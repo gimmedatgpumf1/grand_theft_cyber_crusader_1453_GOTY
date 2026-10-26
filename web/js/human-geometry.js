@@ -21,7 +21,7 @@ function applyMorphs(data, positions, weights) {
     if (!sections) continue;
     const indices = data[sections.index];
     const deltas = data[sections.delta];
-    const amount = weight / data.morphQuant;
+    const amount = Math.abs(weight) / data.morphQuant;
     for (let j = 0; j < indices.length; ++j) {
       const vertex = indices[j] * 3;
       const delta = j * 3;
@@ -70,7 +70,7 @@ function hairGeometry(data, appearance, headBounds, eyes) {
     if (!section) continue;
     const indices = pack[section.index];
     const deltas = pack[section.delta];
-    const amount = weight / pack.morphQuant;
+    const amount = Math.abs(weight) / pack.morphQuant;
     for (let j = 0; j < indices.length; ++j) {
       const vertex = indices[j] * 3;
       const delta = j * 3;
@@ -141,9 +141,10 @@ function hairGeometry(data, appearance, headBounds, eyes) {
     }
   } else if (['short01', 'short02', 'short04'].includes(style.key)) {
     const top = headBounds.max.y - 0.035;
+    const factor = style.key === 'short04' ? 1.15 : 0.48;
     for (let vertex = 0; vertex < count; ++vertex) {
       const offset = vertex * 3 + 1;
-      if (positions[offset] > top) positions[offset] = top + (positions[offset] - top) * 0.48;
+      if (positions[offset] > top) positions[offset] = top + (positions[offset] - top) * factor;
     }
   }
   if (style.key === 'wavy-bob' || style.key === 'curly-bob') {
@@ -153,6 +154,26 @@ function hairGeometry(data, appearance, headBounds, eyes) {
       const offset = vertex * 3;
       positions[offset] = center.x + (positions[offset] - center.x) * factor;
       positions[offset + 2] = center.z + (positions[offset + 2] - center.z) * factor;
+    }
+  }
+  if (style.key === 'long-bangs') {
+    const fringeTop = eyes.L[1] + 0.12;
+    for (let vertex = 0; vertex < count; ++vertex) {
+      const offset = vertex * 3;
+      const x = positions[offset];
+      const y = positions[offset + 1];
+      const front = THREE.MathUtils.clamp((positions[offset + 2] - 0.11) / 0.05, 0, 1);
+      const lower = THREE.MathUtils.clamp((fringeTop - y) / 0.10, 0, 1);
+      const side = THREE.MathUtils.clamp((x + 0.09) / 0.18, 0, 1);
+      const amount = front * lower;
+      positions[offset] -= amount * 0.025;
+      positions[offset + 1] += amount * side * 0.035;
+      positions[offset + 2] -= amount * 0.008;
+      const length = THREE.MathUtils.clamp((eyes.L[1] - 0.03 - y) / 0.22, 0, 1);
+      const edge = THREE.MathUtils.clamp((Math.abs(x) - 0.055) / 0.045, 0, 1);
+      const phase = y * 55 + (x < 0 ? 0.8 : 0);
+      positions[offset] += Math.sign(x) * Math.sin(phase) * length * edge * 0.025;
+      positions[offset + 2] += Math.cos(phase) * length * edge * 0.018;
     }
   }
   if (style.key === 'wavy-bob') {

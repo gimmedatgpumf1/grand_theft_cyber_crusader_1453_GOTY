@@ -17,7 +17,7 @@ KEY = {1,4,10,13,14,33,133,159,145,362,263,386,374,61,291,152,234,454,70,300,63,
        48,115,220,45,64,98,327,344,278,440,275,50,280,101,330,205,425,17,0,37,39,40,267,269,270,321,405,314,84,181,91,146}
 FIT = sorted(set(range(0, 468, 3)) | KEY)
 EXCLUDE = {'neckWidth','shoulders','chest','torsoWidth','stomach','muscles','armWidth','legWidth','african','asian'}
-SELECT = [i for i,s in enumerate(SPECS) if s['key'] not in EXCLUDE]
+SELECT = [i for i,s in enumerate(SPECS) if s['key'] not in EXCLUDE and not s['key'].endswith('Sculpt')]
 
 def read_target(path):
     out = {}
@@ -74,7 +74,7 @@ class Mesh:
                 group=relative[1:];macro='caucasian' if group=='old' else group
                 filename=f"{macro}-{self.sex}-"+('old.target' if group=='old' else 'young.target')
                 path=ROOT/'targets'/'macrodetails'/filename
-            else:path=ROOT/'targets'/relative
+            else:path=ROOT/'targets'/relative.replace('{sex}',self.sex)
             key=str(path)
             if key not in self.cache:self.cache[key]=read_target(path)
             target=self.cache[key]
@@ -99,7 +99,7 @@ for key,ref in REFS.items():
         weight=CURRENT[key]['morphs'].get(spec['key'],0)/100
         if not weight:continue
         raw=mesh.raw_morph(spec['positive' if weight>0 else 'negative'])
-        for vertex,delta in raw.items():fixed[vertex]+=delta*weight
+        for vertex,delta in raw.items():fixed[vertex]+=delta*abs(weight)
     FIXED[key]=fixed
     # Keep all reliable canonical points; the reference always contains the full 468-point face.
     ids=np.array([i for i in FIT if mesh.map_distance[i]<.38])
@@ -135,7 +135,7 @@ for key,ref in REFS.items():
         shaped=points.copy()
         for j in range(len(SELECT)):
             w=params[6+j]
-            shaped+=delta_values[j][1 if w>=0 else 0]*w
+            shaped+=delta_values[j][1 if w>=0 else 0]*abs(w)
         q=shaped@rot.T
         s=math.exp(params[3])
         return np.column_stack((params[4]+s*q[:,0],params[5]-s*q[:,1]))
@@ -151,7 +151,7 @@ for key,ref in REFS.items():
         shaped=points.copy()
         for j in range(count):
             w=params[6+j]
-            shaped+=delta_values[j][1 if w>=0 else 0]*w
+            shaped+=delta_values[j][1 if w>=0 else 0]*abs(w)
         q=shaped@rot.T
         scale=math.exp(params[3])
         jac=np.zeros((2*len(ids)+2*count,6+count))
@@ -170,7 +170,7 @@ for key,ref in REFS.items():
         jac[1:2*len(ids):2,5]=weights
         for j in range(count):
             w=params[6+j]
-            derivative=delta_values[j][1 if w>=0 else 0]@rot.T*scale
+            derivative=(delta_values[j][1] if w>=0 else -delta_values[j][0])@rot.T*scale
             jac[0:2*len(ids):2,6+j]=derivative[:,0]*weights
             jac[1:2*len(ids):2,6+j]=-derivative[:,1]*weights
             jac[2*len(ids)+j,6+j]=.6

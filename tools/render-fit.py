@@ -118,15 +118,15 @@ class Mesh:
             if not weight:
                 continue
             raw = self.raw_morph(spec['positive' if weight > 0 else 'negative'])
-            result += np.array([raw.get(index, np.zeros(3)) for index in original]) * weight
+            result += np.array([raw.get(index, np.zeros(3)) for index in original]) * abs(weight)
         return result
 
     def derivative(self, original, spec, weight):
         positive = np.array([self.raw_morph(spec['positive']).get(index, np.zeros(3)) for index in original]) if spec['positive'] else np.zeros((len(original), 3))
         negative = np.array([self.raw_morph(spec['negative']).get(index, np.zeros(3)) for index in original]) if spec['negative'] else np.zeros((len(original), 3))
         if abs(weight) < .01:
-            return (positive + negative) * .5
-        return positive if weight > 0 else negative
+            return (positive - negative) * .5
+        return positive if weight > 0 else -negative
 
 
 MESHES = {}

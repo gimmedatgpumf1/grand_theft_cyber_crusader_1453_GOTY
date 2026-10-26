@@ -97,7 +97,7 @@ export class CharacterCreator {
 
   schedule() {
     clearTimeout(this.pending);
-    this.pending = setTimeout(() => this.apply(this.read()), 55);
+    this.pending = setTimeout(() => this.apply(this.read(), false, false), 55);
   }
 
   open(local) {
@@ -136,10 +136,10 @@ export class CharacterCreator {
     return normalizeAppearance(result);
   }
 
-  apply(values, announce = false) {
+  apply(values, announce = false, syncControls = true) {
     clearTimeout(this.pending);
     this.values = normalizeAppearance(values);
-    this.syncFields();
+    if (syncControls) this.syncFields();
     this.network.customize(this.values);
     if (announce) this.callbacks.onApplied?.();
   }
