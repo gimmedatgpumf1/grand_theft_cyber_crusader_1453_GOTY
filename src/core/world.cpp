@@ -1,0 +1,394 @@
+#include "core/world.h"
+
+#include "core/collision.h"
+#include "core/json.h"
+
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <sstream>
+
+namespace gtc {
+namespace {
+
+constexpr float kBodyRadius = 0.36F;
+constexpr float kWalkSpeed = 2.8F;
+constexpr float kSprintSpeed = 4.4F;
+
+void appendVec(std::ostringstream& out, const Vec2& value) {
+    out << '[' << jsonNumber(value.x) << ',' << jsonNumber(value.y) << ']';
+}
+
+void appendCharacter(std::ostringstream& out, const Character& character) {
+    out << "{\"id\":" << character.id
+        << ",\"name\":\"" << jsonEscape(character.name) << "\""
+        << ",\"color\":\"" << character.color << "\""
+        << ",\"ai\":" << (character.ai ? "true" : "false")
+        << ",\"x\":" << jsonNumber(character.position.x)
+        << ",\"z\":" << jsonNumber(character.position.y)
+        << ",\"yaw\":" << jsonNumber(character.yaw)
+        << ",\"pitch\":" << jsonNumber(character.pitch)
+        << ",\"speed\":" << jsonNumber(character.speed)
+        << ",\"bladder\":" << jsonNumber(character.needs.bladder)
+        << ",\"bowel\":" << jsonNumber(character.needs.bowel)
+        << ",\"pissing\":" << (character.pissing ? "true" : "false")
+        << ",\"onToilet\":" << (character.onToilet ? "true" : "false")
+        << ",\"notice\":" << character.noticeSequence
+        << ",\"noticeText\":\"" << jsonEscape(character.notice) << "\""
+        << ",\"path\":[";
+    for (std::size_t i = 0; i < character.path.size(); ++i) {
+        if (i != 0) out << ',';
+        appendVec(out, character.path[i]);
+    }
+    out << "]}";
+}
+
+std::string cleanName(std::string name) {
+    std::string cleaned;
+    for (const unsigned char value : name) {
+        if (value >= 0x20U && value != 0x7FU && cleaned.size() < 18) {
+            cleaned.push_back(static_cast<char>(value));
+        }
+    }
+    const std::size_t first = cleaned.find_first_not_of(" \t");
+    if (first == std::string::npos) return "Unnamed Mistake";
+    const std::size_t last = cleaned.find_last_not_of(" \t");
+    return cleaned.substr(first, last - first + 1);
+}
+
+} // namespace
+
+World::World() : pathfinder_(obstacles_, kHalfWidth, kHalfDepth) {
+    obstacles_ = {
+        {{0.0F, -7.0F}, {9.0F, 0.16F}, 3.4F, "boundary"},
+        {{0.0F, 7.0F}, {9.0F, 0.16F}, 0.55F, "boundary"},
+        {{-9.0F, 0.0F}, {0.16F, 7.0F}, 3.4F, "boundary"},
+        {{9.0F, 0.0F}, {0.16F, 7.0F}, 0.55F, "boundary"},
+        {toiletPosition(), {0.58F, 0.72F}, 1.4F, "toilet"},
+        {{5.2F, -4.95F}, {0.85F, 0.55F}, 1.1F, "sink"},
+        {{-6.6F, -3.8F}, {0.75F, 0.75F}, 1.25F, "crate"},
+        {{6.7F, 3.7F}, {0.65F, 0.65F}, 0.85F, "crate"}
+    };
+}
+
+std::uint32_t World::addCharacter(const std::string& name, bool ai) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::uint32_t id = nextCharacterId_++;
+    Character character;
+    character.id = id;
+    character.name = cleanName(name);
+    character.ai = ai;
+    character.position = spawnPoint(id);
+    static const char* colors[] = {"#d7ff54", "#ff765f", "#6edbd2", "#c59aff", "#ffcc62"};
+    character.color = colors[(id - 1U) % 5U];
+    character.needs.bladder = ai ? 86.0F : 58.0F + static_cast<float>((id * 7U) % 23U);
+    character.needs.bowel = ai ? 67.0F : 34.0F + static_cast<float>((id * 11U) % 31U);
+    character.aiTimer = ai ? 2.5F : 0.0F;
+    characters_.emplace(id, std::move(character));
+    addEvent(characters_.at(id).name + (ai ? " crawled out of the algorithm." : " entered the gene pool."));
+    return id;
+}
+
+void World::removeCharacter(std::uint32_t id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = characters_.find(id);
+    if (found == characters_.end()) return;
+    if (toiletUser_ == id) toiletUser_ = 0;
+    addEvent(found->second.name + " returned to the void.");
+    characters_.erase(found);
+}
+
+void World::renameCharacter(std::uint32_t id, const std::string& name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Character* character = find(id)) character->name = cleanName(name);
+}
+
+Character* World::find(std::uint32_t id) {
+    const auto found = characters_.find(id);
+    return found == characters_.end() ? nullptr : &found->second;
+}
+
+Character World::character(std::uint32_t id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = characters_.find(id);
+    return found == characters_.end() ? Character{} : found->second;
+}
+
+std::size_t World::characterCount() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return characters_.size();
+}
+
+Vec2 World::spawnPoint(std::uint32_t id) const {
+    static const Vec2 points[] = {{-2.0F, 2.3F}, {2.0F, 2.3F}, {-4.0F, 1.0F},
+                                  {4.0F, 1.0F}, {-2.0F, 4.8F}, {2.0F, 4.8F}};
+    return points[(id - 1U) % 6U];
+}
+
+void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
+                     float yaw, float pitch) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Character* character = find(id);
+    if (character == nullptr) return;
+    const float magnitude = length(move);
+    character->manualMove = magnitude > 1.0F ? move * (1.0F / magnitude) : move;
+    character->sprint = sprint;
+    character->wantsPiss = piss;
+    if (std::isfinite(yaw)) character->yaw = yaw;
+    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.35F, 1.35F);
+}
+
+void World::setDestination(std::uint32_t id, const Vec2& destination) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Character* character = find(id)) setDestinationLocked(*character, destination);
+}
+
+void World::setDestinationLocked(Character& character, const Vec2& destination) {
+    if (character.onToilet || !std::isfinite(destination.x) || !std::isfinite(destination.y)) return;
+    character.pendingToilet = false;
+    character.wantsPiss = false;
+    character.path = pathfinder_.findPath(character.position, destination);
+    if (character.path.empty()) notify(character, "No route. Try being less geographically challenged.");
+}
+
+void World::requestToilet(std::uint32_t id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Character* character = find(id)) requestToiletLocked(*character);
+}
+
+void World::requestToiletLocked(Character& character) {
+    if (character.onToilet) return;
+    character.wantsPiss = false;
+    if (toiletUser_ != 0 && toiletUser_ != character.id) {
+        notify(character, "Throne occupied. Await your terrible inheritance.");
+    }
+    if (distance(character.position, toiletFront()) <= kInteractionRange && toiletUser_ == 0) {
+        beginToilet(character);
+        return;
+    }
+    character.pendingToilet = true;
+    character.path = pathfinder_.findPath(character.position, toiletFront());
+    if (character.path.empty()) {
+        character.pendingToilet = false;
+        notify(character, "The toilet is unreachable. Society has failed again.");
+    } else {
+        notify(character, "Auto-walking to the porcelain throne.");
+    }
+}
+
+void World::notify(Character& character, const std::string& text) {
+    character.notice = text;
+    ++character.noticeSequence;
+}
+
+void World::beginToilet(Character& character) {
+    if (toiletUser_ != 0 || distance(character.position, toiletFront()) > kInteractionRange) return;
+    toiletUser_ = character.id;
+    character.onToilet = true;
+    character.pendingToilet = false;
+    character.pissing = false;
+    character.wantsPiss = false;
+    character.manualMove = {};
+    character.path.clear();
+    character.position = toiletPosition() + Vec2{0.0F, 0.12F};
+    character.yaw = 0.0F;
+    character.actionTime = 0.0F;
+    character.speed = 0.0F;
+    addEvent(character.name + " claimed the porcelain throne.");
+}
+
+void World::update(float deltaSeconds) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const float dt = std::clamp(deltaSeconds, 0.0F, 0.1F);
+    ++tick_;
+    elapsed_ += dt;
+    for (auto& entry : characters_) {
+        Character& character = entry.second;
+        if (character.ai) updateAI(character, dt);
+        updateCharacter(character, dt);
+    }
+    for (auto first = characters_.begin(); first != characters_.end(); ++first) {
+        for (auto second = std::next(first); second != characters_.end(); ++second) {
+            Character& a = first->second;
+            Character& b = second->second;
+            if (a.onToilet || b.onToilet) continue;
+            const Vec2 difference = b.position - a.position;
+            const float currentDistance = length(difference);
+            if (currentDistance >= kBodyRadius * 2.0F) continue;
+            const Vec2 normal = currentDistance > 0.001F ? difference * (1.0F / currentDistance) : Vec2{1.0F, 0.0F};
+            const float push = (kBodyRadius * 2.0F - currentDistance) * 0.5F;
+            a.position = moveWithCollisions(a.position, normal * -push, kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);
+            b.position = moveWithCollisions(b.position, normal * push, kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);
+        }
+    }
+}
+
+void World::updateAI(Character& character, float dt) {
+    character.aiTimer -= dt;
+    if (character.onToilet || character.aiTimer > 0.0F) return;
+    if ((character.needs.bladder > 78.0F || character.needs.bowel > 78.0F) &&
+        !character.pendingToilet && toiletUser_ == 0) {
+        requestToiletLocked(character);
+        character.aiTimer = 1.0F;
+        return;
+    }
+    if (character.pendingToilet) {
+        character.aiTimer = 0.5F;
+        return;
+    }
+    if (character.needs.bladder > 94.0F && toiletUser_ != 0) {
+        character.wantsPiss = true;
+        character.yaw = 0.4F;
+        character.aiTimer = 0.5F;
+        return;
+    }
+    if (character.pissing) {
+        character.wantsPiss = character.needs.bladder > 35.0F;
+        character.aiTimer = 0.5F;
+        return;
+    }
+    if (character.path.empty()) {
+        std::uniform_real_distribution<float> x(-6.5F, 6.5F);
+        std::uniform_real_distribution<float> z(-1.5F, 5.0F);
+        setDestinationLocked(character, {x(random_), z(random_)});
+    }
+    character.aiTimer = 4.0F;
+}
+
+void World::updateCharacter(Character& character, float dt) {
+    if (character.onToilet) {
+        character.actionTime += dt;
+        character.needs.bladder = std::max(0.0F, character.needs.bladder - 34.0F * dt);
+        character.needs.bowel = std::max(0.0F, character.needs.bowel - 25.0F * dt);
+        character.position = toiletPosition() + Vec2{0.0F, 0.12F};
+        if ((character.needs.bladder < 0.1F && character.needs.bowel < 0.1F) || character.actionTime > 6.0F) {
+            character.needs.bladder = 0.0F;
+            character.needs.bowel = 0.0F;
+            character.onToilet = false;
+            character.position = toiletFront();
+            toiletUser_ = 0;
+            addEvent(character.name + " flushed two generations of evidence.");
+            notify(character, "Needs emptied. Bloodline unfortunately intact.");
+        }
+        return;
+    }
+
+    character.needs.bladder = std::min(100.0F, character.needs.bladder + 0.065F * dt);
+    character.needs.bowel = std::min(100.0F, character.needs.bowel + 0.042F * dt);
+    Vec2 direction = character.manualMove;
+    if (length(direction) > 0.05F) {
+        character.path.clear();
+        character.pendingToilet = false;
+    } else if (!character.path.empty()) {
+        const Vec2 difference = character.path.front() - character.position;
+        if (length(difference) < 0.18F) {
+            character.path.erase(character.path.begin());
+        }
+        if (!character.path.empty()) direction = normalized(character.path.front() - character.position);
+    }
+
+    const bool moving = length(direction) > 0.05F;
+    character.speed = moving ? (character.sprint ? kSprintSpeed : kWalkSpeed) : 0.0F;
+    if (character.wantsPiss) character.speed *= 0.65F;
+    if (moving) {
+        character.position = moveWithCollisions(character.position, normalized(direction) * (character.speed * dt),
+                                                kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);
+        if (!character.wantsPiss) {
+            character.yaw = std::atan2(direction.x, direction.y);
+        }
+    }
+    updatePissing(character, dt);
+
+    if (character.pendingToilet && character.path.empty()) {
+        if (distance(character.position, toiletFront()) <= kInteractionRange && toiletUser_ == 0) {
+            beginToilet(character);
+        } else if (toiletUser_ != 0) {
+            character.speed = 0.0F;
+        } else {
+            character.pendingToilet = false;
+            notify(character, "Stopped just outside throning range. Click it again.");
+        }
+    }
+}
+
+void World::updatePissing(Character& character, float dt) {
+    character.pissing = character.wantsPiss && character.needs.bladder > 0.05F;
+    if (!character.pissing) {
+        character.puddleTimer = 0.0F;
+        return;
+    }
+    character.needs.bladder = std::max(0.0F, character.needs.bladder - 19.0F * dt);
+    character.puddleTimer -= dt;
+    if (character.puddleTimer > 0.0F) return;
+    character.puddleTimer = 0.32F;
+    const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+    const Vec2 landing = character.position + forward * 1.25F;
+    const Vec2 toToilet = normalized(toiletPosition() - character.position);
+    const float aimAtToilet = forward.x * toToilet.x + forward.y * toToilet.y;
+    if (distance(character.position, toiletPosition()) < 2.4F && aimAtToilet > 0.65F) return;
+    if (!circleHitsWorld(landing, 0.05F, obstacles_, kHalfWidth, kHalfDepth)) addPuddle(landing);
+}
+
+void World::addPuddle(const Vec2& position) {
+    for (Puddle& puddle : puddles_) {
+        if (distance(puddle.position, position) < 0.75F) {
+            puddle.size = std::min(1.3F, puddle.size + 0.07F);
+            puddle.position = (puddle.position + position) * 0.5F;
+            return;
+        }
+    }
+    if (puddles_.size() >= 40) puddles_.erase(puddles_.begin());
+    puddles_.push_back({nextPuddleId_++, position, 0.28F});
+}
+
+void World::addEvent(const std::string& text) {
+    events_.push_back({nextEventId_++, text});
+    while (events_.size() > 7) events_.pop_front();
+}
+
+std::string World::description() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::ostringstream out;
+    out << "{\"width\":18,\"depth\":14,\"interactionRange\":" << jsonNumber(kInteractionRange)
+        << ",\"toilet\":{\"x\":0,\"z\":-4.75,\"frontX\":0,\"frontZ\":-2.85}"
+        << ",\"obstacles\":[";
+    for (std::size_t i = 0; i < obstacles_.size(); ++i) {
+        const Obstacle& obstacle = obstacles_[i];
+        if (i != 0) out << ',';
+        out << "{\"x\":" << jsonNumber(obstacle.center.x)
+            << ",\"z\":" << jsonNumber(obstacle.center.y)
+            << ",\"hx\":" << jsonNumber(obstacle.halfSize.x)
+            << ",\"hz\":" << jsonNumber(obstacle.halfSize.y)
+            << ",\"height\":" << jsonNumber(obstacle.height)
+            << ",\"kind\":\"" << obstacle.kind << "\"}";
+    }
+    out << "]}";
+    return out.str();
+}
+
+std::string World::snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::ostringstream out;
+    out << "{\"type\":\"state\",\"tick\":" << tick_ << ",\"time\":" << static_cast<std::uint64_t>(elapsed_)
+        << ",\"toiletUser\":" << toiletUser_ << ",\"characters\":[";
+    std::size_t index = 0;
+    for (const auto& entry : characters_) {
+        if (index++ != 0) out << ',';
+        appendCharacter(out, entry.second);
+    }
+    out << "],\"puddles\":[";
+    for (std::size_t i = 0; i < puddles_.size(); ++i) {
+        if (i != 0) out << ',';
+        out << "{\"id\":" << puddles_[i].id << ",\"x\":" << jsonNumber(puddles_[i].position.x)
+            << ",\"z\":" << jsonNumber(puddles_[i].position.y) << ",\"size\":" << jsonNumber(puddles_[i].size) << '}';
+    }
+    out << "],\"events\":[";
+    for (std::size_t i = 0; i < events_.size(); ++i) {
+        if (i != 0) out << ',';
+        out << "{\"id\":" << events_[i].id << ",\"text\":\"" << jsonEscape(events_[i].text) << "\"}";
+    }
+    out << "]}";
+    return out.str();
+}
+
+} // namespace gtc
