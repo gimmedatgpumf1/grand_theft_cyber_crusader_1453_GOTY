@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../web/js/vendor/three.module.min.js';
 import { CameraController } from '../web/js/camera.js';
+import { InputController } from '../web/js/input.js';
 
 const nearZero = value => Math.abs(value) < 1e-8;
 const controller = new CameraController(new THREE.PerspectiveCamera());
@@ -41,4 +42,29 @@ controller.godFocus.set(0, 0, 0);
 controller.pan(new Set(['KeyW', 'ShiftLeft']), 0.1);
 assert.ok(controller.godFocus.length() > normalDistance * 1.5, 'Shift must boost godview panning');
 
-console.log('Camera direction, mouse look, and godview speed tests passed.');
+globalThis.window = { addEventListener() {}, innerWidth: 1280, innerHeight: 800 };
+globalThis.document = { addEventListener() {}, pointerLockElement: null };
+const canvas = { addEventListener() {}, style: {} };
+const scene = { pick: () => null, setHighlight() {} };
+const inputCamera = new CameraController(new THREE.PerspectiveCamera());
+const input = new InputController(canvas, inputCamera, {}, scene, {
+  isHelpOpen: () => false,
+  isInputBlocked: () => false,
+  localPosition: () => new THREE.Vector3(),
+  localYaw: () => Math.PI,
+  onMode() {},
+});
+input.mode = inputCamera.mode = 'third';
+inputCamera.yaw = Math.PI;
+input.keys.add('KeyD');
+let controls = input.update(0.05);
+assert.ok(controls.x > 0.99 && nearZero(controls.z), 'Input must send world-space D as protocol x/z');
+input.keys.clear();
+input.keys.add('KeyW');
+controls = input.update(0.05);
+assert.ok(controls.z < -0.99 && nearZero(controls.x), 'Input must send world-space W as protocol x/z');
+input.setMode('god');
+controls = input.update(0.05);
+assert.ok(nearZero(controls.x) && nearZero(controls.z), 'Godview pans without moving the citizen');
+
+console.log('Camera, input protocol, mouse look, and godview speed tests passed.');

@@ -15,6 +15,7 @@ export class HUD {
     this.lastEvent = 0;
     this.toastTimer = null;
     this.mode = 'third';
+    this.targetedKind = null;
     this.map = byId('minimap').getContext('2d');
   }
 
@@ -46,6 +47,8 @@ export class HUD {
     byId('ai-tag').textContent = local.ai ? 'AI' : 'HUMAN?';
     this.need('bladder', local.bladder);
     this.need('bowel', local.bowel);
+    this.cheatNeed('bladder', local.bladder);
+    this.cheatNeed('bowel', local.bowel);
     this.context(local, state, world);
     this.minimap(state, localId, world);
     if (local.notice > this.lastNotice) {
@@ -61,6 +64,20 @@ export class HUD {
     byId(`${kind}-bar`).style.width = `${clamp(value, 0, 100)}%`;
     byId(`${kind}-state`).textContent = needStatus(kind, value);
     byId(`${kind}-need`).classList.toggle('critical', value >= 90);
+  }
+
+  cheatNeed(kind, value) {
+    byId(`cheat-${kind}-value`).textContent = `${Math.round(value)}%`;
+    byId(`cheat-${kind}-bar`).style.width = `${clamp(value, 0, 100)}%`;
+  }
+
+  cheats(open) {
+    byId('cheats').classList.toggle('hidden', !open);
+  }
+
+  target(kind) {
+    this.targetedKind = kind || null;
+    byId('crosshair').classList.toggle('targeted', this.targetedKind === 'toilet');
   }
 
   context(local, state, world) {
@@ -80,19 +97,15 @@ export class HUD {
     } else if (near && occupied) {
       key.textContent = '⌛';
       title.textContent = 'THRONE OCCUPIED';
-      detail.textContent = 'AWAIT YOUR TERRIBLE INHERITANCE · CLICK TO QUEUE';
+      detail.textContent = 'AWAIT YOUR TERRIBLE INHERITANCE · NO QUEUE-CAMPING THE BOWL';
     } else if (near) {
       key.textContent = 'E';
-      title.textContent = 'USE PORCELAIN THRONE';
-      detail.textContent = 'EMPTIES BLADDER + BOWEL · SATISFACTION NOT GUARANTEED';
-    } else if (this.mode === 'first') {
-      key.textContent = 'F';
-      title.textContent = 'HOLD TO COMMIT LIQUID HERESY';
-      detail.textContent = 'E: APPROACH THRONE · CLICK VIEW: CAPTURE MOUSE · ESC: RELEASE';
+      title.textContent = '[E] Interact';
+      detail.textContent = 'PORCELAIN THRONE · EMPTIES BLADDER + BOWEL · SINGLE ACTION';
     } else {
       key.textContent = '↖';
-      title.textContent = 'CLICK THRONE TO AUTO-WALK';
-      detail.textContent = `INTERACTION RANGE ${world.interactionRange.toFixed(1)} M · CLICK FLOOR TO PATHFIND`;
+      title.textContent = this.targetedKind === 'toilet' ? 'THRONE OUT OF RANGE' : 'MOVE CLOSER TO INTERACT';
+      detail.textContent = `INTERACTION RANGE ${world.interactionRange.toFixed(1)} M · NO AUTO-WALK · F1 CHEATS`;
     }
   }
 
@@ -101,9 +114,9 @@ export class HUD {
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
     byId('crosshair').classList.toggle('hidden', mode === 'god');
     const hints = {
-      third: '<b>CLICK</b> CAPTURE MOUSE <span>·</span> <b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> ORBIT <span>·</span> <b>E</b> INTERACT',
-      god: '<b>WASD</b> FAST PAN <span>·</span> <b>SHIFT</b> BOOST <span>·</span> <b>LMB</b> MOVE CITIZEN / INTERACT <span>·</span> <b>WHEEL</b> ZOOM',
-      first: '<b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> LOOK <span>·</span> <b>HOLD F</b> PISS <span>·</span> <b>E</b> THRONE',
+      third: '<b>CLICK</b> CAPTURE MOUSE <span>·</span> <b>WASD</b> MOVE <span>·</span> <b>E</b> INTERACT IN RANGE <span>·</span> <b>F1</b> CHEATS',
+      god: '<b>WASD</b> FAST PAN <span>·</span> <b>SHIFT</b> BOOST <span>·</span> <b>LMB</b> MOVE / INTERACT IN RANGE <span>·</span> <b>F1</b> CHEATS',
+      first: '<b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> LOOK <span>·</span> <b>HOLD F</b> PISS <span>·</span> <b>E</b> INTERACT <span>·</span> <b>F1</b> CHEATS',
     };
     byId('control-hint').innerHTML = hints[mode];
     byId('piss-indicator').classList.add('hidden');

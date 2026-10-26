@@ -65,6 +65,7 @@ export class Network {
   input(input) { this.send({ type: 'input', ...input }); }
   path(point) { this.send({ type: 'path', x: point.x, z: point.z }); }
   toilet() { this.send({ type: 'toilet' }); }
+  cheat(need, delta) { this.send({ type: 'cheat', need, delta }); }
 
   rename(name) {
     this.identity = name;

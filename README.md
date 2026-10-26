@@ -21,14 +21,20 @@ actions as browser players.
 
 | Mode | Move citizen | Camera | Interact |
 | --- | --- | --- | --- |
-| **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E or centered left-click for throne |
-| **2 — Godview** | Left-click floor to pathfind | WASD fast-pans; Shift boosts; wheel zoom | Left-click throne; E for throne |
-| **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E for throne; **hold F to piss** |
+| **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E or centered left-click in range |
+| **2 — Godview** | Left-click floor to pathfind | WASD fast-pans; Shift boosts; wheel zoom | Left-click a highlighted object in range; E also works |
+| **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E in range; **hold F to piss** |
 
-- Clicking the toilet from outside its **1.8 m interaction range** auto-paths to it.
-- The throne empties both bladder and bowel. It supports one occupant and a queue.
+- Targeted objects glow. **[E] Interact** appears only inside the **1.8 m interaction range**.
+- E and object clicks never auto-walk the player. Move closer yourself; explicit godview floor
+  clicks still use pathfinding. Autonomous AI can path to the toilet before using it.
+- Single-action objects such as the throne activate directly. Multi-action objects will use a
+  choice wheel rather than silently selecting an action; this slice currently has no such object.
+- The throne empties both bladder and bowel and supports one occupant.
 - First-person pissing empties only the bladder and leaves shared, persistent puddles.
   Aim at the toilet from close range to avoid making a floor puddle.
+- **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
+  server applies and clamps every change to 0–100%, so all connected views share the result.
 - **H** opens the field manual and identity editor.
 
 ## One-click Windows build
@@ -97,10 +103,11 @@ bash tools/nagger.sh
 ```
 
 The test runner builds and executes simulation tests for JSON, collision/sliding, A* path
-validity, toilet auto-pathing and interaction range, dual-need relief, pissing/puddles, and AI
-toilet use. It also checks camera-relative strafe directions, mouse-look direction, godview
-pan speed, and syntax-checks every first-party browser module with Node.js. Node is only a
-test convenience, not a game dependency.
+validity, strict interaction range without player auto-walk, dual-need relief, clamped cheat
+adjustments, pissing/puddles, and autonomous AI toilet use. It also checks camera-relative
+strafe directions, the input protocol's world-space x/z mapping, mouse-look direction,
+godview pan speed, and syntax-checks every first-party
+browser module with Node.js. Node is only a test convenience, not a game dependency.
 
 ## Architecture
 

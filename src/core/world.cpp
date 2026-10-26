@@ -134,8 +134,10 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     character->manualMove = magnitude > 1.0F ? move * (1.0F / magnitude) : move;
     character->sprint = sprint;
     character->wantsPiss = piss;
-    if (std::isfinite(yaw)) character->yaw = yaw;
-    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.35F, 1.35F);
+    if (!character->onToilet) {
+        if (std::isfinite(yaw)) character->yaw = yaw;
+        if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.35F, 1.35F);
+    }
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination) {
@@ -158,22 +160,27 @@ void World::requestToilet(std::uint32_t id) {
 
 void World::requestToiletLocked(Character& character) {
     if (character.onToilet) return;
-    character.wantsPiss = false;
-    if (toiletUser_ != 0 && toiletUser_ != character.id) {
-        notify(character, "Throne occupied. Await your terrible inheritance.");
-    }
-    if (distance(character.position, toiletFront()) <= kInteractionRange && toiletUser_ == 0) {
-        beginToilet(character);
+    if (distance(character.position, toiletFront()) > kInteractionRange) {
+        notify(character, "Out of range. Move closer to interact.");
         return;
     }
-    character.pendingToilet = true;
-    character.path = pathfinder_.findPath(character.position, toiletFront());
-    if (character.path.empty()) {
-        character.pendingToilet = false;
-        notify(character, "The toilet is unreachable. Society has failed again.");
-    } else {
-        notify(character, "Auto-walking to the porcelain throne.");
+    if (toiletUser_ != 0 && toiletUser_ != character.id) {
+        notify(character, "Throne occupied. Find another outlet.");
+        return;
     }
+    beginToilet(character);
+}
+
+void World::adjustNeed(std::uint32_t id, const std::string& need, float delta) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Character* character = find(id);
+    if (character == nullptr || !std::isfinite(delta)) return;
+    float* value = nullptr;
+    if (need == "bladder") value = &character->needs.bladder;
+    if (need == "bowel") value = &character->needs.bowel;
+    if (value == nullptr) return;
+    *value = std::clamp(*value + std::clamp(delta, -100.0F, 100.0F), 0.0F, 100.0F);
+    notify(*character, "Cheat: " + need + " set to " + std::to_string(static_cast<int>(*value)) + "%.");
 }
 
 void World::notify(Character& character, const std::string& text) {
@@ -228,7 +235,13 @@ void World::updateAI(Character& character, float dt) {
     if (character.onToilet || character.aiTimer > 0.0F) return;
     if ((character.needs.bladder > 78.0F || character.needs.bowel > 78.0F) &&
         !character.pendingToilet && toiletUser_ == 0) {
-        requestToiletLocked(character);
+        if (distance(character.position, toiletFront()) <= kInteractionRange) {
+            requestToiletLocked(character);
+        } else {
+            character.pendingToilet = true;
+            character.path = pathfinder_.findPath(character.position, toiletFront());
+            if (character.path.empty()) character.pendingToilet = false;
+        }
         character.aiTimer = 1.0F;
         return;
     }

@@ -65,19 +65,25 @@ int main() {
         check(gtc::distance(previous, {3, 0}) < 0.01F, "route reaches requested destination");
     });
 
-    test("toilet auto-path, range, and both needs", [] {
+    test("toilet requires range and empties both needs", [] {
         gtc::World world;
         const auto id = world.addCharacter("Test Subject", false);
+        const auto spawn = world.character(id).position;
         world.requestToilet(id);
-        bool satDown = false;
-        for (int i = 0; i < 600; ++i) {
-            world.update(0.05F);
-            if (world.character(id).onToilet) {
-                satDown = true;
-                break;
-            }
-        }
-        check(satDown, "citizen should auto-path into interaction range and sit");
+        check(!world.character(id).onToilet, "out-of-range interaction must not sit");
+        check(world.character(id).path.empty(), "out-of-range interaction must not auto-walk");
+        check(gtc::distance(world.character(id).position, spawn) < 0.001F,
+              "out-of-range interaction must not move the citizen");
+        world.setDestination(id, {0, -2.85F});
+        for (int i = 0; i < 600 && !world.character(id).path.empty(); ++i) world.update(0.05F);
+        check(gtc::distance(world.character(id).position, {0, -2.85F}) < 0.2F,
+              "explicit movement should reach the toilet");
+        world.requestToilet(id);
+        check(world.character(id).onToilet, "in-range interaction should sit immediately");
+        world.setInput(id, {}, false, false, 1.25F, 0.4F);
+        world.update(0.05F);
+        check(std::abs(world.character(id).yaw) < 0.001F,
+              "camera input must not rotate a seated citizen away from the throne");
         for (int i = 0; i < 200 && world.character(id).onToilet; ++i) world.update(0.05F);
         const auto relieved = world.character(id);
         check(!relieved.onToilet, "toilet action should finish");
@@ -85,6 +91,19 @@ int main() {
               "throne empties bladder and bowel");
         world.requestToilet(id);
         check(world.character(id).onToilet, "throne can be reused from interaction range");
+    });
+
+    test("cheat menu adjusts needs within safe bounds", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Cheat Subject", false);
+        world.adjustNeed(id, "bladder", 100);
+        world.adjustNeed(id, "bowel", 25);
+        check(world.character(id).needs.bladder == 100.0F, "bladder can be filled and clamps at 100");
+        const float bowel = world.character(id).needs.bowel;
+        world.adjustNeed(id, "bladder", -150);
+        world.adjustNeed(id, "invalid", 100);
+        check(world.character(id).needs.bladder == 0.0F, "bladder can be emptied and clamps at zero");
+        check(world.character(id).needs.bowel == bowel, "invalid need names are ignored");
     });
 
     test("first-person style piss action drains bladder and makes puddles", [] {

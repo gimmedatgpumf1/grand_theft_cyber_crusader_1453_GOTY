@@ -230,6 +230,8 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         world_.setDestination(id, {x, z});
     } else if (type == "toilet") {
         world_.requestToilet(id);
+    } else if (type == "cheat") {
+        world_.adjustNeed(id, message.stringAt("need"), static_cast<float>(message.numberAt("delta")));
     } else if (type == "join") {
         world_.renameCharacter(id, message.stringAt("name", "Fresh Mistake"));
     }

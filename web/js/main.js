@@ -22,12 +22,28 @@ const camera = new CameraController(gameScene.camera,
 let latestState = { characters: [], puddles: [], events: [], tick: 0, toiletUser: 0 };
 let mode = 'third';
 let helpOpen = false;
+let cheatOpen = false;
 
 function toggleHelp(force) {
   helpOpen = typeof force === 'boolean' ? force : !helpOpen;
+  if (helpOpen) {
+    cheatOpen = false;
+    hud.cheats(false);
+  }
   hud.help(helpOpen);
   input.clear();
   if (helpOpen && document.pointerLockElement) document.exitPointerLock?.();
+}
+
+function toggleCheats(force) {
+  cheatOpen = typeof force === 'boolean' ? force : !cheatOpen;
+  if (cheatOpen) {
+    helpOpen = false;
+    hud.help(false);
+  }
+  hud.cheats(cheatOpen);
+  input.clear();
+  if (cheatOpen && document.pointerLockElement) document.exitPointerLock?.();
 }
 
 const input = new InputController(document.getElementById('world'), camera, network, gameScene, {
@@ -40,7 +56,9 @@ const input = new InputController(document.getElementById('world'), camera, netw
     if (mode === 'god') hud.toast('Godview: WASD fast-pans; Shift boosts. Clicks move your citizen.');
   },
   onHelp: toggleHelp,
+  onCheat: toggleCheats,
   isHelpOpen: () => helpOpen,
+  isInputBlocked: () => cheatOpen,
   localPosition: () => characters.localView(network.id)?.group.position || null,
   localYaw: () => characters.localView(network.id)?.data.yaw ?? Math.PI,
 });
@@ -69,6 +87,14 @@ document.getElementById('close-help').addEventListener('click', () => toggleHelp
 document.getElementById('help').addEventListener('mousedown', event => {
   if (event.target.id === 'help') toggleHelp(false);
 });
+document.getElementById('cheat-button').addEventListener('click', () => toggleCheats(true));
+document.getElementById('close-cheats').addEventListener('click', () => toggleCheats(false));
+document.getElementById('cheats').addEventListener('mousedown', event => {
+  if (event.target.id === 'cheats') toggleCheats(false);
+});
+document.querySelectorAll('.cheat-buttons button').forEach(button => {
+  button.addEventListener('click', () => network.cheat(button.dataset.need, Number(button.dataset.delta)));
+});
 document.getElementById('apply-name').addEventListener('click', () => {
   const field = document.getElementById('player-name');
   const name = field.value.trim().slice(0, 18) || 'Unnamed Mistake';
@@ -92,6 +118,7 @@ function frame(now) {
   const time = now / 1000;
   characters.sync(latestState, network.id, mode, gameScene.camera, time, dt);
   const controls = input.update(dt);
+  hud.target(gameScene.highlightedKind);
   camera.update(dt, characters.localView(network.id));
   gameScene.update(time, dt);
   inputAccumulator += dt;

@@ -28,7 +28,10 @@
           <small><span id="population">0</span> CITIZENS · PORT 1453 · 20 TICK</small>
         </div>
       </div>
-      <button id="help-button" class="icon-button" title="Controls and identity (H)" aria-label="Open help">?</button>
+      <div class="top-actions">
+        <button id="cheat-button" class="icon-button" title="Cheat console (F1)" aria-label="Open cheat console">F1</button>
+        <button id="help-button" class="icon-button" title="Controls and identity (H)" aria-label="Open help">?</button>
+      </div>
     </header>
 
     <aside class="needs panel-cut hud-layer" aria-label="Character needs">
@@ -67,8 +70,8 @@
 
     <div class="bottom-ui hud-layer">
       <div id="context-prompt" class="context-prompt panel-cut">
-        <span class="context-key">E</span>
-        <div><strong id="context-title">FIND THE PORCELAIN THRONE</strong><small id="context-detail">CLICK TOILET TO AUTO-WALK · CLICK FLOOR TO PATH</small></div>
+        <span class="context-key">↖</span>
+        <div><strong id="context-title">MOVE CLOSER TO INTERACT</strong><small id="context-detail">INTERACTION RANGE 1.8 M · CLICK FLOOR TO PATH</small></div>
       </div>
       <div class="control-dock panel-cut">
         <div class="mode-switch" role="group" aria-label="Camera mode">
@@ -94,16 +97,46 @@
         <h2>HOW TO BE A<br><em>FUNCTIONING CITIZEN</em></h2>
         <p class="help-intro">One bathroom. Zero privacy. Every browser is a separate citizen; the AI follows the same humiliating rules.</p>
         <div class="help-grid">
-          <article><h3>01 // THIRD PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse orbit · wheel zoom<br><b>E</b> / centered <b>left-click</b> throne</p></article>
-          <article><h3>02 // GODVIEW</h3><p><b>WASD</b> fast-pan camera, not citizen<br><b>Shift</b> pan boost · wheel zoom<br><b>Left-click</b> floor to pathfind<br><b>Click throne</b> to approach & use</p></article>
-          <article><h3>03 // FIRST PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse look<br><b>Hold F</b> piss wherever justice is needed</p></article>
-          <article><h3>UNIVERSAL BIOLOGY</h3><p><b>E</b> approach / use toilet<br>Using the throne empties both needs.<br>You must be within <b>1.8 m</b>; clicking from afar auto-paths.</p></article>
+          <article><h3>01 // THIRD PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse orbit · wheel zoom<br><b>E</b> / centered <b>left-click</b> to interact in range</p></article>
+          <article><h3>02 // GODVIEW</h3><p><b>WASD</b> fast-pan camera, not citizen<br><b>Shift</b> pan boost · wheel zoom<br><b>Left-click</b> floor to pathfind<br><b>Click throne</b> only when already in range</p></article>
+          <article><h3>03 // FIRST PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse look<br><b>Hold F</b> piss wherever justice is needed<br><b>E</b> interacts with a nearby throne</p></article>
+          <article><h3>UNIVERSAL BIOLOGY</h3><p>Nearby objects glow when targeted.<br><b>[E] Interact</b> appears only within <b>1.8 m</b>.<br>The throne directly empties both needs.<br><b>F1</b> opens boost / reduce cheats. No auto-walk.</p></article>
         </div>
         <div class="identity-editor">
           <label for="player-name">YOUR QUESTIONABLE IDENTITY</label>
           <div><input id="player-name" maxlength="18" autocomplete="off" spellcheck="false"><button id="apply-name">UPDATE CITIZEN RECORD</button></div>
         </div>
-        <small class="help-foot">H / ESC TO CLOSE · ALL ASSETS LOCAL · NO MICROTRANSACTIONS, ONLY MICRO-ORGANISMS</small>
+        <small class="help-foot">H / ESC TO CLOSE · F1 CHEAT CONSOLE · ALL ASSETS LOCAL · NO MICROTRANSACTIONS, ONLY MICRO-ORGANISMS</small>
+      </div>
+    </section>
+
+    <section id="cheats" class="modal hidden" aria-label="Need cheat console" aria-modal="true">
+      <div class="cheat-card panel-cut">
+        <div class="help-top"><span>F1 // UNSANCTIONED BIOLOGY</span><button id="close-cheats" aria-label="Close cheat console">×</button></div>
+        <h2>CHEAT THE<br><em>MEAT MACHINE</em></h2>
+        <p class="help-intro">Boost or reduce the authoritative server stats. Changes apply only to your citizen and clamp between 0% and 100%.</p>
+        <div class="cheat-row" data-need="bladder">
+          <div class="cheat-label"><span>BLADDER // LIQUID ASSETS</span><strong id="cheat-bladder-value">--%</strong></div>
+          <div class="cheat-meter"><i id="cheat-bladder-bar"></i></div>
+          <div class="cheat-buttons">
+            <button data-need="bladder" data-delta="-100">EMPTY</button>
+            <button data-need="bladder" data-delta="-25">−25</button>
+            <button class="boost" data-need="bladder" data-delta="25">+25</button>
+            <button class="boost" data-need="bladder" data-delta="100">FILL</button>
+          </div>
+        </div>
+        <div class="cheat-row" data-need="bowel">
+          <div class="cheat-label"><span>BOWEL // BROWN NOISE</span><strong id="cheat-bowel-value">--%</strong></div>
+          <div class="cheat-meter"><i id="cheat-bowel-bar"></i></div>
+          <div class="cheat-buttons">
+            <button data-need="bowel" data-delta="-100">EMPTY</button>
+            <button data-need="bowel" data-delta="-25">−25</button>
+            <button class="boost" data-need="bowel" data-delta="25">+25</button>
+            <button class="boost" data-need="bowel" data-delta="100">FILL</button>
+          </div>
+        </div>
+        <p class="cheat-note">Multiplayer warning: the AI can see your crimes, but not your browser's cheat console.</p>
+        <small class="help-foot">F1 / ESC TO CLOSE · NO AUTO-WALK · CHEATS USE THE SAME SERVER STATE AS EVERY OTHER ACTION</small>
       </div>
     </section>
 

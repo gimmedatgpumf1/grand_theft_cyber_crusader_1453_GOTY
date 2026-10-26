@@ -24,6 +24,7 @@ public:
                   float yaw, float pitch);
     void setDestination(std::uint32_t id, const Vec2& destination);
     void requestToilet(std::uint32_t id);
+    void adjustNeed(std::uint32_t id, const std::string& need, float delta);
     void update(float deltaSeconds);
 
     Character character(std::uint32_t id) const;

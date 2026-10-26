@@ -61,6 +61,8 @@ export class GameScene {
     this.cameraBlockers = [];
     this.pointer = new THREE.Vector2();
     this.clickTargets = [];
+    this.toiletMaterials = new Set();
+    this.highlightedKind = null;
     this.puddles = new Map();
     this.worldRoot = null;
     this.destinationLife = 0;
@@ -96,6 +98,8 @@ export class GameScene {
     this.scene.add(this.worldRoot);
     this.clickTargets = [];
     this.cameraBlockers = [];
+    this.toiletMaterials = new Set();
+    this.highlightedKind = null;
     for (const puddle of this.puddles.values()) this.scene.remove(puddle);
     this.puddles.clear();
     this.createFloor(world);
@@ -205,7 +209,16 @@ export class GameScene {
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.7, 7), dark);
     pipe.position.set(0, 0.42, -0.68);
     toilet.add(pipe);
-    toilet.traverse(child => { child.userData.kind = 'toilet'; });
+    toilet.traverse(child => {
+      child.userData.kind = 'toilet';
+      if (!child.isMesh) return;
+      for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+        if (!material.emissive || this.toiletMaterials.has(material)) continue;
+        material.userData.baseEmissive = material.emissive.getHex();
+        material.userData.baseEmissiveIntensity = material.emissiveIntensity;
+        this.toiletMaterials.add(material);
+      }
+    });
     this.worldRoot.add(toilet);
     this.clickTargets.push(toilet);
   }
@@ -349,6 +362,18 @@ export class GameScene {
     this.destinationLife = 1;
   }
 
+  setHighlight(kind) {
+    const activeKind = kind || null;
+    if (this.highlightedKind === activeKind) return;
+    this.highlightedKind = activeKind;
+    const active = activeKind === 'toilet';
+    for (const material of this.toiletMaterials) {
+      material.emissive.setHex(active ? 0x526b24 : material.userData.baseEmissive);
+      material.emissiveIntensity = active ? 0.72 : material.userData.baseEmissiveIntensity;
+    }
+    if (this.questMarker) this.questMarker.material.color.set(active ? '#ffffff' : '#d7ff54');
+  }
+
   pick(clientX, clientY, camera) {
     const bounds = this.canvas.getBoundingClientRect();
     this.pointer.set(((clientX - bounds.left) / bounds.width) * 2 - 1,
@@ -367,8 +392,12 @@ export class GameScene {
     if (this.questMarker) {
       this.questMarker.rotation.y = time * 1.7;
       this.questMarker.position.y = 2.04 + Math.sin(time * 2.8) * 0.1;
+      this.questMarker.scale.setScalar(this.highlightedKind === 'toilet' ? 1.45 : 1);
     }
-    if (this.interactionRing) this.interactionRing.material.opacity = 0.15 + Math.sin(time * 2) * 0.06;
+    if (this.interactionRing) {
+      this.interactionRing.material.opacity = this.highlightedKind === 'toilet' ? 0.72 :
+        0.15 + Math.sin(time * 2) * 0.06;
+    }
     if (this.destinationLife > 0) {
       this.destinationLife = Math.max(0, this.destinationLife - dt * 0.8);
       this.destination.material.opacity = this.destinationLife;
