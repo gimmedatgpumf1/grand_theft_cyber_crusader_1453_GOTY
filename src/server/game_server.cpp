@@ -229,7 +229,19 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -6.7, 6.7));
         world_.setDestination(id, {x, z});
     } else if (type == "toilet") {
-        world_.requestToilet(id);
+        world_.requestToilet(id, message.stringAt("action", "sit"));
+    } else if (type == "customize") {
+        Appearance appearance = world_.character(id).appearance;
+        appearance.male = message.boolAt("male", appearance.male);
+        appearance.skin = static_cast<int>(message.numberAt("skin", appearance.skin));
+        appearance.hair = static_cast<int>(message.numberAt("hair", appearance.hair));
+        appearance.hairColor = static_cast<int>(message.numberAt("hairColor", appearance.hairColor));
+        appearance.shirt = static_cast<int>(message.numberAt("shirt", appearance.shirt));
+        appearance.pants = static_cast<int>(message.numberAt("pants", appearance.pants));
+        appearance.beard = static_cast<int>(message.numberAt("beard", appearance.beard));
+        appearance.coat = message.boolAt("coat", appearance.coat);
+        appearance.sunglasses = message.boolAt("sunglasses", appearance.sunglasses);
+        world_.customizeCharacter(id, appearance);
     } else if (type == "cheat") {
         world_.adjustNeed(id, message.stringAt("need"), static_cast<float>(message.numberAt("delta")));
     } else if (type == "join") {

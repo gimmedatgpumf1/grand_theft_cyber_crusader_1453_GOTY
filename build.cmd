@@ -27,24 +27,39 @@ if not defined INCLUDE (
 call :CheckStandardLibrary
 if errorlevel 1 exit /b 1
 
-set "SOURCES="
-for /r "%ROOT%\src" %%F in (*.cpp) do set "SOURCES=!SOURCES! "%%F""
-if not defined SOURCES (
-  echo [build] No sources found.
-  exit /b 1
+set "CCACHE_BIN="
+if exist "%ROOT%\tools\ccache\windows-x86_64\ccache.exe" (
+  set "CCACHE_BIN=%ROOT%\tools\ccache\windows-x86_64\ccache.exe"
+) else (
+  where ccache.exe >nul 2>nul
+  if not errorlevel 1 set "CCACHE_BIN=ccache.exe"
 )
-set "COMPILER=cl.exe"
-where ccache.exe >nul 2>nul
-if not errorlevel 1 (
-  set "COMPILER=ccache.exe cl.exe"
+if defined CCACHE_BIN (
   echo [build] ccache enabled: content hashes only, persistent local cache.
 ) else (
   echo [build] WARNING: ccache not found; compiling directly. Install ccache for faster rebuilds.
 )
 
-%COMPILER% /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
-  /I"%ROOT%\src" !SOURCES! /Fo"%ROOT%\build\obj\\" /Fe"%ROOT%\build\bin\gtc1453.exe" ^
-  /link Ws2_32.lib
+set "OBJECTS="
+set "SOURCE_COUNT=0"
+for /r "%ROOT%\src" %%F in (*.cpp) do (
+  set /a SOURCE_COUNT+=1
+  set "OBJECT=%ROOT%\build\obj\%%~nF.obj"
+  set "OBJECTS=!OBJECTS! "!OBJECT!""
+  if defined CCACHE_BIN (
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
+      /I"%ROOT%\src" /c "%%F" /Fo"!OBJECT!"
+  ) else (
+    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
+      /I"%ROOT%\src" /c "%%F" /Fo"!OBJECT!"
+  )
+  if errorlevel 1 exit /b 1
+)
+if "!SOURCE_COUNT!"=="0" (
+  echo [build] No sources found.
+  exit /b 1
+)
+cl.exe /nologo !OBJECTS! /Fe"%ROOT%\build\bin\gtc1453.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
 echo [build] Success: %ROOT%\build\bin\gtc1453.exe
 if /i "%~1"=="--run" "%ROOT%\build\bin\gtc1453.exe"

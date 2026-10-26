@@ -29,6 +29,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <button id="creator-button" class="icon-button" title="Character creator (C)" aria-label="Open character creator">C</button>
         <button id="cheat-button" class="icon-button" title="Cheat console (F1)" aria-label="Open cheat console">F1</button>
         <button id="help-button" class="icon-button" title="Controls and identity (H)" aria-label="Open help">?</button>
       </div>
@@ -68,6 +69,15 @@
     <div id="crosshair" class="crosshair hud-layer hidden" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div id="piss-indicator" class="piss-indicator hud-layer hidden">LIQUID HERESY IN PROGRESS</div>
 
+    <section id="action-wheel" class="action-wheel hidden" aria-label="Toilet action choice wheel">
+      <div class="wheel-core"><small>PORCELAIN</small><strong>CHOOSE<br>YOUR SIN</strong></div>
+      <button class="wheel-action wheel-sit" data-toilet-action="sit"><b>SIT</b><small>STAY A WHILE</small></button>
+      <button class="wheel-action wheel-piss" data-toilet-action="piss"><b id="wheel-piss-label">PISS</b><small id="wheel-piss-detail">STANDING</small></button>
+      <button class="wheel-action wheel-shit" data-toilet-action="shit"><b>SHIT</b><small>BOWEL DOWNLOAD</small></button>
+      <button class="wheel-action wheel-stand hidden" data-toilet-action="stand"><b>STAND UP</b><small>RELEASE THRONE</small></button>
+      <button id="close-wheel" class="wheel-close" aria-label="Close action wheel">×</button>
+    </section>
+
     <div class="bottom-ui hud-layer">
       <div id="context-prompt" class="context-prompt panel-cut">
         <span class="context-key">↖</span>
@@ -100,14 +110,40 @@
           <article><h3>01 // THIRD PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse orbit · wheel zoom<br><b>E</b> / centered <b>left-click</b> to interact in range</p></article>
           <article><h3>02 // GODVIEW</h3><p><b>WASD</b> fast-pan camera, not citizen<br><b>Shift</b> pan boost · wheel zoom<br><b>Left-click</b> floor to pathfind<br><b>Click throne</b> only when already in range</p></article>
           <article><h3>03 // FIRST PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse look<br><b>Hold F</b> piss wherever justice is needed<br><b>E</b> interacts with a nearby throne</p></article>
-          <article><h3>UNIVERSAL BIOLOGY</h3><p>Nearby objects glow when targeted.<br><b>[E] Interact</b> appears only within <b>1.8 m</b>.<br>The throne directly empties both needs.<br><b>F1</b> opens boost / reduce cheats. No auto-walk.</p></article>
+          <article><h3>UNIVERSAL BIOLOGY</h3><p>Nearby objects glow when targeted.<br><b>[E] Interact</b> opens the toilet wheel within <b>1.8 m</b>.<br><b>Sit</b> persists; <b>Shit</b> drains bowel; <b>Piss</b> drains bladder.<br>Males piss standing. E / WASD stands up.<br><b>C</b> creator · <b>F1</b> cheats · no auto-walk.</p></article>
         </div>
         <div class="identity-editor">
           <label for="player-name">YOUR QUESTIONABLE IDENTITY</label>
           <div><input id="player-name" maxlength="18" autocomplete="off" spellcheck="false"><button id="apply-name">UPDATE CITIZEN RECORD</button></div>
         </div>
-        <small class="help-foot">H / ESC TO CLOSE · F1 CHEAT CONSOLE · ALL ASSETS LOCAL · NO MICROTRANSACTIONS, ONLY MICRO-ORGANISMS</small>
+        <small class="help-foot">H / ESC TO CLOSE · C CHARACTER CREATOR · F1 CHEAT CONSOLE · ALL ASSETS LOCAL</small>
       </div>
+    </section>
+
+    <section id="creator" class="creator-panel panel-cut hidden" aria-label="Character creator">
+      <div class="help-top"><span>CITIZEN FABRICATOR // C</span><button id="close-creator" aria-label="Close character creator">×</button></div>
+      <h2>BUILD A BETTER<br><em>MEAT MACHINE</em></h2>
+      <p class="help-intro">A front-facing live preview. Every change is applied by the server and replicated to every citizen.</p>
+      <div class="preset-row">
+        <button data-preset="jc">JC // 2052</button>
+        <button data-preset="agent">FIELD AGENT</button>
+        <button data-preset="classic">CLASSIC</button>
+      </div>
+      <div class="creator-grid">
+        <label>PLUMBING<select id="creator-male" data-appearance><option value="male">MALE · STANDING PISS</option><option value="female">FEMALE · SEATED PISS</option></select></label>
+        <label>SKIN<select id="creator-skin" data-appearance><option value="0">PORCELAIN</option><option value="1">TAN</option><option value="2">BRONZE</option><option value="3">BROWN</option><option value="4">DEEP</option><option value="5">WARM</option></select></label>
+        <label>HAIR STYLE<select id="creator-hair" data-appearance><option value="0">BALD</option><option value="1">CROPPED</option><option value="2">SIDE PART</option><option value="3">BOB</option><option value="4">SWEPT</option></select></label>
+        <label>HAIR COLOR<select id="creator-hairColor" data-appearance><option value="0">BLACK</option><option value="1">BROWN</option><option value="2">ASH</option><option value="3">BLOND</option><option value="4">GRAY</option><option value="5">AUBURN</option></select></label>
+        <label>FACIAL HAIR<select id="creator-beard" data-appearance><option value="0">CLEAN</option><option value="1">STUBBLE</option><option value="2">GOATEE</option></select></label>
+        <label>SHIRT / COAT<select id="creator-shirt" data-appearance><option value="0">BLACK</option><option value="1">RED</option><option value="2">GREEN</option><option value="3">KHAKI</option><option value="4">NAVY</option><option value="5">PURPLE</option><option value="6">WHITE</option></select></label>
+        <label>TROUSERS<select id="creator-pants" data-appearance><option value="0">BLACK</option><option value="1">CHARCOAL</option><option value="2">BROWN</option><option value="3">NAVY</option></select></label>
+        <div class="creator-toggles">
+          <label><input id="creator-coat" data-appearance type="checkbox"> TRENCH COAT</label>
+          <label><input id="creator-sunglasses" data-appearance type="checkbox"> SUNGLASSES</label>
+        </div>
+      </div>
+      <button id="apply-appearance" class="creator-apply">REBUILD CITIZEN</button>
+      <small class="help-foot">C / ESC TO CLOSE · CHANGES SAVE LOCALLY AND REPLICATE IMMEDIATELY</small>
     </section>
 
     <section id="cheats" class="modal hidden" aria-label="Need cheat console" aria-modal="true">

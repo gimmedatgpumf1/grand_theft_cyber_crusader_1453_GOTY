@@ -15,6 +15,25 @@ constexpr float kBodyRadius = 0.36F;
 constexpr float kWalkSpeed = 2.8F;
 constexpr float kSprintSpeed = 4.4F;
 
+const char* actionName(ToiletAction action) {
+    switch (action) {
+        case ToiletAction::Sit: return "sit";
+        case ToiletAction::Shit: return "shit";
+        case ToiletAction::Piss: return "piss";
+        default: return "none";
+    }
+}
+
+Appearance cleanAppearance(Appearance appearance) {
+    appearance.skin = std::clamp(appearance.skin, 0, 5);
+    appearance.hair = std::clamp(appearance.hair, 0, 4);
+    appearance.hairColor = std::clamp(appearance.hairColor, 0, 5);
+    appearance.shirt = std::clamp(appearance.shirt, 0, 6);
+    appearance.pants = std::clamp(appearance.pants, 0, 3);
+    appearance.beard = std::clamp(appearance.beard, 0, 2);
+    return appearance;
+}
+
 void appendVec(std::ostringstream& out, const Vec2& value) {
     out << '[' << jsonNumber(value.x) << ',' << jsonNumber(value.y) << ']';
 }
@@ -33,6 +52,16 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"bowel\":" << jsonNumber(character.needs.bowel)
         << ",\"pissing\":" << (character.pissing ? "true" : "false")
         << ",\"onToilet\":" << (character.onToilet ? "true" : "false")
+        << ",\"toiletAction\":\"" << actionName(character.toiletAction) << "\""
+        << ",\"male\":" << (character.appearance.male ? "true" : "false")
+        << ",\"skin\":" << character.appearance.skin
+        << ",\"hair\":" << character.appearance.hair
+        << ",\"hairColor\":" << character.appearance.hairColor
+        << ",\"shirt\":" << character.appearance.shirt
+        << ",\"pants\":" << character.appearance.pants
+        << ",\"beard\":" << character.appearance.beard
+        << ",\"coat\":" << (character.appearance.coat ? "true" : "false")
+        << ",\"sunglasses\":" << (character.appearance.sunglasses ? "true" : "false")
         << ",\"notice\":" << character.noticeSequence
         << ",\"noticeText\":\"" << jsonEscape(character.notice) << "\""
         << ",\"path\":[";
@@ -81,6 +110,21 @@ std::uint32_t World::addCharacter(const std::string& name, bool ai) {
     character.position = spawnPoint(id);
     static const char* colors[] = {"#d7ff54", "#ff765f", "#6edbd2", "#c59aff", "#ffcc62"};
     character.color = colors[(id - 1U) % 5U];
+    character.appearance.male = id % 3U != 0;
+    character.appearance.skin = static_cast<int>(id % 6U);
+    character.appearance.hair = static_cast<int>(id % 4U) + 1;
+    character.appearance.hairColor = static_cast<int>(id % 6U);
+    character.appearance.shirt = static_cast<int>(id % 7U);
+    character.appearance.pants = static_cast<int>(id % 4U);
+    character.appearance.beard = static_cast<int>(id % 3U);
+    character.appearance.coat = id % 5U == 0;
+    character.appearance.sunglasses = id % 4U == 0;
+    if (ai) {
+        character.appearance = {};
+        character.appearance.beard = 2;
+        character.appearance.coat = true;
+        character.appearance.sunglasses = true;
+    }
     character.needs.bladder = ai ? 86.0F : 58.0F + static_cast<float>((id * 7U) % 23U);
     character.needs.bowel = ai ? 67.0F : 34.0F + static_cast<float>((id * 11U) % 31U);
     character.aiTimer = ai ? 2.5F : 0.0F;
@@ -101,6 +145,17 @@ void World::removeCharacter(std::uint32_t id) {
 void World::renameCharacter(std::uint32_t id, const std::string& name) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (Character* character = find(id)) character->name = cleanName(name);
+}
+
+void World::customizeCharacter(std::uint32_t id, const Appearance& appearance) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Character* character = find(id);
+    if (character == nullptr) return;
+    const bool wasPiss = character->toiletAction == ToiletAction::Piss;
+    const bool sexChanged = character->appearance.male != appearance.male;
+    character->appearance = cleanAppearance(appearance);
+    if (wasPiss && sexChanged) finishToilet(*character);
+    notify(*character, "Citizen mesh rebuilt. Dignity remains procedurally generated.");
 }
 
 Character* World::find(std::uint32_t id) {
@@ -131,13 +186,21 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     Character* character = find(id);
     if (character == nullptr) return;
     const float magnitude = length(move);
+    if (character->toiletAction != ToiletAction::None) {
+        if (magnitude > 0.05F) {
+            finishToilet(*character);
+        } else {
+            character->manualMove = {};
+            character->sprint = false;
+            character->wantsPiss = false;
+            return;
+        }
+    }
     character->manualMove = magnitude > 1.0F ? move * (1.0F / magnitude) : move;
     character->sprint = sprint;
     character->wantsPiss = piss;
-    if (!character->onToilet) {
-        if (std::isfinite(yaw)) character->yaw = yaw;
-        if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.35F, 1.35F);
-    }
+    if (std::isfinite(yaw)) character->yaw = yaw;
+    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.5F, 1.35F);
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination) {
@@ -146,20 +209,32 @@ void World::setDestination(std::uint32_t id, const Vec2& destination) {
 }
 
 void World::setDestinationLocked(Character& character, const Vec2& destination) {
-    if (character.onToilet || !std::isfinite(destination.x) || !std::isfinite(destination.y)) return;
+    if (character.toiletAction != ToiletAction::None ||
+        !std::isfinite(destination.x) || !std::isfinite(destination.y)) return;
     character.pendingToilet = false;
+    character.queuedToiletAction = ToiletAction::None;
     character.wantsPiss = false;
     character.path = pathfinder_.findPath(character.position, destination);
     if (character.path.empty()) notify(character, "No route. Try being less geographically challenged.");
 }
 
-void World::requestToilet(std::uint32_t id) {
+void World::requestToilet(std::uint32_t id, const std::string& action) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (Character* character = find(id)) requestToiletLocked(*character);
+    Character* character = find(id);
+    if (character == nullptr) return;
+    if (action == "stand") {
+        finishToilet(*character);
+        return;
+    }
+    ToiletAction requested = ToiletAction::None;
+    if (action == "sit") requested = ToiletAction::Sit;
+    if (action == "shit") requested = ToiletAction::Shit;
+    if (action == "piss") requested = ToiletAction::Piss;
+    if (requested != ToiletAction::None) requestToiletLocked(*character, requested);
 }
 
-void World::requestToiletLocked(Character& character) {
-    if (character.onToilet) return;
+void World::requestToiletLocked(Character& character, ToiletAction action) {
+    if (character.toiletAction != ToiletAction::None) return;
     if (distance(character.position, toiletFront()) > kInteractionRange) {
         notify(character, "Out of range. Move closer to interact.");
         return;
@@ -168,7 +243,7 @@ void World::requestToiletLocked(Character& character) {
         notify(character, "Throne occupied. Find another outlet.");
         return;
     }
-    beginToilet(character);
+    beginToilet(character, action);
 }
 
 void World::adjustNeed(std::uint32_t id, const std::string& need, float delta) {
@@ -188,20 +263,45 @@ void World::notify(Character& character, const std::string& text) {
     ++character.noticeSequence;
 }
 
-void World::beginToilet(Character& character) {
-    if (toiletUser_ != 0 || distance(character.position, toiletFront()) > kInteractionRange) return;
+void World::beginToilet(Character& character, ToiletAction action) {
+    if (action == ToiletAction::None || toiletUser_ != 0 ||
+        distance(character.position, toiletFront()) > kInteractionRange) return;
     toiletUser_ = character.id;
-    character.onToilet = true;
+    character.toiletAction = action;
+    character.queuedToiletAction = ToiletAction::None;
+    character.onToilet = action == ToiletAction::Sit || action == ToiletAction::Shit ||
+                         !character.appearance.male;
     character.pendingToilet = false;
+    character.pissing = action == ToiletAction::Piss && !character.onToilet;
+    character.wantsPiss = false;
+    character.manualMove = {};
+    character.path.clear();
+    character.position = character.onToilet ? toiletSeat() : toiletFront();
+    character.yaw = character.onToilet ? 0.0F : 3.14159265F;
+    character.actionTime = 0.0F;
+    character.speed = 0.0F;
+    if (action == ToiletAction::Sit) addEvent(character.name + " parked their cheeks on the porcelain.");
+    if (action == ToiletAction::Shit) addEvent(character.name + " began a tactical bowel download.");
+    if (action == ToiletAction::Piss) addEvent(character.name + (character.onToilet ?
+        " took a seated piss." : " aimed at the porcelain like a professional."));
+}
+
+void World::finishToilet(Character& character, const std::string& message) {
+    if (character.toiletAction == ToiletAction::None) return;
+    character.toiletAction = ToiletAction::None;
+    character.queuedToiletAction = ToiletAction::None;
+    character.pendingToilet = false;
+    character.onToilet = false;
     character.pissing = false;
     character.wantsPiss = false;
     character.manualMove = {};
     character.path.clear();
-    character.position = toiletSeat();
+    character.position = toiletFront();
     character.yaw = 0.0F;
     character.actionTime = 0.0F;
     character.speed = 0.0F;
-    addEvent(character.name + " claimed the porcelain throne.");
+    if (toiletUser_ == character.id) toiletUser_ = 0;
+    if (!message.empty()) notify(character, message);
 }
 
 void World::update(float deltaSeconds) {
@@ -218,7 +318,7 @@ void World::update(float deltaSeconds) {
         for (auto second = std::next(first); second != characters_.end(); ++second) {
             Character& a = first->second;
             Character& b = second->second;
-            if (a.onToilet || b.onToilet) continue;
+            if (a.toiletAction != ToiletAction::None || b.toiletAction != ToiletAction::None) continue;
             const Vec2 difference = b.position - a.position;
             const float currentDistance = length(difference);
             if (currentDistance >= kBodyRadius * 2.0F) continue;
@@ -232,15 +332,20 @@ void World::update(float deltaSeconds) {
 
 void World::updateAI(Character& character, float dt) {
     character.aiTimer -= dt;
-    if (character.onToilet || character.aiTimer > 0.0F) return;
+    if (character.toiletAction != ToiletAction::None || character.aiTimer > 0.0F) return;
     if ((character.needs.bladder > 78.0F || character.needs.bowel > 78.0F) &&
         !character.pendingToilet && toiletUser_ == 0) {
+        const ToiletAction action = character.needs.bowel > 78.0F ? ToiletAction::Shit : ToiletAction::Piss;
         if (distance(character.position, toiletFront()) <= kInteractionRange) {
-            requestToiletLocked(character);
+            requestToiletLocked(character, action);
         } else {
             character.pendingToilet = true;
+            character.queuedToiletAction = action;
             character.path = pathfinder_.findPath(character.position, toiletFront());
-            if (character.path.empty()) character.pendingToilet = false;
+            if (character.path.empty()) {
+                character.pendingToilet = false;
+                character.queuedToiletAction = ToiletAction::None;
+            }
         }
         character.aiTimer = 1.0F;
         return;
@@ -269,19 +374,32 @@ void World::updateAI(Character& character, float dt) {
 }
 
 void World::updateCharacter(Character& character, float dt) {
-    if (character.onToilet) {
+    if (character.toiletAction != ToiletAction::None) {
         character.actionTime += dt;
-        character.needs.bladder = std::max(0.0F, character.needs.bladder - 34.0F * dt);
-        character.needs.bowel = std::max(0.0F, character.needs.bowel - 25.0F * dt);
-        character.position = toiletSeat();
-        if ((character.needs.bladder < 0.1F && character.needs.bowel < 0.1F) || character.actionTime > 6.0F) {
+        character.speed = 0.0F;
+        character.wantsPiss = false;
+        character.position = character.onToilet ? toiletSeat() : toiletFront();
+        if (character.toiletAction == ToiletAction::Sit) {
+            character.needs.bladder = std::min(100.0F, character.needs.bladder + 0.065F * dt);
+            character.needs.bowel = std::min(100.0F, character.needs.bowel + 0.042F * dt);
+            return;
+        }
+        if (character.toiletAction == ToiletAction::Shit) {
+            character.pissing = false;
+            character.needs.bowel = std::max(0.0F, character.needs.bowel - 25.0F * dt);
+            if (character.needs.bowel < 0.1F || character.actionTime > 6.0F) {
+                character.needs.bowel = 0.0F;
+                addEvent(character.name + " flushed two generations of evidence.");
+                finishToilet(character, "Bowel emptied. Bloodline unfortunately intact.");
+            }
+            return;
+        }
+        character.needs.bladder = std::max(0.0F, character.needs.bladder - 22.0F * dt);
+        character.pissing = !character.onToilet && character.needs.bladder > 0.05F;
+        if (character.needs.bladder < 0.1F || character.actionTime > 6.0F) {
             character.needs.bladder = 0.0F;
-            character.needs.bowel = 0.0F;
-            character.onToilet = false;
-            character.position = toiletFront();
-            toiletUser_ = 0;
-            addEvent(character.name + " flushed two generations of evidence.");
-            notify(character, "Needs emptied. Bloodline unfortunately intact.");
+            addEvent(character.name + " finished irrigation without painting the floor.");
+            finishToilet(character, "Bladder emptied. Floor remains miraculously dry.");
         }
         return;
     }
@@ -314,11 +432,12 @@ void World::updateCharacter(Character& character, float dt) {
 
     if (character.pendingToilet && character.path.empty()) {
         if (distance(character.position, toiletFront()) <= kInteractionRange && toiletUser_ == 0) {
-            beginToilet(character);
+            beginToilet(character, character.queuedToiletAction);
         } else if (toiletUser_ != 0) {
             character.speed = 0.0F;
         } else {
             character.pendingToilet = false;
+            character.queuedToiletAction = ToiletAction::None;
             notify(character, "Stopped just outside throning range. Click it again.");
         }
     }

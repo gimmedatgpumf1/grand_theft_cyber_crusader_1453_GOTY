@@ -28,7 +28,7 @@ export class CameraController {
   rotate(dx, dy) {
     // Positive mouse X must turn right with our +Z-forward yaw convention.
     this.yaw -= dx * LOOK_SENSITIVITY;
-    if (this.mode === 'first') this.pitch = clamp(this.pitch - dy * LOOK_SENSITIVITY, -1.25, 1.25);
+    if (this.mode === 'first') this.pitch = clamp(this.pitch - dy * LOOK_SENSITIVITY, -1.5, 1.25);
     else this.pitch = clamp(this.pitch + dy * LOOK_SENSITIVITY, 0.06, 1.05);
   }
 
@@ -61,13 +61,16 @@ export class CameraController {
     }
     const player = localView.group.position;
     if (this.mode === 'first') {
-      const eyeHeight = localView.data.onToilet ? 1.43 : 1.65;
-      this.camera.position.copy(player).add(new THREE.Vector3(0, eyeHeight, 0));
+      const seated = localView.data.onToilet && !(localView.data.male && localView.data.toiletAction === 'piss');
+      const eyeHeight = seated ? 1.43 : 1.65;
+      const bodyForward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+      // Eyes sit ahead of the torso, so a natural downward look includes chest, legs and feet.
+      this.camera.position.copy(player).add(new THREE.Vector3(0, eyeHeight, 0)).addScaledVector(bodyForward, 0.17);
       const horizontal = Math.cos(this.pitch);
       const direction = new THREE.Vector3(
-        Math.sin(this.yaw) * horizontal,
+        bodyForward.x * horizontal,
         Math.sin(this.pitch),
-        Math.cos(this.yaw) * horizontal
+        bodyForward.z * horizontal
       );
       this.camera.lookAt(this.camera.position.clone().add(direction));
     } else if (this.mode === 'god') {

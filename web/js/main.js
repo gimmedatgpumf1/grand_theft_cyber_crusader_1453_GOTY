@@ -4,6 +4,7 @@ import { CharacterManager } from './characters.js';
 import { CameraController } from './camera.js';
 import { InputController } from './input.js';
 import { HUD } from './hud.js';
+import { CharacterCreator } from './creator.js';
 
 const hud = new HUD();
 let gameScene;
@@ -19,58 +20,114 @@ const network = new Network(identity);
 const characters = new CharacterManager(gameScene.scene);
 const camera = new CameraController(gameScene.camera,
   (target, desired) => gameScene.resolveCamera(target, desired));
+const creator = new CharacterCreator(network, {
+  onApplied: () => hud.toast('Citizen rebuilt. The server has witnessed your new meat.'),
+});
 let latestState = { characters: [], puddles: [], events: [], tick: 0, toiletUser: 0 };
 let mode = 'third';
-let helpOpen = false;
-let cheatOpen = false;
+let overlay = null;
+let creatorCamera = null;
 
-function toggleHelp(force) {
-  helpOpen = typeof force === 'boolean' ? force : !helpOpen;
-  if (helpOpen) {
-    cheatOpen = false;
-    hud.cheats(false);
-  }
-  hud.help(helpOpen);
+function closeOverlay() {
+  const restore = overlay === 'creator' ? creatorCamera : null;
+  overlay = null;
+  creatorCamera = null;
+  hud.help(false);
+  hud.cheats(false);
+  hud.wheel(false);
+  creator.close();
+  document.body.classList.remove('creator-open');
   input.clear();
-  if (helpOpen && document.pointerLockElement) document.exitPointerLock?.();
+  if (restore) {
+    input.setMode(restore.mode, false);
+    camera.yaw = restore.yaw;
+    camera.pitch = restore.pitch;
+    camera.distance = restore.distance;
+    camera.godFocus.copy(restore.godFocus);
+    camera.initialized = false;
+  }
 }
 
-function toggleCheats(force) {
-  cheatOpen = typeof force === 'boolean' ? force : !cheatOpen;
-  if (cheatOpen) {
-    helpOpen = false;
-    hud.help(false);
-  }
-  hud.cheats(cheatOpen);
+function showOverlay(name) {
+  if (overlay === name) return;
+  closeOverlay();
+  const local = latestState.characters.find(character => character.id === network.id);
+  if ((name === 'creator' || name === 'wheel') && !local) return;
+  overlay = name;
   input.clear();
-  if (cheatOpen && document.pointerLockElement) document.exitPointerLock?.();
+  if (document.pointerLockElement) document.exitPointerLock?.();
+  if (name === 'help') hud.help(true);
+  if (name === 'cheats') hud.cheats(true);
+  if (name === 'wheel') hud.wheel(true, local);
+  if (name === 'creator') {
+    creatorCamera = {
+      mode, yaw: camera.yaw, pitch: camera.pitch, distance: camera.distance,
+      godFocus: camera.godFocus.clone(),
+    };
+    input.setMode('third', false);
+    camera.yaw = local.yaw + Math.PI;
+    camera.pitch = 0.08;
+    camera.distance = 3.25;
+    camera.initialized = false;
+    creator.open(local);
+    document.body.classList.add('creator-open');
+  }
+}
+
+function toggleOverlay(name) {
+  if (overlay === name) closeOverlay();
+  else showOverlay(name);
+}
+
+function interact() {
+  const local = latestState.characters.find(character => character.id === network.id);
+  if (!local || !network.world) return;
+  if (local.toiletAction !== 'none') {
+    network.toilet('stand');
+    return;
+  }
+  const distance = Math.hypot(local.x - network.world.toilet.frontX, local.z - network.world.toilet.frontZ);
+  if (distance > network.world.interactionRange) {
+    hud.toast(`Out of range: ${distance.toFixed(1)} m / ${network.world.interactionRange.toFixed(1)} m. Walk closer; E never auto-walks.`);
+    return;
+  }
+  if (latestState.toiletUser !== 0 && latestState.toiletUser !== local.id) {
+    hud.toast('Throne occupied. Await your terrible inheritance.');
+    return;
+  }
+  showOverlay('wheel');
 }
 
 const input = new InputController(document.getElementById('world'), camera, network, gameScene, {
-  onMode(newMode) {
+  onMode(newMode, announce = true) {
     mode = newMode;
     hud.setMode(mode);
     gameScene.setMode(mode);
+    if (!announce) return;
     if (mode === 'first') hud.toast('Click the view to capture your mouse. Hold F to piss.');
-    if (mode === 'third') hud.toast('Click the view for mouse look. WASD moves; E interacts.');
+    if (mode === 'third') hud.toast('Click the view for mouse look. WASD moves; E opens the toilet wheel.');
     if (mode === 'god') hud.toast('Godview: WASD fast-pans; Shift boosts. Clicks move your citizen.');
   },
-  onHelp: toggleHelp,
-  onCheat: toggleCheats,
-  isHelpOpen: () => helpOpen,
-  isInputBlocked: () => cheatOpen,
+  onHelp: () => toggleOverlay('help'),
+  onCheat: () => toggleOverlay('cheats'),
+  onCreator: () => toggleOverlay('creator'),
+  onEscape: () => overlay ? closeOverlay() : document.exitPointerLock?.(),
+  onInteract: interact,
+  isHelpOpen: () => overlay === 'help',
+  isInputBlocked: () => overlay !== null,
   localPosition: () => characters.localView(network.id)?.group.position || null,
   localYaw: () => characters.localView(network.id)?.data.yaw ?? Math.PI,
 });
 
 network.onStatus = status => hud.network(status);
 network.onWelcome = message => {
+  closeOverlay();
   latestState = { characters: [], puddles: [], events: [], tick: 0, toiletUser: 0 };
   gameScene.buildWorld(message.world);
   gameScene.setMode(mode);
   hud.lastNotice = 0;
   hud.welcome(message, network.identity);
-  hud.toast(`Welcome, ${network.identity}. The throne is marked in acid green.`);
+  hud.toast(`Welcome, ${network.identity}. Press C to fabricate your citizen.`);
 };
 network.onState = state => {
   latestState = state;
@@ -80,17 +137,30 @@ network.onState = state => {
 
 hud.setMode(mode);
 document.querySelectorAll('[data-mode]').forEach(button => {
-  button.addEventListener('click', () => input.setMode(button.dataset.mode));
+  button.addEventListener('click', () => {
+    if (overlay === 'creator') closeOverlay();
+    input.setMode(button.dataset.mode);
+  });
 });
-document.getElementById('help-button').addEventListener('click', () => toggleHelp(true));
-document.getElementById('close-help').addEventListener('click', () => toggleHelp(false));
+document.getElementById('help-button').addEventListener('click', () => showOverlay('help'));
+document.getElementById('close-help').addEventListener('click', closeOverlay);
 document.getElementById('help').addEventListener('mousedown', event => {
-  if (event.target.id === 'help') toggleHelp(false);
+  if (event.target.id === 'help') closeOverlay();
 });
-document.getElementById('cheat-button').addEventListener('click', () => toggleCheats(true));
-document.getElementById('close-cheats').addEventListener('click', () => toggleCheats(false));
+document.getElementById('cheat-button').addEventListener('click', () => showOverlay('cheats'));
+document.getElementById('close-cheats').addEventListener('click', closeOverlay);
 document.getElementById('cheats').addEventListener('mousedown', event => {
-  if (event.target.id === 'cheats') toggleCheats(false);
+  if (event.target.id === 'cheats') closeOverlay();
+});
+document.getElementById('creator-button').addEventListener('click', () => toggleOverlay('creator'));
+document.getElementById('close-creator').addEventListener('click', closeOverlay);
+document.getElementById('close-wheel').addEventListener('click', closeOverlay);
+document.querySelectorAll('[data-toilet-action]').forEach(button => {
+  button.addEventListener('click', () => {
+    const action = button.dataset.toiletAction;
+    closeOverlay();
+    network.toilet(action);
+  });
 });
 document.querySelectorAll('.cheat-buttons button').forEach(button => {
   button.addEventListener('click', () => network.cheat(button.dataset.need, Number(button.dataset.delta)));

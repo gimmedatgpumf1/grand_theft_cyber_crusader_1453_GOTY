@@ -17,7 +17,10 @@ export class InputController {
 
   bind() {
     window.addEventListener('keydown', event => {
-      if (event.target instanceof HTMLInputElement) return;
+      const textEntry = event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLInputElement && !['checkbox', 'button', 'submit'].includes(event.target.type));
+      const selectShortcut = event.target instanceof HTMLSelectElement && ['Escape', 'KeyC'].includes(event.code);
+      if (textEntry || (event.target instanceof HTMLSelectElement && !selectShortcut)) return;
       if (event.code === 'KeyH' && !event.repeat) {
         this.callbacks.onHelp();
         event.preventDefault();
@@ -28,11 +31,14 @@ export class InputController {
         if (!event.repeat) this.callbacks.onCheat?.();
         return;
       }
+      if (event.code === 'KeyC' && !event.repeat) {
+        this.callbacks.onCreator?.();
+        event.preventDefault();
+        return;
+      }
       if (event.code === 'Escape') {
         this.clear();
-        if (this.callbacks.isInputBlocked?.()) this.callbacks.onCheat?.(false);
-        else if (this.callbacks.isHelpOpen()) this.callbacks.onHelp(false);
-        else if (document.pointerLockElement) document.exitPointerLock?.();
+        this.callbacks.onEscape?.();
         return;
       }
       if (this.blocked()) return;
@@ -84,10 +90,10 @@ export class InputController {
     }, { passive: false });
   }
 
-  setMode(mode) {
+  setMode(mode, announce = true) {
     this.mode = mode;
     this.camera.setMode(mode, this.callbacks.localPosition());
-    this.callbacks.onMode(mode);
+    this.callbacks.onMode(mode, announce);
     this.clear();
     if (mode === 'god' && document.pointerLockElement) document.exitPointerLock?.();
   }
@@ -98,7 +104,8 @@ export class InputController {
   }
 
   interact() {
-    this.network.toilet();
+    if (this.callbacks.onInteract) this.callbacks.onInteract();
+    else this.network.toilet('sit');
   }
 
   updateHover() {

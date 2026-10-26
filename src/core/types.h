@@ -46,6 +46,20 @@ struct Needs {
     float bowel = 40.0F;
 };
 
+enum class ToiletAction { None, Sit, Shit, Piss };
+
+struct Appearance {
+    bool male = true;
+    int skin = 1;
+    int hair = 2;
+    int hairColor = 0;
+    int shirt = 0;
+    int pants = 0;
+    int beard = 0;
+    bool coat = false;
+    bool sunglasses = false;
+};
+
 struct Character {
     std::uint32_t id = 0;
     std::string name;
@@ -60,7 +74,10 @@ struct Character {
     bool wantsPiss = false;
     bool pissing = false;
     bool onToilet = false;
+    ToiletAction toiletAction = ToiletAction::None;
+    ToiletAction queuedToiletAction = ToiletAction::None;
     bool pendingToilet = false;
+    Appearance appearance;
     Needs needs;
     std::vector<Vec2> path;
     float actionTime = 0.0F;

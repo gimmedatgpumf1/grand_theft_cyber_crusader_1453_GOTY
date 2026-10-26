@@ -25,6 +25,13 @@ void test(const std::string& name, const std::function<void()>& body) {
     body();
 }
 
+void moveToToilet(gtc::World& world, std::uint32_t id) {
+    world.setDestination(id, {0, -2.85F});
+    for (int i = 0; i < 600 && !world.character(id).path.empty(); ++i) world.update(0.05F);
+    check(gtc::distance(world.character(id).position, {0, -2.85F}) < 0.2F,
+          "explicit movement should reach the toilet");
+}
+
 } // namespace
 
 int main() {
@@ -65,32 +72,106 @@ int main() {
         check(gtc::distance(previous, {3, 0}) < 0.01F, "route reaches requested destination");
     });
 
-    test("toilet requires range and empties both needs", [] {
+    test("toilet range, persistent sitting, and standing", [] {
         gtc::World world;
         const auto id = world.addCharacter("Test Subject", false);
         const auto spawn = world.character(id).position;
-        world.requestToilet(id);
-        check(!world.character(id).onToilet, "out-of-range interaction must not sit");
+        world.requestToilet(id, "sit");
+        check(world.character(id).toiletAction == gtc::ToiletAction::None,
+              "out-of-range interaction must not start an action");
         check(world.character(id).path.empty(), "out-of-range interaction must not auto-walk");
         check(gtc::distance(world.character(id).position, spawn) < 0.001F,
               "out-of-range interaction must not move the citizen");
-        world.setDestination(id, {0, -2.85F});
-        for (int i = 0; i < 600 && !world.character(id).path.empty(); ++i) world.update(0.05F);
-        check(gtc::distance(world.character(id).position, {0, -2.85F}) < 0.2F,
-              "explicit movement should reach the toilet");
-        world.requestToilet(id);
-        check(world.character(id).onToilet, "in-range interaction should sit immediately");
+        moveToToilet(world, id);
+        world.requestToilet(id, "sit");
+        check(world.character(id).onToilet, "in-range sit should seat immediately");
         world.setInput(id, {}, false, false, 1.25F, 0.4F);
-        world.update(0.05F);
+        for (int i = 0; i < 140; ++i) world.update(0.05F);
+        check(world.character(id).onToilet, "sitting persists beyond the old six-second action");
         check(std::abs(world.character(id).yaw) < 0.001F,
-              "camera input must not rotate a seated citizen away from the throne");
-        for (int i = 0; i < 200 && world.character(id).onToilet; ++i) world.update(0.05F);
+              "camera input must not rotate a seated citizen");
+        world.requestToilet(id, "stand");
+        check(world.character(id).toiletAction == gtc::ToiletAction::None,
+              "explicit stand releases the throne");
+        world.requestToilet(id, "sit");
+        world.setInput(id, {0, 1}, false, false, 0.0F, 0.0F);
+        world.update(0.05F);
+        check(world.character(id).toiletAction == gtc::ToiletAction::None,
+              "WASD interrupts sitting and returns movement control");
+    });
+
+    test("shitting drains bowel without magically emptying bladder", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Bowel Subject", false);
+        moveToToilet(world, id);
+        world.adjustNeed(id, "bowel", 100);
+        const float bladder = world.character(id).needs.bladder;
+        world.requestToilet(id, "shit");
+        check(world.character(id).onToilet, "shitting is seated");
+        for (int i = 0; i < 200 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
+            world.update(0.05F);
+        }
         const auto relieved = world.character(id);
-        check(!relieved.onToilet, "toilet action should finish");
-        check(relieved.needs.bladder == 0.0F && relieved.needs.bowel == 0.0F,
-              "throne empties bladder and bowel");
-        world.requestToilet(id);
-        check(world.character(id).onToilet, "throne can be reused from interaction range");
+        check(relieved.needs.bowel == 0.0F, "shitting empties bowel");
+        check(relieved.needs.bladder == bladder, "shitting leaves bladder unchanged");
+        check(relieved.toiletAction == gtc::ToiletAction::None, "completed shit releases the throne");
+    });
+
+    test("male toilet piss is standing and makes no puddle", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Standing Subject", false);
+        moveToToilet(world, id);
+        world.adjustNeed(id, "bladder", 100);
+        const float bowel = world.character(id).needs.bowel;
+        world.requestToilet(id, "piss");
+        check(!world.character(id).onToilet, "male toilet piss is standing");
+        check(world.character(id).pissing, "standing toilet piss has a visible stream state");
+        for (int i = 0; i < 200 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
+            world.update(0.05F);
+        }
+        const auto relieved = world.character(id);
+        check(relieved.needs.bladder == 0.0F, "toilet piss empties bladder");
+        check(relieved.needs.bowel == bowel, "pissing leaves bowel unchanged");
+        check(world.snapshot().find("\"puddles\":[{\"id\":") == std::string::npos,
+              "pissing into the bowl must not create a floor puddle");
+    });
+
+    test("creator validates appearance and female piss is seated", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Creator Subject", false);
+        gtc::Appearance appearance;
+        appearance.male = false;
+        appearance.skin = 99;
+        appearance.hair = -4;
+        appearance.hairColor = 99;
+        appearance.shirt = 99;
+        appearance.pants = -2;
+        appearance.beard = 99;
+        appearance.coat = true;
+        appearance.sunglasses = true;
+        world.customizeCharacter(id, appearance);
+        const auto customized = world.character(id);
+        check(!customized.appearance.male && customized.appearance.skin == 5 &&
+              customized.appearance.hair == 0 && customized.appearance.shirt == 6 &&
+              customized.appearance.pants == 0 && customized.appearance.beard == 2,
+              "creator fields are validated and clamped");
+        check(world.snapshot().find("\"coat\":true") != std::string::npos,
+              "appearance is replicated in snapshots");
+        moveToToilet(world, id);
+        world.requestToilet(id, "piss");
+        check(world.character(id).onToilet && !world.character(id).pissing,
+              "female toilet piss uses the seated pose without a standing stream");
+        gtc::Appearance male = customized.appearance;
+        male.male = true;
+        world.customizeCharacter(id, male);
+        check(world.character(id).toiletAction == gtc::ToiletAction::None && !world.character(id).onToilet,
+              "changing sex interrupts the old seated piss pose");
+        world.requestToilet(id, "piss");
+        check(!world.character(id).onToilet && world.character(id).pissing,
+              "male piss starts standing after customization");
+        world.customizeCharacter(id, customized.appearance);
+        check(world.character(id).toiletAction == gtc::ToiletAction::None,
+              "changing sex also interrupts standing piss");
     });
 
     test("cheat menu adjusts needs within safe bounds", [] {
@@ -122,18 +203,18 @@ int main() {
         check(!world.character(id).pissing, "releasing input stops pissing");
     });
 
-    test("AI uses exactly the same toilet interaction", [] {
+    test("AI uses the same multi-action toilet system", [] {
         gtc::World world;
         const auto id = world.addCharacter("Automated Dump", true);
         bool usedToilet = false;
         for (int i = 0; i < 800; ++i) {
             world.update(0.05F);
-            if (world.character(id).onToilet) {
+            if (world.character(id).toiletAction != gtc::ToiletAction::None) {
                 usedToilet = true;
                 break;
             }
         }
-        check(usedToilet, "AI should autonomously request and use the toilet");
+        check(usedToilet, "AI should autonomously request and use a toilet action");
     });
 
     if (failures != 0) {

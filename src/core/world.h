@@ -20,10 +20,11 @@ public:
     std::uint32_t addCharacter(const std::string& name, bool ai);
     void removeCharacter(std::uint32_t id);
     void renameCharacter(std::uint32_t id, const std::string& name);
+    void customizeCharacter(std::uint32_t id, const Appearance& appearance);
     void setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
                   float yaw, float pitch);
     void setDestination(std::uint32_t id, const Vec2& destination);
-    void requestToilet(std::uint32_t id);
+    void requestToilet(std::uint32_t id, const std::string& action);
     void adjustNeed(std::uint32_t id, const std::string& need, float delta);
     void update(float deltaSeconds);
 
@@ -57,8 +58,9 @@ private:
     Vec2 spawnPoint(std::uint32_t id) const;
     Character* find(std::uint32_t id);
     void setDestinationLocked(Character& character, const Vec2& destination);
-    void requestToiletLocked(Character& character);
-    void beginToilet(Character& character);
+    void requestToiletLocked(Character& character, ToiletAction action);
+    void beginToilet(Character& character, ToiletAction action);
+    void finishToilet(Character& character, const std::string& message = "");
     void updateCharacter(Character& character, float dt);
     void updateAI(Character& character, float dt);
     void updatePissing(Character& character, float dt);
