@@ -54,9 +54,8 @@ exit /b %ERRORLEVEL%
 set "VCVARS="
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "%VSWHERE%" (
-  set "VSROOT="
-  for /f "usebackq tokens=*" %%I in (`"%VSWHERE%" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%I"
-  if defined VSROOT if exist "!VSROOT!\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=!VSROOT!\VC\Auxiliary\Build\vcvars64.bat"
+  "%VSWHERE%" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "VC\Auxiliary\Build\vcvars64.bat" > "%ROOT%\build\obj\vcvars_path.txt"
+  if not errorlevel 1 set /p "VCVARS=" < "%ROOT%\build\obj\vcvars_path.txt"
 )
 if not defined VCVARS if exist "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars64.bat"
 if not defined VCVARS (
@@ -64,6 +63,11 @@ if not defined VCVARS (
   echo [build] In Visual Studio Installer, enable "Desktop development with C++".
   exit /b 1
 )
+if not exist "!VCVARS!" (
+  echo [build] Detected vcvars64.bat path does not exist: !VCVARS!
+  exit /b 1
+)
+echo [build] Using: !VCVARS!
 echo [build] Initializing Visual Studio C++ environment...
 call "!VCVARS!"
 if errorlevel 1 (
