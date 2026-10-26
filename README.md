@@ -93,7 +93,9 @@ The server binds **0.0.0.0:1453** by default. Advanced overrides:
 - Local build products and cache state remain ignored by Git. The prebuilt binary, ccache tool,
   source archives and compressed seed are deliberately committed for GitHub-hosted acceleration.
 - **No npm install, CDN, download, or network connection is needed to build or play.** Three.js
-  r170 and its license are vendored under `web/js/vendor/`. Art and textures are procedural.
+  r170 and its license are vendored under `web/js/vendor/`. The CC0 MakeHuman geometry, rigs,
+  shape targets and MPFB detail masks are also vendored; see `web/assets/human/LICENSE.md`.
+  Clothing, fabric, skin-color compositing and the remaining art are procedural.
 
 ## The 1,000-line nagger
 
@@ -131,7 +133,10 @@ web/
   index.html  HUD and field manual
   styles.css  Acid-green CRT-ish interface
   js/         Renderer, cameras, controls, networking, characters, HUD
-  js/vendor/  Offline Three.js
+  js/vendor/  Offline Three.js and generated CC0 human packs
+  assets/human/ Local facial masks and asset provenance
+tools/convert-human.py Offline human-pack generator
+tools/human-source/ CC0 MakeHuman source geometry, targets and weights
 build.cmd     VS2022 auto-detection and one-click MSVC build
 build.ps1     PowerShell entry point for the same Windows build
 build.sh      One-click cached Linux build
@@ -148,5 +153,7 @@ sends inputs, not positions, so collision and interaction range remain server-au
 
 Three.js is MIT licensed. See `web/js/vendor/THREE-LICENSE.txt` and `NOTICE.md`.
 The optional build accelerator is ccache 4.14.2, GPL-3.0-or-later; its license and complete
-corresponding source archives are under `tools/ccache/`. The game itself is repository-local
-C++, HTML, CSS, JavaScript, and procedural art.
+corresponding source archives are under `tools/ccache/`. Character geometry, rigs, targets and
+facial masks are CC0 MakeHuman/MPFB assets; provenance and regeneration instructions are in
+`web/assets/human/LICENSE.md`. No MakeHuman/MPFB program code is distributed. The game itself
+is repository-local C++, HTML, CSS and JavaScript.

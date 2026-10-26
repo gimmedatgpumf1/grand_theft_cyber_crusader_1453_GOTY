@@ -12,7 +12,7 @@ export const DEFAULT_APPEARANCE = Object.freeze({
 
 export const PRESETS = {
   jc: { male: true, skin: 1, hair: 2, hairColor: 0, shirt: 0, pants: 0,
-    beard: 2, coat: true, sunglasses: true },
+    beard: 0, coat: true, sunglasses: true },
   agent: { male: true, skin: 3, hair: 1, hairColor: 0, shirt: 4, pants: 1,
     beard: 1, coat: false, sunglasses: false },
   classic: { male: false, skin: 0, hair: 3, hairColor: 2, shirt: 2, pants: 3,

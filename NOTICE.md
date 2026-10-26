@@ -8,8 +8,17 @@
 - Included file: `web/js/vendor/three.module.min.js`
 - Full license: `web/js/vendor/THREE-LICENSE.txt`
 
-Three.js is vendored so the game works fully offline. No other third-party runtime libraries
-or remote assets are used.
+Three.js is vendored so the game works fully offline. No remote runtime assets are used.
+
+## MakeHuman / MPFB character assets (CC0 1.0)
+
+- Projects: https://github.com/makehumancommunity/makehuman and
+  https://github.com/makehumancommunity/mpfb2
+- License: CC0 1.0 Universal for the bundled graphical assets; no project program code is included.
+- Source geometry, rigs, weights and shape targets: `tools/human-source/`
+- Generated local runtime packs: `web/js/vendor/human-*-data.js`
+- Local facial masks, provenance and full license: `web/assets/human/`
+- Offline generator: `tools/convert-human.py`
 
 ## ccache 4.14.2 (optional build accelerator)
 
