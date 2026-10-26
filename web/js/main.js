@@ -17,7 +17,8 @@ try {
 const identity = defaultIdentity();
 const network = new Network(identity);
 const characters = new CharacterManager(gameScene.scene);
-const camera = new CameraController(gameScene.camera);
+const camera = new CameraController(gameScene.camera,
+  (target, desired) => gameScene.resolveCamera(target, desired));
 let latestState = { characters: [], puddles: [], events: [], tick: 0, toiletUser: 0 };
 let mode = 'third';
 let helpOpen = false;
@@ -35,7 +36,8 @@ const input = new InputController(document.getElementById('world'), camera, netw
     hud.setMode(mode);
     gameScene.setMode(mode);
     if (mode === 'first') hud.toast('Click the view to capture your mouse. Hold F to piss.');
-    if (mode === 'god') hud.toast('Godview: WASD pans the camera; only clicks move your citizen.');
+    if (mode === 'third') hud.toast('Click the view for mouse look. WASD moves; E interacts.');
+    if (mode === 'god') hud.toast('Godview: WASD fast-pans; Shift boosts. Clicks move your citizen.');
   },
   onHelp: toggleHelp,
   isHelpOpen: () => helpOpen,
@@ -58,6 +60,7 @@ network.onState = state => {
   if (network.world) hud.update(state, network.id, network.world);
 };
 
+hud.setMode(mode);
 document.querySelectorAll('[data-mode]').forEach(button => {
   button.addEventListener('click', () => input.setMode(button.dataset.mode));
 });

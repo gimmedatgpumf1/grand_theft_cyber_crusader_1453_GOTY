@@ -51,6 +51,7 @@ private:
     std::mt19937 random_{1453};
 
     Vec2 toiletPosition() const { return {0.0F, -4.75F}; }
+    Vec2 toiletSeat() const { return toiletPosition() + Vec2{0.0F, 0.45F}; }
     Vec2 toiletFront() const { return {0.0F, -2.85F}; }
     Vec2 spawnPoint(std::uint32_t id) const;
     Character* find(std::uint32_t id);

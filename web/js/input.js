@@ -9,7 +9,6 @@ export class InputController {
     this.mode = 'third';
     this.dragging = false;
     this.pissing = false;
-    this.lastYaw = Math.PI;
     this.bindEvents();
   }
 
@@ -32,6 +31,9 @@ export class InputController {
       if (event.code === 'KeyF') this.pissing = false;
     });
     window.addEventListener('blur', () => this.clear());
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement !== this.canvas) this.clear();
+    });
     this.canvas.addEventListener('contextmenu', event => event.preventDefault());
     this.canvas.addEventListener('mousedown', event => this.mouseDown(event));
     window.addEventListener('mouseup', event => {
@@ -39,7 +41,7 @@ export class InputController {
     });
     window.addEventListener('mousemove', event => {
       const locked = document.pointerLockElement === this.canvas;
-      if ((locked && this.mode === 'first') || (this.dragging && this.mode === 'third')) {
+      if ((locked && this.mode !== 'god') || (this.dragging && this.mode === 'third')) {
         this.camera.rotate(event.movementX, event.movementY);
       }
     });
@@ -51,21 +53,21 @@ export class InputController {
 
   mouseDown(event) {
     if (this.callbacks.isHelpOpen()) return;
+    const locked = document.pointerLockElement === this.canvas;
     if (event.button === 2) {
-      this.dragging = true;
+      if (this.mode === 'third' && !locked) this.dragging = true;
       return;
     }
     if (event.button !== 0) return;
-    if (this.mode === 'first' && document.pointerLockElement !== this.canvas) {
+    if (this.mode !== 'god' && !locked) {
       this.canvas.requestPointerLock?.();
       return;
     }
-    const locked = document.pointerLockElement === this.canvas;
     const hit = this.scene.pick(locked ? window.innerWidth / 2 : event.clientX,
       locked ? window.innerHeight / 2 : event.clientY, this.camera.camera);
     if (!hit) return;
     if (hit.kind === 'toilet') this.network.toilet();
-    if (hit.kind === 'ground') {
+    if (hit.kind === 'ground' && this.mode === 'god') {
       this.network.path(hit.point);
       this.scene.showDestination(hit.point);
     }
@@ -73,9 +75,8 @@ export class InputController {
 
   setMode(mode) {
     this.mode = mode;
-    this.pissing = false;
     this.clear();
-    if (mode !== 'first' && document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+    if (mode === 'god' && document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     this.camera.setMode(mode, this.callbacks.localPosition());
     this.callbacks.onMode(mode);
   }
@@ -88,19 +89,20 @@ export class InputController {
 
   update(dt) {
     if (this.callbacks.isHelpOpen()) {
-      return { x: 0, z: 0, sprint: false, piss: false, yaw: this.lastYaw, pitch: 0 };
+      return { x: 0, z: 0, sprint: false, piss: false, yaw: this.callbacks.localYaw(), pitch: 0 };
     }
     if (this.mode === 'god') {
       this.camera.pan(this.keys, dt);
       return { x: 0, z: 0, sprint: false, piss: false, yaw: this.callbacks.localYaw(), pitch: 0 };
     }
     const move = this.camera.movement(this.keys);
-    this.lastYaw = this.camera.yaw;
+    const moving = Math.hypot(move.x, move.z) > 0.05;
     return {
       ...move,
       sprint: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
       piss: this.pissing && this.mode === 'first',
-      yaw: this.camera.yaw,
+      // TPS bodies face their movement; only FPS bodies track the camera while stationary.
+      yaw: this.mode === 'first' || moving ? this.camera.yaw : this.callbacks.localYaw(),
       pitch: this.camera.pitch,
     };
   }

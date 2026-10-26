@@ -21,8 +21,8 @@ actions as browser players.
 
 | Mode | Move citizen | Camera | Interact |
 | --- | --- | --- | --- |
-| **1 — Third person** | WASD; Shift to sprint | Right-drag to orbit; wheel zoom | Left-click floor/throne; E for throne |
-| **2 — Godview** | Left-click floor to pathfind | WASD pans; wheel zoom | Left-click throne; E for throne |
+| **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E or centered left-click for throne |
+| **2 — Godview** | Left-click floor to pathfind | WASD fast-pans; Shift boosts; wheel zoom | Left-click throne; E for throne |
 | **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E for throne; **hold F to piss** |
 
 - Clicking the toilet from outside its **1.8 m interaction range** auto-paths to it.
@@ -98,8 +98,9 @@ bash tools/nagger.sh
 
 The test runner builds and executes simulation tests for JSON, collision/sliding, A* path
 validity, toilet auto-pathing and interaction range, dual-need relief, pissing/puddles, and AI
-toilet use. It also syntax-checks every first-party browser module with Node.js. Node is only
-a test convenience, not a game dependency.
+toilet use. It also checks camera-relative strafe directions, mouse-look direction, godview
+pan speed, and syntax-checks every first-party browser module with Node.js. Node is only a
+test convenience, not a game dependency.
 
 ## Architecture
 

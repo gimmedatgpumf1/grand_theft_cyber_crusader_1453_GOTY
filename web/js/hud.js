@@ -99,10 +99,10 @@ export class HUD {
   setMode(mode) {
     this.mode = mode;
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
-    byId('crosshair').classList.toggle('hidden', mode !== 'first');
+    byId('crosshair').classList.toggle('hidden', mode === 'god');
     const hints = {
-      third: '<b>WASD</b> MOVE <span>·</span> <b>RMB</b> ORBIT <span>·</span> <b>LMB</b> INTERACT <span>·</span> <b>SHIFT</b> SPRINT',
-      god: '<b>WASD</b> PAN CAMERA <span>·</span> <b>LMB</b> MOVE CITIZEN / INTERACT <span>·</span> <b>WHEEL</b> ZOOM',
+      third: '<b>CLICK</b> CAPTURE MOUSE <span>·</span> <b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> ORBIT <span>·</span> <b>E</b> INTERACT',
+      god: '<b>WASD</b> FAST PAN <span>·</span> <b>SHIFT</b> BOOST <span>·</span> <b>LMB</b> MOVE CITIZEN / INTERACT <span>·</span> <b>WHEEL</b> ZOOM',
       first: '<b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> LOOK <span>·</span> <b>HOLD F</b> PISS <span>·</span> <b>E</b> THRONE',
     };
     byId('control-hint').innerHTML = hints[mode];

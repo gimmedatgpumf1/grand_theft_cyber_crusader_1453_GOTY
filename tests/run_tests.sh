@@ -15,4 +15,5 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
 ./build/bin/gtc1453_tests
 node --check web/js/main.js
 for FILE in web/js/*.js; do node --check "$FILE"; done
+node tests/camera_tests.mjs
 echo '[test] Browser module syntax checks passed.'

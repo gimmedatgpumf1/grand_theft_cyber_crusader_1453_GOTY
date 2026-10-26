@@ -37,6 +37,26 @@ function limb(radius, length, color) {
   return pivot;
 }
 
+function leg(color) {
+  const hip = new THREE.Group();
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.13, 0.38, 5), material(color));
+  upper.position.y = -0.19;
+  upper.castShadow = true;
+  hip.add(upper);
+  const knee = new THREE.Group();
+  knee.position.y = -0.38;
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.115, 0.38, 5), material(color));
+  lower.position.y = -0.19;
+  lower.castShadow = true;
+  knee.add(lower);
+  const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.15, 0.37), material('#141d18'));
+  boot.position.set(0, -0.365, 0.08);
+  boot.castShadow = true;
+  knee.add(boot);
+  hip.add(knee);
+  return { hip, knee };
+}
+
 function createView(data, scene) {
   const group = new THREE.Group();
   const visual = new THREE.Group();
@@ -44,41 +64,40 @@ function createView(data, scene) {
   const skinTones = ['#b9926f', '#d0aa82', '#8c684f', '#c39272'];
   const skin = skinTones[data.id % skinTones.length];
   const trousers = '#263a35';
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.41, 0.72, 5), material(data.color));
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.41, 0.72, 5, 1, true), material(data.color));
   torso.position.y = 1.18;
   torso.castShadow = true;
   visual.add(torso);
-  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.11, 5), material('#17231e'));
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.11, 5, 1, true), material('#17231e'));
   belt.position.y = 0.82;
   visual.add(belt);
+  const headParts = [];
   const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.29, 0), material(skin));
   head.position.y = 1.79;
   head.castShadow = true;
   visual.add(head);
+  headParts.push(head);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.19, 5), material(skin));
   nose.rotation.x = Math.PI / 2;
   nose.position.set(0, 1.77, 0.31);
   visual.add(nose);
+  headParts.push(nose);
   for (const x of [-0.105, 0.105]) {
     const eye = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.045, 0.035), material('#101610'));
     eye.position.set(x, 1.86, 0.265);
     visual.add(eye);
+    headParts.push(eye);
   }
   const hair = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 0.38), material(data.id % 2 ? '#342a21' : '#66703c'));
   hair.position.set(0, 2.04, -0.02);
   hair.rotation.x = -0.16;
   visual.add(hair);
-  const leftLeg = limb(0.13, 0.76, trousers);
-  const rightLeg = limb(0.13, 0.76, trousers);
-  leftLeg.position.set(-0.2, 0.82, 0);
-  rightLeg.position.set(0.2, 0.82, 0);
-  visual.add(leftLeg, rightLeg);
-  for (const x of [-0.2, 0.2]) {
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.15, 0.37), material('#141d18'));
-    boot.position.set(x, 0.1, 0.08);
-    boot.castShadow = true;
-    visual.add(boot);
-  }
+  headParts.push(hair);
+  const leftLeg = leg(trousers);
+  const rightLeg = leg(trousers);
+  leftLeg.hip.position.set(-0.2, 0.82, 0);
+  rightLeg.hip.position.set(0.2, 0.82, 0);
+  visual.add(leftLeg.hip, rightLeg.hip);
   const leftArm = limb(0.1, 0.68, data.color);
   const rightArm = limb(0.1, 0.68, data.color);
   leftArm.position.set(-0.4, 1.47, 0);
@@ -103,7 +122,7 @@ function createView(data, scene) {
   scene.add(stream, droplets);
   group.position.set(data.x, 0, data.z);
   scene.add(group);
-  return { group, visual, torso, head, leftLeg, rightLeg, leftArm, rightArm, ring, label,
+  return { group, visual, torso, headParts, leftLeg, rightLeg, leftArm, rightArm, ring, label,
     stream, droplets, streamGeometry, target: new THREE.Vector3(data.x, 0, data.z),
     data, name: data.name, walkPhase: 0 };
 }
@@ -133,10 +152,13 @@ export class CharacterManager {
       const blend = 1 - Math.exp(-15 * dt);
       view.group.position.lerp(view.target, data.onToilet ? 1 : blend);
       const angleDelta = Math.atan2(Math.sin(data.yaw - view.group.rotation.y), Math.cos(data.yaw - view.group.rotation.y));
-      view.group.rotation.y += angleDelta * blend;
-      view.visual.visible = !(local && mode === 'first');
+      if (data.onToilet) view.group.rotation.y = data.yaw;
+      else view.group.rotation.y += angleDelta * blend;
+      view.visual.visible = true;
       view.ring.visible = local && mode !== 'first' && !data.onToilet;
       const cameraDistance = view.group.position.distanceTo(camera.position);
+      const hideHead = local && (mode === 'first' || cameraDistance < 0.85);
+      for (const part of view.headParts) part.visible = !hideHead;
       view.label.visible = !local && cameraDistance > 1.6;
       const labelScale = THREE.MathUtils.clamp(cameraDistance / 4, 0.55, 1);
       view.label.scale.set(1.9 * labelScale, 0.3 * labelScale, 1);
@@ -168,15 +190,23 @@ export class CharacterManager {
     const blend = 1 - Math.exp(-12 * dt);
     if (data.onToilet) {
       view.visual.position.y = -0.12;
-      view.leftLeg.rotation.x = THREE.MathUtils.lerp(view.leftLeg.rotation.x, -1.25, blend);
-      view.rightLeg.rotation.x = THREE.MathUtils.lerp(view.rightLeg.rotation.x, -1.25, blend);
-      view.leftArm.rotation.x = THREE.MathUtils.lerp(view.leftArm.rotation.x, -0.45, blend);
-      view.rightArm.rotation.x = THREE.MathUtils.lerp(view.rightArm.rotation.x, -0.45, blend);
+      view.leftLeg.hip.position.x = -0.28;
+      view.rightLeg.hip.position.x = 0.28;
+      for (const leg of [view.leftLeg, view.rightLeg]) {
+        leg.hip.rotation.x = -Math.PI / 2;
+        leg.knee.rotation.x = Math.PI / 2;
+      }
+      view.leftArm.rotation.x = -0.9;
+      view.rightArm.rotation.x = -0.9;
       view.torso.rotation.z = Math.sin(time * 9) * 0.025;
     } else {
       view.visual.position.y = walking ? Math.abs(Math.sin(view.walkPhase)) * 0.035 : 0;
-      view.leftLeg.rotation.x = THREE.MathUtils.lerp(view.leftLeg.rotation.x, swing, blend);
-      view.rightLeg.rotation.x = THREE.MathUtils.lerp(view.rightLeg.rotation.x, -swing, blend);
+      view.leftLeg.hip.position.x = -0.2;
+      view.rightLeg.hip.position.x = 0.2;
+      view.leftLeg.hip.rotation.x = THREE.MathUtils.lerp(view.leftLeg.hip.rotation.x, swing, blend);
+      view.rightLeg.hip.rotation.x = THREE.MathUtils.lerp(view.rightLeg.hip.rotation.x, -swing, blend);
+      view.leftLeg.knee.rotation.x = THREE.MathUtils.lerp(view.leftLeg.knee.rotation.x, Math.max(0, -swing) * 0.65, blend);
+      view.rightLeg.knee.rotation.x = THREE.MathUtils.lerp(view.rightLeg.knee.rotation.x, Math.max(0, swing) * 0.65, blend);
       view.leftArm.rotation.x = THREE.MathUtils.lerp(view.leftArm.rotation.x, -swing * 0.75, blend);
       view.rightArm.rotation.x = THREE.MathUtils.lerp(view.rightArm.rotation.x, swing * 0.75, blend);
       view.torso.rotation.z = data.pissing ? -0.06 : 0;

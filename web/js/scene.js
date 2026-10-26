@@ -57,6 +57,8 @@ export class GameScene {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.raycaster = new THREE.Raycaster();
+    this.cameraRaycaster = new THREE.Raycaster();
+    this.cameraBlockers = [];
     this.pointer = new THREE.Vector2();
     this.clickTargets = [];
     this.puddles = new Map();
@@ -93,6 +95,7 @@ export class GameScene {
     this.worldRoot = new THREE.Group();
     this.scene.add(this.worldRoot);
     this.clickTargets = [];
+    this.cameraBlockers = [];
     for (const puddle of this.puddles.values()) this.scene.remove(puddle);
     this.puddles.clear();
     this.createFloor(world);
@@ -101,6 +104,7 @@ export class GameScene {
     this.ceiling.position.y = 3.39;
     this.ceiling.receiveShadow = true;
     this.worldRoot.add(this.ceiling);
+    this.cameraBlockers.push(this.ceiling);
     for (const obstacle of world.obstacles) {
       if (obstacle.kind === 'boundary') this.createWall(obstacle);
       else if (obstacle.kind === 'toilet') this.createToilet(obstacle);
@@ -109,6 +113,7 @@ export class GameScene {
     }
     this.createDressing();
     this.createInteractionMarkers();
+    this.worldRoot.updateMatrixWorld(true);
   }
 
   createFloor(world) {
@@ -156,6 +161,7 @@ export class GameScene {
     const wall = box(obstacle.hx * 2, obstacle.height, obstacle.hz * 2, material);
     wall.position.set(obstacle.x, obstacle.height / 2, obstacle.z);
     this.worldRoot.add(wall);
+    this.cameraBlockers.push(wall);
     if (tall) {
       const trim = box(obstacle.hx * 2 + 0.04, 0.16, obstacle.hz * 2 + 0.04, standard('#1c2d25'));
       trim.position.set(obstacle.x, 1.05, obstacle.z);
@@ -210,6 +216,7 @@ export class GameScene {
     const cabinet = box(1.35, 0.72, 0.75, standard('#354b40'));
     cabinet.position.y = 0.36;
     group.add(cabinet);
+    this.cameraBlockers.push(cabinet);
     const basin = new THREE.Mesh(new THREE.CylinderGeometry(0.61, 0.48, 0.24, 8), standard('#bdc9b5'));
     basin.scale.z = 0.72;
     basin.position.y = 0.85;
@@ -231,6 +238,7 @@ export class GameScene {
     const crate = box(obstacle.hx * 2, obstacle.height, obstacle.hz * 2, standard('#5e5135'));
     crate.position.set(obstacle.x, obstacle.height / 2, obstacle.z);
     this.worldRoot.add(crate);
+    this.cameraBlockers.push(crate);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(crate.geometry), new THREE.LineBasicMaterial({ color: '#211f16' }));
     edges.position.copy(crate.position);
     this.worldRoot.add(edges);
@@ -315,6 +323,20 @@ export class GameScene {
         this.puddles.delete(id);
       }
     }
+  }
+
+  resolveCamera(target, desired) {
+    const direction = desired.clone().sub(target);
+    const distance = direction.length();
+    if (distance < 0.01 || this.cameraBlockers.length === 0) return desired;
+    direction.multiplyScalar(1 / distance);
+    this.cameraRaycaster.near = 0.05;
+    this.cameraRaycaster.far = distance;
+    this.cameraRaycaster.set(target, direction);
+    const hit = this.cameraRaycaster.intersectObjects(this.cameraBlockers, false)[0];
+    if (!hit) return desired;
+    const safeDistance = Math.max(0.35, hit.distance - 0.24);
+    return target.clone().addScaledVector(direction, safeDistance);
   }
 
   setMode(mode) {

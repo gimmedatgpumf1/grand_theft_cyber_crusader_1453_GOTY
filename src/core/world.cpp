@@ -190,7 +190,7 @@ void World::beginToilet(Character& character) {
     character.wantsPiss = false;
     character.manualMove = {};
     character.path.clear();
-    character.position = toiletPosition() + Vec2{0.0F, 0.12F};
+    character.position = toiletSeat();
     character.yaw = 0.0F;
     character.actionTime = 0.0F;
     character.speed = 0.0F;
@@ -260,7 +260,7 @@ void World::updateCharacter(Character& character, float dt) {
         character.actionTime += dt;
         character.needs.bladder = std::max(0.0F, character.needs.bladder - 34.0F * dt);
         character.needs.bowel = std::max(0.0F, character.needs.bowel - 25.0F * dt);
-        character.position = toiletPosition() + Vec2{0.0F, 0.12F};
+        character.position = toiletSeat();
         if ((character.needs.bladder < 0.1F && character.needs.bowel < 0.1F) || character.actionTime > 6.0F) {
             character.needs.bladder = 0.0F;
             character.needs.bowel = 0.0F;
