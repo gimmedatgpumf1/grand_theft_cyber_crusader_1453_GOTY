@@ -45,11 +45,43 @@ def read_target(path):
     return result
 
 
+def closest_triangle(point, a, b, c):
+    """Closest point and barycentric weights, from Real-Time Collision Detection."""
+    ab, ac, ap = b - a, c - a, point - a
+    d1, d2 = ab @ ap, ac @ ap
+    if d1 <= 0 and d2 <= 0:
+        return a, np.array([1., 0., 0.])
+    bp = point - b
+    d3, d4 = ab @ bp, ac @ bp
+    if d3 >= 0 and d4 <= d3:
+        return b, np.array([0., 1., 0.])
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0 and d1 >= 0 and d3 <= 0:
+        v = d1 / (d1 - d3)
+        return a + v * ab, np.array([1 - v, v, 0.])
+    cp = point - c
+    d5, d6 = ab @ cp, ac @ cp
+    if d6 >= 0 and d5 <= d6:
+        return c, np.array([0., 0., 1.])
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0 and d2 >= 0 and d6 <= 0:
+        w = d2 / (d2 - d6)
+        return a + w * ac, np.array([1 - w, 0., w])
+    va = d3 * d6 - d5 * d4
+    if va <= 0 and d4 - d3 >= 0 and d5 - d6 >= 0:
+        w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+        return b + w * (c - b), np.array([0., 1 - w, w])
+    denominator = va + vb + vc
+    v, w = vb / denominator, vc / denominator
+    return a + ab * v + ac * w, np.array([1 - v - w, v, w])
+
+
 class Mesh:
     def __init__(self, sex):
         self.sex = sex
         self.vertices = []
         body_ids = set()
+        body_faces = []
         group = ''
         for line in open(ROOT / 'base.obj'):
             parts = line.split()
@@ -60,7 +92,9 @@ class Mesh:
             elif parts[0] == 'g':
                 group = parts[1]
             elif parts[0] == 'f' and group == 'body':
-                body_ids.update(int(item.split('/')[0]) - 1 for item in parts[1:])
+                face = [int(item.split('/')[0]) - 1 for item in parts[1:]]
+                body_ids.update(face)
+                body_faces.extend([[face[0], face[index], face[index + 1]] for index in range(1, len(face) - 1)])
         self.vertices = np.array(self.vertices)
         self.base_macro = read_target(ROOT / f'caucasian-{sex}-young.target')
         for index, delta in self.base_macro.items():
@@ -73,6 +107,11 @@ class Mesh:
         self.regions_head = neck[1] - .07
         self.neck_source = self.skeleton['joints'][self.bones['neck01']['head']]
         self.head_ids = np.array(sorted(index for index in body_ids if self.vertices[index, 1] > self.regions_head - .25))
+        head_set = set(self.head_ids)
+        self.head_faces = np.array([face for face in body_faces if all(index in head_set for index in face)], dtype=int)
+        self.head_triangles = self.vertices[self.head_faces]
+        self.head_tree = cKDTree(self.head_triangles.mean(axis=1))
+        self.surface_map = None
         eye_l = self.joint(self.bones['eye.L']['head'])
         eye_r = self.joint(self.bones['eye.R']['head'])
         source_center = (CANON[33] + CANON[263]) / 2
@@ -120,6 +159,56 @@ class Mesh:
             raw = self.raw_morph(spec['positive' if weight > 0 else 'negative'])
             result += np.array([raw.get(index, np.zeros(3)) for index in original]) * abs(weight)
         return result
+
+    def nearest_surface(self, points, neighbors=16):
+        closest_points, face_ids, barycentric, distances = [], [], [], []
+        for point in points:
+            candidates = np.atleast_1d(self.head_tree.query(point, k=neighbors)[1])
+            best = (float('inf'), None, None, None)
+            for face_id in candidates:
+                candidate, weights = closest_triangle(point, *self.head_triangles[face_id])
+                distance = float(np.linalg.norm(point - candidate))
+                if distance < best[0]:
+                    best = (distance, face_id, weights, candidate)
+            distances.append(best[0])
+            face_ids.append(best[1])
+            barycentric.append(best[2])
+            closest_points.append(best[3])
+        return np.array(closest_points), np.array(face_ids), np.array(barycentric), np.array(distances)
+
+    def build_surface_map(self):
+        """Align the generic canonical face without using any reference photograph."""
+        eye_l = self.joint(self.bones['eye.L']['head'])
+        eye_r = self.joint(self.bones['eye.R']['head'])
+        source_center = (CANON[33] + CANON[263]) / 2
+        scales = np.full(3, self.scale)
+        translation = (eye_l + eye_r) / 2 - scales * source_center
+        ids = np.array(sorted(set(range(0, 468, 6)) | KEY))
+        source = CANON[ids]
+        for _ in range(8):
+            aligned = CANON * scales + translation
+            closest, _, _, distances = self.nearest_surface(aligned[ids])
+            weights = np.minimum(1, .08 / np.maximum(distances, 1e-9))
+            root = np.sqrt(weights)
+            for axis in range(3):
+                design = np.column_stack((source[:, axis], np.ones(len(source))))
+                coefficients = np.linalg.lstsq(design * root[:, None], closest[:, axis] * root, rcond=None)[0]
+                scales[axis], translation[axis] = coefficients
+        aligned = CANON * scales + translation
+        _, face_ids, barycentric, distances = self.nearest_surface(aligned, 24)
+        faces = self.head_faces[face_ids]
+        self.surface_map = (faces, barycentric, distances)
+        return self.surface_map
+
+    def surface_points(self, ids, morphs):
+        if self.surface_map is None:
+            self.build_surface_map()
+        faces, barycentric, _ = self.surface_map
+        selected = faces[ids]
+        unique, inverse = np.unique(selected.reshape(-1), return_inverse=True)
+        shaped = self.points(unique, morphs)
+        triangles = shaped[inverse.reshape(selected.shape)]
+        return np.sum(triangles * barycentric[ids, :, None], axis=1)
 
     def derivative(self, original, spec, weight):
         positive = np.array([self.raw_morph(spec['positive']).get(index, np.zeros(3)) for index in original]) if spec['positive'] else np.zeros((len(original), 3))

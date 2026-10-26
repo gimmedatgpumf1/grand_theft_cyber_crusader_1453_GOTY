@@ -26,6 +26,7 @@ CORE = {
     52, 282, 53, 283, 46, 276, 37, 39, 40, 267, 269, 270, 321, 405,
     314, 84, 181, 91, 146,
 }
+ANCHORS = sorted(set(range(0, 468, 3)) | CORE | fit.KEY)
 
 
 def detect(face_mesh, key):
@@ -40,10 +41,12 @@ def detect(face_mesh, key):
 
 def sculpt(key, candidate, points, accumulate=False):
     model = fit.mesh('male' if candidate['male'] else 'female')
-    ids = np.array([index for index in sorted(CORE) if model.map_distance[index] < .34])
-    original = model.canonical_original[ids]
+    if model.surface_map is None:
+        model.build_surface_map()
+    surface_distance = model.surface_map[2]
+    ids = np.array([index for index in ANCHORS if surface_distance[index] < .25])
     morphs = candidate['morphs']
-    model_points = model.points(original, morphs)
+    model_points = model.surface_points(ids, morphs)
     design = np.column_stack((model_points, np.ones(len(ids))))
     weights = fit.landmark_weights(ids)
     coefficients = np.linalg.lstsq(design * np.sqrt(weights)[:, None],
