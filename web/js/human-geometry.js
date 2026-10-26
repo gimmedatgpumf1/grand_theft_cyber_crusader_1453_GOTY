@@ -190,6 +190,13 @@ function hairGeometry(data, appearance, headBounds, eyes) {
       positions[offset + 2] -= amount * 0.07;
     }
   }
+  if (style.key === 'fifties-updo') {
+    const crown = headBounds.max.y - 0.025;
+    for (let vertex = 0; vertex < count; ++vertex) {
+      const offset = vertex * 3 + 1;
+      if (positions[offset] > crown) positions[offset] = crown + (positions[offset] - crown) * 0.65;
+    }
+  }
   if (['long-waves', 'curly-bob', 'wavy-bob'].includes(style.key)) {
     const lift = style.key === 'wavy-bob' ? 0.02 : 0.065;
     for (let vertex = 0; vertex < count; ++vertex) {
