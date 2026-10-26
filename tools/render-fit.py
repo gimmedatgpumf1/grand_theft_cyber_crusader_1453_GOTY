@@ -327,7 +327,8 @@ def coordinate(driver, face_mesh, candidates, observations, scores, histories, r
 
 def main():
     selected = [key for key in (sys.argv[1:] or list(REFS)) if key in REFS]
-    initial = export_initial()
+    candidate_file = os.environ.get('RENDER_FIT_CANDIDATES')
+    initial = json.loads((REPO / candidate_file).read_text()) if candidate_file else export_initial()
     candidates = {key: initial[key] for key in selected}
     observations = {}
     scores = {}
