@@ -57,16 +57,22 @@ export function addEyes(view, owned) {
   const size = 1 + (appearance.morphs[16] || 0) * 0.0015;
   for (const side of ['L', 'R']) {
     const center = eyes[side];
+    const direction = new THREE.Vector3(...(view.data.eyeDirections?.[side] || [0, 0, 1])).normalize();
+    const irisRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
     const geometry = new THREE.SphereGeometry(0.0110 * size, 20, 12);
     const eye = smallMesh(rig.byName.head, geometry, white, owned);
     attach(rig.byName.head, eye, center);
     parts.push(eye);
     const colored = smallMesh(rig.byName.head, new THREE.SphereGeometry(1, 12, 8), iris, owned);
     colored.scale.set(0.0045 * size, 0.0045 * size, 0.0016);
-    attach(rig.byName.head, colored, [center[0], center[1], center[2] + 0.0100 * size]);
+    colored.quaternion.copy(irisRotation);
+    attach(rig.byName.head, colored, [center[0] + direction.x * 0.0100 * size,
+      center[1] + direction.y * 0.0100 * size, center[2] + direction.z * 0.0100 * size]);
     const dark = smallMesh(rig.byName.head, new THREE.SphereGeometry(1, 10, 6), pupil, owned);
     dark.scale.set(0.0019 * size, 0.0019 * size, 0.001);
-    attach(rig.byName.head, dark, [center[0], center[1], center[2] + 0.0114 * size]);
+    dark.quaternion.copy(irisRotation);
+    attach(rig.byName.head, dark, [center[0] + direction.x * 0.0114 * size,
+      center[1] + direction.y * 0.0114 * size, center[2] + direction.z * 0.0114 * size]);
     parts.push(colored, dark);
   }
   return parts;

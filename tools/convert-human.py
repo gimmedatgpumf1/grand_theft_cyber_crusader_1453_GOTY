@@ -268,6 +268,13 @@ landmarks['noseR'] = landmark((-0.13, 6.85 + HEAD_SHIFT, 1.47))
 def transformed(point):
     return [round(point[0] * SCALE, 6), round((point[1] + GROUND) * SCALE, 6), round(point[2] * SCALE, 6)]
 
+def eye_direction(side):
+    center = bone_center(f'eye.{side}')
+    tail = bone_center(f'eye.{side}', True)
+    direction = [tail[axis] - center[axis] for axis in range(3)]
+    length = math.sqrt(sum(value * value for value in direction)) or 1
+    return [round(value / length, 6) for value in direction]
+
 def eye_anchor(side):
     center = bone_center(f'eye.{side}')
     index = nearest(center)
@@ -310,6 +317,7 @@ meta = {
     'scale': SCALE, 'ground': GROUND, 'bones': bones, 'bodyGroups': body_groups,
     'landmarks': landmarks, 'regions': REGIONS, 'headShift': HEAD_SHIFT, 'bodyShift': BODY_SHIFT,
     'eyes': {side: transformed(bone_center(f'eye.{side}')) for side in ('L', 'R')},
+    'eyeDirections': {side: eye_direction(side) for side in ('L', 'R')},
     'eyeAnchors': {side: eye_anchor(side) for side in ('L', 'R')},
     'morphOrder': [spec['key'] for spec in MORPH_SPECS], 'morphQuant': 100000,
     'shoes': {side: transformed((bone_center(f'foot.{side}')[0], bone_center(f'foot.{side}')[1] - 0.272,

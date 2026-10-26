@@ -123,7 +123,7 @@ export class CharacterManager {
         view.group.add(view.label);
         view.name = data.name;
       }
-      this.animate(view, preview ? { ...data, onToilet: false, toiletAction: 'none', speed: 0 } : data, time, dt);
+      this.animate(view, preview ? { ...data, onToilet: false, toiletAction: 'none', speed: 0 } : data, time, dt, preview);
       const seated = !preview && data.onToilet && !(data.male && data.toiletAction === 'piss');
       view.torsoMaterial.visible = true;
       if (view.coatMesh) view.coatMesh.visible = !firstBody || seated;
@@ -150,7 +150,7 @@ export class CharacterManager {
     this.updatePath(localData, state.tick);
   }
 
-  animate(view, data, time, dt) {
+  animate(view, data, time, dt, preview = false) {
     resetPose(view);
     view.walkPhase += dt * (4 + data.speed * 2.2);
     const walking = data.speed > 0.1 && data.toiletAction === 'none';
@@ -170,8 +170,8 @@ export class CharacterManager {
       return;
     }
     view.visual.position.y = walking ? Math.abs(Math.sin(view.walkPhase)) * 0.02 : 0;
-    rotateBone(view, 'head', Y, walking ? 0 : Math.sin(time * 0.45 + data.id) * 0.035);
-    rotateBone(view, 'spine02', X, Math.sin(time * 2 + data.id) * 0.006);
+    rotateBone(view, 'head', Y, walking || preview ? 0 : Math.sin(time * 0.45 + data.id) * 0.035);
+    rotateBone(view, 'spine02', X, preview ? 0 : Math.sin(time * 2 + data.id) * 0.006);
     for (const [suffix, direction] of [['L', 1], ['R', -1]]) {
       const legSwing = swing * direction;
       rotateBone(view, `upperleg01.${suffix}`, X, legSwing);

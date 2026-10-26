@@ -110,6 +110,46 @@ function tintedMask(image, color) {
   return canvas;
 }
 
+function paintBrow(context, inner, outer, arch, width) {
+  const control = [(inner[0] + outer[0]) / 2 - 4, (inner[1] + outer[1]) / 2 - arch];
+  const upper = [];
+  const lower = [];
+  const samples = [];
+  for (let i = 0; i <= 18; ++i) {
+    const t = i / 18;
+    const u = 1 - t;
+    const x = u * u * inner[0] + 2 * u * t * control[0] + t * t * outer[0];
+    const y = u * u * inner[1] + 2 * u * t * control[1] + t * t * outer[1];
+    const dx = 2 * u * (control[0] - inner[0]) + 2 * t * (outer[0] - control[0]);
+    const dy = 2 * u * (control[1] - inner[1]) + 2 * t * (outer[1] - control[1]);
+    const length = Math.hypot(dx, dy) || 1;
+    const normal = [-dy / length, dx / length];
+    const taper = (0.84 + Math.sin(Math.PI * t) * 0.24) * (1 - 0.90 * t ** 3);
+    const half = width * taper * 0.5;
+    upper.push([x + normal[0] * half, y + normal[1] * half]);
+    lower.push([x - normal[0] * half, y - normal[1] * half]);
+    samples.push({ x, y, normal, half });
+  }
+  context.beginPath();
+  context.moveTo(...upper[0]);
+  for (const point of upper.slice(1)) context.lineTo(...point);
+  for (const point of lower.reverse()) context.lineTo(...point);
+  context.closePath();
+  context.fill();
+  context.save();
+  context.globalAlpha *= 0.42;
+  context.lineWidth = 0.55;
+  for (let i = 2; i < samples.length - 2; i += 2) {
+    const sample = samples[i];
+    context.beginPath();
+    context.moveTo(sample.x - sample.normal[0] * sample.half * 0.8, sample.y - sample.normal[1] * sample.half * 0.8);
+    context.lineTo(sample.x + sample.normal[0] * sample.half * 1.15 + 0.35,
+      sample.y + sample.normal[1] * sample.half * 1.15);
+    context.stroke();
+  }
+  context.restore();
+}
+
 function paintSkin(canvas, appearance) {
   const size = canvas.width;
   const context = canvas.getContext('2d');
@@ -145,6 +185,41 @@ function paintSkin(canvas, appearance) {
     gradient.addColorStop(1, 'rgba(0,0,0,0)');
     context.fillStyle = gradient;
     context.fillRect(x - 24, y - 24, 48, 48);
+  }
+  const ageDetail = Math.max(0, Math.min(1, ((appearance.morphs[0] || 0) - 32) / 45));
+  if (ageDetail > 0) {
+    context.save();
+    context.lineCap = 'round';
+    context.strokeStyle = `rgba(65,36,29,${0.15 * ageDetail})`;
+    context.lineWidth = 1.05;
+    const forehead = point('forehead');
+    for (let line = 0; line < 3; ++line) {
+      const x = forehead[0] - 18 + line * 7;
+      context.beginPath();
+      context.moveTo(x, forehead[1] - 25 + line * 2);
+      context.quadraticCurveTo(x - 2.5, forehead[1], x, forehead[1] + 25 - line * 2);
+      context.stroke();
+    }
+    context.strokeStyle = `rgba(65,36,29,${0.13 * ageDetail})`;
+    for (const side of ['L', 'R']) {
+      const eye = point(`eye${side}`);
+      for (let line = 0; line < 2; ++line) {
+        const x = eye[0] + 7 + line * 4;
+        context.beginPath();
+        context.moveTo(x, eye[1] - 10 + line * 2);
+        context.quadraticCurveTo(x + 2.5, eye[1], x, eye[1] + 10 - line * 2);
+        context.stroke();
+      }
+      const noseSide = point(`nose${side}`);
+      const mouthSide = point(`mouth${side}`);
+      const direction = side === 'L' ? 1 : -1;
+      context.beginPath();
+      context.moveTo(noseSide[0] + 2, noseSide[1]);
+      context.quadraticCurveTo((noseSide[0] + mouthSide[0]) / 2 + 5,
+        (noseSide[1] + mouthSide[1]) / 2 + direction * 3, mouthSide[0] - 2, mouthSide[1]);
+      context.stroke();
+    }
+    context.restore();
   }
   if (appearance.beard > 0) {
     const mouth = point('mouth');
@@ -205,17 +280,14 @@ function paintSkin(canvas, appearance) {
   const browColor = appearance.hairColor >= 6 && appearance.hairColor <= 7 ? '#68503d' :
     appearance.hairColor === 2 ? '#493326' :
     appearance.hairColor === 8 || appearance.hairColor === 4 ? '#4e4b47' : PALETTES.hairColor[appearance.hairColor];
-  context.strokeStyle = browColor;
+  context.strokeStyle = context.fillStyle = browColor;
   context.lineCap = 'round';
   for (const side of ['L', 'R']) {
     const inner = point(`browInner${side}`);
     const outer = point(`browOuter${side}`);
-    context.lineWidth = appearance.makeup === 4 ? 2 : appearance.makeup ? 3.2 : 3;
+    const width = appearance.makeup === 4 ? 2.6 : appearance.makeup ? 3.8 : 4.2;
     const arch = appearance.makeup === 4 ? 12 : appearance.makeup ? 8 : 4;
-    context.beginPath();
-    context.moveTo(...inner);
-    context.quadraticCurveTo((inner[0] + outer[0]) / 2 - 4, (inner[1] + outer[1]) / 2 - arch, ...outer);
-    context.stroke();
+    paintBrow(context, inner, outer, arch, width);
   }
   if (appearance.makeup === 4) {
     const mouth = point('mouth');
