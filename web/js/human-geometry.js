@@ -21,6 +21,7 @@ function applyMorphs(data, positions, weights) {
     if (!sections) continue;
     const indices = data[sections.index];
     const deltas = data[sections.delta];
+    // MakeHuman direction targets already contain signed deltas; the slider supplies magnitude.
     const amount = Math.abs(weight) / data.morphQuant;
     for (let j = 0; j < indices.length; ++j) {
       const vertex = indices[j] * 3;
@@ -70,7 +71,7 @@ function hairGeometry(data, appearance, headBounds, eyes) {
     if (!section) continue;
     const indices = pack[section.index];
     const deltas = pack[section.delta];
-    const amount = Math.abs(weight) / pack.morphQuant;
+    const amount = Math.abs(weight) / pack.morphQuant; // Direction deltas are already signed.
     for (let j = 0; j < indices.length; ++j) {
       const vertex = indices[j] * 3;
       const delta = j * 3;

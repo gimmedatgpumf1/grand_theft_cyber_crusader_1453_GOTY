@@ -125,6 +125,10 @@ class Mesh:
         positive = np.array([self.raw_morph(spec['positive']).get(index, np.zeros(3)) for index in original]) if spec['positive'] else np.zeros((len(original), 3))
         negative = np.array([self.raw_morph(spec['negative']).get(index, np.zeros(3)) for index in original]) if spec['negative'] else np.zeros((len(original), 3))
         if abs(weight) < .01:
+            if not spec['negative']:
+                return positive
+            if not spec['positive']:
+                return -negative
             return (positive - negative) * .5
         return positive if weight > 0 else -negative
 
