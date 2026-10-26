@@ -3,6 +3,7 @@
 
 The generated .target files contain vertex deltas only. References and photographs
 remain development inputs and are never copied into runtime facial materials.
+Run convert-human.py and convert-hair.py for each affected sex before rendering.
 Usage: PYTHONPATH=.cache/python python3 tools/build-sculpts.py obama
 """
 import importlib.util, json, os, sys

@@ -54,6 +54,11 @@ async function render(session, candidates, keys) {
       const input = document.querySelector('[data-morph]');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }, candidate);
+    if (typeof candidate.male === 'boolean') {
+      const expected = candidate.male ? 'male' : 'female';
+      const actual = await session.page.locator('#creator-male').inputValue();
+      if (actual !== expected) throw new Error(`${key}: expected ${expected} creator geometry, got ${actual || 'empty select'}`);
+    }
     await session.page.waitForTimeout(800);
     await session.page.screenshot({ path: path.join(root, 'build', `render-fit-${key}.png`) });
   }
