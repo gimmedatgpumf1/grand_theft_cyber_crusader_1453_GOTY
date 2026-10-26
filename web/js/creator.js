@@ -116,6 +116,7 @@ export class CharacterCreator {
     for (const key of FIELDS) {
       const field = byId(`creator-${key}`);
       if (field.type === 'checkbox') field.checked = this.values[key];
+      else if (key === 'male') field.value = this.values[key] ? 'male' : 'female';
       else field.value = String(this.values[key]);
     }
     MORPH_DEFS.forEach((definition, index) => {
