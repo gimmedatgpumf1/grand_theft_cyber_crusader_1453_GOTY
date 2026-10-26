@@ -22,6 +22,12 @@ const camera = new CameraController(gameScene.camera,
   (target, desired) => gameScene.resolveCamera(target, desired));
 const creator = new CharacterCreator(network, {
   onApplied: () => hud.toast('Citizen rebuilt. The server has witnessed your new meat.'),
+  onFocus: focus => camera.setCreatorFocus(focus),
+  onZoom: direction => camera.creatorZoom(direction),
+  onPreset: preset => {
+    const local = latestState.characters.find(character => character.id === network.id);
+    camera.setCreatorPose(local?.yaw || 0, preset);
+  },
 });
 let latestState = { characters: [], puddles: [], events: [], tick: 0, toiletUser: 0 };
 let mode = 'third';
@@ -32,6 +38,8 @@ function closeOverlay() {
   const restore = overlay === 'creator' ? creatorCamera : null;
   overlay = null;
   creatorCamera = null;
+  camera.creatorActive = false;
+  gameScene.setCreatorMode(false);
   hud.help(false);
   hud.cheats(false);
   hud.wheel(false);
@@ -44,6 +52,10 @@ function closeOverlay() {
     camera.pitch = restore.pitch;
     camera.distance = restore.distance;
     camera.godFocus.copy(restore.godFocus);
+    if (restore.fov) {
+      gameScene.camera.fov = restore.fov;
+      gameScene.camera.updateProjectionMatrix();
+    }
     camera.initialized = false;
   }
 }
@@ -62,13 +74,15 @@ function showOverlay(name) {
   if (name === 'creator') {
     creatorCamera = {
       mode, yaw: camera.yaw, pitch: camera.pitch, distance: camera.distance,
-      godFocus: camera.godFocus.clone(),
+      godFocus: camera.godFocus.clone(), fov: gameScene.camera.fov,
     };
     input.setMode('third', false);
     camera.yaw = local.yaw + Math.PI;
-    camera.pitch = 0.08;
-    camera.distance = 3.25;
-    camera.initialized = false;
+    camera.creatorActive = true;
+    gameScene.camera.fov = 22;
+    gameScene.camera.updateProjectionMatrix();
+    camera.setCreatorFocus('full');
+    gameScene.setCreatorMode(true);
     creator.open(local);
     document.body.classList.add('creator-open');
   }
@@ -118,6 +132,31 @@ const input = new InputController(document.getElementById('world'), camera, netw
   localPosition: () => characters.localView(network.id)?.group.position || null,
   localYaw: () => characters.localView(network.id)?.data.yaw ?? Math.PI,
 });
+
+const worldCanvas = document.getElementById('world');
+let creatorDrag = null;
+worldCanvas.addEventListener('pointerdown', event => {
+  if (overlay !== 'creator' || event.button !== 0) return;
+  creatorDrag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  worldCanvas.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+});
+worldCanvas.addEventListener('pointermove', event => {
+  if (!creatorDrag || creatorDrag.id !== event.pointerId || overlay !== 'creator') return;
+  const dx = event.clientX - creatorDrag.x;
+  const dy = event.clientY - creatorDrag.y;
+  creatorDrag.x = event.clientX;
+  creatorDrag.y = event.clientY;
+  camera.creatorOrbit(dx, dy);
+});
+const endCreatorDrag = () => { creatorDrag = null; };
+worldCanvas.addEventListener('pointerup', endCreatorDrag);
+worldCanvas.addEventListener('pointercancel', endCreatorDrag);
+worldCanvas.addEventListener('wheel', event => {
+  if (overlay !== 'creator') return;
+  event.preventDefault();
+  camera.zoom(event.deltaY);
+}, { passive: false });
 
 network.onStatus = status => hud.network(status);
 network.onWelcome = message => {
@@ -186,7 +225,7 @@ function frame(now) {
   const dt = Math.min(0.05, Math.max(0.001, (now - previous) / 1000));
   previous = now;
   const time = now / 1000;
-  characters.sync(latestState, network.id, mode, gameScene.camera, time, dt);
+  characters.sync(latestState, network.id, mode, gameScene.camera, time, dt, overlay === 'creator');
   const controls = input.update(dt);
   hud.target(gameScene.highlightedKind);
   camera.update(dt, characters.localView(network.id));

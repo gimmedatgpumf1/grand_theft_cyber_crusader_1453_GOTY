@@ -142,8 +142,11 @@ int main() {
         gtc::Appearance appearance;
         appearance.male = false;
         appearance.skin = 99;
-        appearance.hair = -4;
+        appearance.hair = 99;
         appearance.hairColor = 99;
+        appearance.morphs.fill(500);
+        appearance.morphs[0] = -20;
+        appearance.morphs[3] = -500;
         appearance.shirt = 99;
         appearance.pants = -2;
         appearance.beard = 99;
@@ -152,9 +155,15 @@ int main() {
         world.customizeCharacter(id, appearance);
         const auto customized = world.character(id);
         check(!customized.appearance.male && customized.appearance.skin == 5 &&
-              customized.appearance.hair == 0 && customized.appearance.shirt == 6 &&
-              customized.appearance.pants == 0 && customized.appearance.beard == 2,
+              customized.appearance.hair == 8 && customized.appearance.shirt == 6 &&
+              customized.appearance.pants == 0 && customized.appearance.beard == 2 &&
+              customized.appearance.hairColor == 8,
               "creator fields are validated and clamped");
+        check(customized.appearance.morphs[0] == 0 && customized.appearance.morphs[1] == 100 &&
+              customized.appearance.morphs[3] == -100 && customized.appearance.morphs[50] == 100,
+              "all 51 morph values are server-clamped");
+        check(world.snapshot().find("\"morphs\":[0,100,100,-100") != std::string::npos,
+              "the morph vector is replicated in snapshots");
         check(world.snapshot().find("\"coat\":true") != std::string::npos,
               "appearance is replicated in snapshots");
         moveToToilet(world, id);

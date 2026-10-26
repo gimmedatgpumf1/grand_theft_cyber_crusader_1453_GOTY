@@ -11,8 +11,10 @@ from pathlib import Path
 SEX = sys.argv[1] if len(sys.argv) > 1 else 'male'
 if SEX not in ('male', 'female'):
     raise SystemExit('Expected male or female')
+REPO = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parent / 'human-source'
-OUT = Path(__file__).resolve().parents[1] / 'web' / 'js' / 'vendor' / f'human-{SEX}-data.js'
+MORPH_SPECS = json.loads((Path(__file__).resolve().parent / 'human-morphs.json').read_text())
+OUT = REPO / 'web' / 'js' / 'vendor' / f'human-{SEX}-data.js'
 SCALE = 0.108
 GROUND = 8.1676
 KEEP = {
@@ -23,6 +25,14 @@ for side in ('L', 'R'):
         'clavicle', 'shoulder01', 'upperarm01', 'upperarm02',
         'lowerarm01', 'lowerarm02', 'wrist', 'pelvis', 'upperleg01',
         'upperleg02', 'lowerleg01', 'lowerleg02', 'foot')})
+
+def read_target(path):
+    result = {}
+    for line in path.open():
+        parts = line.split()
+        if len(parts) == 4 and parts[0].isdigit():
+            result[int(parts[0])] = tuple(float(value) for value in parts[1:4])
+    return result
 
 vertices, uvs, faces = [], [], []
 group = ''
@@ -39,11 +49,9 @@ for line in (ROOT / 'base.obj').open():
     elif parts[0] == 'f' and group == 'body':
         faces.append([tuple(int(n) - 1 for n in item.split('/')[:2]) for item in parts[1:]])
 
-for line in (ROOT / f'caucasian-{SEX}-young.target').open():
-    parts = line.split()
-    if len(parts) == 4 and parts[0].isdigit():
-        index = int(parts[0])
-        vertices[index] = tuple(vertices[index][axis] + float(parts[axis + 1]) for axis in range(3))
+base_macro = read_target(ROOT / f'caucasian-{SEX}-young.target')
+for index, delta in base_macro.items():
+    vertices[index] = tuple(vertices[index][axis] + delta[axis] for axis in range(3))
 body_vertices = {vertex for face in faces for vertex, _ in face}
 minimum_y = min(vertices[index][1] for index in body_vertices)
 maximum_y = max(vertices[index][1] for index in body_vertices)
@@ -53,6 +61,8 @@ SCALE = 1.8 / (maximum_y - minimum_y)
 skeleton = json.load((ROOT / 'default.mhskel').open())
 weight_data = json.load((ROOT / 'default_weights.mhw').open())['weights']
 bone_defs = skeleton['bones']
+EYE_SOURCE = {side: skeleton['joints'][bone_defs[f'eye.{side}']['head']] for side in ('L', 'R')}
+NECK_SOURCE = skeleton['joints'][bone_defs['neck01']['head']]
 
 def joint(name):
     ids = skeleton['joints'][name]
@@ -118,10 +128,12 @@ for face in faces:
 
 positions, texcoords, skin_indices, skin_weights = [], [], [], []
 raw_for_vertex = []
+original_to_unique = defaultdict(list)
 unweighted = 0
 for (original, uv), new_index in sorted(unique.items(), key=lambda item: item[1]):
     x, y, z = vertices[original]
     raw_for_vertex.append((x, y, z))
+    original_to_unique[original].append(new_index)
     positions.extend((x * SCALE, (y + GROUND) * SCALE, z * SCALE))
     texcoords.extend(uvs[uv])
     weights = collapsed.get(original)
@@ -170,7 +182,7 @@ def category(face):
     return 'shirt'
 
 head_indices, body_lists = [], {name: [] for name in ('skin', 'shirt', 'sleeve', 'pants', 'boots', 'torso')}
-hair_lists = [[] for _ in range(4)]
+hair_lists = [[] for _ in range(8)]
 coat_indices = []
 triangle_raw = []
 for face in faces:
@@ -188,6 +200,10 @@ for face in faces:
                 y > receded or (z < 0.42 and y > 6.82 + HEAD_SHIFT) or (abs(x) > 0.76 and z < 0.55 and y > 7.02 + HEAD_SHIFT),
                 y > 7.48 + HEAD_SHIFT + 0.10 * abs(x) or (z < 0.64 and y > 6.10 + HEAD_SHIFT) or (abs(x) > 0.70 and z < 0.93 and y > 6.35 + HEAD_SHIFT),
                 y > swept or (z < 0.35 and y > 6.88 + HEAD_SHIFT) or (x < -0.55 and z < 0.85 and y > 7.04 + HEAD_SHIFT),
+                y > 7.50 + HEAD_SHIFT + 0.10 * abs(x) or (z < 0.62 and y > 6.45 + HEAD_SHIFT) or (abs(x) > 0.68 and z < 0.90 and y > 6.55 + HEAD_SHIFT),
+                y > 7.48 + HEAD_SHIFT + 0.10 * abs(x) or (z < 0.70 and y > 5.75 + HEAD_SHIFT) or (abs(x) > 0.72 and z < 0.95 and y > 5.95 + HEAD_SHIFT),
+                y > 7.78 + HEAD_SHIFT + 0.04 * abs(x) or (z < 0.32 and y > 7.15 + HEAD_SHIFT) or (abs(x) > 0.78 and z < 0.42 and y > 7.35 + HEAD_SHIFT),
+                y > 7.96 + HEAD_SHIFT + 0.05 * abs(x) or (z < 0.30 and y > 6.95 + HEAD_SHIFT) or (abs(x) > 0.80 and z < 0.48 and y > 7.25 + HEAD_SHIFT),
             )
             for style, enabled in enumerate(masks):
                 if enabled:
@@ -249,10 +265,50 @@ landmarks['noseR'] = landmark((-0.13, 6.85 + HEAD_SHIFT, 1.47))
 def transformed(point):
     return [round(point[0] * SCALE, 6), round((point[1] + GROUND) * SCALE, 6), round(point[2] * SCALE, 6)]
 
+def eye_anchor(side):
+    center = bone_center(f'eye.{side}')
+    index = nearest(center)
+    base = transformed(raw_for_vertex[index])
+    exact = transformed(center)
+    return {'index': index, 'offset': [round(exact[axis] - base[axis], 6) for axis in range(3)]}
+
+target_cache = {}
+def morph_delta(paths):
+    combined = defaultdict(lambda: [0.0, 0.0, 0.0])
+    for relative in paths:
+        if relative.startswith('@'):
+            group = relative[1:]
+            macro_group = 'caucasian' if group == 'old' else group
+            filename = f'{macro_group}-{SEX}-' + ('old.target' if group == 'old' else 'young.target')
+            path = ROOT / 'targets' / 'macrodetails' / filename
+        else:
+            path = ROOT / 'targets' / relative
+        key = str(path)
+        if key not in target_cache:
+            target_cache[key] = read_target(path)
+        target = target_cache[key]
+        if relative.startswith('@'):
+            difference = {index: tuple(target.get(index, (0, 0, 0))[axis] - base_macro.get(index, (0, 0, 0))[axis]
+                                       for axis in range(3)) for index in set(target) | set(base_macro)}
+            reference = [sum(difference.get(index, (0, 0, 0))[axis] for index in NECK_SOURCE) / len(NECK_SOURCE)
+                         for axis in range(3)]
+            for index, delta in difference.items():
+                if vertices[index][1] < REGIONS['head'] - 0.20:
+                    continue
+                for axis in range(3):
+                    combined[index][axis] += delta[axis] - reference[axis]
+        else:
+            for index, delta in target.items():
+                for axis in range(3):
+                    combined[index][axis] += delta[axis]
+    return combined
+
 meta = {
     'scale': SCALE, 'ground': GROUND, 'bones': bones, 'bodyGroups': body_groups,
     'landmarks': landmarks, 'regions': REGIONS, 'headShift': HEAD_SHIFT, 'bodyShift': BODY_SHIFT,
     'eyes': {side: transformed(bone_center(f'eye.{side}')) for side in ('L', 'R')},
+    'eyeAnchors': {side: eye_anchor(side) for side in ('L', 'R')},
+    'morphOrder': [spec['key'] for spec in MORPH_SPECS], 'morphQuant': 100000,
     'shoes': {side: transformed((bone_center(f'foot.{side}')[0], bone_center(f'foot.{side}')[1] - 0.272,
                                  bone_center(f'foot.{side}')[2] + 0.789)) for side in ('L', 'R')},
     'unweighted': unweighted,
@@ -274,6 +330,39 @@ for name, values in [('headIndex', head_indices), ('bodyIndex', body_indices), (
     add_array(name, values, 'H')
 for i, values in enumerate(hair_lists, 1):
     add_array(f'hair{i}Index', values, 'H')
+morph_meta = {}
+for spec in MORPH_SPECS:
+    entry = {}
+    for direction in ('negative', 'positive'):
+        if not spec[direction]:
+            continue
+        mapped = {}
+        raw_delta = morph_delta(spec[direction])
+        for original, delta in raw_delta.items():
+            quantized = [max(-32768, min(32767, round(value * SCALE * 100000))) for value in delta]
+            if not any(quantized):
+                continue
+            for new_index in original_to_unique.get(original, []):
+                mapped[new_index] = quantized
+        indices, deltas = [], []
+        for index in sorted(mapped):
+            indices.append(index)
+            deltas.extend(mapped[index])
+        index_name = f"morph_{spec['key']}_{direction}_index"
+        delta_name = f"morph_{spec['key']}_{direction}_delta"
+        add_array(index_name, indices, 'H')
+        add_array(delta_name, deltas, 'h')
+        eye_deltas = []
+        for side in ('L', 'R'):
+            sources = EYE_SOURCE[side]
+            for axis in range(3):
+                value = sum(raw_delta.get(index, (0, 0, 0))[axis] for index in sources) / len(sources)
+                eye_deltas.append(max(-32768, min(32767, round(value * SCALE * 100000))))
+        eye_name = f"morph_{spec['key']}_{direction}_eyes"
+        add_array(eye_name, eye_deltas, 'h')
+        entry[direction] = {'index': index_name, 'delta': delta_name, 'eyes': eye_name}
+    morph_meta[spec['key']] = entry
+meta['morphs'] = morph_meta
 meta['sections'] = sections
 meta_json = json.dumps(meta, separators=(',', ':')).encode()
 padding = b'\0' * ((4 - (12 + len(meta_json)) % 4) % 4)
@@ -282,10 +371,14 @@ encoded = base64.b64encode(blob).decode()
 lines = [encoded[i:i + 160] for i in range(0, len(encoded), 160)]
 content = '''// Generated from MakeHuman CC0 base mesh, default skeleton and symmetric weights.\n// Source and provenance: web/assets/human/LICENSE.md. Do not edit by hand.\nconst PACK = [\n'''
 content += ''.join(f"  '{line}',\n" for line in lines)
-content += '''].join('');\nlet cache = null;\nexport function humanData() {\n  if (cache) return cache;\n  const binary = atob(PACK);\n  const bytes = new Uint8Array(binary.length);\n  for (let i = 0; i < binary.length; ++i) bytes[i] = binary.charCodeAt(i);\n  const view = new DataView(bytes.buffer);\n  const length = view.getUint32(8, true);\n  const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + length)));\n  const base = (12 + length + 3) & ~3;\n  const types = { f: Float32Array, B: Uint8Array, H: Uint16Array };\n  const arrays = {};\n  for (const section of meta.sections) {\n    arrays[section.name] = new types[section.type](bytes.buffer, base + section.offset, section.count);\n  }\n  cache = { ...meta, ...arrays };\n  return cache;\n}\n'''
+content += '''].join('');\nlet cache = null;\nexport function humanData() {\n  if (cache) return cache;\n  const binary = atob(PACK);\n  const bytes = new Uint8Array(binary.length);\n  for (let i = 0; i < binary.length; ++i) bytes[i] = binary.charCodeAt(i);\n  const view = new DataView(bytes.buffer);\n  const length = view.getUint32(8, true);\n  const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + length)));\n  const base = (12 + length + 3) & ~3;\n  const types = { f: Float32Array, B: Uint8Array, H: Uint16Array, h: Int16Array };\n  const arrays = {};\n  for (const section of meta.sections) {\n    arrays[section.name] = new types[section.type](bytes.buffer, base + section.offset, section.count);\n  }\n  cache = { ...meta, ...arrays };\n  return cache;\n}\n'''
 OUT.write_text(content)
+public_specs = [{key: spec[key] for key in ('key', 'label', 'tab', 'min', 'max')} for spec in MORPH_SPECS]
+morph_module = '// Generated by tools/convert-human.py from tools/human-morphs.json.\n'
+morph_module += 'export const MORPH_DEFS = ' + json.dumps(public_specs, indent=2) + ';\n'
+(REPO / 'web' / 'js' / 'morphs.js').write_text(morph_module)
 print('vertices', len(unique), 'triangles', len(head_indices + body_indices) // 3,
       'head', len(head_indices) // 3, 'bones', len(bones), 'unweighted', unweighted,
-      'packed', len(blob), 'js', len(content))
+      'morphs', len(morph_meta), 'packed', len(blob), 'js', len(content))
 print('groups', body_groups)
 print('landmarks', json.dumps(landmarks, indent=2))

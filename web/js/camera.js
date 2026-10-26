@@ -15,6 +15,9 @@ export class CameraController {
     this.godYaw = 0.72;
     this.godFocus = new THREE.Vector3(0, 0, 0);
     this.initialized = false;
+    this.creatorActive = false;
+    this.creatorFocus = 'full';
+    this.creatorRoll = 0;
   }
 
   setMode(mode, localPosition) {
@@ -33,8 +36,34 @@ export class CameraController {
   }
 
   zoom(delta) {
-    if (this.mode === 'god') this.godDistance = clamp(this.godDistance + delta * 0.012, 8, 25);
+    if (this.creatorActive) this.distance = clamp(this.distance + delta * 0.008, 1.2, 14);
+    else if (this.mode === 'god') this.godDistance = clamp(this.godDistance + delta * 0.012, 8, 25);
     else this.distance = clamp(this.distance + delta * 0.006, 2.8, 8);
+  }
+
+  creatorOrbit(dx, dy) {
+    this.creatorRoll = 0;
+    this.yaw -= dx * 0.008;
+    this.pitch = clamp(this.pitch + dy * 0.005, -0.25, 0.65);
+  }
+
+  creatorZoom(direction) {
+    this.distance = clamp(this.distance + direction * 0.65, 1.2, 14);
+  }
+
+  setCreatorFocus(focus) {
+    this.creatorFocus = focus;
+    this.distance = { face: 2.2, body: 6.2, full: 10.0 }[focus] || 10.0;
+    this.pitch = focus === 'face' ? 0.02 : 0.08;
+    this.creatorRoll = 0;
+    this.initialized = false;
+  }
+
+  setCreatorPose(baseYaw, preset) {
+    this.yaw = baseYaw + Math.PI - (preset.creatorYaw || 0);
+    this.pitch = clamp(preset.creatorPitch ?? 0.02, -0.25, 0.65);
+    this.creatorRoll = preset.creatorRoll || 0;
+    this.initialized = false;
   }
 
   pan(keys, dt) {
@@ -73,6 +102,25 @@ export class CameraController {
         bodyForward.z * horizontal
       );
       this.camera.lookAt(this.camera.position.clone().add(direction));
+    } else if (this.creatorActive) {
+      const headCenter = localView.headBounds?.center.y || 1.55;
+      const targetHeight = this.creatorFocus === 'face' ? headCenter : this.creatorFocus === 'body' ? headCenter * 0.71 : headCenter * 0.58;
+      const target = player.clone().add(new THREE.Vector3(0, targetHeight, 0));
+      if (this.creatorFocus === 'face' && localView.headBounds) {
+        const offset = new THREE.Vector3(localView.headBounds.center.x, 0, localView.headBounds.center.z)
+          .applyQuaternion(localView.group.quaternion);
+        target.add(offset);
+      }
+      const forward = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+      const headHeight = localView.headBounds ? localView.headBounds.max.y - localView.headBounds.min.y : 0.5;
+      const focusScale = this.creatorFocus === 'face' ? clamp(headHeight / 0.50, 0.78, 1.22) : 1;
+      const horizontal = Math.cos(this.pitch) * this.distance * focusScale;
+      const desired = target.clone().addScaledVector(forward, -horizontal)
+        .add(new THREE.Vector3(0, Math.sin(this.pitch) * this.distance, 0));
+      const smoothing = this.initialized ? 1 - Math.exp(-18 * dt) : 1;
+      this.camera.position.lerp(desired, smoothing);
+      this.camera.lookAt(target);
+      if (this.creatorRoll) this.camera.rotateZ(this.creatorRoll);
     } else if (this.mode === 'god') {
       const offset = new THREE.Vector3(
         Math.sin(this.godYaw) * this.godDistance * 0.72,

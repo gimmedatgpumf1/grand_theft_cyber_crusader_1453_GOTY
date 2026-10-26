@@ -234,6 +234,7 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         Appearance appearance = world_.character(id).appearance;
         appearance.male = message.boolAt("male", appearance.male);
         appearance.skin = static_cast<int>(message.numberAt("skin", appearance.skin));
+        appearance.portrait = static_cast<int>(message.numberAt("portrait", appearance.portrait));
         appearance.hair = static_cast<int>(message.numberAt("hair", appearance.hair));
         appearance.hairColor = static_cast<int>(message.numberAt("hairColor", appearance.hairColor));
         appearance.shirt = static_cast<int>(message.numberAt("shirt", appearance.shirt));
@@ -241,6 +242,22 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         appearance.beard = static_cast<int>(message.numberAt("beard", appearance.beard));
         appearance.coat = message.boolAt("coat", appearance.coat);
         appearance.sunglasses = message.boolAt("sunglasses", appearance.sunglasses);
+        appearance.eyeColor = static_cast<int>(message.numberAt("eyeColor", appearance.eyeColor));
+        appearance.makeup = static_cast<int>(message.numberAt("makeup", appearance.makeup));
+        appearance.lipColor = static_cast<int>(message.numberAt("lipColor", appearance.lipColor));
+        appearance.suit = message.boolAt("suit", appearance.suit);
+        appearance.tie = static_cast<int>(message.numberAt("tie", appearance.tie));
+        appearance.dress = message.boolAt("dress", appearance.dress);
+        appearance.beret = message.boolAt("beret", appearance.beret);
+        appearance.earrings = message.boolAt("earrings", appearance.earrings);
+        appearance.necklace = message.boolAt("necklace", appearance.necklace);
+        appearance.fur = message.boolAt("fur", appearance.fur);
+        if (const JsonValue* morphs = message.get("morphs")) {
+            const auto& values = morphs->array();
+            for (std::size_t i = 0; i < appearance.morphs.size() && i < values.size(); ++i) {
+                appearance.morphs[i] = static_cast<int>(values[i].number(appearance.morphs[i]));
+            }
+        }
         world_.customizeCharacter(id, appearance);
     } else if (type == "cheat") {
         world_.adjustNeed(id, message.stringAt("need"), static_cast<float>(message.numberAt("delta")));

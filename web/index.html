@@ -123,27 +123,71 @@
     <section id="creator" class="creator-panel panel-cut hidden" aria-label="Character creator">
       <div class="help-top"><span>CITIZEN FABRICATOR // C</span><button id="close-creator" aria-label="Close character creator">×</button></div>
       <h2>BUILD A BETTER<br><em>MEAT MACHINE</em></h2>
-      <p class="help-intro">A front-facing live preview. Every change is applied by the server and replicated to every citizen.</p>
-      <div class="preset-row">
+      <p class="help-intro">Select a starting citizen, then sculpt every feature. Drag the character to rotate; use the mouse wheel to zoom.</p>
+      <div class="creator-preview-controls" aria-label="Preview camera controls">
+        <button data-creator-focus="face">FACE</button>
+        <button data-creator-focus="body">BODY</button>
+        <button data-creator-focus="full" class="active">FULL</button>
+        <button data-creator-zoom="-1" aria-label="Zoom in">+</button>
+        <button data-creator-zoom="1" aria-label="Zoom out">−</button>
+      </div>
+      <div class="preset-row" aria-label="Character presets">
         <button data-preset="jc">JC // 2052</button>
         <button data-preset="agent">FIELD AGENT</button>
         <button data-preset="classic">CLASSIC</button>
+        <button data-preset="marilyn">MARILYN</button>
+        <button data-preset="ibrahim">IBRAHIM</button>
+        <button data-preset="xi">XI</button>
+        <button data-preset="putin">PUTIN</button>
+        <button data-preset="trump">TRUMP</button>
+        <button data-preset="taylor">TAYLOR</button>
+        <button data-preset="obama">OBAMA</button>
       </div>
-      <div class="creator-grid">
-        <label>PLUMBING<select id="creator-male" data-appearance><option value="male">MALE · STANDING PISS</option><option value="female">FEMALE · SEATED PISS</option></select></label>
-        <label>SKIN<select id="creator-skin" data-appearance><option value="0">PORCELAIN</option><option value="1">TAN</option><option value="2">BRONZE</option><option value="3">BROWN</option><option value="4">DEEP</option><option value="5">WARM</option></select></label>
-        <label>HAIR STYLE<select id="creator-hair" data-appearance><option value="0">BALD</option><option value="1">CROPPED</option><option value="2">SIDE PART</option><option value="3">BOB</option><option value="4">SWEPT</option></select></label>
-        <label>HAIR COLOR<select id="creator-hairColor" data-appearance><option value="0">BLACK</option><option value="1">BROWN</option><option value="2">ASH</option><option value="3">BLOND</option><option value="4">GRAY</option><option value="5">AUBURN</option></select></label>
-        <label>FACIAL HAIR<select id="creator-beard" data-appearance><option value="0">CLEAN</option><option value="1">STUBBLE</option><option value="2">GOATEE</option></select></label>
-        <label>SHIRT / COAT<select id="creator-shirt" data-appearance><option value="0">BLACK</option><option value="1">RED</option><option value="2">GREEN</option><option value="3">KHAKI</option><option value="4">NAVY</option><option value="5">PURPLE</option><option value="6">WHITE</option></select></label>
-        <label>TROUSERS<select id="creator-pants" data-appearance><option value="0">BLACK</option><option value="1">CHARCOAL</option><option value="2">BROWN</option><option value="3">NAVY</option></select></label>
-        <div class="creator-toggles">
-          <label><input id="creator-coat" data-appearance type="checkbox"> TRENCH COAT</label>
-          <label><input id="creator-sunglasses" data-appearance type="checkbox"> SUNGLASSES</label>
+      <div class="creator-random">
+        <button id="randomize-appearance">RANDOMIZE MEAT</button>
+        <button id="reset-appearance">RESET</button>
+      </div>
+      <div class="creator-tabs" role="tablist" aria-label="Creator sections">
+        <button data-creator-tab="style" class="active">STYLE</button>
+        <button data-creator-tab="face">FACE</button>
+        <button data-creator-tab="eyes">EYES</button>
+        <button data-creator-tab="nose">NOSE</button>
+        <button data-creator-tab="mouth">MOUTH</button>
+        <button data-creator-tab="body">BODY</button>
+      </div>
+      <div data-creator-page="style" class="creator-page">
+        <div class="creator-grid">
+          <label>PLUMBING<select id="creator-male" data-appearance><option value="male">MALE · STANDING PISS</option><option value="female">FEMALE · SEATED PISS</option></select></label>
+          <label>SKIN<select id="creator-skin" data-appearance><option value="0">PORCELAIN</option><option value="1">TAN</option><option value="2">BRONZE</option><option value="3">BROWN</option><option value="4">DEEP</option><option value="5">WARM</option></select></label>
+          <label>FACE TEXTURE<select id="creator-portrait" data-appearance><option value="0">PROCEDURAL</option><option value="1">MARILYN</option><option value="2">IBRAHIM</option><option value="3">XI</option><option value="4">PUTIN</option><option value="5">TRUMP</option><option value="6">TAYLOR</option><option value="7">OBAMA</option></select></label>
+          <label>HAIR STYLE<select id="creator-hair" data-appearance><option value="0">BALD</option><option value="1">CROPPED</option><option value="2">SIDE PART</option><option value="3">BOB</option><option value="4">SWEPT</option><option value="5">GLAM WAVES</option><option value="6">LONG BANGS</option><option value="7">COMBOVER</option><option value="8">RECEDED</option><option value="9">PONYTAIL</option><option value="10">BRAID</option><option value="11">AFRO</option><option value="12">LONG WAVES</option></select></label>
+          <label>HAIR COLOR<select id="creator-hairColor" data-appearance><option value="0">BLACK</option><option value="1">BROWN</option><option value="2">ASH</option><option value="3">BLOND</option><option value="4">GRAY</option><option value="5">AUBURN</option><option value="6">PLATINUM</option><option value="7">GOLDEN BLOND</option><option value="8">SILVER</option></select></label>
+          <label>EYE COLOR<select id="creator-eyeColor" data-appearance><option value="0">DARK BROWN</option><option value="1">HAZEL</option><option value="2">BLUE</option><option value="3">GREEN</option><option value="4">GRAY</option><option value="5">BLACK</option></select></label>
+          <label>MAKEUP<select id="creator-makeup" data-appearance><option value="0">NONE</option><option value="1">EYELINER</option><option value="2">COLOR</option><option value="3">RED CARPET</option><option value="4">ICONIC GLAM + MOLE</option></select></label>
+          <label>LIP COLOR<select id="creator-lipColor" data-appearance><option value="0">NATURAL</option><option value="1">CLASSIC RED</option><option value="2">BRIGHT RED</option><option value="3">ROSE</option><option value="4">CORAL</option></select></label>
+          <label>FACIAL HAIR<select id="creator-beard" data-appearance><option value="0">CLEAN</option><option value="1">STUBBLE</option><option value="2">GOATEE</option></select></label>
+          <label>SHIRT / COAT<select id="creator-shirt" data-appearance><option value="0">BLACK</option><option value="1">RED</option><option value="2">GREEN</option><option value="3">KHAKI</option><option value="4">NAVY</option><option value="5">PURPLE</option><option value="6">WHITE</option></select></label>
+          <label>TROUSERS<select id="creator-pants" data-appearance><option value="0">BLACK</option><option value="1">CHARCOAL</option><option value="2">BROWN</option><option value="3">NAVY</option></select></label>
+          <label>TIE<select id="creator-tie" data-appearance><option value="0">NONE</option><option value="1">NAVY</option><option value="2">BURGUNDY</option><option value="3">BLUE</option><option value="4">CHARCOAL</option><option value="5">GOLD</option></select></label>
+          <div class="creator-toggles">
+            <label><input id="creator-coat" data-appearance type="checkbox"> TRENCH COAT</label>
+            <label><input id="creator-sunglasses" data-appearance type="checkbox"> SUNGLASSES</label>
+            <label><input id="creator-suit" data-appearance type="checkbox"> SUIT + COLLAR</label>
+            <label><input id="creator-dress" data-appearance type="checkbox"> DRESS</label>
+            <label><input id="creator-beret" data-appearance type="checkbox"> BERET</label>
+            <label><input id="creator-earrings" data-appearance type="checkbox"> EARRINGS</label>
+            <label><input id="creator-necklace" data-appearance type="checkbox"> NECKLACE</label>
+            <label><input id="creator-fur" data-appearance type="checkbox"> FUR COLLAR</label>
+          </div>
         </div>
       </div>
+      <div data-creator-page="face" class="creator-page hidden"><div id="morph-face" class="morph-grid"></div></div>
+      <div data-creator-page="eyes" class="creator-page hidden"><div id="morph-eyes" class="morph-grid"></div></div>
+      <div data-creator-page="nose" class="creator-page hidden"><div id="morph-nose" class="morph-grid"></div></div>
+      <div data-creator-page="mouth" class="creator-page hidden"><div id="morph-mouth" class="morph-grid"></div></div>
+      <div data-creator-page="body" class="creator-page hidden"><div id="morph-body" class="morph-grid"></div></div>
       <button id="apply-appearance" class="creator-apply">REBUILD CITIZEN</button>
-      <small class="help-foot">C / ESC TO CLOSE · CHANGES SAVE LOCALLY AND REPLICATE IMMEDIATELY</small>
+      <small class="help-foot">C / ESC TO CLOSE · DRAG PREVIEW TO ROTATE · WHEEL / ＋ / − TO ZOOM · ALL CHANGES REPLICATE</small>
     </section>
 
     <section id="cheats" class="modal hidden" aria-label="Need cheat console" aria-modal="true">

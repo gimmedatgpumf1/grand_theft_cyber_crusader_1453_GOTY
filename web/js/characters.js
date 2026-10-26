@@ -74,7 +74,7 @@ export class CharacterManager {
     this.pathTick = -1;
   }
 
-  sync(state, localId, mode, camera, time, dt) {
+  sync(state, localId, mode, camera, time, dt, creatorOpen = false) {
     const alive = new Set();
     let localData = null;
     for (const data of state.characters) {
@@ -96,6 +96,8 @@ export class CharacterManager {
       view.data = data;
       view.target.set(data.x, 0, data.z);
       const local = data.id === localId;
+      const preview = creatorOpen && local;
+      view.group.visible = !creatorOpen || local;
       if (local) localData = data;
       const blend = 1 - Math.exp(-15 * dt);
       view.group.position.lerp(view.target, data.onToilet || data.toiletAction === 'piss' ? 1 : blend);
@@ -109,7 +111,7 @@ export class CharacterManager {
       const firstBody = local && mode === 'first';
       if (view.coatSkirt) view.coatSkirt.visible = !firstBody;
       for (const detail of view.coatDetails) detail.visible = !firstBody;
-      view.ring.visible = local && mode !== 'first' && data.toiletAction === 'none';
+      view.ring.visible = local && (preview || (mode !== 'first' && data.toiletAction === 'none'));
       view.label.visible = !local && cameraDistance > 1.6;
       const labelScale = THREE.MathUtils.clamp(cameraDistance / 4, 0.55, 1);
       view.label.scale.set(1.9 * labelScale, 0.3 * labelScale, 1);
@@ -121,8 +123,8 @@ export class CharacterManager {
         view.group.add(view.label);
         view.name = data.name;
       }
-      this.animate(view, data, time, dt);
-      const seated = data.onToilet && !(data.male && data.toiletAction === 'piss');
+      this.animate(view, preview ? { ...data, onToilet: false, toiletAction: 'none', speed: 0 } : data, time, dt);
+      const seated = !preview && data.onToilet && !(data.male && data.toiletAction === 'piss');
       view.torsoMaterial.visible = true;
       if (view.coatMesh) view.coatMesh.visible = !firstBody || seated;
       view.visual.position.z = firstBody && !seated ? -0.18 : 0;
@@ -136,6 +138,8 @@ export class CharacterManager {
         }
       }
       this.updateStream(view, data, local, mode, camera, time);
+      if (creatorOpen && !local) view.stream.visible = view.droplets.visible = false;
+      if (preview) view.stream.visible = view.droplets.visible = false;
     }
     for (const [id, view] of this.views) {
       if (!alive.has(id)) {

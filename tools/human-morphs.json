@@ -1,0 +1,697 @@
+[
+  {
+    "key": "age",
+    "label": "AGE",
+    "tab": "face",
+    "min": 0,
+    "max": 100,
+    "positive": [
+      "@old"
+    ],
+    "negative": []
+  },
+  {
+    "key": "african",
+    "label": "AFRICAN HERITAGE",
+    "tab": "face",
+    "min": 0,
+    "max": 100,
+    "positive": [
+      "@african"
+    ],
+    "negative": []
+  },
+  {
+    "key": "asian",
+    "label": "EAST ASIAN HERITAGE",
+    "tab": "face",
+    "min": 0,
+    "max": 100,
+    "positive": [
+      "@asian"
+    ],
+    "negative": []
+  },
+  {
+    "key": "headWidth",
+    "label": "HEAD WIDTH",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "head/head-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "head/head-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "headHeight",
+    "label": "HEAD HEIGHT",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "head/head-scale-vert-incr.target"
+    ],
+    "negative": [
+      "head/head-scale-vert-decr.target"
+    ]
+  },
+  {
+    "key": "headDepth",
+    "label": "HEAD DEPTH",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "head/head-scale-depth-incr.target"
+    ],
+    "negative": [
+      "head/head-scale-depth-decr.target"
+    ]
+  },
+  {
+    "key": "faceShape",
+    "label": "ROUND / ANGULAR",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "head/head-round.target"
+    ],
+    "negative": [
+      "head/head-rectangular.target"
+    ]
+  },
+  {
+    "key": "faceFullness",
+    "label": "FACE FULLNESS",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "head/head-fat-incr.target"
+    ],
+    "negative": [
+      "head/head-fat-decr.target"
+    ]
+  },
+  {
+    "key": "forehead",
+    "label": "FOREHEAD HEIGHT",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "forehead/forehead-scale-vert-incr.target"
+    ],
+    "negative": [
+      "forehead/forehead-scale-vert-decr.target"
+    ]
+  },
+  {
+    "key": "cheekBones",
+    "label": "CHEEKBONES",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "cheek/l-cheek-bones-incr.target",
+      "cheek/r-cheek-bones-incr.target"
+    ],
+    "negative": [
+      "cheek/l-cheek-bones-decr.target",
+      "cheek/r-cheek-bones-decr.target"
+    ]
+  },
+  {
+    "key": "cheekFullness",
+    "label": "CHEEK FULLNESS",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "cheek/l-cheek-volume-incr.target",
+      "cheek/r-cheek-volume-incr.target"
+    ],
+    "negative": [
+      "cheek/l-cheek-volume-decr.target",
+      "cheek/r-cheek-volume-decr.target"
+    ]
+  },
+  {
+    "key": "cheekHeight",
+    "label": "CHEEK HEIGHT",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "cheek/l-cheek-trans-up.target",
+      "cheek/r-cheek-trans-up.target"
+    ],
+    "negative": [
+      "cheek/l-cheek-trans-down.target",
+      "cheek/r-cheek-trans-down.target"
+    ]
+  },
+  {
+    "key": "jawWidth",
+    "label": "JAW WIDTH",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "chin/chin-width-incr.target"
+    ],
+    "negative": [
+      "chin/chin-width-decr.target"
+    ]
+  },
+  {
+    "key": "chinHeight",
+    "label": "CHIN HEIGHT",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "chin/chin-height-incr.target"
+    ],
+    "negative": [
+      "chin/chin-height-decr.target"
+    ]
+  },
+  {
+    "key": "chinProjection",
+    "label": "CHIN PROJECTION",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "chin/chin-prominent-incr.target"
+    ],
+    "negative": [
+      "chin/chin-prominent-decr.target"
+    ]
+  },
+  {
+    "key": "chinCleft",
+    "label": "CHIN CLEFT",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "chin/chin-cleft-incr.target"
+    ],
+    "negative": [
+      "chin/chin-cleft-decr.target"
+    ]
+  },
+  {
+    "key": "eyeSize",
+    "label": "EYE SIZE",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-scale-incr.target",
+      "eyes/r-eye-scale-incr.target"
+    ],
+    "negative": [
+      "eyes/l-eye-scale-decr.target",
+      "eyes/r-eye-scale-decr.target"
+    ]
+  },
+  {
+    "key": "eyeOpening",
+    "label": "EYE OPENING",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-height1-incr.target",
+      "eyes/r-eye-height1-incr.target"
+    ],
+    "negative": [
+      "eyes/l-eye-height1-decr.target",
+      "eyes/r-eye-height1-decr.target"
+    ]
+  },
+  {
+    "key": "eyeSpacing",
+    "label": "EYE SPACING",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-trans-out.target",
+      "eyes/r-eye-trans-out.target"
+    ],
+    "negative": [
+      "eyes/l-eye-trans-in.target",
+      "eyes/r-eye-trans-in.target"
+    ]
+  },
+  {
+    "key": "eyeDepth",
+    "label": "EYE DEPTH",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-push1-out.target",
+      "eyes/r-eye-push1-out.target"
+    ],
+    "negative": [
+      "eyes/l-eye-push1-in.target",
+      "eyes/r-eye-push1-in.target"
+    ]
+  },
+  {
+    "key": "eyeTilt",
+    "label": "EYE TILT",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-corner1-up.target",
+      "eyes/r-eye-corner1-up.target"
+    ],
+    "negative": [
+      "eyes/l-eye-corner1-down.target",
+      "eyes/r-eye-corner1-down.target"
+    ]
+  },
+  {
+    "key": "epicanthus",
+    "label": "INNER EYE FOLD",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-epicanthus-in.target",
+      "eyes/r-eye-epicanthus-in.target"
+    ],
+    "negative": [
+      "eyes/l-eye-epicanthus-out.target",
+      "eyes/r-eye-epicanthus-out.target"
+    ]
+  },
+  {
+    "key": "eyeBags",
+    "label": "EYE BAGS",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyes/l-eye-bag-incr.target",
+      "eyes/r-eye-bag-incr.target"
+    ],
+    "negative": [
+      "eyes/l-eye-bag-decr.target",
+      "eyes/r-eye-bag-decr.target"
+    ]
+  },
+  {
+    "key": "browHeight",
+    "label": "BROW HEIGHT",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyebrows/eyebrows-trans-up.target"
+    ],
+    "negative": [
+      "eyebrows/eyebrows-trans-down.target"
+    ]
+  },
+  {
+    "key": "browAngle",
+    "label": "BROW ANGLE",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "eyebrows/eyebrows-angle-up.target"
+    ],
+    "negative": [
+      "eyebrows/eyebrows-angle-down.target"
+    ]
+  },
+  {
+    "key": "noseWidth",
+    "label": "NOSE WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "nose/nose-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "noseProjection",
+    "label": "NOSE PROJECTION",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-scale-depth-incr.target"
+    ],
+    "negative": [
+      "nose/nose-scale-depth-decr.target"
+    ]
+  },
+  {
+    "key": "noseLength",
+    "label": "NOSE LENGTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-scale-vert-incr.target"
+    ],
+    "negative": [
+      "nose/nose-scale-vert-decr.target"
+    ]
+  },
+  {
+    "key": "noseTip",
+    "label": "TIP WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-point-width-incr.target"
+    ],
+    "negative": [
+      "nose/nose-point-width-decr.target"
+    ]
+  },
+  {
+    "key": "noseBridge",
+    "label": "BRIDGE / HUMP",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-hump-incr.target"
+    ],
+    "negative": [
+      "nose/nose-hump-decr.target"
+    ]
+  },
+  {
+    "key": "noseFlare",
+    "label": "NOSTRIL FLARE",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-flaring-incr.target"
+    ],
+    "negative": [
+      "nose/nose-flaring-decr.target"
+    ]
+  },
+  {
+    "key": "nostrils",
+    "label": "NOSTRIL WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-nostrils-width-incr.target"
+    ],
+    "negative": [
+      "nose/nose-nostrils-width-decr.target"
+    ]
+  },
+  {
+    "key": "nosePoint",
+    "label": "TIP UP / DOWN",
+    "tab": "nose",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "nose/nose-point-up.target"
+    ],
+    "negative": [
+      "nose/nose-point-down.target"
+    ]
+  },
+  {
+    "key": "mouthWidth",
+    "label": "MOUTH WIDTH",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "mouthFullness",
+    "label": "MOUTH PROJECTION",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-scale-depth-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-scale-depth-decr.target"
+    ]
+  },
+  {
+    "key": "upperLip",
+    "label": "UPPER LIP VOLUME",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-upperlip-volume-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-upperlip-volume-decr.target"
+    ]
+  },
+  {
+    "key": "lowerLip",
+    "label": "LOWER LIP VOLUME",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-lowerlip-volume-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-lowerlip-volume-decr.target"
+    ]
+  },
+  {
+    "key": "lipHeight",
+    "label": "LIP HEIGHT",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-scale-vert-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-scale-vert-decr.target"
+    ]
+  },
+  {
+    "key": "smile",
+    "label": "SMILE / FROWN",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-angles-up.target"
+    ],
+    "negative": [
+      "mouth/mouth-angles-down.target"
+    ]
+  },
+  {
+    "key": "cupidsBow",
+    "label": "CUPID'S BOW",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-cupidsbow-incr.target"
+    ],
+    "negative": [
+      "mouth/mouth-cupidsbow-decr.target"
+    ]
+  },
+  {
+    "key": "laughLines",
+    "label": "LAUGH LINES",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "mouth/mouth-laugh-lines-out.target"
+    ],
+    "negative": [
+      "mouth/mouth-laugh-lines-in.target"
+    ]
+  },
+  {
+    "key": "earSize",
+    "label": "EAR SIZE",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "ears/l-ear-scale-incr.target",
+      "ears/r-ear-scale-incr.target"
+    ],
+    "negative": [
+      "ears/l-ear-scale-decr.target",
+      "ears/r-ear-scale-decr.target"
+    ]
+  },
+  {
+    "key": "earStick",
+    "label": "EAR PROMINENCE",
+    "tab": "face",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "ears/l-ear-wing-incr.target",
+      "ears/r-ear-wing-incr.target"
+    ],
+    "negative": [
+      "ears/l-ear-wing-decr.target",
+      "ears/r-ear-wing-decr.target"
+    ]
+  },
+  {
+    "key": "neckWidth",
+    "label": "NECK WIDTH",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "neck/neck-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "neck/neck-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "shoulders",
+    "label": "SHOULDER V-SHAPE",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "torso/torso-vshape-incr.target"
+    ],
+    "negative": [
+      "torso/torso-vshape-decr.target"
+    ]
+  },
+  {
+    "key": "chest",
+    "label": "CHEST DEPTH",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "torso/torso-scale-depth-incr.target"
+    ],
+    "negative": [
+      "torso/torso-scale-depth-decr.target"
+    ]
+  },
+  {
+    "key": "torsoWidth",
+    "label": "TORSO WIDTH",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "torso/torso-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "torso/torso-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "stomach",
+    "label": "BELLY / TONE",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "stomach/stomach-tone-decr.target"
+    ],
+    "negative": [
+      "stomach/stomach-tone-incr.target"
+    ]
+  },
+  {
+    "key": "muscles",
+    "label": "TORSO MUSCLE",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "torso/torso-muscle-pectoral-incr.target",
+      "torso/torso-muscle-dorsi-incr.target"
+    ],
+    "negative": [
+      "torso/torso-muscle-pectoral-decr.target",
+      "torso/torso-muscle-dorsi-decr.target"
+    ]
+  },
+  {
+    "key": "armWidth",
+    "label": "ARM WIDTH",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "armslegs/l-upperarm-scale-horiz-incr.target",
+      "armslegs/r-upperarm-scale-horiz-incr.target",
+      "armslegs/l-lowerarm-scale-horiz-incr.target",
+      "armslegs/r-lowerarm-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "armslegs/l-upperarm-scale-horiz-decr.target",
+      "armslegs/r-upperarm-scale-horiz-decr.target",
+      "armslegs/l-lowerarm-scale-horiz-decr.target",
+      "armslegs/r-lowerarm-scale-horiz-decr.target"
+    ]
+  },
+  {
+    "key": "legWidth",
+    "label": "LEG WIDTH",
+    "tab": "body",
+    "min": -100,
+    "max": 100,
+    "positive": [
+      "armslegs/l-upperleg-scale-horiz-incr.target",
+      "armslegs/r-upperleg-scale-horiz-incr.target",
+      "armslegs/l-lowerleg-scale-horiz-incr.target",
+      "armslegs/r-lowerleg-scale-horiz-incr.target"
+    ],
+    "negative": [
+      "armslegs/l-upperleg-scale-horiz-decr.target",
+      "armslegs/r-upperleg-scale-horiz-decr.target",
+      "armslegs/l-lowerleg-scale-horiz-decr.target",
+      "armslegs/r-lowerleg-scale-horiz-decr.target"
+    ]
+  }
+]

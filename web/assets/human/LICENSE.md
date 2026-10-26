@@ -43,3 +43,35 @@ python3 tools/convert-human.py female
 Skin colors, facial color compositing, fabric, clothing and accessories are
 created locally by the game. All required runtime assets are served locally;
 nothing is downloaded at runtime.
+
+## Community hairstyles
+
+The `afro01`, `bob01`, `braid01`, `ponytail01`, `short01`, `short02` and
+`short04` sources carry the MakeHuman September 2020 CC0 dedication in their
+MHCLO headers. They were also distributed in the public-domain/Unlicense
+Humanizer asset collection:
+<https://github.com/RavinMaddHatter/Madhatters-Table-Top-RPG-Mini-Maker>.
+
+The `grump`, `long-bangs`, `long-waves` and `waves` sources declare **CC-BY**,
+with author **Elvaerwyn**, in their embedded MHCLO headers. They were retrieved
+from this asset mirror:
+<https://github.com/Ismail-Bzk/Synthetic_Face_Generator/tree/main/Hair2/makehuman_system_assets_cc0/hair>.
+The mirror directory name does not override those per-file license declarations.
+Attribution is therefore given to Elvaerwyn for these four hairstyles and their
+derived runtime meshes/textures. Changes include MHCLO fitting/packing, UV-seam
+preservation, skin-weight interpolation, and grayscale/alpha texture conversion.
+
+`tools/convert-hair.py` reproduces the generated runtime geometry packs offline:
+
+```bash
+python3 tools/convert-hair.py male
+python3 tools/convert-hair.py female
+```
+
+## Portrait references and generated likenesses
+
+The seven reference portraits and their derived textures, projected UVs,
+landmark measurements and fitted facial surfaces were supplied or created for
+this specific character-recreation task. They are not claimed to be CC0. The
+original development inputs are preserved under
+`tools/human-source/portrait-fitting/`; all browser runtime assets remain local.

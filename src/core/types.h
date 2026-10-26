@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -51,6 +52,7 @@ enum class ToiletAction { None, Sit, Shit, Piss };
 struct Appearance {
     bool male = true;
     int skin = 1;
+    int portrait = 0;
     int hair = 2;
     int hairColor = 0;
     int shirt = 0;
@@ -58,6 +60,17 @@ struct Appearance {
     int beard = 0;
     bool coat = false;
     bool sunglasses = false;
+    int eyeColor = 2;
+    int makeup = 0;
+    int lipColor = 0;
+    bool suit = false;
+    int tie = 0;
+    bool dress = false;
+    bool beret = false;
+    bool earrings = false;
+    bool necklace = false;
+    bool fur = false;
+    std::array<int, 51> morphs{};
 };
 
 struct Character {

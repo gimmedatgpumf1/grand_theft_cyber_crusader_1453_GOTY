@@ -18,7 +18,7 @@ export class InputController {
   bind() {
     window.addEventListener('keydown', event => {
       const textEntry = event.target instanceof HTMLTextAreaElement ||
-        (event.target instanceof HTMLInputElement && !['checkbox', 'button', 'submit'].includes(event.target.type));
+        (event.target instanceof HTMLInputElement && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(event.target.type));
       const selectShortcut = event.target instanceof HTMLSelectElement && ['Escape', 'KeyC'].includes(event.code);
       if (textEntry || (event.target instanceof HTMLSelectElement && !selectShortcut)) return;
       if (event.code === 'KeyH' && !event.repeat) {

@@ -26,11 +26,19 @@ const char* actionName(ToiletAction action) {
 
 Appearance cleanAppearance(Appearance appearance) {
     appearance.skin = std::clamp(appearance.skin, 0, 5);
-    appearance.hair = std::clamp(appearance.hair, 0, 4);
-    appearance.hairColor = std::clamp(appearance.hairColor, 0, 5);
+    appearance.portrait = std::clamp(appearance.portrait, 0, 7);
+    appearance.hair = std::clamp(appearance.hair, 0, 12);
+    appearance.hairColor = std::clamp(appearance.hairColor, 0, 8);
     appearance.shirt = std::clamp(appearance.shirt, 0, 6);
     appearance.pants = std::clamp(appearance.pants, 0, 3);
     appearance.beard = std::clamp(appearance.beard, 0, 2);
+    appearance.eyeColor = std::clamp(appearance.eyeColor, 0, 5);
+    appearance.makeup = std::clamp(appearance.makeup, 0, 4);
+    appearance.lipColor = std::clamp(appearance.lipColor, 0, 4);
+    appearance.tie = std::clamp(appearance.tie, 0, 5);
+    for (std::size_t i = 0; i < appearance.morphs.size(); ++i) {
+        appearance.morphs[i] = std::clamp(appearance.morphs[i], i < 3 ? 0 : -100, 100);
+    }
     return appearance;
 }
 
@@ -55,6 +63,7 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"toiletAction\":\"" << actionName(character.toiletAction) << "\""
         << ",\"male\":" << (character.appearance.male ? "true" : "false")
         << ",\"skin\":" << character.appearance.skin
+        << ",\"portrait\":" << character.appearance.portrait
         << ",\"hair\":" << character.appearance.hair
         << ",\"hairColor\":" << character.appearance.hairColor
         << ",\"shirt\":" << character.appearance.shirt
@@ -62,6 +71,22 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"beard\":" << character.appearance.beard
         << ",\"coat\":" << (character.appearance.coat ? "true" : "false")
         << ",\"sunglasses\":" << (character.appearance.sunglasses ? "true" : "false")
+        << ",\"eyeColor\":" << character.appearance.eyeColor
+        << ",\"makeup\":" << character.appearance.makeup
+        << ",\"lipColor\":" << character.appearance.lipColor
+        << ",\"suit\":" << (character.appearance.suit ? "true" : "false")
+        << ",\"tie\":" << character.appearance.tie
+        << ",\"dress\":" << (character.appearance.dress ? "true" : "false")
+        << ",\"beret\":" << (character.appearance.beret ? "true" : "false")
+        << ",\"earrings\":" << (character.appearance.earrings ? "true" : "false")
+        << ",\"necklace\":" << (character.appearance.necklace ? "true" : "false")
+        << ",\"fur\":" << (character.appearance.fur ? "true" : "false")
+        << ",\"morphs\":[";
+    for (std::size_t i = 0; i < character.appearance.morphs.size(); ++i) {
+        if (i != 0) out << ',';
+        out << character.appearance.morphs[i];
+    }
+    out << ']'
         << ",\"notice\":" << character.noticeSequence
         << ",\"noticeText\":\"" << jsonEscape(character.notice) << "\""
         << ",\"path\":[";

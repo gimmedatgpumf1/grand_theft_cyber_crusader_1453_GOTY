@@ -33,6 +33,17 @@ controller.pitch = 0.34;
 controller.rotate(0, 100);
 assert.ok(controller.pitch > 0.34, 'Mouse-down must pitch a TPS camera downward');
 
+controller.creatorActive = true;
+const creatorYaw = controller.yaw;
+controller.creatorOrbit(20, 0);
+assert.ok(controller.yaw < creatorYaw, 'Creator drag rotates around the citizen');
+controller.setCreatorFocus('face');
+const creatorDistance = controller.distance;
+controller.creatorZoom(-1);
+assert.ok(controller.distance < creatorDistance, 'Creator zoom-in reduces camera distance');
+assert.ok(controller.distance >= 0.38, 'Creator zoom remains above the near-plane safe distance');
+controller.creatorActive = false;
+
 controller.godFocus.set(0, 0, 0);
 controller.godDistance = 16;
 controller.pan(new Set(['KeyW']), 0.1);

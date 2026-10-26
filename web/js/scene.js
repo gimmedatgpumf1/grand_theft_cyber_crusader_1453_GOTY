@@ -67,13 +67,16 @@ export class GameScene {
     this.worldRoot = null;
     this.destinationLife = 0;
     this.addLights();
+    this.createStudio();
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
 
   addLights() {
+    this.worldLights = [];
     const hemisphere = new THREE.HemisphereLight('#c8e3c1', '#273125', 1.55);
     this.scene.add(hemisphere);
+    this.worldLights.push(hemisphere);
     const sun = new THREE.DirectionalLight('#fff1c7', 2.15);
     sun.position.set(-4, 11, 6);
     sun.castShadow = true;
@@ -86,9 +89,40 @@ export class GameScene {
     sun.shadow.camera.far = 30;
     sun.shadow.bias = -0.0007;
     this.scene.add(sun);
+    this.worldLights.push(sun);
     const sickly = new THREE.PointLight('#b7ff6a', 9, 9, 2);
     sickly.position.set(0, 2.8, -4.5);
     this.scene.add(sickly);
+    this.worldLights.push(sickly);
+  }
+
+  createStudio() {
+    this.baseFog = this.scene.fog;
+    this.studioRoot = new THREE.Group();
+    this.studioRoot.visible = false;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80),
+      new THREE.MeshStandardMaterial({ color: '#202824', roughness: 0.94 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.012;
+    floor.receiveShadow = true;
+    this.studioRoot.add(floor);
+    const ambient = new THREE.HemisphereLight('#f4f5ff', '#343b36', 1.2);
+    const key = new THREE.DirectionalLight('#ffffff', 2.1);
+    key.position.set(-3, 6, 5);
+    const fill = new THREE.DirectionalLight('#c9ddf2', 0.9);
+    fill.position.set(4, 3, 1);
+    const rim = new THREE.DirectionalLight('#ffffff', 1.1);
+    rim.position.set(0, 4, -5);
+    this.studioRoot.add(ambient, key, fill, rim);
+    this.scene.add(this.studioRoot);
+  }
+
+  setCreatorMode(active) {
+    if (this.worldRoot) this.worldRoot.visible = !active;
+    this.studioRoot.visible = active;
+    for (const light of this.worldLights) light.visible = !active;
+    this.scene.background.set(active ? '#111713' : '#111913');
+    this.scene.fog = active ? null : this.baseFog;
   }
 
   buildWorld(world) {
