@@ -64,12 +64,12 @@ export function addEyes(view, owned) {
     attach(rig.byName.head, eye, center);
     parts.push(eye);
     const colored = smallMesh(rig.byName.head, new THREE.SphereGeometry(1, 12, 8), iris, owned);
-    colored.scale.set(0.0045 * size, 0.0045 * size, 0.0016);
+    colored.scale.set(0.0054 * size, 0.0054 * size, 0.0016);
     colored.quaternion.copy(irisRotation);
     attach(rig.byName.head, colored, [center[0] + direction.x * 0.0100 * size,
       center[1] + direction.y * 0.0100 * size, center[2] + direction.z * 0.0100 * size]);
     const dark = smallMesh(rig.byName.head, new THREE.SphereGeometry(1, 10, 6), pupil, owned);
-    dark.scale.set(0.0019 * size, 0.0019 * size, 0.001);
+    dark.scale.set(0.0022 * size, 0.0022 * size, 0.001);
     dark.quaternion.copy(irisRotation);
     attach(rig.byName.head, dark, [center[0] + direction.x * 0.0114 * size,
       center[1] + direction.y * 0.0114 * size, center[2] + direction.z * 0.0114 * size]);
