@@ -20,25 +20,31 @@ async function openSession() {
   await page.waitForSelector('#creator:not(.hidden)');
   await page.locator('[data-creator-focus="face"]').click();
   await page.waitForTimeout(600);
-  return { browser, page, errors };
+  return { browser, page, errors, setupKey: '' };
 }
 
 async function render(session, candidates, keys) {
   for (const key of keys) {
     const candidate = candidates[key];
     if (!candidate) throw new Error(`Missing candidate ${key}`);
-    await session.page.locator(`[data-preset="${candidate.preset || key}"]`).click();
+    const fields = candidate.fields || {};
+    const setupKey = JSON.stringify([candidate.preset || key, fields]);
+    if (session.setupKey !== setupKey) {
+      await session.page.locator(`[data-preset="${candidate.preset || key}"]`).click();
+      await session.page.evaluate(fields => {
+        for (const [name, value] of Object.entries(fields)) {
+          const input = document.getElementById(`creator-${name}`);
+          if (!input) throw new Error(`Unknown appearance field ${name}`);
+          if (input.type === 'checkbox') input.checked = Boolean(value);
+          else input.value = String(value);
+        }
+        if (Object.keys(fields).length) {
+          document.querySelector('[data-appearance]').dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, fields);
+      session.setupKey = setupKey;
+    }
     await session.page.evaluate(candidate => {
-      const fields = candidate.fields || {};
-      for (const [name, value] of Object.entries(fields)) {
-        const input = document.getElementById(`creator-${name}`);
-        if (!input) throw new Error(`Unknown appearance field ${name}`);
-        if (input.type === 'checkbox') input.checked = Boolean(value);
-        else input.value = String(value);
-      }
-      if (Object.keys(fields).length) {
-        document.querySelector('[data-appearance]').dispatchEvent(new Event('change', { bubbles: true }));
-      }
       for (const [name, value] of Object.entries(candidate.morphs)) {
         const input = document.getElementById(`morph-${name}`);
         if (!input) throw new Error(`Unknown morph ${name}`);
