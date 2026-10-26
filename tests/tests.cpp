@@ -155,7 +155,7 @@ int main() {
         world.customizeCharacter(id, appearance);
         const auto customized = world.character(id);
         check(!customized.appearance.male && customized.appearance.skin == 5 &&
-              customized.appearance.hair == 8 && customized.appearance.shirt == 6 &&
+              customized.appearance.hair == 12 && customized.appearance.shirt == 6 &&
               customized.appearance.pants == 0 && customized.appearance.beard == 2 &&
               customized.appearance.hairColor == 8,
               "creator fields are validated and clamped");

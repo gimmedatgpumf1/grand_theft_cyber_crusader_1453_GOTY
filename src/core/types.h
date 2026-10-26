@@ -52,7 +52,6 @@ enum class ToiletAction { None, Sit, Shit, Piss };
 struct Appearance {
     bool male = true;
     int skin = 1;
-    int portrait = 0;
     int hair = 2;
     int hairColor = 0;
     int shirt = 0;
@@ -70,7 +69,7 @@ struct Appearance {
     bool earrings = false;
     bool necklace = false;
     bool fur = false;
-    std::array<int, 51> morphs{};
+    std::array<int, 128> morphs{};
 };
 
 struct Character {

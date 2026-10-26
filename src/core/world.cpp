@@ -26,7 +26,6 @@ const char* actionName(ToiletAction action) {
 
 Appearance cleanAppearance(Appearance appearance) {
     appearance.skin = std::clamp(appearance.skin, 0, 5);
-    appearance.portrait = std::clamp(appearance.portrait, 0, 7);
     appearance.hair = std::clamp(appearance.hair, 0, 12);
     appearance.hairColor = std::clamp(appearance.hairColor, 0, 8);
     appearance.shirt = std::clamp(appearance.shirt, 0, 6);
@@ -63,7 +62,6 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"toiletAction\":\"" << actionName(character.toiletAction) << "\""
         << ",\"male\":" << (character.appearance.male ? "true" : "false")
         << ",\"skin\":" << character.appearance.skin
-        << ",\"portrait\":" << character.appearance.portrait
         << ",\"hair\":" << character.appearance.hair
         << ",\"hairColor\":" << character.appearance.hairColor
         << ",\"shirt\":" << character.appearance.shirt

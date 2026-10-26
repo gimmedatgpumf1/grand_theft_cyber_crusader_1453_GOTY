@@ -19,10 +19,13 @@ python3 tools/fit-portraits.py
 python3 tools/update-portrait-presets.py
 ```
 
-The first command rewrites the fitted results, portrait textures and ignored
-`build/fit-*.png` diagnostics. The second merges facial morphs into
+The first command rewrites only the fitted slider results and ignored
+`build/fit-*.png` landmark diagnostics. It does not create character textures. The second merges facial morphs into
 `web/js/appearance.js` without discarding the excluded controls. No network
 access is needed when using these saved inputs.
 
 The reference portraits were supplied for this character-recreation task. Their
 presence here is not a CC0 dedication or a grant of additional rights.
+
+The browser never loads these reference portraits or derives likeness textures
+from them. Only general-purpose morph values are merged into the runtime presets.

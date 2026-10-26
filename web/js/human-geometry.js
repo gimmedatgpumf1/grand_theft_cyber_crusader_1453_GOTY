@@ -2,7 +2,6 @@ import * as THREE from './vendor/three.module.min.js';
 import { humanData } from './vendor/human-data.js';
 import { hairData } from './vendor/human-hair-data.js';
 import { MORPH_DEFS } from './morphs.js';
-import { projectPortraitUvs, filterPortraitFace } from './portrait-projection.js';
 
 function subset(base, indices, groups = null) {
   const geometry = new THREE.BufferGeometry();
@@ -46,6 +45,8 @@ function morphedHeadBounds(data, positions) {
     if (visited.has(index)) continue;
     visited.add(index);
     const offset = index * 3;
+    const rawY = positions[offset + 1] / data.scale - data.ground;
+    if (rawY < data.regions.head - 0.25) continue;
     min.x = Math.min(min.x, positions[offset]);
     min.y = Math.min(min.y, positions[offset + 1]);
     min.z = Math.min(min.z, positions[offset + 2]);
@@ -178,7 +179,7 @@ export function buildHumanGeometry(appearance) {
     const y = attribute.getY(i);
     const rawY = y / data.scale - data.ground;
     const hand = Math.abs(x) > data.regions.handX * data.scale && rawY < data.regions.handY;
-    if (rawY < data.regions.head && rawY > data.regions.boots && !hand) {
+    if (rawY < data.regions.collar && rawY > data.regions.boots && !hand) {
       const cloth = 0.008 + (rawY > data.regions.pants ?
         Math.sin(rawY * 11 + x * 38 + attribute.getZ(i) * 17) * 0.002 : 0);
       attribute.setXYZ(i, x + normals.getX(i) * cloth, y + normals.getY(i) * cloth,
@@ -188,8 +189,20 @@ export function buildHumanGeometry(appearance) {
   base.computeVertexNormals();
   const body = subset(base, data.bodyIndex, data.bodyGroups);
   const head = subset(base, data.headIndex);
-  projectPortraitUvs(head, appearance.portrait);
-  filterPortraitFace(head, appearance.portrait);
+  let scalp = null;
+  const capStyle = appearance.hair === 8 ? 0 : (({ 9: 3, 10: 3, 11: 5, 12: 6 })[appearance.hair] || appearance.hair);
+  const capIndices = capStyle > 0 ? data[`hair${capStyle}Index`] : null;
+  if (capIndices?.length) {
+    scalp = subset(base, capIndices).clone();
+    const scalpPositions = scalp.attributes.position;
+    const scalpNormals = scalp.attributes.normal;
+    for (let i = 0; i < scalpPositions.count; ++i) {
+      scalpPositions.setXYZ(i, scalpPositions.getX(i) + scalpNormals.getX(i) * 0.0024,
+        scalpPositions.getY(i) + scalpNormals.getY(i) * 0.0024,
+        scalpPositions.getZ(i) + scalpNormals.getZ(i) * 0.0024);
+    }
+    scalp.computeVertexNormals();
+  }
   let coat = null;
   if (appearance.coat) {
     coat = base.clone();
@@ -203,5 +216,5 @@ export function buildHumanGeometry(appearance) {
     coat.setIndex(new THREE.BufferAttribute(data.coatIndex, 1));
     coat.computeVertexNormals();
   }
-  return { data, body, head, coat, hair: hairGeometry(data, appearance, headBounds), eyes, headBounds };
+  return { data, body, head, scalp, coat, hair: hairGeometry(data, appearance, headBounds), eyes, headBounds };
 }

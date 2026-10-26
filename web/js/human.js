@@ -1,9 +1,8 @@
 import * as THREE from './vendor/three.module.min.js';
 import { humanData } from './vendor/human-data.js';
-import { PALETTES, PORTRAIT_KEYS, normalizeAppearance } from './appearance.js';
+import { PALETTES, normalizeAppearance } from './appearance.js';
 import { buildHumanGeometry } from './human-geometry.js';
 import { addEyes, addSunglasses, addShoes, addClothDetails, addAccessories } from './human-parts.js';
-import { portraitTexture, portraitFaceGeometry } from './portrait-projection.js';
 
 const maskCache = new Map();
 const tintCache = new Map();
@@ -90,14 +89,6 @@ function paintSkin(canvas, appearance) {
   context.globalCompositeOperation = 'source-over';
   context.fillStyle = PALETTES.skin[appearance.skin];
   context.fillRect(0, 0, size, size);
-  const portrait = PORTRAIT_KEYS[appearance.portrait];
-  if (portrait) {
-    const image = maskCache.get(`portrait-${portrait}`);
-    if (image?.complete && image.naturalWidth) {
-      context.drawImage(image, 0, 0, size, size);
-      return;
-    }
-  }
   for (let i = 0; i < 1700; ++i) {
     const x = (Math.sin(i * 91.731 + appearance.skin) * 0.5 + 0.5) * size;
     const y = (Math.sin(i * 37.117 + 4.2) * 0.5 + 0.5) * size;
@@ -212,8 +203,6 @@ function skinTexture(appearance) {
   };
   mask('lips', repaint);
   mask('eyelids', repaint);
-  const portrait = PORTRAIT_KEYS[appearance.portrait];
-  if (portrait) mask(`portrait-${portrait}`, repaint);
   repaint();
   return texture;
 }
@@ -302,25 +291,19 @@ export function createHuman(data) {
   const sleeve = appearance.coat || appearance.shirt % 2 === 0 ? (appearance.coat ? coat : shirt) : skin;
   const torsoMaterial = shirt.clone();
   const body = skinned(visual, geometries.body, [skin, shirt, sleeve, pants, boots, torsoMaterial], rig.skeleton, owned);
-  const headSkin = appearance.portrait ? skin.clone() : skin;
-  if (appearance.portrait) {
-    headSkin.map = portraitTexture(appearance.portrait);
-    owned.materials.add(headSkin);
-  }
-  const head = skinned(visual, geometries.head, headSkin, rig.skeleton, owned);
+  const head = skinned(visual, geometries.head, skin, rig.skeleton, owned);
   const headParts = [head];
-  const faceGeometry = portraitFaceGeometry(appearance.portrait);
-  if (faceGeometry) {
-    const face = new THREE.Mesh(faceGeometry, headSkin);
-    face.castShadow = true;
-    face.position.copy(new THREE.Vector3().applyMatrix4(rig.byName.head.userData.bindInverse));
-    rig.byName.head.add(face);
-    owned.geometries.add(faceGeometry);
-    headParts.push(face);
+  const hairBoost = [1.6, 2.2, 2.0, 2.0, 2.8, 2.1, 4.2, 3.4, 2.6][appearance.hairColor] || 1.6;
+  let scalp = null;
+  if (geometries.scalp) {
+    const scalpMaterial = surface(new THREE.Color(PALETTES.hairColor[appearance.hairColor]).multiplyScalar(Math.min(1.35, hairBoost * 0.5)),
+      { roughness: 0.9 });
+    scalp = skinned(visual, geometries.scalp, scalpMaterial, rig.skeleton, owned);
+    owned.materials.add(scalpMaterial);
+    headParts.push(scalp);
   }
   let hair = null;
   if (geometries.hair) {
-    const hairBoost = [1.6, 2.2, 2.0, 2.0, 2.8, 2.1, 4.2, 3.4, 2.6][appearance.hairColor] || 1.6;
     const hairMaterial = surface(new THREE.Color(PALETTES.hairColor[appearance.hairColor]).multiplyScalar(hairBoost), { roughness: 0.72, side: THREE.DoubleSide });
     hairMaterial.map = hairTexture(geometries.hair.userData.hairTexture);
     hairMaterial.alphaTest = 0.32;
@@ -330,7 +313,7 @@ export function createHuman(data) {
   }
   let coatMesh = null;
   if (geometries.coat) coatMesh = skinned(visual, geometries.coat, coat, rig.skeleton, owned);
-  const view = { group, visual, rig, body, head, hair, coatMesh, headParts, coatDetails: [], coatSkirt: null,
+  const view = { group, visual, rig, body, head, scalp, hair, coatMesh, headParts, coatDetails: [], coatSkirt: null,
     appearance, texture, owned, belt: null, eyeParts: [], sunglasses: [], torsoMaterial,
     data: geometries.data, eyes: geometries.eyes, headBounds: geometries.headBounds, extraHeadParts: [] };
   view.eyeParts = addEyes(view, owned);

@@ -356,5 +356,397 @@ export const MORPH_DEFS = [
     "tab": "body",
     "min": -100,
     "max": 100
+  },
+  {
+    "key": "cheekInner",
+    "label": "INNER CHEEKS",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "chinBones",
+    "label": "JAW BONES",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "jawDrop",
+    "label": "JAW DROP",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "prognathism",
+    "label": "JAW PROGNATHISM",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "chinTriangle",
+    "label": "TRIANGULAR CHIN",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "earLobe",
+    "label": "EAR LOBES",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "earFlap",
+    "label": "EAR FLAPS",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "earDepth",
+    "label": "EAR DEPTH",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "earHeight",
+    "label": "EAR HEIGHT",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "earRotation",
+    "label": "EAR ROTATION",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "earPointed",
+    "label": "POINTED EARS",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "earRound",
+    "label": "ROUND EARS",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "browDepth",
+    "label": "BROW PROJECTION",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeHeight2",
+    "label": "UPPER LID OPENING",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeHeight3",
+    "label": "LOWER LID OPENING",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "outerEyeCorner",
+    "label": "OUTER EYE CORNER",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeBagHeight",
+    "label": "EYE BAG HEIGHT",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeBagDepth",
+    "label": "EYE BAG DEPTH",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "upperEyelid",
+    "label": "UPPER EYELID FOLD",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyelidFold",
+    "label": "EYELID CURVATURE",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyelidAngle",
+    "label": "EYELID ANGLE",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeVertical",
+    "label": "EYE HEIGHT",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "eyeSocketDepth",
+    "label": "EYE SOCKET DEPTH",
+    "tab": "eyes",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "foreheadTemple",
+    "label": "TEMPLE WIDTH",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "foreheadSlope",
+    "label": "FOREHEAD SLOPE",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "foreheadNubian",
+    "label": "FOREHEAD CURVE",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "headOval",
+    "label": "OVAL HEAD",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "headDiamond",
+    "label": "DIAMOND HEAD",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "headSquare",
+    "label": "SQUARE HEAD",
+    "tab": "face",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "key": "headTriangle",
+    "label": "TRIANGLE / INVERTED",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "headBackDepth",
+    "label": "BACK OF HEAD",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "headAge",
+    "label": "FACIAL AGE DETAIL",
+    "tab": "face",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "cupidsBowWidth",
+    "label": "CUPID\u2019S BOW WIDTH",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "dimples",
+    "label": "DIMPLES",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "upperLipHeight",
+    "label": "UPPER LIP HEIGHT",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "lowerLipHeight",
+    "label": "LOWER LIP HEIGHT",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "upperLipWidth",
+    "label": "UPPER LIP WIDTH",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "lowerLipWidth",
+    "label": "LOWER LIP WIDTH",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "philtrum",
+    "label": "PHILTRUM",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "mouthVertical",
+    "label": "MOUTH HEIGHT",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "upperLipSides",
+    "label": "UPPER LIP CORNERS",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "lowerLipSides",
+    "label": "LOWER LIP CORNERS",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "upperLipMiddle",
+    "label": "UPPER LIP MIDDLE",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "lowerLipMiddle",
+    "label": "LOWER LIP MIDDLE",
+    "tab": "mouth",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseBase",
+    "label": "NOSE BASE HEIGHT",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseCurve",
+    "label": "NOSE CURVE",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseCompression",
+    "label": "NOSE COMPRESSION",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseGreek",
+    "label": "GREEK NOSE",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "nostrilAngle",
+    "label": "NOSTRIL ANGLE",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "septumAngle",
+    "label": "SEPTUM ANGLE",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseVolume",
+    "label": "NOSE VOLUME",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseRootWidth",
+    "label": "UPPER NOSE WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseMidWidth",
+    "label": "MID NOSE WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseLowerWidth",
+    "label": "LOWER NOSE WIDTH",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseVertical",
+    "label": "NOSE HEIGHT",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
+  },
+  {
+    "key": "noseShiftDepth",
+    "label": "NOSE SHIFT",
+    "tab": "nose",
+    "min": -100,
+    "max": 100
   }
 ];

@@ -68,10 +68,11 @@ python3 tools/convert-hair.py male
 python3 tools/convert-hair.py female
 ```
 
-## Portrait references and generated likenesses
+## Portrait fitting references
 
-The seven reference portraits and their derived textures, projected UVs,
-landmark measurements and fitted facial surfaces were supplied or created for
-this specific character-recreation task. They are not claimed to be CC0. The
-original development inputs are preserved under
-`tools/human-source/portrait-fitting/`; all browser runtime assets remain local.
+The seven reference portraits and their landmark measurements are development
+inputs under `tools/human-source/portrait-fitting/`. They are used only to fit
+and evaluate general-purpose geometry sliders. They are not browser assets and
+no portrait photograph, projected photograph, or photo-derived facial texture
+is included in the runtime. Their presence in the development inputs is not a
+CC0 dedication or a grant of additional rights.

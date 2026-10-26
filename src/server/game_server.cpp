@@ -234,7 +234,6 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         Appearance appearance = world_.character(id).appearance;
         appearance.male = message.boolAt("male", appearance.male);
         appearance.skin = static_cast<int>(message.numberAt("skin", appearance.skin));
-        appearance.portrait = static_cast<int>(message.numberAt("portrait", appearance.portrait));
         appearance.hair = static_cast<int>(message.numberAt("hair", appearance.hair));
         appearance.hairColor = static_cast<int>(message.numberAt("hairColor", appearance.hairColor));
         appearance.shirt = static_cast<int>(message.numberAt("shirt", appearance.shirt));

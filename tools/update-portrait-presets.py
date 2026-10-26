@@ -22,7 +22,7 @@ for key in fitted:
     text,count=re.subn(pattern,lambda match:match.group(1)+body+match.group(2),text,count=1,flags=re.S)
     if count!=1:raise RuntimeError((key,count))
     start=text.index(f'  {key}: {{')
-    portrait=text.index('    portrait:',start)
+    insertion=text.index('    morphs: face(',start)
     pose=f"    creatorYaw: {fitted[key]['camera'][1]:.8f},\n    creatorPitch: {fitted[key]['camera'][0]:.8f},\n    creatorRoll: {fitted[key]['camera'][2]:.8f},\n"
-    text=text[:portrait]+pose+text[portrait:]
+    text=text[:insertion]+pose+text[insertion:]
 path.write_text(text)

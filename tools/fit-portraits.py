@@ -10,8 +10,8 @@ REPO = Path(__file__).resolve().parents[1]
 WORK = REPO / 'tools/human-source/portrait-fitting'
 ROOT = REPO / 'tools/human-source'
 SPECS = json.loads((REPO / 'tools/human-morphs.json').read_text())
-REFS = json.loads(WORK / 'reference-landmarks.json'.read_text())
-CURRENT = json.loads(WORK / 'current-presets.json'.read_text())
+REFS = json.loads((WORK / 'reference-landmarks.json').read_text())
+CURRENT = json.loads((WORK / 'current-presets.json').read_text())
 CANON = np.array([list(map(float, line.split()[1:4])) for line in open(str(WORK / 'canonical_face_model.obj')) if line.startswith('v ')])
 KEY = {1,4,10,13,14,33,133,159,145,362,263,386,374,61,291,152,234,454,70,300,63,293,105,334,66,296,107,336,55,285,65,295,52,282,53,283,46,276,
        48,115,220,45,64,98,327,344,278,440,275,50,280,101,330,205,425,17,0,37,39,40,267,269,270,321,405,314,84,181,91,146}
@@ -139,12 +139,44 @@ for key,ref in REFS.items():
         q=shaped@rot.T
         s=math.exp(params[3])
         return np.column_stack((params[4]+s*q[:,0],params[5]-s*q[:,1]))
+    regular_weights=np.array([.45 if SPECS[index]['key']=='age' else 1.35 for index in SELECT])
     def residual(params):
         diff=(projected(params)-reference)*weights[:,None]
         prior=(params[6:]-initial)*.6
-        regular=params[6:]*np.array([.45 if SPECS[index]['key']=='age' else 1.35 for index in SELECT])
+        regular=params[6:]*regular_weights
         return np.r_[diff.ravel(),prior,regular]
-    result=least_squares(residual,x0,bounds=(lower,upper),loss='soft_l1',f_scale=4,max_nfev=280,x_scale='jac')
+    def jacobian(params, points=base, delta_values=deltas):
+        count=len(SELECT)
+        rot=Rotation.from_euler('xyz',params[:3]).as_matrix()
+        shaped=points.copy()
+        for j in range(count):
+            w=params[6+j]
+            shaped+=delta_values[j][1 if w>=0 else 0]*w
+        q=shaped@rot.T
+        scale=math.exp(params[3])
+        jac=np.zeros((2*len(ids)+2*count,6+count))
+        for axis in range(3):
+            epsilon=1e-5
+            angles=params[:3].copy();angles[axis]+=epsilon
+            plus=Rotation.from_euler('xyz',angles).as_matrix()
+            angles[axis]-=2*epsilon
+            minus=Rotation.from_euler('xyz',angles).as_matrix()
+            derivative=shaped@(plus-minus).T*(scale/(2*epsilon))
+            jac[0:2*len(ids):2,axis]=derivative[:,0]*weights
+            jac[1:2*len(ids):2,axis]=-derivative[:,1]*weights
+        jac[0:2*len(ids):2,3]=scale*q[:,0]*weights
+        jac[1:2*len(ids):2,3]=-scale*q[:,1]*weights
+        jac[0:2*len(ids):2,4]=weights
+        jac[1:2*len(ids):2,5]=weights
+        for j in range(count):
+            w=params[6+j]
+            derivative=delta_values[j][1 if w>=0 else 0]@rot.T*scale
+            jac[0:2*len(ids):2,6+j]=derivative[:,0]*weights
+            jac[1:2*len(ids):2,6+j]=-derivative[:,1]*weights
+            jac[2*len(ids)+j,6+j]=.6
+            jac[2*len(ids)+count+j,6+j]=regular_weights[j]
+        return jac
+    result=least_squares(residual,x0,jac=jacobian,bounds=(lower,upper),loss='soft_l1',f_scale=4,max_nfev=280,x_scale='jac')
     fit=projected(result.x)
     rmse=float(np.sqrt(np.mean(np.sum((fit-reference)**2,axis=1))))
     morphs={SPECS[index]['key']:int(round(result.x[6+j]*100)) for j,index in enumerate(SELECT) if abs(result.x[6+j])>.025}
@@ -159,78 +191,4 @@ for key,ref in REFS.items():
     cv2.putText(image,f'{key} RMSE {rmse:.2f}px',(20,35),cv2.FONT_HERSHEY_SIMPLEX,.8,(255,255,255),2)
     cv2.imwrite(str(REPO/'build'/f'fit-{key}.png'),image)
     print(key,'rmse',round(rmse,3),'morphs',morphs)
-WORK / 'fitted-presets.json'.write_text(json.dumps(OUTPUT,indent=2))
-
-SIZE = 1024
-for key,ref in REFS.items():
-    sex='male' if CURRENT[key]['male'] else 'female'
-    mesh=MESHES[sex]
-    fitted=OUTPUT[key]
-    shaped=FIXED[key].copy()
-    for j,index in enumerate(SELECT):
-        name=SPECS[index]['key']
-        weight=fitted['morphs'].get(name,0)/100
-        if not weight:continue
-        raw=mesh.raw_morph(SPECS[index]['positive' if weight>0 else 'negative'])
-        for vertex,delta in raw.items():shaped[vertex]+=delta*weight
-    center=(mesh.eye_l+mesh.eye_r)/2
-    rot=Rotation.from_euler('xyz',fitted['camera'][:3]).as_matrix()
-    q=(shaped-center)@rot.T
-    scale3=math.exp(fitted['camera'][3])
-    projected=np.column_stack((fitted['camera'][4]+scale3*q[:,0],fitted['camera'][5]-scale3*q[:,1]))
-    source_points=np.array([point[:2] for point in ref['points']],dtype=np.float32)
-    image=cv2.imread(str(WORK / 'references' / ref['file']))
-    image_scale=ref['width']/image.shape[1]
-    if image_scale!=1:image=cv2.resize(image,None,fx=image_scale,fy=image_scale,interpolation=cv2.INTER_CUBIC)
-    skin_samples=[]
-    for index in (50,280,101,330):
-        x,y=map(int,source_points[index])
-        patch=image[max(0,y-4):y+5,max(0,x-4):x+5]
-        if patch.size:skin_samples.append(np.median(patch.reshape(-1,3),axis=0))
-    skin=np.median(np.array(skin_samples),axis=0).astype(np.float32)
-    face_mask=np.zeros(image.shape[:2],dtype=np.uint8)
-    hull=cv2.convexHull(np.round(source_points).astype(np.int32))
-    cv2.fillConvexPoly(face_mask,hull,255,lineType=cv2.LINE_AA)
-    face_alpha=cv2.GaussianBlur(face_mask.astype(np.float32)/255,(0,0),2)[:,:,None]
-    image=np.clip(image.astype(np.float32)*face_alpha+skin[None,None,:]*(1-face_alpha),0,255).astype(np.uint8)
-    accum=np.zeros((SIZE,SIZE,3),dtype=np.float32)
-    weights=np.zeros((SIZE,SIZE),dtype=np.float32)
-    used=0
-    for face in mesh.faces:
-        if min(shaped[v,1] for v,u in face)<mesh.regions_head-.22:continue
-        for corner in range(1,len(face)-1):
-            triangle=[face[0],face[corner],face[corner+1]]
-            ids=[v for v,u in triangle]
-            normal=np.cross(q[ids[1]]-q[ids[0]],q[ids[2]]-q[ids[0]])
-            if normal[2]<=0:continue
-            src=projected[ids].astype(np.float32)
-            dst=np.array([[mesh.uvs[u][0]*SIZE,(1-mesh.uvs[u][1])*SIZE] for v,u in triangle],dtype=np.float32)
-            if abs(cv2.contourArea(src))<.03 or abs(cv2.contourArea(dst))<.08:continue
-            if max(cv2.arcLength(dst,True),cv2.arcLength(src,True))>800:continue
-            x,y,w,h=cv2.boundingRect(dst)
-            if w<1 or h<1 or w>400 or h>400:continue
-            if x<0 or y<0 or x+w>SIZE or y+h>SIZE:continue
-            shifted=dst-np.array([x,y],dtype=np.float32)
-            matrix=cv2.getAffineTransform(src,shifted)
-            warped=cv2.warpAffine(image,matrix,(w,h),flags=cv2.INTER_CUBIC,borderMode=cv2.BORDER_REFLECT101)
-            mask=np.zeros((h,w),dtype=np.float32)
-            cv2.fillConvexPoly(mask,np.round(shifted).astype(np.int32),1.0,lineType=cv2.LINE_AA)
-            accum[y:y+h,x:x+w]+=warped.astype(np.float32)*mask[:,:,None]
-            weights[y:y+h,x:x+w]+=mask
-            used+=1
-    covered=weights>0.001
-    detail=np.zeros_like(accum)
-    detail[covered]=accum[covered]/weights[covered,None]
-    detail=skin+(detail-skin)*.90
-    alpha=cv2.GaussianBlur(covered.astype(np.float32),(0,0),1.5)
-    alpha=np.clip(alpha*1.4,0,1)[:,:,None]
-    texture=np.clip(skin[None,None,:]*(1-alpha)+detail*alpha,0,255).astype(np.uint8)
-    cv2.imwrite(str(REPO/'web/assets/human'/f'portrait-{key}.png'),texture)
-    yy,xx=np.where(covered)
-    x0=max(0,int(xx.min())-15);x1=min(SIZE,int(xx.max())+15)
-    y0=max(0,int(yy.min())-15);y1=min(SIZE,int(yy.max())+15)
-    crop=texture[y0:y1,x0:x1]
-    factor=max(1,700//max(1,crop.shape[1]))
-    if factor>1:crop=cv2.resize(crop,None,fx=factor,fy=factor,interpolation=cv2.INTER_NEAREST)
-    cv2.imwrite(str(REPO/'build'/f'uv-{key}.png'),crop)
-    print('direct baked',key,'triangles',used,'coverage',round(float(covered.mean()),3))
+(WORK / 'fitted-presets.json').write_text(json.dumps(OUTPUT,indent=2))

@@ -1,6 +1,5 @@
 import * as THREE from './vendor/three.module.min.js';
 import { PALETTES } from './appearance.js';
-import { portraitTexture, projectPortraitUvs } from './portrait-projection.js';
 
 function surface(color, options = {}) {
   return new THREE.MeshStandardMaterial({
@@ -54,18 +53,14 @@ export function addEyes(view, owned) {
   const white = surface('#d8d5ca', { roughness: 0.32 });
   const iris = surface(appearance.sunglasses ? '#1c2328' : PALETTES.eyes[appearance.eyeColor], { roughness: 0.25 });
   const pupil = surface('#090c0d', { roughness: 0.2 });
-  const photo = appearance.portrait ? surface('#ffffff', { roughness: 0.48 }) : null;
-  if (photo) photo.map = portraitTexture(appearance.portrait);
   const parts = [];
-  const size = 1 + (appearance.morphs[17] || 0) * 0.0015;
+  const size = 1 + (appearance.morphs[16] || 0) * 0.0015;
   for (const side of ['L', 'R']) {
     const center = eyes[side];
     const geometry = new THREE.SphereGeometry(0.0110 * size, 20, 12);
-    if (photo) projectPortraitUvs(geometry, appearance.portrait, center);
-    const eye = smallMesh(rig.byName.head, geometry, photo || white, owned);
+    const eye = smallMesh(rig.byName.head, geometry, white, owned);
     attach(rig.byName.head, eye, center);
     parts.push(eye);
-    if (photo) continue;
     const colored = smallMesh(rig.byName.head, new THREE.SphereGeometry(1, 12, 8), iris, owned);
     colored.scale.set(0.0045 * size, 0.0045 * size, 0.0016);
     attach(rig.byName.head, colored, [center[0], center[1], center[2] + 0.0100 * size]);
@@ -155,7 +150,7 @@ export function addClothDetails(view, appearance, owned) {
   owned.materials.add(dark);
   view.belt = belt;
   const { data } = view;
-  const neckY = (data.regions.head + data.ground) * data.scale;
+  const neckY = (data.regions.collar + data.ground) * data.scale;
   const collarMaterial = surface(PALETTES.shirt[appearance.shirt], { side: THREE.DoubleSide, roughness: 0.84 });
   const collarHeight = appearance.beret ? 0.035 : 0.015;
   const neckline = loft([[neckY - 0.014, 0.085, 0.073], [neckY + collarHeight, 0.080, 0.070]], collarMaterial);

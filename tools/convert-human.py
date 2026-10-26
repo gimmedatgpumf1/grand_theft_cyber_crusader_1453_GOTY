@@ -75,6 +75,7 @@ HEAD_SHIFT = bone_point('eye.L')[1] - 7.28415
 BODY_SHIFT = bone_point('upperleg01.L')[1] - 0.4862
 REGIONS = {
     'head': bone_point('neck01')[1] - 0.07,
+    'collar': bone_point('neck01')[1] - 0.85,
     'pants': bone_point('root', 'tail')[1],
     'boots': bone_point('foot.L')[1] + 0.3978,
     'handX': abs(bone_point('wrist.L')[0]) - 0.03,
@@ -163,9 +164,10 @@ def face_weights(face):
 
 def category(face):
     x, y, z = centroid(face)
-    if y > REGIONS['head']:
-        return 'head'
     weights = face_weights(face)
+    neck = weights.get('neck01', 0) + weights.get('head', 0) + weights.get('jaw', 0)
+    if y > REGIONS['head'] or (y > REGIONS['collar'] and neck > 0.42):
+        return 'head'
     hand = weights.get('wrist.L', 0) + weights.get('wrist.R', 0)
     if hand > 0.53 or (abs(x) > REGIONS['handX'] and y < REGIONS['handY']):
         return 'skin'

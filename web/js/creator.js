@@ -2,7 +2,7 @@ import { DEFAULT_APPEARANCE, PRESETS, normalizeAppearance } from './appearance.j
 import { MORPH_DEFS } from './morphs.js';
 
 const byId = id => document.getElementById(id);
-const FIELDS = ['male', 'skin', 'portrait', 'hair', 'hairColor', 'shirt', 'pants', 'beard', 'coat', 'sunglasses',
+const FIELDS = ['male', 'skin', 'hair', 'hairColor', 'shirt', 'pants', 'beard', 'coat', 'sunglasses',
   'eyeColor', 'makeup', 'lipColor', 'suit', 'tie', 'dress', 'beret', 'earrings', 'necklace', 'fur'];
 
 export class CharacterCreator {
