@@ -23,6 +23,7 @@ STYLE_KEYS = {
     1: 'short01', 2: 'short02', 3: 'bob01', 4: 'grump',
     5: 'waves', 6: 'long-bangs', 7: 'short04', 8: 'short01',
     9: 'ponytail01', 10: 'braid01', 11: 'afro01', 12: 'long-waves',
+    13: 'wavy-bob', 14: 'curly-bob', 15: 'fifties-updo',
 }
 KEEP = {'root', 'spine03', 'spine02', 'spine01', 'neck01', 'head', 'jaw'}
 for side in ('L', 'R'):

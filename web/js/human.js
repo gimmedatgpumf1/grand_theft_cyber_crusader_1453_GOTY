@@ -49,6 +49,39 @@ function surface(color, options = {}) {
   });
 }
 
+function makeScalpMaterial(color, geometries, hairstyle) {
+  const material = surface(color, { roughness: 0.9 });
+  const uniforms = {
+    eyeY: { value: geometries.eyes.L[1] },
+    eyeZ: { value: geometries.eyes.L[2] },
+    hairline: { value: hairstyle === 5 || hairstyle === 13 ? 0.070 : 0.085 },
+    width: { value: Math.max(0.06, (geometries.headBounds.max.x - geometries.headBounds.min.x) * 0.5) },
+  };
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGtcScalp;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGtcScalp = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vGtcScalp;
+uniform float eyeY;
+uniform float eyeZ;
+uniform float hairline;
+uniform float width;`)
+      .replace('#include <clipping_planes_fragment>', `
+float front = smoothstep(eyeZ * 0.45, eyeZ * 0.95, vGtcScalp.z);
+float edge = eyeY + hairline + 0.018 * pow(clamp(abs(vGtcScalp.x) / width, 0.0, 1.5), 2.0);
+if (vGtcScalp.y < mix(-100.0, edge, front)) discard;
+#include <clipping_planes_fragment>`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+float strand = sin((vGtcScalp.x * 1.3 + vGtcScalp.z) * 540.0 + sin(vGtcScalp.y * 61.0) * 1.8);
+diffuseColor.rgb *= 0.94 + 0.06 * strand;`);
+  };
+  material.customProgramCacheKey = () => 'gtc-scalp-v1';
+  return material;
+}
+
 function mask(name, repaint) {
   if (maskCache.has(name)) {
     const cached = maskCache.get(name);
@@ -168,16 +201,20 @@ function paintSkin(canvas, appearance) {
     context.ellipse(mouth[0], mouth[1], 4, 27, 0, 0, Math.PI * 2);
     context.fill();
   }
-  context.globalAlpha = 0.60;
-  context.strokeStyle = PALETTES.hairColor[appearance.hairColor];
+  context.globalAlpha = appearance.makeup ? 0.76 : 0.70;
+  const browColor = appearance.hairColor >= 6 && appearance.hairColor <= 7 ? '#68503d' :
+    appearance.hairColor === 2 ? '#493326' :
+    appearance.hairColor === 8 || appearance.hairColor === 4 ? '#4e4b47' : PALETTES.hairColor[appearance.hairColor];
+  context.strokeStyle = browColor;
   context.lineCap = 'round';
   for (const side of ['L', 'R']) {
     const inner = point(`browInner${side}`);
     const outer = point(`browOuter${side}`);
-    context.lineWidth = appearance.makeup ? 2 : 3;
+    context.lineWidth = appearance.makeup === 4 ? 2 : appearance.makeup ? 3.2 : 3;
+    const arch = appearance.makeup === 4 ? 12 : appearance.makeup ? 8 : 4;
     context.beginPath();
     context.moveTo(...inner);
-    context.quadraticCurveTo((inner[0] + outer[0]) / 2 - 4, (inner[1] + outer[1]) / 2, ...outer);
+    context.quadraticCurveTo((inner[0] + outer[0]) / 2 - 4, (inner[1] + outer[1]) / 2 - arch, ...outer);
     context.stroke();
   }
   if (appearance.makeup === 4) {
@@ -296,8 +333,8 @@ export function createHuman(data) {
   const hairBoost = [1.6, 2.2, 2.0, 2.0, 2.8, 2.1, 4.2, 3.4, 2.6][appearance.hairColor] || 1.6;
   let scalp = null;
   if (geometries.scalp) {
-    const scalpMaterial = surface(new THREE.Color(PALETTES.hairColor[appearance.hairColor]).multiplyScalar(Math.min(1.35, hairBoost * 0.5)),
-      { roughness: 0.9 });
+    const scalpMaterial = makeScalpMaterial(
+      new THREE.Color(PALETTES.hairColor[appearance.hairColor]).multiplyScalar(Math.min(1.25, hairBoost * 0.5)), geometries, appearance.hair);
     scalp = skinned(visual, geometries.scalp, scalpMaterial, rig.skeleton, owned);
     owned.materials.add(scalpMaterial);
     headParts.push(scalp);

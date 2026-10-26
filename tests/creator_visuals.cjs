@@ -45,7 +45,13 @@ const { chromium } = require(path.join(root, '.cache/browser/node_modules/playwr
   });
   await page.waitForTimeout(700);
   const slider = await page.locator('#morph-noseWidth-value').textContent();
-  const result = { errors, slider, presets: keys };
+  await page.locator('[data-preset="marilyn"]').click();
+  await page.locator('[data-creator-focus="face"]').click();
+  await page.locator('[data-creator-tab="style"]').click();
+  await page.locator('#creator-hair').selectOption('15');
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: path.join(root, 'build', 'creator-updo.png') });
+  const result = { errors, slider, presets: keys, extraHair: [15] };
   fs.writeFileSync(path.join(root, 'build', 'creator-visuals.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
   await browser.close();

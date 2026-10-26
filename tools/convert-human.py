@@ -241,13 +241,14 @@ def bone_center(name, tail=False):
     definition = bone_defs[name]
     return joint(definition['tail' if tail else 'head'])
 
+eye_raw = {side: bone_center(f'eye.{side}') for side in ('L', 'R')}
 landmarks = {
     'eyeL': landmark(bone_center('eye.L', True)),
     'eyeR': landmark(bone_center('eye.R', True)),
-    'browInnerL': landmark(bone_center('oculi01.L', True)),
-    'browOuterL': landmark(bone_center('oculi02.L')),
-    'browInnerR': landmark(bone_center('oculi01.R', True)),
-    'browOuterR': landmark(bone_center('oculi02.R')),
+    'browInnerL': landmark((0.16, eye_raw['L'][1] + 0.46, eye_raw['L'][2] + 0.22)),
+    'browOuterL': landmark((0.55, eye_raw['L'][1] + 0.40, eye_raw['L'][2] + 0.05)),
+    'browInnerR': landmark((-0.16, eye_raw['R'][1] + 0.46, eye_raw['R'][2] + 0.22)),
+    'browOuterR': landmark((-0.55, eye_raw['R'][1] + 0.40, eye_raw['R'][2] + 0.05)),
     'mouth': landmark(bone_center('oris05')),
     'mouthL': landmark((0.34, 6.70 + HEAD_SHIFT, 1.49)),
     'mouthR': landmark((-0.34, 6.70 + HEAD_SHIFT, 1.49)),

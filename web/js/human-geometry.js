@@ -57,7 +57,7 @@ function morphedHeadBounds(data, positions) {
   return { min, max, center: min.clone().add(max).multiplyScalar(0.5) };
 }
 
-function hairGeometry(data, appearance, headBounds) {
+function hairGeometry(data, appearance, headBounds, eyes) {
   if (appearance.hair <= 0) return null;
   const pack = hairData(appearance.male);
   const style = pack.styles[appearance.hair];
@@ -146,6 +146,31 @@ function hairGeometry(data, appearance, headBounds) {
       if (positions[offset] > top) positions[offset] = top + (positions[offset] - top) * 0.48;
     }
   }
+  if (style.key === 'wavy-bob' || style.key === 'curly-bob') {
+    const center = headBounds.center;
+    const factor = style.key === 'wavy-bob' ? 0.84 : 0.90;
+    for (let vertex = 0; vertex < count; ++vertex) {
+      const offset = vertex * 3;
+      positions[offset] = center.x + (positions[offset] - center.x) * factor;
+      positions[offset + 2] = center.z + (positions[offset + 2] - center.z) * factor;
+    }
+  }
+  if (['long-waves', 'curly-bob', 'wavy-bob'].includes(style.key)) {
+    const lift = style.key === 'wavy-bob' ? 0.02 : 0.065;
+    for (let vertex = 0; vertex < count; ++vertex) {
+      const offset = vertex * 3;
+      const front = THREE.MathUtils.clamp((positions[offset + 2] - eyes.L[2] * 0.68) / (eyes.L[2] * 0.45), 0, 1);
+      const band = THREE.MathUtils.clamp(1 - Math.abs(positions[offset + 1] - eyes.L[1] - 0.025) / 0.075, 0, 1);
+      positions[offset + 1] += front * band * lift;
+      positions[offset + 2] -= front * band * 0.018;
+      if (style.key === 'wavy-bob') {
+        const side = THREE.MathUtils.clamp((Math.abs(positions[offset]) - 0.025) / 0.04, 0, 1);
+        const eyeBand = THREE.MathUtils.clamp(1 - Math.abs(positions[offset + 1] - eyes.L[1] - 0.005) / 0.055, 0, 1);
+        positions[offset + 1] += front * side * eyeBand * 0.025;
+        positions[offset + 2] -= front * side * eyeBand * 0.055;
+      }
+    }
+  }
   const hair = new THREE.BufferGeometry();
   hair.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   hair.setAttribute('uv', new THREE.BufferAttribute(pack[`${style.prefix}_uv`], 2));
@@ -190,7 +215,7 @@ export function buildHumanGeometry(appearance) {
   const body = subset(base, data.bodyIndex, data.bodyGroups);
   const head = subset(base, data.headIndex);
   let scalp = null;
-  const capStyle = appearance.hair === 8 ? 0 : (({ 9: 3, 10: 3, 11: 5, 12: 6 })[appearance.hair] || appearance.hair);
+  const capStyle = appearance.hair === 8 ? 0 : (({ 9: 3, 10: 3, 11: 5, 12: 6, 13: 5, 14: 6, 15: 5 })[appearance.hair] || appearance.hair);
   const capIndices = capStyle > 0 ? data[`hair${capStyle}Index`] : null;
   if (capIndices?.length) {
     scalp = subset(base, capIndices).clone();
@@ -216,5 +241,5 @@ export function buildHumanGeometry(appearance) {
     coat.setIndex(new THREE.BufferAttribute(data.coatIndex, 1));
     coat.computeVertexNormals();
   }
-  return { data, body, head, scalp, coat, hair: hairGeometry(data, appearance, headBounds), eyes, headBounds };
+  return { data, body, head, scalp, coat, hair: hairGeometry(data, appearance, headBounds, eyes), eyes, headBounds };
 }

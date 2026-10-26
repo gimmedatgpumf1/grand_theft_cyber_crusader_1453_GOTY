@@ -26,7 +26,7 @@ const char* actionName(ToiletAction action) {
 
 Appearance cleanAppearance(Appearance appearance) {
     appearance.skin = std::clamp(appearance.skin, 0, 5);
-    appearance.hair = std::clamp(appearance.hair, 0, 12);
+    appearance.hair = std::clamp(appearance.hair, 0, 15);
     appearance.hairColor = std::clamp(appearance.hairColor, 0, 8);
     appearance.shirt = std::clamp(appearance.shirt, 0, 6);
     appearance.pants = std::clamp(appearance.pants, 0, 3);

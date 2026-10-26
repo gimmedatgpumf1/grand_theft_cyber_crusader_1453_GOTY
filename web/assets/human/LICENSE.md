@@ -58,8 +58,13 @@ from this asset mirror:
 <https://github.com/Ismail-Bzk/Synthetic_Face_Generator/tree/main/Hair2/makehuman_system_assets_cc0/hair>.
 The mirror directory name does not override those per-file license declarations.
 Attribution is therefore given to Elvaerwyn for these four hairstyles and their
-derived runtime meshes/textures. Changes include MHCLO fitting/packing, UV-seam
+derived runtime meshes/textures. The `wavy-bob`, `curly-bob` and `fifties-updo`
+sources also declare **CC-BY** and author **Elvaerwyn** in their MHCLO headers;
+they came from the mirror's `Hair2/hair02_ccby/hair` directory. The same
+attribution and license notices apply to their derived meshes and textures.
+Changes to all seven Elvaerwyn sets include MHCLO fitting/packing, UV-seam
 preservation, skin-weight interpolation, and grayscale/alpha texture conversion.
+Source: <https://github.com/Ismail-Bzk/Synthetic_Face_Generator>.
 
 `tools/convert-hair.py` reproduces the generated runtime geometry packs offline:
 

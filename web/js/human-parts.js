@@ -151,9 +151,13 @@ export function addClothDetails(view, appearance, owned) {
   view.belt = belt;
   const { data } = view;
   const neckY = (data.regions.collar + data.ground) * data.scale;
-  const collarMaterial = surface(PALETTES.shirt[appearance.shirt], { side: THREE.DoubleSide, roughness: 0.84 });
-  const collarHeight = appearance.beret ? 0.035 : 0.015;
-  const neckline = loft([[neckY - 0.014, 0.085, 0.073], [neckY + collarHeight, 0.080, 0.070]], collarMaterial);
+  const collarMaterial = surface(appearance.suit ? '#dfe3df' : PALETTES.shirt[appearance.shirt],
+    { side: THREE.DoubleSide, roughness: 0.84 });
+  const collarHeight = appearance.beret ? 0.035 : appearance.suit ? 0.026 : 0.020;
+  const collarX = appearance.suit ? 0.112 : 0.094;
+  const collarZ = appearance.suit ? 0.095 : 0.082;
+  const neckline = loft([[neckY - 0.018, collarX, collarZ],
+    [neckY + collarHeight, collarX * 0.93, collarZ * 0.94]], collarMaterial);
   neckline.castShadow = true;
   attach(view.rig.byName.spine01, neckline, [0, 0, 0]);
   owned.geometries.add(neckline.geometry);

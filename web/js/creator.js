@@ -149,7 +149,7 @@ export class CharacterCreator {
     const random = maximum => Math.floor(Math.random() * (maximum + 1));
     const male = Math.random() < 0.5;
     Object.assign(values, {
-      male, skin: random(5), hair: random(8), hairColor: random(8), shirt: random(6), pants: random(3),
+      male, skin: random(5), hair: random(15), hairColor: random(8), shirt: random(6), pants: random(3),
       eyeColor: random(5), makeup: male ? 0 : random(4), lipColor: random(4), beard: male ? random(2) : 0,
       coat: Math.random() < 0.15, suit: Math.random() < 0.30, tie: random(5),
       earrings: Math.random() < 0.18, necklace: Math.random() < 0.15,
