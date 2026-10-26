@@ -105,5 +105,12 @@
 {"key":"noseMidWidth","label":"MID NOSE WIDTH","tab":"nose","min":-100,"max":100,"positive":["nose/nose-width2-incr.target"],"negative":["nose/nose-width2-decr.target"]},
 {"key":"noseLowerWidth","label":"LOWER NOSE WIDTH","tab":"nose","min":-100,"max":100,"positive":["nose/nose-width3-incr.target"],"negative":["nose/nose-width3-decr.target"]},
 {"key":"noseVertical","label":"NOSE HEIGHT","tab":"nose","min":-100,"max":100,"positive":["nose/nose-trans-up.target"],"negative":["nose/nose-trans-down.target"]},
-{"key":"noseShiftDepth","label":"NOSE SHIFT","tab":"nose","min":-100,"max":100,"positive":["nose/nose-trans-forward.target"],"negative":["nose/nose-trans-backward.target"]}
+{"key":"noseShiftDepth","label":"NOSE SHIFT","tab":"nose","min":-100,"max":100,"positive":["nose/nose-trans-forward.target"],"negative":["nose/nose-trans-backward.target"]},
+{"key":"obamaSculpt","label":"OBAMA SCULPT","tab":"face","min":0,"max":100,"positive":["custom/obama-{sex}.target"],"negative":[]},
+{"key":"marilynSculpt","label":"MARILYN SCULPT","tab":"face","min":0,"max":100,"positive":["custom/marilyn-{sex}.target"],"negative":[]},
+{"key":"taylorSculpt","label":"TAYLOR SCULPT","tab":"face","min":0,"max":100,"positive":["custom/taylor-{sex}.target"],"negative":[]},
+{"key":"xiSculpt","label":"XI SCULPT","tab":"face","min":0,"max":100,"positive":["custom/xi-{sex}.target"],"negative":[]},
+{"key":"putinSculpt","label":"PUTIN SCULPT","tab":"face","min":0,"max":100,"positive":["custom/putin-{sex}.target"],"negative":[]},
+{"key":"trumpSculpt","label":"TRUMP SCULPT","tab":"face","min":0,"max":100,"positive":["custom/trump-{sex}.target"],"negative":[]},
+{"key":"ibrahimSculpt","label":"IBRAHIM SCULPT","tab":"face","min":0,"max":100,"positive":["custom/ibrahim-{sex}.target"],"negative":[]}
 ]

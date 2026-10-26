@@ -175,7 +175,7 @@ def morph_delta(paths):
             macro = 'caucasian' if group_name == 'old' else group_name
             path = ROOT / 'targets' / 'macrodetails' / f"{macro}-{SEX}-{'old' if group_name == 'old' else 'young'}.target"
         else:
-            path = ROOT / 'targets' / relative
+            path = ROOT / 'targets' / relative.replace('{sex}', SEX)
         key = str(path)
         if key not in cache:
             cache[key] = read_target(path)

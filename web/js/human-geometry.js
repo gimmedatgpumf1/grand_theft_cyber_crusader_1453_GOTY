@@ -155,6 +155,19 @@ function hairGeometry(data, appearance, headBounds, eyes) {
       positions[offset + 2] = center.z + (positions[offset + 2] - center.z) * factor;
     }
   }
+  if (style.key === 'wavy-bob') {
+    const top = headBounds.max.y + 0.005;
+    for (let vertex = 0; vertex < count; ++vertex) {
+      const offset = vertex * 3;
+      if (positions[offset + 1] > top) positions[offset + 1] = top + (positions[offset + 1] - top) * 0.78;
+      const lower = THREE.MathUtils.clamp((eyes.L[1] - positions[offset + 1] + 0.02) / 0.16, 0, 1);
+      const front = THREE.MathUtils.clamp((positions[offset + 2] - eyes.L[2] * 0.65) / (eyes.L[2] * 0.5), 0, 1);
+      const side = THREE.MathUtils.clamp((Math.abs(positions[offset]) - 0.035) / 0.07, 0, 1);
+      const amount = lower * front * side;
+      positions[offset] += Math.sign(positions[offset]) * amount * 0.018;
+      positions[offset + 2] -= amount * 0.07;
+    }
+  }
   if (['long-waves', 'curly-bob', 'wavy-bob'].includes(style.key)) {
     const lift = style.key === 'wavy-bob' ? 0.02 : 0.065;
     for (let vertex = 0; vertex < count; ++vertex) {

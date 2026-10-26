@@ -292,7 +292,7 @@ def morph_delta(paths):
             filename = f'{macro_group}-{SEX}-' + ('old.target' if group == 'old' else 'young.target')
             path = ROOT / 'targets' / 'macrodetails' / filename
         else:
-            path = ROOT / 'targets' / relative
+            path = ROOT / 'targets' / relative.replace('{sex}', SEX)
         key = str(path)
         if key not in target_cache:
             target_cache[key] = read_target(path)

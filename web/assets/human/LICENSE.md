@@ -77,7 +77,12 @@ python3 tools/convert-hair.py female
 
 The seven reference portraits and their landmark measurements are development
 inputs under `tools/human-source/portrait-fitting/`. They are used only to fit
-and evaluate general-purpose geometry sliders. They are not browser assets and
-no portrait photograph, projected photograph, or photo-derived facial texture
-is included in the runtime. Their presence in the development inputs is not a
-CC0 dedication or a grant of additional rights.
+and evaluate geometry sliders and numeric sculpt targets. They are not browser
+assets and no portrait photograph, projected photograph, or photo-derived
+facial texture is included in the runtime. Their presence in the development
+inputs is not a CC0 dedication or a grant of additional rights.
+
+`tools/build-sculpts.py` fits the custom `.target` files under
+`tools/human-source/targets/custom/`. Those files contain only MakeHuman vertex
+indices and numeric geometry deltas: no pixels, image UVs, or encoded portraits.
+The opposite-sex placeholder targets are intentionally empty.

@@ -33,7 +33,7 @@ COORDINATE = [
     'mouthWidth', 'mouthVertical', 'smile', 'lipHeight', 'upperLip', 'lowerLip',
 ]
 EXCLUDE = {'neckWidth','shoulders','chest','torsoWidth','stomach','muscles','armWidth','legWidth','african','asian'}
-SELECT = [i for i, spec in enumerate(SPECS) if spec['key'] not in EXCLUDE]
+SELECT = [i for i, spec in enumerate(SPECS) if spec['key'] not in EXCLUDE and not spec['key'].endswith('Sculpt')]
 
 
 def read_target(path):
@@ -94,7 +94,7 @@ class Mesh:
                 filename = f"{macro}-{self.sex}-" + ('old.target' if group == 'old' else 'young.target')
                 path = ROOT / 'targets' / 'macrodetails' / filename
             else:
-                path = ROOT / 'targets' / relative
+                path = ROOT / 'targets' / relative.replace('{sex}', self.sex)
             key = str(path)
             if key not in self.cache:
                 self.cache[key] = read_target(path)

@@ -27,9 +27,19 @@ async function render(session, candidates, keys) {
   for (const key of keys) {
     const candidate = candidates[key];
     if (!candidate) throw new Error(`Missing candidate ${key}`);
-    await session.page.locator(`[data-preset="${key}"]`).click();
-    await session.page.evaluate(morphs => {
-      for (const [name, value] of Object.entries(morphs)) {
+    await session.page.locator(`[data-preset="${candidate.preset || key}"]`).click();
+    await session.page.evaluate(candidate => {
+      const fields = candidate.fields || {};
+      for (const [name, value] of Object.entries(fields)) {
+        const input = document.getElementById(`creator-${name}`);
+        if (!input) throw new Error(`Unknown appearance field ${name}`);
+        if (input.type === 'checkbox') input.checked = Boolean(value);
+        else input.value = String(value);
+      }
+      if (Object.keys(fields).length) {
+        document.querySelector('[data-appearance]').dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      for (const [name, value] of Object.entries(candidate.morphs)) {
         const input = document.getElementById(`morph-${name}`);
         if (!input) throw new Error(`Unknown morph ${name}`);
         input.value = String(value);
@@ -37,7 +47,7 @@ async function render(session, candidates, keys) {
       }
       const input = document.querySelector('[data-morph]');
       input.dispatchEvent(new Event('input', { bubbles: true }));
-    }, candidate.morphs);
+    }, candidate);
     await session.page.waitForTimeout(800);
     await session.page.screenshot({ path: path.join(root, 'build', `render-fit-${key}.png`) });
   }
