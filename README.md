@@ -33,15 +33,23 @@ actions as browser players.
 
 ## One-click Windows build
 
-Requirements: Visual Studio 2022 with **Desktop development with C++**.
+Requirements: Visual Studio 2022 with **Desktop development with C++**, including the
+**MSVC v143 C++ x64/x86 build tools** and a **Windows 10 or 11 SDK**.
 
 1. Double-click **`build.cmd`**.
 2. Double-click **`run.cmd`** to build (if needed) and start the game.
 
-The script finds an existing MSVC environment or locates VS2022 through `vswhere`, then runs
-`vcvars64.bat`. Output goes to `build/bin/gtc1453.exe`; objects go to `build/obj/`.
+The script always initializes the Visual Studio environment through `vcvars64.bat` (finding
+VS2022 through `vswhere` when necessary), then verifies that the C++ standard library compiles.
+This matters because merely having `cl.exe` on PATH does not configure its standard headers or
+libraries. Output goes to `build/bin/gtc1453.exe`; objects go to `build/obj/`.
 `ccache.exe` is used automatically when available on PATH. Without it, the build still works
 and prints a warning.
+
+If the preflight reports that `cmath` or the C++ standard library is unavailable, open
+**Visual Studio Installer → Modify → Desktop development with C++** and enable the two
+components listed above. No repository headers named `cmath`, `map`, or `string` are needed;
+those are supplied by MSVC.
 
 ## One-click Linux build
 
