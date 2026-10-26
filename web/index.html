@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" content="#111813">
+  <title>Grand Theft Cyber Crusader 1453 — Porcelain Protocol</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="game" aria-label="Grand Theft Cyber Crusader game">
+    <canvas id="world" aria-label="Low-poly multiplayer bathroom"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <header class="topbar hud-layer">
+      <div class="brand panel-cut">
+        <div class="brand-mark">1453</div>
+        <div>
+          <h1>GRAND THEFT<br><span>CYBER CRUSADER</span></h1>
+          <p>PORCELAIN PROTOCOL <b>// GOTY</b></p>
+        </div>
+      </div>
+      <div class="network panel-cut">
+        <span id="net-dot" class="status-dot"></span>
+        <div>
+          <strong id="net-status">DIALING THE VOID</strong>
+          <small><span id="population">0</span> CITIZENS · PORT 1453 · 20 TICK</small>
+        </div>
+      </div>
+      <button id="help-button" class="icon-button" title="Controls and identity (H)" aria-label="Open help">?</button>
+    </header>
+
+    <aside class="needs panel-cut hud-layer" aria-label="Character needs">
+      <div class="panel-heading">
+        <span>MEAT STATUS</span>
+        <small id="citizen-id">CITIZEN --</small>
+      </div>
+      <div class="identity-row">
+        <span id="identity-swatch"></span>
+        <strong id="citizen-name">CONNECTING...</strong>
+        <span id="ai-tag">HUMAN?</span>
+      </div>
+      <div class="need" id="bladder-need">
+        <div class="need-label"><span><i class="need-icon pee-icon">◒</i> BLADDER</span><b id="bladder-value">--%</b></div>
+        <div class="meter"><div id="bladder-bar" class="meter-fill bladder"></div><div class="meter-ticks"></div></div>
+        <small id="bladder-state">AWAITING BIOLOGY</small>
+      </div>
+      <div class="need" id="bowel-need">
+        <div class="need-label"><span><i class="need-icon poo-icon">●</i> BOWEL</span><b id="bowel-value">--%</b></div>
+        <div class="meter"><div id="bowel-bar" class="meter-fill bowel"></div><div class="meter-ticks"></div></div>
+        <small id="bowel-state">AWAITING BIOLOGY</small>
+      </div>
+      <div class="objective"><span>ACTIVE QUEST</span><strong>ANSWER NATURE'S<br>ENCRYPTED CALL</strong></div>
+    </aside>
+
+    <aside class="minimap panel-cut hud-layer" aria-label="Bathroom minimap">
+      <div class="panel-heading"><span>SECTOR 01</span><small>THE LAST BATHROOM</small></div>
+      <canvas id="minimap" width="220" height="156"></canvas>
+      <div class="map-legend"><span><i class="you-dot"></i> YOU</span><span><i class="npc-dot"></i> NPC</span><span>▣ THRONE</span></div>
+    </aside>
+
+    <section id="event-feed" class="event-feed hud-layer" aria-label="City event feed"></section>
+
+    <div id="crosshair" class="crosshair hud-layer hidden" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div id="piss-indicator" class="piss-indicator hud-layer hidden">LIQUID HERESY IN PROGRESS</div>
+
+    <div class="bottom-ui hud-layer">
+      <div id="context-prompt" class="context-prompt panel-cut">
+        <span class="context-key">E</span>
+        <div><strong id="context-title">FIND THE PORCELAIN THRONE</strong><small id="context-detail">CLICK TOILET TO AUTO-WALK · CLICK FLOOR TO PATH</small></div>
+      </div>
+      <div class="control-dock panel-cut">
+        <div class="mode-switch" role="group" aria-label="Camera mode">
+          <button data-mode="third" class="active"><kbd>1</kbd> THIRD</button>
+          <button data-mode="god"><kbd>2</kbd> GOD</button>
+          <button data-mode="first"><kbd>3</kbd> FIRST</button>
+        </div>
+        <div id="control-hint" class="control-hint"><b>WASD</b> MOVE <span>·</span> <b>RMB</b> ORBIT <span>·</span> <b>LMB</b> INTERACT <span>·</span> <b>SHIFT</b> SPRINT</div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hud-layer" role="status"></div>
+    <div id="loading" class="loading panel-cut">
+      <div class="loading-icon">♜</div>
+      <strong>ESTABLISHING CURSED CONNECTION</strong>
+      <small>Negotiating with the porcelain dimension...</small>
+      <div class="loading-line"><i></i></div>
+    </div>
+
+    <section id="help" class="modal hidden" aria-label="Controls and identity">
+      <div class="help-card panel-cut">
+        <div class="help-top"><span>FIELD MANUAL // REV. 1453</span><button id="close-help" aria-label="Close help">×</button></div>
+        <h2>HOW TO BE A<br><em>FUNCTIONING CITIZEN</em></h2>
+        <p class="help-intro">One bathroom. Zero privacy. Every browser is a separate citizen; the AI follows the same humiliating rules.</p>
+        <div class="help-grid">
+          <article><h3>01 // THIRD PERSON</h3><p><b>WASD</b> move · <b>Shift</b> sprint<br><b>Right-drag</b> orbit · wheel zoom<br><b>Left-click</b> floor / throne</p></article>
+          <article><h3>02 // GODVIEW</h3><p><b>WASD</b> pan camera, not citizen<br><b>Left-click</b> floor to pathfind<br><b>Click throne</b> to approach & use<br>Wheel zoom</p></article>
+          <article><h3>03 // FIRST PERSON</h3><p><b>Click view</b> capture mouse · <b>Esc</b> release<br><b>WASD</b> move · mouse look<br><b>Hold F</b> piss wherever justice is needed</p></article>
+          <article><h3>UNIVERSAL BIOLOGY</h3><p><b>E</b> approach / use toilet<br>Using the throne empties both needs.<br>You must be within <b>1.8 m</b>; clicking from afar auto-paths.</p></article>
+        </div>
+        <div class="identity-editor">
+          <label for="player-name">YOUR QUESTIONABLE IDENTITY</label>
+          <div><input id="player-name" maxlength="18" autocomplete="off" spellcheck="false"><button id="apply-name">UPDATE CITIZEN RECORD</button></div>
+        </div>
+        <small class="help-foot">H / ESC TO CLOSE · ALL ASSETS LOCAL · NO MICROTRANSACTIONS, ONLY MICRO-ORGANISMS</small>
+      </div>
+    </section>
+
+    <div id="fatal" class="fatal hidden"><strong>THE VOID REJECTED YOU</strong><p id="fatal-message"></p><button onclick="location.reload()">TRY AGAIN</button></div>
+    <noscript>This cursed bathroom requires JavaScript.</noscript>
+  </main>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

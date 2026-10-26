@@ -1,0 +1,15 @@
+# Local build products (persistent between builds, never committed)
+build/
+.cache/
+
+# Editor and OS noise
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
