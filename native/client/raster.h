@@ -32,13 +32,17 @@ struct NativeFrame {
     int width = 480;
     int height = 640;
     std::vector<unsigned char> rgb;
+    double uiScale = 1.0;
+    double uiOffsetX = 0.0;
+    double uiOffsetY = 0.0;
 
     bool save(const std::string& path) const;
+    void logicalUi(int logicalWidth = 480, int logicalHeight = 640);
     void rectangle(int x, int y, int w, int h, Color color);
 };
 
 struct Material {
-    enum class Kind { Solid, Skin, Hair, Floor, Puddle } kind = Kind::Solid;
+    enum class Kind { Solid, Skin, Hair, Floor, Puddle, Cloth, Textured } kind = Kind::Solid;
     Color color{0.5, 0.5, 0.5};
     Color second{0.5, 0.5, 0.5};
     const Texture* texture = nullptr;
@@ -48,6 +52,7 @@ struct Material {
     const Texture* normalOld = nullptr;
     double age = 25;
     double specular = 0.06;
+    bool unlit = false;
 };
 
 struct Camera {

@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
+#include <algorithm>
 #include <cctype>
 
 namespace gtc::native {
@@ -16,6 +17,8 @@ struct NativeWindow::Impl {
     double lastY = 320;
     std::vector<WindowEvent> events;
     std::vector<unsigned char> bgra;
+    int width = 480;
+    int height = 640;
 
     static int key(WPARAM value) {
         if (value >= 'A' && value <= 'Z') return static_cast<int>(value - 'A' + 'a');
@@ -39,7 +42,7 @@ struct NativeWindow::Impl {
     }
 
     void centerMouse() {
-        POINT point{240, 320};
+        POINT point{width / 2, height / 2};
         ClientToScreen(window, &point);
         SetCursorPos(point.x, point.y);
     }
@@ -63,8 +66,8 @@ struct NativeWindow::Impl {
                 moved.x = GET_X_LPARAM(lParam);
                 moved.y = GET_Y_LPARAM(lParam);
                 if (self->captured) {
-                    moved.dx = moved.x - 240;
-                    moved.dy = moved.y - 320;
+                    moved.dx = moved.x - self->width / 2;
+                    moved.dy = moved.y - self->height / 2;
                     if (moved.dx != 0 || moved.dy != 0) self->centerMouse();
                 } else {
                     moved.dx = moved.x - self->lastX;
@@ -92,6 +95,10 @@ struct NativeWindow::Impl {
                 self->events.push_back(wheel);
                 return 0;
             }
+            case WM_SIZE:
+                self->width = std::max(1, static_cast<int>(LOWORD(lParam)));
+                self->height = std::max(1, static_cast<int>(HIWORD(lParam)));
+                return 0;
             case WM_KILLFOCUS:
                 self->events.push_back({WindowEvent::Type::FocusLoss});
                 return 0;
@@ -128,14 +135,14 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         close();
         return false;
     }
-    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    constexpr DWORD style = WS_OVERLAPPEDWINDOW;
     RECT rectangle{0, 0, 480, 640};
     AdjustWindowRect(&rectangle, style, false);
     impl_->window = CreateWindowEx(0, description.lpszClassName, title.c_str(), style,
         CW_USEDEFAULT, CW_USEDEFAULT, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
         nullptr, nullptr, instance, impl_);
     if (!impl_->window) {
-        error = "Could not create the native 480x640 Win32 window";
+        error = "Could not create the resizable native Win32 window";
         close();
         return false;
     }
@@ -169,8 +176,14 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
 }
 
 bool NativeWindow::present(const NativeFrame& frame) {
-    if (!impl_ || !impl_->open || frame.width != 480 || frame.height != 640) return false;
-    for (std::size_t i = 0; i < 480U * 640U; ++i) {
+    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
+    RECT client{};
+    GetClientRect(impl_->window, &client);
+    impl_->width = std::max(1, static_cast<int>(client.right - client.left));
+    impl_->height = std::max(1, static_cast<int>(client.bottom - client.top));
+    const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
+    impl_->bgra.resize(count * 4);
+    for (std::size_t i = 0; i < count; ++i) {
         impl_->bgra[i * 4] = frame.rgb[i * 3 + 2];
         impl_->bgra[i * 4 + 1] = frame.rgb[i * 3 + 1];
         impl_->bgra[i * 4 + 2] = frame.rgb[i * 3];
@@ -178,13 +191,14 @@ bool NativeWindow::present(const NativeFrame& frame) {
     }
     BITMAPINFO bitmap{};
     bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap.bmiHeader.biWidth = 480;
-    bitmap.bmiHeader.biHeight = -640;
+    bitmap.bmiHeader.biWidth = frame.width;
+    bitmap.bmiHeader.biHeight = -frame.height;
     bitmap.bmiHeader.biPlanes = 1;
     bitmap.bmiHeader.biBitCount = 32;
     bitmap.bmiHeader.biCompression = BI_RGB;
     const HDC device = GetDC(impl_->window);
-    const int result = StretchDIBits(device, 0, 0, 480, 640, 0, 0, 480, 640,
+    SetStretchBltMode(device, HALFTONE);
+    const int result = StretchDIBits(device, 0, 0, impl_->width, impl_->height, 0, 0, frame.width, frame.height,
                                      impl_->bgra.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(impl_->window, device);
     return result != 0;
@@ -201,6 +215,11 @@ void NativeWindow::captureMouse(bool capture) {
         ReleaseCapture();
         ShowCursor(true);
     }
+}
+
+void NativeWindow::size(int& width, int& height) const {
+    width = impl_ ? impl_->width : 480;
+    height = impl_ ? impl_->height : 640;
 }
 
 bool NativeWindow::opened() const { return impl_ && impl_->open; }

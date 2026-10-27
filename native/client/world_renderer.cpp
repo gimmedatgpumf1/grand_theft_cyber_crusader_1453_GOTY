@@ -45,7 +45,9 @@ Vec3 unobstructedCamera(const ClientWorld& world, Vec3 target, Vec3 desired) {
 
 Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId, const ViewState& view) {
     Camera camera;
-    camera.fovDegrees = 50;
+    camera.width = std::max(1, view.width);
+    camera.height = std::max(1, view.height);
+    camera.fovDegrees = 62;
     const Character* local = state.character(localId);
     const Vec3 citizen = local ? Vec3{local->position.x, 0, local->position.y} : Vec3{};
     const float yaw = local ? view.yaw : 0.0F;
@@ -53,19 +55,19 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
         camera.position = {view.godX + std::sin(view.godYaw) * view.godDistance * 0.72,
                            view.godDistance * 0.82,
                            view.godZ + std::cos(view.godYaw) * view.godDistance * 0.72};
-        camera.target = {view.godX, 0.2, view.godZ};
-        camera.fovDegrees = 48;
+        camera.target = {view.godX, 0.0, view.godZ};
         return camera;
     }
     const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
     const Vec3 forward{std::sin(yaw) * cp, sp, std::cos(yaw) * cp};
     if (view.mode == ViewMode::FirstPerson) {
-        camera.position = citizen + Vec3{0, local && local->onToilet ? 1.23 : 1.58, 0} +
-                          Vec3{std::sin(yaw) * 0.16, 0, std::cos(yaw) * 0.16};
+        const bool seated = local && local->onToilet && !(local->appearance.male && local->toiletAction == ToiletAction::Piss);
+        camera.position = citizen + Vec3{0, seated ? 1.43 : 1.65, 0} +
+                          Vec3{std::sin(yaw) * 0.17, 0, std::cos(yaw) * 0.17};
         camera.target = camera.position + forward;
-        camera.fovDegrees = 65;
     } else {
-        camera.target = citizen + Vec3{0, 1.12, 0};
+        const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
+        camera.target = citizen + Vec3{0, 1.25, 0} + right * 0.42;
         camera.position = camera.target - forward * view.distance;
         camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
         camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
@@ -85,8 +87,8 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
 void drawFloor(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world) {
     Material floor;
     floor.kind = Material::Kind::Floor;
-    floor.color = colorHex("#38433e");
-    floor.second = colorHex("#303a36");
+    floor.color = colorHex("#83917a");
+    floor.second = colorHex("#31473e");
     floor.specular = 0.04;
     const double x = world.width * 0.5, z = world.depth * 0.5;
     const Vec3 a{-x, 0, -z}, b{x, 0, -z}, c{x, 0, z}, d{-x, 0, z};
@@ -194,25 +196,26 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     const Color panel = colorHex("#111815");
     const Color text = colorHex("#d7ff54");
     const Color muted = colorHex("#b4c5ba");
-    frame.rectangle(0, 0, frame.width, 60, panel);
+    frame.rectangle(0, 0, 480, 60, panel);
     drawText(frame, 8, 7, "GTC 1453", text);
     const char* mode = view.mode == ViewMode::FirstPerson ? "FPS" : view.mode == ViewMode::God ? "GOD" : "TPS";
     drawText(frame, 8, 34, std::string(mode) + " TICK " + std::to_string(state.tick), muted);
+    if (view.fps > 0) drawText(frame, 330, 34, std::to_string(static_cast<int>(view.fps + 0.5)) + " FPS", muted);
     if (local) {
         drawText(frame, 285, 7, local->name.substr(0, 10), text);
         const double range = distance(local->position, world.toiletFront);
         if (local->toiletAction != ToiletAction::None || range <= world.interactionRange) {
-            frame.rectangle(0, 478, frame.width, 34, panel);
+            frame.rectangle(0, 478, 480, 34, panel);
             drawText(frame, 8, 484, local->toiletAction != ToiletAction::None ? "E STAND" : "E TOILET", text);
         }
         if (!local->notice.empty()) {
-            frame.rectangle(0, 518, frame.width, 34, panel);
+            frame.rectangle(0, 518, 480, 34, panel);
             drawText(frame, 8, 524, local->notice.substr(0, 25), muted);
         } else if (!state.events.empty()) {
-            frame.rectangle(0, 518, frame.width, 34, panel);
+            frame.rectangle(0, 518, 480, 34, panel);
             drawText(frame, 8, 524, state.events.back().text.substr(0, 25), muted);
         }
-        frame.rectangle(0, 562, frame.width, 78, panel);
+        frame.rectangle(0, 562, 480, 78, panel);
         drawText(frame, 8, 571, "BLADDER " + std::to_string(static_cast<int>(local->needs.bladder)), text);
         drawText(frame, 250, 571, "BOWEL " + std::to_string(static_cast<int>(local->needs.bowel)), text);
         frame.rectangle(8, 607, 210, 14, colorHex("#29332d"));
@@ -232,6 +235,7 @@ bool WorldRenderer::load(const std::string& root, std::string& error) {
     root_ = root;
     if (!male_.loadRuntime(root, true, error) || !female_.loadRuntime(root, false, error)) return false;
     if (!maleHair_.load(root, male_, error) || !femaleHair_.load(root, female_, error)) return false;
+    humanCache_.clear();
     ready_ = true;
     return true;
 }
@@ -252,7 +256,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         return false;
     }
     const Camera camera = makeCamera(world, state, localId, view);
-    Rasterizer rasterizer(480, 640, colorHex("#17231f"), camera.focal());
+    Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal());
     drawFloor(rasterizer, camera, world);
     if (view.highlightToilet) {
         Material highlight;
@@ -267,10 +271,11 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         const HumanModel& model = character.appearance.male ? male_ : female_;
         const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
         const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
-        drawHuman(rasterizer, camera, model, hair, character, root_, state.tick, hideHead);
+        drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
         drawPissing(rasterizer, camera, character);
     }
     frame = rasterizer.finish();
+    frame.logicalUi();
     drawHud(frame, world, state, localId, view);
     return true;
 }

@@ -53,6 +53,9 @@ public:
             std::cerr << error << '\n';
             return 1;
         }
+        window_.size(view_.width, view_.height);
+        mouseX_ = view_.width * 0.5;
+        mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;
         view_.pitch = -0.34F;
         using Clock = std::chrono::steady_clock;
@@ -62,7 +65,9 @@ public:
         bool running = true;
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
-            const float dt = std::min(0.05F, std::max(0.001F, std::chrono::duration<float>(now - previous).count()));
+            const float elapsed = std::max(0.0001F, std::chrono::duration<float>(now - previous).count());
+            const float dt = std::min(0.05F, elapsed);
+            view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
@@ -70,6 +75,7 @@ public:
             }
             std::vector<WindowEvent> events;
             if (!window_.poll(events)) break;
+            window_.size(view_.width, view_.height);
             for (const WindowEvent& event : events) {
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
@@ -81,10 +87,13 @@ public:
             }
             updateHighlight();
             NativeFrame frame;
+            const auto renderStart = Clock::now();
             if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, frame, error)) {
                 std::cerr << error << '\n';
                 return 1;
             }
+            const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
+            view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
             drawOverlay(frame);
             if (screenshot_) {
                 std::filesystem::create_directories("build/native-client");
@@ -95,7 +104,7 @@ public:
                 std::cerr << "Native window presentation failed\n";
                 return 1;
             }
-            nextFrame += std::chrono::milliseconds(33);
+            nextFrame += std::chrono::milliseconds(16);
             std::this_thread::sleep_until(nextFrame);
             if (Clock::now() - nextFrame > std::chrono::milliseconds(250)) nextFrame = Clock::now();
         }
@@ -189,8 +198,8 @@ private:
         const Vec3 forward = normalized(camera.target - camera.position);
         const Vec3 right = normalized(cross(forward, camera.up));
         const Vec3 vertical = normalized(cross(right, forward));
-        const Vec3 direction = normalized(forward + right * ((x - 240) / camera.focal()) +
-                                          vertical * ((240 - y) / camera.focal()));
+        const Vec3 direction = normalized(forward + right * ((x - view_.width * 0.5) / camera.focal()) +
+                                          vertical * ((view_.height * 0.5 - y) / camera.focal()));
         if (direction.y >= -1e-6) return false;
         const Vec3 hit = camera.position + direction * (-camera.position.y / direction.y);
         point = {static_cast<float>(std::clamp(hit.x, -8.7, 8.7)),
@@ -202,16 +211,17 @@ private:
         const Camera camera = makeViewCamera(client_.world(), client_.state(), client_.playerId(), view_);
         const Vec3 point = camera.view({client_.world().toilet.x, 0.72, client_.world().toilet.y});
         if (point.z <= 0.05) return false;
-        const double sx = 240 + camera.focal() * point.x / point.z;
-        const double sy = 320 - camera.focal() * point.y / point.z;
-        return std::hypot(sx - x, sy - y) <= 75;
+        const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
+        const double sy = view_.height * 0.5 - camera.focal() * point.y / point.z;
+        const double scale = std::min(view_.width / 480.0, view_.height / 640.0);
+        return std::hypot(sx - x, sy - y) <= 75 * scale;
     }
 
     void updateHighlight() {
         const Character* citizen = local();
         view_.highlightToilet = citizen &&
             distance(citizen->position, client_.world().toiletFront) <= client_.world().interactionRange &&
-            toiletHit(captured_ ? 240 : mouseX_, captured_ ? 320 : mouseY_);
+            toiletHit(captured_ ? view_.width * 0.5 : mouseX_, captured_ ? view_.height * 0.5 : mouseY_);
     }
 
     void handle(const WindowEvent& event) {
@@ -242,9 +252,12 @@ private:
             mouseY_ = event.y;
             if (event.button != 1) return;
             if (overlay_ == Overlay::Wheel) {
-                if (std::hypot(event.x - 240, event.y - 210) < 88) toiletChoice(1);
-                else if (std::hypot(event.x - 140, event.y - 405) < 88) toiletChoice(2);
-                else if (std::hypot(event.x - 340, event.y - 405) < 88) toiletChoice(3);
+                const double scale = std::min(view_.width / 480.0, view_.height / 640.0);
+                const double x = (event.x - (view_.width - 480 * scale) * 0.5) / scale;
+                const double y = (event.y - (view_.height - 640 * scale) * 0.5) / scale;
+                if (std::hypot(x - 240, y - 210) < 88) toiletChoice(1);
+                else if (std::hypot(x - 140, y - 405) < 88) toiletChoice(2);
+                else if (std::hypot(x - 340, y - 405) < 88) toiletChoice(3);
                 return;
             }
             if (overlay_ != Overlay::None) return;
@@ -257,7 +270,7 @@ private:
             } else if (!captured_) {
                 window_.captureMouse(true);
                 captured_ = true;
-            } else if (toiletHit(240, 320)) {
+            } else if (toiletHit(view_.width * 0.5, view_.height * 0.5)) {
                 interact();
             }
             return;

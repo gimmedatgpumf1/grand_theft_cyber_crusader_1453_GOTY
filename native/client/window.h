@@ -43,6 +43,7 @@ public:
     bool poll(std::vector<WindowEvent>& events);
     bool present(const NativeFrame& frame);
     void captureMouse(bool capture);
+    void size(int& width, int& height) const;
     bool opened() const;
 
 private:

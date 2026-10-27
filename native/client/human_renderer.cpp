@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <unordered_map>
 
 namespace gtc::native {
@@ -110,6 +111,27 @@ Vec3 rotateWorld(Vec3 point, float yaw) {
     return {c * point.x + s * point.z, point.y, -s * point.x + c * point.z};
 }
 
+const Texture& agedSkinTexture(const std::string& root, const std::string& sex, int age, bool normal) {
+    const double old = std::clamp((age - 24) / 58.0, 0.0, 1.0);
+    const double blend = old * old * (3 - 2 * old) * (normal ? 1.0 : 0.94);
+    const std::string key = root + sex + std::to_string(age) + (normal ? "normal" : "detail");
+    static std::map<std::string, Texture> cache;
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+    const std::string base = root + "/web/assets/human/skin-" + sex;
+    const Texture& young = loadTexture(base + (normal ? "-young-normal.png" : "-young-detail.jpg"));
+    const Texture& aged = loadTexture(base + (normal ? "-old-normal.png" : "-old-detail.jpg"));
+    if (young.width != aged.width || young.height != aged.height || young.pixels.empty()) return young;
+    Texture result;
+    result.width = young.width;
+    result.height = young.height;
+    result.pixels.resize(young.pixels.size());
+    for (std::size_t i = 0; i < result.pixels.size(); ++i) {
+        result.pixels[i] = static_cast<unsigned char>(std::lround(young.pixels[i] * (1 - blend) + aged.pixels[i] * blend));
+    }
+    return cache.emplace(key, std::move(result)).first->second;
+}
+
 Material skinMaterial(const HumanModel& model, const Character& character, const std::string& root,
                       const std::vector<double>& morphs) {
     static const char* colors[] = {"#f0c8a8", "#d9a17d", "#b97c58", "#8a573e", "#714a38", "#e5b894"};
@@ -118,17 +140,17 @@ Material skinMaterial(const HumanModel& model, const Character& character, const
     material.color = colorHex(colors[std::clamp(character.appearance.skin, 0, 5)]);
     material.specular = 0.035;
     const std::string sex = model.male ? "male" : "female";
-    material.young = &loadTexture(root + "/web/assets/human/skin-" + sex + "-young-detail.jpg");
-    material.old = &loadTexture(root + "/web/assets/human/skin-" + sex + "-old-detail.jpg");
-    material.normalYoung = &loadTexture(root + "/web/assets/human/skin-" + sex + "-young-normal.png");
-    material.normalOld = &loadTexture(root + "/web/assets/human/skin-" + sex + "-old-normal.png");
-    const int age = model.specIndex("age");
-    material.age = age >= 0 && static_cast<std::size_t>(age) < morphs.size() ? morphs[age] : 25;
+    const int ageIndex = model.specIndex("age");
+    const int age = ageIndex >= 0 && static_cast<std::size_t>(ageIndex) < morphs.size() ?
+        static_cast<int>(morphs[ageIndex]) : 25;
+    material.texture = &agedSkinTexture(root, sex, age, false);
+    material.normalYoung = &agedSkinTexture(root, sex, age, true);
+    material.age = age;
     return material;
 }
 
 Color hairColor(int index) {
-    static const char* colors[] = {"#24201e", "#493226", "#75604a", "#b5a075", "#697078",
+    static const char* colors[] = {"#171a1c", "#3b281d", "#75604a", "#b5a075", "#5b6268",
                                    "#69362c", "#e5d5aa", "#d2b477", "#a9adb0"};
     return colorHex(colors[std::clamp(index, 0, 8)]);
 }
@@ -198,12 +220,18 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
 } // namespace
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
-               const HairLibrary& hair, const Character& character, const std::string& root,
-               std::uint64_t tick, bool hideHead) {
-    std::vector<int> ids(model.vertices.size());
-    for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
+               const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
+               const std::string& root, std::uint64_t tick, bool hideHead) {
     std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
-    const std::vector<Vec3> rest = model.shape(ids, morphs);
+    if (!cache.valid || cache.male != character.appearance.male || cache.morphs != character.appearance.morphs) {
+        std::vector<int> ids(model.vertices.size());
+        for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
+        cache.rest = model.shape(ids, morphs);
+        cache.morphs = character.appearance.morphs;
+        cache.male = character.appearance.male;
+        cache.valid = true;
+    }
+    const std::vector<Vec3>& rest = cache.rest;
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     std::vector<Vec3> posed = rest;
     for (std::size_t index = 0; index < posed.size(); ++index) {
@@ -230,14 +258,17 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     for (Vec3& normal : normals) normal = normalized(normal);
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     const Material skin = skinMaterial(model, character, root, morphs);
-    static const char* shirts[] = {"#b8cf4d", "#b64e43", "#397987", "#d8cdb5", "#67547c", "#386343", "#c68138"};
-    static const char* pants[] = {"#28323a", "#443c37", "#263b55", "#5b5144"};
+    static const char* shirts[] = {"#20262b", "#b3453c", "#56765f", "#c4b58d", "#334c6b", "#6b4c70", "#c7ccd1"};
+    static const char* pants[] = {"#1c2328", "#2d3338", "#4a453e", "#23384a"};
     Material shirt;
+    shirt.kind = Material::Kind::Cloth;
+    shirt.specular = 0.015;
     shirt.color = colorHex(shirts[std::clamp(character.appearance.shirt, 0, 6)]);
-    if (character.appearance.suit) shirt.color = colorHex("#25313a");
-    if (character.appearance.dress) shirt.color = colorHex("#79465f");
-    if (character.appearance.coat) shirt.color = colorHex("#455445");
+    if (character.appearance.suit) shirt.color = shirt.color * 1.18;
+    if (character.appearance.coat) shirt.color = shirt.color * 0.82;
     Material trousers;
+    trousers.kind = Material::Kind::Cloth;
+    trousers.specular = 0.015;
     trousers.color = colorHex(pants[std::clamp(character.appearance.pants, 0, 3)]);
     Material shoes;
     shoes.color = colorHex("#202421");
@@ -254,10 +285,10 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             }
             return result;
         };
-        rasterizer.triangle(vertices(0), skin);
         if (shirtTriangle(character, restCenter)) rasterizer.triangle(vertices(0.009), shirt);
         else if (!character.appearance.dress && pantsTriangle(restCenter)) rasterizer.triangle(vertices(0.008), trousers);
         else if (restCenter.y < 0.13) rasterizer.triangle(vertices(0.009), shoes);
+        else rasterizer.triangle(vertices(0), skin);
     }
     if (hideHead) return;
     const int headIndex = boneIndex(model, "head");
@@ -341,7 +372,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
     }
     if (character.appearance.tie > 0) {
-        static const char* ties[] = {"#7e3838", "#334f72", "#4d683c", "#79613a", "#69436e", "#30383d"};
+        static const char* ties[] = {"#20262b", "#243b60", "#7d2528", "#375a80", "#454c55", "#b2924a"};
         Material tie;
         tie.color = colorHex(ties[std::clamp(character.appearance.tie, 0, 5)]);
         drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);

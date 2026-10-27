@@ -14,13 +14,36 @@
 namespace gtc::native {
 namespace {
 
+constexpr int kColorLutSize = 4096;
+
+struct ColorLuts {
+    std::array<double, kColorLutSize> encode{};
+    std::array<double, kColorLutSize> decode{};
+    ColorLuts() {
+        for (int i = 0; i < kColorLutSize; ++i) {
+            const double value = i / static_cast<double>(kColorLutSize - 1);
+            decode[i] = value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+            encode[i] = value <= 0.0031308 ? value * 12.92 : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
+        }
+    }
+};
+
+const ColorLuts& colorLuts() {
+    static const ColorLuts luts;
+    return luts;
+}
+
 double toLinear(double value) {
+    if (value >= 0.0 && value <= 1.0) {
+        return colorLuts().decode[static_cast<int>(value * (kColorLutSize - 1) + 0.5)];
+    }
     return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
 }
 
 double toSrgb(double value) {
-    return value <= 0.0031308 ? value * 12.92 :
-        1.055 * std::pow(std::max(0.0, value), 1.0 / 2.4) - 0.055;
+    if (value <= 0.0) return 0.0;
+    if (value >= 1.0) return 1.0;
+    return colorLuts().encode[static_cast<int>(value * (kColorLutSize - 1) + 0.5)];
 }
 
 Color linear(Color value) { return {toLinear(value.r), toLinear(value.g), toLinear(value.b)}; }
@@ -101,12 +124,22 @@ bool NativeFrame::save(const std::string& path) const {
     return stbi_write_png(path.c_str(), width, height, 3, rgb.data(), width * 3) != 0;
 }
 
+void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
+    uiScale = std::min(width / static_cast<double>(logicalWidth), height / static_cast<double>(logicalHeight));
+    uiOffsetX = (width - logicalWidth * uiScale) * 0.5;
+    uiOffsetY = (height - logicalHeight * uiScale) * 0.5;
+}
+
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
-    for (int py = std::max(0, y); py < std::min(height, y + h); ++py) {
-        for (int px = std::max(0, x); px < std::min(width, x + w); ++px) {
+    const int left = static_cast<int>(std::lround(uiOffsetX + x * uiScale));
+    const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
+    const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
+    const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
+    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
+        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
             const std::size_t offset = (static_cast<std::size_t>(py) * width + px) * 3;
             rgb[offset] = static_cast<unsigned char>(r);
             rgb[offset + 1] = static_cast<unsigned char>(g);
@@ -157,6 +190,10 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         if (insideA) polygon[polygonSize++] = a;
         if (insideA != insideB) polygon[polygonSize++] = interpolate(a, b, (near - a.view.z) / (b.view.z - a.view.z));
     }
+    static const Vec3 key = normalized(Vec3{-0.45, 0.78, 0.55});
+    static const Vec3 fill = normalized(Vec3{0.65, 0.25, 0.35});
+    const double old = std::clamp((material.age - 24) / 58, 0.0, 1.0);
+    const double ageBlend = old * old * (3 - 2 * old);
     for (std::size_t face = 1; face + 1 < polygonSize; ++face) {
         const std::array<RenderVertex, 3> vertices = {polygon[0], polygon[face], polygon[face + 1]};
         std::array<Projected, 3> p;
@@ -172,12 +209,14 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const double area = (p[1].x - p[0].x) * (p[2].y - p[0].y) -
                             (p[1].y - p[0].y) * (p[2].x - p[0].x);
         if (std::abs(area) < 1e-9) continue;
+        const double inverseArea = 1.0 / area;
         const int minX = std::max(0, static_cast<int>(std::floor(std::min({p[0].x, p[1].x, p[2].x}))));
         const int maxX = std::min(width_ - 1, static_cast<int>(std::ceil(std::max({p[0].x, p[1].x, p[2].x}))));
         const int minY = std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y}))));
         const int maxY = std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y}))));
+        if (minX > maxX || minY > maxY) continue;
         Vec3 tangent{1, 0, 0}, bitangent{0, 1, 0};
-        if (material.kind == Material::Kind::Skin) {
+        if (material.kind == Material::Kind::Skin && material.normalYoung) {
             const Vec3 e1 = p[1].view - p[0].view, e2 = p[2].view - p[0].view;
             const double du1 = p[1].uv.x - p[0].uv.x, dv1 = p[1].uv.y - p[0].uv.y;
             const double du2 = p[2].uv.x - p[0].uv.x, dv2 = p[2].uv.y - p[0].uv.y;
@@ -187,53 +226,77 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 bitangent = normalized((e2 * du1 - e1 * du2) / denominator);
             }
         }
-        for (int y = minY; y <= maxY; ++y) for (int x = minX; x <= maxX; ++x) {
-            const double px = x + 0.5, py = y + 0.5;
-            const double w0 = ((p[1].x - px) * (p[2].y - py) - (p[1].y - py) * (p[2].x - px)) / area;
-            const double w1 = ((p[2].x - px) * (p[0].y - py) - (p[2].y - py) * (p[0].x - px)) / area;
-            const double w2 = 1 - w0 - w1;
-            if (w0 < -1e-7 || w1 < -1e-7 || w2 < -1e-7) continue;
-            const double inverse = w0 * p[0].inverseDepth + w1 * p[1].inverseDepth + w2 * p[2].inverseDepth;
-            if (inverse <= 1e-9) continue;
-            const double depth = 1 / inverse;
-            const std::size_t pixel = static_cast<std::size_t>(y) * width_ + x;
-            if (depth >= depth_[pixel]) continue;
-            const double a = w0 * p[0].inverseDepth / inverse;
-            const double b = w1 * p[1].inverseDepth / inverse;
-            const double c = w2 * p[2].inverseDepth / inverse;
-            const Vec2 uv{p[0].uv.x * a + p[1].uv.x * b + p[2].uv.x * c,
-                          p[0].uv.y * a + p[1].uv.y * b + p[2].uv.y * c};
-            if (material.kind == Material::Kind::Hair && alpha(material.texture, uv.x, uv.y) < 0.32) continue;
-            const Vec3 view = p[0].view * a + p[1].view * b + p[2].view * c;
-            Vec3 normal = normalized(p[0].normal * a + p[1].normal * b + p[2].normal * c);
-            Color base = material.color;
-            if (material.kind == Material::Kind::Floor) {
-                const int tile = (static_cast<int>(std::floor(p[0].source.x * a + p[1].source.x * b + p[2].source.x * c)) +
-                                  static_cast<int>(std::floor(p[0].source.z * a + p[1].source.z * b + p[2].source.z * c))) & 1;
-                base = tile ? material.second : material.color;
-            } else if (material.kind == Material::Kind::Skin) {
-                const double old = std::clamp((material.age - 24) / 58, 0.0, 1.0);
-                const double blend = old * old * (3 - 2 * old);
-                const Color detail = mix(linear(sample(material.young, uv.x, uv.y)),
-                                         linear(sample(material.old, uv.x, uv.y)), blend * 0.94);
-                base = {base.r * detail.r, base.g * detail.g, base.b * detail.b};
-                const Color nm = mix(sample(material.normalYoung, uv.x, uv.y),
-                                     sample(material.normalOld, uv.x, uv.y), blend);
-                normal = normalized(normal + tangent * ((nm.r * 2 - 1) * 0.32) +
-                                    bitangent * ((nm.g * 2 - 1) * 0.32));
-            } else if (material.kind == Material::Kind::Hair) {
-                const Color detail = linear(sample(material.texture, uv.x, uv.y));
-                base = {base.r * detail.r, base.g * detail.g, base.b * detail.b};
+        const double step0X = (p[1].y - p[2].y) * inverseArea;
+        const double step1X = (p[2].y - p[0].y) * inverseArea;
+        for (int y = minY; y <= maxY; ++y) {
+            const double py = y + 0.5;
+            const double px = minX + 0.5;
+            double w0 = ((p[1].x - px) * (p[2].y - py) - (p[1].y - py) * (p[2].x - px)) * inverseArea;
+            double w1 = ((p[2].x - px) * (p[0].y - py) - (p[2].y - py) * (p[0].x - px)) * inverseArea;
+            for (int x = minX; x <= maxX; ++x, w0 += step0X, w1 += step1X) {
+                const double w2 = 1 - w0 - w1;
+                if (w0 < -1e-7 || w1 < -1e-7 || w2 < -1e-7) continue;
+                const double inverse = w0 * p[0].inverseDepth + w1 * p[1].inverseDepth + w2 * p[2].inverseDepth;
+                if (inverse <= 1e-9) continue;
+                const double depth = 1 / inverse;
+                const std::size_t pixel = static_cast<std::size_t>(y) * width_ + x;
+                if (depth >= depth_[pixel]) continue;
+                const double a = w0 * p[0].inverseDepth * depth;
+                const double b = w1 * p[1].inverseDepth * depth;
+                const double c = w2 * p[2].inverseDepth * depth;
+                const Vec2 uv{p[0].uv.x * a + p[1].uv.x * b + p[2].uv.x * c,
+                              p[0].uv.y * a + p[1].uv.y * b + p[2].uv.y * c};
+                if (material.kind == Material::Kind::Hair && alpha(material.texture, uv.x, uv.y) < 0.32) continue;
+                const Vec3 view = p[0].view * a + p[1].view * b + p[2].view * c;
+                Vec3 normal = normalized(p[0].normal * a + p[1].normal * b + p[2].normal * c);
+                Color base = material.color;
+                if (material.kind == Material::Kind::Floor) {
+                    const double sx = p[0].source.x * a + p[1].source.x * b + p[2].source.x * c;
+                    const double sz = p[0].source.z * a + p[1].source.z * b + p[2].source.z * c;
+                    const int tile = (static_cast<int>(std::floor(sx)) + static_cast<int>(std::floor(sz))) & 1;
+                    base = tile ? material.second : material.color;
+                    const double fx = std::abs(sx - std::floor(sx));
+                    const double fz = std::abs(sz - std::floor(sz));
+                    if (std::min(fx, 1 - fx) < 0.025 || std::min(fz, 1 - fz) < 0.025) base = base * 0.43;
+                } else if (material.kind == Material::Kind::Skin) {
+                    Color detail;
+                    if (material.texture) {
+                        detail = linear(sample(material.texture, uv.x, uv.y));
+                    } else {
+                        detail = mix(linear(sample(material.young, uv.x, uv.y)),
+                                     linear(sample(material.old, uv.x, uv.y)), ageBlend * 0.94);
+                    }
+                    base = {base.r * detail.r, base.g * detail.g, base.b * detail.b};
+                    if (material.normalYoung) {
+                        const Color nm = material.normalOld ? mix(sample(material.normalYoung, uv.x, uv.y),
+                            sample(material.normalOld, uv.x, uv.y), ageBlend) : sample(material.normalYoung, uv.x, uv.y);
+                        normal = normalized(normal + tangent * ((nm.r * 2 - 1) * 0.32) +
+                                            bitangent * ((nm.g * 2 - 1) * 0.32));
+                    }
+                } else if (material.kind == Material::Kind::Hair || material.kind == Material::Kind::Textured) {
+                    const Color detail = linear(sample(material.texture, uv.x, uv.y));
+                    base = {base.r * detail.r, base.g * detail.g, base.b * detail.b};
+                } else if (material.kind == Material::Kind::Cloth) {
+                    const int weave = (static_cast<int>(std::floor(uv.x * 640)) +
+                                       static_cast<int>(std::floor(uv.y * 640))) & 3;
+                    base = base * (weave == 0 ? 1.055 : weave == 1 ? 0.955 : 1.0);
+                }
+                if (material.unlit) {
+                    pixels_[pixel] = base;
+                    depth_[pixel] = depth;
+                    continue;
+                }
+                if (dot(normal, view) > 0) normal = normal * -1.0;
+                const double diffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
+                                       0.24 * std::max(0.0, dot(normal, fill));
+                double specular = 0.0;
+                if (material.specular > 0.0) {
+                    const Vec3 toward = normalized(view * -1.0);
+                    specular = std::pow(std::max(0.0, dot(normal, normalized(key + toward))), 42) * material.specular;
+                }
+                pixels_[pixel] = base * diffuse + Color{specular, specular, specular};
+                depth_[pixel] = depth;
             }
-            const Vec3 toward = normalized(view * -1.0);
-            if (dot(normal, toward) < 0) normal = normal * -1.0;
-            const Vec3 key = normalized(Vec3{-0.45, 0.78, 0.55});
-            const Vec3 fill = normalized(Vec3{0.65, 0.25, 0.35});
-            const double diffuse = 0.30 + 0.72 * std::max(0.0, dot(normal, key)) +
-                                   0.20 * std::max(0.0, dot(normal, fill));
-            const double specular = std::pow(std::max(0.0, dot(normal, normalized(key + toward))), 42) * material.specular;
-            pixels_[pixel] = base * diffuse + Color{specular, specular, specular};
-            depth_[pixel] = depth;
         }
     }
 }

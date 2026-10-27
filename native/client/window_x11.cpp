@@ -59,6 +59,17 @@ struct XMotionEvent {
     Bool same_screen;
 };
 
+struct XConfigureEvent {
+    int type;
+    unsigned long serial;
+    Bool send_event;
+    Display* display;
+    Window event, window;
+    int x, y, width, height, border_width;
+    Window above;
+    Bool override_redirect;
+};
+
 struct XClientMessageEvent {
     int type;
     unsigned long serial;
@@ -75,6 +86,7 @@ union XEvent {
     XKeyEvent xkey;
     XButtonEvent xbutton;
     XMotionEvent xmotion;
+    XConfigureEvent xconfigure;
     XClientMessageEvent xclient;
     long pad[24];
 };
@@ -144,6 +156,8 @@ struct NativeWindow::Impl {
     double lastX = 240;
     double lastY = 320;
     std::vector<unsigned char> bgra;
+    int width = 480;
+    int height = 640;
 
     bool load() {
         api.library = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -256,10 +270,11 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
             moved.x = event.xmotion.x;
             moved.y = event.xmotion.y;
             if (impl_->captured) {
-                moved.dx = moved.x - 240;
-                moved.dy = moved.y - 320;
+                moved.dx = moved.x - impl_->width / 2;
+                moved.dy = moved.y - impl_->height / 2;
                 if (moved.dx != 0 || moved.dy != 0) {
-                    impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0, 240, 320);
+                    impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
+                                           impl_->width / 2, impl_->height / 2);
                 }
             } else {
                 moved.dx = moved.x - impl_->lastX;
@@ -281,6 +296,9 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
                 click.y = event.xbutton.y;
                 events.push_back(click);
             }
+        } else if (event.type == 22) {
+            impl_->width = std::max(1, event.xconfigure.width);
+            impl_->height = std::max(1, event.xconfigure.height);
         } else if (event.type == 9) {
             events.push_back({WindowEvent::Type::FocusLoss});
         } else if (event.type == 33 && event.xclient.data.l[0] == static_cast<long>(impl_->wmDelete)) {
@@ -295,8 +313,11 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
 }
 
 bool NativeWindow::present(const NativeFrame& frame) {
-    if (!impl_ || !impl_->open || frame.width != 480 || frame.height != 640) return false;
-    for (std::size_t i = 0; i < 480U * 640U; ++i) {
+    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
+    if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.
+    const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
+    impl_->bgra.resize(count * 4);
+    for (std::size_t i = 0; i < count; ++i) {
         impl_->bgra[i * 4] = frame.rgb[i * 3 + 2];
         impl_->bgra[i * 4 + 1] = frame.rgb[i * 3 + 1];
         impl_->bgra[i * 4 + 2] = frame.rgb[i * 3];
@@ -305,10 +326,10 @@ bool NativeWindow::present(const NativeFrame& frame) {
     const int screen = impl_->api.defaultScreen(impl_->display);
     XImage* image = impl_->api.createImage(impl_->display, impl_->api.defaultVisual(impl_->display, screen),
         static_cast<unsigned int>(impl_->api.defaultDepth(impl_->display, screen)), 2, 0,
-        reinterpret_cast<char*>(impl_->bgra.data()), 480, 640, 32, 480 * 4);
+        reinterpret_cast<char*>(impl_->bgra.data()), frame.width, frame.height, 32, frame.width * 4);
     if (!image) return false;
     const bool ok = impl_->api.putImage(impl_->display, impl_->window, impl_->gc, image,
-                                        0, 0, 0, 0, 480, 640) != 0;
+                                        0, 0, 0, 0, frame.width, frame.height) != 0;
     impl_->api.free(image);
     impl_->api.flush(impl_->display);
     return ok;
@@ -320,11 +341,17 @@ void NativeWindow::captureMouse(bool capture) {
     if (capture) {
         impl_->api.grabPointer(impl_->display, impl_->window, 1, (1U << 2) | (1U << 3) | (1U << 6),
                                1, 1, impl_->window, 0, 0);
-        impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0, 240, 320);
+        impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
+                               impl_->width / 2, impl_->height / 2);
     } else {
         impl_->api.ungrabPointer(impl_->display, 0);
     }
     impl_->api.flush(impl_->display);
+}
+
+void NativeWindow::size(int& width, int& height) const {
+    width = impl_ ? impl_->width : 480;
+    height = impl_ ? impl_->height : 640;
 }
 
 bool NativeWindow::opened() const { return impl_ && impl_->open; }
