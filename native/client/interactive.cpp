@@ -186,8 +186,10 @@ private:
         view_.mode = mode;
         cameraReady_ = false;
         keys_.clear();
-        window_.captureMouse(false);
-        captured_ = false;
+        if (mode == ViewMode::God && captured_) {
+            window_.captureMouse(false);
+            captured_ = false;
+        }
         if (mode == ViewMode::FirstPerson) view_.pitch = 0;
         if (mode == ViewMode::ThirdPerson) view_.pitch = -0.34F;
         if (mode == ViewMode::God) {
@@ -276,7 +278,7 @@ private:
             if (captured_ && view_.mode != ViewMode::God) {
                 view_.yaw -= static_cast<float>(event.dx * 0.0022);
                 view_.pitch -= static_cast<float>(event.dy * 0.0022);
-                view_.pitch = std::clamp(view_.pitch, view_.mode == ViewMode::FirstPerson ? -1.35F : -1.05F,
+                view_.pitch = std::clamp(view_.pitch, view_.mode == ViewMode::FirstPerson ? -1.5F : -1.05F,
                                          view_.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
             }
             return;
@@ -320,20 +322,22 @@ private:
         }
         if (event.type != WindowEvent::Type::KeyDown || event.key == 0) return;
         if (event.key == kKeyF12) {
-            screenshot_ = true;
+            if (!event.repeat) screenshot_ = true;
             return;
         }
+        if (event.repeat && (event.key == kKeyEscape || event.key == kKeyF1 || event.key == '1' ||
+            event.key == '2' || event.key == '3' || event.key == 'e' || event.key == 'c' || event.key == 'h')) return;
         if (overlay_ == Overlay::Wheel) {
             if (event.key >= '1' && event.key <= '3') toiletChoice(event.key - '0');
             else if (event.key == 'e' || event.key == kKeyEscape) overlay_ = Overlay::None;
             return;
         }
         if (overlay_ == Overlay::Cheats) {
-            cheat(event.key);
+            if (!event.repeat) cheat(event.key);
             return;
         }
         if (overlay_ == Overlay::Creator) {
-            creatorKey(event.key);
+            if (!event.repeat || (event.key != kKeyEnter && event.key != 'c' && event.key != kKeyEscape)) creatorKey(event.key);
             return;
         }
         if (overlay_ == Overlay::Help) {

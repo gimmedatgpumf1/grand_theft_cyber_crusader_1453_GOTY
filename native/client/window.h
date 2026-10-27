@@ -29,6 +29,7 @@ struct WindowEvent {
     double dx = 0;
     double dy = 0;
     double wheel = 0;
+    bool repeat = false;
 };
 
 class NativeWindow {

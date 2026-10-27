@@ -151,6 +151,7 @@ struct Api {
     int (*flush)(Display*) = nullptr;
     int (*pending)(Display*) = nullptr;
     int (*nextEvent)(Display*, XEvent*) = nullptr;
+    int (*peekEvent)(Display*, XEvent*) = nullptr;
     KeySym (*lookupKeysym)(XKeyEvent*, int) = nullptr;
     Atom (*internAtom)(Display*, const char*, Bool) = nullptr;
     int (*setProtocols)(Display*, Window, Atom*, int) = nullptr;
@@ -207,6 +208,7 @@ struct NativeWindow::Impl {
     bool gpu = false;
     bool open = false;
     bool captured = false;
+    bool skipMotion = false;
     double lastX = 240;
     double lastY = 320;
     std::vector<unsigned char> bgra;
@@ -241,6 +243,7 @@ struct NativeWindow::Impl {
         GTC_LOAD_X11(flush, "XFlush");
         GTC_LOAD_X11(pending, "XPending");
         GTC_LOAD_X11(nextEvent, "XNextEvent");
+        GTC_LOAD_X11(peekEvent, "XPeekEvent");
         GTC_LOAD_X11(lookupKeysym, "XLookupKeysym");
         GTC_LOAD_X11(internAtom, "XInternAtom");
         GTC_LOAD_X11(setProtocols, "XSetWMProtocols");
@@ -428,18 +431,34 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
         XEvent event{};
         impl_->api.nextEvent(impl_->display, &event);
         if (event.type == 2 || event.type == 3) {
-            events.push_back({event.type == 2 ? WindowEvent::Type::KeyDown : WindowEvent::Type::KeyUp,
-                              keySymbol(impl_->api, event.xkey)});
+            bool repeat = false;
+            if (event.type == 3 && impl_->api.pending(impl_->display) > 0) {
+                XEvent next{};
+                impl_->api.peekEvent(impl_->display, &next);
+                if (next.type == 2 && next.xkey.keycode == event.xkey.keycode && next.xkey.time == event.xkey.time) {
+                    impl_->api.nextEvent(impl_->display, &next);
+                    repeat = true;
+                }
+            }
+            WindowEvent key{event.type == 2 || repeat ? WindowEvent::Type::KeyDown : WindowEvent::Type::KeyUp,
+                            keySymbol(impl_->api, event.xkey)};
+            key.repeat = repeat;
+            events.push_back(key);
         } else if (event.type == 6) {
             WindowEvent moved{WindowEvent::Type::MouseMove};
             moved.x = event.xmotion.x;
             moved.y = event.xmotion.y;
             if (impl_->captured) {
-                moved.dx = moved.x - impl_->width / 2;
-                moved.dy = moved.y - impl_->height / 2;
-                if (moved.dx != 0 || moved.dy != 0) {
-                    impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
-                                           impl_->width / 2, impl_->height / 2);
+                if (impl_->skipMotion) {
+                    impl_->skipMotion = false;
+                } else {
+                    moved.dx = moved.x - impl_->width / 2;
+                    moved.dy = moved.y - impl_->height / 2;
+                    if (moved.dx != 0 || moved.dy != 0) {
+                        impl_->skipMotion = true;
+                        impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
+                                               impl_->width / 2, impl_->height / 2);
+                    }
                 }
             } else {
                 moved.dx = moved.x - impl_->lastX;
@@ -464,6 +483,11 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
         } else if (event.type == 22) {
             impl_->width = std::max(1, event.xconfigure.width);
             impl_->height = std::max(1, event.xconfigure.height);
+            if (impl_->captured) {
+                impl_->skipMotion = true;
+                impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
+                                       impl_->width / 2, impl_->height / 2);
+            }
         } else if (event.type == 9) {
             events.push_back({WindowEvent::Type::FocusLoss});
         } else if (event.type == 33 && event.xclient.data.l[0] == static_cast<long>(impl_->wmDelete)) {
@@ -521,9 +545,11 @@ void NativeWindow::captureMouse(bool capture) {
     if (capture) {
         impl_->api.grabPointer(impl_->display, impl_->window, 1, (1U << 2) | (1U << 3) | (1U << 6),
                                1, 1, impl_->window, 0, 0);
+        impl_->skipMotion = true;
         impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
                                impl_->width / 2, impl_->height / 2);
     } else {
+        impl_->skipMotion = false;
         impl_->api.ungrabPointer(impl_->display, 0);
     }
     impl_->api.flush(impl_->display);
