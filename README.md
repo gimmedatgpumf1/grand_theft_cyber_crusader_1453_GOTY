@@ -124,6 +124,13 @@ strafe directions, the input protocol's world-space x/z mapping, mouse-look dire
 godview pan speed, and syntax-checks every first-party
 browser module with Node.js. Node is only a test convenience, not a game dependency.
 
+### Portrait fitting harness
+
+`web/fit.html` is a standalone **480×640** head-only, render-on-demand canvas used by
+`tools/render-fit-driver.cjs` and `tools/render-fit.py`. It loads no networking, world, AI,
+HUD, or creator UI and has no continuous render loop. Bulk fitting must use this harness;
+the full game is reserved for actual gameplay and creator-UI regression checks.
+
 ## Architecture
 
 ```text

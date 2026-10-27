@@ -432,6 +432,14 @@ function skinned(visual, geometry, materials, skeleton, owned) {
   return object;
 }
 
+export function humanAssetsReady() {
+  const imagesReady = [...maskCache.values(), ...skinImages.values()]
+    .every(image => image.complete && image.naturalWidth > 0);
+  const texturesReady = [...hairTextures.values(), ...skinSurfaceTextures.values()]
+    .every(texture => texture.image && texture.image.width > 0);
+  return imagesReady && texturesReady;
+}
+
 export function createHuman(data) {
   const appearance = normalizeAppearance(data);
   const group = new THREE.Group();

@@ -1,4 +1,5 @@
-// Development-only render fitting driver. No runtime dependency on Playwright.
+// Development-only portrait fitting driver. No runtime Playwright dependency.
+// It uses the standalone head-only canvas, never the game/network/creator UI.
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
@@ -10,57 +11,26 @@ async function openSession() {
     executablePath: process.env.CHROMIUM || '/tmp/chromium', headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'],
   });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 480, height: 640 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-  await page.goto(process.env.GTC_URL || 'http://127.0.0.1:1453', { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => document.getElementById('citizen-id').textContent !== 'CITIZEN --');
-  await page.keyboard.press('KeyC');
-  await page.waitForSelector('#creator:not(.hidden)');
-  await page.locator('[data-creator-focus="face"]').click();
-  await page.waitForTimeout(600);
-  return { browser, page, errors, setupKey: '' };
+  const base = process.env.GTC_URL || 'http://127.0.0.1:1453';
+  await page.goto(process.env.FIT_URL || new URL('/fit.html', base).toString(), { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.fitHarness?.ready === true);
+  return { browser, page, errors };
 }
 
 async function render(session, candidates, keys) {
   for (const key of keys) {
     const candidate = candidates[key];
     if (!candidate) throw new Error(`Missing candidate ${key}`);
-    const fields = candidate.fields || {};
-    const setupKey = JSON.stringify([candidate.preset || key, fields]);
-    if (session.setupKey !== setupKey) {
-      await session.page.locator(`[data-preset="${candidate.preset || key}"]`).click();
-      await session.page.evaluate(fields => {
-        for (const [name, value] of Object.entries(fields)) {
-          const input = document.getElementById(`creator-${name}`);
-          if (!input) throw new Error(`Unknown appearance field ${name}`);
-          if (input.type === 'checkbox') input.checked = Boolean(value);
-          else input.value = String(value);
-        }
-        if (Object.keys(fields).length) {
-          document.querySelector('[data-appearance]').dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }, fields);
-      session.setupKey = setupKey;
-    }
-    await session.page.evaluate(candidate => {
-      for (const [name, value] of Object.entries(candidate.morphs)) {
-        const input = document.getElementById(`morph-${name}`);
-        if (!input) throw new Error(`Unknown morph ${name}`);
-        input.value = String(value);
-        document.getElementById(`morph-${name}-value`).textContent = String(value);
-      }
-      const input = document.querySelector('[data-morph]');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }, candidate);
-    if (typeof candidate.male === 'boolean') {
-      const expected = candidate.male ? 'male' : 'female';
-      const actual = await session.page.locator('#creator-male').inputValue();
-      if (actual !== expected) throw new Error(`${key}: expected ${expected} creator geometry, got ${actual || 'empty select'}`);
-    }
-    await session.page.waitForTimeout(250);
-    await session.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await session.page.evaluate(({ key, candidate }) => window.fitHarness.apply(key, candidate), { key, candidate });
+    await session.page.waitForFunction(() => window.fitHarness.assetsReady(), null, { timeout: 30000 });
+    await session.page.evaluate(() => {
+      window.fitHarness.draw();
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
     await session.page.screenshot({ path: path.join(root, 'build', `render-fit-${key}.png`) });
   }
   if (session.errors.length) {
