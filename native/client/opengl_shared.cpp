@@ -15,8 +15,12 @@ float displayChannel(double value) {
 namespace c {
 constexpr gl::Enum noError = 0;
 constexpr gl::Enum triangles = 0x0004;
+constexpr gl::Enum triangleStrip = 0x0005;
 constexpr gl::Enum less = 0x0201;
 constexpr gl::Enum greater = 0x0204;
+constexpr gl::Enum srcAlpha = 0x0302;
+constexpr gl::Enum oneMinusSrcAlpha = 0x0303;
+constexpr gl::Enum front = 0x0404;
 constexpr gl::Enum back = 0x0405;
 constexpr gl::Enum frontAndBack = 0x0408;
 constexpr gl::Enum depthBufferBit = 0x00000100;
@@ -34,7 +38,9 @@ constexpr gl::Enum smooth = 0x1D01;
 constexpr gl::Enum modulate = 0x2100;
 constexpr gl::Enum textureEnv = 0x2300;
 constexpr gl::Enum textureEnvMode = 0x2200;
+constexpr gl::Enum nearest = 0x2600;
 constexpr gl::Enum linear = 0x2601;
+constexpr gl::Enum clamp = 0x2900;
 constexpr gl::Enum textureMagFilter = 0x2800;
 constexpr gl::Enum textureMinFilter = 0x2801;
 constexpr gl::Enum textureWrapS = 0x2802;
@@ -104,6 +110,8 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(texParameteri, "glTexParameteri");
     GTC_LOAD_GL(texImage2D, "glTexImage2D");
     GTC_LOAD_GL(texEnvi, "glTexEnvi");
+    GTC_LOAD_GL(texSubImage2D, "glTexSubImage2D");
+    GTC_LOAD_GL(blendFunc, "glBlendFunc");
     GTC_LOAD_GL(pixelStorei, "glPixelStorei");
     GTC_LOAD_GL(readPixels, "glReadPixels");
     GTC_LOAD_GL(getError, "glGetError");
@@ -134,8 +142,12 @@ void OpenGlRenderer::shutdown() {
     if (loaded_ && !textures_.empty()) {
         for (const auto& [source, id] : textures_) api_.deleteTextures(1, &id);
     }
+    if (loaded_ && overlayTexture_) api_.deleteTextures(1, &overlayTexture_);
     textures_.clear();
     bottomUp_.clear();
+    overlay_.clear();
+    overlayTexture_ = 0;
+    overlayWidth_ = overlayHeight_ = 0;
     api_ = {};
     loaded_ = false;
 }
@@ -244,42 +256,95 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.disable(c::alphaTest);
     frame.width = scene.width;
     frame.height = scene.height;
-    frame.rgb.resize(static_cast<std::size_t>(scene.width) * scene.height * 3);
-    bottomUp_.resize(frame.rgb.size());
-    api_.pixelStorei(c::packAlignment, 1);
-    api_.readBuffer(c::back);
-    api_.readPixels(0, 0, scene.width, scene.height, c::rgb, c::unsignedByte, bottomUp_.data());
-    for (int y = 0; y < scene.height; ++y) {
-        const unsigned char* source = bottomUp_.data() + static_cast<std::size_t>(scene.height - 1 - y) * scene.width * 3;
-        std::copy(source, source + static_cast<std::size_t>(scene.width) * 3,
-                  frame.rgb.begin() + static_cast<std::size_t>(y) * scene.width * 3);
-    }
+    const std::size_t pixels = static_cast<std::size_t>(scene.width) * scene.height;
+    frame.rgb.assign(pixels * 3, 0);
+    frame.alpha.assign(pixels, 0);
+    frame.uiScale = 1.0;
+    frame.uiOffsetX = frame.uiOffsetY = 0.0;
     return api_.getError() == c::noError;
 }
 
 bool OpenGlRenderer::present(const NativeFrame& frame) {
+    const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
     if (!loaded_ || frame.width <= 0 || frame.height <= 0 ||
-        frame.rgb.size() < static_cast<std::size_t>(frame.width) * frame.height * 3) return false;
+        frame.rgb.size() < pixels * 3 || frame.alpha.size() < pixels) return false;
+    overlay_.resize(pixels * 4);
+    for (std::size_t i = 0; i < pixels; ++i) {
+        overlay_[i * 4] = frame.rgb[i * 3];
+        overlay_[i * 4 + 1] = frame.rgb[i * 3 + 1];
+        overlay_[i * 4 + 2] = frame.rgb[i * 3 + 2];
+        overlay_[i * 4 + 3] = frame.alpha[i];
+    }
+    api_.drawBuffer(c::back);
     api_.viewport(0, 0, frame.width, frame.height);
     api_.disable(c::depthTest);
+    api_.depthMask(0);
     api_.disable(c::lighting);
-    api_.disable(c::texture2D);
     api_.disable(c::alphaTest);
+    api_.enable(c::blend);
+    api_.blendFunc(c::srcAlpha, c::oneMinusSrcAlpha);
     api_.matrixMode(c::projection);
     api_.loadIdentity();
     api_.matrixMode(c::modelView);
     api_.loadIdentity();
-    api_.rasterPos2i(-1, -1);
-    bottomUp_.resize(frame.rgb.size());
-    for (int y = 0; y < frame.height; ++y) {
-        const unsigned char* source = frame.rgb.data() + static_cast<std::size_t>(frame.height - 1 - y) * frame.width * 3;
-        std::copy(source, source + static_cast<std::size_t>(frame.width) * 3,
-                  bottomUp_.begin() + static_cast<std::size_t>(y) * frame.width * 3);
+    api_.matrixMode(c::textureMatrix);
+    api_.loadIdentity();
+    api_.matrixMode(c::modelView);
+    api_.enable(c::texture2D);
+    if (!overlayTexture_) {
+        api_.genTextures(1, &overlayTexture_);
+        api_.bindTexture(c::texture2D, overlayTexture_);
+        api_.texParameteri(c::texture2D, c::textureMinFilter, c::nearest);
+        api_.texParameteri(c::texture2D, c::textureMagFilter, c::nearest);
+        api_.texParameteri(c::texture2D, c::textureWrapS, c::clamp);
+        api_.texParameteri(c::texture2D, c::textureWrapT, c::clamp);
+    } else {
+        api_.bindTexture(c::texture2D, overlayTexture_);
     }
+    api_.texEnvi(c::textureEnv, c::textureEnvMode, c::modulate);
+    api_.color3f(1, 1, 1);
     api_.pixelStorei(c::unpackAlignment, 1);
-    api_.drawBuffer(c::back);
-    api_.drawPixels(frame.width, frame.height, c::rgb, c::unsignedByte, bottomUp_.data());
+    if (overlayWidth_ != frame.width || overlayHeight_ != frame.height) {
+        api_.texImage2D(c::texture2D, 0, c::rgba, frame.width, frame.height, 0,
+                        c::rgba, c::unsignedByte, overlay_.data());
+        overlayWidth_ = frame.width;
+        overlayHeight_ = frame.height;
+    } else {
+        api_.texSubImage2D(c::texture2D, 0, 0, 0, frame.width, frame.height,
+                           c::rgba, c::unsignedByte, overlay_.data());
+    }
+    static const gl::Float positions[] = {-1, -1, 1, -1, -1, 1, 1, 1};
+    static const gl::Float coordinates[] = {0, 1, 1, 1, 0, 0, 1, 0};
+    api_.enableClientState(c::vertexArray);
+    api_.enableClientState(c::textureCoordArray);
+    api_.disableClientState(c::normalArray);
+    api_.vertexPointer(2, c::floatType, 0, positions);
+    api_.texCoordPointer(2, c::floatType, 0, coordinates);
+    api_.drawArrays(c::triangleStrip, 0, 4);
+    api_.disableClientState(c::vertexArray);
+    api_.disableClientState(c::textureCoordArray);
+    api_.disable(c::blend);
+    api_.disable(c::texture2D);
+    api_.depthMask(1);
     return api_.getError() == c::noError;
+}
+
+bool OpenGlRenderer::capture(int width, int height, const std::string& path) {
+    if (!loaded_ || width <= 0 || height <= 0) return false;
+    NativeFrame frame;
+    frame.width = width;
+    frame.height = height;
+    frame.rgb.resize(static_cast<std::size_t>(width) * height * 3);
+    bottomUp_.resize(frame.rgb.size());
+    api_.readBuffer(c::front);
+    api_.pixelStorei(c::packAlignment, 1);
+    api_.readPixels(0, 0, width, height, c::rgb, c::unsignedByte, bottomUp_.data());
+    for (int y = 0; y < height; ++y) {
+        const unsigned char* source = bottomUp_.data() + static_cast<std::size_t>(height - 1 - y) * width * 3;
+        std::copy(source, source + static_cast<std::size_t>(width) * 3,
+                  frame.rgb.begin() + static_cast<std::size_t>(y) * width * 3);
+    }
+    return api_.getError() == c::noError && frame.save(path);
 }
 
 } // namespace gtc::native

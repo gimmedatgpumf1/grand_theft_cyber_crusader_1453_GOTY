@@ -32,6 +32,7 @@ struct NativeFrame {
     int width = 480;
     int height = 640;
     std::vector<unsigned char> rgb;
+    std::vector<unsigned char> alpha;
     double uiScale = 1.0;
     double uiOffsetX = 0.0;
     double uiOffsetY = 0.0;

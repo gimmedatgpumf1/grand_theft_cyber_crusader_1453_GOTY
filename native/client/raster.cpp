@@ -164,10 +164,12 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
     for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
         for (int px = std::max(0, left); px < std::min(width, right); ++px) {
-            const std::size_t offset = (static_cast<std::size_t>(py) * width + px) * 3;
+            const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
+            const std::size_t offset = pixel * 3;
             rgb[offset] = static_cast<unsigned char>(r);
             rgb[offset + 1] = static_cast<unsigned char>(g);
             rgb[offset + 2] = static_cast<unsigned char>(b);
+            if (!alpha.empty()) alpha[pixel] = 255;
         }
     }
 }
@@ -183,10 +185,21 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
     for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
         for (int px = std::max(0, left); px < std::min(width, right); ++px) {
-            const std::size_t offset = (static_cast<std::size_t>(py) * width + px) * 3;
-            rgb[offset] = static_cast<unsigned char>((r * alpha + rgb[offset] * (255 - alpha)) / 255);
-            rgb[offset + 1] = static_cast<unsigned char>((g * alpha + rgb[offset + 1] * (255 - alpha)) / 255);
-            rgb[offset + 2] = static_cast<unsigned char>((b * alpha + rgb[offset + 2] * (255 - alpha)) / 255);
+            const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
+            const std::size_t offset = pixel * 3;
+            if (this->alpha.empty()) {
+                rgb[offset] = static_cast<unsigned char>((r * alpha + rgb[offset] * (255 - alpha)) / 255);
+                rgb[offset + 1] = static_cast<unsigned char>((g * alpha + rgb[offset + 1] * (255 - alpha)) / 255);
+                rgb[offset + 2] = static_cast<unsigned char>((b * alpha + rgb[offset + 2] * (255 - alpha)) / 255);
+            } else {
+                const int oldAlpha = this->alpha[pixel];
+                const int weight = alpha * 255 + oldAlpha * (255 - alpha);
+                if (!weight) continue;
+                rgb[offset] = static_cast<unsigned char>((r * alpha * 255 + rgb[offset] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                rgb[offset + 1] = static_cast<unsigned char>((g * alpha * 255 + rgb[offset + 1] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                rgb[offset + 2] = static_cast<unsigned char>((b * alpha * 255 + rgb[offset + 2] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                this->alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
+            }
         }
     }
 }

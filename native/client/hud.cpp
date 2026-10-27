@@ -148,10 +148,22 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
                 if (px < 0 || py < 0 || px >= frame.width || py >= frame.height) continue;
                 const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
                 if (!coverage) continue;
-                const std::size_t offset = (static_cast<std::size_t>(py) * frame.width + px) * 3;
-                frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);
-                frame.rgb[offset + 1] = static_cast<unsigned char>((green * coverage + frame.rgb[offset + 1] * (255 - coverage)) / 255);
-                frame.rgb[offset + 2] = static_cast<unsigned char>((blue * coverage + frame.rgb[offset + 2] * (255 - coverage)) / 255);
+                const std::size_t pixel = static_cast<std::size_t>(py) * frame.width + px;
+                const std::size_t offset = pixel * 3;
+                if (frame.alpha.empty()) {
+                    frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);
+                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * coverage + frame.rgb[offset + 1] * (255 - coverage)) / 255);
+                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * coverage + frame.rgb[offset + 2] * (255 - coverage)) / 255);
+                } else {
+                    const int sourceAlpha = static_cast<int>(coverage);
+                    const int oldAlpha = frame.alpha[pixel];
+                    const int weight = sourceAlpha * 255 + oldAlpha * (255 - sourceAlpha);
+                    if (!weight) continue;
+                    frame.rgb[offset] = static_cast<unsigned char>((red * sourceAlpha * 255 + frame.rgb[offset] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * sourceAlpha * 255 + frame.rgb[offset + 1] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * sourceAlpha * 255 + frame.rgb[offset + 2] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    frame.alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
+                }
             }
             penX += glyph.advance;
         }

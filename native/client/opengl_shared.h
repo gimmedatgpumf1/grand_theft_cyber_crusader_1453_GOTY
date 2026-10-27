@@ -57,6 +57,8 @@ struct Api {
     void (GTC_GL_CALL *texParameteri)(Enum, Enum, Int) = nullptr;
     void (GTC_GL_CALL *texImage2D)(Enum, Int, Int, Sizei, Sizei, Int, Enum, Enum, const void*) = nullptr;
     void (GTC_GL_CALL *texEnvi)(Enum, Enum, Int) = nullptr;
+    void (GTC_GL_CALL *texSubImage2D)(Enum, Int, Int, Int, Sizei, Sizei, Enum, Enum, const void*) = nullptr;
+    void (GTC_GL_CALL *blendFunc)(Enum, Enum) = nullptr;
     void (GTC_GL_CALL *pixelStorei)(Enum, Int) = nullptr;
     void (GTC_GL_CALL *readPixels)(Int, Int, Sizei, Sizei, Enum, Enum, void*) = nullptr;
     Enum (GTC_GL_CALL *getError)() = nullptr;
@@ -77,6 +79,7 @@ public:
     bool loaded() const { return loaded_; }
     bool render(const GpuScene& scene, NativeFrame& frame);
     bool present(const NativeFrame& frame);
+    bool capture(int width, int height, const std::string& path);
 
 private:
     gl::UInt texture(const Texture& source);
@@ -84,6 +87,10 @@ private:
     gl::Api api_;
     std::map<const Texture*, gl::UInt> textures_;
     std::vector<unsigned char> bottomUp_;
+    std::vector<unsigned char> overlay_;
+    gl::UInt overlayTexture_ = 0;
+    int overlayWidth_ = 0;
+    int overlayHeight_ = 0;
     bool loaded_ = false;
 };
 

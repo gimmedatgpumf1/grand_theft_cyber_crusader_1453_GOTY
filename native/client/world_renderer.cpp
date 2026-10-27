@@ -540,8 +540,9 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     }
     const auto finishStart = std::chrono::steady_clock::now();
     frame = rasterizer.finish();
-    if (view.gpu && frame.rgb.size() != static_cast<std::size_t>(frame.width) * frame.height * 3) {
-        error = "Native GPU rendering or readback failed";
+    const std::size_t framePixels = static_cast<std::size_t>(frame.width) * frame.height;
+    if (view.gpu && (frame.rgb.size() != framePixels * 3 || frame.alpha.size() != framePixels)) {
+        error = "Native GPU scene rendering failed";
         return false;
     }
     if (std::getenv("GTC_PROFILE")) {

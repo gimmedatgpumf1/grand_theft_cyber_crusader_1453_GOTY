@@ -96,14 +96,17 @@ public:
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
             drawOverlay(frame);
-            if (screenshot_) {
-                std::filesystem::create_directories("build/native-client");
-                frame.save("build/native-client/window.png");
-                screenshot_ = false;
-            }
             if (!window_.present(frame)) {
                 std::cerr << "Native window presentation failed\n";
                 return 1;
+            }
+            if (screenshot_) {
+                std::filesystem::create_directories("build/native-client");
+                if (!window_.save(frame, "build/native-client/window.png")) {
+                    std::cerr << "Native screenshot capture failed\n";
+                    return 1;
+                }
+                screenshot_ = false;
             }
             nextFrame += std::chrono::milliseconds(16);
             std::this_thread::sleep_until(nextFrame);

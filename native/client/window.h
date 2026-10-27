@@ -44,6 +44,7 @@ public:
     void close();
     bool poll(std::vector<WindowEvent>& events);
     bool present(const NativeFrame& frame);
+    bool save(const NativeFrame& frame, const std::string& path);
     void captureMouse(bool capture);
     void size(int& width, int& height) const;
     bool gpu() const;

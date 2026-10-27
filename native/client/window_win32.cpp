@@ -277,6 +277,15 @@ bool NativeWindow::present(const NativeFrame& frame) {
     return result != 0;
 }
 
+bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
+    if (!impl_ || !impl_->open) return false;
+    if (impl_->gpu) {
+        if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
+        return impl_->renderer.capture(impl_->width, impl_->height, path);
+    }
+    return frame.save(path);
+}
+
 void NativeWindow::captureMouse(bool capture) {
     if (!impl_ || !impl_->window || impl_->captured == capture) return;
     impl_->captured = capture;
