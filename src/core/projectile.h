@@ -272,7 +272,7 @@ inline float pissAimPitch(const Character& character, Vec2 target, float targetH
 inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,
                           const std::vector<Obstacle>& obstacles, float halfWidth, float halfDepth) {
     candidate.id = id;
-    candidate.size = 0.09F + static_cast<float>(id % 4U) * 0.015F;
+    candidate.size = std::sqrt(kPissDropletArea / 3.141592653589793F);
     if (!projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return {};
     const auto merge = [](Puddle& into, const Puddle& added) {
         const float a = into.size * into.size, b = added.size * added.size, sum = a + b;

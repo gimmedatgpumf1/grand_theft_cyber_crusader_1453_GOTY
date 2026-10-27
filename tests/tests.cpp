@@ -569,13 +569,20 @@ int main() {
         check(first.id == 1 && second.id == 0 && spots.size() == 1 &&
               spots.front().size > first.size && gtc::length(spots.front().position) < 0.001F,
               "overlapping floor impacts merge into one growing puddle without displacement");
-        gtc::Puddle separated; separated.position = {0.28F, 0};
+        gtc::Puddle separated; separated.position = {0.065F, 0};
         spots.push_back(gtc::placePuddle(spots, separated, 3, {}, 9, 7));
         gtc::placePuddle(spots, input, 4, {}, 9, 7);
         check(spots.size() == 1, "growth coalesces every newly overlapping floor puddle");
-        for (std::uint32_t next = 4; next < 220; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
-        check(spots.size() == 1 && spots.front().size > 1.5F && std::isfinite(spots.front().size),
-              "piss blob keeps conserving area and growing beyond the old 0.65 metre ceiling");
+        for (std::uint32_t next = 5; next <= 220; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
+        const float at220 = spots.front().size;
+        const float expected220 = std::sqrt(220.0F * gtc::kPissDropletArea / 3.141592653589793F);
+        check(spots.size() == 1 && std::abs(at220 - expected220) < 0.001F && at220 < 0.25F,
+              "220 physical droplets produce the calibrated area rather than runaway growth");
+        for (std::uint32_t next = 221; next <= 840; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
+        const float expectedFull = std::sqrt(840.0F * gtc::kPissDropletArea / 3.141592653589793F);
+        check(spots.size() == 1 && std::abs(spots.front().size - expectedFull) < 0.001F &&
+              std::abs(expectedFull - 0.437F) < 0.002F && spots.front().size / at220 < 2.0F,
+              "600 ml covers 0.6 square metres and four times the liquid gives twice the radius");
 
         gtc::World upward;
         const auto shooter = upward.addCharacter("Postal Arc", false);
@@ -607,7 +614,7 @@ int main() {
         const auto wallSpots = world.puddles();
         const float largest = wallSpots.empty() ? 0.0F : std::max_element(wallSpots.begin(), wallSpots.end(),
             [](const gtc::Puddle& a, const gtc::Puddle& b) { return a.size < b.size; })->size;
-        check(!wallSpots.empty() && wallSpots.size() <= 4 && largest > 0.14F,
+        check(!wallSpots.empty() && wallSpots.size() <= 4 && largest > 0.025F,
               "repeated wall impacts grow compact stains instead of stacking transparent duplicates");
         for (int i = 12; i < 420; ++i) world.update(0.05F);
         check(world.puddles().size() <= 8 && world.snapshot().size() < 65536,
@@ -655,8 +662,8 @@ int main() {
                        {0, 1.0F}, 0.018F, true);
         for (int i = 0; i < 60; ++i) floor.update(0.05F);
         const auto spots = floor.puddles();
-        check(spots.size() == 1 && spots.front().size > 0.15F,
-              "a sustained stream grows one unified floor puddle at physical impacts");
+        check(spots.size() == 1 && spots.front().size > 0.12F && spots.front().size < 0.18F,
+              "a sustained stream grows one unified, volume-calibrated floor puddle");
 
         gtc::World bullet;
         const auto shooter = bullet.addCharacter("Water Shooter", false);
@@ -682,7 +689,7 @@ int main() {
         check(!legs.waterRipples().empty(), "legs entering and moving in water create ripple feedback");
     });
 
-    test("fifteen-times clock, bladder calibration, and day-long drying", [] {
+    test("fifteen-times clock, bladder calibration, and hourly evaporation", [] {
         gtc::World bladder;
         const auto id = bladder.addCharacter("Twenty One Seconds", false);
         bladder.toggleZip(id);
@@ -710,12 +717,20 @@ int main() {
         for (int i = 0; i < 100; ++i) wet.update(0.1F);
         check(std::abs((wet.gameSeconds() - gameBefore) - 150.0) < 0.001,
               "ten real seconds advance one hundred fifty game seconds");
-        double youngest = 100000.0;
-        for (const auto& puddle : wet.puddles()) youngest = std::min(youngest, puddle.age);
+        const auto beforeEvaporation = wet.puddles();
+        for (int i = 0; i < 2400; ++i) wet.update(0.1F);
+        const auto afterOneHour = wet.puddles();
+        const float expectedRadius = std::exp(-0.5F * gtc::kPissEvaporationDepthPerGameHour / gtc::kPissFilmDepth);
+        bool hourly = afterOneHour.size() == beforeEvaporation.size();
+        for (std::size_t i = 0; hourly && i < afterOneHour.size(); ++i) {
+            hourly = std::abs(afterOneHour[i].size / beforeEvaporation[i].size - expectedRadius) < 0.001F;
+        }
+        check(hourly, "one game hour evaporates area at 0.2 mm per hour and radius follows square-root area");
+        for (int i = 0; i < 23 * 2400; ++i) wet.update(0.1F);
+        check(!wet.puddles().empty(), "there is no arbitrary deletion at twenty-four game hours");
         int steps = 0;
-        while (!wet.puddles().empty() && steps < 57620) { wet.update(0.1F); ++steps; }
-        check(wet.puddles().empty() && std::abs(steps * 0.1F - (gtc::kPuddleLifetimeSeconds - youngest)) < 0.11F,
-              "a stain dries after exactly one twenty-four-hour game day");
+        while (!wet.puddles().empty() && steps < 200000) { wet.update(0.1F); ++steps; }
+        check(wet.puddles().empty(), "blobs eventually disappear only after evaporation shrinks them to a tiny remnant");
     });
 
     test("god attacks are authoritative, ranged, and blockable", [] {

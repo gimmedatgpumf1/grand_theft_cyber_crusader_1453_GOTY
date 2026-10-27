@@ -151,12 +151,18 @@ void World::addPuddle(const Puddle& puddle) {
 }
 
 void World::updateProjectiles(float dt) {
-    for (Puddle& puddle : puddles_) puddle.age += dt;
+    const float gameHours = dt * kGameTimeScale / 3600.0F;
+    const float radiusRetention = std::exp(-0.5F * gameHours *
+        kPissEvaporationDepthPerGameHour / kPissFilmDepth);
+    for (Puddle& puddle : puddles_) {
+        puddle.age += dt;
+        puddle.size *= radiusRetention; // Evaporation acts on area; radius follows its square root.
+    }
     for (WaterRipple& ripple : waterRipples_) ripple.age += dt;
     waterRipples_.erase(std::remove_if(waterRipples_.begin(), waterRipples_.end(),
         [](const WaterRipple& ripple) { return ripple.age >= 1.8; }), waterRipples_.end());
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const Puddle& puddle) {
-        return puddle.age >= kPuddleLifetimeSeconds;
+        return puddle.size <= kPissMinimumRadius;
     }), puddles_.end());
     const Vec2 wind = windAt(elapsed_);
     for (std::size_t index = 0; index < projectiles_.size();) {

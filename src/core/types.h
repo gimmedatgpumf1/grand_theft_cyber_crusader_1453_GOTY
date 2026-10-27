@@ -33,7 +33,15 @@ inline constexpr float kPissLifetime = 4.0F;
 inline constexpr float kPissEmissionInterval = 1.0F / 30.0F;
 inline constexpr float kBladderDrainPerSecond = 75.0F / 21.0F;
 inline constexpr float kGameTimeScale = 15.0F;
-inline constexpr float kPuddleLifetimeSeconds = 24.0F * 60.0F * 60.0F / kGameTimeScale;
+inline constexpr float kPissFullBladderVolume = 0.0006F; // 600 ml at 100%.
+inline constexpr float kPissFilmDepth = 0.001F; // Simple 1 mm film model.
+inline constexpr float kPissDropletsPerFullBladder =
+    100.0F / kBladderDrainPerSecond / kPissEmissionInterval;
+inline constexpr float kPissDropletArea =
+    kPissFullBladderVolume / kPissDropletsPerFullBladder / kPissFilmDepth;
+// Open water at 20 C, 50% RH and still air: approximately 0.185 mm/h, rounded.
+inline constexpr float kPissEvaporationDepthPerGameHour = 0.0002F;
+inline constexpr float kPissMinimumRadius = 0.0001F;
 
 struct Vec2 {
     float x = 0.0F;
