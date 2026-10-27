@@ -172,6 +172,25 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     }
 }
 
+void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
+    const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
+    const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
+    const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
+    const int alpha = static_cast<int>(std::clamp(opacity, 0.0, 1.0) * 255);
+    const int left = static_cast<int>(std::lround(uiOffsetX + x * uiScale));
+    const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
+    const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
+    const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
+    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
+        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
+            const std::size_t offset = (static_cast<std::size_t>(py) * width + px) * 3;
+            rgb[offset] = static_cast<unsigned char>((r * alpha + rgb[offset] * (255 - alpha)) / 255);
+            rgb[offset + 1] = static_cast<unsigned char>((g * alpha + rgb[offset + 1] * (255 - alpha)) / 255);
+            rgb[offset + 2] = static_cast<unsigned char>((b * alpha + rgb[offset + 2] * (255 - alpha)) / 255);
+        }
+    }
+}
+
 void Camera::basis() const {
     if (basisReady) return;
     forward = normalized(target - position);

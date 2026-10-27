@@ -39,6 +39,7 @@ struct NativeFrame {
     bool save(const std::string& path) const;
     void logicalUi(int logicalWidth = 480, int logicalHeight = 640);
     void rectangle(int x, int y, int w, int h, Color color);
+    void blendRectangle(int x, int y, int w, int h, Color color, double opacity);
 };
 
 struct Material {

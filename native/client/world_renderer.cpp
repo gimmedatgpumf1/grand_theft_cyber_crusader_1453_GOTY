@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 
 namespace gtc::native {
 namespace {
@@ -139,12 +140,132 @@ void drawFloor(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& 
                          cameraVertex(camera, d, normal, d, {0, v})}, floor);
 }
 
+void drawQuad(Rasterizer& rasterizer, const Camera& camera, const std::array<Vec3, 4>& points,
+              Vec3 normal, const Material& material) {
+    const Vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    std::array<RenderVertex, 4> vertices;
+    for (int i = 0; i < 4; ++i) vertices[i] = cameraVertex(camera, points[i], normal, points[i], uv[i]);
+    rasterizer.triangle({vertices[0], vertices[1], vertices[2]}, material);
+    rasterizer.triangle({vertices[0], vertices[2], vertices[3]}, material);
+}
+
+void drawRing(Rasterizer& rasterizer, const Camera& camera, Vec3 center, double inner, double outer,
+              const Material& material, int segments = 40) {
+    constexpr double pi = 3.141592653589793;
+    const Vec3 normal{0, 1, 0};
+    for (int i = 0; i < segments; ++i) {
+        const double a = i * 2 * pi / segments, b = (i + 1) * 2 * pi / segments;
+        const std::array<Vec3, 4> points = {
+            center + Vec3{std::cos(a) * inner, 0, std::sin(a) * inner},
+            center + Vec3{std::cos(a) * outer, 0, std::sin(a) * outer},
+            center + Vec3{std::cos(b) * outer, 0, std::sin(b) * outer},
+            center + Vec3{std::cos(b) * inner, 0, std::sin(b) * inner}};
+        drawQuad(rasterizer, camera, points, normal, material);
+    }
+}
+
+void drawOctahedron(Rasterizer& rasterizer, const Camera& camera, Vec3 center, double radius,
+                    const Material& material) {
+    const Vec3 top = center + Vec3{0, radius, 0}, bottom = center - Vec3{0, radius, 0};
+    const Vec3 points[4] = {center + Vec3{radius, 0, 0}, center + Vec3{0, 0, radius},
+                            center - Vec3{radius, 0, 0}, center - Vec3{0, 0, radius}};
+    for (int i = 0; i < 4; ++i) {
+        const Vec3 a = points[i], b = points[(i + 1) % 4];
+        const Vec3 normalA = normalized(cross(a - top, b - top));
+        const Vec3 normalB = normalized(cross(b - bottom, a - bottom));
+        rasterizer.triangle({cameraVertex(camera, top, normalA, top), cameraVertex(camera, a, normalA, a),
+                             cameraVertex(camera, b, normalA, b)}, material);
+        rasterizer.triangle({cameraVertex(camera, bottom, normalB, bottom), cameraVertex(camera, b, normalB, b),
+                             cameraVertex(camera, a, normalB, a)}, material);
+    }
+}
+
+const Texture& signTexture(const std::string& text, const char* foreground, const char* background) {
+    const std::string key = text + foreground + background;
+    static std::map<std::string, Texture> cache;
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+    NativeFrame canvas;
+    canvas.width = 512;
+    canvas.height = 256;
+    canvas.rgb.resize(512U * 256U * 3U);
+    canvas.rectangle(0, 0, 512, 256, colorHex(foreground));
+    canvas.rectangle(8, 8, 496, 240, colorHex(background));
+    const int split = static_cast<int>(text.find('\n'));
+    const std::string first = text.substr(0, split);
+    const std::string second = split >= 0 ? text.substr(static_cast<std::size_t>(split) + 1) : "";
+    drawText(canvas, std::max(18, 256 - static_cast<int>(first.size()) * 12), second.empty() ? 105 : 68,
+             first, colorHex(foreground), 5);
+    if (!second.empty()) {
+        drawText(canvas, std::max(18, 256 - static_cast<int>(second.size()) * 12), 143,
+                 second, colorHex(foreground), 5);
+    }
+    Texture texture;
+    texture.width = 512;
+    texture.height = 256;
+    texture.pixels.resize(512U * 256U * 4U, 255);
+    for (std::size_t i = 0; i < 512U * 256U; ++i) {
+        texture.pixels[i * 4] = canvas.rgb[i * 3];
+        texture.pixels[i * 4 + 1] = canvas.rgb[i * 3 + 1];
+        texture.pixels[i * 4 + 2] = canvas.rgb[i * 3 + 2];
+    }
+    return cache.emplace(key, std::move(texture)).first->second;
+}
+
+void drawSign(Rasterizer& rasterizer, const Camera& camera, Vec3 center, double width, double height,
+              const Texture& texture) {
+    Material material;
+    material.kind = Material::Kind::Textured;
+    material.color = {1, 1, 1};
+    material.texture = &texture;
+    material.unlit = true;
+    drawQuad(rasterizer, camera, {center + Vec3{-width * 0.5, -height * 0.5, 0},
+        center + Vec3{width * 0.5, -height * 0.5, 0}, center + Vec3{width * 0.5, height * 0.5, 0},
+        center + Vec3{-width * 0.5, height * 0.5, 0}}, {0, 0, 1}, material);
+}
+
+void drawDressing(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world,
+                  const ClientState& state, const ViewState& view) {
+    drawSign(rasterizer, camera, {-3.8, 2.05, -6.82}, 2.4, 1.15,
+             signTexture("FLUSH THE\nFLESH", "#d7ff54", "#2c3c31"));
+    drawSign(rasterizer, camera, {3.0, 2.25, -6.82}, 2.15, 0.95,
+             signTexture("NO GODS\nONLY CLOGS", "#e9a45f", "#26332b"));
+    drawSign(rasterizer, camera, {0, 2.35, -6.81}, 2.5, 0.5,
+             signTexture("PORCELAIN.EXE", "#d7ff54", "#101a13"));
+    Material metal;
+    metal.color = colorHex("#677568");
+    metal.specular = 0.18;
+    for (double x : {-7.7, 7.65}) {
+        drawEllipsoid(rasterizer, camera, {x, 1.55, -6.65}, {0.11, 1.55, 0.11}, metal, 8, 6);
+    }
+    Material wood;
+    wood.color = colorHex("#9b7748");
+    drawEllipsoid(rasterizer, camera, {-1.1, 0.65, -5.35}, {0.035, 0.52, 0.035}, wood, 6, 5);
+    Material rubber;
+    rubber.color = colorHex("#6c382c");
+    drawEllipsoid(rasterizer, camera, {-1.18, 0.15, -5.35}, {0.22, 0.15, 0.22}, rubber, 8, 4);
+    Material paper;
+    paper.color = colorHex("#d9decb");
+    drawEllipsoid(rasterizer, camera, {1.25, 1.0, -6.55}, {0.16, 0.16, 0.24}, paper, 10, 5);
+    Material fixture;
+    fixture.color = colorHex("#c9efaf");
+    fixture.unlit = true;
+    for (double x : {-3.5, 3.5}) drawBox(rasterizer, camera, {x, 3.05, -1.7}, {2.3, 0.09, 0.28}, fixture);
+    Material marker;
+    marker.color = colorHex("#d7ff54");
+    marker.unlit = true;
+    drawRing(rasterizer, camera, {world.toiletFront.x, 0.025, world.toiletFront.y},
+             world.interactionRange - 0.035, world.interactionRange, marker);
+    drawOctahedron(rasterizer, camera, {world.toilet.x, 2.04 + std::sin(state.tick * 0.08) * 0.1, world.toilet.y},
+                   view.highlightToilet ? 0.22 : 0.16, marker);
+}
+
 void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) {
     Material porcelain;
-    porcelain.color = colorHex("#d5ddd7");
+    porcelain.color = colorHex("#d7ddc9");
     porcelain.specular = 0.30;
     Material dark;
-    dark.color = colorHex("#263f42");
+    dark.color = colorHex("#17251e");
     dark.specular = 0.42;
     const Vec3 center{toilet.x, 0, toilet.y};
     drawBox(rasterizer, camera, center + Vec3{0, 0.20, -0.10}, Vec3{0.58, 0.40, 0.55}, porcelain);
@@ -168,19 +289,33 @@ void drawObstacles(Rasterizer& rasterizer, const Camera& camera, const ClientWor
             continue;
         }
         Material material;
-        if (obstacle.kind == "boundary") material.color = colorHex("#58625d");
-        else if (obstacle.kind == "sink") material.color = colorHex("#82928c");
-        else material.color = colorHex("#71583b");
-        material.specular = obstacle.kind == "sink" ? 0.24 : 0.04;
+        if (obstacle.kind == "boundary") material.color = colorHex(obstacle.height > 1 ? "#53665a" : "#293a31");
+        else if (obstacle.kind == "sink") material.color = colorHex("#354b40");
+        else material.color = colorHex("#5e5135");
         drawBox(rasterizer, camera, center, size, material);
+        if (obstacle.kind == "boundary" && obstacle.height > 1) {
+            Material trim;
+            trim.color = colorHex("#1c2d25");
+            drawBox(rasterizer, camera, {center.x, 1.05, center.z}, {size.x + 0.04, 0.16, size.z + 0.04}, trim);
+        }
         if (obstacle.kind == "sink") {
             Material basin;
-            basin.color = colorHex("#b7c5bf");
+            basin.color = colorHex("#bdc9b5");
             basin.specular = 0.32;
             drawEllipsoid(rasterizer, camera, Vec3{center.x, obstacle.height + 0.05, center.z},
                           Vec3{0.65, 0.12, 0.40}, basin, 10, 5);
             drawBox(rasterizer, camera, Vec3{center.x, obstacle.height + 0.28, center.z - 0.28},
                     Vec3{0.08, 0.45, 0.08}, basin);
+            Material mirrorFrame;
+            mirrorFrame.color = colorHex("#1b2b23");
+            drawBox(rasterizer, camera, {obstacle.center.x, 2.0, -6.84}, {1.84, 1.28, 0.05}, mirrorFrame);
+            Material mirror;
+            mirror.color = colorHex("#263d33");
+            mirror.unlit = true;
+            drawQuad(rasterizer, camera, std::array<Vec3, 4>{
+                Vec3{obstacle.center.x - 0.85, 1.425, -6.80},
+                Vec3{obstacle.center.x + 0.85, 1.425, -6.80}, Vec3{obstacle.center.x + 0.85, 2.575, -6.80},
+                Vec3{obstacle.center.x - 0.85, 2.575, -6.80}}, {0, 0, 1}, mirror);
         }
     }
 }
@@ -208,7 +343,7 @@ void drawPaths(Rasterizer& rasterizer, const Camera& camera, const ClientState& 
 void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
     Material puddle;
     puddle.kind = Material::Kind::Puddle;
-    puddle.color = colorHex("#527f72");
+    puddle.color = colorHex("#b5a636");
     puddle.specular = 0.65;
     for (const Puddle& puddleValue : state.puddles) {
         drawEllipsoid(rasterizer, camera, Vec3{puddleValue.position.x, 0.018, puddleValue.position.y},
@@ -230,43 +365,117 @@ void drawPissing(Rasterizer& rasterizer, const Camera& camera, const Character& 
     }
 }
 
+void drawLabels(NativeFrame& frame, const Camera& camera, const ClientState& state, std::uint32_t localId) {
+    for (const Character& character : state.characters) {
+        if (character.id == localId) continue;
+        const Vec3 world{character.position.x, 2.08, character.position.y};
+        if (length(camera.position - world) < 1.6) continue;
+        const Vec3 point = camera.view(world);
+        if (point.z <= 0.2) continue;
+        const double sx = camera.width * 0.5 + camera.focal() * point.x / point.z;
+        const double sy = camera.height * 0.5 - camera.focal() * point.y / point.z;
+        if (sx < 20 || sy < 40 || sx >= camera.width - 20 || sy >= camera.height - 40) continue;
+        const std::string label = std::string(character.ai ? "AI " : "") + character.name.substr(0, 18);
+        const int width = std::min(250, std::max(64, static_cast<int>(label.size()) * 13 + 18));
+        const int x = std::clamp(static_cast<int>(sx) - width / 2, 4, std::max(4, frame.width - width - 4));
+        const int y = std::clamp(static_cast<int>(sy) - 36, 64, std::max(64, frame.height - 90));
+        frame.blendRectangle(x, y, width, 36, colorHex("#07100c"), 0.84);
+        frame.rectangle(x, y, 3, 36, colorHex(character.color.c_str()));
+        drawText(frame, x + 9, y + 4, label, colorHex(character.color.c_str()));
+    }
+}
+
+void panel(NativeFrame& frame, int x, int y, int width, int height, bool accent = false) {
+    frame.blendRectangle(x + 3, y + 4, width, height, colorHex("#020604"), 0.42);
+    frame.blendRectangle(x, y, width, height, colorHex("#0b1411"), 0.86);
+    frame.rectangle(x, y, width, 2, colorHex("#52665d"));
+    frame.rectangle(x, y, 2, height, colorHex(accent ? "#d7ff54" : "#33483e"));
+}
+
+void drawMinimap(NativeFrame& frame, const ClientWorld& world, const ClientState& state, std::uint32_t localId) {
+    const int x = 330, y = 112, width = 132, height = 104;
+    frame.rectangle(x, y, width, height, colorHex("#07100b"));
+    const double scale = std::min((width - 12.0) / world.width, (height - 12.0) / world.depth);
+    auto project = [&](double px, double pz, int& sx, int& sy) {
+        sx = x + width / 2 + static_cast<int>(px * scale);
+        sy = y + height / 2 + static_cast<int>(pz * scale);
+    };
+    for (const Obstacle& obstacle : world.obstacles) {
+        if (obstacle.kind == "boundary") continue;
+        int sx = 0, sy = 0;
+        project(obstacle.center.x, obstacle.center.y, sx, sy);
+        const int w = std::max(2, static_cast<int>(obstacle.halfSize.x * 2 * scale));
+        const int h = std::max(2, static_cast<int>(obstacle.halfSize.y * 2 * scale));
+        frame.rectangle(sx - w / 2, sy - h / 2, w, h,
+                        colorHex(obstacle.kind == "toilet" ? "#d7ff54" : "#526158"));
+    }
+    for (const Puddle& puddle : state.puddles) {
+        int sx = 0, sy = 0;
+        project(puddle.position.x, puddle.position.y, sx, sy);
+        frame.rectangle(sx - 1, sy - 1, 3, 3, colorHex("#b5a636"));
+    }
+    for (const Character& character : state.characters) {
+        int sx = 0, sy = 0;
+        project(character.position.x, character.position.y, sx, sy);
+        const Color color = character.id == localId ? colorHex("#d7ff54") :
+            character.ai ? colorHex("#ff765f") : colorHex(character.color.c_str());
+        frame.rectangle(sx - 2, sy - 2, character.id == localId ? 5 : 4, character.id == localId ? 5 : 4, color);
+        frame.rectangle(sx + static_cast<int>(std::sin(character.yaw) * 5),
+                        sy + static_cast<int>(std::cos(character.yaw) * 5), 2, 2, color);
+    }
+}
+
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
              std::uint32_t localId, const ViewState& view) {
     const Character* local = state.character(localId);
-    const Color panel = colorHex("#111815");
     const Color text = colorHex("#d7ff54");
     const Color muted = colorHex("#b4c5ba");
-    frame.rectangle(0, 0, 480, 60, panel);
-    drawText(frame, 8, 7, "GTC 1453", text);
-    const char* mode = view.mode == ViewMode::FirstPerson ? "FPS" : view.mode == ViewMode::God ? "GOD" : "TPS";
-    drawText(frame, 8, 34, std::string(mode) + " TICK " + std::to_string(state.tick), muted);
-    if (view.fps > 0) drawText(frame, 300, 34, std::string(view.gpu ? "GPU " : "CPU ") +
-        std::to_string(static_cast<int>(view.fps + 0.5)) + " FPS", muted);
+    const Color cyan = colorHex("#6edbd2");
+    panel(frame, 0, 0, 480, 60, true);
+    drawText(frame, 12, 5, "GTC // 1453", text);
+    drawText(frame, 12, 34, "PORCELAIN PROTOCOL", muted);
+    drawText(frame, 316, 5, "NET // ONLINE", text);
+    std::string performance = std::to_string(state.characters.size()) + " CIT / " +
+        (view.gpu ? "GPU" : "CPU");
+    if (view.fps > 0) performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
+    drawText(frame, 316, 34, performance, muted);
     if (local) {
-        drawText(frame, 285, 7, local->name.substr(0, 10), text);
-        const double range = distance(local->position, world.toiletFront);
-        if (local->toiletAction != ToiletAction::None || range <= world.interactionRange) {
-            frame.rectangle(0, 478, 480, 34, panel);
-            drawText(frame, 8, 484, local->toiletAction != ToiletAction::None ? "E STAND" : "E TOILET", text);
-        }
-        if (!local->notice.empty()) {
-            frame.rectangle(0, 518, 480, 34, panel);
-            drawText(frame, 8, 524, local->notice.substr(0, 25), muted);
-        } else if (!state.events.empty()) {
-            frame.rectangle(0, 518, 480, 34, panel);
-            drawText(frame, 8, 524, state.events.back().text.substr(0, 25), muted);
-        }
-        frame.rectangle(0, 562, 480, 78, panel);
-        drawText(frame, 8, 571, "BLADDER " + std::to_string(static_cast<int>(local->needs.bladder)), text);
-        drawText(frame, 250, 571, "BOWEL " + std::to_string(static_cast<int>(local->needs.bowel)), text);
-        frame.rectangle(8, 607, 210, 14, colorHex("#29332d"));
-        frame.rectangle(250, 607, 210, 14, colorHex("#29332d"));
-        frame.rectangle(8, 607, static_cast<int>(210 * std::clamp(local->needs.bladder / 100.0F, 0.0F, 1.0F)), 14,
-                        colorHex("#6edbd2"));
-        frame.rectangle(250, 607, static_cast<int>(210 * std::clamp(local->needs.bowel / 100.0F, 0.0F, 1.0F)), 14,
+        panel(frame, 12, 74, 218, 174, true);
+        drawText(frame, 24, 82, "MEAT STATUS", text);
+        drawText(frame, 24, 112, local->name.substr(0, 15), muted);
+        drawText(frame, 24, 145, "BLADDER " + std::to_string(static_cast<int>(local->needs.bladder)) + "%", cyan);
+        frame.rectangle(24, 174, 194, 8, colorHex("#29332d"));
+        frame.rectangle(24, 174, static_cast<int>(194 * std::clamp(local->needs.bladder / 100.0F, 0.0F, 1.0F)), 8, cyan);
+        drawText(frame, 24, 191, "BOWEL " + std::to_string(static_cast<int>(local->needs.bowel)) + "%", colorHex("#ffcc62"));
+        frame.rectangle(24, 220, 194, 8, colorHex("#29332d"));
+        frame.rectangle(24, 220, static_cast<int>(194 * std::clamp(local->needs.bowel / 100.0F, 0.0F, 1.0F)), 8,
                         colorHex("#ffcc62"));
+        panel(frame, 318, 74, 150, 162);
+        drawText(frame, 328, 82, "SECTOR 01", text);
+        drawMinimap(frame, world, state, localId);
+        drawText(frame, 328, 222, "LOCAL / AI", muted);
+        panel(frame, 12, 462, 456, 44);
+        if (!local->notice.empty()) drawText(frame, 24, 470, local->notice.substr(0, 36), muted);
+        else if (!state.events.empty()) drawText(frame, 24, 470, state.events.back().text.substr(0, 36), muted);
+        else drawText(frame, 24, 470, "QUEST // ANSWER NATURE'S CALL", text);
+        const double range = distance(local->position, world.toiletFront);
+        panel(frame, 12, 514, 456, 44, range <= world.interactionRange || local->toiletAction != ToiletAction::None);
+        if (local->toiletAction != ToiletAction::None) drawText(frame, 24, 522, "E // STAND UP", text);
+        else if (range <= world.interactionRange) drawText(frame, 24, 522, "E // CHOOSE ACTION", text);
+        else drawText(frame, 24, 522, "MOVE CLOSER TO INTERACT", muted);
+    }
+    panel(frame, 0, 568, 480, 72);
+    drawText(frame, 12, 576, "1 THIRD", view.mode == ViewMode::ThirdPerson ? text : muted);
+    drawText(frame, 132, 576, "2 GOD", view.mode == ViewMode::God ? text : muted);
+    drawText(frame, 232, 576, "3 FIRST", view.mode == ViewMode::FirstPerson ? text : muted);
+    if (!local) {
+        drawText(frame, 12, 608, "WAITING FOR CITIZEN", text);
+    } else if (view.mode == ViewMode::God) {
+        drawText(frame, 12, 608, "WASD PAN / CLICK PATH / BOOST", muted);
+    } else if (view.mode == ViewMode::FirstPerson) {
+        drawText(frame, 12, 608, "WASD / F PISS / E USE", muted);
     } else {
-        drawText(frame, 8, 570, "WAITING FOR CITIZEN", text);
+        drawText(frame, 12, 608, "WASD / MOUSE LOOK / E USE", muted);
     }
 }
 
@@ -300,6 +509,12 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const Camera camera = makeCamera(world, state, localId, view);
     Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
     drawFloor(rasterizer, camera, world);
+    if (view.mode != ViewMode::God) {
+        Material ceiling;
+        ceiling.color = colorHex("#1b2720");
+        drawBox(rasterizer, camera, {0, 3.41, 0}, {world.width, 0.04, world.depth}, ceiling);
+    }
+    drawDressing(rasterizer, camera, world, state, view);
     if (view.highlightToilet) {
         Material highlight;
         highlight.color = colorHex("#86b83e");
@@ -314,6 +529,12 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         const HumanModel& model = character.appearance.male ? male_ : female_;
         const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
         const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
+        if (character.id == localId && view.mode != ViewMode::FirstPerson && character.toiletAction == ToiletAction::None) {
+            Material ring;
+            ring.color = colorHex("#d7ff54");
+            ring.unlit = true;
+            drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
+        }
         drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
         drawPissing(rasterizer, camera, character);
     }
@@ -332,6 +553,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                   << " humans=" << milliseconds(humanStart, finishStart)
                   << " finish=" << milliseconds(finishStart, end) << " ms\n";
     }
+    drawLabels(frame, camera, state, localId);
     frame.logicalUi();
     drawHud(frame, world, state, localId, view);
     return true;
