@@ -381,13 +381,13 @@ bool animatedPose(const ClientState& state) {
     return false;
 }
 
-bool sameGeometry(const ClientState& a, const ClientState& b, bool skinning) {
+bool sameGeometry(const ClientState& a, const ClientState& b) {
     if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size()) return false;
     for (std::size_t i = 0; i < a.characters.size(); ++i) {
         const Character& left = a.characters[i];
         const Character& right = b.characters[i];
         if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
-            (!skinning && left.speed != right.speed) || left.pissing != right.pissing || left.onToilet != right.onToilet ||
+            left.speed != right.speed || left.pissing != right.pissing || left.onToilet != right.onToilet ||
             left.toiletAction != right.toiletAction || left.path.size() != right.path.size()) return false;
         for (std::size_t p = 0; p < left.path.size(); ++p) {
             if (left.path[p].x != right.path[p].x || left.path[p].y != right.path[p].y) return false;
@@ -399,7 +399,7 @@ bool sameGeometry(const ClientState& a, const ClientState& b, bool skinning) {
         if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
             left.size != right.size) return false;
     }
-    return skinning || !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
+    return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
 }
 
 void updateObjectTransforms(GpuScene& scene, const ClientState& state) {
@@ -407,12 +407,6 @@ void updateObjectTransforms(GpuScene& scene, const ClientState& state) {
         if (!batch.objectId) continue;
         const Character* character = state.character(batch.objectId);
         if (!character) continue;
-        if (batch.skinned) {
-            const double c = std::cos(character->yaw), s = std::sin(character->yaw);
-            batch.modelMatrix = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0,
-                character->position.x, batch.localY, character->position.y, 1};
-            continue;
-        }
         const double delta = std::atan2(std::sin(character->yaw - batch.yaw), std::cos(character->yaw - batch.yaw));
         const double c = std::cos(delta), s = std::sin(delta);
         const double rotatedX = c * batch.pivotX + s * batch.pivotZ;
@@ -595,9 +589,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const auto profileStart = std::chrono::steady_clock::now();
     Camera camera = cameraOverride ? *cameraOverride : makeCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
-    camera.gpuSkinning = view.gpuSkinning;
-    const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state, view.gpuSkinning) ||
-        gpuLocalId_ != localId ||
+    const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
     auto humanStart = profileStart;
     auto finishStart = profileStart;
@@ -623,8 +615,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         drawPuddles(rasterizer, camera, state);
         humanStart = std::chrono::steady_clock::now();
         for (const Character& character : state.characters) {
-            rasterizer.setObject(character.id, {character.position.x, character.position.y}, character.yaw,
-                                 character.onToilet ? -0.35F : 0.0F);
+            rasterizer.setObject(character.id, {character.position.x, character.position.y}, character.yaw);
             const HumanModel& model = character.appearance.male ? male_ : female_;
             const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
             const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
@@ -657,19 +648,6 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         gpuScene_.focal = camera.focal();
         gpuScene_.viewMatrix = camera.viewMatrix();
         updateObjectTransforms(gpuScene_, state);
-        gpuScene_.skins.resize(view.gpuSkinning ? state.characters.size() : 0);
-        for (std::size_t index = 0; index < gpuScene_.skins.size(); ++index) {
-            const Character& character = state.characters[index];
-            ObjectSkin& skin = gpuScene_.skins[index];
-            skin.objectId = character.id;
-            const auto cached = humanCache_.find(character.id);
-            if (cached == humanCache_.end() || !cached->second.valid) {
-                skin.matrices.clear();
-                continue;
-            }
-            const HumanModel& model = character.appearance.male ? male_ : female_;
-            skinningMatrices(model, cached->second.rest, character, view.time, skin.matrices);
-        }
         if (!renderGpuScene(gpuScene_, frame)) {
             error = "Native GPU scene rendering failed";
             return false;

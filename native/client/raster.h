@@ -68,7 +68,6 @@ struct Camera {
     int width = 480;
     int height = 640;
     bool worldSpaceGpu = false;
-    bool gpuSkinning = false;
 
     Vec3 view(Vec3 point) const;
     Vec3 viewDirection(Vec3 direction) const;
@@ -88,9 +87,6 @@ struct RenderVertex {
     Vec3 normal;
     Vec3 source;
     Vec2 uv;
-    std::array<float, 4> bones{};
-    std::array<float, 4> weights{};
-    bool skinned = false;
 };
 
 RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 source, Vec2 uv = {});
@@ -99,22 +95,14 @@ struct GpuVertex {
     float x = 0, y = 0, z = 0;
     float nx = 0, ny = 0, nz = 0;
     float u = 0, v = 0;
-    std::array<float, 4> bones{};
-    std::array<float, 4> weights{};
 };
 
 struct GpuBatch {
     Material material;
     std::vector<GpuVertex> vertices;
     std::uint32_t objectId = 0;
-    float pivotX = 0, pivotZ = 0, yaw = 0, localY = 0;
-    bool skinned = false;
+    float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-};
-
-struct ObjectSkin {
-    std::uint32_t objectId = 0;
-    std::vector<float> matrices;
 };
 
 struct GpuScene {
@@ -125,7 +113,6 @@ struct GpuScene {
     Color background;
     std::array<double, 16> viewMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     std::vector<GpuBatch> batches;
-    std::vector<ObjectSkin> skins;
 };
 
 using GpuRenderer = bool (*)(const GpuScene& scene, NativeFrame& frame);
@@ -138,7 +125,7 @@ public:
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     void setCamera(const Camera& camera);
-    void setObject(std::uint32_t id, Vec2 pivot, float yaw, float localY = 0);
+    void setObject(std::uint32_t id, Vec2 pivot, float yaw);
     GpuScene takeGpuScene() { return std::move(scene_); }
     NativeFrame finish() const;
 
@@ -150,7 +137,6 @@ private:
     std::uint32_t objectId_ = 0;
     Vec2 objectPivot_{};
     float objectYaw_ = 0;
-    float objectLocalY_ = 0;
     std::size_t activeBatch_ = static_cast<std::size_t>(-1);
     GpuScene scene_;
     std::vector<double> depth_;

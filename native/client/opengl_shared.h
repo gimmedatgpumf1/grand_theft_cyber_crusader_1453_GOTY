@@ -68,7 +68,6 @@ struct Api {
     void (GTC_GL_CALL *readPixels)(Int, Int, Sizei, Sizei, Enum, Enum, void*) = nullptr;
     Enum (GTC_GL_CALL *getError)() = nullptr;
     const UByte* (GTC_GL_CALL *getString)(Enum) = nullptr;
-    void (GTC_GL_CALL *getIntegerv)(Enum, Int*) = nullptr;
     void (GTC_GL_CALL *color3f)(Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *alphaFunc)(Enum, Float) = nullptr;
     void (GTC_GL_CALL *rasterPos2i)(Int, Int) = nullptr;
@@ -101,10 +100,6 @@ struct ShaderApi {
     void (GTC_GL_CALL *uniform1f)(Int, Float) = nullptr;
     void (GTC_GL_CALL *uniform3f)(Int, Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *activeTexture)(Enum) = nullptr;
-    void (GTC_GL_CALL *bindAttribLocation)(UInt, UInt, const Char*) = nullptr;
-    void (GTC_GL_CALL *enableVertexAttribArray)(UInt) = nullptr;
-    void (GTC_GL_CALL *disableVertexAttribArray)(UInt) = nullptr;
-    void (GTC_GL_CALL *vertexAttribPointer)(UInt, Int, Enum, Boolean, Sizei, const void*) = nullptr;
 };
 
 bool loadApi(Api& api, const std::function<void*(const char*)>& symbol);
@@ -122,22 +117,15 @@ public:
     bool present(const NativeFrame& frame);
     bool capture(int width, int height, const std::string& path);
     std::string name() const;
-    bool skinning() const { return skinning_; }
 
 private:
     gl::UInt texture(const Texture& source);
-    gl::UInt boneTexture(const ObjectSkin& skin);
     bool checkError();
-    bool buildShader(bool allowSkinning);
+    bool buildShader();
 
     struct ShaderUniforms {
         gl::Int textured = -1, normalMapped = -1, unlit = -1, hair = -1;
-        gl::Int specular = -1, fogColor = -1, skinned = -1;
-        gl::Int boneCount = -1;
-    };
-    struct BoneTexture {
-        gl::UInt id = 0;
-        int width = 0;
+        gl::Int specular = -1, fogColor = -1;
     };
 
     gl::Api api_;
@@ -148,8 +136,6 @@ private:
     std::uint64_t uploadedRevision_ = 0;
     bool vbo_ = false;
     std::map<const Texture*, gl::UInt> textures_;
-    std::map<std::uint32_t, BoneTexture> boneTextures_;
-    std::vector<std::uint32_t> boneUploads_;
     std::vector<unsigned char> bottomUp_;
     std::vector<unsigned char> overlay_;
     gl::UInt overlayTextures_[3] = {0, 0, 0};
@@ -159,7 +145,6 @@ private:
     gl::UInt shaderProgram_ = 0;
     ShaderUniforms shaderUniforms_;
     bool shaders_ = false;
-    bool skinning_ = false;
     bool loaded_ = false;
     bool debug_ = false;
 };

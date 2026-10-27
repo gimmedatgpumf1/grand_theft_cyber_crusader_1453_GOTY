@@ -27,9 +27,6 @@ struct HumanRenderCache {
     std::vector<RenderVertex> transformed;
 };
 
-void skinningMatrices(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, double time, std::vector<float>& matrices);
-
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
                const std::string& root, std::uint64_t tick, bool hideHead);

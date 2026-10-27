@@ -66,12 +66,12 @@ int boneIndex(const HumanModel& model, const std::string& name) {
 }
 
 std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& rest,
-                            const Character& character, double time) {
+                            const Character& character, std::uint64_t tick) {
     std::vector<Transform> transforms(model.rigBones.size());
     std::vector<int> states(model.rigBones.size(), 0);
     const bool seated = character.onToilet;
     const double movement = seated ? 0.0 : std::clamp(character.speed / 2.8, 0.0, 1.4);
-    const double phase = time * 1.1 * (4.0 + character.speed) + character.id * 0.7;
+    const double phase = tick * 0.055 * (4.0 + character.speed) + character.id * 0.7;
     const double swing = std::sin(phase) * 0.48 * movement;
     auto local = [&](const RigBone& bone) {
         double angle = 0;
@@ -263,20 +263,6 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
 
 } // namespace
 
-void skinningMatrices(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, double time, std::vector<float>& matrices) {
-    const std::vector<Transform> transforms = pose(model, rest, character, time);
-    matrices.resize(transforms.size() * 16);
-    for (std::size_t bone = 0; bone < transforms.size(); ++bone) {
-        const Mat3& r = transforms[bone].rotation;
-        const Vec3& t = transforms[bone].translation;
-        const double columnMajor[16] = {r.v[0], r.v[3], r.v[6], 0,
-            r.v[1], r.v[4], r.v[7], 0, r.v[2], r.v[5], r.v[8], 0,
-            t.x, t.y, t.z, 1};
-        for (int element = 0; element < 16; ++element) matrices[bone * 16 + element] = static_cast<float>(columnMajor[element]);
-    }
-}
-
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
                const std::string& root, std::uint64_t tick, bool hideHead) {
@@ -298,7 +284,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseValid = false;
     }
     const std::vector<Vec3>& rest = cache.rest;
-    const std::vector<Transform> transforms = pose(model, rest, character, tick / 20.0);
+    const std::vector<Transform> transforms = pose(model, rest, character, tick);
     const bool freshPose = !cache.poseValid || cache.poseTick != tick ||
         cache.poseX != character.position.x || cache.poseZ != character.position.y ||
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
@@ -307,7 +293,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     auto world = [&](Vec3 point) {
         return rotateWorld(point, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
     };
-    if (!camera.gpuSkinning && freshPose) {
+    if (freshPose) {
         cache.posed = rest;
         cache.posedNormals.resize(rest.size());
         for (std::size_t index = 0; index < rest.size(); ++index) {
@@ -339,30 +325,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     cache.transformed.resize(rest.size());
     auto& transformed = cache.transformed;
     for (std::size_t index = 0; index < rest.size(); ++index) {
-        if (!camera.gpuSkinning) {
-            transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
-            continue;
-        }
-        RenderVertex vertex;
-        vertex.view = rest[index];
-        vertex.normal = cache.normals[index];
-        vertex.source = rest[index];
-        vertex.skinned = true;
-        std::array<std::pair<int, double>, 4> best{};
-        for (const auto& [bone, weight] : model.rigWeights[index]) {
-            if (bone < 0 || weight <= 0) continue;
-            for (int slot = 0; slot < 4; ++slot) {
-                if (weight <= best[slot].second) continue;
-                for (int move = 3; move > slot; --move) best[move] = best[move - 1];
-                best[slot] = {bone, weight};
-                break;
-            }
-        }
-        for (int slot = 0; slot < 4; ++slot) {
-            vertex.bones[slot] = static_cast<float>(std::max(0, best[slot].first));
-            vertex.weights[slot] = static_cast<float>(best[slot].second);
-        }
-        transformed[index] = vertex;
+        transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
     }
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     const Material skin = skinMaterial(model, character, root, morphs);

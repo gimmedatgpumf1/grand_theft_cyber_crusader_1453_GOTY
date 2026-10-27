@@ -48,7 +48,6 @@ public:
     void captureMouse(bool capture);
     void size(int& width, int& height) const;
     bool gpu() const;
-    bool skinning() const;
     bool opened() const;
 
 private:
