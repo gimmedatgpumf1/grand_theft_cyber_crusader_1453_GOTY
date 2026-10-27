@@ -367,6 +367,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         else tallY = standingShape.position.y;
     }
     shaped = shaped && std::abs(tallY - shortY) > 0.001;
+    const double leastHeightClearance = 0.75 * std::min({armClearance, upwardClearance, standingClearance, leastMorphClearance});
+    const bool heightClearance = leastHeightClearance > 0.035;
     ViewState mouse;
     mouse.mode = ViewMode::FirstPerson;
     mouse.pitch = 0;
@@ -389,9 +391,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
         "=" + std::to_string(leastMorphClearance);
+    else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
     else if (!look) error = "first-person look input";
     return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && heightScaling && seated && neck && pitch && clearance &&
-        lowerBody && shaped && look;
+        lowerBody && shaped && heightClearance && look;
 }
 
 } // namespace
