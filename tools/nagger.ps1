@@ -24,5 +24,6 @@ if (-not $Failed) {
     Write-Host "[nagger] All first-party files are <= 1000 lines. Readability survives."
 }
 Write-Host "[nagger] Build successful? Push to GitHub!"
+Write-Host "[nagger] Less yapping, more coding! Don't bother the King until you have fixed it!"
 if ($Failed) { exit 1 }
 exit 0

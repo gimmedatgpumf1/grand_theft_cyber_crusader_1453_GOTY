@@ -286,12 +286,20 @@ void prepareHuman(const HumanModel& model, const Character& character, HumanRend
 }
 
 Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, std::uint64_t tick) {
+                      const Character& character, std::uint64_t tick,
+                      double headYaw, double headPitch) {
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     const int headIndex = boneIndex(model, "head");
     const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
     const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
-    const Vec3 posed = head.point(eyes);
+    Vec3 posed = head.point(eyes);
+    const int neckIndex = boneIndex(model, "neck01");
+    if (neckIndex >= 0 && (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9)) {
+        const RigBone& neckBone = model.rigBones[neckIndex];
+        const Vec3 neck = transforms[neckIndex].point(joint(rest, neckBone.head));
+        const Vec3 neckToEye = apply(rotationX(-headPitch), posed - neck);
+        posed = neck + rotateWorld(neckToEye, static_cast<float>(headYaw));
+    }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
 }

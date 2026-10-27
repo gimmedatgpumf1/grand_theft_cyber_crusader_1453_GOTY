@@ -142,10 +142,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             if (vertex.y > 1.10 && vertex.y < 1.40) torsoRetained = true;
         }
     }
-    const auto expectedEye = [&](const gtc::Character& character) {
+    const auto expectedEye = [&](const gtc::Character& character, double headYaw = 0, double headPitch = 0) {
         HumanRenderCache cache;
         prepareHuman(eyeModel, character, cache);
-        return humanEyePosition(eyeModel, cache.rest, character, state.tick);
+        return humanEyePosition(eyeModel, cache.rest, character, state.tick, headYaw, headPitch);
     };
     state.characters[0].onToilet = true;
     state.characters[0].toiletAction = gtc::ToiletAction::Shit;
@@ -159,15 +159,25 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool seated = length(seatedEye.position - expectedSeatedEye) < 1e-6 &&
         length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y < eye.position.y - 0.01;
     ViewState neckView = view;
-    neckView.yaw = state.characters[0].yaw + 3.14159265F;
+    neckView.yaw = state.characters[0].yaw + 3.0F;
     const Camera limited = renderer.viewCamera(world, state, citizen.id, neckView);
     const Vec3 limitedForward = normalized(limited.target - limited.position);
     const double limitedYaw = std::atan2(limitedForward.x, limitedForward.z);
     const double bodyYaw = state.characters[0].yaw;
     const double neckAngle = std::abs(std::atan2(std::sin(limitedYaw - bodyYaw), std::cos(limitedYaw - bodyYaw)));
     constexpr double neckLimit = 100.0 * 3.141592653589793 / 180.0;
+    const Vec3 expectedNeckEye = expectedEye(state.characters[0], neckLimit, 0);
     const bool neck = std::abs(neckAngle - neckLimit) < 1e-4 &&
-        length(limited.position - expectedSeatedEye) < 1e-6;
+        length(limited.position - expectedNeckEye) < 1e-6 &&
+        length(expectedNeckEye - expectedSeatedEye) > 0.01;
+    ViewState pitchView = view;
+    pitchView.pitch = -1.5F;
+    const Camera pitched = renderer.viewCamera(world, state, citizen.id, pitchView);
+    constexpr double pitchDown = -1.05;
+    const Vec3 expectedPitchEye = expectedEye(state.characters[0], 0, pitchDown);
+    const Vec3 pitchForward = normalized(pitched.target - pitched.position);
+    const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 &&
+        length(expectedPitchEye - expectedSeatedEye) > 0.01 && std::abs(pitchForward.y - std::sin(pitchDown)) < 1e-6;
     const int headHeight = eyeModel.specIndex("headHeight");
     bool shaped = headHeight >= 0;
     double shortY = 0, tallY = 0;
@@ -198,9 +208,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
+    else if (!pitch) error = "first-person neck pitch pivot";
     else if (!shaped) error = "first-person morphed head attachment";
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && seated && neck && shaped && look;
+    return eyeMatrix && attached && seated && neck && pitch && shaped && look;
 }
 
 } // namespace

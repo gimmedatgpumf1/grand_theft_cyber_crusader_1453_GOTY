@@ -16,4 +16,5 @@ if [ "$FAILED" -eq 0 ]; then
   echo '[nagger] All first-party files are <= 1000 lines. Readability survives.'
 fi
 echo '[nagger] Build successful? Push to GitHub!'
+echo '[nagger] Less yapping, more coding! Don'"'"'t bother the King until you have fixed it!'
 exit "$FAILED"
