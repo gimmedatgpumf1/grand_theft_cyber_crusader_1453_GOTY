@@ -705,14 +705,9 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 if (next < 0) break;
                 previous = lowerRootId; lowerRootId = next;
             }
-            double maxZ = -1e100, minZ = 1e100;
-            for (int id : ids) { maxZ = std::max(maxZ, rest[id].z); minZ = std::min(minZ, rest[id].z); }
-            // The distal cap centroid is the urethral meatus. The dorsal ridge
-            // vertex is several millimetres away and reads as a phantom stream.
-            Vec3 exit;
-            int cap = 0;
-            for (int id : ids) if (rest[id].z >= maxZ - 0.12 * (maxZ - minZ)) { exit += cache.posed[id]; ++cap; }
-            exit = exit / static_cast<double>(std::max(1, cap));
+            // The distal-most midline vertex is the mesh apex, i.e. the meatus.
+            // The visible stream must leave that exact point, not an offset.
+            const Vec3 exit = cache.posed[tipId];
             cache.genitalPivot = rootId; cache.genitalTip = tipId;
             const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
             const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
@@ -730,7 +725,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 cache.posedNormals[id] = normalized(articulate(cache.posedNormals[id]));
             }
             cache.genitalRoot = pivot;
-            cache.genitalExit = pivot + articulate(exit - pivot);
+            const Vec3 meatus = pivot + articulate(exit - pivot);
+            cache.genitalExit = meatus + normalized(meatus - pivot) * 0.0015; // Clear the skin surface.
         }
     }
     cache.transformed.resize(rest.size());

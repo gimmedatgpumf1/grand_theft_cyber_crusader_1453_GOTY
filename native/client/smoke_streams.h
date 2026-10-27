@@ -64,7 +64,7 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
     const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
     const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
     const double capOffset = length(cache.genitalExit - cache.posed[cache.genitalTip]);
-    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset < 0.0005 || capOffset > 0.02 ||
+    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset < 0.001 || capOffset > 0.003 ||
         length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
         dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
         length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
