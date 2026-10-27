@@ -33,7 +33,8 @@ class WorldRenderer {
 public:
     bool load(const std::string& root, std::string& error);
     bool render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
-                const ViewState& view, NativeFrame& frame, std::string& error) const;
+                const ViewState& view, NativeFrame& frame, std::string& error,
+                const Camera* cameraOverride = nullptr) const;
     const std::vector<MorphSpec>& morphSpecs(bool male) const;
 
 private:
@@ -55,5 +56,7 @@ private:
 
 Camera makeViewCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
                       const ViewState& view);
+void interpolateCharacters(const ClientState& target, ClientState& current, float dt);
+Camera smoothViewCamera(const Camera& desired, const Camera& previous, ViewMode mode, float dt, bool reset);
 
 } // namespace gtc::native

@@ -111,6 +111,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(matrixMode, "glMatrixMode");
     GTC_LOAD_GL(loadIdentity, "glLoadIdentity");
     GTC_LOAD_GL(loadMatrixd, "glLoadMatrixd");
+    GTC_LOAD_GL(multMatrixd, "glMultMatrixd");
     GTC_LOAD_GL(frustum, "glFrustum");
     GTC_LOAD_GL(scalef, "glScalef");
     GTC_LOAD_GL(lightModelfv, "glLightModelfv");
@@ -448,6 +449,9 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         api_.loadIdentity();
         if (material.kind == Material::Kind::Cloth) api_.scalef(5, 5, 1);
         api_.matrixMode(c::modelView);
+        api_.loadMatrixd(scene.viewMatrix.data());
+        api_.multMatrixd(batch.modelMatrix.data());
+        api_.scalef(1, 1, -1);
         const bool textured = material.texture && !material.texture->pixels.empty() &&
             (material.kind == Material::Kind::Skin || material.kind == Material::Kind::Hair ||
              material.kind == Material::Kind::Cloth || material.kind == Material::Kind::Floor ||

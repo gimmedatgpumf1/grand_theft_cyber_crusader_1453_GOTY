@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <iostream>
 #include <set>
-#include <thread>
 #include <vector>
 
 namespace gtc::native {
@@ -62,7 +61,6 @@ public:
         using Clock = std::chrono::steady_clock;
         auto previous = Clock::now();
         auto inputTime = previous;
-        auto nextFrame = previous;
         NativeFrame frame;
         bool running = true;
         while (running && window_.opened() && client_.connected()) {
@@ -87,9 +85,11 @@ public:
                 sendInput();
                 inputTime = now;
             }
+            updatePresentation(dt);
+            updateCamera(dt);
             updateHighlight();
             const auto renderStart = Clock::now();
-            if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, frame, error)) {
+            if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error, &activeCamera())) {
                 std::cerr << error << '\n';
                 return 1;
             }
@@ -108,9 +108,6 @@ public:
                 }
                 screenshot_ = false;
             }
-            nextFrame += std::chrono::microseconds(4000);
-            std::this_thread::sleep_until(nextFrame);
-            if (Clock::now() - nextFrame > std::chrono::milliseconds(250)) nextFrame = Clock::now();
         }
         return 0;
     }
@@ -147,9 +144,46 @@ public:
 private:
     const Character* local() const { return client_.state().character(client_.playerId()); }
 
+    const ClientState& visualState() const {
+        return presentationReady_ ? presentation_ : client_.state();
+    }
+
+    void updatePresentation(float dt) {
+        const ClientState& latest = client_.state();
+        if (!presentationReady_) {
+            presentation_ = latest;
+            presentationVersion_ = client_.stateVersion();
+            presentationReady_ = true;
+            return;
+        }
+        if (presentationVersion_ != client_.stateVersion()) {
+            const ClientState previous = presentation_;
+            presentation_ = latest;
+            presentationVersion_ = client_.stateVersion();
+            for (Character& character : presentation_.characters) {
+                if (const Character* old = previous.character(character.id)) {
+                    character.position = old->position;
+                    character.yaw = old->yaw;
+                }
+            }
+        }
+        interpolateCharacters(latest, presentation_, dt);
+    }
+
+    void updateCamera(float dt) {
+        const Camera desired = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const bool reset = !cameraReady_ || cameraMode_ != view_.mode;
+        camera_ = smoothViewCamera(desired, camera_, view_.mode, dt, reset);
+        cameraMode_ = view_.mode;
+        cameraReady_ = true;
+    }
+
+    const Camera& activeCamera() const { return camera_; }
+
     void setMode(ViewMode mode) {
         if (view_.mode == mode) return;
         view_.mode = mode;
+        cameraReady_ = false;
         keys_.clear();
         window_.captureMouse(false);
         captured_ = false;
@@ -198,7 +232,7 @@ private:
     }
 
     bool ground(double x, double y, gtc::Vec2& point) const {
-        const Camera camera = makeViewCamera(client_.world(), client_.state(), client_.playerId(), view_);
+        const Camera camera = cameraReady_ ? camera_ : makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 forward = normalized(camera.target - camera.position);
         const Vec3 right = normalized(cross(forward, camera.up));
         const Vec3 vertical = normalized(cross(right, forward));
@@ -212,7 +246,7 @@ private:
     }
 
     bool toiletHit(double x, double y) const {
-        const Camera camera = makeViewCamera(client_.world(), client_.state(), client_.playerId(), view_);
+        const Camera camera = cameraReady_ ? camera_ : makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 point = camera.view({client_.world().toilet.x, 0.72, client_.world().toilet.y});
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
@@ -468,6 +502,12 @@ private:
         }
     }
 
+    ClientState presentation_;
+    std::uint64_t presentationVersion_ = 0;
+    bool presentationReady_ = false;
+    Camera camera_;
+    ViewMode cameraMode_ = ViewMode::ThirdPerson;
+    bool cameraReady_ = false;
     InteractiveOptions options_;
     NativeClient client_;
     WorldRenderer renderer_;

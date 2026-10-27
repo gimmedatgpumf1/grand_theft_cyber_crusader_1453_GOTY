@@ -365,6 +365,20 @@ void drawPissing(Rasterizer& rasterizer, const Camera& camera, const Character& 
     }
 }
 
+void updateObjectTransforms(GpuScene& scene, const ClientState& state) {
+    for (GpuBatch& batch : scene.batches) {
+        if (!batch.objectId) continue;
+        const Character* character = state.character(batch.objectId);
+        if (!character) continue;
+        const double delta = std::atan2(std::sin(character->yaw - batch.yaw), std::cos(character->yaw - batch.yaw));
+        const double c = std::cos(delta), s = std::sin(delta);
+        const double rotatedX = c * batch.pivotX + s * batch.pivotZ;
+        const double rotatedZ = -s * batch.pivotX + c * batch.pivotZ;
+        batch.modelMatrix = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0,
+            character->position.x - rotatedX, 0, character->position.y - rotatedZ, 1};
+    }
+}
+
 void drawLabels(NativeFrame& frame, const Camera& camera, const ClientState& state, std::uint32_t localId) {
     for (const Character& character : state.characters) {
         if (character.id == localId) continue;
@@ -500,14 +514,43 @@ Camera makeViewCamera(const ClientWorld& world, const ClientState& state, std::u
     return makeCamera(world, state, localId, view);
 }
 
+void interpolateCharacters(const ClientState& target, ClientState& current, float dt) {
+    const double blend = 1.0 - std::exp(-15.0 * dt);
+    for (Character& character : current.characters) {
+        const Character* destination = target.character(character.id);
+        if (!destination) continue;
+        if (destination->onToilet || destination->toiletAction == ToiletAction::Piss) {
+            character.position = destination->position;
+            character.yaw = destination->yaw;
+            continue;
+        }
+        character.position.x += static_cast<float>((destination->position.x - character.position.x) * blend);
+        character.position.y += static_cast<float>((destination->position.y - character.position.y) * blend);
+        const double angle = std::atan2(std::sin(destination->yaw - character.yaw),
+                                        std::cos(destination->yaw - character.yaw));
+        character.yaw = static_cast<float>(character.yaw + angle * blend);
+    }
+}
+
+Camera smoothViewCamera(const Camera& desired, const Camera& previous, ViewMode mode, float dt, bool reset) {
+    Camera result = desired;
+    if (!reset && mode != ViewMode::FirstPerson) {
+        const double rate = mode == ViewMode::God ? 12.0 : 16.0;
+        const double blend = 1.0 - std::exp(-rate * dt);
+        result.position = previous.position + (desired.position - previous.position) * blend;
+    }
+    return result;
+}
+
 bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
-                           const ViewState& view, NativeFrame& frame, std::string& error) const {
+                           const ViewState& view, NativeFrame& frame, std::string& error,
+                           const Camera* cameraOverride) const {
     if (!ready_) {
         error = "Native world renderer is not loaded";
         return false;
     }
     const auto profileStart = std::chrono::steady_clock::now();
-    Camera camera = makeCamera(world, state, localId, view);
+    Camera camera = cameraOverride ? *cameraOverride : makeCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
     const bool rebuild = !view.gpu || !gpuValid_ || gpuTick_ != state.tick || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
@@ -534,6 +577,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         drawPuddles(rasterizer, camera, state);
         humanStart = std::chrono::steady_clock::now();
         for (const Character& character : state.characters) {
+            rasterizer.setObject(character.id, {character.position.x, character.position.y}, character.yaw);
             const HumanModel& model = character.appearance.male ? male_ : female_;
             const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
             const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
@@ -546,6 +590,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
             drawPissing(rasterizer, camera, character);
         }
+        rasterizer.setObject(0, {}, 0);
         finishStart = std::chrono::steady_clock::now();
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();
@@ -564,6 +609,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         gpuScene_.height = std::max(1, view.height);
         gpuScene_.focal = camera.focal();
         gpuScene_.viewMatrix = camera.viewMatrix();
+        updateObjectTransforms(gpuScene_, state);
         if (!renderGpuScene(gpuScene_, frame)) {
             error = "Native GPU scene rendering failed";
             return false;

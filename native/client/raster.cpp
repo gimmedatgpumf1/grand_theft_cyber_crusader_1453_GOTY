@@ -260,14 +260,25 @@ void Rasterizer::setCamera(const Camera& camera) {
     if (gpu_) scene_.viewMatrix = camera.viewMatrix();
 }
 
+void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw) {
+    objectId_ = id;
+    objectPivot_ = pivot;
+    objectYaw_ = yaw;
+}
+
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
         auto batch = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
-            return sameMaterial(candidate.material, material);
+            return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
         });
         if (batch == scene_.batches.end()) {
-            scene_.batches.push_back({material, {}});
+            scene_.batches.push_back({});
             batch = std::prev(scene_.batches.end());
+            batch->material = material;
+            batch->objectId = objectId_;
+            batch->pivotX = static_cast<float>(objectPivot_.x);
+            batch->pivotZ = static_cast<float>(objectPivot_.y);
+            batch->yaw = objectYaw_;
             batch->vertices.reserve(12288);
         }
         for (const RenderVertex& vertex : input) {

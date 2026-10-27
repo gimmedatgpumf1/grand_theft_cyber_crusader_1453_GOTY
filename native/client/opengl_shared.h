@@ -41,6 +41,7 @@ struct Api {
     void (GTC_GL_CALL *matrixMode)(Enum) = nullptr;
     void (GTC_GL_CALL *loadIdentity)() = nullptr;
     void (GTC_GL_CALL *loadMatrixd)(const Double*) = nullptr;
+    void (GTC_GL_CALL *multMatrixd)(const Double*) = nullptr;
     void (GTC_GL_CALL *frustum)(Double, Double, Double, Double, Double, Double) = nullptr;
     void (GTC_GL_CALL *scalef)(Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *lightModelfv)(Enum, const Float*) = nullptr;
