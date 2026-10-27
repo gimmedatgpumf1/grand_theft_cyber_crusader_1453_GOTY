@@ -18,8 +18,10 @@ inline void seedAimedToiletStream(ClientState& state, Character& character, gtc:
     character.pitch = pissLaunchPitch(character, target, kToiletWaterHeight, -0.9F, &speed);
     const float cp = std::cos(character.pitch), sp = std::sin(character.pitch);
     const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    const gtc::Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
-    const float originHeight = character.elevation + 0.79F + 0.10F * sp;
+    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
+    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + reach);
+    const float originHeight = character.elevation + kPissEmitterPivotHeight + drop;
     const gtc::Vec2 direction = normalized(target - origin);
     character.pissYaw = std::atan2(direction.x, direction.y);
     character.pissPitch = character.pitch;

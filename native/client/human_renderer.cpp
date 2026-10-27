@@ -598,8 +598,10 @@ Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache
     }
     const float cp = std::cos(fallbackPitch), sp = std::sin(fallbackPitch);
     const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    const gtc::Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
-    return {origin.x, character.elevation + 0.79F + 0.10F * sp, origin.y};
+    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
+    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + reach);
+    return {origin.x, character.elevation + kPissEmitterPivotHeight + drop, origin.y};
 }
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
@@ -689,6 +691,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             int ventralId = tipId;
             for (int id : edges[tipId]) if (central(id) && rest[id].y < rest[tipId].y &&
                 (ventralId == tipId || rest[id].z > rest[ventralId].z)) ventralId = id;
+            // The pivot is the midline shaft landmark that the core emitter
+            // constants are measured from, so organ and droplets agree.
             int rootId = tipId, previous = -1;
             for (int step = 0; step < 4; ++step) {
                 int next = -1;

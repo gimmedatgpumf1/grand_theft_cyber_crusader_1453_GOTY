@@ -26,6 +26,14 @@ inline constexpr float kToiletRimHeight = 0.368F;
 inline constexpr float kToiletSeatHeight = 0.381F;
 inline constexpr float kToiletWaterHeight = kToiletRimHeight - 0.133F;
 inline constexpr float kToiletTankHeight = 0.743F;
+// Anatomical emitter measured from the CC0 male mesh after morph scaling.
+// The renderer pivots the organ at 0.8173 m above the soles and 0.1162 m
+// forward; the meatus sits 30.3 mm below and 27.9 mm ahead of that pivot.
+// Droplets must leave that hole at every aim angle, not a fixed hip offset.
+inline constexpr float kPissEmitterPivotHeight = 0.8173F;
+inline constexpr float kPissEmitterPivotForward = 0.1162F;
+inline constexpr float kPissEmitterDrop = 0.0303F;
+inline constexpr float kPissEmitterReach = 0.0279F;
 inline constexpr float kPissSpeed = 9.0F;
 inline constexpr float kBulletSpeed = 32.0F;
 inline constexpr float kProjectileGravity = 9.81F;

@@ -73,8 +73,12 @@ void World::spawnPiss(Character& character) {
     if (targeted && !projectile.toilet) character.pitch = pitch;
     const float cp = std::cos(pitch), sp = std::sin(pitch);
     const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    projectile.position = character.position + forward * (0.10F + 0.06F * cp);
-    projectile.height = character.elevation + 0.79F + 0.10F * sp;
+    // Rotate the meatus about the shaft pivot so droplets leave the visible hole
+    // at every aim angle instead of a fixed hip offset.
+    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
+    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
+    projectile.position = character.position + forward * (kPissEmitterPivotForward + reach);
+    projectile.height = character.elevation + kPissEmitterPivotHeight + drop;
     Vec2 direction = forward;
     if (targeted) {
         const Vec2 delta = target - projectile.position;
