@@ -411,7 +411,7 @@ int main(int argc, char** argv) {
         tps.yaw = 0;
         gtc::native::ViewState fps;
         fps.mode = gtc::native::ViewMode::FirstPerson;
-        fps.pitch = -1.20;
+        fps.pitch = -1.50;
         gtc::native::ViewState fpsLevel;
         fpsLevel.mode = gtc::native::ViewMode::FirstPerson;
         gtc::native::ViewState god;
