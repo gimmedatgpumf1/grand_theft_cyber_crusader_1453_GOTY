@@ -546,6 +546,10 @@ int main() {
         check(first.id == 1 && second.id == 0 && spots.size() == 1 &&
               spots.front().size > first.size && gtc::length(spots.front().position) < 0.001F,
               "overlapping floor impacts merge into one growing puddle without displacement");
+        gtc::Puddle separated; separated.position = {0.28F, 0};
+        spots.push_back(gtc::placePuddle(spots, separated, 3, {}, 9, 7));
+        gtc::placePuddle(spots, input, 4, {}, 9, 7);
+        check(spots.size() == 1, "growth coalesces every newly overlapping floor puddle");
 
         gtc::World upward;
         const auto shooter = upward.addCharacter("Postal Arc", false);

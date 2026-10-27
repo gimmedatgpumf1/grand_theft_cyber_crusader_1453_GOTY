@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace gtc {
 namespace projectile_detail {
@@ -274,15 +275,24 @@ inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::
     candidate.size = 0.09F + static_cast<float>(id % 4U) * 0.015F;
     if (!projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return {};
     if (candidate.vertical) return candidate; // Wall hits stay exactly where the physical sweep landed.
-    for (Puddle& other : existing) {
-        if (!projectile_detail::overlaps(candidate, other)) continue;
-        const float a = other.size * other.size, b = candidate.size * candidate.size;
-        other.position = (other.position * a + candidate.position * b) * (1.0F / (a + b));
-        other.size = std::min(0.65F, std::sqrt(a + b));
-        other.age = std::min(other.age, candidate.age);
-        return {};
+    const auto merge = [](Puddle& into, const Puddle& added) {
+        const float a = into.size * into.size, b = added.size * added.size;
+        into.position = (into.position * a + added.position * b) * (1.0F / (a + b));
+        into.size = std::min(0.65F, std::sqrt(a + b));
+        into.age = std::min(into.age, added.age);
+    };
+    std::size_t first = 0;
+    while (first < existing.size() && !projectile_detail::overlaps(candidate, existing[first])) ++first;
+    if (first == existing.size()) return candidate;
+    merge(existing[first], candidate);
+    std::swap(existing[0], existing[first]);
+    for (std::size_t i = 1; i < existing.size();) {
+        if (!projectile_detail::overlaps(existing[0], existing[i])) { ++i; continue; }
+        merge(existing[0], existing[i]);
+        existing.erase(existing.begin() + static_cast<std::ptrdiff_t>(i));
+        i = 1;
     }
-    return candidate;
+    return {};
 }
 
 } // namespace gtc
