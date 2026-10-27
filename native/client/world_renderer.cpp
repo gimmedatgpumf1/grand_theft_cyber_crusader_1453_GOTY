@@ -264,8 +264,10 @@ void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) 
     const Vec3 center{toilet.x, 0, toilet.y};
     drawBox(rasterizer, camera, center + Vec3{0, 0.20, -0.10}, Vec3{0.58, 0.40, 0.55}, porcelain);
     drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.48, 0.03}, Vec3{0.49, 0.34, 0.62}, porcelain, 12, 6);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.72, 0.05}, Vec3{0.53, 0.065, 0.64}, porcelain, 16, 4);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.765, 0.08}, Vec3{0.32, 0.018, 0.40}, dark, 12, 4);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletSeatHeight - 0.065, 0.05},
+                  Vec3{0.53, 0.065, 0.64}, porcelain, 16, 4);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletSeatHeight - 0.020, 0.08},
+                  Vec3{0.32, 0.018, 0.40}, dark, 12, 4);
     drawBox(rasterizer, camera, center + Vec3{0, 1.02, -0.52}, Vec3{1.02, 0.92, 0.34}, porcelain);
     drawBox(rasterizer, camera, center + Vec3{0, 1.51, -0.52}, Vec3{1.08, 0.08, 0.39}, porcelain);
     Material flush;

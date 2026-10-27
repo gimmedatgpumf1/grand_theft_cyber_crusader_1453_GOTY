@@ -169,7 +169,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Camera seatedEye = renderer.viewCamera(world, state, citizen.id, view);
     const Vec3 expectedSeatedEye = expectedEye(state.characters[0]);
     const bool seated = length(seatedEye.position - expectedSeatedEye) < 1e-6 &&
-        length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y < eye.position.y - 0.01;
+        length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y > eye.position.y;
+    // This toilet's high measured seat places the eyes slightly above standing;
+    // the old fixed root drop and its forced-lower assertion were both wrong.
     ViewState neckView = view;
     neckView.yaw = state.characters[0].yaw + 3.0F;
     const Camera limited = renderer.viewCamera(world, state, citizen.id, neckView);

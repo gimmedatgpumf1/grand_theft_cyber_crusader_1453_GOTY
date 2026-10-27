@@ -286,6 +286,42 @@ void prepareHuman(const HumanModel& model, const Character& character, HumanRend
 
 namespace {
 
+double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
+                       const Character& character, const std::vector<Transform>& transforms) {
+    if (!character.onToilet) return 0.0;
+    std::vector<bool> supportBone(model.rigBones.size(), false);
+    for (std::size_t i = 0; i < model.rigBones.size(); ++i) {
+        const std::string& name = model.rigBones[i].name;
+        supportBone[i] = name == "root" || name == "spine05" ||
+            name == "upperleg01.L" || name == "upperleg01.R" ||
+            name == "upperleg02.L" || name == "upperleg02.R";
+    }
+    double lowest = 1e100;
+    for (std::size_t index = 0; index < rest.size(); ++index) {
+        const Vec3& source = rest[index];
+        if (source.y < 0.55 || source.y > 1.10 || std::abs(source.x) > 0.30 || source.z > 0.02) continue;
+        Vec3 point;
+        double total = 0, support = 0;
+        for (const auto& [bone, weight] : model.rigWeights[index]) {
+            if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+            point += transforms[bone].point(source) * weight;
+            total += weight;
+            if (supportBone[bone]) support += weight;
+        }
+        if (support < 0.25 || total < 1e-8) continue;
+        const Vec3 local = (point / total) * kHumanHeightScale;
+        const double outerX = local.x / 0.53;
+        const double outerZ = (local.z - (0.05 - kToiletSeatForwardOffset)) / 0.64;
+        const double innerX = local.x / 0.32;
+        const double innerZ = (local.z - (0.08 - kToiletSeatForwardOffset)) / 0.40;
+        if (outerX * outerX + outerZ * outerZ > 1.0 || innerX * innerX + innerZ * innerZ < 1.0) continue;
+        lowest = std::min(lowest, local.y);
+    }
+    // Place the real posed buttock/posterior-thigh support surface on the
+    // porcelain seat ring, outside the open bowl and inside its front edge.
+    return lowest < 1e99 ? kToiletSeatHeight - lowest : 0.0;
+}
+
 struct GazeChain {
     std::vector<int> indices;
     std::vector<Vec3> pivots;
@@ -432,7 +468,7 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
         posedEye = points[count];
         posedChin = points[count + 1];
     }
-    const double rootY = character.onToilet ? -0.35 : 0.0;
+    const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
         return rotateWorld(point * kHumanHeightScale, character.yaw) +
             Vec3{character.position.x, rootY, character.position.y};
@@ -457,7 +493,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseX != character.position.x || cache.poseZ != character.position.y ||
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet;
-    const double rootY = character.onToilet ? -0.35 : 0.0;
+    const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
         return rotateWorld(point * kHumanHeightScale, character.yaw) +
             Vec3{character.position.x, rootY, character.position.y};

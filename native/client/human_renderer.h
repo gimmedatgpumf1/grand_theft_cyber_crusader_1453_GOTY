@@ -12,6 +12,7 @@
 namespace gtc::native {
 
 inline constexpr double kEyeInHeadRange = 30.0 * 3.141592653589793 / 180.0;
+inline constexpr double kToiletSeatHeight = 0.785;
 
 struct HumanRenderCache {
     bool valid = false;
