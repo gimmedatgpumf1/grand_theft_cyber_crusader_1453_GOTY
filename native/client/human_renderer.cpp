@@ -310,6 +310,9 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
         const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
         posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckYawShare),
                                       headPitch * (1 - neckPitchShare));
+        // Neck flexion also carries the head slightly forward; a pure rotation
+        // leaves the eye behind the chest when looking at the legs.
+        posed.z += 0.025 * std::sin(std::max(0.0, -headPitch));
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};

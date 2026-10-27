@@ -212,10 +212,14 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
+    const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
     int visiblePelvis = 0, visibleLegs = 0;
+    double standingClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
         for (const auto& vertex : batch.vertices) {
-            const Vec3 point = transform(Vec3{vertex.x, vertex.y, vertex.z});
+            const Vec3 worldPoint{vertex.x, vertex.y, vertex.z};
+            standingClearance = std::min(standingClearance, length(standingCamera.position - worldPoint));
+            const Vec3 point = transform(worldPoint);
             if (point.z <= 0.035) continue;
             const double x = motionScene->width * 0.5 + motionScene->focal * point.x / point.z;
             const double y = motionScene->height * 0.5 - motionScene->focal * point.y / point.z;
@@ -224,9 +228,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             if (vertex.y > 0.05 && vertex.y < 0.65) ++visibleLegs;
         }
     }
-    const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
     const Vec3 standingForward = normalized(standingCamera.target - standingCamera.position);
-    const bool lowerBody = visiblePelvis > 8 && visibleLegs > 8 && std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
+    const bool lowerBody = visiblePelvis > 8 && visibleLegs > 8 && standingClearance > 0.04 &&
+        std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
     const int headHeight = eyeModel.specIndex("headHeight");
     bool shaped = headHeight >= 0;
     double shortY = 0, tallY = 0;
@@ -259,7 +263,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!neck) error = "first-person human neck limit";
     else if (!pitch) error = "first-person neck pitch pivot";
     else if (!clearance) error = "first-person arm clearance";
-    else if (!lowerBody) error = "standing male lower-body visibility";
+    else if (!lowerBody) error = "standing male lower-body visibility, clearance=" + std::to_string(standingClearance) +
+        ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
     else if (!shaped) error = "first-person morphed head attachment";
     else if (!look) error = "first-person look input";
     return eyeMatrix && attached && seated && neck && pitch && clearance && lowerBody && shaped && look;
