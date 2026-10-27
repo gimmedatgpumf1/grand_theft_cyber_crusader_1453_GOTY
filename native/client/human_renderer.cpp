@@ -619,7 +619,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
         cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
         cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing ||
-        cache.poseUnzipped != character.unzipped || cache.poseBlocking != character.blocking;
+        cache.poseUnzipped != character.unzipped || cache.poseBlocking != character.blocking ||
+        cache.posePissing != character.pissing;
     const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
         return rotateWorld(point * kHumanHeightScale, character.yaw) +
@@ -660,6 +661,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.posePissYaw = character.pissYaw; cache.posePissPitch = character.pissPitch;
         cache.poseAttackAnim = character.attackAnim;
         cache.poseUnzipped = character.unzipped;
+        cache.posePissing = character.pissing;
         cache.poseBlocking = character.blocking;
         cache.poseAction = static_cast<int>(character.toiletAction);
         cache.poseOnToilet = character.onToilet;
@@ -703,9 +705,16 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 if (next < 0) break;
                 previous = lowerRootId; lowerRootId = next;
             }
+            double maxZ = -1e100, minZ = 1e100;
+            for (int id : ids) { maxZ = std::max(maxZ, rest[id].z); minZ = std::min(minZ, rest[id].z); }
+            // The distal cap centroid is the urethral meatus. The dorsal ridge
+            // vertex is several millimetres away and reads as a phantom stream.
+            Vec3 exit;
+            int cap = 0;
+            for (int id : ids) if (rest[id].z >= maxZ - 0.12 * (maxZ - minZ)) { exit += cache.posed[id]; ++cap; }
+            exit = exit / static_cast<double>(std::max(1, cap));
             cache.genitalPivot = rootId; cache.genitalTip = tipId;
             const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
-            const Vec3 exit = cache.posed[tipId];
             const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
             const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
             const double yaw = active ? character.pissYaw : character.yaw;

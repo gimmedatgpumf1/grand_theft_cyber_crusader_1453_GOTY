@@ -63,8 +63,8 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
                       std::cos(character.pissPitch) * std::cos(character.pissYaw)};
     const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
     const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
-    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 ||
-        length(cache.genitalExit - cache.posed[cache.genitalTip]) > 1e-6 ||
+    const double capOffset = length(cache.genitalExit - cache.posed[cache.genitalTip]);
+    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset < 0.0005 || capOffset > 0.02 ||
         length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
         dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
         length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
@@ -104,6 +104,32 @@ inline bool orbitKeepsControlsFrozen() {
     return capture && frozenWalk && frozenAim && previewsCamera && restored && !rejected.begin(firstPerson, false);
 }
 
+// A male NPC can start pissing without ever unzipping. If the pose cache does
+// not include that flag the genitals are never articulated and the renderer
+// silently falls back to the floating hip offset instead of the meatus.
+inline bool npcPissingReposesGenitals(const HumanModel& model, Character character, double tick,
+                                      const std::string& root) {
+    character.ai = character.appearance.male = true;
+    character.onToilet = false;
+    character.toiletAction = ToiletAction::None;
+    character.unzipped = character.pissing = false;
+    HumanRenderCache cache;
+    Camera camera;
+    camera.width = camera.height = 16;
+    camera.worldSpaceGpu = true;
+    Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
+    HairLibrary hair;
+    drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
+    if (cache.genitalTip >= 0) return false;
+    character.pissing = true;
+    character.pissYaw = character.yaw;
+    character.pissPitch = -0.35F;
+    drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
+    const Vec3 fallback = humanStreamOrigin(character, nullptr, character.pissPitch);
+    return cache.genitalTip >= 0 && length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) < 1e-6 &&
+        length(cache.genitalExit - fallback) > 0.01;
+}
+
 inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
                                     const std::string& root, double tick) {
     state.projectiles.clear();
@@ -122,7 +148,8 @@ inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
     seedAimedToiletStream(state, *npc, {0, -4.69F});
     HumanModel model;
     std::string error;
-    return model.loadRuntime(root, true, error) && npcStreamOriginMatchesPose(model, *npc, tick, root);
+    return model.loadRuntime(root, true, error) && npcPissingReposesGenitals(model, *npc, tick, root) &&
+        npcStreamOriginMatchesPose(model, *npc, tick, root);
 }
 
 } // namespace gtc::native

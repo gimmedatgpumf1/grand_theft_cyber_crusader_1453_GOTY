@@ -27,7 +27,7 @@ struct HumanRenderCache {
     int poseAction = -1;
     bool poseOnToilet = false;
     bool poseGrounded = true, poseCrouched = false, poseProne = false, poseGrabbing = false;
-    bool poseUnzipped = false, poseBlocking = false;
+    bool poseUnzipped = false, poseBlocking = false, posePissing = false;
     int genitalPivot = -1, genitalTip = -1;
     Vec3 genitalRoot, genitalExit;
     std::vector<Vec3> posed;
