@@ -228,7 +228,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     const double vertical = nearPlane * scene.height / (2 * scene.focal);
     api_.frustum(-horizontal, horizontal, -vertical, vertical, nearPlane, 70.0);
     api_.matrixMode(c::modelView);
-    api_.loadMatrixd(scene.viewMatrix.data());
+    api_.loadIdentity();
     const gl::Float ambient[] = {0.38F, 0.38F, 0.38F, 1.0F};
     const gl::Float keyDiffuse[] = {0.78F, 0.78F, 0.78F, 1.0F};
     const gl::Float fillDiffuse[] = {0.24F, 0.24F, 0.24F, 1.0F};
@@ -242,6 +242,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.lightfv(c::light1, c::position, fillPosition);
     api_.colorMaterial(c::frontAndBack, c::ambientAndDiffuse);
     api_.enable(c::colorMaterial);
+    api_.loadMatrixd(scene.viewMatrix.data());
     api_.scalef(1, 1, -1);
     api_.enableClientState(c::vertexArray);
     api_.enableClientState(c::normalArray);
