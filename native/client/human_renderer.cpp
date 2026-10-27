@@ -298,8 +298,11 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
         // C1/C2 supplies about half of axial rotation. Sagittal shares group
         // published C0-C7 mobility into this rig's four joints: lower cervical,
         // middle cervical, atlanto-axial, then atlanto-occipital (Aho/Werne).
+        // Flexion and extension differ, especially at the occiput-C1 joint.
         constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
-        constexpr double pitchShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 11.5 + 10.9, 3.5 + 21.0};
+        constexpr double flexionShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 11.5, 3.5};
+        constexpr double extensionShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
+        const double* pitchShares = headPitch < 0 ? flexionShares : extensionShares;
         std::vector<Vec3> points;
         std::vector<int> segments;
         double yawTotal = 0, pitchTotal = 0;

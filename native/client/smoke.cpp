@@ -244,9 +244,38 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     scaledCitizen.yaw = 0;
     HumanRenderCache similarityCache;
     prepareHuman(eyeModel, scaledCitizen, similarityCache);
+    const auto expectedFullChain = [&](const std::vector<Vec3>& rest, double yaw, double pitch) {
+        static const char* names[] = {"neck01", "neck02", "neck03", "head"};
+        constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
+        constexpr double flexion[] = {65.0, 27.0, 11.5, 3.5};
+        constexpr double extension[] = {65.0, 27.0, 10.9, 21.0};
+        const double* pitchShares = pitch < 0 ? flexion : extension;
+        std::vector<Vec3> points(5);
+        double yawTotal = 0, pitchTotal = 0;
+        for (int segment = 0; segment < 4; ++segment) {
+            int index = -1;
+            for (std::size_t i = 0; i < eyeModel.rigBones.size(); ++i) {
+                if (eyeModel.rigBones[i].name == names[segment]) index = static_cast<int>(i);
+            }
+            if (index < 0) return Vec3{};
+            points[segment] = jointPosition(rest, eyeModel.rigBones[index].head);
+            yawTotal += yawShares[segment];
+            pitchTotal += pitchShares[segment];
+        }
+        points[4] = (jointPosition(rest, eyeModel.eyeSource[0]) + jointPosition(rest, eyeModel.eyeSource[1])) * 0.5;
+        for (int i = 0; i < 4; ++i) for (int j = i + 1; j < 5; ++j) {
+            const double angle = pitch * pitchShares[i] / pitchTotal;
+            const double c = std::cos(-angle), s = std::sin(-angle);
+            const Vec3 delta = points[j] - points[i];
+            const Vec3 rotated{delta.x, c * delta.y - s * delta.z, s * delta.y + c * delta.z};
+            points[j] = points[i] + rotateBody(rotated, static_cast<float>(yaw * yawShares[i] / yawTotal));
+        }
+        return points[4];
+    };
     const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
     const Vec3 baseDown = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick,
                                            0, headAngleForGaze(pitchDown));
+    const bool fullChain = length(baseDown - expectedFullChain(similarityCache.rest, 0, headAngleForGaze(pitchDown))) < 1e-6;
     bool heightScaling = true;
     for (double scale : {0.75, 1.30}) {
         std::vector<Vec3> scaledRest;
@@ -257,6 +286,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
                                                  0, headAngleForGaze(pitchDown));
         heightScaling = heightScaling && length(scaledNeutral - baseNeutral * scale) < 1e-6 &&
             length(scaledDown - baseDown * scale) < 1e-6 &&
+            length(scaledDown - expectedFullChain(scaledRest, 0, headAngleForGaze(pitchDown))) < 1e-6 &&
             length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
     }
     ViewState standingView = view;
@@ -349,6 +379,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
+    else if (!fullChain) error = "first-person complete neck01-neck02-neck03-head chain";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
@@ -359,7 +390,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
         "=" + std::to_string(leastMorphClearance);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && eyeJoint && gazeSplit && heightScaling && seated && neck && pitch && clearance &&
+    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && heightScaling && seated && neck && pitch && clearance &&
         lowerBody && shaped && look;
 }
 
