@@ -23,8 +23,10 @@ struct HumanRenderCache {
     bool poseValid = false;
     std::uint64_t poseTick = 0;
     float poseX = 0, poseZ = 0, poseYaw = 0, poseSpeed = 0;
+    float poseElevation = 0, poseCharge = 0;
     int poseAction = -1;
     bool poseOnToilet = false;
+    bool poseGrounded = true, poseCrouched = false, poseProne = false, poseGrabbing = false;
     std::vector<Vec3> posed;
     std::vector<Vec3> posedNormals;
     std::vector<RenderVertex> transformed;

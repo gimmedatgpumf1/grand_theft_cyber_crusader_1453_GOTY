@@ -427,6 +427,18 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool gazeSplit = std::abs(headAngleForGaze(0.2)) < 1e-9 &&
         std::abs(headAngleForGaze(neckLimit) - (neckLimit - eyeRange)) < 1e-9 &&
         std::abs(headAngleForGaze(1.0) - (1.0 - eyeRange)) < 1e-9;
+    gtc::Character crouchedCitizen = standingCitizen;
+    crouchedCitizen.crouched = true;
+    const Vec3 crouchedEye = expectedEye(crouchedCitizen);
+    gtc::Character proneCitizen = standingCitizen;
+    proneCitizen.prone = true;
+    const Vec3 proneEye = expectedEye(proneCitizen);
+    gtc::Character elevatedCitizen = standingCitizen;
+    elevatedCitizen.elevation = 0.5F;
+    const Vec3 elevatedEye = expectedEye(elevatedCitizen);
+    const bool stanceEyes = crouchedEye.y < neutralStanding.position.y - 0.20 && proneEye.y < 0.70 &&
+        length(Vec3{proneEye.x - neutralStanding.position.x, 0, proneEye.z - neutralStanding.position.z}) > 0.35 &&
+        length((elevatedEye - neutralStanding.position) - Vec3{0, 0.5, 0}) < 1e-6;
     gtc::Character scaledCitizen = standingCitizen;
     scaledCitizen.position = {0, 0};
     scaledCitizen.yaw = 0;
@@ -665,6 +677,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
+    else if (!stanceEyes) error = "crouch/prone/elevated eye attachment, crouchY=" + std::to_string(crouchedEye.y) +
+        ", proneY=" + std::to_string(proneEye.y) + ", proneTravel=" +
+        std::to_string(length(Vec3{proneEye.x - neutralStanding.position.x, 0, proneEye.z - neutralStanding.position.z})) +
+        ", elevatedDelta=" + std::to_string(length((elevatedEye - neutralStanding.position) - Vec3{0, 0.5, 0}));
     else if (!fullChain) error = "first-person 117.2 mm forward, zero-vertical eye/manubrium geometry";
     else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
@@ -684,7 +700,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!crosshairs) error = "first/third-person centered crosshair, third=" + std::to_string(thirdCrosshair) +
         ", first=" + std::to_string(firstCrosshair) + ", god pixels=" + std::to_string(godCrosshairPixels);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
+    return eyeMatrix && attached && eyeJoint && gazeSplit && stanceEyes && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
         lowerBody && shaped && heightClearance && bodyTurn && yawBoundary && crosshairs && look;
 }
 
@@ -839,6 +855,28 @@ int main(int argc, char** argv) {
                 std::cerr << "Native standing male piss capture failed: " << error << '\n';
                 return 1;
             }
+            male->toiletAction = gtc::ToiletAction::None;
+            male->pissing = false;
+            const auto stanceCapture = [&](const char* name, const gtc::native::ViewState& stanceView) {
+                return renderer.render(alpha.world(), standing, alpha.playerId(), stanceView, frame, error) &&
+                    frame.save(output + "/" + name + ".png");
+            };
+            male->crouched = true;
+            if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
+            male->crouched = false;
+            male->charge = 0.65F;
+            if (!stanceCapture("alpha-charge-tps", tps)) return 1;
+            male->charge = 1.0F;
+            if (!stanceCapture("alpha-full-charge-tps", tps)) return 1;
+            male->charge = 0;
+            male->prone = true;
+            gtc::native::ViewState proneFps = fpsLevel;
+            proneFps.yaw = male->yaw;
+            if (!stanceCapture("alpha-prone-tps", tps) || !stanceCapture("alpha-prone-fps", proneFps)) return 1;
+            male->prone = false;
+            male->elevation = 0.5F;
+            male->grounded = false;
+            if (!stanceCapture("alpha-jump-tps", tps)) return 1;
         }
     }
     std::ofstream report(output + "/report.json");

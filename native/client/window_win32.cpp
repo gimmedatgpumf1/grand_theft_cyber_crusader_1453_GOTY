@@ -19,14 +19,14 @@ struct NativeWindow::Impl {
     bool open = false;
     bool captured = false;
     bool skipMotion = false;
-    double lastX = 240;
-    double lastY = 320;
+    double lastX = kDefaultWindowWidth * 0.5;
+    double lastY = kDefaultWindowHeight * 0.5;
     std::vector<WindowEvent> events;
     std::vector<unsigned char> bgra;
     OpenGlRenderer renderer;
     HMODULE openGl = nullptr;
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
 
     static int key(WPARAM value) {
         if (value >= 'A' && value <= 'Z') return static_cast<int>(value - 'A' + 'a');
@@ -36,6 +36,8 @@ struct NativeWindow::Impl {
             case VK_F1: return kKeyF1;
             case VK_F12: return kKeyF12;
             case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT: return kKeyShift;
+            case VK_LCONTROL: return kKeyLeftControl;
+            case VK_MENU: case VK_LMENU: case VK_RMENU: return kKeyAlt;
             case VK_CAPITAL: return kKeyCapsLock;
             case VK_RETURN: return kKeyEnter;
             case VK_LEFT: return kKeyLeft;
@@ -217,7 +219,7 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         return false;
     }
     constexpr DWORD style = WS_OVERLAPPEDWINDOW;
-    RECT rectangle{0, 0, 480, 640};
+    RECT rectangle{0, 0, kDefaultWindowWidth, kDefaultWindowHeight};
     AdjustWindowRect(&rectangle, style, false);
     impl_->window = CreateWindowEx(0, description.lpszClassName, title.c_str(), style,
         CW_USEDEFAULT, CW_USEDEFAULT, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
@@ -227,7 +229,7 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         close();
         return false;
     }
-    impl_->bgra.resize(480U * 640U * 4U);
+    impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
     if (impl_->initializeGpu()) {
         activeGpu = impl_;
@@ -327,8 +329,8 @@ void NativeWindow::captureMouse(bool capture) {
 }
 
 void NativeWindow::size(int& width, int& height) const {
-    width = impl_ ? impl_->width : 480;
-    height = impl_ ? impl_->height : 640;
+    width = impl_ ? impl_->width : kDefaultWindowWidth;
+    height = impl_ ? impl_->height : kDefaultWindowHeight;
 }
 
 bool NativeWindow::gpu() const { return impl_ && impl_->gpu; }

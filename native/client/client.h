@@ -41,7 +41,8 @@ public:
     bool receive(std::string& error, int timeoutMilliseconds = -1);
 
     bool sendJoin(const std::string& name);
-    bool sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk = false);
+    bool sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk = false,
+                   bool crouch = false, bool grab = false, bool jump = false);
     bool sendPath(Vec2 destination);
     bool sendToilet(const std::string& action);
     bool sendCheat(const std::string& need, float delta);

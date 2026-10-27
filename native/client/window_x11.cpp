@@ -178,6 +178,8 @@ int keySymbol(Api& api, XKeyEvent& event) {
         case 0xffbe: return kKeyF1;
         case 0xffc9: return kKeyF12;
         case 0xffe1: case 0xffe2: return kKeyShift;
+        case 0xffe3: return kKeyLeftControl;
+        case 0xffe9: case 0xffea: return kKeyAlt;
         case 0xffe5: return kKeyCapsLock;
         case 0xff0d: return kKeyEnter;
         case 0xff51: return kKeyLeft;
@@ -210,11 +212,11 @@ struct NativeWindow::Impl {
     bool open = false;
     bool captured = false;
     bool skipMotion = false;
-    double lastX = 240;
-    double lastY = 320;
+    double lastX = kDefaultWindowWidth * 0.5;
+    double lastY = kDefaultWindowHeight * 0.5;
     std::vector<unsigned char> bgra;
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
 
     bool load() {
         api.library = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -362,7 +364,8 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         attributes.background_pixel = 0x111815;
         attributes.colormap = colormap;
         if (colormap) {
-            impl_->window = impl_->api.createWindow(impl_->display, root, 0, 0, 480, 640, 0,
+            impl_->window = impl_->api.createWindow(impl_->display, root, 0, 0,
+                kDefaultWindowWidth, kDefaultWindowHeight, 0,
                 visualInfo->depth, 1, visualInfo->visual, (1L << 1) | (1L << 13), &attributes);
         }
         if (impl_->window) {
@@ -376,12 +379,13 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         impl_->api.free(visualInfo);
     }
     if (!impl_->window) {
-        impl_->window = impl_->api.createSimpleWindow(impl_->display, root, 0, 0, 480, 640, 0, 0, 0x111815);
+        impl_->window = impl_->api.createSimpleWindow(impl_->display, root, 0, 0,
+            kDefaultWindowWidth, kDefaultWindowHeight, 0, 0, 0x111815);
         impl_->visual = impl_->api.defaultVisual(impl_->display, screen);
         impl_->depth = impl_->api.defaultDepth(impl_->display, screen);
     }
     if (!impl_->window) {
-        error = "Could not create the native 480x640 window";
+        error = "Could not create the native 640x480 landscape window";
         close();
         return false;
     }
@@ -394,7 +398,7 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     impl_->gc = impl_->api.createGC(impl_->display, impl_->window, 0, nullptr);
     impl_->api.mapWindow(impl_->display, impl_->window);
     impl_->api.flush(impl_->display);
-    impl_->bgra.resize(480U * 640U * 4U);
+    impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
     if (impl_->context && impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) {
         impl_->gpu = impl_->renderer.load([this](const char* name) {
@@ -557,8 +561,8 @@ void NativeWindow::captureMouse(bool capture) {
 }
 
 void NativeWindow::size(int& width, int& height) const {
-    width = impl_ ? impl_->width : 480;
-    height = impl_ ? impl_->height : 640;
+    width = impl_ ? impl_->width : kDefaultWindowWidth;
+    height = impl_ ? impl_->height : kDefaultWindowHeight;
 }
 
 bool NativeWindow::gpu() const { return impl_ && impl_->gpu; }

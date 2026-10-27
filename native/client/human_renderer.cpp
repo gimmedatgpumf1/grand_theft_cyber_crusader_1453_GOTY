@@ -83,6 +83,10 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     std::vector<Transform> transforms(model.rigBones.size());
     std::vector<int> states(model.rigBones.size(), 0);
     const bool seated = character.onToilet;
+    const bool prone = character.prone && !seated;
+    const bool airborne = !character.grounded && !character.grabbing && !seated;
+    const double crouch = prone || seated ? 0.0 :
+        std::max(character.crouched ? 1.0 : 0.0, static_cast<double>(character.charge) * 0.65);
     const double movement = seated ? 0.0 : std::clamp(static_cast<double>(character.speed) / kFastWalkSpeed, 0.0, 1.4);
     const double phase = tick * 0.055 * (4.0 + character.speed) + character.id * 0.7;
     const double forwardMovement = character.manualMove.x * std::sin(character.yaw) +
@@ -94,7 +98,7 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     // the femur from the anatomical eye position. This ordinary rig pose
     // fades out with locomotion and has no gaze or vertex-deformation input;
     // one-shot actions can replace the idle layer.
-    const double idle = standingIdleWeight(character);
+    const double idle = prone ? 0.0 : standingIdleWeight(character);
     const double idleHip = 8.0 * pi / 180.0 * idle;
     const double idleAdduction = 5.0 * pi / 180.0 * idle;
     auto local = [&](const RigBone& bone) {
@@ -111,8 +115,23 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
             if (bone.name == "upperarm01.L") angle = swing * 0.72;
             if (bone.name == "upperarm01.R") angle = -swing * 0.72;
             if (character.toiletAction == ToiletAction::Piss && bone.name == "upperarm01.R") angle = -0.42;
+            if (crouch > 0.0) {
+                if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle += (-1.25 - angle) * crouch;
+                if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += (1.90 - angle) * crouch;
+                if (bone.name == "spine05") angle += 0.32 * crouch;
+            }
+            if (airborne) {
+                if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle -= 0.18;
+                if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += 0.32;
+            }
+            if (character.grabbing) {
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -1.55;
+                if (bone.name == "upperarm02.L" || bone.name == "upperarm02.R") angle = -0.15;
+            } else if (prone && (bone.name == "upperarm01.L" || bone.name == "upperarm01.R")) {
+                angle = -0.55 + swing * 0.25;
+            }
         }
-        Mat3 rotation = rotationX(angle);
+        Mat3 rotation = rotationX(prone && bone.name == "root" ? pi * 0.5 : angle);
         if (idleAdduction != 0.0 && (bone.name == "upperleg01.L" || bone.name == "upperleg01.R")) {
             const double direction = bone.name == "upperleg01.L" ? -1.0 : 1.0;
             rotation = multiply(rotationZ(direction * idleAdduction), rotation);
@@ -320,11 +339,14 @@ namespace {
 double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
                        const Character& character, const std::vector<Transform>& transforms) {
     if (!character.onToilet) {
+        const bool prone = character.prone;
         const double idle = standingIdleWeight(character);
-        if (idle <= 0.0) return 0.0;
+        const double supportWeight = prone || character.crouched || character.charge > 0.001F ||
+            !character.grounded ? 1.0 : idle;
+        if (supportWeight <= 0.0) return character.elevation;
         double sole = 1e100;
         for (std::size_t index = 0; index < rest.size(); ++index) {
-            if (rest[index].y > 0.18) continue;
+            if (!prone && rest[index].y > 0.18) continue;
             Vec3 point;
             double total = 0, support = 0;
             for (const auto& [bone, weight] : model.rigWeights[index]) {
@@ -334,9 +356,12 @@ double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
                 const std::string& name = model.rigBones[bone].name;
                 if (name.rfind("foot.", 0) == 0 || name.rfind("toe", 0) == 0) support += weight;
             }
-            if (support > 0.25 && total > 1e-8) sole = std::min(sole, point.y / total * kHumanHeightScale);
+            if (total > 1e-8 && (prone || support > 0.25)) {
+                sole = std::min(sole, point.y / total * kHumanHeightScale);
+            }
         }
-        return sole < 1e99 ? -sole * idle : 0.0;
+        const double offset = sole < 1e99 ? -sole * supportWeight + (prone ? 0.025 : 0.0) : 0.0;
+        return character.elevation + offset;
     }
     std::vector<bool> supportBone(model.rigBones.size(), false);
     for (std::size_t i = 0; i < model.rigBones.size(); ++i) {
@@ -368,7 +393,7 @@ double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
     }
     // Place the real posed buttock/posterior-thigh support surface on the
     // porcelain seat ring, outside the open bowl and inside its front edge.
-    return lowest < 1e99 ? kToiletSeatHeight - lowest : 0.0;
+    return character.elevation + (lowest < 1e99 ? kToiletSeatHeight - lowest : 0.0);
 }
 
 struct GazeChain {
@@ -525,12 +550,18 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     const bool freshPose = !cache.poseValid || cache.poseTick != tick ||
         cache.poseX != character.position.x || cache.poseZ != character.position.y ||
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
-        cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet;
+        cache.poseElevation != character.elevation || cache.poseCharge != character.charge ||
+        cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
+        cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
+        cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing;
     const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
         return rotateWorld(point * kHumanHeightScale, character.yaw) +
             Vec3{character.position.x, rootY, character.position.y};
     };
+    const int rootIndex = boneIndex(model, "root");
+    const Transform rootTransform = rootIndex >= 0 ? transforms[rootIndex] : Transform{};
+    const auto rootWorld = [&](Vec3 point) { return world(rootTransform.point(point)); };
     if (freshPose) {
         cache.posed = rest;
         cache.posedNormals.resize(rest.size());
@@ -547,8 +578,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 cache.posed[index] = world(point / total);
                 cache.posedNormals[index] = rotateWorld(normalized(normal), character.yaw);
             } else {
-                cache.posed[index] = world(rest[index]);
-                cache.posedNormals[index] = rotateWorld(cache.normals[index], character.yaw);
+                cache.posed[index] = rootWorld(rest[index]);
+                cache.posedNormals[index] = rotateWorld(rootTransform.direction(cache.normals[index]), character.yaw);
             }
         }
         cache.poseTick = tick;
@@ -556,8 +587,14 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseZ = character.position.y;
         cache.poseYaw = character.yaw;
         cache.poseSpeed = character.speed;
+        cache.poseElevation = character.elevation;
+        cache.poseCharge = character.charge;
         cache.poseAction = static_cast<int>(character.toiletAction);
         cache.poseOnToilet = character.onToilet;
+        cache.poseGrounded = character.grounded;
+        cache.poseCrouched = character.crouched;
+        cache.poseProne = character.prone;
+        cache.poseGrabbing = character.grabbing;
         cache.poseValid = true;
         if (character.appearance.male && !character.onToilet && character.toiletAction == ToiletAction::Piss &&
             !model.genitalTriangles.empty()) {
@@ -641,6 +678,12 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             rasterizer.triangle(vertices, skin);
         }
     }
+    const int collarBone = boneIndex(model, "neck01");
+    const Transform collarTransform = collarBone >= 0 ? transforms[collarBone] : rootTransform;
+    const auto collarWorld = [&](Vec3 point) { return world(collarTransform.point(point)); };
+    const int torsoBone = boneIndex(model, "spine01");
+    const Transform torsoTransform = torsoBone >= 0 ? transforms[torsoBone] : rootTransform;
+    const auto torsoWorld = [&](Vec3 point) { return world(torsoTransform.point(point)); };
     Material belt;
     belt.kind = Material::Kind::Cloth;
     belt.color = colorHex("#151a1d");
@@ -657,7 +700,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             beltZ = std::max(beltZ, std::abs(point.z) + 0.015);
         }
     }
-    drawLoft(rasterizer, camera, world, {{0.945, beltX, beltZ}, {0.975, beltX, beltZ}}, belt);
+    drawLoft(rasterizer, camera, rootWorld, {{0.945, beltX, beltZ}, {0.975, beltX, beltZ}}, belt);
     const double garmentX = std::clamp(beltX / 0.24, 1.0, 1.8);
     const double garmentZ = std::clamp(beltZ / 0.166, 1.0, 1.8);
     double neckY = 1.42;
@@ -670,14 +713,14 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     const double collarHeight = character.appearance.beret ? 0.035 : character.appearance.suit ? 0.026 : 0.020;
     const double collarX = character.appearance.suit ? 0.112 : 0.094;
     const double collarZ = character.appearance.suit ? 0.095 : 0.082;
-    drawLoft(rasterizer, camera, world, {{neckY - 0.018, collarX, collarZ},
+    drawLoft(rasterizer, camera, collarWorld, {{neckY - 0.018, collarX, collarZ},
         {neckY + collarHeight, collarX * 0.93, collarZ * 0.94}}, collar);
     if (character.appearance.coat) {
         Material coat;
         coat.kind = Material::Kind::Cloth;
         coat.color = shirtBase * 0.82;
         coat.texture = &fabricTexture();
-        drawLoft(rasterizer, camera, world, {{0.43, 0.34 * garmentX, 0.21 * garmentZ},
+        drawLoft(rasterizer, camera, rootWorld, {{0.43, 0.34 * garmentX, 0.21 * garmentZ},
             {0.70, 0.29 * garmentX, 0.18 * garmentZ}, {0.98, 0.23 * garmentX, 0.15 * garmentZ}},
                  coat, pi / 2 + 0.42, 2 * pi - 0.84);
     }
@@ -686,7 +729,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         dress.kind = Material::Kind::Cloth;
         dress.color = shirtBase;
         dress.texture = &fabricTexture();
-        drawLoft(rasterizer, camera, world, {{0.40, 0.36 * garmentX, 0.25 * garmentZ},
+        drawLoft(rasterizer, camera, rootWorld, {{0.40, 0.36 * garmentX, 0.25 * garmentZ},
             {0.72, 0.29 * garmentX, 0.21 * garmentZ}, {1.04, 0.22 * garmentX, 0.16 * garmentZ}}, dress);
     }
     if (hideHead) return;
@@ -770,24 +813,24 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     if (character.appearance.necklace) {
         for (int i = 0; i < 14; ++i) {
             const double angle = i * 2 * pi / 14;
-            accessory(world(Vec3{0.066 * std::cos(angle), 1.42,
+            accessory(collarWorld(Vec3{0.066 * std::cos(angle), 1.42,
                 0.052 * std::sin(angle)}), Vec3{0.006, 0.006, 0.006}, metal, 6, 4);
         }
-        accessory(world(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
+        accessory(torsoWorld(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
     }
     if (character.appearance.tie > 0) {
         static const char* ties[] = {"#20262b", "#243b60", "#7d2528", "#375a80", "#454c55", "#b2924a"};
         Material tie;
         tie.color = colorHex(ties[std::clamp(character.appearance.tie, 0, 5)]);
-        accessory(world(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
-        accessory(world(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
+        accessory(torsoWorld(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
+        accessory(torsoWorld(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
     }
     if (character.appearance.fur) {
         Material fur;
         fur.color = colorHex("#a3937c");
         for (int i = 0; i < 16; ++i) {
             const double angle = i * 2 * pi / 16;
-            accessory(world(Vec3{0.12 * std::cos(angle), 1.39,
+            accessory(collarWorld(Vec3{0.12 * std::cos(angle), 1.39,
                 0.085 * std::sin(angle)}), Vec3{0.035, 0.030, 0.035}, fur, 8, 5);
         }
     }

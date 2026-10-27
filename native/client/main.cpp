@@ -33,8 +33,8 @@ int main(int argc, char** argv) {
         else if (argument == "--output" && i + 1 < argc) output = argv[++i];
         else if (argument == "--frames" && i + 1 < argc) frames = static_cast<int>(number(argv[++i], 1));
         else if (argument == "--benchmark" && i + 1 < argc) benchmark = std::max(1, static_cast<int>(number(argv[++i], 1)));
-        else if (argument == "--width" && i + 1 < argc) view.width = std::max(1, static_cast<int>(number(argv[++i], 480)));
-        else if (argument == "--height" && i + 1 < argc) view.height = std::max(1, static_cast<int>(number(argv[++i], 640)));
+        else if (argument == "--width" && i + 1 < argc) view.width = std::max(1, static_cast<int>(number(argv[++i], gtc::native::kDefaultWindowWidth)));
+        else if (argument == "--height" && i + 1 < argc) view.height = std::max(1, static_cast<int>(number(argv[++i], gtc::native::kDefaultWindowHeight)));
         else if (argument == "--mode" && i + 1 < argc) mode = argv[++i];
         else if (argument == "--path" && i + 2 < argc) {
             destination = {static_cast<float>(number(argv[++i])), static_cast<float>(number(argv[++i]))};

@@ -11,6 +11,14 @@ namespace gtc {
 inline constexpr float kSlowWalkSpeed = 4.0F / 3.6F;
 inline constexpr float kFastWalkSpeed = 6.4F / 3.6F;
 inline constexpr float kSprintSpeed = 20.0F / 3.6F;
+inline constexpr float kCrouchSpeed = 3.6F / 3.6F;
+inline constexpr float kProneSpeed = 2.0F / 3.6F;
+inline constexpr float kJumpHeight = 0.5F;
+inline constexpr float kMaximumJumpHeight = 1.0F;
+inline constexpr float kAutomaticStepHeight = 0.27F;
+inline constexpr float kStandingHeight = 1.7F;
+inline constexpr float kCrouchingHeight = 1.1F;
+inline constexpr float kProneHeight = 0.45F;
 inline constexpr float kToiletSeatForwardOffset = 0.45F;
 
 struct Vec2 {
@@ -45,6 +53,7 @@ struct Obstacle {
     Vec2 halfSize;
     float height = 3.0F;
     std::string kind;
+    float base = 0.0F;
 };
 
 struct Needs {
@@ -87,9 +96,23 @@ struct Character {
     float yaw = 3.14159265F;
     float pitch = 0.0F;
     float speed = 0.0F;
+    float elevation = 0.0F;
+    float verticalVelocity = 0.0F;
+    float charge = 0.0F;
+    float fullChargeTime = 0.0F;
+    bool grounded = true;
+    bool crouched = false;
+    bool prone = false;
+    bool grabbing = false;
     bool sprint = false;
     bool slowWalk = false;
     bool wantsPiss = false;
+    bool crouchInput = false;
+    bool grabInput = false;
+    bool jumpInput = false;
+    bool jumpHeld = false;
+    bool chargeLocked = false;
+    int grabbedObstacle = -1;
     bool pissing = false;
     bool onToilet = false;
     ToiletAction toiletAction = ToiletAction::None;

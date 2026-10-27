@@ -11,6 +11,9 @@
 
 namespace gtc::native {
 
+inline constexpr int kDefaultWindowWidth = 640;
+inline constexpr int kDefaultWindowHeight = 480;
+
 struct Color {
     double r = 0;
     double g = 0;
@@ -31,8 +34,8 @@ struct Texture {
 const Texture& loadTexture(const std::string& path);
 
 struct NativeFrame {
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
     std::vector<unsigned char> rgb;
     std::vector<unsigned char> alpha;
     double uiScale = 1.0;
@@ -40,7 +43,7 @@ struct NativeFrame {
     double uiOffsetY = 0.0;
 
     bool save(const std::string& path) const;
-    void logicalUi(int logicalWidth = 480, int logicalHeight = 640);
+    void logicalUi(int logicalWidth = kDefaultWindowWidth, int logicalHeight = kDefaultWindowHeight);
     void rectangle(int x, int y, int w, int h, Color color);
     void blendRectangle(int x, int y, int w, int h, Color color, double opacity);
 };
@@ -65,8 +68,8 @@ struct Camera {
     Vec3 target;
     Vec3 up{0, 1, 0};
     double fovDegrees = 50;
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
     bool worldSpaceGpu = false;
 
     Vec3 view(Vec3 point) const;
@@ -106,8 +109,8 @@ struct GpuBatch {
 };
 
 struct GpuScene {
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
     double focal = 640;
     std::uint64_t revision = 0;
     Color background;

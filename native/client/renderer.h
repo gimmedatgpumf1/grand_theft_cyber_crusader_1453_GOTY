@@ -21,8 +21,8 @@ struct ViewState {
     float godZ = 0.0F;
     float godYaw = 0.72F;
     float godDistance = 16.0F;
-    int width = 480;
-    int height = 640;
+    int width = kDefaultWindowWidth;
+    int height = kDefaultWindowHeight;
     double fps = 0.0;
     double frameMilliseconds = 0.0;
     bool gpu = false;

@@ -137,7 +137,7 @@ public:
             drawOverlay(frame);
             if (!frame.save(output + "/" + name + ".png")) return 1;
         }
-        std::cout << "native UI review: " << output << " (480x640)\n";
+        std::cout << "native UI review: " << output << " (640x480 landscape)\n";
         return 0;
     }
 
@@ -191,6 +191,7 @@ private:
             for (Character& character : presentation_.characters) {
                 if (const Character* old = previous.character(character.id)) {
                     character.position = old->position;
+                    character.elevation = old->elevation;
                     character.yaw = old->yaw;
                 }
             }
@@ -285,7 +286,7 @@ private:
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
         const double sy = view_.height * 0.5 - camera.focal() * point.y / point.z;
-        const double scale = std::min(view_.width / 480.0, view_.height / 640.0);
+        const double scale = std::min(view_.width / 640.0, view_.height / 480.0);
         return std::hypot(sx - x, sy - y) <= 75 * scale;
     }
 
@@ -325,12 +326,12 @@ private:
             mouseY_ = event.y;
             if (event.button != 1) return;
             if (overlay_ == Overlay::Wheel) {
-                const double scale = std::min(1.0, std::min(view_.width / 480.0, view_.height / 640.0));
-                const double x = (event.x - (view_.width - 480 * scale) * 0.5) / scale;
-                const double y = (event.y - (view_.height - 640 * scale)) / scale;
-                if (std::hypot(x - 240, y - 210) < 88) toiletChoice(1);
-                else if (std::hypot(x - 140, y - 405) < 88) toiletChoice(2);
-                else if (std::hypot(x - 340, y - 405) < 88) toiletChoice(3);
+                const double scale = std::min(1.0, std::min(view_.width / 640.0, view_.height / 480.0));
+                const double x = (event.x - (view_.width - 640 * scale) * 0.5) / scale;
+                const double y = (event.y - (view_.height - 480 * scale)) / scale;
+                if (std::hypot(x - 150, y - 240) < 88) toiletChoice(1);
+                else if (std::hypot(x - 320, y - 240) < 88) toiletChoice(2);
+                else if (std::hypot(x - 490, y - 240) < 88) toiletChoice(3);
                 return;
             }
             if (overlay_ != Overlay::None) return;
@@ -350,6 +351,7 @@ private:
         }
         if (event.type == WindowEvent::Type::KeyUp) {
             keys_.erase(event.key);
+            if (event.key == ' ' || event.key == kKeyLeftControl || event.key == kKeyAlt) sendInput();
             return;
         }
         if (event.type != WindowEvent::Type::KeyDown || event.key == 0) return;
@@ -388,7 +390,10 @@ private:
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
         else if (event.key == 'c') openOverlay(Overlay::Creator);
         else if (event.key == 'h') openOverlay(Overlay::Help);
-        else keys_.insert(event.key);
+        else {
+            keys_.insert(event.key);
+            if (!event.repeat && (event.key == ' ' || event.key == kKeyLeftControl || event.key == kKeyAlt)) sendInput();
+        }
     }
 
     void cheat(int key) {
@@ -407,7 +412,7 @@ private:
 
     void sendInput() {
         gtc::Vec2 move{};
-        bool sprint = false, piss = false;
+        bool sprint = false, piss = false, crouch = false, grab = false, jump = false;
         float yaw = local() ? local()->yaw : view_.yaw;
         if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
@@ -416,10 +421,13 @@ private:
                     static_cast<float>(std::cos(view_.yaw) * forward + std::sin(view_.yaw) * right)};
             sprint = keys_.count(kKeyShift) != 0;
             piss = view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0;
-            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0) yaw = view_.yaw;
+            crouch = keys_.count(kKeyAlt) != 0;
+            grab = keys_.count(kKeyLeftControl) != 0;
+            jump = keys_.count(' ') != 0;
+            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab) yaw = view_.yaw;
         }
         view_.slowWalk = slowWalk_;
-        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_);
+        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump);
     }
 
     void updateGod(float dt) {
@@ -501,43 +509,43 @@ private:
         if (overlay_ == Overlay::None) return;
         const Color panel = colorHex("#101713"), text = colorHex("#d7ff54"), muted = colorHex("#b4c5ba");
         if (overlay_ == Overlay::Wheel) {
-            frame.rectangle(35, 65, 410, 495, panel);
-            drawText(frame, 92, 85, "TOILET CHOICE", text);
-            circle(frame, 240, 210, 85, colorHex("#334c42"));
-            circle(frame, 140, 405, 85, colorHex("#4b4030"));
-            circle(frame, 340, 405, 85, colorHex("#303f50"));
-            circle(frame, 240, 325, 48, colorHex("#1b241f"));
-            drawText(frame, 195, 200, "1 SIT", text);
-            drawText(frame, 86, 395, "2 SHIT", text);
-            drawText(frame, 286, 395, "3 PISS", text);
-            drawText(frame, 204, 315, "E", muted);
-            drawText(frame, 114, 505, local() && local()->appearance.male ? "PISS STANDING" : "PISS SEATED", muted);
+            frame.rectangle(35, 60, 570, 360, panel);
+            drawText(frame, 230, 80, "TOILET CHOICE", text);
+            circle(frame, 150, 240, 85, colorHex("#334c42"));
+            circle(frame, 320, 240, 85, colorHex("#4b4030"));
+            circle(frame, 490, 240, 85, colorHex("#303f50"));
+            drawText(frame, 122, 230, "1 SIT", text);
+            drawText(frame, 286, 230, "2 SHIT", text);
+            drawText(frame, 456, 230, "3 PISS", text);
+            drawText(frame, 410, 285, local() && local()->appearance.male ? "STANDING" : "SEATED", muted);
+            drawText(frame, 215, 380, "E STAND / ESC CLOSE", muted);
         } else if (overlay_ == Overlay::Cheats) {
-            frame.rectangle(20, 140, 440, 330, panel);
-            drawText(frame, 125, 155, "F1 NEED CHEATS", text);
-            drawText(frame, 38, 215, "1 BLADDER +25 2 -25", muted);
-            drawText(frame, 38, 275, "3 EMPTY       4 FILL", muted);
-            drawText(frame, 38, 335, "5 BOWEL +25   6 -25", muted);
-            drawText(frame, 38, 395, "7 EMPTY       8 FILL", muted);
+            frame.rectangle(60, 100, 520, 280, panel);
+            drawText(frame, 220, 120, "F1 NEED CHEATS", text);
+            drawText(frame, 90, 180, "1 BLADDER +25 2 -25", muted);
+            drawText(frame, 90, 230, "3 EMPTY       4 FILL", muted);
+            drawText(frame, 90, 280, "5 BOWEL +25  6 -25", muted);
+            drawText(frame, 90, 330, "7 EMPTY       8 FILL", muted);
         } else if (overlay_ == Overlay::Help) {
-            frame.rectangle(15, 70, 450, 530, panel);
-            drawText(frame, 145, 85, "FIELD MANUAL", text);
-            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "CAPS SLOW SHIFT SPRINT", "CLICK CAPTURES MOUSE", "ESC RELEASES MOUSE",
-                "E TOILET IN RANGE", "SIT SHIT PISS WHEEL", "HOLD F PISS IN FPS", "GOD CLICK PATHS",
-                "GOD WASD FAST PANS", "C CREATOR F1 CHEATS", "F12 SAVES NATIVE PNG", "H CLOSES MANUAL"};
-            for (int i = 0; i < 12; ++i) drawText(frame, 32, 140 + i * 37, lines[i], muted);
+            frame.rectangle(30, 20, 580, 430, panel);
+            drawText(frame, 230, 35, "FIELD MANUAL", text);
+            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP",
+                "HOLD CTRL CHARGE / GRAB", "W CLIMB S RELEASE", "ALT CROUCH 3.6 KM/H",
+                "ALT+CTRL PRONE 2 KM/H", "LOW TUNNELS AUTO PRONE", "CLICK CAPTURE ESC RELEASE",
+                "E TOILET F FPS PISS", "C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
+            for (int i = 0; i < 12; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
         } else if (overlay_ == Overlay::Creator) {
-            frame.rectangle(0, 55, 480, 585, panel);
-            drawText(frame, 24, 68, "C CREATOR ENTER APPLY", text);
+            frame.rectangle(0, 20, 640, 440, panel);
+            drawText(frame, 20, 28, "C CREATOR ENTER APPLY", text);
             for (int row = 0; row < 10 && scroll_ + row < static_cast<int>(creator_.size()); ++row) {
                 const int index = scroll_ + row;
-                const int y = 120 + row * 40;
-                if (index == selected_) frame.rectangle(8, y - 5, 464, 32, colorHex("#29382e"));
-                drawText(frame, 15, y, creator_[index].label.substr(0, 17), index == selected_ ? text : muted);
-                drawText(frame, 390, y, std::to_string(creatorValue(creator_[index])), text);
+                const int y = 80 + row * 32;
+                if (index == selected_) frame.rectangle(8, y - 4, 624, 28, colorHex("#29382e"));
+                drawText(frame, 15, y, creator_[index].label.substr(0, 24), index == selected_ ? text : muted);
+                drawText(frame, 550, y, std::to_string(creatorValue(creator_[index])), text);
             }
-            drawText(frame, 24, 540, "ARROWS EDIT PGUP PGDN", muted);
-            drawText(frame, 24, 585, "ENTER SERVER CUSTOMIZE", muted);
+            drawText(frame, 24, 405, "ARROWS EDIT PGUP PGDN", muted);
+            drawText(frame, 24, 433, "ENTER SERVER CUSTOMIZE", muted);
         }
     }
 
@@ -559,7 +567,7 @@ private:
     ToiletAction trackedToiletAction_ = ToiletAction::None;
     bool slowWalk_ = false;
     bool screenshot_ = false;
-    double mouseX_ = 240, mouseY_ = 320;
+    double mouseX_ = kDefaultWindowWidth * 0.5, mouseY_ = kDefaultWindowHeight * 0.5;
     std::vector<CreatorEntry> creator_;
     Appearance draft_;
     int selected_ = 0;

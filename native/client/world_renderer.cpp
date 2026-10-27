@@ -54,7 +54,7 @@ Camera makeExternalCamera(const ClientWorld& world, const ClientState& state, st
     camera.height = std::max(1, view.height);
     camera.fovDegrees = 62;
     const Character* local = state.character(localId);
-    const Vec3 citizen = local ? Vec3{local->position.x, 0, local->position.y} : Vec3{};
+    const Vec3 citizen = local ? Vec3{local->position.x, local->elevation, local->position.y} : Vec3{};
     const float yaw = local ? view.yaw : 0.0F;
     if (view.mode == ViewMode::God) {
         camera.position = {view.godX + std::sin(view.godYaw) * view.godDistance * 0.72,
@@ -66,7 +66,8 @@ Camera makeExternalCamera(const ClientWorld& world, const ClientState& state, st
     const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
     const Vec3 forward{std::sin(yaw) * cp, sp, std::cos(yaw) * cp};
     const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
-    camera.target = citizen + Vec3{0, 1.25, 0} + right * 0.42;
+    const double targetHeight = local && local->prone ? 0.35 : local && local->crouched ? 0.82 : 1.25;
+    camera.target = citizen + Vec3{0, targetHeight, 0} + right * 0.42;
     camera.position = camera.target - forward * view.distance;
     camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
     camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
@@ -278,15 +279,16 @@ void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) 
 
 void drawObstacles(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world) {
     for (const Obstacle& obstacle : world.obstacles) {
-        const Vec3 center{obstacle.center.x, obstacle.height * 0.5, obstacle.center.y};
-        const Vec3 size{obstacle.halfSize.x * 2, obstacle.height, obstacle.halfSize.y * 2};
+        const Vec3 center{obstacle.center.x, (obstacle.base + obstacle.height) * 0.5, obstacle.center.y};
+        const Vec3 size{obstacle.halfSize.x * 2, obstacle.height - obstacle.base, obstacle.halfSize.y * 2};
         if (obstacle.kind == "toilet") {
             drawToilet(rasterizer, camera, obstacle.center);
             continue;
         }
         Material material;
         if (obstacle.kind == "boundary") material.color = colorHex(obstacle.height > 1 ? "#53665a" : "#293a31");
-        else if (obstacle.kind == "sink") material.color = colorHex("#354b40");
+        else if (obstacle.kind == "sink" || obstacle.kind == "tunnel") material.color = colorHex("#354b40");
+        else if (obstacle.kind == "step") material.color = colorHex("#53665a");
         else material.color = colorHex("#5e5135");
         drawBox(rasterizer, camera, center, size, material);
         if (obstacle.kind == "boundary" && obstacle.height > 1) {
@@ -354,7 +356,7 @@ void drawPissing(Rasterizer& rasterizer, const Camera& camera, const HumanModel&
     stream.color = colorHex("#b9c862");
     stream.specular = 0.4;
     const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
-    Vec3 origin{character.position.x, 0.77, character.position.y};
+    Vec3 origin{character.position.x, character.elevation + 0.77, character.position.y};
     if (!model.genitalTriangles.empty() && cache.posed.size() == cache.rest.size()) {
         int tip = model.genitalTriangles.front().v[0];
         for (const Triangle& triangle : model.genitalTriangles) {
@@ -391,7 +393,9 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         const Character& left = a.characters[i];
         const Character& right = b.characters[i];
         if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
-            left.speed != right.speed || left.pissing != right.pissing || left.onToilet != right.onToilet ||
+            left.speed != right.speed || left.elevation != right.elevation || left.charge != right.charge ||
+            left.grounded != right.grounded || left.crouched != right.crouched || left.prone != right.prone ||
+            left.grabbing != right.grabbing || left.pissing != right.pissing || left.onToilet != right.onToilet ||
             left.toiletAction != right.toiletAction || left.path.size() != right.path.size()) return false;
         for (std::size_t p = 0; p < left.path.size(); ++p) {
             if (left.path[p].x != right.path[p].x || left.path[p].y != right.path[p].y) return false;
@@ -423,7 +427,8 @@ void updateObjectTransforms(GpuScene& scene, const ClientState& state) {
 void drawLabels(NativeFrame& frame, const Camera& camera, const ClientState& state, std::uint32_t localId) {
     for (const Character& character : state.characters) {
         if (character.id == localId) continue;
-        const Vec3 world{character.position.x, 2.08, character.position.y};
+        const double labelHeight = character.prone ? 0.65 : character.crouched ? 1.35 : 2.08;
+        const Vec3 world{character.position.x, character.elevation + labelHeight, character.position.y};
         if (length(camera.position - world) < 1.6) continue;
         const Vec3 point = camera.view(world);
         if (point.z <= 0.2) continue;
@@ -447,8 +452,9 @@ void panel(NativeFrame& frame, int x, int y, int width, int height, bool accent 
     frame.rectangle(x, y, 2, height, colorHex(accent ? "#d7ff54" : "#33483e"));
 }
 
-void drawMinimap(NativeFrame& frame, const ClientWorld& world, const ClientState& state, std::uint32_t localId) {
-    const int x = 330, y = 112, width = 132, height = 104;
+void drawMinimap(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
+                 std::uint32_t localId, int x) {
+    const int y = 112, width = 132, height = 104;
     frame.rectangle(x, y, width, height, colorHex("#07100b"));
     const double scale = std::min((width - 12.0) / world.width, (height - 12.0) / world.depth);
     auto project = [&](double px, double pz, int& sx, int& sy) {
@@ -511,18 +517,15 @@ void drawCrosshair(NativeFrame& frame, ViewMode mode) {
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
              std::uint32_t localId, const ViewState& view) {
     const Character* local = state.character(localId);
-    const Color text = colorHex("#d7ff54");
-    const Color muted = colorHex("#b4c5ba");
-    const Color cyan = colorHex("#6edbd2");
+    const Color text = colorHex("#d7ff54"), muted = colorHex("#b4c5ba"), cyan = colorHex("#6edbd2");
     const double centeredX = frame.uiOffsetX;
-    panel(frame, 0, 0, 480, 60, true);
+    panel(frame, 0, 0, 640, 60, true);
     drawText(frame, 12, 5, "GTC // 1453", text);
     drawText(frame, 12, 34, "PORCELAIN PROTOCOL", muted);
-    drawText(frame, 316, 5, "NET // ONLINE", text);
-    std::string performance = std::to_string(state.characters.size()) + " CIT / " +
-        (view.gpu ? "GPU" : "CPU");
+    drawText(frame, 476, 5, "NET // ONLINE", text);
+    std::string performance = std::to_string(state.characters.size()) + " CIT / " + (view.gpu ? "GPU" : "CPU");
     if (view.fps > 0) performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
-    drawText(frame, 316, 34, performance, muted);
+    drawText(frame, 476, 34, performance, muted);
     if (local) {
         frame.uiOffsetX = 0.0;
         panel(frame, 12, 74, 218, 174, true);
@@ -535,39 +538,48 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
         frame.rectangle(24, 220, 194, 8, colorHex("#29332d"));
         frame.rectangle(24, 220, static_cast<int>(194 * std::clamp(local->needs.bowel / 100.0F, 0.0F, 1.0F)), 8,
                         colorHex("#ffcc62"));
-        frame.uiOffsetX = frame.width - 480 * frame.uiScale;
-        panel(frame, 318, 74, 150, 162);
-        drawText(frame, 328, 82, "SECTOR 01", text);
-        drawMinimap(frame, world, state, localId);
-        drawText(frame, 328, 222, "LOCAL / AI", muted);
+        frame.uiOffsetX = frame.width - 640 * frame.uiScale;
+        panel(frame, 478, 74, 150, 162);
+        drawText(frame, 488, 82, "SECTOR 01", text);
+        drawMinimap(frame, world, state, localId, 490);
+        drawText(frame, 488, 222, "LOCAL / AI", muted);
         frame.uiOffsetX = centeredX;
-        frame.uiOffsetY = std::max(0.0, frame.height - 640 * frame.uiScale);
-        panel(frame, 12, 462, 456, 44);
-        if (!local->notice.empty()) drawText(frame, 24, 470, local->notice.substr(0, 36), muted);
-        else if (!state.events.empty()) drawText(frame, 24, 470, state.events.back().text.substr(0, 36), muted);
-        else drawText(frame, 24, 470, "QUEST // ANSWER NATURE'S CALL", text);
+        frame.uiOffsetY = (frame.height - 480 * frame.uiScale) * 0.5;
+        if (local->grabbing) {
+            panel(frame, 220, 264, 200, 34, true);
+            drawText(frame, 232, 270, "W CLIMB / S DROP", text);
+        } else if (local->charge > 0.001F) {
+            const Color chargeColor = local->fullChargeTime > 1.0F ? colorHex("#ff765f") : text;
+            panel(frame, 220, 264, 200, 34, local->fullChargeTime > 0.0F);
+            drawText(frame, 232, 266, "JUMP " + std::to_string(static_cast<int>(local->charge * 100 + 0.5F)) + "%", chargeColor);
+            frame.rectangle(228, 292, 184, 3, colorHex("#29332d"));
+            frame.rectangle(228, 292, static_cast<int>(184 * local->charge), 3, chargeColor);
+        }
+        frame.uiOffsetY = std::max(0.0, frame.height - 480 * frame.uiScale);
+        panel(frame, 12, 302, 616, 44);
+        if (!local->notice.empty()) drawText(frame, 24, 310, local->notice.substr(0, 52), muted);
+        else if (!state.events.empty()) drawText(frame, 24, 310, state.events.back().text.substr(0, 52), muted);
+        else drawText(frame, 24, 310, "QUEST // ANSWER NATURE'S CALL", text);
         const double range = distance(local->position, world.toiletFront);
-        panel(frame, 12, 514, 456, 44, range <= world.interactionRange || local->toiletAction != ToiletAction::None);
-        if (local->toiletAction != ToiletAction::None) drawText(frame, 24, 522, "E // STAND UP", text);
-        else if (range <= world.interactionRange) drawText(frame, 24, 522, "E // CHOOSE ACTION", text);
-        else drawText(frame, 24, 522, "MOVE CLOSER TO INTERACT", muted);
+        panel(frame, 12, 354, 616, 44, range <= world.interactionRange || local->toiletAction != ToiletAction::None);
+        if (local->toiletAction != ToiletAction::None) drawText(frame, 24, 362, "E // STAND UP", text);
+        else if (range <= world.interactionRange) drawText(frame, 24, 362, "E // CHOOSE ACTION", text);
+        else drawText(frame, 24, 362, "MOVE CLOSER TO INTERACT", muted);
     }
     frame.uiOffsetX = centeredX;
-    frame.uiOffsetY = std::max(0.0, frame.height - 640 * frame.uiScale);
-    panel(frame, 0, 568, 480, 72);
-    drawText(frame, 12, 576, "1 THIRD", view.mode == ViewMode::ThirdPerson ? text : muted);
-    drawText(frame, 132, 576, "2 GOD", view.mode == ViewMode::God ? text : muted);
-    drawText(frame, 232, 576, "3 FIRST", view.mode == ViewMode::FirstPerson ? text : muted);
-    if (local && view.mode != ViewMode::God) drawText(frame, 384, 576, view.slowWalk ? "SLOW" : "FAST", muted);
-    if (!local) {
-        drawText(frame, 12, 608, "WAITING FOR CITIZEN", text);
-    } else if (view.mode == ViewMode::God) {
-        drawText(frame, 12, 608, "WASD PAN / CLICK PATH / BOOST", muted);
-    } else if (view.mode == ViewMode::FirstPerson) {
-        drawText(frame, 12, 608, "WASD / F PISS / E USE", muted);
-    } else {
-        drawText(frame, 12, 608, "WASD / MOUSE LOOK / E USE", muted);
+    frame.uiOffsetY = std::max(0.0, frame.height - 480 * frame.uiScale);
+    panel(frame, 0, 408, 640, 72);
+    drawText(frame, 12, 416, "1 THIRD", view.mode == ViewMode::ThirdPerson ? text : muted);
+    drawText(frame, 132, 416, "2 GOD", view.mode == ViewMode::God ? text : muted);
+    drawText(frame, 232, 416, "3 FIRST", view.mode == ViewMode::FirstPerson ? text : muted);
+    if (local && view.mode != ViewMode::God) {
+        const char* stance = local->prone ? "PRONE" : local->grabbing ? "GRAB" : local->crouched ? "CROUCH" :
+            !local->grounded ? "AIR" : view.slowWalk ? "SLOW" : "FAST";
+        drawText(frame, 520, 416, stance, muted);
     }
+    if (!local) drawText(frame, 12, 448, "WAITING FOR CITIZEN", text);
+    else if (view.mode == ViewMode::God) drawText(frame, 12, 448, "WASD PAN / CLICK PATH / BOOST", muted);
+    else drawText(frame, 12, 448, "WASD / SPACE JUMP / CTRL GRAB / ALT CROUCH", muted);
 }
 
 } // namespace
@@ -660,9 +672,11 @@ void interpolateCharacters(const ClientState& target, ClientState& current, floa
         if (!destination) continue;
         if (destination->onToilet || destination->toiletAction == ToiletAction::Piss) {
             character.position = destination->position;
+            character.elevation = destination->elevation;
             character.yaw = destination->yaw;
             continue;
         }
+        character.elevation += static_cast<float>((destination->elevation - character.elevation) * blend);
         character.position.x += static_cast<float>((destination->position.x - character.position.x) * blend);
         character.position.y += static_cast<float>((destination->position.y - character.position.y) * blend);
         const double angle = std::atan2(std::sin(destination->yaw - character.yaw),
@@ -714,7 +728,8 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                 Material ring;
                 ring.color = colorHex("#d7ff54");
                 ring.unlit = true;
-                drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
+                drawRing(rasterizer, camera, {character.position.x, character.elevation + 0.028, character.position.y},
+                         0.36, 0.41, ring, 24);
             }
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
             drawPissing(rasterizer, camera, model, humanCache_[character.id], character);

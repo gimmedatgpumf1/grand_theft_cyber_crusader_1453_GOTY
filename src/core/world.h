@@ -22,7 +22,8 @@ public:
     void renameCharacter(std::uint32_t id, const std::string& name);
     void customizeCharacter(std::uint32_t id, const Appearance& appearance);
     void setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
-                  float yaw, float pitch, bool slowWalk = false);
+                  float yaw, float pitch, bool slowWalk = false, bool crouch = false,
+                  bool grab = false, bool jump = false);
     void setDestination(std::uint32_t id, const Vec2& destination);
     void requestToilet(std::uint32_t id, const std::string& action);
     void adjustNeed(std::uint32_t id, const std::string& need, float delta);
@@ -62,6 +63,8 @@ private:
     void beginToilet(Character& character, ToiletAction action);
     void finishToilet(Character& character, const std::string& message = "");
     void updateCharacter(Character& character, float dt);
+    void moveBody(Character& character, const Vec2& delta);
+    void updateVertical(Character& character, float dt);
     void updateAI(Character& character, float dt);
     void updatePissing(Character& character, float dt);
     void addPuddle(const Vec2& position);

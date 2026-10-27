@@ -15,6 +15,22 @@ bool circleHitsObstacle(const Vec2& point, float radius, const Obstacle& obstacl
     return dx * dx + dz * dz < radius * radius;
 }
 
+bool bodyHitsObstacle(const Vec2& point, float radius, float feet, float bodyHeight,
+                      const Obstacle& obstacle) {
+    if (feet >= obstacle.height - 0.0001F || feet + bodyHeight <= obstacle.base + 0.0001F) return false;
+    return circleHitsObstacle(point, radius, obstacle);
+}
+
+bool bodyHitsWorld(const Vec2& point, float radius, float feet, float bodyHeight,
+                   const std::vector<Obstacle>& obstacles, float halfWidth, float halfDepth) {
+    if (point.x - radius < -halfWidth || point.x + radius > halfWidth ||
+        point.y - radius < -halfDepth || point.y + radius > halfDepth) return true;
+    for (const Obstacle& obstacle : obstacles) {
+        if (obstacle.kind != "boundary" && bodyHitsObstacle(point, radius, feet, bodyHeight, obstacle)) return true;
+    }
+    return false;
+}
+
 bool circleHitsWorld(const Vec2& point, float radius,
                      const std::vector<Obstacle>& obstacles,
                      float halfWidth, float halfDepth) {

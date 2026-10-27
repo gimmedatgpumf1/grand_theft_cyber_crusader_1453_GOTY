@@ -121,6 +121,14 @@ Character parseCharacter(const JsonValue& value) {
     character.manualMove = {static_cast<float>(value.numberAt("moveX")),
                             static_cast<float>(value.numberAt("moveZ"))};
     character.speed = static_cast<float>(value.numberAt("speed"));
+    character.elevation = static_cast<float>(value.numberAt("elevation"));
+    character.verticalVelocity = static_cast<float>(value.numberAt("verticalVelocity"));
+    character.charge = static_cast<float>(value.numberAt("charge"));
+    character.fullChargeTime = static_cast<float>(value.numberAt("fullChargeTime"));
+    character.grounded = value.boolAt("grounded", true);
+    character.crouched = value.boolAt("crouched");
+    character.prone = value.boolAt("prone");
+    character.grabbing = value.boolAt("grabbing");
     character.needs.bladder = static_cast<float>(value.numberAt("bladder"));
     character.needs.bowel = static_cast<float>(value.numberAt("bowel"));
     character.pissing = value.boolAt("pissing");
@@ -157,6 +165,7 @@ void parseWorld(const JsonValue& value, ClientWorld& world) {
             obstacle.center = {static_cast<float>(item.numberAt("x")), static_cast<float>(item.numberAt("z"))};
             obstacle.halfSize = {static_cast<float>(item.numberAt("hx")), static_cast<float>(item.numberAt("hz"))};
             obstacle.height = static_cast<float>(item.numberAt("height", 3.0));
+            obstacle.base = static_cast<float>(item.numberAt("base"));
             obstacle.kind = item.stringAt("kind");
             world.obstacles.push_back(std::move(obstacle));
         }
@@ -302,11 +311,14 @@ bool NativeClient::sendJoin(const std::string& name) {
     return send("{\"type\":\"join\",\"name\":\"" + jsonEscape(name) + "\"}");
 }
 
-bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk) {
+bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk,
+                             bool crouch, bool grab, bool jump) {
     std::ostringstream out;
     out << "{\"type\":\"input\",\"x\":" << jsonNumber(move.x) << ",\"z\":" << jsonNumber(move.y)
         << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"slow\":" << (slowWalk ? "true" : "false")
         << ",\"piss\":" << (piss ? "true" : "false")
+        << ",\"crouch\":" << (crouch ? "true" : "false") << ",\"grab\":" << (grab ? "true" : "false")
+        << ",\"jump\":" << (jump ? "true" : "false")
         << ",\"yaw\":" << jsonNumber(yaw) << ",\"pitch\":" << jsonNumber(pitch) << '}';
     return send(out.str());
 }

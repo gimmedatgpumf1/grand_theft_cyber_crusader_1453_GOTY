@@ -223,7 +223,8 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -1.0, 1.0));
         world_.setInput(id, {x, z}, message.boolAt("sprint"), message.boolAt("piss"),
                         static_cast<float>(message.numberAt("yaw")),
-                        static_cast<float>(message.numberAt("pitch")), message.boolAt("slow"));
+                        static_cast<float>(message.numberAt("pitch")), message.boolAt("slow"),
+                        message.boolAt("crouch"), message.boolAt("grab"), message.boolAt("jump"));
     } else if (type == "path") {
         const float x = static_cast<float>(std::clamp(message.numberAt("x"), -8.7, 8.7));
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -6.7, 6.7));

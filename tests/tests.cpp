@@ -32,6 +32,21 @@ void moveToToilet(gtc::World& world, std::uint32_t id) {
           "explicit movement should reach the toilet");
 }
 
+bool driveTo(gtc::World& world, std::uint32_t id, const gtc::Vec2& target) {
+    for (int i = 0; i < 1000; ++i) {
+        const gtc::Character current = world.character(id);
+        if (gtc::distance(current.position, target) < 0.12F) {
+            world.setInput(id, {}, false, false, current.yaw, 0);
+            world.update(0.05F);
+            return true;
+        }
+        const gtc::Vec2 direction = gtc::normalized(target - current.position);
+        world.setInput(id, direction, false, false, std::atan2(direction.x, direction.y), 0);
+        world.update(0.05F);
+    }
+    return false;
+}
+
 } // namespace
 
 int main() {
@@ -152,6 +167,198 @@ int main() {
         check(urgent.pendingToilet, "NPC has an urgent toilet destination");
         check(std::abs(urgent.speed * 3.6F - 6.4F) < 0.001F && !urgent.sprint,
               "urgent NPC travel uses fast walking without sprinting");
+    });
+
+    test("crouch and prone stances use exact speeds and replicate", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Low Profile", false);
+        gtc::Vec2 previous = world.character(id).position;
+        world.setInput(id, {0, 1}, false, false, 0, 0, false, true);
+        world.update(0.05F);
+        gtc::Character current = world.character(id);
+        check(current.crouched && !current.prone, "Alt selects crouching without prone");
+        check(std::abs(current.speed * 3.6F - 3.6F) < 0.001F, "crouch speed is 3.6 kilometres per hour");
+        check(std::abs(gtc::distance(current.position, previous) - 0.05F) < 0.0001F,
+              "crouch displacement is one metre per second");
+        previous = current.position;
+        world.setInput(id, {0, 1}, false, false, 0, 0, false, true, true);
+        world.update(0.05F);
+        current = world.character(id);
+        check(current.prone && !current.crouched, "crouch plus grab lays the citizen down");
+        check(std::abs(current.speed * 3.6F - 2.0F) < 0.001F, "prone speed is two kilometres per hour");
+        check(std::abs(gtc::distance(current.position, previous) - gtc::kProneSpeed * 0.05F) < 0.0001F,
+              "prone displacement matches two kilometres per hour");
+        check(current.charge == 0.0F, "prone grab does not charge a jump");
+        check(world.snapshot().find("\"prone\":true") != std::string::npos,
+              "stance is replicated to first- and third-person renderers");
+        const gtc::Obstacle overhang{{0, 0}, {1, 1}, 2.0, "tunnel", 0.75F};
+        check(gtc::bodyHitsObstacle({0, 0}, 0.3F, 0, gtc::kStandingHeight, overhang),
+              "standing body cannot fit below a 75 centimetre overhang");
+        check(!gtc::bodyHitsObstacle({0, 0}, 0.3F, 0, gtc::kProneHeight, overhang),
+              "prone body fits below the same overhang");
+    });
+
+    test("jump apex, charged jump, and charge expiry", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Ballistic Subject", false);
+        const auto airborneApex = [&](float expected) {
+            world.update(0.05F);
+            world.setInput(id, {}, false, false, 0, 0);
+            float apex = world.character(id).elevation;
+            for (int i = 0; i < 60; ++i) {
+                world.update(0.05F);
+                apex = std::max(apex, world.character(id).elevation);
+                if (i > 5 && world.character(id).grounded) break;
+            }
+            check(std::abs(apex - expected) < 0.035F,
+                  "jump apex matches authored height " + std::to_string(expected));
+            check(world.character(id).grounded && std::abs(world.character(id).elevation) < 0.001F,
+                  "jump lands back on the floor");
+        };
+        world.setInput(id, {}, false, false, 0, 0, false, false, false, true);
+        airborneApex(gtc::kJumpHeight);
+        for (int i = 0; i < 30; ++i) {
+            world.setInput(id, {}, false, false, 0, 0, false, false, true);
+            world.update(0.05F);
+        }
+        check(std::abs(world.character(id).charge - 0.5F) < 0.02F, "half charge takes 1.5 seconds");
+        world.setInput(id, {}, false, false, 0, 0, false, false, true, true);
+        airborneApex(0.75F);
+        for (int i = 0; i < 60; ++i) {
+            world.setInput(id, {}, false, false, 0, 0, false, false, true);
+            world.update(0.05F);
+        }
+        check(world.character(id).charge > 0.99F, "full charge takes three seconds");
+        for (int i = 0; i < 40; ++i) {
+            world.setInput(id, {}, false, false, 0, 0, false, false, true);
+            world.update(0.05F);
+        }
+        check(world.character(id).charge == 0.0F, "full charge dissipates after two seconds");
+        world.setInput(id, {}, false, false, 0, 0);
+        world.update(0.05F);
+        for (int i = 0; i < 60; ++i) {
+            world.setInput(id, {}, false, false, 0, 0, false, false, true);
+            world.update(0.05F);
+        }
+        world.setInput(id, {}, false, false, 0, 0, false, false, true, true);
+        airborneApex(gtc::kMaximumJumpHeight);
+    });
+
+    test("automatic and slow steps support the citizen", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Stair Subject", false);
+        check(driveTo(world, id, {3.1F, -0.2F}), "approach the low step");
+        bool lowStep = false;
+        float lowSpeed = 0;
+        for (int i = 0; i < 30 && !lowStep; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0);
+            world.update(0.05F);
+            lowStep = world.character(id).elevation > 0.17F;
+            lowSpeed = world.character(id).speed;
+        }
+        check(lowStep && std::abs(world.character(id).elevation - 0.18F) < 0.001F,
+              "18 centimetre stair steps up automatically");
+        check(std::abs(lowSpeed * 3.6F - 6.4F) < 0.001F, "low step has no speed penalty");
+        check(driveTo(world, id, {4.8F, -0.2F}) && driveTo(world, id, {4.8F, -2.45F}),
+              "approach the higher step from ground level");
+        bool highStep = false;
+        float highSpeed = 0;
+        for (int i = 0; i < 40 && !highStep; ++i) {
+            world.setInput(id, {-1, 0}, false, false, -1.57079633F, 0);
+            world.update(0.05F);
+            highStep = world.character(id).elevation > 0.44F;
+            highSpeed = world.character(id).speed;
+        }
+        check(highStep && std::abs(world.character(id).elevation - 0.45F) < 0.001F,
+              "45 centimetre obstacle remains steppable");
+        check(highSpeed <= 0.7501F && highSpeed > 0.0F, "higher step is deliberately slow");
+        world.setInput(id, {}, false, false, 0, 0);
+        for (int i = 0; i < 10; ++i) world.update(0.05F);
+        check(world.character(id).grounded && std::abs(world.character(id).elevation - 0.45F) < 0.001F,
+              "step top is a persistent support surface");
+
+        gtc::World boundaryWorld;
+        const auto boundary = boundaryWorld.addCharacter("Boundary Step", false);
+        check(driveTo(boundaryWorld, boundary, {3.1F, -0.2F}), "approach the exact-rise steps");
+        for (int i = 0; i < 30 && boundaryWorld.character(boundary).elevation < 0.17F; ++i) {
+            boundaryWorld.setInput(boundary, {0, -1}, false, false, 3.14159265F, 0);
+            boundaryWorld.update(0.05F);
+        }
+        bool exactRiseSlow = false;
+        for (int i = 0; i < 50; ++i) {
+            boundaryWorld.setInput(boundary, {0, -1}, false, false, 3.14159265F, 0);
+            boundaryWorld.update(0.05F);
+            const auto& c = boundaryWorld.character(boundary);
+            exactRiseSlow = exactRiseSlow || (c.grounded && std::abs(c.elevation - 0.18F) < 0.001F &&
+                c.position.y < -1.0F && c.speed <= 0.7501F && c.speed > 0.0F);
+        }
+        check(exactRiseSlow, "an exact 27 centimetre rise uses the slow-step speed");
+    });
+
+    test("toilet grab, climb, release, and mid-air grab", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Porcelain Climber", false);
+        moveToToilet(world, id);
+        check(driveTo(world, id, {0, -3.25F}), "move within arm reach of the toilet");
+        world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
+        world.update(0.05F);
+        check(world.character(id).grabbing, "Ctrl grabs a reachable toilet ledge");
+        world.setInput(id, {0, 1}, false, false, 3.14159265F, 0, false, false, true);
+        world.update(0.05F);
+        check(!world.character(id).grabbing, "moving backward releases the ledge");
+        world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
+        world.update(0.05F);
+        check(!world.character(id).grabbing, "holding Ctrl cannot instantly regrab after release");
+        world.setInput(id, {}, false, false, 3.14159265F, 0);
+        world.update(0.05F);
+        world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
+        world.update(0.05F);
+        bool climbed = false;
+        for (int i = 0; i < 60 && !climbed; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0, false, false, true);
+            world.update(0.05F);
+            climbed = !world.character(id).grabbing && world.character(id).grounded &&
+                world.character(id).elevation > 1.39F;
+        }
+        check(climbed, "moving forward climbs onto the toilet");
+        world.setInput(id, {}, false, false, 3.14159265F, 0);
+        world.update(0.05F);
+        check(world.character(id).grounded && std::abs(world.character(id).elevation - 1.4F) < 0.001F,
+              "toilet top remains a support surface after Ctrl is released");
+
+        gtc::World airWorld;
+        const auto air = airWorld.addCharacter("Midair Climber", false);
+        moveToToilet(airWorld, air);
+        check(driveTo(airWorld, air, {0, -3.25F}), "approach toilet for a mid-air grab");
+        airWorld.setInput(air, {}, false, false, 3.14159265F, 0, false, false, false, true);
+        airWorld.update(0.05F);
+        airWorld.setInput(air, {}, false, false, 3.14159265F, 0);
+        airWorld.update(0.05F);
+        airWorld.setInput(air, {}, false, false, 3.14159265F, 0, false, false, true);
+        airWorld.update(0.05F);
+        check(airWorld.character(air).grabbing && airWorld.character(air).verticalVelocity == 0.0F,
+              "Ctrl can catch a reachable ledge in mid-air");
+    });
+
+    test("low tunnel automatically forces prone crawling", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Tunnel Subject", false);
+        check(driveTo(world, id, {-5.0F, 1.4F}), "approach the low tunnel");
+        bool prone = false;
+        bool correctSpeed = true;
+        for (int i = 0; i < 180 && world.character(id).position.y > -1.35F; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0);
+            world.update(0.05F);
+            prone = prone || world.character(id).prone;
+            if (world.character(id).prone && std::abs(world.character(id).speed * 3.6F - 2.0F) > 0.001F) {
+                correctSpeed = false;
+            }
+        }
+        check(prone, "low clearance automatically lays the citizen down");
+        check(correctSpeed, "automatic tunnel crawling uses two kilometres per hour");
+        check(world.character(id).position.y < -1.2F, "prone profile physically passes through the tunnel");
+        check(!world.character(id).prone && !world.character(id).crouched,
+              "citizen stands automatically after leaving the tunnel");
     });
 
     test("shitting drains bowel without magically emptying bladder", [] {
