@@ -20,6 +20,8 @@ inline void seedAimedToiletStream(ClientState& state, Character& character, gtc:
     const gtc::Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
     const float originHeight = character.elevation + 0.79F + 0.10F * sp;
     const gtc::Vec2 direction = normalized(target - origin);
+    character.pissYaw = std::atan2(direction.x, direction.y);
+    character.pissPitch = character.pitch;
     const float vertical = speed * sp;
     const float flight = (vertical + std::sqrt(vertical * vertical +
         2.0F * kProjectileGravity * (originHeight - kToiletWaterHeight))) / kProjectileGravity;
@@ -56,9 +58,15 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
     Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
     HairLibrary hair;
     drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
-    if (cache.genitalTip < 0 || length(humanStreamOrigin(character, &cache, 0) - cache.posed[cache.genitalTip]) > 1e-6)
-        return false;
-    const Vec3 tip = cache.posed[cache.genitalTip];
+    const Vec3 launch{std::cos(character.pissPitch) * std::sin(character.pissYaw), std::sin(character.pissPitch),
+                      std::cos(character.pissPitch) * std::cos(character.pissYaw)};
+    const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
+    const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
+    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 ||
+        length(cache.genitalExit - cache.posed[cache.genitalTip]) < 0.001 ||
+        dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
+        length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
+    const Vec3 tip = cache.genitalExit;
     Character moved = character;
     moved.position += {0.3F, -0.2F};
     moved.elevation += 0.1F;

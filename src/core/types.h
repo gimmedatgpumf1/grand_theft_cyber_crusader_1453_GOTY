@@ -131,6 +131,8 @@ struct Character {
     Vec2 manualMove;
     float yaw = 3.14159265F;
     float pitch = 0.0F;
+    float pissYaw = 3.14159265F;
+    float pissPitch = 0.0F;
     float speed = 0.0F;
     float elevation = 0.0F;
     float verticalVelocity = 0.0F;

@@ -38,6 +38,29 @@ Mat3 rotationX(double angle) {
     return result;
 }
 
+Mat3 rotationBetween(Vec3 from, Vec3 to) {
+    if (length(from) < 1e-9 || length(to) < 1e-9) return {};
+    from = normalized(from); to = normalized(to);
+    Vec3 axis = cross(from, to);
+    double sine = length(axis), angle = 0;
+    const double cosine = std::clamp(dot(from, to), -1.0, 1.0);
+    if (sine < 1e-9) {
+        if (cosine > 0) return {};
+        axis = normalized(cross(from, std::abs(from.y) < 0.9 ? Vec3{0, 1, 0} : Vec3{1, 0, 0}));
+        angle = pi;
+    } else {
+        axis = axis / sine;
+        angle = std::atan2(sine, cosine);
+    }
+    const double c = std::cos(angle), s = std::sin(angle), t = 1 - c;
+    const double x = axis.x, y = axis.y, z = axis.z;
+    Mat3 result;
+    result.v = {x * x * t + c, x * y * t - z * s, x * z * t + y * s,
+                y * x * t + z * s, y * y * t + c, y * z * t - x * s,
+                z * x * t - y * s, z * y * t + x * s, z * z * t + c};
+    return result;
+}
+
 Mat3 rotationZ(double angle) {
     Mat3 result;
     const double c = std::cos(angle), s = std::sin(angle);
@@ -565,7 +588,7 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
 Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache, float fallbackPitch) {
     if (cache && cache->poseValid && cache->genitalTip >= 0 &&
         static_cast<std::size_t>(cache->genitalTip) < cache->posed.size()) {
-        const Vec3 tip = cache->posed[cache->genitalTip];
+        const Vec3 tip = cache->genitalExit;
         const double yaw = character.yaw - cache->poseYaw;
         const double c = std::cos(yaw), s = std::sin(yaw);
         const double x = tip.x - cache->poseX, z = tip.z - cache->poseZ;
@@ -591,6 +614,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
         cache.poseElevation != character.elevation || cache.poseCharge != character.charge ||
         cache.poseGrabHeight != character.grabHeight || cache.posePitch != character.pitch ||
+        cache.posePissYaw != character.pissYaw || cache.posePissPitch != character.pissPitch ||
         cache.poseAttackAnim != character.attackAnim ||
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
         cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
@@ -633,6 +657,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseCharge = character.charge;
         cache.poseGrabHeight = character.grabHeight;
         cache.posePitch = character.pitch;
+        cache.posePissYaw = character.pissYaw; cache.posePissPitch = character.pissPitch;
         cache.poseAttackAnim = character.attackAnim;
         cache.poseUnzipped = character.unzipped;
         cache.poseBlocking = character.blocking;
@@ -651,21 +676,43 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) ids.push_back(id);
             std::sort(ids.begin(), ids.end());
             ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-            double minZ = 1e100, maxZ = -1e100;
-            for (int id : ids) { minZ = std::min(minZ, rest[id].z); maxZ = std::max(maxZ, rest[id].z); }
-            int pivotId = ids.front(), tipId = ids.front();
-            for (int id : ids) {
-                if (rest[id].z <= minZ + 0.3 * (maxZ - minZ) && rest[id].y > rest[pivotId].y) pivotId = id;
-                if (rest[id].z > rest[tipId].z) tipId = id;
+            std::unordered_map<int, std::vector<int>> edges;
+            for (const Triangle& triangle : model.genitalTriangles) for (int corner = 0; corner < 3; ++corner) {
+                const int a = triangle.v[corner], b = triangle.v[(corner + 1) % 3];
+                edges[a].push_back(b); edges[b].push_back(a);
             }
-            cache.genitalPivot = pivotId;
-            cache.genitalTip = tipId;
-            const Vec3 pivot = cache.posed[pivotId];
-            const Vec3 restDirection = rotateWorld(cache.posed[tipId] - pivot, -character.yaw);
-            const double restPitch = std::atan2(restDirection.y, restDirection.z);
-            const bool freeAim = character.unzipped && character.toiletAction == ToiletAction::None;
-            const double aimAngle = freeAim ? restPitch - character.pitch : -55.0 * pi / 180.0;
-            const Mat3 rotation = rotationX(aimAngle);
+            const auto central = [&](int id) { return std::abs(rest[id].x) < 0.015; };
+            int tipId = ids.front();
+            for (int id : ids) if (rest[id].z > rest[tipId].z) tipId = id;
+            int ventralId = tipId;
+            for (int id : edges[tipId]) if (central(id) && rest[id].y < rest[tipId].y &&
+                (ventralId == tipId || rest[id].z > rest[ventralId].z)) ventralId = id;
+            int rootId = tipId, previous = -1;
+            for (int step = 0; step < 4; ++step) {
+                int next = -1;
+                for (int id : edges[rootId]) if (id != previous && central(id) && rest[id].y > rest[rootId].y &&
+                    rest[id].z < rest[rootId].z && (next < 0 || rest[id].z > rest[next].z)) next = id;
+                if (next < 0) break;
+                previous = rootId; rootId = next;
+            }
+            int lowerRootId = ventralId; previous = -1;
+            for (int step = 0; step < 7; ++step) {
+                int next = -1;
+                for (int id : edges[lowerRootId]) if (id != previous && central(id) && rest[id].z < rest[lowerRootId].z &&
+                    (next < 0 || rest[id].z > rest[next].z)) next = id;
+                if (next < 0) break;
+                previous = lowerRootId; lowerRootId = next;
+            }
+            cache.genitalPivot = rootId; cache.genitalTip = tipId;
+            const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
+            const Vec3 exit = cache.posed[tipId] * 0.35 + cache.posed[ventralId] * 0.65;
+            const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
+            const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
+            const double yaw = active ? character.pissYaw : character.yaw;
+            const double pitch = active ? character.pissPitch : character.pitch;
+            const Vec3 desired = rotateWorld({std::cos(pitch) * std::sin(yaw), std::sin(pitch),
+                                              std::cos(pitch) * std::cos(yaw)}, -character.yaw);
+            const Mat3 rotation = rotationBetween(restDirection, desired);
             auto articulate = [&](Vec3 direction) {
                 return rotateWorld(apply(rotation, rotateWorld(direction, -character.yaw)), character.yaw);
             };
@@ -673,6 +720,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 cache.posed[id] = pivot + articulate(cache.posed[id] - pivot);
                 cache.posedNormals[id] = normalized(articulate(cache.posedNormals[id]));
             }
+            cache.genitalRoot = pivot;
+            cache.genitalExit = pivot + articulate(exit - pivot);
         }
     }
     cache.transformed.resize(rest.size());

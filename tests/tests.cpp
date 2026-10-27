@@ -455,7 +455,19 @@ int main() {
         world.requestToilet(id, "piss");
         check(!world.character(id).onToilet, "male toilet piss is standing");
         check(world.character(id).pissing, "standing toilet piss has a visible stream state");
-        for (int i = 0; i < 700 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
+        world.update(0.05F);
+        const auto launch = world.character(id);
+        const auto drops = world.projectiles();
+        bool replicatedLaunch = !drops.empty() && world.snapshot().find("\"pissPitch\":") != std::string::npos;
+        if (!drops.empty()) {
+            const auto& drop = drops.front();
+            replicatedLaunch = replicatedLaunch && std::abs(launch.pissPitch -
+                std::atan2(drop.verticalVelocity + gtc::kProjectileGravity * drop.age,
+                           gtc::length(drop.velocity))) < 0.00001F &&
+                std::abs(std::sin(launch.pissYaw - std::atan2(drop.velocity.x, drop.velocity.y))) < 0.00001F;
+        }
+        check(replicatedLaunch, "posed organ receives the exact physical stream yaw and pitch");
+        for (int i = 1; i < 700 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
             world.update(0.05F);
         }
         const auto relieved = world.character(id);

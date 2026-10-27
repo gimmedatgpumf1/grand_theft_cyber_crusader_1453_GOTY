@@ -80,6 +80,8 @@ void World::spawnPiss(Character& character) {
         const Vec2 delta = target - projectile.position;
         if (length(delta) > 0.0001F) direction = normalized(delta);
     }
+    character.pissYaw = std::atan2(direction.x, direction.y);
+    character.pissPitch = pitch;
     projectile.velocity = direction * (speed * cp);
     projectile.verticalVelocity = speed * sp;
     if (projectiles_.size() >= 768) projectiles_.erase(projectiles_.begin());

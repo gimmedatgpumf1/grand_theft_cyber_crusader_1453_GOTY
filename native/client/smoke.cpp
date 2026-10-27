@@ -84,7 +84,7 @@ bool genitalMode(const gtc::native::HumanModel& model, const gtc::Character& cha
     const int cloth = submittedGenital(scene, cache, ids, Material::Kind::Cloth);
     if (!ids.empty() && (exposed ? skin == static_cast<int>(ids.size()) && cloth == 0 : cloth == 0 && skin == 0)) {
         if (character.unzipped && character.toiletAction == gtc::ToiletAction::None && cache.genitalTip >= 0) {
-            const Vec3 actual = normalized(cache.posed[cache.genitalTip] - cache.posed[cache.genitalPivot]);
+            const Vec3 actual = normalized(cache.genitalExit - cache.genitalRoot);
             const Vec3 expected{std::cos(character.pitch) * std::sin(character.yaw), std::sin(character.pitch),
                 std::cos(character.pitch) * std::cos(character.yaw)};
             if (dot(actual, expected) < 0.99999) { error = "unzipped crosshair articulation"; return false; }
@@ -938,6 +938,8 @@ int main(int argc, char** argv) {
             gtc::native::ViewState toiletView = fpsLevel; toiletView.yaw = 3.14159265F; toiletView.pitch = -0.9F;
             if (!gtc::native::seedToiletStreamExhibit(standing, alpha.playerId(), root, standing.tick) ||
                 !stanceCapture("toilet-water-fps", toiletView)) return 1;
+            gtc::native::ViewState npcView = tps; npcView.yaw = 3.14159265F; npcView.pitch = -0.28F; npcView.distance = 3.2F;
+            if (!stanceCapture("npc-piss-tps", npcView)) return 1;
             for (auto& citizen : standing.characters) citizen.pissing = citizen.unzipped = false;
             standing.projectiles.clear(); standing.waterRipples.clear();
             male->position = {0, 0}; male->yaw = male->pitch = 0;

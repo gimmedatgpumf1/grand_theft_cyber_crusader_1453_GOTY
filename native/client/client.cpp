@@ -119,6 +119,8 @@ Character parseCharacter(const JsonValue& value) {
     character.position = {static_cast<float>(value.numberAt("x")), static_cast<float>(value.numberAt("z"))};
     character.yaw = static_cast<float>(value.numberAt("yaw"));
     character.pitch = static_cast<float>(value.numberAt("pitch"));
+    character.pissYaw = static_cast<float>(value.numberAt("pissYaw", character.yaw));
+    character.pissPitch = static_cast<float>(value.numberAt("pissPitch", character.pitch));
     character.manualMove = {static_cast<float>(value.numberAt("moveX")),
                             static_cast<float>(value.numberAt("moveZ"))};
     character.speed = static_cast<float>(value.numberAt("speed"));
@@ -271,6 +273,8 @@ void interpolateState(const ClientState& previous, const ClientState& target,
         value.manualMove = vec(a->manualMove, b->manualMove);
         value.yaw = angle(a->yaw, b->yaw);
         value.pitch = static_cast<float>(lerp(a->pitch, b->pitch));
+        value.pissYaw = angle(a->pissYaw, b->pissYaw);
+        value.pissPitch = static_cast<float>(lerp(a->pissPitch, b->pissPitch));
         value.speed = static_cast<float>(lerp(a->speed, b->speed));
         value.elevation = static_cast<float>(lerp(a->elevation, b->elevation));
         value.verticalVelocity = static_cast<float>(lerp(a->verticalVelocity, b->verticalVelocity));

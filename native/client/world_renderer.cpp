@@ -588,7 +588,7 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
             left.speed != right.speed || left.elevation != right.elevation || left.charge != right.charge ||
             left.grabHeight != right.grabHeight || left.grounded != right.grounded ||
-            left.pitch != right.pitch || left.attackAnim != right.attackAnim ||
+            left.pitch != right.pitch || left.pissYaw != right.pissYaw || left.pissPitch != right.pissPitch || left.attackAnim != right.attackAnim ||
             left.unzipped != right.unzipped || left.blocking != right.blocking ||
             left.crouched != right.crouched || left.prone != right.prone ||
             left.grabbing != right.grabbing || left.pissing != right.pissing || left.onToilet != right.onToilet ||

@@ -125,7 +125,7 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"x\":" << jsonNumber(character.position.x)
         << ",\"z\":" << jsonNumber(character.position.y)
         << ",\"yaw\":" << jsonNumber(character.yaw)
-        << ",\"pitch\":" << jsonNumber(character.pitch)
+        << ",\"pitch\":" << jsonNumber(character.pitch) << ",\"pissYaw\":" << jsonNumber(character.pissYaw) << ",\"pissPitch\":" << jsonNumber(character.pissPitch)
         << ",\"moveX\":" << jsonNumber(character.manualMove.x)
         << ",\"moveZ\":" << jsonNumber(character.manualMove.y)
         << ",\"speed\":" << jsonNumber(character.speed)
@@ -523,6 +523,7 @@ void World::beginToilet(Character& character, ToiletAction action) {
     character.position = character.onToilet ? toiletSeat() : toiletFront();
     character.yaw = character.onToilet ? 0.0F : 3.14159265F;
     character.pitch = action == ToiletAction::Piss && !character.onToilet ? -0.32F : 0.0F;
+    character.pissYaw = character.yaw; character.pissPitch = character.pitch;
     character.actionTime = 0.0F;
     character.speed = 0.0F;
     if (action == ToiletAction::Sit) addEvent(character.name + " parked their cheeks on the porcelain.");

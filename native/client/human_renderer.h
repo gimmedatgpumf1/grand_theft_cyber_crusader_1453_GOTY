@@ -23,12 +23,13 @@ struct HumanRenderCache {
     double poseTick = 0;
     float poseX = 0, poseZ = 0, poseYaw = 0, poseSpeed = 0;
     float poseElevation = 0, poseCharge = 0, poseGrabHeight = 0;
-    float posePitch = 0, poseAttackAnim = 0;
+    float posePitch = 0, posePissYaw = 0, posePissPitch = 0, poseAttackAnim = 0;
     int poseAction = -1;
     bool poseOnToilet = false;
     bool poseGrounded = true, poseCrouched = false, poseProne = false, poseGrabbing = false;
     bool poseUnzipped = false, poseBlocking = false;
     int genitalPivot = -1, genitalTip = -1;
+    Vec3 genitalRoot, genitalExit;
     std::vector<Vec3> posed;
     std::vector<Vec3> posedNormals;
     std::vector<RenderVertex> transformed;

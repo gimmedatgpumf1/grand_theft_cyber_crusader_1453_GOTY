@@ -204,7 +204,7 @@ private:
         const ViewMode previous = view_.mode;
         view_.mode = mode;
         if (previous == ViewMode::God || mode == ViewMode::God) keys_.clear();
-        leftDown_ = rightDown_ = false;
+        leftDown_ = rightDown_ = middleDown_ = false;
         lastLeftClick_ = lastRightClick_ = {};
         view_.aiming = false;
         if (mode == ViewMode::God && captured_) {
@@ -244,7 +244,7 @@ private:
         }
         if (overlay_ == Overlay::None) restoreMouseCapture_ = captured_ && view_.mode == ViewMode::FirstPerson;
         overlay_ = overlay;
-        keys_.clear();
+        keys_.clear(); middleDown_ = false;
         window_.captureMouse(false);
         captured_ = false;
         if (overlay == Overlay::Creator) {
@@ -333,7 +333,7 @@ private:
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
             keys_.clear();
-            leftDown_ = rightDown_ = false;
+            leftDown_ = rightDown_ = middleDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
             restoreMouseCapture_ = false;
@@ -347,6 +347,8 @@ private:
                 if (view_.mode == ViewMode::FirstPerson) {
                     if (const Character* citizen = local()) clampViewToBody(view_, citizen->yaw);
                 }
+            } else if (middleDown_ && overlay_ == Overlay::None && view_.mode == ViewMode::ThirdPerson) {
+                rotateView(view_, event.dx, event.dy);
             }
             return;
         }
@@ -358,6 +360,10 @@ private:
         if (event.type == WindowEvent::Type::MouseDown) {
             mouseX_ = event.x;
             mouseY_ = event.y;
+            if (event.button == 2) {
+                middleDown_ = overlay_ == Overlay::None && view_.mode == ViewMode::ThirdPerson;
+                return;
+            }
             if (event.button != 1 && event.button != 3) return;
             if (overlay_ == Overlay::Wheel && event.button == 1) {
                 const double scale = std::min(1.0, std::min(view_.width / 640.0, view_.height / 480.0));
@@ -402,6 +408,7 @@ private:
         }
         if (event.type == WindowEvent::Type::MouseUp) {
             if (event.button == 1) leftDown_ = false;
+            if (event.button == 2) middleDown_ = false;
             if (event.button == 3) rightDown_ = false;
             sendInput();
             return;
@@ -437,7 +444,7 @@ private:
         }
         if (event.key == kKeyEscape) {
             keys_.clear();
-            leftDown_ = rightDown_ = false;
+            leftDown_ = rightDown_ = middleDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
         } else if (event.key == '1') setMode(ViewMode::ThirdPerson);
@@ -514,7 +521,8 @@ private:
             view_.aiming = rightDown_ && ranged;
             grab = keys_.count(kKeyLeftControl) != 0;
             jump = keys_.count(' ') != 0;
-            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab || ranged) yaw = view_.yaw;
+            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab ||
+                (ranged && !middleDown_)) yaw = view_.yaw;
         }
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
@@ -625,9 +633,10 @@ private:
             drawText(frame, 230, 35, "FIELD MANUAL", text);
             const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
                 "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
-                "RMB AIM RANGED / BLOCK MELEE", "GOD RMB GO SHIFT RUN ALT CROUCH", "GOD 2X RMB ADV PATH",
-                "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
-            for (int i = 0; i < 12; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
+                "RMB AIM RANGED / BLOCK MELEE", "MMB DRAG ORBIT TPS", "GOD RMB GO SHIFT RUN ALT CROUCH",
+                "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS",
+                "F12 PNG H CLOSES MANUAL"};
+            for (int i = 0; i < 13; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
         } else if (overlay_ == Overlay::Creator) {
             frame.rectangle(0, 20, 640, 440, panel);
             drawText(frame, 20, 28, "C CREATOR ENTER APPLY", text);
@@ -657,7 +666,7 @@ private:
     std::set<int> keys_;
     bool captured_ = false;
     bool restoreMouseCapture_ = false;
-    bool leftDown_ = false, rightDown_ = false;
+    bool leftDown_ = false, rightDown_ = false, middleDown_ = false;
     std::chrono::steady_clock::time_point lastLeftClick_{}, lastRightClick_{};
     double lastLeftX_ = 0, lastLeftY_ = 0, lastRightX_ = 0, lastRightY_ = 0;
     bool bodyTrackReady_ = false;
