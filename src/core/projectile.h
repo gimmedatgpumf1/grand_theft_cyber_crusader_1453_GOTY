@@ -272,16 +272,19 @@ inline float pissAimPitch(const Character& character, Vec2 target, float targetH
 inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,
                           const std::vector<Obstacle>& obstacles, float halfWidth, float halfDepth) {
     candidate.id = id;
-    candidate.size = std::sqrt(kPissDropletArea / 3.141592653589793F);
+    candidate.volumeMl = kPissDropletVolumeMl;
+    candidate.size = puddleRadiusForVolume(candidate.volumeMl);
     if (!projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return {};
     const auto merge = [](Puddle& into, const Puddle& added) {
-        const float a = into.size * into.size, b = added.size * added.size, sum = a + b;
-        into.position = (into.position * a + added.position * b) * (1.0F / sum);
+        const double sum = into.volumeMl + added.volumeMl;
+        const float a = static_cast<float>(into.volumeMl), b = static_cast<float>(added.volumeMl);
+        into.position = (into.position * a + added.position * b) * static_cast<float>(1.0 / sum);
         if (into.vertical) {
-            into.height = (into.height * a + added.height * b) / sum;
+            into.height = static_cast<float>((into.height * a + added.height * b) / sum);
             into.normal = normalized(into.normal * a + added.normal * b);
         }
-        into.size = std::sqrt(sum); // Area is conserved; growth has no artificial radius ceiling.
+        into.volumeMl = sum;
+        into.size = puddleRadiusForVolume(static_cast<float>(sum)); // Volume is conserved; growth has no ceiling.
         into.age = std::min(into.age, added.age);
     };
     std::size_t first = 0;

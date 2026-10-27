@@ -429,6 +429,24 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     puddle.color = colorHex("#414713");
     puddle.specular = 0.18;
     puddle.opacity = 0.54;
+    std::vector<const Puddle*> floor;
+    for (const Puddle& value : state.puddles) if (!value.vertical) floor.push_back(&value);
+    std::sort(floor.begin(), floor.end(), [](const Puddle* a, const Puddle* b) { return a->id < b->id; });
+    for (std::size_t i = 1; i < floor.size(); ++i) {
+        const Puddle& a = *floor[i - 1];
+        const Puddle& b = *floor[i];
+        const gtc::Vec2 delta = b.position - a.position;
+        const float span = length(delta);
+        if (std::abs(a.height - b.height) > 0.001F || span < 0.02F || span > 0.55F) continue;
+        const gtc::Vec2 direction = delta * (1.0F / span);
+        const Vec3 start{a.position.x + direction.x * a.size * 0.55F, a.height,
+                         a.position.y + direction.y * a.size * 0.55F};
+        const Vec3 end{b.position.x - direction.x * b.size * 0.55F, b.height,
+                       b.position.y - direction.y * b.size * 0.55F};
+        const float width = std::min(a.size, b.size) * 0.72F;
+        const Vec3 side{-direction.y * width, 0, direction.x * width};
+        drawQuad(rasterizer, camera, {start + side, end + side, end - side, start - side}, {0, 1, 0}, puddle);
+    }
     for (const Puddle& puddleValue : state.puddles) {
         const Vec3 center{puddleValue.position.x, puddleValue.height, puddleValue.position.y};
         const Vec2 tangent{-puddleValue.normal.y, puddleValue.normal.x};
@@ -436,8 +454,9 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
             tangent.y * puddleValue.size * 0.72} : Vec3{puddleValue.size, 0, 0};
         const Vec3 axisB = puddleValue.vertical ? Vec3{0, puddleValue.size, 0} : Vec3{0, 0, puddleValue.size * 0.72};
         const Vec3 normal = puddleValue.vertical ? Vec3{puddleValue.normal.x, 0, puddleValue.normal.y} : Vec3{0, 1, 0};
-        for (int i = 0; i < 14; ++i) {
-            const double a = i * 2.0 * 3.141592653589793 / 14.0, b = (i + 1) * 2.0 * 3.141592653589793 / 14.0;
+        const int segments = puddleValue.vertical ? 14 : 10;
+        for (int i = 0; i < segments; ++i) {
+            const double a = i * 2.0 * 3.141592653589793 / segments, b = (i + 1) * 2.0 * 3.141592653589793 / segments;
             const Vec3 first = center + axisA * std::cos(a) + axisB * std::sin(a);
             const Vec3 second = center + axisA * std::cos(b) + axisB * std::sin(b);
             rasterizer.triangle({cameraVertex(camera, center, normal, center), cameraVertex(camera, first, normal, first),
@@ -448,8 +467,8 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
 
 void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
     Material piss, bullet;
-    piss.color = colorHex("#d4ce68");
-    piss.specular = 0.35;
+    piss.color = colorHex("#ffd21f");
+    piss.unlit = true; // Keep urine yellow instead of washing it out with white specular highlights.
     bullet.color = colorHex("#fff0a0");
     bullet.unlit = true;
     std::vector<const Projectile*> stream;

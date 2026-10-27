@@ -151,18 +151,21 @@ void World::addPuddle(const Puddle& puddle) {
 }
 
 void World::updateProjectiles(float dt) {
-    const float gameHours = dt * kGameTimeScale / 3600.0F;
-    const float radiusRetention = std::exp(-0.5F * gameHours *
-        kPissEvaporationDepthPerGameHour / kPissFilmDepth);
+    const double gameHours = dt * kGameTimeScale / 3600.0;
+    const double areaPerMl = 0.000001 / kPissFilmDepth;
+    const double volumeRetention = std::exp(-gameHours *
+        kPissEvaporationMlPerSquareMeterGameHour * areaPerMl);
     for (Puddle& puddle : puddles_) {
         puddle.age += dt;
-        puddle.size *= radiusRetention; // Evaporation acts on area; radius follows its square root.
+        const double evaporatedMl = puddle.volumeMl * (1.0 - volumeRetention);
+        puddle.volumeMl = std::max(0.0, puddle.volumeMl - evaporatedMl);
+        puddle.size = puddleRadiusForVolume(static_cast<float>(puddle.volumeMl));
     }
     for (WaterRipple& ripple : waterRipples_) ripple.age += dt;
     waterRipples_.erase(std::remove_if(waterRipples_.begin(), waterRipples_.end(),
         [](const WaterRipple& ripple) { return ripple.age >= 1.8; }), waterRipples_.end());
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const Puddle& puddle) {
-        return puddle.size <= kPissMinimumRadius;
+        return puddle.volumeMl <= kPissMinimumVolumeMl;
     }), puddles_.end());
     const Vec2 wind = windAt(elapsed_);
     for (std::size_t index = 0; index < projectiles_.size();) {

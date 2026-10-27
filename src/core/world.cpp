@@ -962,7 +962,8 @@ std::string World::snapshot() const {
         if (i != 0) out << ',';
         out << "{\"id\":" << puddles_[i].id << ",\"x\":" << jsonNumber(puddles_[i].position.x)
             << ",\"z\":" << jsonNumber(puddles_[i].position.y) << ",\"size\":" << jsonNumber(puddles_[i].size)
-            << ",\"height\":" << jsonNumber(puddles_[i].height) << ",\"nx\":" << jsonNumber(puddles_[i].normal.x)
+            << ",\"ml\":" << jsonNumber(puddles_[i].volumeMl) << ",\"height\":" << jsonNumber(puddles_[i].height)
+            << ",\"nx\":" << jsonNumber(puddles_[i].normal.x)
             << ",\"nz\":" << jsonNumber(puddles_[i].normal.y)
             << ",\"vertical\":" << (puddles_[i].vertical ? "true" : "false")
             << ",\"age\":" << jsonNumber(puddles_[i].age) << '}';

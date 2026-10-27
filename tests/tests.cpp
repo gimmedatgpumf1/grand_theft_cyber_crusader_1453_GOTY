@@ -575,12 +575,14 @@ int main() {
         check(spots.size() == 1, "growth coalesces every newly overlapping floor puddle");
         for (std::uint32_t next = 5; next <= 220; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
         const float at220 = spots.front().size;
-        const float expected220 = std::sqrt(220.0F * gtc::kPissDropletArea / 3.141592653589793F);
-        check(spots.size() == 1 && std::abs(at220 - expected220) < 0.001F && at220 < 0.25F,
-              "220 physical droplets produce the calibrated area rather than runaway growth");
+        const float expected220 = gtc::puddleRadiusForVolume(220.0F * gtc::kPissDropletVolumeMl);
+        check(spots.size() == 1 && std::abs(at220 - expected220) < 0.001F && at220 < 0.25F &&
+              std::abs(spots.front().volumeMl - 220.0F * gtc::kPissDropletVolumeMl) < 0.001F,
+              "220 physical droplets conserve their exact millilitre volume and derived area");
         for (std::uint32_t next = 221; next <= 840; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
-        const float expectedFull = std::sqrt(840.0F * gtc::kPissDropletArea / 3.141592653589793F);
+        const float expectedFull = gtc::puddleRadiusForVolume(gtc::kPissFullBladderVolumeMl);
         check(spots.size() == 1 && std::abs(spots.front().size - expectedFull) < 0.001F &&
+              std::abs(spots.front().volumeMl - 600.0F) < 0.001F &&
               std::abs(expectedFull - 0.437F) < 0.002F && spots.front().size / at220 < 2.0F,
               "600 ml covers 0.6 square metres and four times the liquid gives twice the radius");
 
@@ -662,8 +664,9 @@ int main() {
                        {0, 1.0F}, 0.018F, true);
         for (int i = 0; i < 60; ++i) floor.update(0.05F);
         const auto spots = floor.puddles();
-        check(spots.size() == 1 && spots.front().size > 0.12F && spots.front().size < 0.18F,
-              "a sustained stream grows one unified, volume-calibrated floor puddle");
+        check(spots.size() == 1 && spots.front().size > 0.12F && spots.front().size < 0.18F &&
+              spots.front().volumeMl > 0.0F && floor.snapshot().find("\"ml\":") != std::string::npos,
+              "a sustained stream grows one unified puddle and replicates its millilitres");
 
         gtc::World bullet;
         const auto shooter = bullet.addCharacter("Water Shooter", false);
@@ -720,12 +723,16 @@ int main() {
         const auto beforeEvaporation = wet.puddles();
         for (int i = 0; i < 2400; ++i) wet.update(0.1F);
         const auto afterOneHour = wet.puddles();
-        const float expectedRadius = std::exp(-0.5F * gtc::kPissEvaporationDepthPerGameHour / gtc::kPissFilmDepth);
+        const double retention = std::exp(-gtc::kPissEvaporationMlPerSquareMeterGameHour *
+            0.000001 / gtc::kPissFilmDepth);
         bool hourly = afterOneHour.size() == beforeEvaporation.size();
         for (std::size_t i = 0; hourly && i < afterOneHour.size(); ++i) {
-            hourly = std::abs(afterOneHour[i].size / beforeEvaporation[i].size - expectedRadius) < 0.001F;
+            const double expectedMl = beforeEvaporation[i].volumeMl * retention;
+            hourly = std::abs(afterOneHour[i].volumeMl - expectedMl) < 0.001F &&
+                std::abs(afterOneHour[i].size - gtc::puddleRadiusForVolume(expectedMl)) < 0.0001F &&
+                beforeEvaporation[i].volumeMl - afterOneHour[i].volumeMl > 0.0F;
         }
-        check(hourly, "one game hour evaporates area at 0.2 mm per hour and radius follows square-root area");
+        check(hourly, "one game hour subtracts the calibrated millilitre flux and derives radius from remaining volume");
         for (int i = 0; i < 23 * 2400; ++i) wet.update(0.1F);
         check(!wet.puddles().empty(), "there is no arbitrary deletion at twenty-four game hours");
         int steps = 0;

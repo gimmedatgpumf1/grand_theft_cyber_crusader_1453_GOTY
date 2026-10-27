@@ -196,6 +196,7 @@ void parseState(const JsonValue& value, ClientState& state) {
             puddle.id = static_cast<std::uint32_t>(item.numberAt("id"));
             puddle.position = {static_cast<float>(item.numberAt("x")), static_cast<float>(item.numberAt("z"))};
             puddle.size = static_cast<float>(item.numberAt("size", 0.12));
+            puddle.volumeMl = item.numberAt("ml", puddleVolumeForRadius(puddle.size));
             puddle.height = static_cast<float>(item.numberAt("height", 0.018));
             puddle.normal = {static_cast<float>(item.numberAt("nx")), static_cast<float>(item.numberAt("nz"))};
             puddle.vertical = item.boolAt("vertical");
@@ -302,6 +303,7 @@ void interpolateState(const ClientState& previous, const ClientState& target,
         Puddle& value = output.puddles[i];
         value.position = vec(a.position, value.position);
         value.size = static_cast<float>(lerp(a.size, value.size));
+        value.volumeMl = lerp(a.volumeMl, value.volumeMl);
         value.height = static_cast<float>(lerp(a.height, value.height));
         value.normal = vec(a.normal, value.normal);
         value.age = lerp(a.age, value.age);

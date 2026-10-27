@@ -33,15 +33,25 @@ inline constexpr float kPissLifetime = 4.0F;
 inline constexpr float kPissEmissionInterval = 1.0F / 30.0F;
 inline constexpr float kBladderDrainPerSecond = 75.0F / 21.0F;
 inline constexpr float kGameTimeScale = 15.0F;
-inline constexpr float kPissFullBladderVolume = 0.0006F; // 600 ml at 100%.
-inline constexpr float kPissFilmDepth = 0.001F; // Simple 1 mm film model.
+inline constexpr float kPissFullBladderVolumeMl = 600.0F;
+inline constexpr float kPissFilmDepth = 0.001F; // Geometry conversion only; simulation stores ml.
 inline constexpr float kPissDropletsPerFullBladder =
     100.0F / kBladderDrainPerSecond / kPissEmissionInterval;
-inline constexpr float kPissDropletArea =
-    kPissFullBladderVolume / kPissDropletsPerFullBladder / kPissFilmDepth;
-// Open water at 20 C, 50% RH and still air: approximately 0.185 mm/h, rounded.
-inline constexpr float kPissEvaporationDepthPerGameHour = 0.0002F;
-inline constexpr float kPissMinimumRadius = 0.0001F;
+inline constexpr float kPissDropletVolumeMl = kPissFullBladderVolumeMl / kPissDropletsPerFullBladder;
+inline constexpr float kPissDropletArea = kPissDropletVolumeMl * 0.000001F / kPissFilmDepth;
+// The measured 0.185 mm/h water flux is 185 ml/m²/h, rounded to 200.
+inline constexpr float kPissEvaporationMlPerSquareMeterGameHour = 200.0F;
+inline constexpr float kPissMinimumVolumeMl = 0.0000314159F;
+
+inline float puddleAreaForVolume(float volumeMl) {
+    return (volumeMl > 0.0F ? volumeMl : 0.0F) * 0.000001F / kPissFilmDepth;
+}
+inline float puddleRadiusForVolume(float volumeMl) {
+    return std::sqrt(puddleAreaForVolume(volumeMl) / 3.141592653589793F);
+}
+inline float puddleVolumeForRadius(float radius) {
+    return radius * radius * 3.141592653589793F * kPissFilmDepth * 1000000.0F;
+}
 
 struct Vec2 {
     float x = 0.0F;
@@ -186,6 +196,7 @@ struct Puddle {
     std::uint32_t id = 0;
     Vec2 position;
     float size = 0.12F;
+    double volumeMl = 0.0;
     float height = 0.018F;
     Vec2 normal;
     bool vertical = false;
