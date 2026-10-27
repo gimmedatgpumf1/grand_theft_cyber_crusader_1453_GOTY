@@ -636,13 +636,19 @@ int main() {
                        {0, -4.69F}, gtc::kToiletWaterHeight, true);
         bool emitted = false;
         for (int i = 0; i < 40; ++i) {
+            const float x = static_cast<float>(i % 3 - 1) * 0.055F;
+            aimed.setInput(aimer, {}, false, true, 3.14159265F, -0.9F, false, false, false, false, false,
+                           {x, -4.69F}, gtc::kToiletWaterHeight, true);
             aimed.update(0.05F);
             emitted = emitted || !aimed.projectiles().empty();
         }
         check(emitted && aimed.puddles().empty(),
               "crosshair-converged physical droplets enter the toilet water instead of falling short");
-        check(!aimed.waterRipples().empty() && aimed.snapshot().find("\"ripples\":[{\"id\":") != std::string::npos,
-              "urine impacts replicate animated toilet-water ripple impulses");
+        const auto ripples = aimed.waterRipples();
+        float rippleSpread = 0;
+        for (const auto& a : ripples) for (const auto& b : ripples) rippleSpread = std::max(rippleSpread, distance(a.position, b.position));
+        check(rippleSpread > 0.03F && aimed.snapshot().find("\"ripples\":[{\"id\":") != std::string::npos,
+              "waving the stream creates independent ripples at the actual water contacts");
 
         gtc::World elevated;
         const auto painter = elevated.addCharacter("High Wall Marksman", false);

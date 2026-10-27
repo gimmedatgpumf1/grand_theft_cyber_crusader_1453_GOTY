@@ -246,17 +246,6 @@ inline float ballisticPitch(float horizontal, float rise, float speed) {
     return std::atan((v2 - std::sqrt(discriminant)) / (gravity * horizontal));
 }
 
-inline Vec2 pissApproachTarget(const Character& character, Vec2 target, float targetHeight) {
-    const Vec2 center{0.0F, -4.69F};
-    const Vec2 local = target - center;
-    const float water = local.x * local.x / (0.1335F * 0.1335F) +
-        local.y * local.y / (0.0985F * 0.0985F);
-    if (std::abs(targetHeight - kToiletWaterHeight) > 0.025F || water > 1.0F) return target;
-    Vec2 direction = center - character.position;
-    if (length(direction) < 0.001F) direction = {0, -1};
-    return center + normalized(direction) * 0.09F; // Clear the near inner rim, land in real water.
-}
-
 inline float pissAimPitch(const Character& character, Vec2 target, float targetHeight, float initialPitch) {
     float pitch = initialPitch;
     const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
@@ -267,6 +256,20 @@ inline float pissAimPitch(const Character& character, Vec2 target, float targetH
         pitch = ballisticPitch(length(delta), targetHeight - originHeight, kPissSpeed);
     }
     return pitch;
+}
+
+inline Vec2 pissApproachTarget(const Character& character, Vec2 target, float targetHeight) {
+    const Vec2 center{0.0F, -4.69F}, local = target - center;
+    const float water = local.x * local.x / (kToiletWater.x * kToiletWater.x) +
+        local.y * local.y / (kToiletWater.y * kToiletWater.y);
+    if (std::abs(targetHeight - kToiletWaterHeight) > 0.025F || water > 1.0F) return target;
+    Vec2 direction = center - character.position;
+    if (length(direction) < 0.001F) direction = {0, -1};
+    Vec2 safe = normalized(direction) * 0.09F + local * 0.35F;
+    const float metric = safe.x * safe.x / (kToiletWater.x * kToiletWater.x) +
+        safe.y * safe.y / (kToiletWater.y * kToiletWater.y);
+    if (metric > 0.86F) safe = safe * std::sqrt(0.86F / metric);
+    return center + safe;
 }
 
 inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,

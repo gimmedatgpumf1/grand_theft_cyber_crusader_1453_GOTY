@@ -28,16 +28,7 @@ std::vector<WaterRipple> World::waterRipples() const {
     return waterRipples_;
 }
 
-void World::rippleWater(Vec2 position, float strength, bool refresh) {
-    if (refresh) {
-        for (auto& ripple : waterRipples_) {
-            if (ripple.strength < 1.4F && distance(ripple.position, position) < 0.11F) {
-                ripple.age = 0.0;
-                ripple.strength = std::min(1.4F, ripple.strength + strength * 0.15F);
-                return;
-            }
-        }
-    }
+void World::rippleWater(Vec2 position, float strength) {
     if (waterRipples_.size() >= 48) waterRipples_.erase(waterRipples_.begin());
     waterRipples_.push_back({nextEventId_++, position, 0.0, std::clamp(strength, 0.2F, 1.5F)});
 }
@@ -205,7 +196,7 @@ void World::updateProjectiles(float dt) {
         if (hit.hit) {
             const Vec2 impact{old.x + (next.x - old.x) * hit.amount, old.z + (next.z - old.z) * hit.amount};
             if (hit.toilet && inWater(impact, toiletPosition())) {
-                rippleWater(impact, bullet ? 1.25F : 0.65F, !bullet);
+                rippleWater(impact, bullet ? 1.25F : 0.65F);
             }
             if (!bullet && !hit.absorb && !(projectile.toilet && hit.toilet)) addPuddle(hit.puddle);
             erase();

@@ -472,10 +472,33 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
 
 void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
     Material piss, bullet;
-    piss.color = colorHex("#ffd21f");
-    piss.unlit = true; // Keep urine yellow instead of washing it out with white specular highlights.
+    piss.color = colorHex("#f2ce24");
+    piss.unlit = true;
+    piss.opacity = 0.88;
     bullet.color = colorHex("#fff0a0");
     bullet.unlit = true;
+    const auto point = [](const Projectile& value) { return Vec3{value.position.x, value.height, value.position.y}; };
+    auto link = [&](Vec3 a, Vec3 b, double phase) {
+        const Vec3 delta = b - a;
+        const double span = length(delta);
+        if (span < 0.008 || span > 0.85) return;
+        const Vec3 direction = delta / span;
+        Vec3 side = cross(direction, camera.position - (a + b) * 0.5);
+        if (length(side) < 0.001) side = cross(direction, Vec3{0, 1, 0});
+        if (length(side) < 0.001) side = {1, 0, 0};
+        side = normalized(side);
+        const Vec3 normal = normalized(cross(side, direction));
+        Vec3 previous = a;
+        for (int segment = 1; segment <= 3; ++segment) {
+            const double t = segment / 3.0;
+            Vec3 next = a + delta * t;
+            if (segment < 3) next = next + side * (0.0016 * std::sin(phase + t * 13.0) +
+                0.0007 * std::sin(phase * 1.7 + t * 29.0));
+            drawQuad(rasterizer, camera, {previous + side * 0.0038, next + side * 0.0038,
+                next - side * 0.0038, previous - side * 0.0038}, normal, piss);
+            previous = next;
+        }
+    };
     std::vector<const Projectile*> stream;
     for (const Projectile& projectile : state.projectiles) {
         if (projectile.kind == ProjectileKind::Piss) stream.push_back(&projectile);
@@ -486,33 +509,25 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
     for (std::size_t index = 1; index < stream.size(); ++index) {
         const Projectile& older = *stream[index - 1];
         const Projectile& newer = *stream[index];
-        if (older.owner != newer.owner) continue;
         const double ageGap = older.age - newer.age;
-        const Vec3 a{older.position.x, older.height, older.position.y};
-        const Vec3 b{newer.position.x, newer.height, newer.position.y};
-        const Vec3 delta = b - a;
-        const double span = length(delta);
-        if (ageGap < -0.001 || ageGap > 0.075 || span < 0.015 || span > 0.8) continue;
-        const Vec3 direction = delta / span;
-        Vec3 side = cross(direction, Vec3{0, 1, 0});
-        if (length(side) < 0.001) side = {1, 0, 0};
-        side = normalized(side) * 0.0045;
-        const Vec3 up = normalized(cross(side, direction)) * 0.0045;
-        const Vec3 radial[4] = {side, up, side * -1.0, up * -1.0};
-        for (int sideIndex = 0; sideIndex < 4; ++sideIndex) {
-            const int next = (sideIndex + 1) % 4;
-            const Vec3 normal = normalized(radial[sideIndex] + radial[next]);
-            const Vec3 a0 = a + radial[sideIndex], a1 = a + radial[next];
-            const Vec3 b0 = b + radial[sideIndex], b1 = b + radial[next];
-            rasterizer.triangle({cameraVertex(camera, a0, normal, a0), cameraVertex(camera, b0, normal, b0),
-                                 cameraVertex(camera, b1, normal, b1)}, piss);
-            rasterizer.triangle({cameraVertex(camera, a0, normal, a0), cameraVertex(camera, b1, normal, b1),
-                                 cameraVertex(camera, a1, normal, a1)}, piss);
-        }
+        if (older.owner == newer.owner && ageGap >= -0.001 && ageGap <= 0.075)
+            link(point(older), point(newer), older.owner * 0.713 + state.tick * 0.17);
+    }
+    for (std::size_t index = 0; index < stream.size(); ++index) {
+        const Projectile& newest = *stream[index];
+        const Character* owner = state.character(newest.owner);
+        if ((index + 1 < stream.size() && stream[index + 1]->owner == newest.owner) || !owner ||
+            !(owner->pissing || owner->toiletAction == ToiletAction::Piss) || newest.age > 0.075) continue;
+        const float pitch = std::atan2(newest.verticalVelocity + kProjectileGravity * newest.age, length(newest.velocity));
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        const gtc::Vec2 forward{std::sin(owner->yaw), std::cos(owner->yaw)};
+        const gtc::Vec2 origin = owner->position + forward * (0.10F + 0.06F * cp);
+        link({origin.x, owner->elevation + 0.79F + 0.10F * sp, origin.y}, point(newest),
+             owner->id * 0.713 + state.tick * 0.17);
     }
     for (const Projectile& projectile : state.projectiles) {
-        const bool isBullet = projectile.kind == ProjectileKind::Bullet;
-        const Vec3 center{projectile.position.x, projectile.height, projectile.position.y};
+        if (projectile.kind != ProjectileKind::Bullet) continue;
+        const Vec3 center = point(projectile);
         Vec3 direction{projectile.velocity.x, projectile.verticalVelocity, projectile.velocity.y};
         if (length(direction) < 0.001) direction = {0, 1, 0};
         direction = normalized(direction);
@@ -520,18 +535,16 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
         if (length(side) < 0.001) side = {1, 0, 0};
         side = normalized(side);
         const Vec3 up = normalized(cross(side, direction));
-        const double radius = isBullet ? 0.018 : 0.010, length = isBullet ? 0.24 : 0.065;
-        const Vec3 front = center + direction * (length * 0.5), back = center - direction * (length * 0.5);
-        const Vec3 ring[4] = {center + side * radius, center + up * radius, center - side * radius, center - up * radius};
-        const Material& material = isBullet ? bullet : piss;
+        const Vec3 front = center + direction * 0.12, back = center - direction * 0.12;
+        const Vec3 ring[4] = {center + side * 0.018, center + up * 0.018, center - side * 0.018, center - up * 0.018};
         for (int i = 0; i < 4; ++i) {
             const Vec3 a = ring[i], b = ring[(i + 1) % 4];
             const Vec3 normalA = normalized(cross(a - front, b - front));
             const Vec3 normalB = normalized(cross(b - back, a - back));
             rasterizer.triangle({cameraVertex(camera, front, normalA, front), cameraVertex(camera, a, normalA, a),
-                                 cameraVertex(camera, b, normalA, b)}, material);
+                                 cameraVertex(camera, b, normalA, b)}, bullet);
             rasterizer.triangle({cameraVertex(camera, back, normalB, back), cameraVertex(camera, b, normalB, b),
-                                 cameraVertex(camera, a, normalB, a)}, material);
+                                 cameraVertex(camera, a, normalB, a)}, bullet);
         }
     }
 }

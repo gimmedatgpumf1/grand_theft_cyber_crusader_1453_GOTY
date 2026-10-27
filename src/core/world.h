@@ -76,7 +76,7 @@ private:
     void spawnPiss(Character& character);
     void spawnBullet(Character& attacker, const Character& target);
     void spawnBullet(Character& attacker, Vec2 target, float height, std::uint32_t targetId);
-    void rippleWater(Vec2 position, float strength, bool refresh = false);
+    void rippleWater(Vec2 position, float strength);
     void updateProjectiles(float dt);
     void updatePendingAttack(Character& character);
     void beginToilet(Character& character, ToiletAction action);
