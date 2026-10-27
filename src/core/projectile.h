@@ -64,11 +64,11 @@ inline SurfaceHit aabbHit(Point a, Point b, float radius, const Obstacle& obstac
             if (starts[i] < lows[i] || starts[i] > highs[i]) return result;
             continue;
         }
-        float near = (lows[i] - starts[i]) / deltas[i], far = (highs[i] - starts[i]) / deltas[i];
+        float nearTime = (lows[i] - starts[i]) / deltas[i], farTime = (highs[i] - starts[i]) / deltas[i];
         float nearSign = -1.0F;
-        if (near > far) { std::swap(near, far); nearSign = 1.0F; }
-        if (near > enter) { enter = near; axis = i; sign = nearSign; }
-        leave = std::min(leave, far);
+        if (nearTime > farTime) { std::swap(nearTime, farTime); nearSign = 1.0F; }
+        if (nearTime > enter) { enter = nearTime; axis = i; sign = nearSign; }
+        leave = std::min(leave, farTime);
         if (enter > leave) return result;
     }
     if (axis < 0 || enter < 0 || enter > 1) return result;
