@@ -182,7 +182,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     ViewState extremeView = neckView;
     extremeView.pitch = -1.5F;
     const Camera extreme = renderer.viewCamera(world, state, citizen.id, extremeView);
-    const Vec3 expectedExtremeEye = expectedEye(state.characters[0], neckLimit, pitchDown);
+    constexpr double extremePitchDown = -0.5;
+    const Vec3 expectedExtremeEye = expectedEye(state.characters[0], neckLimit, extremePitchDown);
+    const Vec3 extremeForward = normalized(extreme.target - extreme.position);
     double armClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
         for (const auto& vertex : batch.vertices) {
@@ -200,6 +202,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         }
     }
     const bool clearance = length(extreme.position - expectedExtremeEye) < 1e-6 && armClearance > 0.04 &&
+        std::abs(extremeForward.y - std::sin(extremePitchDown)) < 1e-6 &&
         length(extremeUp.position - expectedExtremeUpEye) < 1e-6 && upwardClearance > 0.04;
     ClientState standingState = state;
     standingState.characters[0].onToilet = false;

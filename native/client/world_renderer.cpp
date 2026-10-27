@@ -562,7 +562,10 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
     const double neckYaw = std::clamp(relativeYaw, -neckLimit, neckLimit);
     const double headYaw = local->yaw + neckYaw;
-    const double headPitch = std::clamp(static_cast<double>(view.pitch), -1.45, 1.0);
+    // A human cannot combine maximum horizontal and vertical neck rotation.
+    // Tapering the downward range keeps the posed arm out of the eye at full yaw.
+    const double downwardLimit = 1.45 - 0.95 * std::abs(neckYaw) / neckLimit;
+    const double headPitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
     camera.position = humanEyePosition(model, cache.rest, *local, state.tick, neckYaw, headPitch);
     const double cp = std::cos(headPitch), sp = std::sin(headPitch);
     const Vec3 forward{std::sin(headYaw) * cp, sp, std::cos(headYaw) * cp};
