@@ -35,7 +35,7 @@ mkdir -p "$ROOT/build/obj/native-client"
 CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
 CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
   native/client/human_renderer.cpp native/client/world_renderer.cpp native/client/interactive.cpp
-  native/client/window_x11.cpp native/client/main.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp)
+  native/client/opengl_shared.cpp native/client/window_x11.cpp native/client/main.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp)
 CLIENT_OBJECTS=()
 for SOURCE in "${CLIENT_SOURCES[@]}"; do
   OBJECT="$ROOT/build/obj/native-client/$(basename "${SOURCE%.cpp}").o"
@@ -53,7 +53,7 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
   "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"
   "$ROOT/build/obj/native-client/sha1.o")
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/main.o" "$ROOT/build/obj/native-client/interactive.o" \
-  "$ROOT/build/obj/native-client/window_x11.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-client"
+  "$ROOT/build/obj/native-client/window_x11.o" "$ROOT/build/obj/native-client/opengl_shared.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-client"
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -o "$ROOT/build/bin/gtc-native-smoke"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
