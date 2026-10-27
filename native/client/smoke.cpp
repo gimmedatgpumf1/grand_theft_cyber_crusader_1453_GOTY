@@ -414,11 +414,14 @@ int main(int argc, char** argv) {
         fps.pitch = -1.50;
         gtc::native::ViewState fpsLevel;
         fpsLevel.mode = gtc::native::ViewMode::FirstPerson;
+        gtc::native::ViewState fpsExtreme = fps;
+        if (const gtc::Character* local = alpha.state().character(alpha.playerId())) fpsExtreme.yaw = local->yaw + 3.0F;
         gtc::native::ViewState god;
         god.mode = gtc::native::ViewMode::God;
         const Capture captures[] = {{"alpha-tps", &alpha, tps}, {"beta-tps", &beta, tps},
-                                    {"alpha-fps", &alpha, fps}, {"alpha-fps-level", &alpha, fpsLevel},
-                                    {"beta-fps-level", &beta, fpsLevel}, {"god", &alpha, god}};
+                                    {"alpha-fps", &alpha, fps}, {"alpha-fps-extreme", &alpha, fpsExtreme},
+                                    {"alpha-fps-level", &alpha, fpsLevel}, {"beta-fps-level", &beta, fpsLevel},
+                                    {"god", &alpha, god}};
         for (const Capture& capture : captures) {
             gtc::native::NativeFrame frame;
             if (!renderer.render(capture.client->world(), capture.client->state(), capture.client->playerId(),
