@@ -435,8 +435,7 @@ bool animatedPose(const ClientState& state) {
 }
 
 bool sameGeometry(const ClientState& a, const ClientState& b) {
-    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size() ||
-        a.projectiles.size() != b.projectiles.size()) return false;
+    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size()) return false;
     for (std::size_t i = 0; i < a.characters.size(); ++i) {
         const Character& left = a.characters[i];
         const Character& right = b.characters[i];
@@ -458,13 +457,6 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
             left.size != right.size || left.height != right.height || left.normal.x != right.normal.x ||
             left.normal.y != right.normal.y || left.vertical != right.vertical) return false;
-    }
-    for (std::size_t i = 0; i < a.projectiles.size(); ++i) {
-        const Projectile& left = a.projectiles[i];
-        const Projectile& right = b.projectiles[i];
-        if (left.id != right.id || left.kind != right.kind || left.position.x != right.position.x ||
-            left.position.y != right.position.y || left.height != right.height || left.velocity.x != right.velocity.x ||
-            left.velocity.y != right.velocity.y || left.verticalVelocity != right.verticalVelocity) return false;
     }
     return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
 }
@@ -776,6 +768,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     auto humanStart = profileStart;
     auto finishStart = profileStart;
     if (rebuild) {
+        if (view.gpu) gpuScene_.batches.resize(gpuStaticBatchCount_);
         Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu,
                               view.gpu ? std::move(gpuScene_) : GpuScene{});
         rasterizer.setCamera(camera);
@@ -811,10 +804,11 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
         }
         rasterizer.setObject(0, {}, 0);
-        drawProjectiles(rasterizer, camera, state);
+        if (!view.gpu) drawProjectiles(rasterizer, camera, state);
         finishStart = std::chrono::steady_clock::now();
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();
+            gpuStaticBatchCount_ = gpuScene_.batches.size();
             gpuScene_.revision = ++gpuRevision_;
             gpuGeometryState_ = state;
             gpuLocalId_ = localId;
@@ -826,6 +820,20 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         }
     }
     if (view.gpu) {
+        // Droplets move every rendered frame, but must not invalidate the retained
+        // room/human meshes. Only their small tail buffers are re-uploaded.
+        gpuScene_.batches.resize(gpuStaticBatchCount_);
+        Rasterizer particles(std::max(1, view.width), std::max(1, view.height), gpuScene_.background,
+                             camera.focal(), true);
+        particles.setCamera(camera);
+        drawProjectiles(particles, camera, state);
+        GpuScene dynamic = particles.takeGpuScene();
+        const std::uint64_t dynamicRevision = ++gpuProjectileRevision_;
+        for (GpuBatch& batch : dynamic.batches) {
+            if (batch.vertices.empty()) continue;
+            batch.revision = dynamicRevision;
+            gpuScene_.batches.push_back(std::move(batch));
+        }
         gpuScene_.width = std::max(1, view.width);
         gpuScene_.height = std::max(1, view.height);
         gpuScene_.focal = camera.focal();

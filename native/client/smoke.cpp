@@ -265,10 +265,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     NativeFrame frame;
     setGpuRenderer(&captureMotionScene);
     const auto cleanup = [&] { setGpuRenderer(nullptr); motionScene = nullptr; };
-    if (!renderer.render(world, state, citizen.id, view, frame, error) || !motionScene) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || !motionScene) { cleanup(); return false; }
     const std::uint64_t revision = motionScene->revision;
     const auto initialView = motionScene->viewMatrix;
     ++state.tick;
@@ -279,10 +276,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     }
     state.characters[0].position = {1, 2};
     state.characters[0].yaw = 0.5F;
-    if (!renderer.render(world, state, citizen.id, view, frame, error) || !motionScene) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || !motionScene) { cleanup(); return false; }
     if (motionScene->revision != revision || motionScene->viewMatrix == initialView) {
         error = motionScene->revision != revision ? "unexpected motion rebuild" : "camera did not follow";
         cleanup();
@@ -315,13 +309,31 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
-    view.mode = ViewMode::FirstPerson;
-    view.pitch = 0;
-    view.yaw = state.characters[0].yaw;
-    if (!renderer.render(world, state, citizen.id, view, frame, error)) {
+    state.characters[0].speed = 0;
+    gtc::Projectile drop;
+    drop.id = 1;
+    drop.height = 1;
+    drop.verticalVelocity = gtc::kPissSpeed;
+    state.projectiles = {drop};
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) { cleanup(); return false; }
+    const std::uint64_t retainedRevision = motionScene->revision;
+    const auto projectileRevision = [] {
+        for (const auto& batch : motionScene->batches) if (batch.revision) return batch.revision;
+        return std::uint64_t{0};
+    };
+    const std::uint64_t oldProjectileRevision = projectileRevision();
+    state.projectiles[0].height = 1.2F;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) ||
+        motionScene->revision != retainedRevision || projectileRevision() == oldProjectileRevision) {
+        error = "projectile motion rebuilt the retained world";
         cleanup();
         return false;
     }
+    state.projectiles.clear();
+    view.mode = ViewMode::FirstPerson;
+    view.pitch = 0;
+    view.yaw = state.characters[0].yaw;
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) { cleanup(); return false; }
     const Camera eye = renderer.viewCamera(world, state, citizen.id, view);
     const auto& m = motionScene->viewMatrix;
     const auto transform = [&](Vec3 point) {
@@ -332,10 +344,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 eyeView = transform(eye.position);
     const Vec3 targetView = transform(eye.target);
     HumanModel eyeModel;
-    if (!eyeModel.loadRuntime(".", true, error)) {
-        cleanup();
-        return false;
-    }
+    if (!eyeModel.loadRuntime(".", true, error)) { cleanup(); return false; }
     HumanRenderCache eyeCache;
     prepareHuman(eyeModel, state.characters[0], eyeCache);
     const Vec3 attachedEye = humanEyePosition(eyeModel, eyeCache.rest, state.characters[0], state.tick);
@@ -353,10 +362,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     state.characters[0].onToilet = true;
     state.characters[0].toiletAction = gtc::ToiletAction::Shit;
     ++state.tick;
-    if (!renderer.render(world, state, citizen.id, view, frame, error)) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) { cleanup(); return false; }
     const Camera seatedEye = renderer.viewCamera(world, state, citizen.id, view);
     const Vec3 expectedSeatedEye = expectedEye(state.characters[0]);
     const bool seated = length(seatedEye.position - expectedSeatedEye) < 1e-6 &&
@@ -501,10 +507,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
     }
     HumanModel femaleEyeModel;
-    if (!femaleEyeModel.loadRuntime(".", false, error)) {
-        cleanup();
-        return false;
-    }
+    if (!femaleEyeModel.loadRuntime(".", false, error)) { cleanup(); return false; }
     bool morphContacts = true;
     for (HumanModel* model : {&eyeModel, &femaleEyeModel}) {
         for (int spec = -1; spec < static_cast<int>(model->specs.size()); ++spec) {
@@ -528,19 +531,13 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     ViewState standingView = view;
     standingView.yaw = bodyYaw;
     standingView.pitch = -2.0F;
-    if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) { cleanup(); return false; }
     const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
     ClientState visibilityState = standingState;
     visibilityState.characters[0].toiletAction = gtc::ToiletAction::Piss;
     visibilityState.characters[0].pissing = true;
     const Camera visibilityCamera = renderer.viewCamera(world, visibilityState, citizen.id, standingView);
-    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, visibilityState.tick, error)) {
-        cleanup();
-        return false;
-    }
+    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, visibilityState.tick, error)) { cleanup(); return false; }
     ViewState tpsView = standingView;
     tpsView.mode = ViewMode::ThirdPerson;
     tpsView.pitch = -0.25F;
@@ -687,26 +684,17 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     };
     ViewState crosshairView = view;
     crosshairView.mode = ViewMode::ThirdPerson;
-    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) { cleanup(); return false; }
     const bool thirdCrosshair = crosshairPixels() == 31;
     crosshairView.mode = ViewMode::FirstPerson;
     crosshairView.width = 97;
     crosshairView.height = 83;
-    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) { cleanup(); return false; }
     const bool firstCrosshair = crosshairPixels() == 31;
     crosshairView.mode = ViewMode::God;
     crosshairView.width = 480;
     crosshairView.height = 640;
-    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
-        cleanup();
-        return false;
-    }
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) { cleanup(); return false; }
     const int godCrosshairPixels = crosshairPixels();
     const bool crosshairs = thirdCrosshair && firstCrosshair && godCrosshairPixels == 0;
     const bool eyeMatrix = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;

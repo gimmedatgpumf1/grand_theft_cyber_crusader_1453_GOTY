@@ -105,6 +105,7 @@ struct GpuBatch {
     Material material;
     std::vector<GpuVertex> vertices;
     std::uint32_t objectId = 0;
+    std::uint64_t revision = 0;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };

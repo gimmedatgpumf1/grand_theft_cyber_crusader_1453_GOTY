@@ -133,6 +133,7 @@ private:
     gl::BufferApi buffers_;
     gl::ShaderApi shaderApi_;
     std::vector<gl::UInt> bufferIds_;
+    std::vector<std::uint64_t> bufferRevisions_;
     const GpuScene* uploadedScene_ = nullptr;
     std::uint64_t uploadedRevision_ = 0;
     bool vbo_ = false;

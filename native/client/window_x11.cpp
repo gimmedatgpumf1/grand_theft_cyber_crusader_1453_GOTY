@@ -211,7 +211,6 @@ struct NativeWindow::Impl {
     bool gpu = false;
     bool open = false;
     bool captured = false;
-    bool skipMotion = false;
     double lastX = kDefaultWindowWidth * 0.5;
     double lastY = kDefaultWindowHeight * 0.5;
     std::vector<unsigned char> bgra;
@@ -454,16 +453,13 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
             moved.x = event.xmotion.x;
             moved.y = event.xmotion.y;
             if (impl_->captured) {
-                if (impl_->skipMotion) {
-                    impl_->skipMotion = false;
-                } else {
-                    moved.dx = moved.x - impl_->width / 2;
-                    moved.dy = moved.y - impl_->height / 2;
-                    if (moved.dx != 0 || moved.dy != 0) {
-                        impl_->skipMotion = true;
-                        impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
-                                               impl_->width / 2, impl_->height / 2);
-                    }
+                // Identify recentering by its coordinates, never by discarding the
+                // next queued event. A busy frame may queue real motion first.
+                moved.dx = moved.x - impl_->width / 2;
+                moved.dy = moved.y - impl_->height / 2;
+                if (moved.dx != 0 || moved.dy != 0) {
+                    impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
+                                           impl_->width / 2, impl_->height / 2);
                 }
             } else {
                 moved.dx = moved.x - impl_->lastX;
@@ -489,7 +485,6 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
             impl_->width = std::max(1, event.xconfigure.width);
             impl_->height = std::max(1, event.xconfigure.height);
             if (impl_->captured) {
-                impl_->skipMotion = true;
                 impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
                                        impl_->width / 2, impl_->height / 2);
             }
@@ -550,11 +545,9 @@ void NativeWindow::captureMouse(bool capture) {
     if (capture) {
         impl_->api.grabPointer(impl_->display, impl_->window, 1, (1U << 2) | (1U << 3) | (1U << 6),
                                1, 1, impl_->window, 0, 0);
-        impl_->skipMotion = true;
         impl_->api.warpPointer(impl_->display, 0, impl_->window, 0, 0, 0, 0,
                                impl_->width / 2, impl_->height / 2);
     } else {
-        impl_->skipMotion = false;
         impl_->api.ungrabPointer(impl_->display, 0);
     }
     impl_->api.flush(impl_->display);

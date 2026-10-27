@@ -213,6 +213,7 @@ void OpenGlRenderer::shutdown() {
         buffers_.deleteBuffers(static_cast<gl::Sizei>(bufferIds_.size()), bufferIds_.data());
     }
     bufferIds_.clear();
+    bufferRevisions_.clear();
     uploadedScene_ = nullptr;
     uploadedRevision_ = 0;
     vbo_ = false;
@@ -514,7 +515,8 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         const GpuVertex* vertices = batch.vertices.data();
         bool uploaded = false;
         if (vbo_) {
-            bool upload = refresh;
+            while (bufferRevisions_.size() <= batchIndex) bufferRevisions_.push_back(0);
+            bool upload = refresh || bufferRevisions_[batchIndex] != batch.revision;
             while (bufferIds_.size() <= batchIndex) {
                 gl::UInt id = 0;
                 buffers_.genBuffers(1, &id);
@@ -524,8 +526,11 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             const gl::UInt id = bufferIds_[batchIndex];
             if (id) {
                 buffers_.bindBuffer(c::arrayBuffer, id);
-                if (upload) buffers_.bufferData(c::arrayBuffer,
-                    static_cast<std::ptrdiff_t>(batch.vertices.size() * sizeof(GpuVertex)), vertices, c::dynamicDraw);
+                if (upload) {
+                    buffers_.bufferData(c::arrayBuffer,
+                        static_cast<std::ptrdiff_t>(batch.vertices.size() * sizeof(GpuVertex)), vertices, c::dynamicDraw);
+                    bufferRevisions_[batchIndex] = batch.revision;
+                }
                 api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), nullptr);
                 api_.normalPointer(c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 3));
                 api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 6));

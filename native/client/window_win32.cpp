@@ -18,7 +18,6 @@ struct NativeWindow::Impl {
     bool gpu = false;
     bool open = false;
     bool captured = false;
-    bool skipMotion = false;
     double lastX = kDefaultWindowWidth * 0.5;
     double lastY = kDefaultWindowHeight * 0.5;
     std::vector<WindowEvent> events;
@@ -126,16 +125,11 @@ struct NativeWindow::Impl {
                 moved.x = GET_X_LPARAM(lParam);
                 moved.y = GET_Y_LPARAM(lParam);
                 if (self->captured) {
-                    if (self->skipMotion) {
-                        self->skipMotion = false;
-                    } else {
-                        moved.dx = moved.x - self->width / 2;
-                        moved.dy = moved.y - self->height / 2;
-                        if (moved.dx != 0 || moved.dy != 0) {
-                            self->skipMotion = true;
-                            self->centerMouse();
-                        }
-                    }
+                    // A synthetic recenter has exactly zero delta. Do not skip an
+                    // arbitrary queued event after a slow frame.
+                    moved.dx = moved.x - self->width / 2;
+                    moved.dy = moved.y - self->height / 2;
+                    if (moved.dx != 0 || moved.dy != 0) self->centerMouse();
                 } else {
                     moved.dx = moved.x - self->lastX;
                     moved.dy = moved.y - self->lastY;
@@ -165,10 +159,7 @@ struct NativeWindow::Impl {
             case WM_SIZE:
                 self->width = std::max(1, static_cast<int>(LOWORD(lParam)));
                 self->height = std::max(1, static_cast<int>(HIWORD(lParam)));
-                if (self->captured) {
-                    self->skipMotion = true;
-                    self->centerMouse();
-                }
+                if (self->captured) self->centerMouse();
                 return 0;
             case WM_KILLFOCUS:
                 self->events.push_back({WindowEvent::Type::FocusLoss});
@@ -319,10 +310,8 @@ void NativeWindow::captureMouse(bool capture) {
     if (capture) {
         SetCapture(impl_->window);
         ShowCursor(false);
-        impl_->skipMotion = true;
         impl_->centerMouse();
     } else {
-        impl_->skipMotion = false;
         ReleaseCapture();
         ShowCursor(true);
     }

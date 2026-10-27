@@ -5,6 +5,7 @@
 #include "client/human_renderer.h"
 #include "native.h"
 
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 
@@ -52,6 +53,8 @@ private:
     mutable bool gpuValid_ = false;
     mutable ClientState gpuGeometryState_;
     mutable std::uint64_t gpuRevision_ = 0;
+    mutable std::uint64_t gpuProjectileRevision_ = 0;
+    mutable std::size_t gpuStaticBatchCount_ = 0;
     mutable std::uint32_t gpuLocalId_ = 0;
     mutable int gpuMode_ = -1;
     mutable bool gpuHighlight_ = false;
