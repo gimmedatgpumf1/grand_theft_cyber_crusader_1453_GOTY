@@ -515,8 +515,8 @@ private:
         if (delta != 0) client_.sendCheat(need, delta);
     }
 
-    bool crosshairTarget(const ViewState& from, gtc::Vec2& target, float& height) const {
-        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), from);
+    bool crosshairTarget(const ViewState& controls, gtc::Vec2& target, float& height) const {
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), controls);
         const Vec3 direction = normalized(camera.target - camera.position);
         const projectile_detail::Point from{static_cast<float>(camera.position.x), static_cast<float>(camera.position.y),
                                             static_cast<float>(camera.position.z)};
