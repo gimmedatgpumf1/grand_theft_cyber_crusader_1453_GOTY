@@ -7,7 +7,31 @@ import { addEyes, addSunglasses, addShoes, addClothDetails, addAccessories } fro
 const maskCache = new Map();
 const tintCache = new Map();
 const hairTextures = new Map();
+const skinImages = new Map();
+const skinSurfaceTextures = new Map();
 let clothMap = null;
+
+function skinImage(name, repaint) {
+  if (skinImages.has(name)) {
+    const cached = skinImages.get(name);
+    if (cached.complete && cached.naturalWidth) repaint();
+    else cached.addEventListener('load', repaint, { once: true });
+    return cached;
+  }
+  const image = new Image();
+  image.addEventListener('load', repaint, { once: true });
+  image.src = `assets/human/${name}`;
+  skinImages.set(name, image);
+  return image;
+}
+
+function skinSurfaceTexture(name) {
+  if (skinSurfaceTextures.has(name)) return skinSurfaceTextures.get(name);
+  const texture = new THREE.TextureLoader().load(`assets/human/${name}`);
+  texture.anisotropy = 4;
+  skinSurfaceTextures.set(name, texture);
+  return texture;
+}
 
 function hairTexture(path) {
   if (hairTextures.has(path)) return hairTextures.get(path);
@@ -162,7 +186,25 @@ function paintSkin(canvas, appearance) {
   context.globalCompositeOperation = 'source-over';
   context.fillStyle = PALETTES.skin[appearance.skin];
   context.fillRect(0, 0, size, size);
-  for (let i = 0; i < 1700; ++i) {
+  const sex = appearance.male ? 'male' : 'female';
+  const age = appearance.morphs[0] || 0;
+  const oldBlend = Math.max(0, Math.min(1, (age - 24) / 58));
+  const ageBlend = oldBlend * oldBlend * (3 - 2 * oldBlend);
+  const young = skinImages.get(`skin-${sex}-young-detail.jpg`);
+  const old = skinImages.get(`skin-${sex}-old-detail.jpg`);
+  if (young?.complete && young.naturalWidth) {
+    context.globalCompositeOperation = 'multiply';
+    context.globalAlpha = (1 - ageBlend) * 0.94;
+    context.drawImage(young, 0, 0, size, size);
+  }
+  if (old?.complete && old.naturalWidth) {
+    context.globalCompositeOperation = 'multiply';
+    context.globalAlpha = ageBlend * 0.94;
+    context.drawImage(old, 0, 0, size, size);
+  }
+  context.globalCompositeOperation = 'source-over';
+  context.globalAlpha = 1;
+  for (let i = 0; i < 500; ++i) {
     const x = (Math.sin(i * 91.731 + appearance.skin) * 0.5 + 0.5) * size;
     const y = (Math.sin(i * 37.117 + 4.2) * 0.5 + 0.5) * size;
     context.fillStyle = i % 2 ? 'rgba(80,38,24,.025)' : 'rgba(255,235,205,.035)';
@@ -276,7 +318,7 @@ function paintSkin(canvas, appearance) {
     context.ellipse(mouth[0], mouth[1], 4, 27, 0, 0, Math.PI * 2);
     context.fill();
   }
-  context.globalAlpha = appearance.makeup ? 0.76 : 0.70;
+  context.globalAlpha = appearance.makeup ? 0.76 : young?.naturalWidth ? 0.52 : 0.70;
   const browColor = appearance.hairColor >= 6 && appearance.hairColor <= 7 ? '#68503d' :
     appearance.hairColor === 2 ? '#493326' :
     appearance.hairColor === 8 || appearance.hairColor === 4 ? '#4e4b47' : PALETTES.hairColor[appearance.hairColor];
@@ -312,6 +354,9 @@ function skinTexture(appearance) {
   };
   mask('lips', repaint);
   mask('eyelids', repaint);
+  const sex = appearance.male ? 'male' : 'female';
+  skinImage(`skin-${sex}-young-detail.jpg`, repaint);
+  skinImage(`skin-${sex}-old-detail.jpg`, repaint);
   repaint();
   return texture;
 }
@@ -390,8 +435,13 @@ export function createHuman(data) {
   const geometries = buildHumanGeometry(appearance);
   const rig = makeRig(visual, geometries.data);
   const texture = skinTexture(appearance);
-  const skin = surface('#ffffff', { side: THREE.DoubleSide, roughness: 0.76 });
+  const skin = surface('#ffffff', { side: THREE.DoubleSide, roughness: 0.96 });
   skin.map = texture;
+  const sex = appearance.male ? 'male' : 'female';
+  const textureAge = (appearance.morphs[0] || 0) >= 44 ? 'old' : 'young';
+  skin.normalMap = skinSurfaceTexture(`skin-${sex}-${textureAge}-normal.png`);
+  skin.normalScale.set(0.32, 0.32);
+  skin.roughnessMap = skinSurfaceTexture(`skin-${sex}-${textureAge}-roughness.jpg`);
   const shirt = surface(PALETTES.shirt[appearance.shirt]);
   const pants = surface(PALETTES.pants[appearance.pants]);
   const boots = surface('#171c20', { roughness: 0.62 });

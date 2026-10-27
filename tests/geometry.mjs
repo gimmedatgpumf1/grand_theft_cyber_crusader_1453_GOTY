@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizeAppearance } from '../web/js/appearance.js';
 import { MORPH_DEFS } from '../web/js/morphs.js';
 import { buildHumanGeometry } from '../web/js/human-geometry.js';
+
+const sourceMorphs = JSON.parse(readFileSync(new URL('../tools/human-morphs.json', import.meta.url), 'utf8'));
+assert.ok(MORPH_DEFS.every(definition => !definition.key.endsWith('Sculpt')) &&
+  sourceMorphs.every(definition => ![...definition.positive, ...definition.negative]
+    .some(path => path.startsWith('custom/'))),
+'Every control must be a reusable anatomical morph, not a person-specific sculpt');
+console.log('[test] All face presets use the universal anatomical morph basis.');
 
 function geometryFor(key, value) {
   const appearance = normalizeAppearance();

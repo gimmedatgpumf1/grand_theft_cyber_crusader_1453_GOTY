@@ -33,7 +33,7 @@ COORDINATE = [
     'mouthWidth', 'mouthVertical', 'smile', 'lipHeight', 'upperLip', 'lowerLip',
 ]
 EXCLUDE = {'neckWidth','shoulders','chest','torsoWidth','stomach','muscles','armWidth','legWidth','african','asian'}
-SELECT = [i for i, spec in enumerate(SPECS) if spec['key'] not in EXCLUDE and not spec['key'].endswith('Sculpt')]
+SELECT = [i for i, spec in enumerate(SPECS) if spec['key'] not in EXCLUDE]
 
 
 def read_target(path):

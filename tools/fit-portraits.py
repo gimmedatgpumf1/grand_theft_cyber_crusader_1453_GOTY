@@ -17,7 +17,7 @@ KEY = {1,4,10,13,14,33,133,159,145,362,263,386,374,61,291,152,234,454,70,300,63,
        48,115,220,45,64,98,327,344,278,440,275,50,280,101,330,205,425,17,0,37,39,40,267,269,270,321,405,314,84,181,91,146}
 FIT = sorted(set(range(0, 468, 3)) | KEY)
 EXCLUDE = {'neckWidth','shoulders','chest','torsoWidth','stomach','muscles','armWidth','legWidth','african','asian'}
-SELECT = [i for i,s in enumerate(SPECS) if s['key'] not in EXCLUDE and not s['key'].endswith('Sculpt')]
+SELECT = [i for i,s in enumerate(SPECS) if s['key'] not in EXCLUDE]
 
 def read_target(path):
     out = {}

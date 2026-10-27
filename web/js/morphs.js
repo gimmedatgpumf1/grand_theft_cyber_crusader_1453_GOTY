@@ -748,54 +748,5 @@ export const MORPH_DEFS = [
     "tab": "nose",
     "min": -100,
     "max": 100
-  },
-  {
-    "key": "obamaSculpt",
-    "label": "OBAMA SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "marilynSculpt",
-    "label": "MARILYN SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "taylorSculpt",
-    "label": "TAYLOR SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "xiSculpt",
-    "label": "XI SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "putinSculpt",
-    "label": "PUTIN SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "trumpSculpt",
-    "label": "TRUMP SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
-  },
-  {
-    "key": "ibrahimSculpt",
-    "label": "IBRAHIM SCULPT",
-    "tab": "face",
-    "min": 0,
-    "max": 100
   }
 ];

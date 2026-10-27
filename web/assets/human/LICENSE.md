@@ -40,9 +40,29 @@ python3 tools/convert-human.py male
 python3 tools/convert-human.py female
 ```
 
-Skin colors, facial color compositing, fabric, clothing and accessories are
-created locally by the game. All required runtime assets are served locally;
-nothing is downloaded at runtime.
+Skin palette compositing, fabric, clothing and accessories are created locally
+by the game. All required runtime assets are served locally; nothing is
+downloaded at runtime.
+
+## CC0 universal skin detail
+
+Upstream mirror: <https://github.com/NastyFFM/HumanGenWeb>
+Reviewed commit: `a8ee33f96791ed15534246ac88cc8b20f9da8f6a`.
+
+The four source images in `tools/human-source/skins/` are generic MakeHuman
+young/old male/female body skins from the MakeHuman system-assets CC0 pack.
+The upstream project documents that provenance in its README. These are not
+portrait images and are not associated with any preset person.
+
+`tools/prepare-skin.py` normalizes their albedo into tintable detail and derives
+subtle UV-aligned normal/roughness maps. The resulting `skin-*-detail.jpg`,
+`skin-*-normal.png`, and `skin-*-roughness.jpg` files are shared by all citizens
+of the corresponding sex/age set and work with every skin palette entry.
+Regenerate them offline with:
+
+```bash
+PYTHONPATH=.cache/python python3 tools/prepare-skin.py
+```
 
 ## Community hairstyles
 
@@ -77,12 +97,8 @@ python3 tools/convert-hair.py female
 
 The seven reference portraits and their landmark measurements are development
 inputs under `tools/human-source/portrait-fitting/`. They are used only to fit
-and evaluate geometry sliders and numeric sculpt targets. They are not browser
-assets and no portrait photograph, projected photograph, or photo-derived
-facial texture is included in the runtime. Their presence in the development
-inputs is not a CC0 dedication or a grant of additional rights.
-
-`tools/build-sculpts.py` fits the custom `.target` files under
-`tools/human-source/targets/custom/`. Those files contain only MakeHuman vertex
-indices and numeric geometry deltas: no pixels, image UVs, or encoded portraits.
-The opposite-sex placeholder targets are intentionally empty.
+and evaluate reusable anatomical geometry sliders. They are not browser assets
+and no portrait photograph, projected photograph, portrait-derived morph
+target, or photo-derived facial texture is included in the runtime. Their
+presence in the development inputs is not a CC0 dedication or a grant of
+additional rights.

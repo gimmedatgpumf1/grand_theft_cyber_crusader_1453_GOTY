@@ -30,7 +30,7 @@ export const PRESETS = {
     creatorYaw: -0.42123766,
     creatorPitch: -0.14454021,
     creatorRoll: -0.07859953,
-    morphs: face({ age: 20, headWidth: -17, faceShape: 37, faceFullness: 30, cheekBones: -17, jawWidth: -35, chinHeight: -25, chinProjection: -15, eyeSize: 31, eyeOpening: -18, noseWidth: -45, noseProjection: -45, noseLength: 0, noseTip: -35, nosePoint: 30, mouthWidth: 25, upperLip: 30, lowerLip: 35, smile: 35, cupidsBow: 55, chinCleft: 20, eyeDepth: -23, epicanthus: 4, eyeBags: 13, noseFlare: -35, nostrils: -10, mouthFullness: 38, cheekFullness: 25, browHeight: 20, browAngle: 15, lipHeight: 15, cupidsBowWidth: 15, upperLipHeight: 10, lowerLipHeight: 10, philtrum: 10, noseCurve: 10, marilynSculpt: 100 }) },
+    morphs: face({ age: 20, headWidth: -17, faceShape: 37, faceFullness: 30, cheekBones: -17, jawWidth: -35, chinHeight: -25, chinProjection: -15, eyeSize: 31, eyeOpening: -18, noseWidth: -45, noseProjection: -45, noseLength: 0, noseTip: -35, nosePoint: 30, mouthWidth: 25, upperLip: 30, lowerLip: 35, smile: 35, cupidsBow: 55, chinCleft: 20, eyeDepth: -23, epicanthus: 4, eyeBags: 13, noseFlare: -35, nostrils: -10, mouthFullness: 38, cheekFullness: 25, browHeight: 20, browAngle: 15, lipHeight: 15, cupidsBowWidth: 15, upperLipHeight: 10, lowerLipHeight: 10, philtrum: 10, noseCurve: 10 }) },
   ibrahim: { male: true, skin: 4, hair: 1, hairColor: 0, shirt: 3, pants: 1, eyeColor: 0, beard: 1, beret: true,
     creatorYaw: -0.02750107,
     creatorPitch: -0.10650637,
@@ -52,7 +52,7 @@ export const PRESETS = {
       upperLipHeight: 2, lowerLipHeight: -6, upperLipWidth: -6, lowerLipWidth: -6, philtrum: 8,
       mouthVertical: 29, upperLipSides: 3, lowerLipSides: -6, upperLipMiddle: 5, lowerLipMiddle: -6,
       noseBase: 6, noseCurve: 21, noseCompression: -6, septumAngle: -3, noseVolume: 23,
-      noseMidWidth: 12, noseLowerWidth: -1, noseVertical: 6, noseShiftDepth: 1, ibrahimSculpt: 100
+      noseMidWidth: 12, noseLowerWidth: -1, noseVertical: 6, noseShiftDepth: 1
     }) },
   xi: { male: true, skin: 5, hair: 7, hairColor: 0, shirt: 0, pants: 0, eyeColor: 0, suit: true, tie: 1,
     creatorYaw: -0.18801298,
@@ -75,8 +75,7 @@ export const PRESETS = {
       lowerLipHeight: -6, upperLipWidth: 6, lowerLipWidth: 11, philtrum: -21, mouthVertical: 27,
       upperLipSides: 5, lowerLipSides: -5, upperLipMiddle: -2, lowerLipMiddle: -10, noseBase: -3,
       noseCurve: -24, noseCompression: -29, noseGreek: 11, nostrilAngle: -7, septumAngle: -11,
-      noseVolume: 3, noseMidWidth: 17, noseLowerWidth: 34, noseVertical: 2, noseShiftDepth: -26,
-      xiSculpt: 75
+      noseVolume: 3, noseMidWidth: 17, noseLowerWidth: 34, noseVertical: 2, noseShiftDepth: -26
     }) },
   putin: { male: true, skin: 0, hair: 8, hairColor: 8, shirt: 0, pants: 0, eyeColor: 2, suit: true, tie: 4,
     creatorYaw: 0.05406029,
@@ -99,7 +98,7 @@ export const PRESETS = {
       upperLipWidth: 6, lowerLipWidth: 2, philtrum: -3, mouthVertical: -2, lowerLipSides: -2,
       upperLipMiddle: -5, lowerLipMiddle: -2, noseBase: 6, noseCurve: -93, noseCompression: 28,
       noseGreek: 29, nostrilAngle: -5, septumAngle: -6, noseVolume: 34, noseRootWidth: 22,
-      noseMidWidth: 28, noseLowerWidth: 18, noseVertical: 3, noseShiftDepth: 25, putinSculpt: 75
+      noseMidWidth: 28, noseLowerWidth: 18, noseVertical: 3, noseShiftDepth: 25
     }) },
   trump: { male: true, skin: 1, hair: 4, hairColor: 7, shirt: 0, pants: 0, eyeColor: 2, suit: true, tie: 3,
     creatorYaw: 0.17867560,
@@ -118,7 +117,7 @@ export const PRESETS = {
       headAge: 25, dimples: 16, lowerLipHeight: 26, upperLipWidth: 42, lowerLipWidth: 85,
       philtrum: 8, mouthVertical: 3, upperLipSides: -5, lowerLipSides: -38, lowerLipMiddle: 36,
       noseCurve: -43, noseCompression: -34, noseGreek: -18, septumAngle: 31, noseRootWidth: 31,
-      noseMidWidth: 30, noseLowerWidth: 36, noseShiftDepth: 40, trumpSculpt: 100
+      noseMidWidth: 30, noseLowerWidth: 36, noseShiftDepth: 40
     }) },
   taylor: { male: false, skin: 0, hair: 6, hairColor: 2, shirt: 0, pants: 0, eyeColor: 2,
     makeup: 3, lipColor: 3, earrings: true,
@@ -140,7 +139,7 @@ export const PRESETS = {
       foreheadSlope: 2, foreheadNubian: -6, headDiamond: 6, headSquare: 4, headTriangle: 1,
       headAge: -6, dimples: -1, lowerLipHeight: -6, upperLipWidth: 6, lowerLipWidth: 8,
       mouthVertical: 6, upperLipSides: 1, lowerLipSides: 2, lowerLipMiddle: -6, nostrilAngle: 2,
-      septumAngle: 1, noseLowerWidth: -2, noseVertical: 4, noseShiftDepth: -1, taylorSculpt: 100
+      septumAngle: 1, noseLowerWidth: -2, noseVertical: 4, noseShiftDepth: -1
     }) },
   obama: { male: true, skin: 3, hair: 1, hairColor: 0, shirt: 0, pants: 0, eyeColor: 0, suit: true, tie: 1,
     creatorYaw: -0.00650220,
@@ -163,7 +162,7 @@ export const PRESETS = {
       upperLipHeight: 1, lowerLipHeight: -6, upperLipWidth: 3, lowerLipWidth: -6, philtrum: 1,
       mouthVertical: 6, upperLipSides: 3, lowerLipSides: -6, upperLipMiddle: 2, lowerLipMiddle: -6,
       noseBase: 6, noseCurve: 16, noseCompression: -6, nostrilAngle: 5, septumAngle: -2,
-      noseVolume: 6, noseLowerWidth: 4, noseVertical: 6, noseShiftDepth: -6, obamaSculpt: 100
+      noseVolume: 6, noseLowerWidth: 4, noseVertical: 6, noseShiftDepth: -6
     }) },
 };
 
