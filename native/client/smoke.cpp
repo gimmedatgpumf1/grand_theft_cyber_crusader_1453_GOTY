@@ -174,7 +174,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     ViewState pitchView = view;
     pitchView.pitch = -1.5F;
     const Camera pitched = renderer.viewCamera(world, state, citizen.id, pitchView);
-    constexpr double pitchDown = -1.05;
+    constexpr double pitchDown = -1.45;
     const Vec3 expectedPitchEye = expectedEye(state.characters[0], 0, pitchDown);
     const Vec3 pitchForward = normalized(pitched.target - pitched.position);
     const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 &&
@@ -189,7 +189,44 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             armClearance = std::min(armClearance, length(extreme.position - Vec3{vertex.x, vertex.y, vertex.z}));
         }
     }
-    const bool clearance = length(extreme.position - expectedExtremeEye) < 1e-6 && armClearance > 0.04;
+    ViewState extremeUpView = neckView;
+    extremeUpView.pitch = 1.5F;
+    const Camera extremeUp = renderer.viewCamera(world, state, citizen.id, extremeUpView);
+    const Vec3 expectedExtremeUpEye = expectedEye(state.characters[0], neckLimit, 1.0);
+    double upwardClearance = 1000;
+    for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
+        for (const auto& vertex : batch.vertices) {
+            upwardClearance = std::min(upwardClearance, length(extremeUp.position - Vec3{vertex.x, vertex.y, vertex.z}));
+        }
+    }
+    const bool clearance = length(extreme.position - expectedExtremeEye) < 1e-6 && armClearance > 0.04 &&
+        length(extremeUp.position - expectedExtremeUpEye) < 1e-6 && upwardClearance > 0.04;
+    ClientState standingState = state;
+    standingState.characters[0].onToilet = false;
+    standingState.characters[0].toiletAction = gtc::ToiletAction::None;
+    standingState.characters[0].speed = 0;
+    ViewState standingView = view;
+    standingView.yaw = bodyYaw;
+    standingView.pitch = -1.5F;
+    if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) {
+        cleanup();
+        return false;
+    }
+    int visiblePelvis = 0, visibleLegs = 0;
+    for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
+        for (const auto& vertex : batch.vertices) {
+            const Vec3 point = transform(Vec3{vertex.x, vertex.y, vertex.z});
+            if (point.z <= 0.035) continue;
+            const double x = motionScene->width * 0.5 + motionScene->focal * point.x / point.z;
+            const double y = motionScene->height * 0.5 - motionScene->focal * point.y / point.z;
+            if (x < 3 || x >= motionScene->width - 3 || y < 3 || y >= motionScene->height - 3) continue;
+            if (vertex.y > 0.72 && vertex.y < 1.05) ++visiblePelvis;
+            if (vertex.y > 0.05 && vertex.y < 0.65) ++visibleLegs;
+        }
+    }
+    const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
+    const Vec3 standingForward = normalized(standingCamera.target - standingCamera.position);
+    const bool lowerBody = visiblePelvis > 8 && visibleLegs > 8 && std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
     const int headHeight = eyeModel.specIndex("headHeight");
     bool shaped = headHeight >= 0;
     double shortY = 0, tallY = 0;
@@ -222,9 +259,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!neck) error = "first-person human neck limit";
     else if (!pitch) error = "first-person neck pitch pivot";
     else if (!clearance) error = "first-person arm clearance";
+    else if (!lowerBody) error = "standing male lower-body visibility";
     else if (!shaped) error = "first-person morphed head attachment";
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && seated && neck && pitch && clearance && shaped && look;
+    return eyeMatrix && attached && seated && neck && pitch && clearance && lowerBody && shaped && look;
 }
 
 } // namespace

@@ -562,7 +562,7 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
     const double neckYaw = std::clamp(relativeYaw, -neckLimit, neckLimit);
     const double headYaw = local->yaw + neckYaw;
-    const double headPitch = std::clamp(static_cast<double>(view.pitch), -1.05, 1.0);
+    const double headPitch = std::clamp(static_cast<double>(view.pitch), -1.45, 1.0);
     camera.position = humanEyePosition(model, cache.rest, *local, state.tick, neckYaw, headPitch);
     const double cp = std::cos(headPitch), sp = std::sin(headPitch);
     const Vec3 forward{std::sin(headYaw) * cp, sp, std::cos(headYaw) * cp};
@@ -574,7 +574,7 @@ void rotateView(ViewState& view, double mouseX, double mouseY) {
     if (view.mode == ViewMode::God) return;
     view.yaw -= static_cast<float>(mouseX * 0.0022);
     view.pitch -= static_cast<float>(mouseY * 0.0022);
-    view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.5F : -1.05F,
+    view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.45F : -1.05F,
                             view.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
 }
 

@@ -302,12 +302,14 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
         auto articulate = [](Vec3 point, double yaw, double pitch) {
             return rotateWorld(apply(rotationX(-pitch), point), static_cast<float>(yaw));
         };
-        // The neck and head each contribute half of the rotation. Rotating the
-        // whole eye offset around the lower neck drops it into the shoulders.
-        constexpr double neckShare = 0.5;
-        const Vec3 movedHead = neck + articulate(headPivot - neck, headYaw * neckShare, headPitch * neckShare);
-        const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckShare, headPitch * neckShare);
-        posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckShare), headPitch * (1 - neckShare));
+        // Share yaw evenly, but let the head joint provide most of the pitch.
+        // Rotating the full eye offset around the lower neck drops it into an arm.
+        constexpr double neckYawShare = 0.5;
+        constexpr double neckPitchShare = 0.25;
+        const Vec3 movedHead = neck + articulate(headPivot - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
+        const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
+        posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckYawShare),
+                                      headPitch * (1 - neckPitchShare));
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
