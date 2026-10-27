@@ -562,6 +562,23 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     return humanGazePose(model, rest, character, tick, headYaw, gazePitch).eye;
 }
 
+Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache, float fallbackPitch) {
+    if (cache && cache->poseValid && cache->genitalTip >= 0 &&
+        static_cast<std::size_t>(cache->genitalTip) < cache->posed.size()) {
+        const Vec3 tip = cache->posed[cache->genitalTip];
+        const double yaw = character.yaw - cache->poseYaw;
+        const double c = std::cos(yaw), s = std::sin(yaw);
+        const double x = tip.x - cache->poseX, z = tip.z - cache->poseZ;
+        return {character.position.x + c * x + s * z,
+                tip.y + character.elevation - cache->poseElevation,
+                character.position.y - s * x + c * z};
+    }
+    const float cp = std::cos(fallbackPitch), sp = std::sin(fallbackPitch);
+    const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+    const gtc::Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
+    return {origin.x, character.elevation + 0.79F + 0.10F * sp, origin.y};
+}
+
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
                const std::string& root, double tick, bool hideHead) {

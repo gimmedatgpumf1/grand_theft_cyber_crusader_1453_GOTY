@@ -227,6 +227,9 @@ void parseState(const JsonValue& value, ClientState& state) {
             projectile.velocity = {static_cast<float>(item.numberAt("vx")), static_cast<float>(item.numberAt("vz"))};
             projectile.verticalVelocity = static_cast<float>(item.numberAt("vy"));
             projectile.age = static_cast<float>(item.numberAt("age"));
+            projectile.toilet = item.boolAt("toilet");
+            projectile.target = {static_cast<float>(item.numberAt("tx")), static_cast<float>(item.numberAt("tz"))};
+            projectile.targetHeight = static_cast<float>(item.numberAt("ty"));
             state.projectiles.push_back(projectile);
         }
     }

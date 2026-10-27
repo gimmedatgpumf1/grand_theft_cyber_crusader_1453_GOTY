@@ -431,10 +431,8 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     }
     if (std::isfinite(yaw)) character->yaw = yaw;
     if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.57079633F, 1.57079633F);
-    if (piss && character->hasAimTarget) {
-        const Vec2 target = pissApproachTarget(*character, character->aimTarget, character->aimHeight);
-        character->pitch = pissAimPitch(*character, target, character->aimHeight, character->pitch);
-    }
+    if (piss && character->hasAimTarget)
+        character->pitch = pissLaunchPitch(*character, character->aimTarget, character->aimHeight, character->pitch);
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination, bool sprint, bool advanced) {
@@ -985,7 +983,9 @@ std::string World::snapshot() const {
             << ",\"x\":" << jsonNumber(projectile.position.x) << ",\"z\":" << jsonNumber(projectile.position.y)
             << ",\"y\":" << jsonNumber(projectile.height) << ",\"vx\":" << jsonNumber(projectile.velocity.x)
             << ",\"vz\":" << jsonNumber(projectile.velocity.y) << ",\"vy\":" << jsonNumber(projectile.verticalVelocity)
-            << ",\"age\":" << jsonNumber(projectile.age) << '}';
+            << ",\"age\":" << jsonNumber(projectile.age) << ",\"toilet\":" << (projectile.toilet ? "true" : "false")
+            << ",\"tx\":" << jsonNumber(projectile.target.x) << ",\"tz\":" << jsonNumber(projectile.target.y)
+            << ",\"ty\":" << jsonNumber(projectile.targetHeight) << '}';
     }
     out << "],\"events\":[";
     for (std::size_t i = 0; i < events_.size(); ++i) {

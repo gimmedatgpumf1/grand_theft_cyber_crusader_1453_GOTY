@@ -635,10 +635,11 @@ int main() {
         aimed.setInput(aimer, {}, false, true, 3.14159265F, -0.9F, false, false, false, false, false,
                        {0, -4.69F}, gtc::kToiletWaterHeight, true);
         bool emitted = false;
-        for (int i = 0; i < 40; ++i) {
-            const float x = static_cast<float>(i % 3 - 1) * 0.055F;
+        const gtc::Vec2 aims[] = {{0, -4.60F}, {0, -4.69F}, {0, -4.78F}, {-0.055F, -4.69F}, {0.055F, -4.69F}};
+        for (int i = 0; i < 30; ++i) {
+            const gtc::Vec2 target = aims[i % 5];
             aimed.setInput(aimer, {}, false, true, 3.14159265F, -0.9F, false, false, false, false, false,
-                           {x, -4.69F}, gtc::kToiletWaterHeight, true);
+                           target, gtc::kToiletWaterHeight, true);
             aimed.update(0.05F);
             emitted = emitted || !aimed.projectiles().empty();
         }
@@ -646,9 +647,20 @@ int main() {
               "crosshair-converged physical droplets enter the toilet water instead of falling short");
         const auto ripples = aimed.waterRipples();
         float rippleSpread = 0;
+        bool exactContacts = !ripples.empty();
         for (const auto& a : ripples) for (const auto& b : ripples) rippleSpread = std::max(rippleSpread, distance(a.position, b.position));
-        check(rippleSpread > 0.03F && aimed.snapshot().find("\"ripples\":[{\"id\":") != std::string::npos,
-              "waving the stream creates independent ripples at the actual water contacts");
+        for (const auto& ripple : ripples) {
+            bool atAim = false;
+            for (const auto& aim : aims) atAim = atAim || distance(ripple.position, aim) < 0.025F;
+            exactContacts = exactContacts && atAim;
+        }
+        for (const auto& aim : aims) {
+            bool contacted = false;
+            for (const auto& ripple : ripples) contacted = contacted || distance(ripple.position, aim) < 0.025F;
+            exactContacts = exactContacts && contacted;
+        }
+        check(exactContacts && rippleSpread > 0.03F && aimed.snapshot().find("\"ripples\":[{\"id\":") != std::string::npos,
+              "every physical ripple matches a requested aim point, including near and far water");
 
         gtc::World elevated;
         const auto painter = elevated.addCharacter("High Wall Marksman", false);

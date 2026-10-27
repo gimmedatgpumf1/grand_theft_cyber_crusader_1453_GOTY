@@ -470,7 +470,8 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     }
 }
 
-void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
+void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state,
+                     const std::unordered_map<std::uint32_t, HumanRenderCache>& humanCaches) {
     Material piss, bullet;
     piss.color = colorHex("#f2ce24");
     piss.unlit = true;
@@ -478,10 +479,10 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
     bullet.color = colorHex("#fff0a0");
     bullet.unlit = true;
     const auto point = [](const Projectile& value) { return Vec3{value.position.x, value.height, value.position.y}; };
-    auto link = [&](Vec3 a, Vec3 b, double phase) {
+    auto link = [&](Vec3 a, Vec3 b, double phase, double maxSpan = 0.85) {
         const Vec3 delta = b - a;
         const double span = length(delta);
-        if (span < 0.008 || span > 0.85) return;
+        if (span < 0.008 || span > maxSpan) return;
         const Vec3 direction = delta / span;
         Vec3 side = cross(direction, camera.position - (a + b) * 0.5);
         if (length(side) < 0.001) side = cross(direction, Vec3{0, 1, 0});
@@ -500,13 +501,16 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
         }
     };
     std::vector<const Projectile*> stream;
-    for (const Projectile& projectile : state.projectiles) {
+    for (const Projectile& projectile : state.projectiles)
         if (projectile.kind == ProjectileKind::Piss) stream.push_back(&projectile);
-    }
     std::sort(stream.begin(), stream.end(), [](const Projectile* a, const Projectile* b) {
         return a->owner != b->owner ? a->owner < b->owner : a->id < b->id;
     });
-    for (std::size_t index = 1; index < stream.size(); ++index) {
+    for (std::size_t index = 0; index < stream.size(); ++index) {
+        const Projectile& oldest = *stream[index];
+        if (oldest.toilet && (index == 0 || stream[index - 1]->owner != oldest.owner))
+            link(point(oldest), {oldest.target.x, oldest.targetHeight, oldest.target.y}, oldest.owner * 0.713, 25.0);
+        if (index == 0) continue;
         const Projectile& older = *stream[index - 1];
         const Projectile& newer = *stream[index];
         const double ageGap = older.age - newer.age;
@@ -519,11 +523,10 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
         if ((index + 1 < stream.size() && stream[index + 1]->owner == newest.owner) || !owner ||
             !(owner->pissing || owner->toiletAction == ToiletAction::Piss) || newest.age > 0.075) continue;
         const float pitch = std::atan2(newest.verticalVelocity + kProjectileGravity * newest.age, length(newest.velocity));
-        const float cp = std::cos(pitch), sp = std::sin(pitch);
-        const gtc::Vec2 forward{std::sin(owner->yaw), std::cos(owner->yaw)};
-        const gtc::Vec2 origin = owner->position + forward * (0.10F + 0.06F * cp);
-        link({origin.x, owner->elevation + 0.79F + 0.10F * sp, origin.y}, point(newest),
-             owner->id * 0.713 + state.tick * 0.17);
+        const auto cached = humanCaches.find(newest.owner);
+        const Vec3 origin = humanStreamOrigin(*owner,
+            cached == humanCaches.end() ? nullptr : &cached->second, pitch);
+        link(origin, point(newest), owner->id * 0.713 + state.tick * 0.17);
     }
     for (const Projectile& projectile : state.projectiles) {
         if (projectile.kind != ProjectileKind::Bullet) continue;
@@ -913,7 +916,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             const double time = std::chrono::duration<double>(profileStart.time_since_epoch()).count();
             drawWater(rasterizer, camera, world, state, time);
             drawPuddles(rasterizer, camera, state);
-            drawProjectiles(rasterizer, camera, state);
+            drawProjectiles(rasterizer, camera, state, humanCache_);
         }
         finishStart = std::chrono::steady_clock::now();
         if (view.gpu) {
@@ -955,7 +958,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         particles.setCamera(camera);
         const double time = std::chrono::duration<double>(profileStart.time_since_epoch()).count();
         drawWater(particles, camera, world, state, time);
-        drawProjectiles(particles, camera, state);
+        drawProjectiles(particles, camera, state, humanCache_);
         GpuScene dynamic = particles.takeGpuScene();
         const std::uint64_t dynamicRevision = ++gpuProjectileRevision_;
         for (GpuBatch& batch : dynamic.batches) {

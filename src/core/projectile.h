@@ -246,19 +246,65 @@ inline float ballisticPitch(float horizontal, float rise, float speed) {
     return std::atan((v2 - std::sqrt(discriminant)) / (gravity * horizontal));
 }
 
-inline float pissAimPitch(const Character& character, Vec2 target, float targetHeight, float initialPitch) {
-    float pitch = initialPitch;
-    const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    for (int iteration = 0; iteration < 3; ++iteration) {
-        const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
-        const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
-        const Vec2 delta = target - origin;
-        pitch = ballisticPitch(length(delta), targetHeight - originHeight, kPissSpeed);
-    }
-    return pitch;
+inline bool pissWaterTarget(Vec2 target, float targetHeight) {
+    const Vec2 local = target - Vec2{0.0F, -4.69F};
+    return std::abs(targetHeight - kToiletWaterHeight) < 0.025F &&
+        local.x * local.x / (kToiletWater.x * kToiletWater.x) +
+        local.y * local.y / (kToiletWater.y * kToiletWater.y) <= 1.0F;
 }
 
-inline Vec2 pissApproachTarget(const Character& character, Vec2 target, float targetHeight) {
+inline float pissLaunchPitch(const Character& character, Vec2 target, float targetHeight,
+                             float initialPitch, float* launchSpeed = nullptr) {
+    if (!pissWaterTarget(target, targetHeight)) {
+        if (launchSpeed) *launchSpeed = kPissSpeed;
+        float pitch = initialPitch;
+        const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+        for (int iteration = 0; iteration < 3; ++iteration) {
+            const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
+            const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
+            pitch = ballisticPitch(length(target - origin), targetHeight - originHeight, kPissSpeed);
+        }
+        return pitch;
+    }
+    float bestPitch = initialPitch, bestSpeed = 4.0F;
+    const Obstacle toilet{{0.0F, -4.75F}, {0.2285F, 0.3525F}, kToiletTankHeight, "toilet"};
+    const std::vector<Obstacle> surfaces{toilet};
+    bool found = false;
+    for (float speed : {2.4F, 2.8F, 3.2F, 3.6F, 4.0F}) {
+        float pitch = initialPitch;
+        const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+        for (int iteration = 0; iteration < 3; ++iteration) {
+            const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
+            const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
+            pitch = ballisticPitch(length(target - origin), targetHeight - originHeight, speed);
+        }
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        const Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
+        const Vec2 direction = normalized(target - origin);
+        projectile_detail::Point at{origin.x, character.elevation + 0.79F + 0.10F * sp, origin.y};
+        Vec2 velocity = direction * (speed * cp);
+        float vertical = speed * sp;
+        for (int step = 0; step < 120 && !found; ++step) {
+            const float nextVertical = vertical - kProjectileGravity * 0.01F;
+            const projectile_detail::Point next{at.x + velocity.x * 0.01F,
+                at.y + (vertical + nextVertical) * 0.005F, at.z + velocity.y * 0.01F};
+            const auto hit = projectile_detail::sweepSurfaces(at, next, 0.010F, surfaces);
+            if (hit.hit) {
+                const projectile_detail::Point contact = at + (next - at) * hit.amount;
+                if (hit.absorb && distance({contact.x, contact.z}, target) < 0.035F) {
+                    bestPitch = pitch; bestSpeed = speed; found = true;
+                }
+                break;
+            }
+            at = next; vertical = nextVertical;
+        }
+        if (found) break;
+    }
+    if (launchSpeed) *launchSpeed = bestSpeed;
+    return bestPitch;
+}
+
+inline Vec2 bulletApproachTarget(const Character& character, Vec2 target, float targetHeight) {
     const Vec2 center{0.0F, -4.69F}, local = target - center;
     const float water = local.x * local.x / (kToiletWater.x * kToiletWater.x) +
         local.y * local.y / (kToiletWater.y * kToiletWater.y);

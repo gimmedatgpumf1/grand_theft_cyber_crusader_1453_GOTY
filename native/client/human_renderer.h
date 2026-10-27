@@ -46,6 +46,7 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
 Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
                       const Character& character, double tick,
                       double headYaw = 0, double gazePitch = 0);
+Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache, float fallbackPitch);
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,

@@ -63,9 +63,12 @@ void World::spawnPiss(Character& character) {
     const bool targeted = projectile.toilet || character.hasAimTarget;
     Vec2 target = projectile.toilet ? toiletPosition() + Vec2{0.0F, 0.06F} : character.aimTarget;
     const float targetHeight = projectile.toilet ? kToiletWaterHeight : character.aimHeight;
+    float speed = kPissSpeed;
     if (targeted) {
-        target = pissApproachTarget(character, target, targetHeight);
-        pitch = pissAimPitch(character, target, targetHeight, pitch);
+        pitch = pissLaunchPitch(character, target, targetHeight, pitch, &speed);
+        projectile.target = target;
+        projectile.targetHeight = targetHeight;
+        projectile.toilet = projectile.toilet || pissWaterTarget(target, targetHeight);
     }
     if (targeted && !projectile.toilet) character.pitch = pitch;
     const float cp = std::cos(pitch), sp = std::sin(pitch);
@@ -77,8 +80,8 @@ void World::spawnPiss(Character& character) {
         const Vec2 delta = target - projectile.position;
         if (length(delta) > 0.0001F) direction = normalized(delta);
     }
-    projectile.velocity = direction * (kPissSpeed * cp);
-    projectile.verticalVelocity = kPissSpeed * sp;
+    projectile.velocity = direction * (speed * cp);
+    projectile.verticalVelocity = speed * sp;
     if (projectiles_.size() >= 768) projectiles_.erase(projectiles_.begin());
     projectiles_.push_back(projectile);
 }
@@ -89,7 +92,7 @@ void World::spawnBullet(Character& attacker, const Character& target) {
 }
 
 void World::spawnBullet(Character& attacker, Vec2 target, float targetHeight, std::uint32_t) {
-    if (inWater(target, toiletPosition())) target = pissApproachTarget(attacker, target, targetHeight);
+    if (inWater(target, toiletPosition())) target = bulletApproachTarget(attacker, target, targetHeight);
     const Vec2 initial{std::sin(attacker.yaw), std::cos(attacker.yaw)};
     Projectile projectile;
     projectile.id = nextProjectileId_++;
@@ -162,7 +165,7 @@ void World::updateProjectiles(float dt) {
     for (std::size_t index = 0; index < projectiles_.size();) {
         Projectile projectile = projectiles_[index];
         const bool bullet = projectile.kind == ProjectileKind::Bullet;
-        const float drag = bullet ? 0.025F : 0.16F;
+        const float drag = bullet ? 0.025F : projectile.toilet ? 0.0F : 0.16F;
         const projectile_detail::Point old = projectile_detail::point(projectile);
         const Vec2 nextVelocity = projectile.velocity + (wind - projectile.velocity) * (drag * dt);
         const float nextVertical = projectile.verticalVelocity - kProjectileGravity * dt;

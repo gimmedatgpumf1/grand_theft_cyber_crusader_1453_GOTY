@@ -1,4 +1,4 @@
-#include "client/client.h"
+#include "client/smoke_streams.h"
 #include "client/renderer.h"
 #include <algorithm>
 #include <cmath>
@@ -935,14 +935,12 @@ int main(int argc, char** argv) {
             male->unzipped = male->pissing = true; male->pitch = 1.57079633F; seedStream();
             gtc::native::ViewState airView = tps; airView.yaw = 0.85F;
             if (!stanceCapture("alpha-air-piss-tps", airView)) return 1;
-            standing.projectiles.clear(); male->unzipped = male->pissing = false; male->pitch = 0;
             gtc::native::ViewState toiletView = fpsLevel; toiletView.yaw = 3.14159265F; toiletView.pitch = -0.9F;
-            standing.waterRipples = {{9100, {0, -4.69F}, 0.12, 1.2F}, {9101, {0.04F, -4.67F}, 0.38, 0.8F}};
-            for (auto& citizen : standing.characters) citizen.position = citizen.id == male->id ?
-                gtc::Vec2{0, -3.55F} : gtc::Vec2{7, 5};
-            male->yaw = 3.14159265F;
-            if (!stanceCapture("toilet-water-fps", toiletView)) return 1;
-            male->position = {0, 0}; male->yaw = 0; standing.waterRipples.clear();
+            if (!gtc::native::seedToiletStreamExhibit(standing, alpha.playerId(), root, standing.tick) ||
+                !stanceCapture("toilet-water-fps", toiletView)) return 1;
+            for (auto& citizen : standing.characters) citizen.pissing = citizen.unzipped = false;
+            standing.projectiles.clear(); standing.waterRipples.clear();
+            male->position = {0, 0}; male->yaw = male->pitch = 0;
             male->crouched = true;
             if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
             male->crouched = false;

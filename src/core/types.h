@@ -190,6 +190,8 @@ struct Projectile {
     float verticalVelocity = 0.0F;
     float age = 0.0F;
     bool toilet = false;
+    Vec2 target;
+    float targetHeight = 0.0F;
 };
 
 struct Puddle {
