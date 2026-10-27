@@ -339,14 +339,20 @@ bool NativeClient::sendJoin(const std::string& name) {
 }
 
 bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk,
-                             bool crouch, bool grab, bool jump, bool block) {
+                             bool crouch, bool grab, bool jump, bool block,
+                             Vec2 aimTarget, float aimHeight, bool hasAimTarget) {
     std::ostringstream out;
     out << "{\"type\":\"input\",\"x\":" << jsonNumber(move.x) << ",\"z\":" << jsonNumber(move.y)
         << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"slow\":" << (slowWalk ? "true" : "false")
         << ",\"piss\":" << (piss ? "true" : "false")
         << ",\"crouch\":" << (crouch ? "true" : "false") << ",\"grab\":" << (grab ? "true" : "false")
         << ",\"jump\":" << (jump ? "true" : "false") << ",\"block\":" << (block ? "true" : "false")
-        << ",\"yaw\":" << jsonNumber(yaw) << ",\"pitch\":" << jsonNumber(pitch) << '}';
+        << ",\"yaw\":" << jsonNumber(yaw) << ",\"pitch\":" << jsonNumber(pitch);
+    if (hasAimTarget) {
+        out << ",\"aim\":true,\"aimX\":" << jsonNumber(aimTarget.x) << ",\"aimZ\":" << jsonNumber(aimTarget.y)
+            << ",\"aimY\":" << jsonNumber(aimHeight);
+    }
+    out << '}';
     return send(out.str());
 }
 

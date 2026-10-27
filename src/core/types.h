@@ -26,7 +26,7 @@ inline constexpr float kToiletRimHeight = 0.368F;
 inline constexpr float kToiletSeatHeight = 0.381F;
 inline constexpr float kToiletWaterHeight = kToiletRimHeight - 0.133F;
 inline constexpr float kToiletTankHeight = 0.743F;
-inline constexpr float kPissSpeed = 6.2F;
+inline constexpr float kPissSpeed = 9.0F;
 inline constexpr float kBulletSpeed = 32.0F;
 inline constexpr float kProjectileGravity = 9.81F;
 inline constexpr float kPissLifetime = 4.0F;
@@ -130,6 +130,9 @@ struct Character {
     bool sprint = false;
     bool slowWalk = false;
     bool wantsPiss = false;
+    Vec2 aimTarget;
+    float aimHeight = 0.0F;
+    bool hasAimTarget = false;
     bool crouchInput = false;
     bool grabInput = false;
     bool jumpInput = false;

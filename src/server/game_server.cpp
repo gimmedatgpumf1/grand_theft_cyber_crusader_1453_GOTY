@@ -225,7 +225,9 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
                         static_cast<float>(message.numberAt("yaw")),
                         static_cast<float>(message.numberAt("pitch")), message.boolAt("slow"),
                         message.boolAt("crouch"), message.boolAt("grab"), message.boolAt("jump"),
-                        message.boolAt("block"));
+                        message.boolAt("block"),
+                        {static_cast<float>(message.numberAt("aimX")), static_cast<float>(message.numberAt("aimZ"))},
+                        static_cast<float>(message.numberAt("aimY")), message.boolAt("aim"));
     } else if (type == "zip") {
         world_.toggleZip(id);
     } else if (type == "path") {

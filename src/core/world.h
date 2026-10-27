@@ -23,7 +23,8 @@ public:
     void customizeCharacter(std::uint32_t id, const Appearance& appearance);
     void setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
                   float yaw, float pitch, bool slowWalk = false, bool crouch = false,
-                  bool grab = false, bool jump = false, bool block = false);
+                  bool grab = false, bool jump = false, bool block = false,
+                  Vec2 aimTarget = {}, float aimHeight = 0.0F, bool hasAimTarget = false);
     void setDestination(std::uint32_t id, const Vec2& destination, bool sprint = false, bool advanced = false);
     void toggleZip(std::uint32_t id);
     void attack(std::uint32_t id, std::uint32_t targetId, bool advanced = false);

@@ -3,6 +3,7 @@
 #include "client/client.h"
 #include "client/renderer.h"
 #include "client/window.h"
+#include "core/projectile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -474,6 +475,33 @@ private:
         if (delta != 0) client_.sendCheat(need, delta);
     }
 
+    bool crosshairTarget(gtc::Vec2& target, float& height) const {
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const Vec3 direction = normalized(camera.target - camera.position);
+        const projectile_detail::Point from{static_cast<float>(camera.position.x), static_cast<float>(camera.position.y),
+                                            static_cast<float>(camera.position.z)};
+        const projectile_detail::Point to = from + projectile_detail::Point{
+            static_cast<float>(direction.x * 24.0), static_cast<float>(direction.y * 24.0),
+            static_cast<float>(direction.z * 24.0)};
+        const auto surface = projectile_detail::sweepSurfaces(from, to, 0.0F, client_.world().obstacles);
+        float amount = surface.hit ? surface.amount : 1.0F;
+        bool found = surface.hit;
+        for (const Character& character : visualState().characters) {
+            if (character.id == client_.playerId()) continue;
+            float candidate = 1.0F;
+            if (projectile_detail::sweepCharacter(from, to, 0.0F, character, candidate) &&
+                (!found || candidate < amount)) {
+                amount = candidate;
+                found = true;
+            }
+        }
+        if (!found) amount = 1.0F / 24.0F; // No surface: converge one metre ahead.
+        const projectile_detail::Point at = from + (to - from) * amount;
+        target = {at.x, at.z};
+        height = at.y;
+        return true;
+    }
+
     void sendInput() {
         gtc::Vec2 move{};
         bool sprint = false, piss = false, crouch = false, grab = false, jump = false, block = false;
@@ -495,7 +523,11 @@ private:
             if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab || ranged) yaw = view_.yaw;
         }
         view_.slowWalk = slowWalk_;
-        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump, block);
+        gtc::Vec2 aimTarget{};
+        float aimHeight = 0.0F;
+        const bool hasAimTarget = ranged && view_.mode != ViewMode::God && crosshairTarget(aimTarget, aimHeight);
+        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump, block,
+                          aimTarget, aimHeight, hasAimTarget);
     }
 
     void updateGod(float dt) {

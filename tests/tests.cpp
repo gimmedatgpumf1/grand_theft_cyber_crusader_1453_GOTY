@@ -574,6 +574,35 @@ int main() {
         for (int i = 0; i < 12; ++i) world.update(0.05F);
         check(world.snapshot().find("\"vertical\":true") != std::string::npos,
               "wall splash height and orientation replicate after physical impact");
+
+        gtc::World aimed;
+        const auto aimer = aimed.addCharacter("Porcelain Marksman", false);
+        place(aimed, aimer, {0, -3.55F});
+        aimed.toggleZip(aimer);
+        aimed.adjustNeed(aimer, "bladder", 100);
+        aimed.setInput(aimer, {}, false, true, 3.14159265F, -0.9F, false, false, false, false, false,
+                       {0, -4.69F}, gtc::kToiletWaterHeight, true);
+        bool emitted = false;
+        for (int i = 0; i < 40; ++i) {
+            aimed.update(0.05F);
+            emitted = emitted || !aimed.projectiles().empty();
+        }
+        check(emitted && aimed.puddles().empty(),
+              "crosshair-converged physical droplets enter the toilet water instead of falling short");
+
+        gtc::World elevated;
+        const auto painter = elevated.addCharacter("High Wall Marksman", false);
+        place(elevated, painter, {-7.5F, 2});
+        elevated.toggleZip(painter);
+        elevated.adjustNeed(painter, "bladder", 100);
+        elevated.setInput(painter, {}, false, true, -1.57079633F, 0.5F, false, false, false, false, false,
+                          {-8.84F, 2}, 1.5F, true);
+        for (int i = 0; i < 40; ++i) elevated.update(0.05F);
+        bool accurate = false;
+        for (const auto& puddle : elevated.puddles()) {
+            accurate = accurate || (puddle.vertical && std::abs(puddle.height - 1.5F) < 0.08F);
+        }
+        check(accurate, "close-range aimed piss compensates gravity and strikes an elevated wall target");
     });
 
     test("fifteen-times clock, bladder calibration, and day-long drying", [] {

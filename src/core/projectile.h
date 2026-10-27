@@ -105,7 +105,8 @@ inline SurfaceHit planeHit(Point a, Point b, float height, const Obstacle& toile
     const float x = at.x - toilet.center.x, z = at.z - toilet.center.y - 0.06F;
     const float outer = x * x / (0.1905F * 0.1905F) + z * z / (0.270F * 0.270F);
     const float inner = x * x / (0.145F * 0.145F) + z * z / (0.205F * 0.205F);
-    if (outer > 1.0F || (!water && inner < 1.0F)) return result;
+    const float surface = x * x / (0.1335F * 0.1335F) + z * z / (0.0985F * 0.0985F);
+    if ((water ? surface > 1.0F : outer > 1.0F || inner < 1.0F)) return result;
     result.hit = result.absorb = water;
     result.amount = amount;
     if (!water) {
@@ -242,6 +243,29 @@ inline float ballisticPitch(float horizontal, float rise, float speed) {
     const float discriminant = v2 * v2 - gravity * (gravity * horizontal * horizontal + 2.0F * rise * v2);
     if (discriminant <= 0.0F) return 0.785398163F;
     return std::atan((v2 - std::sqrt(discriminant)) / (gravity * horizontal));
+}
+
+inline Vec2 pissApproachTarget(const Character& character, Vec2 target, float targetHeight) {
+    const Vec2 center{0.0F, -4.69F};
+    const Vec2 local = target - center;
+    const float water = local.x * local.x / (0.1335F * 0.1335F) +
+        local.y * local.y / (0.0985F * 0.0985F);
+    if (std::abs(targetHeight - kToiletWaterHeight) > 0.025F || water > 1.0F) return target;
+    Vec2 direction = center - character.position;
+    if (length(direction) < 0.001F) direction = {0, -1};
+    return center + normalized(direction) * 0.09F; // Clear the near inner rim, land in real water.
+}
+
+inline float pissAimPitch(const Character& character, Vec2 target, float targetHeight, float initialPitch) {
+    float pitch = initialPitch;
+    const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
+        const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
+        const Vec2 delta = target - origin;
+        pitch = ballisticPitch(length(delta), targetHeight - originHeight, kPissSpeed);
+    }
+    return pitch;
 }
 
 inline Puddle placePuddle(const std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,

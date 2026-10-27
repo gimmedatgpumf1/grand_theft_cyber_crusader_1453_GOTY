@@ -46,7 +46,8 @@ public:
 
     bool sendJoin(const std::string& name);
     bool sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk = false,
-                   bool crouch = false, bool grab = false, bool jump = false, bool block = false);
+                   bool crouch = false, bool grab = false, bool jump = false, bool block = false,
+                   Vec2 aimTarget = {}, float aimHeight = 0.0F, bool hasAimTarget = false);
     bool sendPath(Vec2 destination, bool sprint = false, bool advanced = false);
     bool sendAttack(std::uint32_t targetId, bool advanced = false);
     bool sendToggleZip();

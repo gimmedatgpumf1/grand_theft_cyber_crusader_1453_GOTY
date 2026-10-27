@@ -395,7 +395,8 @@ Vec2 World::spawnPoint(std::uint32_t id) const {
 }
 
 void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
-                     float yaw, float pitch, bool slowWalk, bool crouch, bool grab, bool jump, bool block) {
+                     float yaw, float pitch, bool slowWalk, bool crouch, bool grab, bool jump, bool block,
+                     Vec2 aimTarget, float aimHeight, bool hasAimTarget) {
     std::lock_guard<std::mutex> lock(mutex_);
     Character* character = find(id);
     if (character == nullptr) return;
@@ -421,8 +422,19 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     character->grabInput = grab;
     character->jumpInput = jump;
     character->blocking = block && !(character->appearance.male && character->unzipped);
+    character->hasAimTarget = hasAimTarget && std::isfinite(aimTarget.x) && std::isfinite(aimTarget.y) &&
+        std::isfinite(aimHeight) && aimHeight >= -0.1F && aimHeight <= 3.5F &&
+        distance(character->position, aimTarget) <= 20.0F;
+    if (character->hasAimTarget) {
+        character->aimTarget = aimTarget;
+        character->aimHeight = aimHeight;
+    }
     if (std::isfinite(yaw)) character->yaw = yaw;
     if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.57079633F, 1.57079633F);
+    if (piss && character->hasAimTarget) {
+        const Vec2 target = pissApproachTarget(*character, character->aimTarget, character->aimHeight);
+        character->pitch = pissAimPitch(*character, target, character->aimHeight, character->pitch);
+    }
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination, bool sprint, bool advanced) {

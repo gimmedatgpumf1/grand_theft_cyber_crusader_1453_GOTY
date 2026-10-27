@@ -28,12 +28,25 @@ void World::spawnPiss(Character& character) {
     projectile.kind = ProjectileKind::Piss;
     projectile.stain = projectile.id % 6U == 0;
     projectile.toilet = character.toiletAction == ToiletAction::Piss;
-    const float pitch = projectile.toilet ? -0.32F : character.pitch;
+    float pitch = projectile.toilet ? -0.32F : character.pitch;
+    const bool targeted = projectile.toilet || character.hasAimTarget;
+    Vec2 target = projectile.toilet ? toiletPosition() + Vec2{0.0F, 0.06F} : character.aimTarget;
+    const float targetHeight = projectile.toilet ? kToiletWaterHeight : character.aimHeight;
+    if (targeted) {
+        target = pissApproachTarget(character, target, targetHeight);
+        pitch = pissAimPitch(character, target, targetHeight, pitch);
+    }
+    if (targeted && !projectile.toilet) character.pitch = pitch;
     const float cp = std::cos(pitch), sp = std::sin(pitch);
     const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
     projectile.position = character.position + forward * (0.10F + 0.06F * cp);
     projectile.height = character.elevation + 0.79F + 0.10F * sp;
-    projectile.velocity = forward * (kPissSpeed * cp);
+    Vec2 direction = forward;
+    if (targeted) {
+        const Vec2 delta = target - projectile.position;
+        if (length(delta) > 0.0001F) direction = normalized(delta);
+    }
+    projectile.velocity = direction * (kPissSpeed * cp);
     projectile.verticalVelocity = kPissSpeed * sp;
     if (projectiles_.size() >= 768) projectiles_.erase(projectiles_.begin());
     projectiles_.push_back(projectile);
