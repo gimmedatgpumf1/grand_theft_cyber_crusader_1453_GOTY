@@ -51,10 +51,12 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
   Male anatomy starts zipped behind a loose, projecting cloth tent in FPS and TPS; **T** intentionally
   exposes it. Holding LMB (or F in FPS) outside a toilet action works only while unzipped and empties
-  only the bladder. A bladder at 75% supports **21 seconds** of continuous flow at 6.2 m/s, sufficient
-  to clear the citizen's head when fired straight up. Piss droplets and unzipped ranged rounds are
-  server-simulated physical objects under **9.81 m/s² gravity and wind**, with swept collisions rather
-  than decorative trajectory curves. Ranged attacks are always attempted; damage occurs on impact.
+  only the bladder. A bladder at 75% supports **21 seconds** of continuous flow at **9 m/s**, sufficient
+  to clear the citizen's head when fired straight up. Close-range fire converges from the emission point
+  onto the crosshair's contacted surface; toilet shots clear the inner rim and land in the real water ellipse.
+  Piss droplets and unzipped ranged rounds are server-simulated physical objects under
+  **9.81 m/s² gravity and wind**, with swept collisions rather than decorative trajectory curves.
+  Ranged attacks are always attempted; damage occurs on impact.
 - The toilet follows Kohler Wellworth K-3987 measurements: a **381 mm seat**, **743 mm tank**,
   **705 mm depth**, and separate tank, rim, open bowl, water, and pedestal collision. Small translucent
   yellow-green stains attach to floors, object tops, sides, walls, toilet surfaces, and water; overlapping
