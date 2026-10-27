@@ -33,13 +33,14 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 
 | Mode | Move citizen | Camera | Interact |
 | --- | --- | --- | --- |
-| **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E or centered left-click in range |
-| **2 — Godview** | Left-click floor to pathfind | WASD fast-pans; Shift boosts; wheel zoom | Left-click a highlighted object in range; E also works |
-| **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E in range; **hold F to piss** |
+| **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E; **T** toggles a male zip; unzipped LMB pees; RMB aims/blocks |
+| **2 — Godview** | RMB paths; Shift-RMB auto-runs; double-RMB uses advanced traversal | WASD fast-pans; Shift boosts; wheel zoom | LMB attacks; double-LMB melee uses advanced traversal; E interacts |
+| **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E; **T** toggles a male zip; unzipped LMB/F pees; RMB aims/blocks |
 
 - Targeted objects glow. **[E] Interact** appears only inside the **1.8 m interaction range**.
-- E and object clicks never auto-walk the player. Move closer yourself; explicit godview floor
-  clicks still use pathfinding. Autonomous AI can path to the toilet before using it.
+- E never auto-walks the player. Move closer yourself; explicit godview RMB paths use ordinary A*.
+  Double-RMB instead permits server-controlled jumping, climbing, crouching, and crawling en route.
+  Autonomous AI can path to the toilet before using it.
 - The throne is multi-use: E opens a real choice wheel for **Sit**, **Shit**, and **Piss**.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
@@ -48,7 +49,10 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   `customize` message. There are no person-specific morphs or portrait textures. Reusable CC0
   MakeHuman skin maps provide age/sex surface detail across the full skin palette.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
-  Holding F outside a toilet action empties only the bladder and leaves shared, persistent puddles.
+  Male anatomy starts zipped behind a cloth bulge in FPS and TPS; **T** intentionally exposes it.
+  Holding LMB (or F in FPS) outside a toilet action works only while unzipped, empties only the
+  bladder, and leaves shared persistent puddles. God LMB uses melee while zipped and the unzipped
+  ranged weapon otherwise; RMB blocks melee or applies modest ranged aim zoom.
 - **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
 - **H** opens the native field manual. **F12** saves the current native 480×640 framebuffer.

@@ -52,7 +52,7 @@ Camera makeExternalCamera(const ClientWorld& world, const ClientState& state, st
     Camera camera;
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
-    camera.fovDegrees = 62;
+    camera.fovDegrees = view.aiming ? 52 : 62;
     const Character* local = state.character(localId);
     const Vec3 citizen = local ? Vec3{local->position.x, local->elevation, local->position.y} : Vec3{};
     const float yaw = local ? view.yaw : 0.0F;
@@ -349,21 +349,17 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     }
 }
 
-void drawPissing(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
+void drawPissing(Rasterizer& rasterizer, const Camera& camera,
                  const HumanRenderCache& cache, const Character& character) {
     if (!character.pissing) return;
     Material stream;
     stream.color = colorHex("#b9c862");
     stream.specular = 0.4;
-    const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
+    const double pitch = character.unzipped && character.toiletAction == ToiletAction::None ? character.pitch : 0.0;
+    const double cp = std::cos(pitch);
+    const Vec3 forward{std::sin(character.yaw) * cp, std::sin(pitch), std::cos(character.yaw) * cp};
     Vec3 origin{character.position.x, character.elevation + 0.77, character.position.y};
-    if (!model.genitalTriangles.empty() && cache.posed.size() == cache.rest.size()) {
-        int tip = model.genitalTriangles.front().v[0];
-        for (const Triangle& triangle : model.genitalTriangles) {
-            for (int index : triangle.v) if (cache.rest[index].z > cache.rest[tip].z) tip = index;
-        }
-        origin = cache.posed[tip];
-    }
+    if (cache.genitalTip >= 0 && cache.posed.size() == cache.rest.size()) origin = cache.posed[cache.genitalTip];
     for (int i = 0; i < 12; ++i) {
         const double t = i / 11.0;
         const Vec3 at = origin + forward * (0.18 + t * 0.68) + Vec3{0, -0.70 * t * t, 0};
@@ -395,6 +391,8 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
             left.speed != right.speed || left.elevation != right.elevation || left.charge != right.charge ||
             left.grabHeight != right.grabHeight || left.grounded != right.grounded ||
+            left.pitch != right.pitch || left.attackAnim != right.attackAnim ||
+            left.unzipped != right.unzipped || left.blocking != right.blocking ||
             left.crouched != right.crouched || left.prone != right.prone ||
             left.grabbing != right.grabbing || left.pissing != right.pissing || left.onToilet != right.onToilet ||
             left.toiletAction != right.toiletAction || left.path.size() != right.path.size()) return false;
@@ -530,7 +528,7 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     if (local) {
         frame.uiOffsetX = 0.0;
         panel(frame, 12, 74, 218, 174, true);
-        drawText(frame, 24, 82, "MEAT STATUS", text);
+        drawText(frame, 24, 82, "MEAT " + std::to_string(static_cast<int>(local->health)) + " HP", text);
         drawText(frame, 24, 112, local->name.substr(0, 15), muted);
         drawText(frame, 24, 145, "BLADDER " + std::to_string(static_cast<int>(local->needs.bladder)) + "%", cyan);
         frame.rectangle(24, 174, 194, 8, colorHex("#29332d"));
@@ -574,12 +572,13 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     drawText(frame, 132, 416, "2 GOD", view.mode == ViewMode::God ? text : muted);
     drawText(frame, 232, 416, "3 FIRST", view.mode == ViewMode::FirstPerson ? text : muted);
     if (local && view.mode != ViewMode::God) {
-        const char* stance = local->prone ? "PRONE" : local->grabbing ? "GRAB" : local->crouched ? "CROUCH" :
+        const char* stance = local->blocking ? "BLOCK" : view.aiming ? "AIM" : local->prone ? "PRONE" :
+            local->grabbing ? "GRAB" : local->crouched ? "CROUCH" : local->unzipped ? "UNZIP" :
             !local->grounded ? "AIR" : view.slowWalk ? "SLOW" : "FAST";
         drawText(frame, 520, 416, stance, muted);
     }
     if (!local) drawText(frame, 12, 448, "WAITING FOR CITIZEN", text);
-    else if (view.mode == ViewMode::God) drawText(frame, 12, 448, "WASD PAN / CLICK PATH / BOOST", muted);
+    else if (view.mode == ViewMode::God) drawText(frame, 12, 448, "RMB GO / SHIFT RUN / 2X ADV / LMB ATTACK", muted);
     else drawText(frame, 12, 448, "WASD / SPACE JUMP / CTRL GRAB / ALT CROUCH", muted);
 }
 
@@ -631,7 +630,7 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     Camera camera;
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
-    camera.fovDegrees = 62;
+    camera.fovDegrees = view.aiming ? 52 : 62;
     const double gazeYaw = clampedBodyRelativeYaw(view.yaw, local->yaw);
     constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
     // Cervical motion is coupled rather than two independent maximum angles.
@@ -733,7 +732,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                          0.36, 0.41, ring, 24);
             }
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
-            drawPissing(rasterizer, camera, model, humanCache_[character.id], character);
+            drawPissing(rasterizer, camera, humanCache_[character.id], character);
         }
         rasterizer.setObject(0, {}, 0);
         finishStart = std::chrono::steady_clock::now();

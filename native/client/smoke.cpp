@@ -49,16 +49,16 @@ BodyHit bodyHit(const gtc::native::HumanModel& model, const std::vector<gtc::nat
     cast(model.genitalTriangles, true);
     return hit;
 }
-
 int submittedGenital(const gtc::native::GpuScene& scene, const gtc::native::HumanRenderCache& cache,
-                     const std::vector<int>& ids) {
+                     const std::vector<int>& ids, gtc::native::Material::Kind kind = gtc::native::Material::Kind::Skin,
+                     double offset = 0.0) {
     using namespace gtc::native;
     int submitted = 0;
     for (int id : ids) {
         bool found = false;
-        const Vec3 point = cache.posed[id];
+        const Vec3 point = cache.posed[id] + cache.posedNormals[id] * offset;
         for (const GpuBatch& batch : scene.batches) {
-            if (batch.material.kind != Material::Kind::Skin) continue;
+            if (batch.material.kind != kind) continue;
             for (const GpuVertex& vertex : batch.vertices) {
                 if (std::abs(vertex.x - point.x) < 1e-6 && std::abs(vertex.y - point.y) < 1e-6 &&
                     std::abs(vertex.z - point.z) < 1e-6) { found = true; break; }
@@ -69,7 +69,37 @@ int submittedGenital(const gtc::native::GpuScene& scene, const gtc::native::Huma
     }
     return submitted;
 }
-
+bool genitalMode(const gtc::native::HumanModel& model, const gtc::Character& character,
+                 const gtc::native::Camera& camera, std::uint64_t tick, bool exposed, bool hideHead,
+                 std::string& error) {
+    using namespace gtc::native;
+    HumanRenderCache cache;
+    prepareHuman(model, character, cache);
+    std::vector<int> ids;
+    for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) ids.push_back(id);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    Camera geometryCamera = camera;
+    geometryCamera.worldSpaceGpu = true;
+    Rasterizer rasterizer(camera.width, camera.height, Color{}, camera.focal(), true);
+    HairLibrary hair;
+    drawHuman(rasterizer, geometryCamera, model, hair, character, cache, ".", tick, hideHead);
+    const GpuScene scene = rasterizer.takeGpuScene();
+    const int skin = submittedGenital(scene, cache, ids);
+    const int cloth = submittedGenital(scene, cache, ids, Material::Kind::Cloth, 0.010 * kHumanHeightScale);
+    if (!ids.empty() && (exposed ? skin == static_cast<int>(ids.size()) && cloth == 0 :
+        cloth == static_cast<int>(ids.size()) && skin == 0)) {
+        if (character.unzipped && character.toiletAction == gtc::ToiletAction::None && cache.genitalTip >= 0) {
+            const Vec3 actual = normalized(cache.posed[cache.genitalTip] - cache.posed[cache.genitalPivot]);
+            const Vec3 expected{std::cos(character.pitch) * std::sin(character.yaw), std::sin(character.pitch),
+                std::cos(character.pitch) * std::cos(character.yaw)};
+            if (dot(actual, expected) < 0.99999) { error = "unzipped crosshair articulation"; return false; }
+        }
+        return true;
+    }
+    error = exposed ? "unzipped genital skin submission" : "zipped trouser-bulge cloth submission";
+    return false;
+}
 bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& character,
                     const gtc::native::Camera& camera, std::uint64_t tick, std::string& error) {
     using namespace gtc::native;
@@ -187,33 +217,18 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
     gtc::Character dressed = character;
     dressed.toiletAction = gtc::ToiletAction::None;
     dressed.pissing = false;
-    HumanRenderCache dressedCache;
-    prepareHuman(model, dressed, dressedCache);
-    Rasterizer dressedRasterizer(camera.width, camera.height, Color{}, camera.focal(), true);
-    drawHuman(dressedRasterizer, geometryCamera, model, hair, dressed, dressedCache, ".", tick, true);
-    const GpuScene dressedScene = dressedRasterizer.takeGpuScene();
-    int dressedVisible = 0;
-    for (int id : genital) {
-        const BodyHit hit = bodyHit(model, dressedCache.posed, camera.position, dressedCache.posed[id]);
-        if (hit.genital && std::abs(hit.distance - length(dressedCache.posed[id] - camera.position)) < 1e-4) ++dressedVisible;
-    }
-    if (submittedGenital(dressedScene, dressedCache, genital) != static_cast<int>(genital.size()) || dressedVisible < 8) {
-        error = "standing male non-piss genital visibility";
-        return false;
-    }
+    if (!genitalMode(model, dressed, camera, tick, false, true, error)) return false;
+    dressed.unzipped = true;
+    if (!genitalMode(model, dressed, camera, tick, true, true, error)) return false;
     return true;
 }
-
 int integer(const std::string& value, int fallback) {
     try { return std::stoi(value); } catch (...) { return fallback; }
 }
-
 bool receivePair(gtc::native::NativeClient& a, gtc::native::NativeClient& b, std::string& error) {
     return a.receive(error) && b.receive(error);
 }
-
 const gtc::native::GpuScene* motionScene = nullptr;
-
 bool captureMotionScene(const gtc::native::GpuScene& scene, gtc::native::NativeFrame& frame) {
     motionScene = &scene;
     frame.width = scene.width;
@@ -223,7 +238,6 @@ bool captureMotionScene(const gtc::native::GpuScene& scene, gtc::native::NativeF
     frame.alpha.assign(pixels, 0);
     return true;
 }
-
 bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     using namespace gtc::native;
     ClientState target, current;
@@ -533,6 +547,18 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
+    ViewState tpsView = standingView;
+    tpsView.mode = ViewMode::ThirdPerson;
+    tpsView.pitch = -0.25F;
+    const Camera tpsCamera = renderer.viewCamera(world, standingState, citizen.id, tpsView);
+    gtc::Character tpsCitizen = standingState.characters[0];
+    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, standingState.tick, false, false, error)) {
+        cleanup(); return false;
+    }
+    tpsCitizen.unzipped = true;
+    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, standingState.tick, true, false, error)) {
+        cleanup(); return false;
+    }
     int visiblePelvis = 0, visibleLegs = 0;
     double standingClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
@@ -558,6 +584,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         std::abs(dot(basisY, basisZ)) < 1e-6;
     const bool steadyLens = std::abs(neutralStanding.fovDegrees - 62.0) < 1e-9 &&
         std::abs(standingCamera.fovDegrees - neutralStanding.fovDegrees) < 1e-9;
+    ViewState aimView = standingView; aimView.aiming = true;
+    const bool aimLens = std::abs(renderer.viewCamera(world, standingState, citizen.id, aimView).fovDegrees - 52.0) < 1e-9;
     const bool lowerBody = steadyLens && visiblePelvis > 8 && visibleLegs > 8 && standingClearance > 0.04 &&
         verticalBasis && std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
     const auto sceneClearance = [&](const Camera& camera) {
@@ -709,6 +737,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!pitch) error = "first-person neck pitch pivot, forward travel=" + std::to_string(forwardTravel);
     else if (!clearance) error = "first-person arm clearance";
     else if (!steadyLens) error = "first-person camera FOV changed with gaze";
+    else if (!aimLens) error = "explicit RMB aim does not apply modest zoom";
     else if (!lowerBody) error = "standing male lower-body visibility, clearance=" + std::to_string(standingClearance) +
         ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
@@ -722,9 +751,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     return eyeMatrix && attached && eyeJoint && gazeSplit && stanceEyes && relaxedArms && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
         lowerBody && shaped && heightClearance && bodyTurn && yawBoundary && crosshairs && look;
 }
-
 } // namespace
-
 int main(int argc, char** argv) {
     std::string host = "127.0.0.1", output = "build/native-smoke", root = ".";
     int port = 1453;
@@ -770,6 +797,7 @@ int main(int argc, char** argv) {
     if (!alpha.sendJoin("Native Alpha") || !beta.sendJoin("Native Beta") ||
         !alpha.sendCustomize(aAppearance) || !beta.sendCustomize(bAppearance) ||
         !alpha.sendCheat("bowel", 100) || !beta.sendCheat("bladder", 100) ||
+        !alpha.sendToggleZip() || !alpha.sendAttack(beta.playerId(), true) ||
         !alpha.sendPath(alpha.world().toiletFront) || !beta.sendInput({0, 1}, false, false, 3.14159265F, 0, true)) {
         std::cerr << "Could not send native smoke commands\n";
         return 1;
@@ -777,6 +805,7 @@ int main(int argc, char** argv) {
     bool replicated = false, customized = false, inputMoved = false, pathSeen = false;
     bool backwardReplicated = false, slowReplicated = false;
     bool toiletRequested = false, toiletSeen = false;
+    bool zipReplicated = false, attackReplied = false, zipRestoreSent = false, zipRestored = false;
     int iterations = 0;
     for (; iterations < 100; ++iterations) {
         if (!receivePair(alpha, beta, error)) {
@@ -801,6 +830,13 @@ int main(int argc, char** argv) {
         slowReplicated = slowReplicated || (b && b->manualMove.y > 0.9F &&
             std::abs(b->speed * 3.6F - 4.0F) < 0.01F);
         pathSeen = pathSeen || (a && !a->path.empty()) || (b && !b->path.empty());
+        zipReplicated = zipReplicated || (a && aInB && a->unzipped && aInB->unzipped);
+        attackReplied = attackReplied || (a && a->notice.find("Ranged weapon") != std::string::npos);
+        if (zipReplicated && attackReplied && !zipRestoreSent) {
+            if (!alpha.sendToggleZip()) return 1;
+            zipRestoreSent = true;
+        }
+        zipRestored = zipRestored || (zipRestoreSent && a && aInB && !a->unzipped && !aInB->unzipped);
         if (a && !toiletRequested && gtc::distance(a->position, alpha.world().toiletFront) <= 1.55F) {
             if (!alpha.sendToilet("shit")) return 1;
             toiletRequested = true;
@@ -809,10 +845,10 @@ int main(int argc, char** argv) {
         toiletSeen = toiletSeen || (a && aOther && a->toiletAction == gtc::ToiletAction::Shit &&
             aOther->toiletAction == gtc::ToiletAction::Shit && a->onToilet &&
             alpha.state().toiletUser == alpha.playerId() && beta.state().toiletUser == alpha.playerId());
-        if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen) break;
+        if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen && zipRestored) break;
     }
     bool crouchReplicated = false, proneReplicated = false, chargeReplicated = false;
-    if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen) {
+    if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen && zipRestored) {
         for (int i = 0; i < 30; ++i) {
             if (i == 0 && !beta.sendInput({}, false, false, 0, 0, false, true, false)) return 1;
             if (i == 5 && !beta.sendInput({}, false, false, 0, 0, false, true, true)) return 1;
@@ -829,7 +865,7 @@ int main(int argc, char** argv) {
         }
     }
     const bool passed = replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen &&
-        toiletSeen && crouchReplicated && proneReplicated && chargeReplicated;
+        toiletSeen && zipRestored && crouchReplicated && proneReplicated && chargeReplicated;
     bool motion = false;
     std::error_code code;
     std::filesystem::create_directories(output, code);
@@ -959,6 +995,6 @@ int main(int argc, char** argv) {
                            << " input=" << inputMoved << " backward=" << backwardReplicated
                            << " slow=" << slowReplicated << " path=" << pathSeen << " toilet=" << toiletSeen
                            << " crouch=" << crouchReplicated << " prone=" << proneReplicated
-                           << " charge=" << chargeReplicated << '\n';
+                           << " charge=" << chargeReplicated << " zip=" << zipRestored << " attack=" << attackReplied << '\n';
     return passed ? 0 : 1;
 }

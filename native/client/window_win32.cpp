@@ -150,7 +150,7 @@ struct NativeWindow::Impl {
                 const bool down = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN;
                 WindowEvent click{down ? WindowEvent::Type::MouseDown : WindowEvent::Type::MouseUp};
                 click.button = message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ? 1 :
-                               message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ? 2 : 3;
+                               message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ? 3 : 2;
                 click.x = GET_X_LPARAM(lParam);
                 click.y = GET_Y_LPARAM(lParam);
                 self->events.push_back(click);

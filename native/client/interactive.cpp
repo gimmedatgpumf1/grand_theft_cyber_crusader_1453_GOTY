@@ -203,6 +203,9 @@ private:
         if (view_.mode == mode) return;
         view_.mode = mode;
         keys_.clear();
+        leftDown_ = rightDown_ = false;
+        lastLeftClick_ = lastRightClick_ = {};
+        view_.aiming = false;
         if (mode == ViewMode::God && captured_) {
             window_.captureMouse(false);
             captured_ = false;
@@ -290,6 +293,33 @@ private:
         return std::hypot(sx - x, sy - y) <= 75 * scale;
     }
 
+    std::uint32_t characterAt(double x, double y) const {
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        std::uint32_t best = 0;
+        double bestDistance = 46.0;
+        for (const Character& character : visualState().characters) {
+            if (character.id == client_.playerId()) continue;
+            const Vec3 point = camera.view({character.position.x, character.elevation + 0.85, character.position.y});
+            if (point.z <= 0.05) continue;
+            const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
+            const double sy = view_.height * 0.5 - camera.focal() * point.y / point.z;
+            const double candidate = std::hypot(sx - x, sy - y);
+            if (candidate < bestDistance) { bestDistance = candidate; best = character.id; }
+        }
+        return best;
+    }
+
+    bool doubleClick(bool right, double x, double y) {
+        const auto now = std::chrono::steady_clock::now();
+        auto& time = right ? lastRightClick_ : lastLeftClick_;
+        auto& oldX = right ? lastRightX_ : lastLeftX_;
+        auto& oldY = right ? lastRightY_ : lastLeftY_;
+        const bool result = time.time_since_epoch().count() != 0 && now - time < std::chrono::milliseconds(450) &&
+            std::hypot(x - oldX, y - oldY) < 22.0;
+        time = now; oldX = x; oldY = y;
+        return result;
+    }
+
     void updateHighlight() {
         const Character* citizen = local();
         view_.highlightToilet = citizen &&
@@ -300,6 +330,7 @@ private:
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
             keys_.clear();
+            leftDown_ = rightDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
             restoreMouseCapture_ = false;
@@ -324,8 +355,8 @@ private:
         if (event.type == WindowEvent::Type::MouseDown) {
             mouseX_ = event.x;
             mouseY_ = event.y;
-            if (event.button != 1) return;
-            if (overlay_ == Overlay::Wheel) {
+            if (event.button != 1 && event.button != 3) return;
+            if (overlay_ == Overlay::Wheel && event.button == 1) {
                 const double scale = std::min(1.0, std::min(view_.width / 640.0, view_.height / 480.0));
                 const double x = (event.x - (view_.width - 640 * scale) * 0.5) / scale;
                 const double y = (event.y - (view_.height - 480 * scale)) / scale;
@@ -335,18 +366,39 @@ private:
                 return;
             }
             if (overlay_ != Overlay::None) return;
+            const bool doubled = doubleClick(event.button == 3, event.x, event.y);
             if (view_.mode == ViewMode::God) {
-                if (toiletHit(event.x, event.y)) interact();
-                else {
+                if (event.button == 3) {
                     gtc::Vec2 point;
-                    if (ground(event.x, event.y, point)) client_.sendPath(point);
+                    if (ground(event.x, event.y, point)) {
+                        client_.sendPath(point, keys_.count(kKeyShift) != 0, doubled);
+                    }
+                } else if (const std::uint32_t target = characterAt(event.x, event.y)) {
+                    client_.sendAttack(target, doubled);
                 }
-            } else if (!captured_) {
+                return;
+            }
+            if (event.button == 3) {
+                rightDown_ = true;
+                if (!captured_) { window_.captureMouse(true); captured_ = true; }
+                sendInput();
+                return;
+            }
+            if (!captured_) {
                 window_.captureMouse(true);
                 captured_ = true;
+            } else if (local() && local()->appearance.male && local()->unzipped) {
+                leftDown_ = true;
+                sendInput();
             } else if (toiletHit(view_.width * 0.5, view_.height * 0.5)) {
                 interact();
             }
+            return;
+        }
+        if (event.type == WindowEvent::Type::MouseUp) {
+            if (event.button == 1) leftDown_ = false;
+            if (event.button == 3) rightDown_ = false;
+            sendInput();
             return;
         }
         if (event.type == WindowEvent::Type::KeyUp) {
@@ -380,12 +432,14 @@ private:
         }
         if (event.key == kKeyEscape) {
             keys_.clear();
+            leftDown_ = rightDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
         } else if (event.key == '1') setMode(ViewMode::ThirdPerson);
         else if (event.key == '2') setMode(ViewMode::God);
         else if (event.key == '3') setMode(ViewMode::FirstPerson);
         else if (event.key == kKeyCapsLock) { if (!event.repeat) slowWalk_ = !slowWalk_; }
+        else if (event.key == 't') { if (!event.repeat) client_.sendToggleZip(); }
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
         else if (event.key == 'c') openOverlay(Overlay::Creator);
@@ -412,22 +466,26 @@ private:
 
     void sendInput() {
         gtc::Vec2 move{};
-        bool sprint = false, piss = false, crouch = false, grab = false, jump = false;
+        bool sprint = false, piss = false, crouch = false, grab = false, jump = false, block = false;
+        const bool ranged = local() && local()->appearance.male && local()->unzipped;
         float yaw = local() ? local()->yaw : view_.yaw;
+        view_.aiming = false;
         if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
             const double right = (keys_.count('d') ? 1 : 0) - (keys_.count('a') ? 1 : 0);
             move = {static_cast<float>(std::sin(view_.yaw) * forward - std::cos(view_.yaw) * right),
                     static_cast<float>(std::cos(view_.yaw) * forward + std::sin(view_.yaw) * right)};
             sprint = keys_.count(kKeyShift) != 0;
-            piss = view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0;
+            piss = ranged && (leftDown_ || (view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0));
+            block = rightDown_ && !ranged;
+            view_.aiming = rightDown_ && ranged;
             crouch = keys_.count(kKeyAlt) != 0;
             grab = keys_.count(kKeyLeftControl) != 0;
             jump = keys_.count(' ') != 0;
-            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab) yaw = view_.yaw;
+            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab || ranged) yaw = view_.yaw;
         }
         view_.slowWalk = slowWalk_;
-        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump);
+        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump, block);
     }
 
     void updateGod(float dt) {
@@ -529,10 +587,10 @@ private:
         } else if (overlay_ == Overlay::Help) {
             frame.rectangle(30, 20, 580, 430, panel);
             drawText(frame, 230, 35, "FIELD MANUAL", text);
-            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP",
-                "HOLD CTRL CHARGE / GRAB", "W CLIMB S RELEASE", "ALT CROUCH 3.6 KM/H",
-                "ALT+CTRL PRONE 2 KM/H", "LOW CEILINGS HOLD STANCE", "CLICK CAPTURE ESC RELEASE",
-                "E TOILET F FPS PISS", "C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
+            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
+                "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
+                "RMB AIM RANGED / BLOCK MELEE", "GOD RMB GO / SHIFT RUN", "GOD 2X RMB ADV PATH",
+                "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
             for (int i = 0; i < 12; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
         } else if (overlay_ == Overlay::Creator) {
             frame.rectangle(0, 20, 640, 440, panel);
@@ -561,6 +619,9 @@ private:
     std::set<int> keys_;
     bool captured_ = false;
     bool restoreMouseCapture_ = false;
+    bool leftDown_ = false, rightDown_ = false;
+    std::chrono::steady_clock::time_point lastLeftClick_{}, lastRightClick_{};
+    double lastLeftX_ = 0, lastLeftY_ = 0, lastRightX_ = 0, lastRightY_ = 0;
     bool bodyTrackReady_ = false;
     std::uint32_t trackedPlayerId_ = 0;
     float trackedBodyYaw_ = 0;

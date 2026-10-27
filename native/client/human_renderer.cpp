@@ -102,7 +102,8 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     const double idleHip = 8.0 * pi / 180.0 * idle;
     const double idleAdduction = 5.0 * pi / 180.0 * idle;
     const double armRelax = seated ? 0.0 : character.grabbing ? 0.58 : prone ? 0.35 : 0.60;
-    const bool freeArms = !seated && !character.grabbing && !prone && character.toiletAction == ToiletAction::None;
+    const bool freeArms = !seated && !character.grabbing && !prone && !character.blocking &&
+        character.attackAnim <= 0.0F && character.toiletAction == ToiletAction::None;
     const double elbowRelax = freeArms ? 0.65 : 0.0;
     const double reachHeight = character.grabHeight > 0.0F ? character.grabHeight - character.elevation : 1.40;
     const double climbAngle = -std::acos(std::clamp((1.35 - reachHeight) / 0.62, -0.96, 0.98));
@@ -133,7 +134,14 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
                 if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += 0.32;
                 if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle -= 0.35;
             }
-            if (character.grabbing) {
+            if (character.blocking) {
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -0.85;
+                if (bone.name == "lowerarm01.L" || bone.name == "lowerarm01.R") angle = 1.15;
+            } else if (character.attackAnim > 0.0F && !character.unzipped) {
+                if (bone.name == "upperarm01.R") angle = -1.35;
+                if (bone.name == "upperarm01.L") angle = -0.35;
+                if (bone.name == "lowerarm01.R") angle = 0.35;
+            } else if (character.grabbing) {
                 if (bone.name == "upperarm01.L") angle = climbAngle + climbReach;
                 if (bone.name == "upperarm01.R") angle = climbAngle - climbReach;
                 if (bone.name == "upperarm02.L" || bone.name == "upperarm02.R") angle = -0.10;
@@ -565,10 +573,12 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseX != character.position.x || cache.poseZ != character.position.y ||
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
         cache.poseElevation != character.elevation || cache.poseCharge != character.charge ||
-        cache.poseGrabHeight != character.grabHeight ||
+        cache.poseGrabHeight != character.grabHeight || cache.posePitch != character.pitch ||
+        cache.poseAttackAnim != character.attackAnim ||
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
         cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
-        cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing;
+        cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing ||
+        cache.poseUnzipped != character.unzipped || cache.poseBlocking != character.blocking;
     const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
         return rotateWorld(point * kHumanHeightScale, character.yaw) +
@@ -605,6 +615,10 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseElevation = character.elevation;
         cache.poseCharge = character.charge;
         cache.poseGrabHeight = character.grabHeight;
+        cache.posePitch = character.pitch;
+        cache.poseAttackAnim = character.attackAnim;
+        cache.poseUnzipped = character.unzipped;
+        cache.poseBlocking = character.blocking;
         cache.poseAction = static_cast<int>(character.toiletAction);
         cache.poseOnToilet = character.onToilet;
         cache.poseGrounded = character.grounded;
@@ -612,20 +626,29 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseProne = character.prone;
         cache.poseGrabbing = character.grabbing;
         cache.poseValid = true;
-        if (character.appearance.male && !character.onToilet && character.toiletAction == ToiletAction::Piss &&
-            !model.genitalTriangles.empty()) {
+        const bool exposed = character.appearance.male &&
+            (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+        cache.genitalPivot = cache.genitalTip = -1;
+        if (exposed && !character.onToilet && !model.genitalTriangles.empty()) {
             std::vector<int> ids;
             for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) ids.push_back(id);
             std::sort(ids.begin(), ids.end());
             ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
             double minZ = 1e100, maxZ = -1e100;
             for (int id : ids) { minZ = std::min(minZ, rest[id].z); maxZ = std::max(maxZ, rest[id].z); }
-            int pivotId = ids.front();
+            int pivotId = ids.front(), tipId = ids.front();
             for (int id : ids) {
                 if (rest[id].z <= minZ + 0.3 * (maxZ - minZ) && rest[id].y > rest[pivotId].y) pivotId = id;
+                if (rest[id].z > rest[tipId].z) tipId = id;
             }
+            cache.genitalPivot = pivotId;
+            cache.genitalTip = tipId;
             const Vec3 pivot = cache.posed[pivotId];
-            const Mat3 rotation = rotationX(-55.0 * pi / 180.0);
+            const Vec3 restDirection = rotateWorld(cache.posed[tipId] - pivot, -character.yaw);
+            const double restPitch = std::atan2(restDirection.y, restDirection.z);
+            const bool freeAim = character.unzipped && character.toiletAction == ToiletAction::None;
+            const double aimAngle = freeAim ? restPitch - character.pitch : -55.0 * pi / 180.0;
+            const Mat3 rotation = rotationX(aimAngle);
             auto articulate = [&](Vec3 direction) {
                 return rotateWorld(apply(rotation, rotateWorld(direction, -character.yaw)), character.yaw);
             };
@@ -683,16 +706,18 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         else if (region == BodyMaterial::Boots) rasterizer.triangle(vertices(0.009), shoes);
         else rasterizer.triangle(vertices(0), skin);
     }
-    if (character.appearance.male && (hideHead || character.toiletAction == ToiletAction::Piss)) {
-        for (const Triangle& triangle : model.genitalTriangles) {
-            std::array<RenderVertex, 3> vertices;
-            for (int corner = 0; corner < 3; ++corner) {
-                const int index = triangle.v[corner];
-                vertices[corner] = transformed[index];
-                vertices[corner].uv = model.texcoords[triangle.uv[corner]];
-            }
-            rasterizer.triangle(vertices, skin);
+    const bool showGenitals = character.appearance.male &&
+        (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+    for (const Triangle& triangle : model.genitalTriangles) {
+        std::array<RenderVertex, 3> vertices;
+        for (int corner = 0; corner < 3; ++corner) {
+            const int index = triangle.v[corner];
+            vertices[corner] = transformed[index];
+            if (!showGenitals) vertices[corner].view += transformed[index].normal * (0.010 * kHumanHeightScale);
+            vertices[corner].uv = model.texcoords[triangle.uv[corner]];
         }
+        if (showGenitals) rasterizer.triangle(vertices, skin);
+        else if (character.appearance.male) rasterizer.triangle(vertices, trousers);
     }
     const int collarBone = boneIndex(model, "neck01");
     const Transform collarTransform = collarBone >= 0 ? transforms[collarBone] : rootTransform;

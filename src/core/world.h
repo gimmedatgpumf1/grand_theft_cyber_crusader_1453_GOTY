@@ -23,8 +23,10 @@ public:
     void customizeCharacter(std::uint32_t id, const Appearance& appearance);
     void setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
                   float yaw, float pitch, bool slowWalk = false, bool crouch = false,
-                  bool grab = false, bool jump = false);
-    void setDestination(std::uint32_t id, const Vec2& destination);
+                  bool grab = false, bool jump = false, bool block = false);
+    void setDestination(std::uint32_t id, const Vec2& destination, bool sprint = false, bool advanced = false);
+    void toggleZip(std::uint32_t id);
+    void attack(std::uint32_t id, std::uint32_t targetId, bool advanced = false);
     void requestToilet(std::uint32_t id, const std::string& action);
     void adjustNeed(std::uint32_t id, const std::string& need, float delta);
     void update(float deltaSeconds);
@@ -58,8 +60,10 @@ private:
     Vec2 toiletFront() const { return {0.0F, -2.85F}; }
     Vec2 spawnPoint(std::uint32_t id) const;
     Character* find(std::uint32_t id);
-    void setDestinationLocked(Character& character, const Vec2& destination);
+    void setDestinationLocked(Character& character, const Vec2& destination, bool sprint = false, bool advanced = false);
     void requestToiletLocked(Character& character, ToiletAction action);
+    void performAttack(Character& attacker, Character& target);
+    void updatePendingAttack(Character& character);
     void beginToilet(Character& character, ToiletAction action);
     void finishToilet(Character& character, const std::string& message = "");
     void updateCharacter(Character& character, float dt);

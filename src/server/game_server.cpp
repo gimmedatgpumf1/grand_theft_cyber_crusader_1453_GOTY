@@ -224,11 +224,17 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         world_.setInput(id, {x, z}, message.boolAt("sprint"), message.boolAt("piss"),
                         static_cast<float>(message.numberAt("yaw")),
                         static_cast<float>(message.numberAt("pitch")), message.boolAt("slow"),
-                        message.boolAt("crouch"), message.boolAt("grab"), message.boolAt("jump"));
+                        message.boolAt("crouch"), message.boolAt("grab"), message.boolAt("jump"),
+                        message.boolAt("block"));
+    } else if (type == "zip") {
+        world_.toggleZip(id);
     } else if (type == "path") {
         const float x = static_cast<float>(std::clamp(message.numberAt("x"), -8.7, 8.7));
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -6.7, 6.7));
-        world_.setDestination(id, {x, z});
+        world_.setDestination(id, {x, z}, message.boolAt("sprint"), message.boolAt("advanced"));
+    } else if (type == "attack") {
+        const double target = std::clamp(message.numberAt("target"), 0.0, 4294967295.0);
+        world_.attack(id, static_cast<std::uint32_t>(target), message.boolAt("advanced"));
     } else if (type == "toilet") {
         world_.requestToilet(id, message.stringAt("action", "sit"));
     } else if (type == "customize") {

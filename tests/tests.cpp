@@ -47,6 +47,10 @@ bool driveTo(gtc::World& world, std::uint32_t id, const gtc::Vec2& target) {
     return false;
 }
 
+void place(gtc::World& world, std::uint32_t id, const gtc::Vec2& target) {
+    check(driveTo(world, id, target), "test setup position is reachable");
+}
+
 } // namespace
 
 int main() {
@@ -491,9 +495,17 @@ int main() {
         check(world.character(id).needs.bowel == bowel, "invalid need names are ignored");
     });
 
-    test("first-person style piss action drains bladder and makes puddles", [] {
+    test("unzipped first-person piss drains bladder and makes puddles", [] {
         gtc::World world;
         const auto id = world.addCharacter("Postal Worker", false);
+        check(!world.character(id).unzipped, "male citizens start zipped");
+        world.setInput(id, {}, false, true, 0.0F, -0.2F);
+        world.update(0.05F);
+        check(!world.character(id).pissing, "zipped trousers block manual pissing");
+        world.setInput(id, {}, false, false, 0.0F, -0.2F);
+        world.toggleZip(id);
+        check(world.character(id).unzipped && world.snapshot().find("\"unzipped\":true") != std::string::npos,
+              "trouser toggle is authoritative and replicated");
         const float before = world.character(id).needs.bladder;
         world.setInput(id, {}, false, true, 0.0F, -0.2F);
         for (int i = 0; i < 20; ++i) world.update(0.05F);
@@ -505,6 +517,110 @@ int main() {
         world.setInput(id, {}, false, false, 0.0F, 0.0F);
         world.update(0.05F);
         check(!world.character(id).pissing, "releasing input stops pissing");
+        world.toggleZip(id);
+        check(!world.character(id).unzipped, "T restores the zipped default");
+    });
+
+    test("god attacks are authoritative, ranged, and blockable", [] {
+        gtc::World melee;
+        const auto attacker = melee.addCharacter("Bonker", false);
+        const auto target = melee.addCharacter("Target", false);
+        place(melee, attacker, {0, 0});
+        place(melee, target, {0, 1});
+        melee.attack(attacker, target);
+        check(melee.character(target).health == 88.0F && melee.character(attacker).attackAnim > 0.0F,
+              "in-range melee applies damage and attack animation");
+        melee.setInput(target, {}, false, false, 0, 0, false, false, false, false, true);
+        for (int i = 0; i < 12; ++i) melee.update(0.05F);
+        melee.attack(attacker, target);
+        check(melee.character(target).blocking && melee.character(target).health > 83.7F &&
+              melee.character(target).health < 84.0F, "melee RMB blocking reduces server damage");
+        check(melee.snapshot().find("\"health\":") != std::string::npos &&
+              melee.snapshot().find("\"blocking\":true") != std::string::npos,
+              "combat health and block state replicate");
+
+        gtc::World ranged;
+        const auto pisser = ranged.addCharacter("Golden Gun", false);
+        const auto victim = ranged.addCharacter("Dry Target", false);
+        place(ranged, pisser, {0, 0});
+        place(ranged, victim, {0, 2.5F});
+        ranged.toggleZip(pisser);
+        const float bladder = ranged.character(pisser).needs.bladder;
+        ranged.attack(pisser, victim, true);
+        const auto aimed = ranged.character(pisser);
+        const auto aimedTarget = ranged.character(victim);
+        const float expectedYaw = std::atan2(aimedTarget.position.x - aimed.position.x,
+                                             aimedTarget.position.y - aimed.position.y);
+        check(aimedTarget.health == 93.0F && aimed.needs.bladder < bladder &&
+              std::abs(aimed.yaw - expectedYaw) < 0.0001F,
+              "double-left ranged attack faces the target and shoots without pathing");
+        check(ranged.character(pisser).path.empty() && ranged.character(pisser).attackAnim > 0.0F,
+              "ranged attack never creates an approach path");
+        place(ranged, victim, {0, 4.0F});
+        for (int i = 0; i < 12; ++i) ranged.update(0.05F);
+        const float health = ranged.character(victim).health;
+        ranged.attack(pisser, victim, true);
+        check(ranged.character(victim).health == health && ranged.character(pisser).path.empty(),
+              "ranged attack rejects out-of-range targets instead of chasing");
+
+        gtc::World approach;
+        const auto chaser = approach.addCharacter("Chaser", false);
+        const auto runner = approach.addCharacter("Runner", false);
+        place(approach, chaser, {0, 0});
+        place(approach, runner, {0, 4});
+        approach.attack(chaser, runner);
+        check(approach.character(chaser).pendingAttack == runner && !approach.character(chaser).path.empty(),
+              "single-left melee creates a go-there attack order");
+        for (int i = 0; i < 240 && approach.character(chaser).pendingAttack != 0; ++i) approach.update(0.05F);
+        check(approach.character(runner).health == 88.0F, "melee approach finishes with an authoritative hit");
+    });
+
+    test("advanced god paths sprint, crawl, jump, and climb", [] {
+        gtc::World sprint;
+        const auto runner = sprint.addCharacter("Auto Runner", false);
+        place(sprint, runner, {0, 0});
+        sprint.setDestination(runner, {0, 2}, true, false);
+        sprint.update(0.05F);
+        check(std::abs(sprint.character(runner).speed * 3.6F - 20.0F) < 0.001F,
+              "Shift-RMB path uses the sprint speed");
+
+        gtc::World crawl;
+        const auto crawler = crawl.addCharacter("Advanced Crawler", false);
+        place(crawl, crawler, {-7.5F, 0});
+        crawl.setDestination(crawler, {-3.5F, 0}, false, true);
+        bool sawProne = false;
+        for (int i = 0; i < 500 && !crawl.character(crawler).path.empty(); ++i) {
+            crawl.update(0.05F);
+            sawProne = sawProne || crawl.character(crawler).prone;
+        }
+        check(sawProne && gtc::distance(crawl.character(crawler).position, {-3.5F, 0}) < 0.2F,
+              "double-RMB automatically crawls through the low tunnel");
+
+        gtc::World jump;
+        const auto jumper = jump.addCharacter("Advanced Jumper", false);
+        place(jump, jumper, {4.5F, 3.7F});
+        jump.setDestination(jumper, {6.7F, 3.7F}, false, true);
+        bool sawJump = false;
+        for (int i = 0; i < 500 && !jump.character(jumper).path.empty(); ++i) {
+            jump.update(0.05F);
+            sawJump = sawJump || (!jump.character(jumper).grounded && jump.character(jumper).elevation > 0.15F);
+        }
+        check(sawJump && jump.character(jumper).elevation > 0.8F &&
+              gtc::distance(jump.character(jumper).position, {6.7F, 3.7F}) < 0.2F,
+              "double-RMB jumps onto the 85 centimetre crate");
+
+        gtc::World climb;
+        const auto climber = climb.addCharacter("Advanced Climber", false);
+        place(climb, climber, {-8.4F, -3.8F});
+        climb.setDestination(climber, {-6.6F, -3.8F}, false, true);
+        bool sawGrab = false;
+        for (int i = 0; i < 600 && !climb.character(climber).path.empty(); ++i) {
+            climb.update(0.05F);
+            sawGrab = sawGrab || climb.character(climber).grabbing;
+        }
+        check(sawGrab && climb.character(climber).elevation > 1.2F &&
+              gtc::distance(climb.character(climber).position, {-6.6F, -3.8F}) < 0.2F,
+              "double-RMB climbs the 1.25 metre crate");
     });
 
     test("AI uses the same multi-action toilet system", [] {

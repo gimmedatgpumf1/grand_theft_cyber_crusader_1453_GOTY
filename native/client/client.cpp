@@ -126,7 +126,11 @@ Character parseCharacter(const JsonValue& value) {
     character.charge = static_cast<float>(value.numberAt("charge"));
     character.fullChargeTime = static_cast<float>(value.numberAt("fullChargeTime"));
     character.grabHeight = static_cast<float>(value.numberAt("grabHeight"));
+    character.health = static_cast<float>(value.numberAt("health", 100.0));
+    character.attackAnim = static_cast<float>(value.numberAt("attackAnim"));
     character.grounded = value.boolAt("grounded", true);
+    character.unzipped = value.boolAt("unzipped");
+    character.blocking = value.boolAt("blocking");
     character.crouched = value.boolAt("crouched");
     character.prone = value.boolAt("prone");
     character.grabbing = value.boolAt("grabbing");
@@ -313,20 +317,30 @@ bool NativeClient::sendJoin(const std::string& name) {
 }
 
 bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk,
-                             bool crouch, bool grab, bool jump) {
+                             bool crouch, bool grab, bool jump, bool block) {
     std::ostringstream out;
     out << "{\"type\":\"input\",\"x\":" << jsonNumber(move.x) << ",\"z\":" << jsonNumber(move.y)
         << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"slow\":" << (slowWalk ? "true" : "false")
         << ",\"piss\":" << (piss ? "true" : "false")
         << ",\"crouch\":" << (crouch ? "true" : "false") << ",\"grab\":" << (grab ? "true" : "false")
-        << ",\"jump\":" << (jump ? "true" : "false")
+        << ",\"jump\":" << (jump ? "true" : "false") << ",\"block\":" << (block ? "true" : "false")
         << ",\"yaw\":" << jsonNumber(yaw) << ",\"pitch\":" << jsonNumber(pitch) << '}';
     return send(out.str());
 }
 
-bool NativeClient::sendPath(Vec2 destination) {
+bool NativeClient::sendPath(Vec2 destination, bool sprint, bool advanced) {
     return send("{\"type\":\"path\",\"x\":" + jsonNumber(destination.x) +
-                ",\"z\":" + jsonNumber(destination.y) + "}");
+                ",\"z\":" + jsonNumber(destination.y) + ",\"sprint\":" + (sprint ? "true" : "false") +
+                ",\"advanced\":" + (advanced ? "true" : "false") + "}");
+}
+
+bool NativeClient::sendAttack(std::uint32_t targetId, bool advanced) {
+    return send("{\"type\":\"attack\",\"target\":" + std::to_string(targetId) +
+                ",\"advanced\":" + (advanced ? "true" : "false") + "}");
+}
+
+bool NativeClient::sendToggleZip() {
+    return send("{\"type\":\"zip\"}");
 }
 
 bool NativeClient::sendToilet(const std::string& action) {
