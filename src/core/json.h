@@ -20,6 +20,7 @@ public:
     double number(double fallback = 0.0) const;
     const std::string& string() const;
     const Array& array() const;
+    const Object& object() const;
     const JsonValue* get(const std::string& key) const;
     std::string stringAt(const std::string& key, const std::string& fallback = "") const;
     double numberAt(const std::string& key, double fallback = 0.0) const;

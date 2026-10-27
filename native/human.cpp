@@ -246,6 +246,41 @@ bool HumanModel::loadRig(const std::string& root, std::string& error) {
     for (int side = 0; side < 2; ++side) {
         eyeDirection[side] = normalized(joint(eyeTail[side]) - joint(eyeSource[side]));
     }
+    bool weightsOk = false;
+    const gtc::JsonValue weightDocument = gtc::JsonValue::parse(
+        readText(root + "/tools/human-source/default_weights.mhw", weightsOk), weightsOk);
+    const gtc::JsonValue* weightData = weightsOk ? weightDocument.get("weights") : nullptr;
+    if (!weightData) {
+        error = "Cannot parse CC0 default_weights.mhw";
+        return false;
+    }
+    const std::set<std::string> keep = {
+        "root", "spine03", "spine02", "spine01", "neck01", "head", "jaw",
+        "clavicle.L", "shoulder01.L", "upperarm01.L", "upperarm02.L", "lowerarm01.L",
+        "lowerarm02.L", "wrist.L", "pelvis.L", "upperleg01.L", "upperleg02.L",
+        "lowerleg01.L", "lowerleg02.L", "foot.L", "clavicle.R", "shoulder01.R",
+        "upperarm01.R", "upperarm02.R", "lowerarm01.R", "lowerarm02.R", "wrist.R",
+        "pelvis.R", "upperleg01.R", "upperleg02.R", "lowerleg01.R", "lowerleg02.R", "foot.R"
+    };
+    auto keptAncestor = [&](std::string name) {
+        while (!name.empty() && !keep.count(name)) {
+            const gtc::JsonValue* definition = bones->get(name);
+            name = definition ? definition->stringAt("parent") : "";
+        }
+        return name.empty() ? std::string("root") : name;
+    };
+    std::vector<double> headWeights(vertices.size(), 0.0);
+    for (const auto& [bone, entries] : weightData->object()) {
+        const std::string target = keptAncestor(bone);
+        if (target != "neck01" && target != "head" && target != "jaw") continue;
+        for (const auto& entry : entries.array()) {
+            const auto& pair = entry.array();
+            if (pair.size() < 2) continue;
+            const int index = static_cast<int>(pair[0].number());
+            if (index >= 0 && static_cast<std::size_t>(index) < headWeights.size()) headWeights[index] += pair[1].number();
+        }
+    }
+    const double collar = headCutoff - 0.78;
     std::set<int> headSet;
     for (const auto& triangle : triangles) {
         for (int index : triangle.v) {
@@ -256,7 +291,9 @@ bool HumanModel::loadRig(const std::string& root, std::string& error) {
     for (const auto& triangle : triangles) {
         const Vec3 center = (vertices[triangle.v[0]] + vertices[triangle.v[1]] + vertices[triangle.v[2]]) / 3.0;
         if (center.y > headCutoff - 0.25) mappingTriangles.push_back(triangle);
-        if (center.y > headCutoff + 0.36) headTriangles.push_back(triangle);
+        const double headWeight = (headWeights[triangle.v[0]] + headWeights[triangle.v[1]] + headWeights[triangle.v[2]]) / 3.0;
+        const bool centralNeck = center.y > headCutoff - 0.20 && std::abs(center.x) < 0.65;
+        if (center.y > headCutoff || (center.y > collar && headWeight > 0.42) || centralNeck) headTriangles.push_back(triangle);
     }
     Vec3 low{1e100, 1e100, 1e100};
     Vec3 high{-1e100, -1e100, -1e100};

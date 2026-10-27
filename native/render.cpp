@@ -265,6 +265,7 @@ bool scalpTriangle(const HumanModel& model, const Triangle& triangle, int style)
     if (style <= 0 || style > 8) return false;
     const Vec3 point = (model.vertices[triangle.v[0]] + model.vertices[triangle.v[1]] + model.vertices[triangle.v[2]]) / 3.0;
     const double x = point.x, y = point.y, z = point.z, h = model.headShift;
+    if (y < 6.0 + h) return false;
     const double receded = 7.72 + h + 0.12 * std::min(1.0, std::abs(x) / 0.8) + 0.06 * std::max(0.0, z - 1.0);
     const double swept = 7.57 + h + 0.15 * std::max(0.0, x) + 0.06 * std::max(0.0, z - 1.0);
     const bool masks[] = {
