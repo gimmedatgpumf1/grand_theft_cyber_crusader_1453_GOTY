@@ -928,12 +928,13 @@ int main(int argc, char** argv) {
             gtc::native::ViewState airView = tps; airView.yaw = 0.85F;
             if (!stanceCapture("alpha-air-piss-tps", airView)) return 1;
             standing.projectiles.clear(); male->unzipped = male->pissing = false; male->pitch = 0;
-            gtc::native::ViewState toiletView = god; toiletView.godZ = -4.69F; toiletView.godDistance = 3.2F;
+            gtc::native::ViewState toiletView = fpsLevel; toiletView.yaw = 3.14159265F; toiletView.pitch = -0.9F;
             standing.waterRipples = {{9100, {0, -4.69F}, 0.12, 1.2F}, {9101, {0.04F, -4.67F}, 0.38, 0.8F}};
             for (auto& citizen : standing.characters) citizen.position = citizen.id == male->id ?
-                gtc::Vec2{2, 1} : gtc::Vec2{7, 5};
-            if (!stanceCapture("toilet-close-god", toiletView)) return 1;
-            male->position = {0, 0}; standing.waterRipples.clear();
+                gtc::Vec2{0, -3.55F} : gtc::Vec2{7, 5};
+            male->yaw = 3.14159265F;
+            if (!stanceCapture("toilet-water-fps", toiletView)) return 1;
+            male->position = {0, 0}; male->yaw = 0; standing.waterRipples.clear();
             male->crouched = true;
             if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
             male->crouched = false;
