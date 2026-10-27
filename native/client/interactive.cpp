@@ -391,6 +391,7 @@ private:
             return;
         }
         if (event.type == WindowEvent::Type::Wheel) {
+            if (orbit_.active) return; // Zoom is part of the restored camera.
             if (view_.mode == ViewMode::God) view_.godDistance = static_cast<float>(std::clamp(view_.godDistance - event.wheel * 0.9, 8.0, 25.0));
             else view_.distance = static_cast<float>(std::clamp(view_.distance - event.wheel * 0.35, 2.4, 8.0));
             return;
@@ -672,7 +673,7 @@ private:
             drawText(frame, 230, 35, "FIELD MANUAL", text);
             const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
                 "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
-                "RMB AIM RANGED / BLOCK MELEE", "MMB DRAG ORBIT TPS", "GOD RMB GO SHIFT RUN ALT CROUCH",
+                "RMB AIM RANGED / BLOCK MELEE", "MMB ORBIT TPS / RELEASE RESETS", "GOD RMB GO SHIFT RUN ALT CROUCH",
                 "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS",
                 "F12 PNG H CLOSES MANUAL"};
             for (int i = 0; i < 13; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
