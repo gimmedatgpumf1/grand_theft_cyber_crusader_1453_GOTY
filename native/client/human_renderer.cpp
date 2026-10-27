@@ -293,19 +293,19 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     Vec3 posed = head.point(eyes);
     if (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9) {
-        static const char* chainNames[] = {"neck01", "neck02", "neck03", "head"};
-        // C1/C2 supplies about half of axial rotation. Extension shares group
-        // published C0-C7 mobility into this rig's four joints (Aho/Werne).
-        // Terminal flexion instead emphasizes the lower cervical contribution
-        // measured in dynamic studies, while retaining every joint's motion.
-        constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
-        constexpr double flexionShares[] = {0.85, 0.075, 0.0375, 0.0375};
-        constexpr double extensionShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
+        static const char* chainNames[] = {"spine01", "neck01", "neck02", "neck03", "head"};
+        // C1/C2 supplies about half of axial rotation; the upper spine does not
+        // add yaw. Extension shares group published C0-C7 mobility (Aho/Werne).
+        // Looking at one's own body also flexes the upper thorax; a small spine01
+        // share complements terminal lower-cervical dominance without translation.
+        constexpr double yawShares[] = {0.0, 0.25, 0.25, 0.50, 0.0};
+        constexpr double flexionShares[] = {0.10, 0.75, 0.075, 0.0375, 0.0375};
+        constexpr double extensionShares[] = {0.0, 22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
         const double* pitchShares = headPitch < 0 ? flexionShares : extensionShares;
         std::vector<Vec3> points;
         std::vector<int> segments;
         double yawTotal = 0, pitchTotal = 0;
-        for (int segment = 0; segment < 4; ++segment) {
+        for (int segment = 0; segment < 5; ++segment) {
             const int index = boneIndex(model, chainNames[segment]);
             if (index < 0) continue;
             points.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));

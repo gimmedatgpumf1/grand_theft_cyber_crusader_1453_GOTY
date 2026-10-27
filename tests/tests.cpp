@@ -123,8 +123,8 @@ int main() {
         world.setInput(id, {0, 1}, false, false, 0, 0);
         world.update(0.05F);
         gtc::Character current = world.character(id);
-        check(std::abs(current.speed * 3.6F - 6.0F) < 0.001F,
-              "player defaults to six kilometres per hour");
+        check(std::abs(current.speed * 3.6F - 6.4F) < 0.001F,
+              "player defaults to 6.4 kilometres per hour");
         check(std::abs(gtc::distance(current.position, previous) - current.speed * 0.05F) < 0.0001F,
               "fast walking displacement matches metres per second");
         previous = current.position;
@@ -150,7 +150,7 @@ int main() {
         for (int i = 0; i < 60; ++i) npcWorld.update(0.05F);
         const gtc::Character urgent = npcWorld.character(npc);
         check(urgent.pendingToilet, "NPC has an urgent toilet destination");
-        check(std::abs(urgent.speed * 3.6F - 6.0F) < 0.001F && !urgent.sprint,
+        check(std::abs(urgent.speed * 3.6F - 6.4F) < 0.001F && !urgent.sprint,
               "urgent NPC travel uses fast walking without sprinting");
     });
 

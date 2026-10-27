@@ -9,7 +9,7 @@
 namespace gtc {
 
 inline constexpr float kSlowWalkSpeed = 4.0F / 3.6F;
-inline constexpr float kFastWalkSpeed = 6.0F / 3.6F;
+inline constexpr float kFastWalkSpeed = 6.4F / 3.6F;
 inline constexpr float kSprintSpeed = 20.0F / 3.6F;
 
 struct Vec2 {

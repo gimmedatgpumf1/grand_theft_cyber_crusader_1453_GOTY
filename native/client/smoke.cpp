@@ -251,14 +251,14 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     }
     const bool defaultHeight = std::abs((canonicalTop - canonicalBottom) * kHumanHeightScale - 1.7) < 1e-6;
     const auto expectedFullChain = [&](const std::vector<Vec3>& rest, double yaw, double pitch) {
-        static const char* names[] = {"neck01", "neck02", "neck03", "head"};
-        constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
-        constexpr double flexion[] = {0.85, 0.075, 0.0375, 0.0375};
-        constexpr double extension[] = {65.0, 27.0, 10.9, 21.0};
+        static const char* names[] = {"spine01", "neck01", "neck02", "neck03", "head"};
+        constexpr double yawShares[] = {0.0, 0.25, 0.25, 0.50, 0.0};
+        constexpr double flexion[] = {0.10, 0.75, 0.075, 0.0375, 0.0375};
+        constexpr double extension[] = {0.0, 65.0, 27.0, 10.9, 21.0};
         const double* pitchShares = pitch < 0 ? flexion : extension;
-        std::vector<Vec3> points(5);
+        std::vector<Vec3> points(6);
         double yawTotal = 0, pitchTotal = 0;
-        for (int segment = 0; segment < 4; ++segment) {
+        for (int segment = 0; segment < 5; ++segment) {
             int index = -1;
             for (std::size_t i = 0; i < eyeModel.rigBones.size(); ++i) {
                 if (eyeModel.rigBones[i].name == names[segment]) index = static_cast<int>(i);
@@ -268,15 +268,15 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             yawTotal += yawShares[segment];
             pitchTotal += pitchShares[segment];
         }
-        points[4] = (jointPosition(rest, eyeModel.eyeSource[0]) + jointPosition(rest, eyeModel.eyeSource[1])) * 0.5;
-        for (int i = 0; i < 4; ++i) for (int j = i + 1; j < 5; ++j) {
+        points[5] = (jointPosition(rest, eyeModel.eyeSource[0]) + jointPosition(rest, eyeModel.eyeSource[1])) * 0.5;
+        for (int i = 0; i < 5; ++i) for (int j = i + 1; j < 6; ++j) {
             const double angle = pitch * pitchShares[i] / pitchTotal;
             const double c = std::cos(-angle), s = std::sin(-angle);
             const Vec3 delta = points[j] - points[i];
             const Vec3 rotated{delta.x, c * delta.y - s * delta.z, s * delta.y + c * delta.z};
             points[j] = points[i] + rotateBody(rotated, static_cast<float>(yaw * yawShares[i] / yawTotal));
         }
-        return points[4] * kHumanHeightScale;
+        return points[5] * kHumanHeightScale;
     };
     const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
     const Vec3 baseDown = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick,
@@ -387,7 +387,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
-    else if (!fullChain) error = "first-person complete neck01-neck02-neck03-head chain";
+    else if (!fullChain) error = "first-person complete spine01-neck01-neck02-neck03-head chain";
     else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
     else if (!seated) error = "first-person sit-down head attachment";
