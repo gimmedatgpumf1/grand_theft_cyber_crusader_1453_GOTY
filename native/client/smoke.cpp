@@ -360,9 +360,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Camera seatedEye = renderer.viewCamera(world, state, citizen.id, view);
     const Vec3 expectedSeatedEye = expectedEye(state.characters[0]);
     const bool seated = length(seatedEye.position - expectedSeatedEye) < 1e-6 &&
-        length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y > eye.position.y;
-    // This toilet's high measured seat places the eyes slightly above standing;
-    // the old fixed root drop and its forced-lower assertion were both wrong.
+        length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y < eye.position.y;
+    // The real 381 mm seat lowers the posed eyes instead of using the old
+    // oversized 785 mm seat or a fixed root offset.
     ViewState neckView = view;
     neckView.yaw = state.characters[0].yaw + 3.0F;
     const Camera limited = renderer.viewCamera(world, state, citizen.id, neckView);
@@ -401,7 +401,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     ViewState extremeUpView = neckView;
     extremeUpView.pitch = 1.5F;
     const Camera extremeUp = renderer.viewCamera(world, state, citizen.id, extremeUpView);
-    const Vec3 expectedExtremeUpEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit), 1.0);
+    const Vec3 expectedExtremeUpEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit), 1.5);
     double upwardClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
         for (const auto& vertex : batch.vertices) {
@@ -825,7 +825,8 @@ int main(int argc, char** argv) {
             std::abs(b->speed * 3.6F - 4.0F) < 0.01F);
         pathSeen = pathSeen || (a && !a->path.empty()) || (b && !b->path.empty());
         zipReplicated = zipReplicated || (a && aInB && a->unzipped && aInB->unzipped);
-        attackReplied = attackReplied || (a && a->notice.find("Long-distance") != std::string::npos);
+        attackReplied = attackReplied || (a && a->notice.find("Physical shot") != std::string::npos &&
+            !alpha.state().projectiles.empty());
         if (zipReplicated && attackReplied && !zipRestoreSent) {
             if (!alpha.sendToggleZip()) return 1;
             zipRestoreSent = true;
@@ -904,34 +905,42 @@ int main(int argc, char** argv) {
         });
         if (male != standing.characters.end()) {
             male->onToilet = false; male->toiletAction = gtc::ToiletAction::None;
-            male->position = {0, 0};
-            male->yaw = 0;
-            gtc::native::ViewState standingFps = fps;
-            standingFps.yaw = male->yaw;
+            male->position = {0, 0}; male->yaw = 0;
+            const auto seedStream = [&] {
+                standing.projectiles.clear(); const float cp = std::cos(male->pitch), sp = std::sin(male->pitch);
+                for (int i = 0; i < 18; ++i) {
+                    const float t = static_cast<float>(i) / 30.0F; gtc::Projectile drop;
+                    drop.id = 9000U + static_cast<std::uint32_t>(i); drop.owner = male->id;
+                    drop.position = male->position + gtc::Vec2{0.4F * t * t, gtc::kPissSpeed * cp * t};
+                    drop.height = male->elevation + 0.79F + gtc::kPissSpeed * sp * t - 0.5F * gtc::kProjectileGravity * t * t;
+                    drop.velocity = {0, gtc::kPissSpeed * cp}; drop.verticalVelocity = gtc::kPissSpeed * sp - gtc::kProjectileGravity * t;
+                    standing.projectiles.push_back(drop);
+                }
+            };
+            gtc::native::ViewState standingFps = fps; standingFps.yaw = male->yaw;
             gtc::native::NativeFrame frame;
             if (!renderer.render(alpha.world(), standing, alpha.playerId(), standingFps, frame, error) ||
                 !frame.save(output + "/alpha-standing-fps.png")) {
                 std::cerr << "Native standing male capture failed: " << error << '\n';
                 return 1;
             }
-            male->toiletAction = gtc::ToiletAction::Piss;
-            male->pissing = true;
+            male->toiletAction = gtc::ToiletAction::Piss; male->pissing = true; male->pitch = -0.32F;
+            seedStream();
             if (!renderer.render(alpha.world(), standing, alpha.playerId(), standingFps, frame, error) ||
                 !frame.save(output + "/alpha-piss-fps.png")) {
                 std::cerr << "Native standing male piss capture failed: " << error << '\n';
                 return 1;
             }
-            male->toiletAction = gtc::ToiletAction::None;
-            male->pissing = false;
+            male->toiletAction = gtc::ToiletAction::None; male->pissing = false;
             const auto stanceCapture = [&](const char* name, const gtc::native::ViewState& stanceView) {
                 return renderer.render(alpha.world(), standing, alpha.playerId(), stanceView, frame, error) &&
                     frame.save(output + "/" + name + ".png");
             };
-            male->unzipped = male->pissing = true; male->pitch = 0.9F;
+            male->unzipped = male->pissing = true; male->pitch = 1.57079633F; seedStream();
             gtc::native::ViewState airView = tps; airView.yaw = 0.85F;
             if (!stanceCapture("alpha-air-piss-tps", airView)) return 1;
-            male->unzipped = male->pissing = false; male->pitch = 0;
-            gtc::native::ViewState toiletView = god; toiletView.godZ = -4.4F; toiletView.godDistance = 7;
+            standing.projectiles.clear(); male->unzipped = male->pissing = false; male->pitch = 0;
+            gtc::native::ViewState toiletView = god; toiletView.godZ = -4.75F; toiletView.godDistance = 5;
             if (!stanceCapture("toilet-close-god", toiletView)) return 1;
             male->crouched = true;
             if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
@@ -942,8 +951,7 @@ int main(int argc, char** argv) {
             if (!stanceCapture("alpha-full-charge-tps", tps)) return 1;
             male->charge = 0;
             male->prone = true;
-            gtc::native::ViewState proneFps = fpsLevel;
-            proneFps.yaw = male->yaw;
+            gtc::native::ViewState proneFps = fpsLevel; proneFps.yaw = male->yaw;
             if (!stanceCapture("alpha-prone-tps", tps) || !stanceCapture("alpha-prone-fps", proneFps)) return 1;
             male->prone = false;
             male->elevation = 0.5F;
@@ -952,26 +960,18 @@ int main(int argc, char** argv) {
             for (gtc::Character& other : standing.characters) {
                 if (other.id != alpha.playerId()) other.position = {8.0F, 6.0F};
             }
-            male->elevation = 0;
-            male->grounded = true;
-            male->speed = gtc::kFastWalkSpeed;
-            male->manualMove = {0, 1};
+            male->elevation = 0; male->grounded = true;
+            male->speed = gtc::kFastWalkSpeed; male->manualMove = {0, 1};
             if (!stanceCapture("alpha-walk-tps", tps)) return 1;
-            male->speed = 0;
-            male->manualMove = {};
-            gtc::native::ViewState idleView = tps;
-            idleView.yaw = 0.85F;
-            if (!stanceCapture("alpha-idle-side-tps", idleView)) return 1;
-            male->position = {0, -3.25F};
-            male->yaw = 3.14159265F;
-            male->elevation = 0.55F;
-            male->grounded = false;
-            male->grabbing = true;
-            male->grabHeight = 1.4F;
+            male->speed = 0; male->manualMove = {}; male->appearance.coat = false;
+            gtc::native::ViewState idleView = tps; idleView.yaw = 1.57079633F; idleView.distance = 2.7F;
+            if (!stanceCapture("alpha-tent-tps", idleView)) { return 1; } male->appearance.coat = true;
+            male->position = {0, -3.25F}; male->yaw = 3.14159265F;
+            male->elevation = 0.55F; male->grounded = false;
+            male->grabbing = true; male->grabHeight = gtc::kToiletTankHeight;
             male->speed = gtc::kCrouchSpeed;
             male->manualMove = {0, -1};
-            gtc::native::ViewState grabView = tps;
-            grabView.yaw = male->yaw + 0.85F;
+            gtc::native::ViewState grabView = tps; grabView.yaw = male->yaw + 0.85F;
             if (!stanceCapture("alpha-grab-tps", grabView)) return 1;
         }
     }

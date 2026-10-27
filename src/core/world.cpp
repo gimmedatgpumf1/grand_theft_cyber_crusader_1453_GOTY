@@ -1,7 +1,7 @@
 #include "core/world.h"
 
 #include "core/collision.h"
-#include "core/piss.h"
+#include "core/projectile.h"
 #include "core/json.h"
 
 #include <algorithm>
@@ -49,9 +49,10 @@ void applyStance(Character& character, const Vec2& point, const std::vector<Obst
 float supportHeight(const Character& character, const std::vector<Obstacle>& obstacles) {
     float support = 0.0F;
     for (const Obstacle& obstacle : obstacles) {
-        if (obstacle.kind != "boundary" && obstacle.height <= character.elevation + 0.06F &&
+        const float top = obstacleHeightAt(obstacle, character.position);
+        if (obstacle.kind != "boundary" && top <= character.elevation + 0.06F &&
             circleHitsObstacle(character.position, kBodyRadius, obstacle)) {
-            support = std::max(support, obstacle.height);
+            support = std::max(support, top);
         }
     }
     return support;
@@ -63,13 +64,15 @@ int grabTarget(const Character& character, const std::vector<Obstacle>& obstacle
     float bestScore = 1000.0F;
     for (std::size_t i = 0; i < obstacles.size(); ++i) {
         const Obstacle& obstacle = obstacles[i];
-        if (obstacle.kind == "boundary" || obstacle.height <= character.elevation + kAutomaticStepHeight ||
-            obstacle.height > character.elevation + kArmReachWithoutHands + 0.05F) continue;
+        if (obstacle.kind == "boundary") continue;
         const Vec2 nearest{
             std::clamp(character.position.x, obstacle.center.x - obstacle.halfSize.x,
                        obstacle.center.x + obstacle.halfSize.x),
             std::clamp(character.position.y, obstacle.center.y - obstacle.halfSize.y,
                        obstacle.center.y + obstacle.halfSize.y)};
+        const float top = obstacleHeightAt(obstacle, nearest);
+        if (top <= character.elevation + kAutomaticStepHeight ||
+            top > character.elevation + kArmReachWithoutHands + 0.05F) continue;
         const Vec2 delta = nearest - character.position;
         const float range = length(delta);
         if (range < 0.001F || range > kBodyRadius + 0.75F) continue;
@@ -200,7 +203,7 @@ World::World() : pathfinder_(obstacles_, kHalfWidth, kHalfDepth) {
         {{0.0F, 7.0F}, {9.0F, 0.16F}, 0.55F, "boundary"},
         {{-9.0F, 0.0F}, {0.16F, 7.0F}, 3.4F, "boundary"},
         {{9.0F, 0.0F}, {0.16F, 7.0F}, 0.55F, "boundary"},
-        {toiletPosition(), {0.58F, 0.72F}, 1.4F, "toilet"},
+        {toiletPosition(), {0.2285F, 0.3525F}, kToiletTankHeight, "toilet"},
         {{5.2F, -4.95F}, {0.85F, 0.55F}, 1.1F, "sink"},
         {{-6.6F, -3.8F}, {0.75F, 0.75F}, 1.25F, "crate"},
         {{6.7F, 3.7F}, {0.65F, 0.65F}, 0.85F, "crate"},
@@ -285,6 +288,25 @@ void World::toggleZip(std::uint32_t id) {
         "Trousers zipped. Loose civilian fabric restored.");
 }
 
+void World::damageCharacter(Character& attacker, Character& target, float damage, bool ranged) {
+    if (target.blocking) damage *= 0.35F;
+    target.health = std::max(0.0F, target.health - damage);
+    notify(target, attacker.name + (ranged ? " scored a physical projectile hit." : " landed a melee bonk."));
+    addEvent(attacker.name + (ranged ? " weaponized poor decisions against " : " bonked ") + target.name + ".");
+    if (target.health > 0.0F) return;
+    addEvent(target.name + " got flattened and respawned with fresh shame.");
+    if (target.toiletAction != ToiletAction::None) finishToilet(target);
+    target.health = 100.0F;
+    target.position = spawnPoint(target.id);
+    target.elevation = target.verticalVelocity = 0.0F;
+    target.grounded = true;
+    target.path.clear();
+    target.pendingAttack = 0;
+    target.wantsPiss = target.pissing = target.blocking = false;
+    target.grabbing = false;
+    target.grabbedObstacle = -1;
+}
+
 void World::performAttack(Character& attacker, Character& target) {
     const bool ranged = attacker.appearance.male && attacker.unzipped;
     const float targetDistance = distance(attacker.position, target.position);
@@ -296,34 +318,16 @@ void World::performAttack(Character& attacker, Character& target) {
     }
     const Vec2 toTarget = target.position - attacker.position;
     attacker.yaw = std::atan2(toTarget.x, toTarget.y);
-    if (ranged) attacker.pitch = std::atan2(target.elevation + 0.13F - attacker.elevation,
-        std::max(0.05F, distance(attacker.position, target.position)));
-    float damage = ranged ? 7.0F : 12.0F;
-    if (ranged) attacker.needs.bladder = std::max(0.0F, attacker.needs.bladder - 4.0F);
-    if (target.blocking) damage *= 0.35F;
     attacker.attackAnim = ranged ? 0.32F : 0.26F;
     attacker.attackCooldown = ranged ? 0.55F : 0.45F;
-    if (ranged && targetDistance > 3.0F) {
-        notify(attacker, "Long-distance golden attempt launched. No hit, but magnificent commitment.");
-        addEvent(attacker.name + " sprayed heroically toward " + target.name + ".");
+    if (ranged) {
+        attacker.needs.bladder = std::max(0.0F, attacker.needs.bladder - 4.0F);
+        spawnBullet(attacker, target);
+        notify(attacker, "Physical shot away. Wind and gravity have voting rights.");
+        addEvent(attacker.name + " fired a physical round toward " + target.name + ".");
         return;
     }
-    target.health = std::max(0.0F, target.health - damage);
-    notify(target, attacker.name + (ranged ? " scored a direct golden hit." : " landed a melee bonk."));
-    addEvent(attacker.name + (ranged ? " weaponized poor decisions against " : " bonked ") + target.name + ".");
-    if (target.health <= 0.0F) {
-        addEvent(target.name + " got flattened and respawned with fresh shame.");
-        if (target.toiletAction != ToiletAction::None) finishToilet(target);
-        target.health = 100.0F;
-        target.position = spawnPoint(target.id);
-        target.elevation = target.verticalVelocity = 0.0F;
-        target.grounded = true;
-        target.path.clear();
-        target.pendingAttack = 0;
-        target.wantsPiss = target.pissing = target.blocking = false;
-        target.grabbing = false;
-        target.grabbedObstacle = -1;
-    }
+    damageCharacter(attacker, target, 12.0F, false);
 }
 
 void World::updatePendingAttack(Character& character) {
@@ -418,7 +422,7 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     character->jumpInput = jump;
     character->blocking = block && !(character->appearance.male && character->unzipped);
     if (std::isfinite(yaw)) character->yaw = yaw;
-    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.57079633F, 1.35F);
+    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.57079633F, 1.57079633F);
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination, bool sprint, bool advanced) {
@@ -508,6 +512,7 @@ void World::beginToilet(Character& character, ToiletAction action) {
     character.grabHeight = 0.0F;
     character.position = character.onToilet ? toiletSeat() : toiletFront();
     character.yaw = character.onToilet ? 0.0F : 3.14159265F;
+    character.pitch = action == ToiletAction::Piss && !character.onToilet ? -0.32F : 0.0F;
     character.actionTime = 0.0F;
     character.speed = 0.0F;
     if (action == ToiletAction::Sit) addEvent(character.name + " parked their cheeks on the porcelain.");
@@ -532,7 +537,7 @@ void World::finishToilet(Character& character, const std::string& message) {
     character.grabbedObstacle = -1;
     character.grabHeight = 0.0F;
     character.position = toiletFront();
-    character.yaw = 0.0F;
+    character.yaw = character.pitch = 0.0F;
     character.actionTime = 0.0F;
     character.speed = 0.0F;
     if (toiletUser_ == character.id) toiletUser_ = 0;
@@ -564,6 +569,7 @@ void World::update(float deltaSeconds) {
             b.position = moveWithCollisions(b.position, normal * push, kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);
         }
     }
+    updateProjectiles(dt);
 }
 
 void World::updateAI(Character& character, float dt) {
@@ -626,17 +632,18 @@ void World::moveBody(Character& character, const Vec2& delta) {
             if (!character.grounded) continue;
             float stepTop = -1.0F;
             for (const Obstacle& obstacle : obstacles_) {
-                const float rise = obstacle.height - character.elevation;
+                const float top = obstacleHeightAt(obstacle, candidate);
+                const float rise = top - character.elevation;
                 if (obstacle.kind == "boundary" || obstacle.base > character.elevation + 0.02F ||
                     rise <= 0.005F || rise > kJumpHeight + 0.001F ||
                     !bodyHitsObstacle(candidate, kBodyRadius, character.elevation, bodyHeight(character), obstacle)) continue;
-                stepTop = std::max(stepTop, obstacle.height);
+                stepTop = std::max(stepTop, top);
             }
             if (stepTop < 0.0F) {
                 if (!character.pathAdvanced || character.path.empty()) continue;
                 for (std::size_t index = 0; index < obstacles_.size(); ++index) {
                     const Obstacle& obstacle = obstacles_[index];
-                    const float rise = obstacle.height - character.elevation;
+                    const float rise = obstacleHeightAt(obstacle, candidate) - character.elevation;
                     if (obstacle.kind == "boundary" || obstacle.base > character.elevation + 0.02F || rise <= 0.0F ||
                         !bodyHitsObstacle(candidate, kBodyRadius, character.elevation, bodyHeight(character), obstacle)) continue;
                     if (rise <= kMaximumJumpHeight) {
@@ -647,7 +654,7 @@ void World::moveBody(Character& character, const Vec2& delta) {
                     if (rise <= kArmReachWithoutHands) {
                         character.grabbing = true;
                         character.grabbedObstacle = static_cast<int>(index);
-                        character.grabHeight = obstacle.height;
+                        character.grabHeight = obstacleHeightAt(obstacle, candidate);
                         character.grounded = false;
                         character.verticalVelocity = 0.0F;
                         return;
@@ -696,9 +703,10 @@ void World::updateVertical(Character& character, float dt) {
         float landing = -1.0F;
         if (oldElevation >= 0.0F && next <= 0.0F) landing = 0.0F;
         for (const Obstacle& obstacle : obstacles_) {
-            if (obstacle.kind == "boundary" || oldElevation < obstacle.height - 0.02F ||
-                next > obstacle.height || !circleHitsObstacle(character.position, kBodyRadius, obstacle)) continue;
-            landing = std::max(landing, obstacle.height);
+            const float top = obstacleHeightAt(obstacle, character.position);
+            if (obstacle.kind == "boundary" || oldElevation < top - 0.02F ||
+                next > top || !circleHitsObstacle(character.position, kBodyRadius, obstacle)) continue;
+            landing = std::max(landing, top);
         }
         if (landing >= 0.0F) {
             next = landing;
@@ -732,9 +740,8 @@ void World::updateCharacter(Character& character, float dt) {
             }
             return;
         }
-        character.needs.bladder = std::max(0.0F, character.needs.bladder - 22.0F * dt);
-        character.pissing = !character.onToilet && character.needs.bladder > 0.05F;
-        if (character.needs.bladder < 0.1F || character.actionTime > 6.0F) {
+        updatePissing(character, dt);
+        if (character.needs.bladder <= 0.0F || character.actionTime > 30.0F) {
             character.needs.bladder = 0.0F;
             addEvent(character.name + " finished irrigation without painting the floor.");
             finishToilet(character, "Bladder emptied. Floor remains miraculously dry.");
@@ -742,7 +749,9 @@ void World::updateCharacter(Character& character, float dt) {
         return;
     }
 
-    character.needs.bladder = std::min(100.0F, character.needs.bladder + 0.065F * dt);
+    if (!character.wantsPiss || !(character.unzipped || character.ai)) {
+        character.needs.bladder = std::min(100.0F, character.needs.bladder + 0.065F * dt);
+    }
     character.needs.bowel = std::min(100.0F, character.needs.bowel + 0.042F * dt);
     const bool manualMovement = length(character.manualMove) > 0.05F;
     Vec2 direction = character.manualMove;
@@ -777,7 +786,7 @@ void World::updateCharacter(Character& character, float dt) {
         if (target >= 0) {
             character.grabbing = true;
             character.grabbedObstacle = target;
-            character.grabHeight = obstacles_[target].height;
+            character.grabHeight = obstacleHeightAt(obstacles_[target], character.position);
             character.grounded = false;
             character.verticalVelocity = character.charge = character.fullChargeTime = 0.0F;
         }
@@ -803,8 +812,8 @@ void World::updateCharacter(Character& character, float dt) {
             } else if (climb > 0.2F) {
                 character.elevation += kClimbSpeed * dt;
                 character.speed = kCrouchSpeed;
-                if (character.elevation >= obstacle->height) {
-                    character.elevation = obstacle->height;
+                if (character.elevation >= character.grabHeight) {
+                    character.elevation = character.grabHeight;
                     character.grabbing = false;
                     character.grabbedObstacle = -1;
                     character.grabHeight = 0.0F;
@@ -855,7 +864,7 @@ void World::updateCharacter(Character& character, float dt) {
     if (moving && character.grounded) {
         const Vec2 probe = character.position + normalized(direction) * (kBodyRadius + character.speed * dt);
         for (const Obstacle& obstacle : obstacles_) {
-            const float rise = obstacle.height - character.elevation;
+            const float rise = obstacleHeightAt(obstacle, probe) - character.elevation;
             if (obstacle.kind != "boundary" && rise >= kAutomaticStepHeight - 0.0001F && rise <= kJumpHeight &&
                 obstacle.base <= character.elevation + 0.02F &&
                 bodyHitsObstacle(probe, kBodyRadius, character.elevation, bodyHeight(character), obstacle)) {
@@ -884,28 +893,6 @@ void World::updateCharacter(Character& character, float dt) {
     }
 }
 
-void World::updatePissing(Character& character, float dt) {
-    character.pissing = ((character.wantsPiss && (character.unzipped || character.ai)) ||
-        (character.attackAnim > 0.0F && character.unzipped)) && character.needs.bladder > 0.05F;
-    if (!character.pissing) {
-        character.puddleTimer = 0.0F;
-        return;
-    }
-    character.needs.bladder = std::max(0.0F, character.needs.bladder - 19.0F * dt);
-    character.puddleTimer -= dt;
-    if (character.puddleTimer > 0.0F) return;
-    character.puddleTimer = 0.32F;
-    const PissImpact impact = tracePiss(character, obstacles_, character.elevation + 0.77F);
-    if (impact.hit) addPuddle(impact.puddle);
-}
-
-void World::addPuddle(const Puddle& puddle) {
-    Puddle placed = placePuddle(puddles_, puddle, nextPuddleId_++, obstacles_, kHalfWidth, kHalfDepth);
-    if (!placed.id) return;
-    if (puddles_.size() >= 40) puddles_.erase(puddles_.begin());
-    puddles_.push_back(placed);
-}
-
 void World::addEvent(const std::string& text) {
     events_.push_back({nextEventId_++, text});
     while (events_.size() > 7) events_.pop_front();
@@ -915,7 +902,7 @@ std::string World::description() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::ostringstream out;
     out << "{\"width\":18,\"depth\":14,\"interactionRange\":" << jsonNumber(kInteractionRange)
-        << ",\"toilet\":{\"x\":0,\"z\":-4.75,\"frontX\":0,\"frontZ\":-2.85}"
+        << ",\"toilet\":{\"x\":0,\"z\":-4.75,\"frontX\":0,\"frontZ\":-3.55}"
         << ",\"obstacles\":[";
     for (std::size_t i = 0; i < obstacles_.size(); ++i) {
         const Obstacle& obstacle = obstacles_[i];
@@ -935,7 +922,12 @@ std::string World::description() const {
 std::string World::snapshot() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::ostringstream out;
+    const double game = 8.0 * 60.0 * 60.0 + elapsed_ * kGameTimeScale;
+    const Vec2 wind = windAt(elapsed_);
     out << "{\"type\":\"state\",\"tick\":" << tick_ << ",\"time\":" << static_cast<std::uint64_t>(elapsed_)
+        << ",\"gameTime\":" << jsonNumber(static_cast<float>(std::fmod(game, 86400.0)))
+        << ",\"day\":" << (1 + static_cast<std::uint64_t>(game / 86400.0))
+        << ",\"windX\":" << jsonNumber(wind.x) << ",\"windZ\":" << jsonNumber(wind.y)
         << ",\"toiletUser\":" << toiletUser_ << ",\"characters\":[";
     std::size_t index = 0;
     for (const auto& entry : characters_) {
@@ -949,7 +941,19 @@ std::string World::snapshot() const {
             << ",\"z\":" << jsonNumber(puddles_[i].position.y) << ",\"size\":" << jsonNumber(puddles_[i].size)
             << ",\"height\":" << jsonNumber(puddles_[i].height) << ",\"nx\":" << jsonNumber(puddles_[i].normal.x)
             << ",\"nz\":" << jsonNumber(puddles_[i].normal.y)
-            << ",\"vertical\":" << (puddles_[i].vertical ? "true" : "false") << '}';
+            << ",\"vertical\":" << (puddles_[i].vertical ? "true" : "false")
+            << ",\"age\":" << jsonNumber(puddles_[i].age) << '}';
+    }
+    out << "],\"projectiles\":[";
+    for (std::size_t i = 0; i < projectiles_.size(); ++i) {
+        const Projectile& projectile = projectiles_[i];
+        if (i != 0) out << ',';
+        out << "{\"id\":" << projectile.id << ",\"owner\":" << projectile.owner
+            << ",\"kind\":" << (projectile.kind == ProjectileKind::Bullet ? 1 : 0)
+            << ",\"x\":" << jsonNumber(projectile.position.x) << ",\"z\":" << jsonNumber(projectile.position.y)
+            << ",\"y\":" << jsonNumber(projectile.height) << ",\"vx\":" << jsonNumber(projectile.velocity.x)
+            << ",\"vz\":" << jsonNumber(projectile.velocity.y) << ",\"vy\":" << jsonNumber(projectile.verticalVelocity)
+            << ",\"age\":" << jsonNumber(projectile.age) << '}';
     }
     out << "],\"events\":[";
     for (std::size_t i = 0; i < events_.size(); ++i) {

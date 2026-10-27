@@ -15,9 +15,15 @@ bool circleHitsObstacle(const Vec2& point, float radius, const Obstacle& obstacl
     return dx * dx + dz * dz < radius * radius;
 }
 
+float obstacleHeightAt(const Obstacle& obstacle, const Vec2& point) {
+    if (obstacle.kind == "toilet" && point.y > obstacle.center.y - 0.1365F) return kToiletSeatHeight;
+    return obstacle.height;
+}
+
 bool bodyHitsObstacle(const Vec2& point, float radius, float feet, float bodyHeight,
                       const Obstacle& obstacle) {
-    if (feet >= obstacle.height - 0.0001F || feet + bodyHeight <= obstacle.base + 0.0001F) return false;
+    const float top = obstacleHeightAt(obstacle, point);
+    if (feet >= top - 0.0001F || feet + bodyHeight <= obstacle.base + 0.0001F) return false;
     return circleHitsObstacle(point, radius, obstacle);
 }
 

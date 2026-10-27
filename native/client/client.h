@@ -21,9 +21,13 @@ struct ClientWorld {
 struct ClientState {
     std::uint64_t tick = 0;
     std::uint64_t time = 0;
+    double gameTime = 8.0 * 60.0 * 60.0;
+    std::uint32_t day = 1;
+    Vec2 wind;
     std::uint32_t toiletUser = 0;
     std::vector<Character> characters;
     std::vector<Puddle> puddles;
+    std::vector<Projectile> projectiles;
     std::vector<GameEvent> events;
 
     const Character* character(std::uint32_t id) const;

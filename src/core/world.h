@@ -33,6 +33,9 @@ public:
 
     Character character(std::uint32_t id) const;
     std::size_t characterCount() const;
+    std::vector<Projectile> projectiles() const;
+    std::vector<Puddle> puddles() const;
+    double gameSeconds() const;
     std::string snapshot() const;
     std::string description() const;
 
@@ -46,9 +49,11 @@ private:
     std::vector<Obstacle> obstacles_;
     Pathfinder pathfinder_;
     std::vector<Puddle> puddles_;
+    std::vector<Projectile> projectiles_;
     std::deque<GameEvent> events_;
     std::uint32_t nextCharacterId_ = 1;
     std::uint32_t nextPuddleId_ = 1;
+    std::uint32_t nextProjectileId_ = 1;
     std::uint32_t nextEventId_ = 1;
     std::uint32_t toiletUser_ = 0;
     std::uint64_t tick_ = 0;
@@ -57,12 +62,16 @@ private:
 
     Vec2 toiletPosition() const { return {0.0F, -4.75F}; }
     Vec2 toiletSeat() const { return toiletPosition() + Vec2{0.0F, kToiletSeatForwardOffset}; }
-    Vec2 toiletFront() const { return {0.0F, -2.85F}; }
+    Vec2 toiletFront() const { return {0.0F, -3.55F}; }
     Vec2 spawnPoint(std::uint32_t id) const;
     Character* find(std::uint32_t id);
     void setDestinationLocked(Character& character, const Vec2& destination, bool sprint = false, bool advanced = false);
     void requestToiletLocked(Character& character, ToiletAction action);
     void performAttack(Character& attacker, Character& target);
+    void damageCharacter(Character& attacker, Character& target, float damage, bool ranged);
+    void spawnPiss(Character& character);
+    void spawnBullet(Character& attacker, const Character& target);
+    void updateProjectiles(float dt);
     void updatePendingAttack(Character& character);
     void beginToilet(Character& character, ToiletAction action);
     void finishToilet(Character& character, const std::string& message = "");

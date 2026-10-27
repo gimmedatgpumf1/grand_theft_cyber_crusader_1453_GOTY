@@ -195,6 +195,16 @@ private:
                     character.yaw = old->yaw;
                 }
             }
+            for (Projectile& projectile : presentation_.projectiles) {
+                const auto old = std::find_if(previous.projectiles.begin(), previous.projectiles.end(),
+                    [&](const Projectile& candidate) { return candidate.id == projectile.id; });
+                if (old != previous.projectiles.end()) {
+                    projectile.position = old->position;
+                    projectile.height = old->height;
+                    projectile.velocity = old->velocity;
+                    projectile.verticalVelocity = old->verticalVelocity;
+                }
+            }
         }
         interpolateCharacters(latest, presentation_, dt);
     }

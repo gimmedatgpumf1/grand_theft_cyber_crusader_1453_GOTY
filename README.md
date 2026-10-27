@@ -49,15 +49,21 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   `customize` message. There are no person-specific morphs or portrait textures. Reusable CC0
   MakeHuman skin maps provide age/sex surface detail across the full skin palette.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
-  Male anatomy starts zipped behind a cloth bulge in FPS and TPS; **T** intentionally exposes it.
-  Holding LMB (or F in FPS) outside a toilet action works only while unzipped, empties only the
-  bladder, and leaves shared persistent puddles. God LMB uses melee while zipped and the unzipped
-  ranged weapon otherwise; RMB blocks melee or applies modest ranged aim zoom. Ranged clicks always
-  attempt a shot, even when a distant target stays dry. Ballistic piss can stain floors, object tops,
-  and walls with small translucent spots that spread sideways instead of merging into large blobs.
+  Male anatomy starts zipped behind a loose, projecting cloth tent in FPS and TPS; **T** intentionally
+  exposes it. Holding LMB (or F in FPS) outside a toilet action works only while unzipped and empties
+  only the bladder. A bladder at 75% supports **21 seconds** of continuous flow at 6.2 m/s, sufficient
+  to clear the citizen's head when fired straight up. Piss droplets and unzipped ranged rounds are
+  server-simulated physical objects under **9.81 m/s² gravity and wind**, with swept collisions rather
+  than decorative trajectory curves. Ranged attacks are always attempted; damage occurs on impact.
+- The toilet follows Kohler Wellworth K-3987 measurements: a **381 mm seat**, **743 mm tank**,
+  **705 mm depth**, and separate tank, rim, open bowl, water, and pedestal collision. Small translucent
+  yellow-green stains attach to floors, object tops, sides, walls, toilet surfaces, and water; overlapping
+  floor spots spread sideways. One game day is **96 real minutes (15× time)**, shown by the native clock,
+  and urine stains dry after one complete game day. God LMB uses melee while zipped and the physical
+  ranged weapon otherwise; RMB blocks melee or applies explicit ranged aim zoom.
 - **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
-- **H** opens the native field manual. **F12** saves the current native 480×640 framebuffer.
+- **H** opens the native field manual. **F12** saves the current native **640×480 landscape** framebuffer.
   Native UI text is 21 pixels high.
 
 ## One-click Windows build

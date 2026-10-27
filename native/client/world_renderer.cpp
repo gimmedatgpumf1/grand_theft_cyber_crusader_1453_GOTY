@@ -1,7 +1,6 @@
 #include "client/renderer.h"
 
 #include "client/human_renderer.h"
-#include "core/piss.h"
 
 #include <algorithm>
 #include <chrono>
@@ -43,7 +42,7 @@ Vec3 unobstructedCamera(const ClientWorld& world, Vec3 target, Vec3 desired) {
         test({obstacle.center.x, obstacle.height * 0.5, obstacle.center.y},
              {obstacle.halfSize.x, obstacle.height * 0.5, obstacle.halfSize.y});
     }
-    test({world.toilet.x, 0.80, world.toilet.y - 0.52}, {0.55, 0.80, 0.21});
+    test({world.toilet.x, 0.5425, world.toilet.y - 0.2445}, {0.2285, 0.20, 0.108});
     const double adjusted = std::max(0.12, nearest - 0.15 / length);
     return target + direction * adjusted;
 }
@@ -252,7 +251,7 @@ void drawDressing(Rasterizer& rasterizer, const Camera& camera, const ClientWorl
     marker.unlit = true;
     drawRing(rasterizer, camera, {world.toiletFront.x, 0.025, world.toiletFront.y},
              world.interactionRange - 0.035, world.interactionRange, marker);
-    drawOctahedron(rasterizer, camera, {world.toilet.x, 2.04 + std::sin(state.tick * 0.08) * 0.1, world.toilet.y},
+    drawOctahedron(rasterizer, camera, {world.toilet.x, 1.05 + std::sin(state.tick * 0.08) * 0.06, world.toilet.y},
                    view.highlightToilet ? 0.22 : 0.16, marker);
 }
 
@@ -264,19 +263,25 @@ void drawBowl(Rasterizer& rasterizer, const Camera& camera, Vec3 center,
     };
     for (int i = 0; i < 32; ++i) {
         const double a = i * 2 * pi / 32, b = (i + 1) * 2 * pi / 32, middle = (a + b) * 0.5;
-        const Vec3 outerA = point(0.53, 0.64, kToiletSeatHeight, a);
-        const Vec3 outerB = point(0.53, 0.64, kToiletSeatHeight, b);
-        const Vec3 innerA = point(0.34, 0.43, kToiletSeatHeight, a);
-        const Vec3 innerB = point(0.34, 0.43, kToiletSeatHeight, b);
-        const Vec3 baseA = point(0.34, 0.44, 0.32, a), baseB = point(0.34, 0.44, 0.32, b);
-        const Vec3 lowerA = point(0.19, 0.26, 0.43, a), lowerB = point(0.19, 0.26, 0.43, b);
-        drawQuad(rasterizer, camera, {baseA, outerA, outerB, baseB},
+        const Vec3 rimA = point(0.1905, 0.270, kToiletRimHeight, a);
+        const Vec3 rimB = point(0.1905, 0.270, kToiletRimHeight, b);
+        const Vec3 seatA = point(0.1905, 0.270, kToiletSeatHeight, a);
+        const Vec3 seatB = point(0.1905, 0.270, kToiletSeatHeight, b);
+        const Vec3 innerA = point(0.145, 0.205, kToiletSeatHeight, a);
+        const Vec3 innerB = point(0.145, 0.205, kToiletSeatHeight, b);
+        const Vec3 baseA = point(0.12, 0.16, 0.08, a), baseB = point(0.12, 0.16, 0.08, b);
+        const Vec3 lowerA = point(0.1335, 0.0985, kToiletWaterHeight, a);
+        const Vec3 lowerB = point(0.1335, 0.0985, kToiletWaterHeight, b);
+        drawQuad(rasterizer, camera, {baseA, rimA, rimB, baseB},
                  normalized(Vec3{std::cos(middle), 0.15, std::sin(middle)}), porcelain);
-        drawQuad(rasterizer, camera, {outerA, innerA, innerB, outerB}, {0, 1, 0}, porcelain);
+        drawQuad(rasterizer, camera, {rimA, seatA, seatB, rimB},
+                 normalized(Vec3{std::cos(middle), 0.2, std::sin(middle)}), porcelain);
+        drawQuad(rasterizer, camera, {seatA, innerA, innerB, seatB}, {0, 1, 0}, porcelain);
         drawQuad(rasterizer, camera, {innerA, lowerA, lowerB, innerB},
-                 normalized(Vec3{-std::cos(middle), 0.45, -std::sin(middle)}), porcelain);
+                 normalized(Vec3{-std::cos(middle), 0.65, -std::sin(middle)}), porcelain);
     }
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.45, 0.06}, Vec3{0.205, 0.018, 0.28}, water, 20, 4);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletWaterHeight, 0.06},
+                  Vec3{0.1335, 0.006, 0.0985}, water, 24, 4);
 }
 
 void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) {
@@ -284,17 +289,17 @@ void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) 
     porcelain.color = colorHex("#d7ddc9");
     porcelain.specular = 0.30;
     Material dark;
-    dark.color = colorHex("#17251e");
+    dark.color = colorHex("#25443a");
     dark.specular = 0.42;
     const Vec3 center{toilet.x, 0, toilet.y};
-    drawBox(rasterizer, camera, center + Vec3{0, 0.20, -0.10}, Vec3{0.58, 0.40, 0.55}, porcelain);
+    drawBox(rasterizer, camera, center + Vec3{0, 0.10, 0.02}, Vec3{0.24, 0.20, 0.30}, porcelain);
     drawBowl(rasterizer, camera, center, porcelain, dark);
-    drawBox(rasterizer, camera, center + Vec3{0, 1.02, -0.52}, Vec3{1.02, 0.92, 0.34}, porcelain);
-    drawBox(rasterizer, camera, center + Vec3{0, 1.51, -0.52}, Vec3{1.08, 0.08, 0.39}, porcelain);
+    drawBox(rasterizer, camera, center + Vec3{0, 0.5425, -0.2445}, Vec3{0.457, 0.365, 0.216}, porcelain);
+    drawBox(rasterizer, camera, center + Vec3{0, 0.734, -0.2445}, Vec3{0.467, 0.018, 0.226}, porcelain);
     Material flush;
     flush.color = colorHex("#9ca9a4");
     flush.specular = 0.5;
-    drawEllipsoid(rasterizer, camera, center + Vec3{0.34, 1.55, -0.50}, Vec3{0.07, 0.025, 0.05}, flush, 8, 4);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0.16, 0.64, -0.132}, Vec3{0.035, 0.018, 0.012}, flush, 8, 4);
 }
 
 void drawObstacles(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world) {
@@ -366,9 +371,9 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     puddle.opacity = 0.54;
     for (const Puddle& puddleValue : state.puddles) {
         const Vec3 center{puddleValue.position.x, puddleValue.height, puddleValue.position.y};
-        const bool xWall = puddleValue.vertical && std::abs(puddleValue.normal.x) > 0.5F;
-        const Vec3 axisA = puddleValue.vertical ? (xWall ? Vec3{0, 0, puddleValue.size * 0.72} :
-            Vec3{puddleValue.size * 0.72, 0, 0}) : Vec3{puddleValue.size, 0, 0};
+        const Vec2 tangent{-puddleValue.normal.y, puddleValue.normal.x};
+        const Vec3 axisA = puddleValue.vertical ? Vec3{tangent.x * puddleValue.size * 0.72, 0,
+            tangent.y * puddleValue.size * 0.72} : Vec3{puddleValue.size, 0, 0};
         const Vec3 axisB = puddleValue.vertical ? Vec3{0, puddleValue.size, 0} : Vec3{0, 0, puddleValue.size * 0.72};
         const Vec3 normal = puddleValue.vertical ? Vec3{puddleValue.normal.x, 0, puddleValue.normal.y} : Vec3{0, 1, 0};
         for (int i = 0; i < 14; ++i) {
@@ -381,24 +386,35 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     }
 }
 
-void drawPissing(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world,
-                 const HumanRenderCache& cache, const Character& character) {
-    if (!character.pissing) return;
-    Material stream;
-    stream.color = colorHex("#d4ce68");
-    stream.specular = 0.35;
-    const double pitch = character.unzipped && character.toiletAction == ToiletAction::None ? character.pitch : 0.0;
-    const double cp = std::cos(pitch);
-    const Vec3 forward{std::sin(character.yaw) * cp, std::sin(pitch), std::cos(character.yaw) * cp};
-    Vec3 origin{character.position.x, character.elevation + 0.77, character.position.y};
-    if (cache.genitalTip >= 0 && cache.posed.size() == cache.rest.size()) origin = cache.posed[cache.genitalTip];
-    const gtc::Vec2 offset{static_cast<float>(origin.x - character.position.x), static_cast<float>(origin.z - character.position.y)};
-    const PissImpact impact = tracePiss(character, world.obstacles, static_cast<float>(origin.y), offset);
-    for (int i = 0; i < 24; ++i) {
-        const double t = gtc::kPissDuration * i / 23.0;
-        if (impact.hit && t > impact.time) break;
-        const Vec3 at = origin + forward * (gtc::kPissSpeed * t) + Vec3{0, -gtc::kPissGravity * t * t, 0};
-        drawEllipsoid(rasterizer, camera, at, Vec3{0.025, 0.045, 0.025}, stream, 6, 4);
+void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
+    Material piss, bullet;
+    piss.color = colorHex("#d4ce68");
+    piss.specular = 0.35;
+    bullet.color = colorHex("#fff0a0");
+    bullet.unlit = true;
+    for (const Projectile& projectile : state.projectiles) {
+        const bool isBullet = projectile.kind == ProjectileKind::Bullet;
+        const Vec3 center{projectile.position.x, projectile.height, projectile.position.y};
+        Vec3 direction{projectile.velocity.x, projectile.verticalVelocity, projectile.velocity.y};
+        if (length(direction) < 0.001) direction = {0, 1, 0};
+        direction = normalized(direction);
+        Vec3 side = cross(direction, Vec3{0, 1, 0});
+        if (length(side) < 0.001) side = {1, 0, 0};
+        side = normalized(side);
+        const Vec3 up = normalized(cross(side, direction));
+        const double radius = isBullet ? 0.018 : 0.030, length = isBullet ? 0.24 : 0.17;
+        const Vec3 front = center + direction * (length * 0.5), back = center - direction * (length * 0.5);
+        const Vec3 ring[4] = {center + side * radius, center + up * radius, center - side * radius, center - up * radius};
+        const Material& material = isBullet ? bullet : piss;
+        for (int i = 0; i < 4; ++i) {
+            const Vec3 a = ring[i], b = ring[(i + 1) % 4];
+            const Vec3 normalA = normalized(cross(a - front, b - front));
+            const Vec3 normalB = normalized(cross(b - back, a - back));
+            rasterizer.triangle({cameraVertex(camera, front, normalA, front), cameraVertex(camera, a, normalA, a),
+                                 cameraVertex(camera, b, normalA, b)}, material);
+            rasterizer.triangle({cameraVertex(camera, back, normalB, back), cameraVertex(camera, b, normalB, b),
+                                 cameraVertex(camera, a, normalB, a)}, material);
+        }
     }
 }
 
@@ -419,7 +435,8 @@ bool animatedPose(const ClientState& state) {
 }
 
 bool sameGeometry(const ClientState& a, const ClientState& b) {
-    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size()) return false;
+    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size() ||
+        a.projectiles.size() != b.projectiles.size()) return false;
     for (std::size_t i = 0; i < a.characters.size(); ++i) {
         const Character& left = a.characters[i];
         const Character& right = b.characters[i];
@@ -441,6 +458,13 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
             left.size != right.size || left.height != right.height || left.normal.x != right.normal.x ||
             left.normal.y != right.normal.y || left.vertical != right.vertical) return false;
+    }
+    for (std::size_t i = 0; i < a.projectiles.size(); ++i) {
+        const Projectile& left = a.projectiles[i];
+        const Projectile& right = b.projectiles[i];
+        if (left.id != right.id || left.kind != right.kind || left.position.x != right.position.x ||
+            left.position.y != right.position.y || left.height != right.height || left.velocity.x != right.velocity.x ||
+            left.velocity.y != right.velocity.y || left.verticalVelocity != right.verticalVelocity) return false;
     }
     return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
 }
@@ -557,6 +581,11 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     panel(frame, 0, 0, 640, 60, true);
     drawText(frame, 12, 5, "GTC // 1453", text);
     drawText(frame, 12, 34, "PORCELAIN PROTOCOL", muted);
+    const int minuteOfDay = static_cast<int>(state.gameTime / 60.0) % 1440;
+    const auto two = [](int value) { return (value < 10 ? "0" : "") + std::to_string(value); };
+    drawText(frame, 282, 5, "DAY " + std::to_string(state.day) + " " + two(minuteOfDay / 60) + ":" +
+        two(minuteOfDay % 60), text);
+    drawText(frame, 350, 34, "15X TIME", muted);
     drawText(frame, 476, 5, "NET // ONLINE", text);
     std::string performance = std::to_string(state.characters.size()) + " CIT / " + (view.gpu ? "GPU" : "CPU");
     if (view.fps > 0) performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
@@ -674,7 +703,7 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     constexpr double maximumDowngaze = 3.141592653589793 * 0.5;
     const double downwardLimit = maximumDowngaze - (maximumDowngaze - 0.5) *
         std::abs(gazeYaw) / gazeYawLimit;
-    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
+    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.57079633);
     const double headYaw = headAngleForGaze(gazeYaw);
     // The anatomical pose applies eye-in-head motion and solves downward
     // chin/manubrium contact from the total requested gaze angle.
@@ -698,7 +727,7 @@ void rotateView(ViewState& view, double mouseX, double mouseY) {
     view.yaw -= static_cast<float>(mouseX * 0.0022);
     view.pitch -= static_cast<float>(mouseY * 0.0022);
     view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.57079633F : -1.05F,
-                            view.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
+                            view.mode == ViewMode::FirstPerson ? 1.57079633F : -0.06F);
 }
 
 void interpolateCharacters(const ClientState& target, ClientState& current, float dt) {
@@ -718,6 +747,18 @@ void interpolateCharacters(const ClientState& target, ClientState& current, floa
         const double angle = std::atan2(std::sin(destination->yaw - character.yaw),
                                         std::cos(destination->yaw - character.yaw));
         character.yaw = static_cast<float>(character.yaw + angle * blend);
+    }
+    for (Projectile& projectile : current.projectiles) {
+        const auto found = std::find_if(target.projectiles.begin(), target.projectiles.end(), [&](const Projectile& candidate) {
+            return candidate.id == projectile.id;
+        });
+        if (found == target.projectiles.end()) continue;
+        projectile.position.x += static_cast<float>((found->position.x - projectile.position.x) * blend);
+        projectile.position.y += static_cast<float>((found->position.y - projectile.position.y) * blend);
+        projectile.height += static_cast<float>((found->height - projectile.height) * blend);
+        projectile.velocity.x += static_cast<float>((found->velocity.x - projectile.velocity.x) * blend);
+        projectile.velocity.y += static_cast<float>((found->velocity.y - projectile.velocity.y) * blend);
+        projectile.verticalVelocity += static_cast<float>((found->verticalVelocity - projectile.verticalVelocity) * blend);
     }
 }
 
@@ -768,9 +809,9 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                          0.36, 0.41, ring, 24);
             }
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
-            drawPissing(rasterizer, camera, world, humanCache_[character.id], character);
         }
         rasterizer.setObject(0, {}, 0);
+        drawProjectiles(rasterizer, camera, state);
         finishStart = std::chrono::steady_clock::now();
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();

@@ -19,10 +19,21 @@ inline constexpr float kAutomaticStepHeight = 0.27F;
 inline constexpr float kStandingHeight = 1.7F;
 inline constexpr float kCrouchingHeight = 1.1F;
 inline constexpr float kProneHeight = 0.45F;
-inline constexpr float kToiletSeatForwardOffset = 0.45F;
-inline constexpr float kPissSpeed = 3.4F;
-inline constexpr float kPissGravity = 1.6F;
-inline constexpr float kPissDuration = 1.5F;
+// Kohler Wellworth K-3987: 368 mm rim, 381 mm seat, 743 mm tank,
+// 705 mm depth, 457 mm width, and water 133 mm below the rim.
+inline constexpr float kToiletSeatForwardOffset = 0.06F;
+inline constexpr float kToiletRimHeight = 0.368F;
+inline constexpr float kToiletSeatHeight = 0.381F;
+inline constexpr float kToiletWaterHeight = kToiletRimHeight - 0.133F;
+inline constexpr float kToiletTankHeight = 0.743F;
+inline constexpr float kPissSpeed = 6.2F;
+inline constexpr float kBulletSpeed = 32.0F;
+inline constexpr float kProjectileGravity = 9.81F;
+inline constexpr float kPissLifetime = 4.0F;
+inline constexpr float kPissEmissionInterval = 1.0F / 30.0F;
+inline constexpr float kBladderDrainPerSecond = 75.0F / 21.0F;
+inline constexpr float kGameTimeScale = 15.0F;
+inline constexpr float kPuddleLifetimeSeconds = 24.0F * 60.0F * 60.0F / kGameTimeScale;
 
 struct Vec2 {
     float x = 0.0F;
@@ -134,10 +145,25 @@ struct Character {
     Needs needs;
     std::vector<Vec2> path;
     float actionTime = 0.0F;
-    float puddleTimer = 0.0F;
+    float projectileTimer = 0.0F;
     float aiTimer = 0.0F;
     std::uint32_t noticeSequence = 0;
     std::string notice;
+};
+
+enum class ProjectileKind { Piss, Bullet };
+
+struct Projectile {
+    std::uint32_t id = 0;
+    std::uint32_t owner = 0;
+    ProjectileKind kind = ProjectileKind::Piss;
+    Vec2 position;
+    Vec2 velocity;
+    float height = 0.0F;
+    float verticalVelocity = 0.0F;
+    float age = 0.0F;
+    bool stain = false;
+    bool toilet = false;
 };
 
 struct Puddle {
@@ -147,6 +173,7 @@ struct Puddle {
     float height = 0.018F;
     Vec2 normal;
     bool vertical = false;
+    double age = 0.0;
 };
 
 struct GameEvent {

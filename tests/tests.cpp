@@ -1,9 +1,10 @@
 #include "core/collision.h"
 #include "core/json.h"
 #include "core/pathfinding.h"
-#include "core/piss.h"
+#include "core/projectile.h"
 #include "core/world.h"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -304,10 +305,10 @@ int main() {
         gtc::World world;
         const auto id = world.addCharacter("Porcelain Climber", false);
         moveToToilet(world, id);
-        check(driveTo(world, id, {0, -3.25F}), "move within arm reach of the toilet");
+        check(driveTo(world, id, {0, -3.65F}), "move within arm reach of the toilet");
         world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
         world.update(0.05F);
-        check(world.character(id).grabbing && std::abs(world.character(id).grabHeight - 1.4F) < 0.001F,
+        check(world.character(id).grabbing && std::abs(world.character(id).grabHeight - gtc::kToiletSeatHeight) < 0.001F,
               "Ctrl grabs a reachable toilet ledge and replicates its height");
         world.setInput(id, {0, 1}, false, false, 3.14159265F, 0, false, false, true);
         world.update(0.05F);
@@ -324,23 +325,23 @@ int main() {
             world.setInput(id, {0, -1}, false, false, 3.14159265F, 0, false, false, true);
             world.update(0.05F);
             climbed = !world.character(id).grabbing && world.character(id).grounded &&
-                world.character(id).elevation > 1.39F;
+                world.character(id).elevation > gtc::kToiletSeatHeight - 0.01F;
         }
         check(climbed, "moving forward climbs onto the toilet");
         world.setInput(id, {}, false, false, 3.14159265F, 0);
         world.update(0.05F);
-        check(world.character(id).grounded && std::abs(world.character(id).elevation - 1.4F) < 0.001F,
+        check(world.character(id).grounded && std::abs(world.character(id).elevation - gtc::kToiletSeatHeight) < 0.001F,
               "toilet top remains a support surface after Ctrl is released");
 
         gtc::World airWorld;
         const auto air = airWorld.addCharacter("Midair Climber", false);
-        moveToToilet(airWorld, air);
-        check(driveTo(airWorld, air, {0, -3.25F}), "approach toilet for a mid-air grab");
-        airWorld.setInput(air, {}, false, false, 3.14159265F, 0, false, false, false, true);
+        check(driveTo(airWorld, air, {-2.0F, -5.55F}) && driveTo(airWorld, air, {0, -5.55F}),
+              "approach the toilet tank for a mid-air grab");
+        airWorld.setInput(air, {}, false, false, 0.0F, 0, false, false, false, true);
         airWorld.update(0.05F);
-        airWorld.setInput(air, {}, false, false, 3.14159265F, 0);
+        airWorld.setInput(air, {}, false, false, 0.0F, 0);
         airWorld.update(0.05F);
-        airWorld.setInput(air, {}, false, false, 3.14159265F, 0, false, false, true);
+        airWorld.setInput(air, {}, false, false, 0.0F, 0, false, false, true);
         airWorld.update(0.05F);
         check(airWorld.character(air).grabbing && airWorld.character(air).verticalVelocity == 0.0F,
               "Ctrl can catch a reachable ledge in mid-air");
@@ -408,7 +409,7 @@ int main() {
         const float bladder = world.character(id).needs.bladder;
         world.requestToilet(id, "shit");
         check(world.character(id).onToilet, "shitting is seated");
-        for (int i = 0; i < 200 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
+        for (int i = 0; i < 700 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
             world.update(0.05F);
         }
         const auto relieved = world.character(id);
@@ -426,7 +427,7 @@ int main() {
         world.requestToilet(id, "piss");
         check(!world.character(id).onToilet, "male toilet piss is standing");
         check(world.character(id).pissing, "standing toilet piss has a visible stream state");
-        for (int i = 0; i < 200 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
+        for (int i = 0; i < 700 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
             world.update(0.05F);
         }
         const auto relieved = world.character(id);
@@ -512,7 +513,7 @@ int main() {
         for (int i = 0; i < 20; ++i) world.update(0.05F);
         const auto after = world.character(id);
         check(after.pissing, "pissing state is active");
-        check(after.needs.bladder < before - 10.0F, "bladder drains");
+        check(after.needs.bladder < before - 3.4F && after.needs.bladder > before - 3.8F, "bladder drains");
         check(world.snapshot().find("\"puddles\":[{\"id\":") != std::string::npos,
               "urine creates persistent world puddles");
         world.setInput(id, {}, false, false, 0.0F, 0.0F);
@@ -522,23 +523,21 @@ int main() {
         check(!world.character(id).unzipped, "T restores the zipped default");
     });
 
-    test("strong piss splashes surfaces and spreads small spots", [] {
-        gtc::Character shooter;
-        shooter.position = {0, 0};
-        shooter.unzipped = true;
-        shooter.yaw = 1.57079632679F;
+    test("physical piss rises above head and splashes real surfaces", [] {
+        using gtc::projectile_detail::Point;
         const gtc::Obstacle wall{{1, 0}, {0.1F, 2}, 2.0F, "boundary"};
-        const auto wallHit = gtc::tracePiss(shooter, {wall});
+        const auto wallHit = gtc::projectile_detail::sweepSurfaces({0, 1, 0}, {2, 1, 0}, 0.022F, {wall});
         check(wallHit.hit && wallHit.puddle.vertical && wallHit.puddle.normal.x < -0.9F &&
-              wallHit.puddle.height > 0.3F && wallHit.time < gtc::kPissDuration,
-              "ballistic piss leaves a vertical wall stain");
-        shooter.pitch = -0.1F;
+              wallHit.puddle.height > 0.9F, "swept piss leaves a vertical wall stain");
         const gtc::Obstacle crate{{1.4F, 0}, {0.6F, 0.6F}, 0.6F, "crate"};
-        const auto topHit = gtc::tracePiss(shooter, {crate}, 1.0F);
-        check(topHit.hit && !topHit.puddle.vertical && std::abs(topHit.puddle.height - 0.612F) < 0.001F,
-              "ballistic piss can stain the top of an object");
-        shooter.pitch = 1.3F;
-        check(!gtc::tracePiss(shooter, {}).hit, "a strong upward stream stays airborne");
+        const auto topHit = gtc::projectile_detail::sweepSurfaces({1.4F, 1, 0}, {1.4F, 0.4F, 0}, 0.022F, {crate});
+        check(topHit.hit && !topHit.puddle.vertical && std::abs(topHit.puddle.height - 0.608F) < 0.001F,
+              "swept piss can stain the top of an object");
+        const gtc::Obstacle toilet{{0, -4.75F}, {0.2285F, 0.3525F}, gtc::kToiletTankHeight, "toilet"};
+        const auto bowlHit = gtc::projectile_detail::sweepSurfaces({0, 0.79F, -4.69F}, {0, 0.20F, -4.72F},
+            0.022F, {toilet});
+        check(bowlHit.hit && bowlHit.toilet && bowlHit.absorb,
+              "the open toilet bowl absorbs descending piss below its real rim");
         std::vector<gtc::Puddle> spots;
         gtc::Puddle input;
         const auto first = gtc::placePuddle(spots, input, 1, {}, 9, 7);
@@ -548,15 +547,69 @@ int main() {
               gtc::distance(first.position, second.position) > 0.15F,
               "overlapping piss creates a small spot shifted to the side");
 
+        gtc::World upward;
+        const auto shooter = upward.addCharacter("Postal Arc", false);
+        place(upward, shooter, {0, 0});
+        upward.toggleZip(shooter);
+        upward.setInput(shooter, {}, false, true, 0, 1.57079633F);
+        float apex = 0, drift = 0;
+        for (int i = 0; i < 10; ++i) {
+            upward.update(0.05F);
+            for (const auto& projectile : upward.projectiles()) {
+                apex = std::max(apex, projectile.height);
+                drift = std::max(drift, std::abs(projectile.position.x));
+            }
+        }
+        check(apex > gtc::kStandingHeight && apex > 2.4F, "ninety-degree piss physically rises above the head");
+        check(drift > 0.005F, "wind physically deflects an initially vertical stream");
+        check(upward.snapshot().find("\"projectiles\":[{\"id\":") != std::string::npos,
+              "actual projectile positions and velocities replicate");
+
         gtc::World world;
         const auto id = world.addCharacter("Wall Painter", false);
         place(world, id, {-7.5F, 2});
         world.toggleZip(id);
         world.adjustNeed(id, "bladder", 100);
         world.setInput(id, {}, false, true, -1.57079632679F, 0);
-        world.update(0.05F);
+        for (int i = 0; i < 12; ++i) world.update(0.05F);
         check(world.snapshot().find("\"vertical\":true") != std::string::npos,
-              "wall splash height and orientation replicate");
+              "wall splash height and orientation replicate after physical impact");
+    });
+
+    test("fifteen-times clock, bladder calibration, and day-long drying", [] {
+        gtc::World bladder;
+        const auto id = bladder.addCharacter("Twenty One Seconds", false);
+        bladder.toggleZip(id);
+        bladder.adjustNeed(id, "bladder", 100);
+        bladder.adjustNeed(id, "bladder", -25);
+        bladder.setInput(id, {}, false, true, 0, 0);
+        for (int i = 0; i < 419; ++i) bladder.update(0.05F);
+        check(bladder.character(id).needs.bladder > 0.0F, "seventy-five percent still flows before twenty-one seconds");
+        bladder.update(0.05F);
+        check(bladder.character(id).needs.bladder == 0.0F, "seventy-five percent empties at twenty-one seconds");
+        bladder.update(0.05F);
+        check(!bladder.character(id).pissing, "the empty bladder stops emission");
+
+        gtc::World wet;
+        const auto wetId = wet.addCharacter("Persistent Spot", false);
+        place(wet, wetId, {0, 0});
+        wet.toggleZip(wetId);
+        wet.setInput(wetId, {}, false, true, 0, -0.4F);
+        for (int i = 0; i < 30; ++i) wet.update(0.05F);
+        wet.setInput(wetId, {}, false, false, 0, 0);
+        wet.update(0.05F);
+        wet.removeCharacter(wetId);
+        check(!wet.puddles().empty(), "physical impacts leave persistent stains");
+        const double gameBefore = wet.gameSeconds();
+        for (int i = 0; i < 100; ++i) wet.update(0.1F);
+        check(std::abs((wet.gameSeconds() - gameBefore) - 150.0) < 0.001,
+              "ten real seconds advance one hundred fifty game seconds");
+        double youngest = 100000.0;
+        for (const auto& puddle : wet.puddles()) youngest = std::min(youngest, puddle.age);
+        int steps = 0;
+        while (!wet.puddles().empty() && steps < 57620) { wet.update(0.1F); ++steps; }
+        check(wet.puddles().empty() && std::abs(steps * 0.1F - (gtc::kPuddleLifetimeSeconds - youngest)) < 0.11F,
+              "a stain dries after exactly one twenty-four-hour game day");
     });
 
     test("god attacks are authoritative, ranged, and blockable", [] {
@@ -589,11 +642,13 @@ int main() {
         const auto aimedTarget = ranged.character(victim);
         const float expectedYaw = std::atan2(aimedTarget.position.x - aimed.position.x,
                                              aimedTarget.position.y - aimed.position.y);
-        check(aimedTarget.health == 93.0F && aimed.needs.bladder < bladder &&
+        check(aimedTarget.health == 100.0F && aimed.needs.bladder < bladder && ranged.projectiles().size() == 1 &&
               std::abs(aimed.yaw - expectedYaw) < 0.0001F,
-              "double-left ranged attack faces the target and shoots without pathing");
+              "ranged click spawns a physical round instead of applying instant damage");
         check(ranged.character(pisser).path.empty() && ranged.character(pisser).attackAnim > 0.0F,
               "ranged attack never creates an approach path");
+        for (int i = 0; i < 20 && !ranged.projectiles().empty(); ++i) ranged.update(0.05F);
+        check(ranged.character(victim).health == 93.0F, "the physical round damages only after swept impact");
         place(ranged, victim, {0, 4.0F});
         for (int i = 0; i < 12; ++i) ranged.update(0.05F);
         const float health = ranged.character(victim).health;
@@ -601,8 +656,11 @@ int main() {
         ranged.attack(pisser, victim, true);
         const auto attempt = ranged.character(pisser);
         check(ranged.character(victim).health == health && attempt.path.empty() && attempt.attackAnim > 0.0F &&
-              attempt.needs.bladder < attemptBladder && attempt.notice.find("Long-distance") != std::string::npos,
-              "long ranged attacks always shoot without chasing or refusing");
+              attempt.needs.bladder < attemptBladder && !ranged.projectiles().empty() &&
+              attempt.notice.find("Physical shot") != std::string::npos,
+              "long ranged attacks always spawn a round without chasing or refusing");
+        for (int i = 0; i < 20 && !ranged.projectiles().empty(); ++i) ranged.update(0.05F);
+        check(ranged.character(victim).health < health, "physical rounds have no artificial three-metre cutoff");
 
         gtc::World approach;
         const auto chaser = approach.addCharacter("Chaser", false);

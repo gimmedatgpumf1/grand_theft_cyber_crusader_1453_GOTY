@@ -406,10 +406,10 @@ double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
         }
         if (support < 0.25 || total < 1e-8) continue;
         const Vec3 local = (point / total) * kHumanHeightScale;
-        const double outerX = local.x / 0.53;
-        const double outerZ = (local.z - (0.05 - kToiletSeatForwardOffset)) / 0.64;
-        const double innerX = local.x / 0.32;
-        const double innerZ = (local.z - (0.08 - kToiletSeatForwardOffset)) / 0.40;
+        const double outerX = local.x / 0.1905;
+        const double outerZ = (local.z - (0.06 - kToiletSeatForwardOffset)) / 0.270;
+        const double innerX = local.x / 0.145;
+        const double innerZ = (local.z - (0.06 - kToiletSeatForwardOffset)) / 0.205;
         if (outerX * outerX + outerZ * outerZ > 1.0 || innerX * innerX + innerZ * innerZ < 1.0) continue;
         lowest = std::min(lowest, local.y);
     }
@@ -730,18 +730,27 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         const Vec3 center = cache.posed[pivot];
         const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
         const Vec3 right{std::cos(character.yaw), 0, -std::sin(character.yaw)};
-        const Vec3 left = center - right * 0.075 - forward * 0.015 + Vec3{0, -0.045, 0};
-        const Vec3 other = center + right * 0.075 - forward * 0.015 + Vec3{0, -0.045, 0};
-        const Vec3 top = center - forward * 0.025 + Vec3{0, 0.045, 0};
-        const Vec3 tip = center + forward * 0.025 + Vec3{0, -0.010, 0};
+        const Vec3 rows[3][3] = {
+            {center - right * 0.105 - forward * 0.018 + Vec3{0, 0.085, 0},
+             center + forward * 0.050 + Vec3{0, 0.065, 0},
+             center + right * 0.105 - forward * 0.018 + Vec3{0, 0.085, 0}},
+            {center - right * 0.102 - forward * 0.012 + Vec3{0, -0.015, 0},
+             center + forward * 0.115 + Vec3{0, -0.010, 0},
+             center + right * 0.102 - forward * 0.012 + Vec3{0, -0.015, 0}},
+            {center - right * 0.085 - forward * 0.004 + Vec3{0, -0.115, 0},
+             center + forward * 0.045 + Vec3{0, -0.105, 0},
+             center + right * 0.085 - forward * 0.004 + Vec3{0, -0.115, 0}}};
+        Material tent = trousers;
+        tent.kind = Material::Kind::Textured;
         auto fold = [&](Vec3 a, Vec3 b, Vec3 c) {
             const Vec3 normal = normalized(cross(b - a, c - a));
             rasterizer.triangle({cameraVertex(camera, a, normal, a, {0, 0}),
-                cameraVertex(camera, b, normal, b, {1, 0}), cameraVertex(camera, c, normal, c, {0.5, 1})}, trousers);
+                cameraVertex(camera, b, normal, b, {1, 0}), cameraVertex(camera, c, normal, c, {0.5, 1})}, tent);
         };
-        fold(left, tip, top);
-        fold(top, other, tip);
-        fold(left, other, tip);
+        for (int row = 0; row < 2; ++row) for (int side = 0; side < 2; ++side) {
+            fold(rows[row][side], rows[row + 1][side], rows[row + 1][side + 1]);
+            fold(rows[row][side], rows[row + 1][side + 1], rows[row][side + 1]);
+        }
     }
     const int collarBone = boneIndex(model, "neck01");
     const Transform collarTransform = collarBone >= 0 ? transforms[collarBone] : rootTransform;

@@ -180,6 +180,9 @@ void parseWorld(const JsonValue& value, ClientWorld& world) {
 void parseState(const JsonValue& value, ClientState& state) {
     state.tick = static_cast<std::uint64_t>(value.numberAt("tick"));
     state.time = static_cast<std::uint64_t>(value.numberAt("time"));
+    state.gameTime = value.numberAt("gameTime", state.gameTime);
+    state.day = static_cast<std::uint32_t>(value.numberAt("day", 1));
+    state.wind = {static_cast<float>(value.numberAt("windX")), static_cast<float>(value.numberAt("windZ"))};
     state.toiletUser = static_cast<std::uint32_t>(value.numberAt("toiletUser"));
     state.characters.clear();
     if (const JsonValue* characters = value.get("characters")) {
@@ -195,7 +198,23 @@ void parseState(const JsonValue& value, ClientState& state) {
             puddle.height = static_cast<float>(item.numberAt("height", 0.018));
             puddle.normal = {static_cast<float>(item.numberAt("nx")), static_cast<float>(item.numberAt("nz"))};
             puddle.vertical = item.boolAt("vertical");
+            puddle.age = item.numberAt("age");
             state.puddles.push_back(puddle);
+        }
+    }
+    state.projectiles.clear();
+    if (const JsonValue* projectiles = value.get("projectiles")) {
+        for (const JsonValue& item : projectiles->array()) {
+            Projectile projectile;
+            projectile.id = static_cast<std::uint32_t>(item.numberAt("id"));
+            projectile.owner = static_cast<std::uint32_t>(item.numberAt("owner"));
+            projectile.kind = item.numberAt("kind") > 0.5 ? ProjectileKind::Bullet : ProjectileKind::Piss;
+            projectile.position = {static_cast<float>(item.numberAt("x")), static_cast<float>(item.numberAt("z"))};
+            projectile.height = static_cast<float>(item.numberAt("y"));
+            projectile.velocity = {static_cast<float>(item.numberAt("vx")), static_cast<float>(item.numberAt("vz"))};
+            projectile.verticalVelocity = static_cast<float>(item.numberAt("vy"));
+            projectile.age = static_cast<float>(item.numberAt("age"));
+            state.projectiles.push_back(projectile);
         }
     }
     state.events.clear();
