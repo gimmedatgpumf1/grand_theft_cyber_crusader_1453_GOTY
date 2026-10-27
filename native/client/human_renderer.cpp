@@ -102,6 +102,8 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     const double idleHip = 8.0 * pi / 180.0 * idle;
     const double idleAdduction = 5.0 * pi / 180.0 * idle;
     const double armRelax = seated ? 0.0 : character.grabbing ? 0.58 : prone ? 0.35 : 0.60;
+    const bool freeArms = !seated && !character.grabbing && !prone && character.toiletAction == ToiletAction::None;
+    const double elbowRelax = freeArms ? 0.65 : 0.0;
     const double reachHeight = character.grabHeight > 0.0F ? character.grabHeight - character.elevation : 1.40;
     const double climbAngle = -std::acos(std::clamp((1.35 - reachHeight) / 0.62, -0.96, 0.98));
     const double climbReach = character.grabbing && forwardMovement > 0.05 ? std::sin(phase * 1.4) * 0.18 : 0.0;
@@ -118,6 +120,7 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
             if (bone.name == "lowerleg01.R") angle = std::max(0.0, -swing) * 0.75;
             if (bone.name == "upperarm01.L") angle = swing * 0.72;
             if (bone.name == "upperarm01.R") angle = -swing * 0.72;
+            if (bone.name == "lowerarm01.L" || bone.name == "lowerarm01.R") angle = elbowRelax;
             if (character.toiletAction == ToiletAction::Piss && bone.name == "upperarm01.R") angle = -0.42;
             if (crouch > 0.0) {
                 if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle += (-1.25 - angle) * crouch;

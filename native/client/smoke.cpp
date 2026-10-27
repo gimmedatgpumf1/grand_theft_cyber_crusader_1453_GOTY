@@ -422,6 +422,24 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
               ".", standingState.tick, true);
     const Vec3 posedEyeJoint = (jointPosition(corneaCache.posed, eyeModel.eyeSource[0]) +
                                 jointPosition(corneaCache.posed, eyeModel.eyeSource[1])) * 0.5;
+    bool relaxedArms = true;
+    for (const char* side : {"L", "R"}) {
+        const std::string wristName = std::string("wrist.") + side;
+        const std::string hipName = std::string("upperleg01.") + side;
+        const auto wrist = std::find_if(eyeModel.rigBones.begin(), eyeModel.rigBones.end(),
+            [&](const RigBone& bone) { return bone.name == wristName; });
+        const auto hip = std::find_if(eyeModel.rigBones.begin(), eyeModel.rigBones.end(),
+            [&](const RigBone& bone) { return bone.name == hipName; });
+        if (wrist == eyeModel.rigBones.end() || hip == eyeModel.rigBones.end()) {
+            relaxedArms = false;
+            continue;
+        }
+        const Vec3 wristPoint = jointPosition(corneaCache.posed, wrist->head);
+        const Vec3 hipPoint = jointPosition(corneaCache.posed, hip->head);
+        const double forward = dot(wristPoint - hipPoint, bodyForward);
+        relaxedArms = relaxedArms && forward > -0.15 && forward < 0.16 &&
+            wristPoint.y < hipPoint.y + 0.02 && wristPoint.y > hipPoint.y - 0.35;
+    }
     constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
     const bool eyeJoint = length(neutralStanding.position - posedEyeJoint) < 1e-6;
     const bool gazeSplit = std::abs(headAngleForGaze(0.2)) < 1e-9 &&
@@ -681,6 +699,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         ", proneY=" + std::to_string(proneEye.y) + ", proneTravel=" +
         std::to_string(length(Vec3{proneEye.x - neutralStanding.position.x, 0, proneEye.z - neutralStanding.position.z})) +
         ", elevatedDelta=" + std::to_string(length((elevatedEye - neutralStanding.position) - Vec3{0, 0.5, 0}));
+    else if (!relaxedArms) error = "relaxed idle wrists must hang beside the thighs";
     else if (!fullChain) error = "first-person 117.2 mm forward, zero-vertical eye/manubrium geometry";
     else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
@@ -700,7 +719,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!crosshairs) error = "first/third-person centered crosshair, third=" + std::to_string(thirdCrosshair) +
         ", first=" + std::to_string(firstCrosshair) + ", god pixels=" + std::to_string(godCrosshairPixels);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && eyeJoint && gazeSplit && stanceEyes && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
+    return eyeMatrix && attached && eyeJoint && gazeSplit && stanceEyes && relaxedArms && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
         lowerBody && shaped && heightClearance && bodyTurn && yawBoundary && crosshairs && look;
 }
 
@@ -903,6 +922,11 @@ int main(int argc, char** argv) {
             male->speed = gtc::kFastWalkSpeed;
             male->manualMove = {0, 1};
             if (!stanceCapture("alpha-walk-tps", tps)) return 1;
+            male->speed = 0;
+            male->manualMove = {};
+            gtc::native::ViewState idleView = tps;
+            idleView.yaw = 0.85F;
+            if (!stanceCapture("alpha-idle-side-tps", idleView)) return 1;
             male->position = {0, -3.25F};
             male->yaw = 3.14159265F;
             male->elevation = 0.55F;
