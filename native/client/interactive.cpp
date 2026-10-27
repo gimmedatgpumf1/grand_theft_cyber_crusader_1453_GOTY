@@ -212,8 +212,9 @@ private:
 
     void setMode(ViewMode mode) {
         if (view_.mode == mode) return;
+        const ViewMode previous = view_.mode;
         view_.mode = mode;
-        keys_.clear();
+        if (previous == ViewMode::God || mode == ViewMode::God) keys_.clear();
         leftDown_ = rightDown_ = false;
         lastLeftClick_ = lastRightClick_ = {};
         view_.aiming = false;
@@ -222,16 +223,18 @@ private:
             captured_ = false;
         }
         if (mode == ViewMode::FirstPerson) {
-            view_.pitch = 0;
-            if (const Character* citizen = local()) view_.yaw = citizen->yaw;
+            if (const Character* citizen = visualState().character(client_.playerId())) {
+                clampViewToBody(view_, citizen->yaw, true);
+            }
         }
-        if (mode == ViewMode::ThirdPerson) view_.pitch = -0.18F;
+        if (mode == ViewMode::ThirdPerson) view_.pitch = std::clamp(view_.pitch, -1.05F, -0.06F);
         if (mode == ViewMode::God) {
             if (const Character* citizen = local()) {
                 view_.godX = citizen->position.x;
                 view_.godZ = citizen->position.y;
             }
         }
+        sendInput();
     }
 
     void closeOverlay() {
