@@ -54,6 +54,7 @@ public:
         }
         window_.size(view_.width, view_.height);
         view_.gpu = window_.gpu();
+        view_.gpuSkinning = window_.skinning();
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;
@@ -69,6 +70,7 @@ public:
             const float dt = std::min(0.05F, elapsed);
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
+            view_.time += elapsed;
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;

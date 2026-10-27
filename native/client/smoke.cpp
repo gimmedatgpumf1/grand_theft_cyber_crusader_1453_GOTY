@@ -139,9 +139,49 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 eyeView = transform(eye.position);
     const Vec3 targetView = transform(eye.target);
     const bool firstPerson = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
+    if (!firstPerson) {
+        error = "first-person eye matrix";
+        cleanup();
+        return false;
+    }
+    view.mode = ViewMode::ThirdPerson;
+    view.gpuSkinning = true;
+    view.time = 1.0;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || motionScene->skins.size() != 1) {
+        error = "missing GPU skin";
+        cleanup();
+        return false;
+    }
+    const gtc::native::GpuBatch* skinned = nullptr;
+    for (const auto& batch : motionScene->batches) if (batch.skinned && !batch.vertices.empty()) {
+        skinned = &batch;
+        break;
+    }
+    if (!skinned || motionScene->skins[0].matrices.empty() || motionScene->skins[0].matrices.size() % 16 != 0 ||
+        std::abs(skinned->modelMatrix[12] - 1) > 1e-9 || std::abs(skinned->modelMatrix[14] - 2) > 1e-9) {
+        error = "GPU skin transform";
+        cleanup();
+        return false;
+    }
+    const std::uint64_t skinRevision = motionScene->revision;
+    const std::vector<float> initialSkin = motionScene->skins[0].matrices;
+    ++state.tick;
+    view.time += 0.033;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) ||
+        motionScene->revision != skinRevision || motionScene->skins[0].matrices == initialSkin) {
+        error = "GPU skin animation rebuilt or froze";
+        cleanup();
+        return false;
+    }
+    state.characters[0].position = {3, 4};
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || motionScene->revision != skinRevision ||
+        std::abs(skinned->modelMatrix[12] - 3) > 1e-9 || std::abs(skinned->modelMatrix[14] - 4) > 1e-9) {
+        error = "GPU skin motion transform";
+        cleanup();
+        return false;
+    }
     cleanup();
-    if (!firstPerson) error = "first-person eye matrix";
-    return firstPerson;
+    return true;
 }
 
 } // namespace

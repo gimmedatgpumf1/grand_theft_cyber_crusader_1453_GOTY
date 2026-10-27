@@ -261,23 +261,27 @@ void Rasterizer::setCamera(const Camera& camera) {
     if (gpu_) scene_.viewMatrix = camera.viewMatrix();
 }
 
-void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw) {
+void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw, float localY) {
     objectId_ = id;
     objectPivot_ = pivot;
     objectYaw_ = yaw;
+    objectLocalY_ = localY;
 }
 
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
+        const bool skinned = input[0].skinned || input[1].skinned || input[2].skinned;
         std::size_t index = activeBatch_;
         bool reuse = index < scene_.batches.size();
         if (reuse) {
             const GpuBatch& candidate = scene_.batches[index];
-            reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+            reuse = candidate.objectId == objectId_ && candidate.skinned == skinned &&
+                sameMaterial(candidate.material, material);
         }
         if (!reuse) {
             auto found = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
-                return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+                return candidate.objectId == objectId_ && candidate.skinned == skinned &&
+                    sameMaterial(candidate.material, material);
             });
             if (found == scene_.batches.end()) {
                 scene_.batches.push_back({});
@@ -287,6 +291,7 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 created.pivotX = static_cast<float>(objectPivot_.x);
                 created.pivotZ = static_cast<float>(objectPivot_.y);
                 created.yaw = objectYaw_;
+                created.skinned = skinned;
                 created.vertices.reserve(12288);
                 index = scene_.batches.size() - 1;
             } else {
@@ -298,11 +303,12 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         batch.pivotX = static_cast<float>(objectPivot_.x);
         batch.pivotZ = static_cast<float>(objectPivot_.y);
         batch.yaw = objectYaw_;
+        batch.localY = objectLocalY_;
         for (const RenderVertex& vertex : input) {
             batch.vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
                 static_cast<float>(vertex.view.z), static_cast<float>(vertex.normal.x),
                 static_cast<float>(vertex.normal.y), static_cast<float>(vertex.normal.z),
-                static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y)});
+                static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y), vertex.bones, vertex.weights});
         }
         return;
     }

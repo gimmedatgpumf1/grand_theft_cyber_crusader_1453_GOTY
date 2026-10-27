@@ -69,6 +69,10 @@ constexpr gl::Enum compileStatus = 0x8B81;
 constexpr gl::Enum linkStatus = 0x8B82;
 constexpr gl::Enum texture0 = 0x84C0;
 constexpr gl::Enum texture1 = 0x84C1;
+constexpr gl::Enum texture2 = 0x84C2;
+constexpr gl::Enum rgba32F = 0x8814;
+constexpr gl::Enum maxVertexTextureUnits = 0x8B4C;
+constexpr gl::Enum version = 0x1F02;
 constexpr gl::Enum unpackAlignment = 0x0CF5;
 constexpr gl::Enum packAlignment = 0x0D05;
 constexpr gl::Enum cullFace = 0x0B44;
@@ -138,6 +142,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(readPixels, "glReadPixels");
     GTC_LOAD_GL(getError, "glGetError");
     GTC_LOAD_GL(getString, "glGetString");
+    GTC_LOAD_GL(getIntegerv, "glGetIntegerv");
     GTC_LOAD_GL(color3f, "glColor3f");
     GTC_LOAD_GL(alphaFunc, "glAlphaFunc");
     GTC_LOAD_GL(rasterPos2i, "glRasterPos2i");
@@ -182,6 +187,10 @@ bool loadShaderApi(ShaderApi& api, const std::function<void*(const char*)>& symb
     GTC_LOAD_SHADER(uniform1f, "glUniform1f");
     GTC_LOAD_SHADER(uniform3f, "glUniform3f");
     GTC_LOAD_SHADER(activeTexture, "glActiveTexture");
+    GTC_LOAD_SHADER(bindAttribLocation, "glBindAttribLocation");
+    GTC_LOAD_SHADER(enableVertexAttribArray, "glEnableVertexAttribArray");
+    GTC_LOAD_SHADER(disableVertexAttribArray, "glDisableVertexAttribArray");
+    GTC_LOAD_SHADER(vertexAttribPointer, "glVertexAttribPointer");
 #undef GTC_LOAD_SHADER
     return true;
 }
@@ -194,7 +203,21 @@ bool OpenGlRenderer::load(const std::function<void*(const char*)>& symbol) {
     textures_.clear();
     if (!gl::loadApi(api_, symbol)) return false;
     vbo_ = gl::loadBufferApi(buffers_, symbol);
-    shaders_ = gl::loadShaderApi(shaderApi_, symbol) && buildShader();
+    const bool shaderApiLoaded = gl::loadShaderApi(shaderApi_, symbol);
+    bool skinningCapable = false;
+    if (shaderApiLoaded) {
+        gl::Int units = 0;
+        api_.getIntegerv(c::maxVertexTextureUnits, &units);
+        const gl::UByte* versionName = api_.getString(c::version);
+        skinningCapable = units > 0 && versionName && std::atoi(reinterpret_cast<const char*>(versionName)) >= 3;
+    }
+    shaders_ = shaderApiLoaded && buildShader(skinningCapable);
+    bool skinShader = shaders_ && skinningCapable;
+    if (!shaders_ && skinningCapable) {
+        shaders_ = buildShader(false);
+        skinShader = false;
+    }
+    skinning_ = skinShader;
     loaded_ = true;
     api_.enable(c::depthTest);
     api_.depthFunc(c::less);
@@ -218,12 +241,17 @@ void OpenGlRenderer::shutdown() {
     if (loaded_ && shaderProgram_) shaderApi_.deleteProgram(shaderProgram_);
     shaderProgram_ = 0;
     shaders_ = false;
+    skinning_ = false;
     if (loaded_) {
         for (gl::UInt& texture : overlayTextures_) {
             if (texture) api_.deleteTextures(1, &texture);
             texture = 0;
         }
     }
+    if (loaded_) {
+        for (const auto& [object, texture] : boneTextures_) api_.deleteTextures(1, &texture.id);
+    }
+    boneTextures_.clear();
     textures_.clear();
     bottomUp_.clear();
     overlay_.clear();
@@ -237,8 +265,8 @@ bool OpenGlRenderer::checkError() {
     return !debug_ || api_.getError() == c::noError;
 }
 
-bool OpenGlRenderer::buildShader() {
-    static const char vertexSource[] = R"GLSL(#version 110
+bool OpenGlRenderer::buildShader(bool allowSkinning) {
+    static const char baseVertexSource[] = R"GLSL(#version 110
 varying vec3 vPosition;
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -249,6 +277,53 @@ void main() {
     vUv = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
     vColor = gl_Color.rgb;
     gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+}
+)GLSL";
+    static const char skinningVertexSource[] = R"GLSL(#version 110
+attribute vec4 boneIndices;
+attribute vec4 boneWeights;
+uniform sampler2D boneMap;
+uniform int skinned;
+uniform float boneCount;
+varying vec3 vPosition;
+varying vec3 vNormal;
+varying vec2 vUv;
+varying vec3 vColor;
+mat4 readBone(float index) {
+    float width = boneCount * 4.0;
+    float x = index * 4.0;
+    return mat4(texture2D(boneMap, vec2((x + 0.5) / width, 0.5)),
+                texture2D(boneMap, vec2((x + 1.5) / width, 0.5)),
+                texture2D(boneMap, vec2((x + 2.5) / width, 0.5)),
+                texture2D(boneMap, vec2((x + 3.5) / width, 0.5)));
+}
+void main() {
+    vec4 position = gl_Vertex;
+    vec3 normal = gl_Normal;
+    if (skinned != 0) {
+        vec4 posed = vec4(0.0);
+        vec3 posedNormal = vec3(0.0);
+        float total = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            float weight = boneWeights[i];
+            if (weight > 0.0) {
+                mat4 bone = readBone(boneIndices[i]);
+                posed += (bone * gl_Vertex) * weight;
+                posedNormal += (bone[0].xyz * gl_Normal.x + bone[1].xyz * gl_Normal.y +
+                                bone[2].xyz * gl_Normal.z) * weight;
+                total += weight;
+            }
+        }
+        if (total > 0.000001) {
+            position = posed / total;
+            normal = posedNormal / total;
+        }
+    }
+    vPosition = (gl_ModelViewMatrix * position).xyz;
+    vNormal = gl_NormalMatrix * normal;
+    vUv = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    vColor = gl_Color.rgb;
+    gl_Position = gl_ModelViewProjectionMatrix * position;
 }
 )GLSL";
     static const char fragmentSource[] = R"GLSL(#version 110
@@ -327,7 +402,7 @@ void main() {
         }
         return shader;
     };
-    const gl::UInt vertex = compile(c::vertexShader, vertexSource);
+    const gl::UInt vertex = compile(c::vertexShader, allowSkinning ? skinningVertexSource : baseVertexSource);
     const gl::UInt fragment = compile(c::fragmentShader, fragmentSource);
     if (!vertex || !fragment) {
         if (vertex) shaderApi_.deleteShader(vertex);
@@ -337,6 +412,10 @@ void main() {
     shaderProgram_ = shaderApi_.createProgram();
     shaderApi_.attachShader(shaderProgram_, vertex);
     shaderApi_.attachShader(shaderProgram_, fragment);
+    if (allowSkinning) {
+        shaderApi_.bindAttribLocation(shaderProgram_, 12, "boneIndices");
+        shaderApi_.bindAttribLocation(shaderProgram_, 13, "boneWeights");
+    }
     shaderApi_.linkProgram(shaderProgram_);
     shaderApi_.deleteShader(vertex);
     shaderApi_.deleteShader(fragment);
@@ -355,12 +434,15 @@ void main() {
     shaderApi_.useProgram(shaderProgram_);
     shaderApi_.uniform1i(shaderApi_.getUniformLocation(shaderProgram_, "baseMap"), 0);
     shaderApi_.uniform1i(shaderApi_.getUniformLocation(shaderProgram_, "normalMap"), 1);
+    shaderApi_.uniform1i(shaderApi_.getUniformLocation(shaderProgram_, "boneMap"), 2);
     shaderUniforms_.textured = shaderApi_.getUniformLocation(shaderProgram_, "textured");
     shaderUniforms_.normalMapped = shaderApi_.getUniformLocation(shaderProgram_, "normalMapped");
     shaderUniforms_.unlit = shaderApi_.getUniformLocation(shaderProgram_, "unlit");
     shaderUniforms_.hair = shaderApi_.getUniformLocation(shaderProgram_, "hair");
     shaderUniforms_.specular = shaderApi_.getUniformLocation(shaderProgram_, "specularAmount");
     shaderUniforms_.fogColor = shaderApi_.getUniformLocation(shaderProgram_, "fogColor");
+    shaderUniforms_.skinned = shaderApi_.getUniformLocation(shaderProgram_, "skinned");
+    shaderUniforms_.boneCount = shaderApi_.getUniformLocation(shaderProgram_, "boneCount");
     shaderApi_.useProgram(0);
     return true;
 }
@@ -371,7 +453,7 @@ std::string OpenGlRenderer::name() const {
     const gl::UByte* rendererName = api_.getString(c::renderer);
     const std::string vendorText = vendorName ? reinterpret_cast<const char*>(vendorName) : "Unknown vendor";
     const std::string rendererText = rendererName ? reinterpret_cast<const char*>(rendererName) : "Unknown renderer";
-    return vendorText + " / " + rendererText + (shaders_ ? " / GLSL" : " / fixed-function");
+    return vendorText + " / " + rendererText + (skinning_ ? " / GLSL skin" : shaders_ ? " / GLSL" : " / fixed-function");
 }
 
 gl::UInt OpenGlRenderer::texture(const Texture& source) {
@@ -391,9 +473,34 @@ gl::UInt OpenGlRenderer::texture(const Texture& source) {
     return id;
 }
 
+gl::UInt OpenGlRenderer::boneTexture(const ObjectSkin& skin) {
+    if (skin.matrices.empty() || skin.matrices.size() % 16 != 0) return 0;
+    const int width = static_cast<int>(skin.matrices.size() / 4);
+    BoneTexture& cached = boneTextures_[skin.objectId];
+    if (!cached.id) api_.genTextures(1, &cached.id);
+    api_.bindTexture(c::texture2D, cached.id);
+    if (!cached.width) {
+        api_.texParameteri(c::texture2D, c::textureMinFilter, c::nearest);
+        api_.texParameteri(c::texture2D, c::textureMagFilter, c::nearest);
+        api_.texParameteri(c::texture2D, c::textureWrapS, c::clamp);
+        api_.texParameteri(c::texture2D, c::textureWrapT, c::clamp);
+    }
+    api_.pixelStorei(c::unpackAlignment, 1);
+    if (cached.width != width) {
+        api_.texImage2D(c::texture2D, 0, c::rgba32F, width, 1, 0,
+                        c::rgba, c::floatType, skin.matrices.data());
+        cached.width = width;
+    } else {
+        api_.texSubImage2D(c::texture2D, 0, 0, 0, width, 1,
+                           c::rgba, c::floatType, skin.matrices.data());
+    }
+    return cached.id;
+}
+
 bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     if (!loaded_ || scene.width <= 0 || scene.height <= 0) return false;
     const bool refresh = scene.revision == 0 || uploadedScene_ != &scene || uploadedRevision_ != scene.revision;
+    boneUploads_.clear();
     api_.viewport(0, 0, scene.width, scene.height);
     api_.drawBuffer(c::back);
     const auto sceneChannel = [&](double value) {
@@ -444,6 +551,13 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     for (std::size_t batchIndex = 0; batchIndex < scene.batches.size(); ++batchIndex) {
         const GpuBatch& batch = scene.batches[batchIndex];
         if (batch.vertices.empty()) continue;
+        const ObjectSkin* skin = nullptr;
+        if (batch.skinned && skinning_) {
+            const auto found = std::find_if(scene.skins.begin(), scene.skins.end(), [&](const ObjectSkin& candidate) {
+                return candidate.objectId == batch.objectId && !candidate.matrices.empty();
+            });
+            if (found != scene.skins.end()) skin = &*found;
+        }
         const Material& material = batch.material;
         api_.matrixMode(c::textureMatrix);
         api_.loadIdentity();
@@ -481,7 +595,25 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         } else {
             api_.disable(c::alphaTest);
         }
+        bool useSkin = false;
         if (shaders_) {
+            if (skin) {
+                gl::UInt bone = 0;
+                const auto uploaded = std::find(boneUploads_.begin(), boneUploads_.end(), skin->objectId);
+                if (uploaded != boneUploads_.end()) {
+                    bone = boneTextures_[skin->objectId].id;
+                } else {
+                    bone = boneTexture(*skin);
+                    boneUploads_.push_back(skin->objectId);
+                }
+                shaderApi_.activeTexture(c::texture2);
+                api_.bindTexture(c::texture2D, bone);
+                useSkin = bone != 0;
+                shaderApi_.activeTexture(c::texture0);
+            }
+            shaderApi_.uniform1i(shaderUniforms_.skinned, useSkin ? 1 : 0);
+            if (useSkin) shaderApi_.uniform1f(shaderUniforms_.boneCount,
+                static_cast<gl::Float>(skin->matrices.size() / 16));
             const bool normalMapped = material.kind == Material::Kind::Skin && material.normalYoung &&
                 !material.normalYoung->pixels.empty();
             if (normalMapped) {
@@ -521,10 +653,29 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             api_.normalPointer(c::floatType, sizeof(GpuVertex), &vertices->nx);
             api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), &vertices->u);
         }
+        if (shaders_) {
+            if (useSkin) {
+                const void* bones = uploaded ? reinterpret_cast<const void*>(sizeof(gl::Float) * 8) :
+                    static_cast<const void*>(vertices->bones.data());
+                const void* weights = uploaded ? reinterpret_cast<const void*>(sizeof(gl::Float) * 12) :
+                    static_cast<const void*>(vertices->weights.data());
+                shaderApi_.enableVertexAttribArray(12);
+                shaderApi_.enableVertexAttribArray(13);
+                shaderApi_.vertexAttribPointer(12, 4, c::floatType, 0, sizeof(GpuVertex), bones);
+                shaderApi_.vertexAttribPointer(13, 4, c::floatType, 0, sizeof(GpuVertex), weights);
+            } else {
+                shaderApi_.disableVertexAttribArray(12);
+                shaderApi_.disableVertexAttribArray(13);
+            }
+        }
         api_.drawArrays(c::triangles, 0, static_cast<gl::Sizei>(batch.vertices.size()));
     }
     if (vbo_) buffers_.bindBuffer(c::arrayBuffer, 0);
-    if (shaders_) shaderApi_.useProgram(0);
+    if (shaders_) {
+        shaderApi_.disableVertexAttribArray(12);
+        shaderApi_.disableVertexAttribArray(13);
+        shaderApi_.useProgram(0);
+    }
     if (shaderApi_.activeTexture) shaderApi_.activeTexture(c::texture0);
     api_.disableClientState(c::vertexArray);
     api_.disableClientState(c::normalArray);

@@ -535,6 +535,7 @@ void NativeWindow::size(int& width, int& height) const {
 }
 
 bool NativeWindow::gpu() const { return impl_ && impl_->gpu; }
+bool NativeWindow::skinning() const { return impl_ && impl_->gpu && impl_->renderer.skinning(); }
 
 bool NativeWindow::opened() const { return impl_ && impl_->open; }
 

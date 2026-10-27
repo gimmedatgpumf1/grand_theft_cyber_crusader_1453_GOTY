@@ -25,7 +25,9 @@ struct ViewState {
     int height = 640;
     double fps = 0.0;
     double frameMilliseconds = 0.0;
+    double time = 0.0;
     bool gpu = false;
+    bool gpuSkinning = false;
     bool highlightToilet = false;
 };
 
