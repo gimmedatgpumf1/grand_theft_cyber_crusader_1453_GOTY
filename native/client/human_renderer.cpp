@@ -263,26 +263,41 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
 
 } // namespace
 
+void prepareHuman(const HumanModel& model, const Character& character, HumanRenderCache& cache) {
+    if (cache.valid && cache.male == character.appearance.male && cache.morphs == character.appearance.morphs) return;
+    std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
+    std::vector<int> ids(model.vertices.size());
+    for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
+    cache.rest = model.shape(ids, morphs);
+    cache.normals.assign(cache.rest.size(), Vec3{});
+    for (const Triangle& triangle : model.triangles) {
+        const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
+                                  cache.rest[triangle.v[2]] - cache.rest[triangle.v[0]]);
+        for (int index : triangle.v) cache.normals[index] += normal;
+    }
+    for (Vec3& normal : cache.normals) normal = normalized(normal);
+    cache.morphs = character.appearance.morphs;
+    cache.male = character.appearance.male;
+    cache.valid = true;
+    cache.poseValid = false;
+}
+
+Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
+                      const Character& character, std::uint64_t tick) {
+    const std::vector<Transform> transforms = pose(model, rest, character, tick);
+    const int headIndex = boneIndex(model, "head");
+    const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
+    const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
+    const Vec3 posed = head.point(eyes);
+    const double rootY = character.onToilet ? -0.35 : 0.0;
+    return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
+}
+
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
                const std::string& root, std::uint64_t tick, bool hideHead) {
     std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
-    if (!cache.valid || cache.male != character.appearance.male || cache.morphs != character.appearance.morphs) {
-        std::vector<int> ids(model.vertices.size());
-        for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
-        cache.rest = model.shape(ids, morphs);
-        cache.normals.assign(cache.rest.size(), Vec3{});
-        for (const Triangle& triangle : model.triangles) {
-            const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
-                                      cache.rest[triangle.v[2]] - cache.rest[triangle.v[0]]);
-            for (int index : triangle.v) cache.normals[index] += normal;
-        }
-        for (Vec3& normal : cache.normals) normal = normalized(normal);
-        cache.morphs = character.appearance.morphs;
-        cache.male = character.appearance.male;
-        cache.valid = true;
-        cache.poseValid = false;
-    }
+    prepareHuman(model, character, cache);
     const std::vector<Vec3>& rest = cache.rest;
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     const bool freshPose = !cache.poseValid || cache.poseTick != tick ||

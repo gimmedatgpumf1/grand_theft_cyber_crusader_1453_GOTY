@@ -47,7 +47,8 @@ Vec3 unobstructedCamera(const ClientWorld& world, Vec3 target, Vec3 desired) {
     return target + direction * adjusted;
 }
 
-Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId, const ViewState& view) {
+Camera makeExternalCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
+                          const ViewState& view) {
     Camera camera;
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
@@ -64,27 +65,19 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
     }
     const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
     const Vec3 forward{std::sin(yaw) * cp, sp, std::cos(yaw) * cp};
-    if (view.mode == ViewMode::FirstPerson) {
-        const bool seated = local && local->onToilet && !(local->appearance.male && local->toiletAction == ToiletAction::Piss);
-        const float bodyYaw = local ? local->yaw : yaw;
-        camera.position = citizen + Vec3{0, seated ? 1.43 : 1.65, 0} +
-                          Vec3{std::sin(bodyYaw) * 0.17, 0, std::cos(bodyYaw) * 0.17};
-        camera.target = camera.position + forward;
-    } else {
-        const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
-        camera.target = citizen + Vec3{0, 1.25, 0} + right * 0.42;
-        camera.position = camera.target - forward * view.distance;
-        camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
-        camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
-        const Vec3 direct = unobstructedCamera(world, camera.target, camera.position);
-        camera.position = direct;
-        if (length(direct - camera.target) < 1.8) {
-            Vec3 lifted = camera.target - forward * view.distance + Vec3{0, 1.4, 0};
-            lifted.x = std::clamp(lifted.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
-            lifted.z = std::clamp(lifted.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
-            lifted = unobstructedCamera(world, camera.target, lifted);
-            if (length(lifted - camera.target) > length(direct - camera.target)) camera.position = lifted;
-        }
+    const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
+    camera.target = citizen + Vec3{0, 1.25, 0} + right * 0.42;
+    camera.position = camera.target - forward * view.distance;
+    camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
+    camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
+    const Vec3 direct = unobstructedCamera(world, camera.target, camera.position);
+    camera.position = direct;
+    if (length(direct - camera.target) < 1.8) {
+        Vec3 lifted = camera.target - forward * view.distance + Vec3{0, 1.4, 0};
+        lifted.x = std::clamp(lifted.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
+        lifted.z = std::clamp(lifted.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
+        lifted = unobstructedCamera(world, camera.target, lifted);
+        if (length(lifted - camera.target) > length(direct - camera.target)) camera.position = lifted;
     }
     return camera;
 }
@@ -554,15 +547,28 @@ const std::vector<MorphSpec>& WorldRenderer::morphSpecs(bool male) const {
     return male ? male_.specs : female_.specs;
 }
 
-Camera makeViewCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
-                      const ViewState& view) {
-    return makeCamera(world, state, localId, view);
+Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& state,
+                                 std::uint32_t localId, const ViewState& view) const {
+    const Character* local = state.character(localId);
+    if (view.mode != ViewMode::FirstPerson || !local) return makeExternalCamera(world, state, localId, view);
+    const HumanModel& model = local->appearance.male ? male_ : female_;
+    HumanRenderCache& cache = humanCache_[localId];
+    prepareHuman(model, *local, cache);
+    Camera camera;
+    camera.width = std::max(1, view.width);
+    camera.height = std::max(1, view.height);
+    camera.fovDegrees = 62;
+    camera.position = humanEyePosition(model, cache.rest, *local, state.tick);
+    const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
+    const Vec3 forward{std::sin(view.yaw) * cp, sp, std::cos(view.yaw) * cp};
+    camera.target = camera.position + forward;
+    return camera;
 }
 
 void rotateView(ViewState& view, double mouseX, double mouseY) {
     if (view.mode == ViewMode::God) return;
-    view.yaw += static_cast<float>(mouseX * 0.0022);
-    view.pitch += static_cast<float>(mouseY * 0.0022);
+    view.yaw -= static_cast<float>(mouseX * 0.0022);
+    view.pitch -= static_cast<float>(mouseY * 0.0022);
     view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.5F : -1.05F,
                             view.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
 }
@@ -592,7 +598,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         return false;
     }
     const auto profileStart = std::chrono::steady_clock::now();
-    Camera camera = makeCamera(world, state, localId, view);
+    Camera camera = viewCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
     const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;

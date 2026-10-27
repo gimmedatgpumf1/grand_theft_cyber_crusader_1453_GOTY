@@ -118,7 +118,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
-    const Camera eye = makeViewCamera(world, state, citizen.id, view);
+    const Camera eye = renderer.viewCamera(world, state, citizen.id, view);
     const auto& m = motionScene->viewMatrix;
     const auto transform = [&](Vec3 point) {
         return Vec3{m[0] * point.x + m[4] * point.y + m[8] * point.z + m[12],
@@ -127,19 +127,68 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     };
     const Vec3 eyeView = transform(eye.position);
     const Vec3 targetView = transform(eye.target);
-    const Vec3 attachedEye{1 + std::sin(0.5) * 0.17, 1.65, 2 + std::cos(0.5) * 0.17};
+    HumanModel eyeModel;
+    if (!eyeModel.loadRuntime(".", true, error)) {
+        cleanup();
+        return false;
+    }
+    HumanRenderCache eyeCache;
+    prepareHuman(eyeModel, state.characters[0], eyeCache);
+    const Vec3 attachedEye = humanEyePosition(eyeModel, eyeCache.rest, state.characters[0], state.tick);
+    bool torsoRetained = false;
+    for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
+        for (const auto& vertex : batch.vertices) {
+            if (vertex.y > 1.10 && vertex.y < 1.40) torsoRetained = true;
+        }
+    }
+    const auto expectedEye = [&](const gtc::Character& character) {
+        HumanRenderCache cache;
+        prepareHuman(eyeModel, character, cache);
+        return humanEyePosition(eyeModel, cache.rest, character, state.tick);
+    };
+    state.characters[0].onToilet = true;
+    state.characters[0].toiletAction = gtc::ToiletAction::Shit;
+    ++state.tick;
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) {
+        cleanup();
+        return false;
+    }
+    const Camera seatedEye = renderer.viewCamera(world, state, citizen.id, view);
+    const Vec3 expectedSeatedEye = expectedEye(state.characters[0]);
+    const bool seated = length(seatedEye.position - expectedSeatedEye) < 1e-6 &&
+        length(transform(seatedEye.position)) < 1e-8 && seatedEye.position.y < eye.position.y - 0.01;
+    const int headHeight = eyeModel.specIndex("headHeight");
+    bool shaped = headHeight >= 0;
+    double shortY = 0, tallY = 0;
+    for (int value : {-100, 100}) {
+        if (!shaped) break;
+        ClientState shapeState = state;
+        gtc::Character& character = shapeState.characters[0];
+        character.appearance.morphs[headHeight] = value;
+        const Camera seatedShape = renderer.viewCamera(world, shapeState, citizen.id, view);
+        shaped = length(seatedShape.position - expectedEye(character)) < 1e-6;
+        character.onToilet = false;
+        character.toiletAction = gtc::ToiletAction::None;
+        const Camera standingShape = renderer.viewCamera(world, shapeState, citizen.id, view);
+        shaped = shaped && length(standingShape.position - expectedEye(character)) < 1e-6;
+        if (value < 0) shortY = standingShape.position.y;
+        else tallY = standingShape.position.y;
+    }
+    shaped = shaped && std::abs(tallY - shortY) > 0.001;
     ViewState mouse;
     mouse.mode = ViewMode::FirstPerson;
     mouse.pitch = 0;
     rotateView(mouse, 10, -20);
     const bool eyeMatrix = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
-    const bool attached = length(eye.position - attachedEye) < 1e-6;
-    const bool look = std::abs(mouse.yaw - 0.022F) < 1e-6F && std::abs(mouse.pitch + 0.044F) < 1e-6F;
+    const bool attached = length(eye.position - attachedEye) < 1e-6 && torsoRetained;
+    const bool look = std::abs(mouse.yaw + 0.022F) < 1e-6F && std::abs(mouse.pitch - 0.044F) < 1e-6F;
     cleanup();
     if (!eyeMatrix) error = "first-person eye matrix";
     else if (!attached) error = "first-person body attachment";
+    else if (!seated) error = "first-person sit-down head attachment";
+    else if (!shaped) error = "first-person morphed head attachment";
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && look;
+    return eyeMatrix && attached && seated && shaped && look;
 }
 
 } // namespace
@@ -246,10 +295,13 @@ int main(int argc, char** argv) {
         gtc::native::ViewState fps;
         fps.mode = gtc::native::ViewMode::FirstPerson;
         fps.pitch = -1.20;
+        gtc::native::ViewState fpsLevel;
+        fpsLevel.mode = gtc::native::ViewMode::FirstPerson;
         gtc::native::ViewState god;
         god.mode = gtc::native::ViewMode::God;
         const Capture captures[] = {{"alpha-tps", &alpha, tps}, {"beta-tps", &beta, tps},
-                                    {"alpha-fps", &alpha, fps}, {"god", &alpha, god}};
+                                    {"alpha-fps", &alpha, fps}, {"alpha-fps-level", &alpha, fpsLevel},
+                                    {"beta-fps-level", &beta, fpsLevel}, {"god", &alpha, god}};
         for (const Capture& capture : captures) {
             gtc::native::NativeFrame frame;
             if (!renderer.render(capture.client->world(), capture.client->state(), capture.client->playerId(),

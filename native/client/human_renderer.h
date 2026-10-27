@@ -27,6 +27,10 @@ struct HumanRenderCache {
     std::vector<RenderVertex> transformed;
 };
 
+void prepareHuman(const HumanModel& model, const Character& character, HumanRenderCache& cache);
+Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
+                      const Character& character, std::uint64_t tick);
+
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
                const std::string& root, std::uint64_t tick, bool hideHead);

@@ -222,7 +222,7 @@ private:
     }
 
     bool ground(double x, double y, gtc::Vec2& point) const {
-        const Camera camera = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 forward = normalized(camera.target - camera.position);
         const Vec3 right = normalized(cross(forward, camera.up));
         const Vec3 vertical = normalized(cross(right, forward));
@@ -236,7 +236,7 @@ private:
     }
 
     bool toiletHit(double x, double y) const {
-        const Camera camera = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 point = camera.view({client_.world().toilet.x, 0.72, client_.world().toilet.y});
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
