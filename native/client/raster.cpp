@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <iterator>
 #include <map>
 #include <thread>
 
@@ -100,7 +101,20 @@ struct Projected {
     Vec2 uv;
 };
 
+bool sameColor(Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
+
+bool sameMaterial(const Material& a, const Material& b) {
+    return a.kind == b.kind && sameColor(a.color, b.color) && sameColor(a.second, b.second) &&
+        a.texture == b.texture && a.young == b.young && a.old == b.old &&
+        a.normalYoung == b.normalYoung && a.normalOld == b.normalOld && a.age == b.age &&
+        a.specular == b.specular && a.unlit == b.unlit && a.constantLighting == b.constantLighting;
+}
+
+GpuRenderer activeGpuRenderer = nullptr;
+
 } // namespace
+
+void setGpuRenderer(GpuRenderer renderer) { activeGpuRenderer = renderer; }
 
 Color operator+(Color a, Color b) { return {a.r + b.r, a.g + b.g, a.b + b.b}; }
 Color operator*(Color a, double b) { return {a.r * b, a.g * b, a.b * b}; }
@@ -185,11 +199,36 @@ RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 so
     return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
-Rasterizer::Rasterizer(int width, int height, Color background, double focal) : width_(width), height_(height), focal_(focal),
-    depth_(static_cast<std::size_t>(width) * height, 1e100),
-    pixels_(static_cast<std::size_t>(width) * height, background) {}
+Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu)
+    : width_(width), height_(height), focal_(focal), gpu_(gpu) {
+    scene_.width = width;
+    scene_.height = height;
+    scene_.focal = focal;
+    scene_.background = background;
+    if (!gpu_) {
+        depth_.resize(static_cast<std::size_t>(width) * height, 1e100);
+        pixels_.resize(static_cast<std::size_t>(width) * height, background);
+    }
+}
 
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
+    if (gpu_) {
+        auto batch = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
+            return sameMaterial(candidate.material, material);
+        });
+        if (batch == scene_.batches.end()) {
+            scene_.batches.push_back({material, {}});
+            batch = std::prev(scene_.batches.end());
+            batch->vertices.reserve(12288);
+        }
+        for (const RenderVertex& vertex : input) {
+            batch->vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
+                static_cast<float>(vertex.view.z), static_cast<float>(vertex.normal.x),
+                static_cast<float>(vertex.normal.y), static_cast<float>(vertex.normal.z),
+                static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y)});
+        }
+        return;
+    }
     constexpr double near = 0.035;
     std::array<RenderVertex, 4> polygon;
     std::size_t polygonSize = 0;
@@ -333,6 +372,11 @@ NativeFrame Rasterizer::finish() const {
     NativeFrame frame;
     frame.width = width_;
     frame.height = height_;
+    if (gpu_) {
+        if (activeGpuRenderer && activeGpuRenderer(scene_, frame)) return frame;
+        frame.rgb.clear();
+        return frame;
+    }
     frame.rgb.resize(pixels_.size() * 3);
     constexpr int size = 4096;
     constexpr double range = 4.0;

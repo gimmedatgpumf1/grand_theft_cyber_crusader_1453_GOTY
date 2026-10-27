@@ -54,6 +54,7 @@ public:
             return 1;
         }
         window_.size(view_.width, view_.height);
+        view_.gpu = window_.gpu();
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;

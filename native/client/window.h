@@ -33,6 +33,8 @@ struct WindowEvent {
 
 class NativeWindow {
 public:
+    struct Impl;
+
     NativeWindow();
     ~NativeWindow();
     NativeWindow(const NativeWindow&) = delete;
@@ -44,10 +46,10 @@ public:
     bool present(const NativeFrame& frame);
     void captureMouse(bool capture);
     void size(int& width, int& height) const;
+    bool gpu() const;
     bool opened() const;
 
 private:
-    struct Impl;
     Impl* impl_ = nullptr;
 };
 

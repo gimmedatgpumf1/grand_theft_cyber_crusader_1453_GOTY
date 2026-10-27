@@ -85,9 +85,31 @@ struct RenderVertex {
 
 RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 source, Vec2 uv = {});
 
+struct GpuVertex {
+    float x = 0, y = 0, z = 0;
+    float nx = 0, ny = 0, nz = 0;
+    float u = 0, v = 0;
+};
+
+struct GpuBatch {
+    Material material;
+    std::vector<GpuVertex> vertices;
+};
+
+struct GpuScene {
+    int width = 480;
+    int height = 640;
+    double focal = 640;
+    Color background;
+    std::vector<GpuBatch> batches;
+};
+
+using GpuRenderer = bool (*)(const GpuScene& scene, NativeFrame& frame);
+void setGpuRenderer(GpuRenderer renderer);
+
 class Rasterizer {
 public:
-    Rasterizer(int width, int height, Color background, double focal);
+    Rasterizer(int width, int height, Color background, double focal, bool gpu = false);
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     NativeFrame finish() const;
@@ -96,6 +118,8 @@ private:
     int width_;
     int height_;
     double focal_;
+    bool gpu_ = false;
+    GpuScene scene_;
     std::vector<double> depth_;
     std::vector<Color> pixels_;
 };

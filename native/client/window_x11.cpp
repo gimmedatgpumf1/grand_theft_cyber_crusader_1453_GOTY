@@ -354,6 +354,8 @@ void NativeWindow::size(int& width, int& height) const {
     height = impl_ ? impl_->height : 640;
 }
 
+bool NativeWindow::gpu() const { return false; }
+
 bool NativeWindow::opened() const { return impl_ && impl_->open; }
 
 } // namespace gtc::native

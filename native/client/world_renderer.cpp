@@ -240,7 +240,8 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     drawText(frame, 8, 7, "GTC 1453", text);
     const char* mode = view.mode == ViewMode::FirstPerson ? "FPS" : view.mode == ViewMode::God ? "GOD" : "TPS";
     drawText(frame, 8, 34, std::string(mode) + " TICK " + std::to_string(state.tick), muted);
-    if (view.fps > 0) drawText(frame, 330, 34, std::to_string(static_cast<int>(view.fps + 0.5)) + " FPS", muted);
+    if (view.fps > 0) drawText(frame, 300, 34, std::string(view.gpu ? "GPU " : "CPU ") +
+        std::to_string(static_cast<int>(view.fps + 0.5)) + " FPS", muted);
     if (local) {
         drawText(frame, 285, 7, local->name.substr(0, 10), text);
         const double range = distance(local->position, world.toiletFront);
@@ -297,7 +298,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     }
     const auto profileStart = std::chrono::steady_clock::now();
     const Camera camera = makeCamera(world, state, localId, view);
-    Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal());
+    Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
     drawFloor(rasterizer, camera, world);
     if (view.highlightToilet) {
         Material highlight;
@@ -318,6 +319,10 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     }
     const auto finishStart = std::chrono::steady_clock::now();
     frame = rasterizer.finish();
+    if (view.gpu && frame.rgb.size() != static_cast<std::size_t>(frame.width) * frame.height * 3) {
+        error = "Native GPU rendering or readback failed";
+        return false;
+    }
     if (std::getenv("GTC_PROFILE")) {
         const auto end = std::chrono::steady_clock::now();
         const auto milliseconds = [](auto start, auto stop) {

@@ -2,7 +2,7 @@
 
 The native path is C++17 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
 
-- `gtc-native-client` connects to the authoritative server and renders its replicated world at **480×640**.
+- `gtc-native-client` connects to the authoritative server and renders its replicated world in a resizable window that opens at **480×640**.
 - `gtc-native-smoke` runs two real networked citizens through replication, customization, movement, pathfinding, and toilet-action checks.
 - `gtc-native-fit` is the portrait fitting and review tool; it does not call a landmark detector during optimization.
 
@@ -36,9 +36,9 @@ To start the pieces manually from the repository root:
 
 The client uses the existing `/ws` welcome/world, state, input, path, toilet, customize, and cheat messages. It sends no positions and has no offline player-only action path. Toilet requests never auto-walk.
 
-The default is a native **480×640 Win32 window** on Windows or a dynamically loaded **system X11 window** on Linux. There is no X11 link-time dependency and no downloaded windowing runtime. On a machine without a display, use `--headless`; useful headless options include `--frames N`, `--mode tps|fps|god`, `--path X Z`, `--move X Z`, `--toilet sit|shit|piss`, `--yaw`, `--pitch`, and `--output PNG`.
+The default is a resizable native Win32 window on Windows or a dynamically loaded **system X11 window** on Linux. Windows uses an OpenGL GPU backend with textured triangle batches and CPU-composited native HUD; the HUD reports `GPU` only when that context is active. Linux currently uses the tested CPU raster fallback. There is no X11 link-time dependency and no downloaded windowing runtime. On a machine without a display, use `--headless`; useful headless options include `--frames N`, `--benchmark N`, `--width`, `--height`, `--mode tps|fps|god`, `--path X Z`, `--move X Z`, `--toilet sit|shit|piss`, `--yaw`, `--pitch`, and `--output PNG`.
 
-Native controls: **1/2/3** select TPS/god/FPS; WASD moves or fast-pans god view; Shift sprints/boosts; click captures the mouse and Esc releases it; the wheel zooms; **hold F** to piss in FPS; **E** opens the in-range Sit/Shit/Piss wheel or stands; god-view floor clicks explicitly pathfind. **C** opens the generic style + 107-universal-morph creator (arrows, Page Up/Down, Enter to replicate), **F1** opens cheats, **H** opens help, and **F12** saves a native PNG. Every UI glyph is 21 pixels high.
+Native controls: **1/2/3** select TPS/god/FPS; WASD moves or fast-pans god view; Shift sprints/boosts; click captures the mouse and Esc releases it; the wheel zooms; **hold F** to piss in FPS; **E** opens the in-range Sit/Shit/Piss wheel or stands; god-view floor clicks explicitly pathfind. **C** opens the generic style + 107-universal-morph creator (arrows, Page Up/Down, Enter to replicate), **F1** opens cheats, **H** opens help, and **F12** saves a native PNG. The proportional sans UI renders at least 20 pixels high and scales with the logical 480×640 layout.
 
 To review the exact native overlay pixels without a display:
 
@@ -86,8 +86,8 @@ A candidate is **not** promoted automatically. Lower landmark error is not liken
 - The CPU rasterizer has perspective-correct UV interpolation, a depth buffer, generic skin detail/normal maps, procedural eyes, MHCLO barycentric hair, alpha-tested generic hair textures, and a parametric scalp/hairline pass. Head/neck face selection uses the vendored CC0 skeleton weights rather than a person-specific cut.
 - The reference landmark JSON is development fitting data only. It is never sampled as an image or transferred to a material.
 
-The preserved browser implementation is a legacy checkpoint only. Native networking, software world rendering, interactive Win32/X11 window/input, native overlays, and the headless multiplayer driver are implemented here. Actual native PNG review remains required for visual acceptance.
+The preserved browser implementation is a legacy checkpoint only. Native networking, GPU/CPU world rendering, interactive Win32/X11 window/input, native overlays, and the headless multiplayer driver are implemented here. Actual native PNG review remains required for visual acceptance.
 
 ## Vendored decoder
 
-`native/vendor/stb_image.h` and `stb_image_write.h` are from `nothings/stb`, commit `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5`. stb is dual-licensed under MIT or public domain; see `native/vendor/README.md`. These third-party headers are exempt from the authored-file line nagger.
+`native/vendor/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are from `nothings/stb`, commit `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5`. stb is dual-licensed under MIT or public domain; see `native/vendor/README.md`. These third-party headers are exempt from the authored-file line nagger. `native/assets/ui-sans.ttf` is unmodified DejaVu Sans; its Bitstream Vera/DejaVu redistribution notice is retained in `native/assets/FONT-LICENSE.txt`.

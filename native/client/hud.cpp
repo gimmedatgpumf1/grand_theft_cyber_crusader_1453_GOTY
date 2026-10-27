@@ -1,7 +1,15 @@
 #include "client/raster.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
+#include <fstream>
+#include <map>
+#include <vector>
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "vendor/stb_truetype.h"
 
 namespace gtc::native {
 namespace {
@@ -63,10 +71,92 @@ std::array<unsigned char, 7> glyph(char c) {
     }
 }
 
+struct Font {
+    stbtt_fontinfo info{};
+    std::vector<unsigned char> bytes;
+    bool ready = false;
+    Font() {
+        std::ifstream input("native/assets/ui-sans.ttf", std::ios::binary);
+        if (!input) return;
+        bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        ready = !bytes.empty() && stbtt_InitFont(&info, bytes.data(), 0) != 0;
+    }
+};
+
+Font& font() {
+    static Font instance;
+    return instance;
+}
+
+struct Glyph {
+    int width = 0;
+    int height = 0;
+    int xOffset = 0;
+    int yOffset = 0;
+    double advance = 0;
+    std::vector<unsigned char> coverage;
+};
+
+const Glyph& cachedGlyph(char character, int pixelHeight) {
+    const unsigned key = (static_cast<unsigned>(pixelHeight) << 8) | static_cast<unsigned char>(character);
+    static std::map<unsigned, Glyph> cache;
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+    Glyph glyph;
+    const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    stbtt_GetCodepointBitmapBox(&font().info, character, fontScale, fontScale, &x0, &y0, &x1, &y1);
+    glyph.width = std::max(0, x1 - x0);
+    glyph.height = std::max(0, y1 - y0);
+    glyph.xOffset = x0;
+    glyph.yOffset = y0;
+    glyph.coverage.resize(static_cast<std::size_t>(glyph.width) * glyph.height);
+    if (!glyph.coverage.empty()) {
+        stbtt_MakeCodepointBitmap(&font().info, glyph.coverage.data(), glyph.width, glyph.height,
+                                  glyph.width, fontScale, fontScale, character);
+    }
+    int advance = 0, bearing = 0;
+    stbtt_GetCodepointHMetrics(&font().info, character, &advance, &bearing);
+    glyph.advance = advance * fontScale;
+    return cache.emplace(key, std::move(glyph)).first->second;
+}
+
+unsigned char srgbChannel(double value) {
+    value = std::max(0.0, std::min(1.0, value));
+    return static_cast<unsigned char>((value <= 0.0031308 ? value * 12.92 :
+        1.055 * std::pow(value, 1.0 / 2.4) - 0.055) * 255);
+}
+
 } // namespace
 
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
-    scale = std::max(3, scale); // 5x7 glyphs are at least 21 physical pixels high.
+    scale = std::max(3, scale);
+    if (font().ready) {
+        const int pixelHeight = std::max(20, static_cast<int>(std::lround(9 * scale * frame.uiScale)));
+        const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+        int ascent = 0, descent = 0, gap = 0;
+        stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+        double penX = frame.uiOffsetX + x * frame.uiScale;
+        const double baseline = frame.uiOffsetY + y * frame.uiScale + ascent * fontScale;
+        const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
+        for (char character : text) {
+            const Glyph& glyph = cachedGlyph(character, pixelHeight);
+            const int left = static_cast<int>(std::lround(penX)) + glyph.xOffset;
+            const int top = static_cast<int>(std::lround(baseline)) + glyph.yOffset;
+            for (int row = 0; row < glyph.height; ++row) for (int column = 0; column < glyph.width; ++column) {
+                const int px = left + column, py = top + row;
+                if (px < 0 || py < 0 || px >= frame.width || py >= frame.height) continue;
+                const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
+                if (!coverage) continue;
+                const std::size_t offset = (static_cast<std::size_t>(py) * frame.width + px) * 3;
+                frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);
+                frame.rgb[offset + 1] = static_cast<unsigned char>((green * coverage + frame.rgb[offset + 1] * (255 - coverage)) / 255);
+                frame.rgb[offset + 2] = static_cast<unsigned char>((blue * coverage + frame.rgb[offset + 2] * (255 - coverage)) / 255);
+            }
+            penX += glyph.advance;
+        }
+        return;
+    }
     for (char character : text) {
         const auto rows = glyph(character);
         for (int row = 0; row < 7; ++row) for (int column = 0; column < 5; ++column) {
