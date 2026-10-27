@@ -329,8 +329,15 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
-    state.projectiles.clear();
-    view.mode = ViewMode::FirstPerson;
+    state.projectiles.clear(); gtc::Puddle stain; stain.vertical = true; stain.normal = {0, 1}; state.puddles = {stain};
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) { cleanup(); return false; }
+    const auto decalRevision = [] { for (const auto& batch : motionScene->batches) if (batch.material.kind == Material::Kind::Puddle) return batch.revision; return std::uint64_t{0}; };
+    const std::uint64_t oldDecalRevision = decalRevision(); ++state.tick;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || decalRevision() != oldDecalRevision) { error = "idle frame rebuilt decals"; cleanup(); return false; }
+    state.puddles[0].size = 0.2F;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || decalRevision() == oldDecalRevision ||
+        motionScene->revision != retainedRevision) { error = "decal update rebuilt retained world"; cleanup(); return false; }
+    state.puddles.clear(); view.mode = ViewMode::FirstPerson;
     view.pitch = 0;
     view.yaw = state.characters[0].yaw;
     if (!renderer.render(world, state, citizen.id, view, frame, error)) { cleanup(); return false; }

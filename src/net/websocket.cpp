@@ -54,7 +54,9 @@ bool receiveWebSocket(SocketHandle socket, std::string& payload, int& opcode, bo
             length = (length << 8U) | static_cast<std::uint8_t>(byte);
         }
     }
-    if (length > 65536U) return false;
+    // Full combat/fluid snapshots legitimately exceed 64 KiB. Keep a hard
+    // allocation guard without disconnecting ordinary busy-world states.
+    if (length > 8U * 1024U * 1024U) return false;
     std::array<char, 4> mask{};
     if (masked && !readExact(socket, mask.data(), mask.size())) return false;
     payload.resize(static_cast<std::size_t>(length));

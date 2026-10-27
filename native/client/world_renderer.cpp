@@ -494,6 +494,16 @@ bool animatedPose(const ClientState& state) {
     return false;
 }
 
+bool samePuddles(const std::vector<Puddle>& a, const std::vector<Puddle>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].id != b[i].id || a[i].position.x != b[i].position.x || a[i].position.y != b[i].position.y ||
+            a[i].size != b[i].size || a[i].height != b[i].height || a[i].normal.x != b[i].normal.x ||
+            a[i].normal.y != b[i].normal.y || a[i].vertical != b[i].vertical) return false;
+    }
+    return true;
+}
+
 bool sameGeometry(const ClientState& a, const ClientState& b) {
     if (a.characters.size() != b.characters.size()) return false;
     for (std::size_t i = 0; i < a.characters.size(); ++i) {
@@ -699,6 +709,8 @@ bool WorldRenderer::load(const std::string& root, std::string& error) {
     if (!male_.loadRuntime(root, true, error) || !female_.loadRuntime(root, false, error)) return false;
     if (!maleHair_.load(root, male_, error) || !femaleHair_.load(root, female_, error)) return false;
     humanCache_.clear();
+    gpuPuddleGeometry_.clear();
+    gpuPuddleBatchCount_ = 0;
     gpuValid_ = false;
     ready_ = true;
     return true;
@@ -866,6 +878,8 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();
             gpuStaticBatchCount_ = gpuScene_.batches.size();
+            gpuPuddleBatchCount_ = 0;
+            gpuPuddleGeometry_.clear();
             gpuScene_.revision = ++gpuRevision_;
             gpuGeometryState_ = state;
             gpuLocalId_ = localId;
@@ -877,14 +891,29 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         }
     }
     if (view.gpu) {
-        // Water, stains and droplets change without rebuilding retained room/human meshes.
-        gpuScene_.batches.resize(gpuStaticBatchCount_);
+        if (!samePuddles(gpuPuddleGeometry_, state.puddles)) {
+            gpuScene_.batches.resize(gpuStaticBatchCount_);
+            Rasterizer decals(std::max(1, view.width), std::max(1, view.height), gpuScene_.background,
+                              camera.focal(), true);
+            decals.setCamera(camera);
+            drawPuddles(decals, camera, state);
+            GpuScene cached = decals.takeGpuScene();
+            const std::uint64_t revision = ++gpuProjectileRevision_;
+            for (GpuBatch& batch : cached.batches) {
+                if (batch.vertices.empty()) continue;
+                batch.revision = revision;
+                gpuScene_.batches.push_back(std::move(batch));
+            }
+            gpuPuddleBatchCount_ = gpuScene_.batches.size() - gpuStaticBatchCount_;
+            gpuPuddleGeometry_ = state.puddles;
+        }
+        // Only water and flying droplets are re-uploaded each frame.
+        gpuScene_.batches.resize(gpuStaticBatchCount_ + gpuPuddleBatchCount_);
         Rasterizer particles(std::max(1, view.width), std::max(1, view.height), gpuScene_.background,
                              camera.focal(), true);
         particles.setCamera(camera);
         const double time = std::chrono::duration<double>(profileStart.time_since_epoch()).count();
         drawWater(particles, camera, world, state, time);
-        drawPuddles(particles, camera, state);
         drawProjectiles(particles, camera, state);
         GpuScene dynamic = particles.takeGpuScene();
         const std::uint64_t dynamicRevision = ++gpuProjectileRevision_;

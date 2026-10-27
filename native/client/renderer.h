@@ -55,6 +55,8 @@ private:
     mutable std::uint64_t gpuRevision_ = 0;
     mutable std::uint64_t gpuProjectileRevision_ = 0;
     mutable std::size_t gpuStaticBatchCount_ = 0;
+    mutable std::size_t gpuPuddleBatchCount_ = 0;
+    mutable std::vector<Puddle> gpuPuddleGeometry_;
     mutable std::uint32_t gpuLocalId_ = 0;
     mutable int gpuMode_ = -1;
     mutable bool gpuHighlight_ = false;

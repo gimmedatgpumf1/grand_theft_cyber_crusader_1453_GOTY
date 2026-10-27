@@ -3,6 +3,11 @@
 #include "core/pathfinding.h"
 #include "core/projectile.h"
 #include "core/world.h"
+#include "net/websocket.h"
+
+#ifndef _WIN32
+#include <sys/socket.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -68,6 +73,24 @@ int main() {
         bool invalid = true;
         gtc::JsonValue::parse("{definitely not json}", invalid);
         check(!invalid, "invalid JSON should be rejected");
+    });
+
+    test("large combat snapshots survive native websocket transport", [] {
+#ifndef _WIN32
+        int sockets[2] = {-1, -1};
+        const bool pairReady = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0;
+        check(pairReady, "create websocket test pair");
+        if (!pairReady) return;
+        const std::string payload(128 * 1024, 'x');
+        const bool sent = net::sendWebSocket(sockets[0], payload);
+        std::string decoded;
+        int opcode = 0;
+        const bool received = sent && net::receiveWebSocket(sockets[1], decoded, opcode, false);
+        net::closeSocket(sockets[0]);
+        net::closeSocket(sockets[1]);
+        check(sent && received && opcode == 1 && decoded == payload,
+              "a 128 KiB world snapshot no longer crosses a silent 64 KiB disconnect limit");
+#endif
     });
 
     test("collision slides instead of crossing objects", [] {
@@ -579,8 +602,13 @@ int main() {
         check(world.snapshot().find("\"vertical\":true") != std::string::npos,
               "wall splash height and orientation replicate after physical impact");
         const auto wallSpots = world.puddles();
-        check(std::count_if(wallSpots.begin(), wallSpots.end(), [](const gtc::Puddle& p) {
-            return p.vertical; }) >= 4, "multiple physical wall impacts stain reliably rather than only sampled droplets");
+        const float largest = wallSpots.empty() ? 0.0F : std::max_element(wallSpots.begin(), wallSpots.end(),
+            [](const gtc::Puddle& a, const gtc::Puddle& b) { return a.size < b.size; })->size;
+        check(!wallSpots.empty() && wallSpots.size() <= 4 && largest > 0.14F,
+              "repeated wall impacts grow compact stains instead of stacking transparent duplicates");
+        for (int i = 12; i < 420; ++i) world.update(0.05F);
+        check(world.puddles().size() <= 8 && world.snapshot().size() < 65536,
+              "a full sustained wall stream stays compact and below the old fatal snapshot threshold");
 
         gtc::World aimed;
         const auto aimer = aimed.addCharacter("Porcelain Marksman", false);

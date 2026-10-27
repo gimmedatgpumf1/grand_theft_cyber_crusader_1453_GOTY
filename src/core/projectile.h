@@ -274,11 +274,14 @@ inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::
     candidate.id = id;
     candidate.size = 0.09F + static_cast<float>(id % 4U) * 0.015F;
     if (!projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return {};
-    if (candidate.vertical) return candidate; // Wall hits stay exactly where the physical sweep landed.
     const auto merge = [](Puddle& into, const Puddle& added) {
-        const float a = into.size * into.size, b = added.size * added.size;
-        into.position = (into.position * a + added.position * b) * (1.0F / (a + b));
-        into.size = std::min(0.65F, std::sqrt(a + b));
+        const float a = into.size * into.size, b = added.size * added.size, sum = a + b;
+        into.position = (into.position * a + added.position * b) * (1.0F / sum);
+        if (into.vertical) {
+            into.height = (into.height * a + added.height * b) / sum;
+            into.normal = normalized(into.normal * a + added.normal * b);
+        }
+        into.size = std::min(0.65F, std::sqrt(sum));
         into.age = std::min(into.age, added.age);
     };
     std::size_t first = 0;
