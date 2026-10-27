@@ -23,6 +23,7 @@ struct HumanRenderCache {
     bool poseValid = false;
     std::uint64_t poseTick = 0;
     float poseX = 0, poseZ = 0, poseYaw = 0, poseSpeed = 0;
+    double poseLean = -1.0;
     int poseAction = -1;
     bool poseOnToilet = false;
     std::vector<Vec3> posed;
@@ -45,6 +46,6 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
-               const std::string& root, std::uint64_t tick, bool hideHead);
+               const std::string& root, std::uint64_t tick, bool hideHead, double gazePitch = 0);
 
 } // namespace gtc::native

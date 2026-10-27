@@ -54,6 +54,7 @@ private:
     mutable std::uint32_t gpuLocalId_ = 0;
     mutable int gpuMode_ = -1;
     mutable bool gpuHighlight_ = false;
+    mutable double gpuPosePitch_ = 0;
 };
 
 double headAngleForGaze(double gazeAngle);

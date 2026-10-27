@@ -83,6 +83,7 @@ public:
     std::vector<Vec3> vertices;
     std::vector<Vec2> texcoords;
     std::vector<Triangle> triangles;
+    std::vector<Triangle> genitalTriangles;
     std::vector<BodyMaterial> bodyMaterials;
     std::vector<Triangle> mappingTriangles;
     std::vector<Triangle> headTriangles;

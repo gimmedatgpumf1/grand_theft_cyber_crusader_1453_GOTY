@@ -172,7 +172,7 @@ bool HumanModel::loadMesh(const std::string& root, std::string& error) {
             texcoords.push_back(uv);
         } else if (kind == "g") {
             stream >> group;
-        } else if (kind == "f" && group == "body") {
+        } else if (kind == "f" && (group == "body" || group == "helper-genital")) {
             std::vector<std::array<int, 2>> face;
             std::string token;
             while (stream >> token) {
@@ -187,7 +187,8 @@ bool HumanModel::loadMesh(const std::string& root, std::string& error) {
                     triangle.v[corner] = corners[corner][0];
                     triangle.uv[corner] = corners[corner][1];
                 }
-                triangles.push_back(triangle);
+                if (group == "body") triangles.push_back(triangle);
+                else genitalTriangles.push_back(triangle);
             }
         }
     }

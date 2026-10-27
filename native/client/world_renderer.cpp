@@ -347,13 +347,21 @@ void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState
     }
 }
 
-void drawPissing(Rasterizer& rasterizer, const Camera& camera, const Character& character) {
+void drawPissing(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
+                 const HumanRenderCache& cache, const Character& character) {
     if (!character.pissing) return;
     Material stream;
     stream.color = colorHex("#b9c862");
     stream.specular = 0.4;
     const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
-    const Vec3 origin{character.position.x, 0.77, character.position.y};
+    Vec3 origin{character.position.x, 0.77, character.position.y};
+    if (!model.genitalTriangles.empty() && cache.posed.size() == cache.rest.size()) {
+        int tip = model.genitalTriangles.front().v[0];
+        for (const Triangle& triangle : model.genitalTriangles) {
+            for (int index : triangle.v) if (cache.rest[index].z > cache.rest[tip].z) tip = index;
+        }
+        origin = cache.posed[tip];
+    }
     for (int i = 0; i < 12; ++i) {
         const double t = i / 11.0;
         const Vec3 at = origin + forward * (0.18 + t * 0.68) + Vec3{0, -0.70 * t * t, 0};
@@ -556,6 +564,16 @@ double headAngleForGaze(double gazeAngle) {
     return gazeAngle - std::clamp(gazeAngle, -kEyeInHeadRange, kEyeInHeadRange);
 }
 
+double gazePitchForView(const Character& local, const ViewState& view) {
+    constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
+    const double relativeYaw = std::atan2(std::sin(view.yaw - local.yaw), std::cos(view.yaw - local.yaw));
+    const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
+    constexpr double maximumDowngaze = 3.141592653589793 * 0.5;
+    const double downwardLimit = maximumDowngaze - (maximumDowngaze - 0.5) *
+        std::abs(gazeYaw) / gazeYawLimit;
+    return std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
+}
+
 Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& state,
                                  std::uint32_t localId, const ViewState& view) const {
     const Character* local = state.character(localId);
@@ -566,16 +584,14 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     Camera camera;
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
-    camera.fovDegrees = 62;
     constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
     const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
     const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
     // Cervical motion is coupled rather than two independent maximum angles.
-    // Keep the combined downward gaze clear of the posed shoulder and arm.
-    constexpr double maximumDowngaze = 3.141592653589793 * 0.5;
-    const double downwardLimit = maximumDowngaze - (maximumDowngaze - 0.5) *
-        std::abs(gazeYaw) / gazeYawLimit;
-    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
+    const double gazePitch = gazePitchForView(*local, view);
+    constexpr double pi = 3.141592653589793;
+    const double bodyView = std::clamp((-gazePitch - kEyeInHeadRange) / (pi * 0.5 - kEyeInHeadRange), 0.0, 1.0);
+    camera.fovDegrees = 62.0 + (135.0 - 62.0) * bodyView;
     const double headYaw = headAngleForGaze(gazeYaw);
     // The anatomical pose applies eye-in-head motion and solves downward
     // chin/manubrium contact from the total requested gaze angle.
@@ -622,8 +638,10 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const auto profileStart = std::chrono::steady_clock::now();
     Camera camera = viewCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
+    const Character* local = state.character(localId);
+    const double bodyGazePitch = view.mode == ViewMode::FirstPerson && local ? gazePitchForView(*local, view) : 0.0;
     const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
-        gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
+        gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet || gpuPosePitch_ != bodyGazePitch;
     auto humanStart = profileStart;
     auto finishStart = profileStart;
     if (rebuild) {
@@ -658,8 +676,10 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                 ring.unlit = true;
                 drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
             }
-            drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
-            drawPissing(rasterizer, camera, character);
+            const double characterGazePitch = hideHead ? bodyGazePitch : 0.0;
+            drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick,
+                      hideHead, characterGazePitch);
+            drawPissing(rasterizer, camera, model, humanCache_[character.id], character);
         }
         rasterizer.setObject(0, {}, 0);
         finishStart = std::chrono::steady_clock::now();
@@ -670,6 +690,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             gpuLocalId_ = localId;
             gpuMode_ = static_cast<int>(view.mode);
             gpuHighlight_ = view.highlightToilet;
+            gpuPosePitch_ = bodyGazePitch;
             gpuValid_ = true;
         } else {
             frame = rasterizer.finish();
