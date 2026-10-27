@@ -254,6 +254,35 @@ bool HumanModel::loadRig(const std::string& root, std::string& error) {
         error = "Cannot parse CC0 default_weights.mhw";
         return false;
     }
+    rigBones.clear();
+    rigWeights.assign(vertices.size(), {});
+    std::unordered_map<std::string, int> boneIndices;
+    for (const auto& [name, definition] : bones->object()) {
+        RigBone bone;
+        bone.name = name;
+        bone.parent = definition.stringAt("parent");
+        bone.head = integers(joints->get(definition.stringAt("head")));
+        bone.tail = integers(joints->get(definition.stringAt("tail")));
+        boneIndices[name] = static_cast<int>(rigBones.size());
+        rigBones.push_back(std::move(bone));
+    }
+    for (RigBone& bone : rigBones) {
+        const auto parent = boneIndices.find(bone.parent);
+        if (parent != boneIndices.end()) bone.parentIndex = parent->second;
+    }
+    for (const auto& [bone, entries] : weightData->object()) {
+        const auto found = boneIndices.find(bone);
+        if (found == boneIndices.end()) continue;
+        for (const auto& entry : entries.array()) {
+            const auto& pair = entry.array();
+            if (pair.size() < 2) continue;
+            const int index = static_cast<int>(pair[0].number());
+            const double weight = pair[1].number();
+            if (index >= 0 && static_cast<std::size_t>(index) < rigWeights.size() && weight > 0) {
+                rigWeights[index].emplace_back(found->second, weight);
+            }
+        }
+    }
     const std::set<std::string> keep = {
         "root", "spine03", "spine02", "spine01", "neck01", "head", "jaw",
         "clavicle.L", "shoulder01.L", "upperarm01.L", "upperarm02.L", "lowerarm01.L",
@@ -480,13 +509,22 @@ bool HumanModel::loadLandmarks(const std::string& root, std::string& error) {
 }
 
 bool HumanModel::load(const std::string& root, bool isMale, std::string& error) {
+    return loadImpl(root, isMale, true, error);
+}
+
+bool HumanModel::loadRuntime(const std::string& root, bool isMale, std::string& error) {
+    return loadImpl(root, isMale, false, error);
+}
+
+bool HumanModel::loadImpl(const std::string& root, bool isMale, bool landmarks, std::string& error) {
     male = isMale;
     sourceRoot_ = root + "/tools/human-source";
     vertices.clear(); texcoords.clear(); triangles.clear(); mappingTriangles.clear(); headTriangles.clear(); headVertices.clear();
     specs.clear(); positive.clear(); negative.clear(); fitIndices.clear(); fitVertices.clear(); fitWeights.clear();
     fitSurfaceTriangles.clear(); fitSurfaceBary.clear(); surfaceReady = false;
     targetCache_.clear(); baseMacro_.clear(); neckSource_.clear();
-    return loadMesh(root, error) && loadRig(root, error) && loadMorphs(root, error) && loadLandmarks(root, error);
+    return loadMesh(root, error) && loadRig(root, error) && loadMorphs(root, error) &&
+           (!landmarks || loadLandmarks(root, error));
 }
 
 Vec3 HumanModel::runtime(Vec3 raw) const {

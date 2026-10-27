@@ -1,6 +1,10 @@
-# Native portrait fitter / renderer
+# Native C++ runtime and portrait fitter
 
-`gtc-native-fit` is a C++17, offline-only portrait fitting and review tool. It does not start a browser, execute JavaScript, use Chromium, or call a landmark detector during optimization.
+The native path is C++17 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
+
+- `gtc-native-client` connects to the authoritative server and renders its replicated world at **480×640**.
+- `gtc-native-smoke` runs two real networked citizens through replication, customization, movement, pathfinding, and toilet-action checks.
+- `gtc-native-fit` is the portrait fitting and review tool; it does not call a landmark detector during optimization.
 
 ## Build
 
@@ -16,9 +20,28 @@ Windows with Visual Studio 2022 and the **Desktop development with C++** workloa
 native\build.cmd
 ```
 
-`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find MSVC v143. The Linux executable is also retained as `prebuilt/linux-x86_64/gtc-native-fit` with `prebuilt/NATIVE_SHA256SUMS`.
+`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find MSVC v143. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
 
-## Run
+## Native multiplayer client and smoke test
+
+Start the existing authoritative server from the repository root, then connect a native client:
+
+```sh
+./build/bin/gtc1453 --port 1453 --web web
+./build/bin/gtc-native-client --name "Native Citizen" --frames 1 --output build/native-client/frame.png
+```
+
+The client uses the existing `/ws` welcome/world, state, input, path, toilet, customize, and cheat messages. It sends no positions and has no offline player-only action path. Useful headless options include `--mode tps|fps|god`, `--path X Z`, `--move X Z`, `--toilet sit|shit|piss`, `--yaw`, and `--pitch`. Toilet requests never auto-walk.
+
+With the server running, execute the two-player test:
+
+```sh
+./build/bin/gtc-native-smoke --output build/native-smoke
+```
+
+It fails unless both clients replicate distinct identities, universal morph/style changes, server movement, a replicated path, and a server-granted seated Shit action. It writes `report.json` plus inspected 480×640 TPS, FPS, and god-view PNGs. The renderer uses the CC0 full-body mesh and rig weights, all replicated universal morphs, generic skin maps and MHCLO hair, near-plane clipping, camera obstruction handling, and authoritative puddles/actions. No portrait texture or person-specific sculpt is used.
+
+## Portrait fitter
 
 From the repository root:
 
@@ -50,7 +73,7 @@ A candidate is **not** promoted automatically. Lower landmark error is not liken
 - The CPU rasterizer has perspective-correct UV interpolation, a depth buffer, generic skin detail/normal maps, procedural eyes, MHCLO barycentric hair, alpha-tested generic hair textures, and a parametric scalp/hairline pass. Head/neck face selection uses the vendored CC0 skeleton weights rather than a person-specific cut.
 - The reference landmark JSON is development fitting data only. It is never sampled as an image or transferred to a material.
 
-The preserved multiplayer browser slice remains a legacy checkpoint; this directory is the native-only path forward, not a claim that the native game client is complete.
+The preserved browser implementation is a legacy checkpoint only. Native networking, rendering, and the headless multiplayer driver are implemented here; the native interactive window/input layer is the next runtime milestone.
 
 ## Vendored decoder
 

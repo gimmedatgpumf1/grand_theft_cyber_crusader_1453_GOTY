@@ -30,9 +30,37 @@ for SOURCE in "${SOURCES[@]}"; do
   OBJECTS+=("$OBJECT")
 done
 "$COMPILER" "${OBJECTS[@]}" -o "$ROOT/build/bin/gtc-native-fit"
+
+mkdir -p "$ROOT/build/obj/native-client"
+CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
+CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
+  native/client/human_renderer.cpp native/client/world_renderer.cpp native/client/main.cpp native/client/smoke.cpp
+  src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp)
+CLIENT_OBJECTS=()
+for SOURCE in "${CLIENT_SOURCES[@]}"; do
+  OBJECT="$ROOT/build/obj/native-client/$(basename "${SOURCE%.cpp}").o"
+  if [ -n "$CCACHE_BIN" ]; then
+    "$CCACHE_BIN" "$COMPILER" "${CLIENT_FLAGS[@]}" -c "$SOURCE" -o "$OBJECT"
+  else
+    "$COMPILER" "${CLIENT_FLAGS[@]}" -c "$SOURCE" -o "$OBJECT"
+  fi
+  CLIENT_OBJECTS+=("$OBJECT")
+done
+CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-client/raster.o"
+  "$ROOT/build/obj/native-client/hud.o" "$ROOT/build/obj/native-client/human_renderer.o"
+  "$ROOT/build/obj/native-client/world_renderer.o" "$ROOT/build/obj/native/human.o"
+  "$ROOT/build/obj/native/hair.o" "$ROOT/build/obj/native/json.o"
+  "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"
+  "$ROOT/build/obj/native-client/sha1.o")
+"$COMPILER" -pthread "$ROOT/build/obj/native-client/main.o" "${CLIENT_COMMON[@]}" -o "$ROOT/build/bin/gtc-native-client"
+"$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -o "$ROOT/build/bin/gtc-native-smoke"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
-  (cd "$ROOT/prebuilt" && sha256sum linux-x86_64/gtc-native-fit > NATIVE_SHA256SUMS)
+  cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
+  cp "$ROOT/build/bin/gtc-native-smoke" "$ROOT/prebuilt/linux-x86_64/gtc-native-smoke"
+  (cd "$ROOT/prebuilt" && sha256sum linux-x86_64/gtc-native-fit linux-x86_64/gtc-native-client linux-x86_64/gtc-native-smoke > NATIVE_SHA256SUMS)
 fi
 echo "[native] Success: $ROOT/build/bin/gtc-native-fit"
+echo "[native] Success: $ROOT/build/bin/gtc-native-client"
+echo "[native] Success: $ROOT/build/bin/gtc-native-smoke"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace gtc::native {
@@ -52,9 +53,18 @@ struct MorphSpec {
 
 using Target = std::unordered_map<int, Vec3>;
 
+struct RigBone {
+    std::string name;
+    std::string parent;
+    int parentIndex = -1;
+    std::vector<int> head;
+    std::vector<int> tail;
+};
+
 class HumanModel {
 public:
     bool load(const std::string& root, bool male, std::string& error);
+    bool loadRuntime(const std::string& root, bool male, std::string& error);
 
     bool male = true;
     double scale = 0.108;
@@ -81,6 +91,8 @@ public:
     std::vector<double> fitWeights;
     std::vector<int> eyeSource[2];
     Vec3 eyeDirection[2];
+    std::vector<RigBone> rigBones;
+    std::vector<std::vector<std::pair<int, double>>> rigWeights;
 
     Vec3 runtime(Vec3 raw) const;
     Vec3 joint(const std::vector<int>& ids) const;
@@ -95,6 +107,7 @@ private:
     std::vector<int> neckSource_;
     std::unordered_map<std::string, Target> targetCache_;
 
+    bool loadImpl(const std::string& root, bool male, bool landmarks, std::string& error);
     bool loadMesh(const std::string& root, std::string& error);
     bool loadRig(const std::string& root, std::string& error);
     bool loadMorphs(const std::string& root, std::string& error);

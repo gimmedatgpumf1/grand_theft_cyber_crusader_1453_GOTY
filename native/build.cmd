@@ -35,7 +35,26 @@ for %%S in (native\human.cpp native\io.cpp native\hair.cpp native\fit.cpp native
 )
 cl.exe /nologo !OBJECTS! /Fe"%ROOT%\build\bin\gtc-native-fit.exe"
 if errorlevel 1 exit /b 1
+if not exist "%ROOT%\build\obj\native-client" mkdir "%ROOT%\build\obj\native-client"
+set "CLIENT_OBJECTS="
+for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.cpp native\client\human_renderer.cpp native\client\world_renderer.cpp native\client\main.cpp native\client\smoke.cpp src\net\platform.cpp src\net\websocket.cpp src\net\sha1.cpp) do (
+  set "OBJECT=%ROOT%\build\obj\native-client\%%~nS.obj"
+  set "CLIENT_OBJECTS=!CLIENT_OBJECTS! "!OBJECT!""
+  if defined CCACHE_BIN (
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+  ) else (
+    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+  )
+  if errorlevel 1 exit /b 1
+)
+set "CLIENT_COMMON=%ROOT%\build\obj\native-client\client.obj %ROOT%\build\obj\native-client\raster.obj %ROOT%\build\obj\native-client\hud.obj %ROOT%\build\obj\native-client\human_renderer.obj %ROOT%\build\obj\native-client\world_renderer.obj %ROOT%\build\obj\native\human.obj %ROOT%\build\obj\native\hair.obj %ROOT%\build\obj\native\json.obj %ROOT%\build\obj\native-client\platform.obj %ROOT%\build\obj\native-client\websocket.obj %ROOT%\build\obj\native-client\sha1.obj"
+cl.exe /nologo "%ROOT%\build\obj\native-client\main.obj" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-native-client.exe" /link Ws2_32.lib
+if errorlevel 1 exit /b 1
+cl.exe /nologo "%ROOT%\build\obj\native-client\smoke.obj" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-native-smoke.exe" /link Ws2_32.lib
+if errorlevel 1 exit /b 1
 echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
+echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe
+echo [native] Success: %ROOT%\build\bin\gtc-native-smoke.exe
 exit /b 0
 
 :InitializeVisualStudio
