@@ -23,10 +23,12 @@ $exitCode = 1
 try {
     $serverRunning = Test-ServerPort $port
     if (-not $serverRunning) {
-        & (Join-Path $root 'build.cmd')
+        $serverBuild = Join-Path $root 'build.cmd'
+        & $env:ComSpec /d /c "`"$serverBuild`""
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
-    & (Join-Path $root 'native\build.cmd')
+    $nativeBuild = Join-Path $root 'native\build.cmd'
+    & $env:ComSpec /d /c "`"$nativeBuild`""
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $serverRunning) {

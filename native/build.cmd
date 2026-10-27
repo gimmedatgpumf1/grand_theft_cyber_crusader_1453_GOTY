@@ -9,7 +9,7 @@ if not exist "%ROOT%\build\obj\native" mkdir "%ROOT%\build\obj\native"
 if not exist "%ROOT%\.cache\ccache" mkdir "%ROOT%\.cache\ccache"
 set "CCACHE_DIR=%ROOT%\.cache\ccache"
 set "CCACHE_CONFIGPATH=%ROOT%\tools\ccache.conf"
-call :InitializeVisualStudio
+call "%ROOT%\tools\vcvars2022.cmd" "%ROOT%"
 if errorlevel 1 exit /b 1
 where cl.exe >nul 2>nul
 if errorlevel 1 (
@@ -56,20 +56,3 @@ echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-smoke.exe
 exit /b 0
-
-:InitializeVisualStudio
-set "VCVARS="
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if exist "%VSWHERE%" (
-  "%VSWHERE%" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "VC\Auxiliary\Build\vcvars64.bat" > "%ROOT%\build\obj\native\vcvars_path.txt"
-  if not errorlevel 1 set /p "VCVARS=" < "%ROOT%\build\obj\native\vcvars_path.txt"
-)
-if not defined VCVARS if exist "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars64.bat"
-if not defined VCVARS (
-  echo [native] Could not locate Visual Studio 2022 with MSVC v143 build tools.
-  echo [native] Enable Desktop development with C++ in Visual Studio Installer.
-  exit /b 1
-)
-if not exist "!VCVARS!" exit /b 1
-call "!VCVARS!"
-exit /b %ERRORLEVEL%
