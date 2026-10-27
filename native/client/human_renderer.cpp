@@ -38,6 +38,13 @@ Mat3 rotationX(double angle) {
     return result;
 }
 
+Mat3 rotationZ(double angle) {
+    Mat3 result;
+    const double c = std::cos(angle), s = std::sin(angle);
+    result.v = {c, -s, 0, s, c, 0, 0, 0, 1};
+    return result;
+}
+
 struct Transform {
     Mat3 rotation;
     Vec3 translation;
@@ -65,6 +72,12 @@ int boneIndex(const HumanModel& model, const std::string& name) {
     return -1;
 }
 
+double standingIdleWeight(const Character& character) {
+    if (character.onToilet) return 0.0;
+    const double movement = std::clamp(static_cast<double>(character.speed) / kFastWalkSpeed, 0.0, 1.0);
+    return 1.0 - std::clamp(movement * 4.0, 0.0, 1.0);
+}
+
 std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& rest,
                             const Character& character, std::uint64_t tick) {
     std::vector<Transform> transforms(model.rigBones.size());
@@ -76,6 +89,14 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
         character.manualMove.y * std::cos(character.yaw);
     const double gait = forwardMovement < -0.05 ? -1.0 : 1.0;
     const double swing = std::sin(phase) * 0.48 * movement * gait;
+    // Relaxed standing corrects the source A-pose to hip-width feet and uses
+    // a small hip angle so the anterior tibia is not exactly hidden behind
+    // the femur from the anatomical eye position. This ordinary rig pose
+    // fades out with locomotion and has no gaze or vertex-deformation input;
+    // one-shot actions can replace the idle layer.
+    const double idle = standingIdleWeight(character);
+    const double idleHip = 8.0 * pi / 180.0 * idle;
+    const double idleAdduction = 5.0 * pi / 180.0 * idle;
     auto local = [&](const RigBone& bone) {
         double angle = 0;
         if (seated) {
@@ -83,15 +104,20 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
             if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle = 1.28;
             if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -0.20;
         } else {
-            if (bone.name == "upperleg01.L") angle = -swing;
-            if (bone.name == "upperleg01.R") angle = swing;
+            if (bone.name == "upperleg01.L") angle = -swing - idleHip;
+            if (bone.name == "upperleg01.R") angle = swing - idleHip;
             if (bone.name == "lowerleg01.L") angle = std::max(0.0, swing) * 0.75;
             if (bone.name == "lowerleg01.R") angle = std::max(0.0, -swing) * 0.75;
             if (bone.name == "upperarm01.L") angle = swing * 0.72;
             if (bone.name == "upperarm01.R") angle = -swing * 0.72;
             if (character.toiletAction == ToiletAction::Piss && bone.name == "upperarm01.R") angle = -0.42;
         }
-        return around(joint(rest, bone.head), rotationX(angle));
+        Mat3 rotation = rotationX(angle);
+        if (idleAdduction != 0.0 && (bone.name == "upperleg01.L" || bone.name == "upperleg01.R")) {
+            const double direction = bone.name == "upperleg01.L" ? -1.0 : 1.0;
+            rotation = multiply(rotationZ(direction * idleAdduction), rotation);
+        }
+        return around(joint(rest, bone.head), rotation);
     };
     std::function<void(int)> compute = [&](int index) {
         if (states[index] == 2) return;
@@ -293,7 +319,25 @@ namespace {
 
 double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
                        const Character& character, const std::vector<Transform>& transforms) {
-    if (!character.onToilet) return 0.0;
+    if (!character.onToilet) {
+        const double idle = standingIdleWeight(character);
+        if (idle <= 0.0) return 0.0;
+        double sole = 1e100;
+        for (std::size_t index = 0; index < rest.size(); ++index) {
+            if (rest[index].y > 0.18) continue;
+            Vec3 point;
+            double total = 0, support = 0;
+            for (const auto& [bone, weight] : model.rigWeights[index]) {
+                if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+                point += transforms[bone].point(rest[index]) * weight;
+                total += weight;
+                const std::string& name = model.rigBones[bone].name;
+                if (name.rfind("foot.", 0) == 0 || name.rfind("toe", 0) == 0) support += weight;
+            }
+            if (support > 0.25 && total > 1e-8) sole = std::min(sole, point.y / total * kHumanHeightScale);
+        }
+        return sole < 1e99 ? -sole * idle : 0.0;
+    }
     std::vector<bool> supportBone(model.rigBones.size(), false);
     for (std::size_t i = 0; i < model.rigBones.size(); ++i) {
         const std::string& name = model.rigBones[i].name;
@@ -546,7 +590,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     const Material skin = skinMaterial(model, character, root, morphs);
     static const char* shirts[] = {"#20262b", "#b3453c", "#56765f", "#c4b58d", "#334c6b", "#6b4c70", "#c7ccd1"};
-    static const char* pants[] = {"#1c2328", "#2d3338", "#4a453e", "#23384a"};
+    static const char* pants[] = {"#303b44", "#2d3338", "#4a453e", "#23384a"};
     Material shirt;
     shirt.kind = Material::Kind::Cloth;
     shirt.specular = 0.0;

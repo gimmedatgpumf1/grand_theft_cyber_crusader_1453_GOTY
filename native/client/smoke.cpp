@@ -116,6 +116,45 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
         error = "standing male genital visibility";
         return false;
     }
+    double sole = 1e100;
+    for (std::size_t id = 0; id < cache.rest.size(); ++id) {
+        if (cache.rest[id].y > 0.18) continue;
+        double support = 0;
+        for (const auto& [bone, weight] : model.rigWeights[id]) {
+            if (bone < 0 || static_cast<std::size_t>(bone) >= model.rigBones.size()) continue;
+            const std::string& name = model.rigBones[bone].name;
+            if (name.rfind("foot.", 0) == 0 || name.rfind("toe", 0) == 0) support += weight;
+        }
+        if (support > 0.25) sole = std::min(sole, cache.posed[id].y);
+    }
+    if (sole > 1e90 || std::abs(sole) > 1e-6) {
+        error = "standing idle sole contact";
+        return false;
+    }
+    auto visibleBone = [&](const char* name) {
+        const auto it = std::find_if(model.rigBones.begin(), model.rigBones.end(), [&](const RigBone& bone) {
+            return bone.name == name;
+        });
+        if (it == model.rigBones.end()) return -1;
+        const int bone = static_cast<int>(it - model.rigBones.begin());
+        int seen = 0;
+        for (std::size_t id = 0; id < cache.rest.size(); ++id) {
+            double weight = 0;
+            for (const auto& [candidate, value] : model.rigWeights[id]) if (candidate == bone) weight += value;
+            if (weight < 0.45) continue;
+            const BodyHit hit = bodyHit(model, cache.posed, camera.position, cache.posed[id]);
+            if (std::abs(hit.distance - length(cache.posed[id] - camera.position)) < 1e-4) ++seen;
+        }
+        return seen;
+    };
+    for (const char* side : {"L", "R"}) {
+        const std::string upper = std::string("lowerleg01.") + side;
+        const std::string lower = std::string("lowerleg02.") + side;
+        if (visibleBone(upper.c_str()) < 12 || visibleBone(lower.c_str()) < 20) {
+            error = "anterior tibia occluded by femur";
+            return false;
+        }
+    }
     for (const char* name : {"foot.L", "foot.R"}) {
         const auto it = std::find_if(model.rigBones.begin(), model.rigBones.end(), [&](const RigBone& bone) {
             return bone.name == name;
@@ -379,13 +418,17 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Camera neutralStanding = renderer.viewCamera(world, standingState, citizen.id, neutralStandingView);
     HumanRenderCache corneaCache;
     prepareHuman(eyeModel, standingState.characters[0], corneaCache);
-    const Vec3 eyeCenter = (jointPosition(corneaCache.rest, eyeModel.eyeSource[0]) +
-                            jointPosition(corneaCache.rest, eyeModel.eyeSource[1])) * 0.5;
     const gtc::Character& standingCitizen = standingState.characters[0];
-    const Vec3 expectedEyeJoint = rotateBody(eyeCenter * kHumanHeightScale, standingCitizen.yaw) +
-        Vec3{standingCitizen.position.x, 0, standingCitizen.position.y};
+    Camera jointCamera = neutralStanding;
+    jointCamera.worldSpaceGpu = true;
+    Rasterizer jointRasterizer(1, 1, Color{}, 1.0, true);
+    HairLibrary jointHair;
+    drawHuman(jointRasterizer, jointCamera, eyeModel, jointHair, standingCitizen, corneaCache,
+              ".", standingState.tick, true);
+    const Vec3 posedEyeJoint = (jointPosition(corneaCache.posed, eyeModel.eyeSource[0]) +
+                                jointPosition(corneaCache.posed, eyeModel.eyeSource[1])) * 0.5;
     constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
-    const bool eyeJoint = length(neutralStanding.position - expectedEyeJoint) < 1e-6;
+    const bool eyeJoint = length(neutralStanding.position - posedEyeJoint) < 1e-6;
     const bool gazeSplit = std::abs(headAngleForGaze(0.2)) < 1e-9 &&
         std::abs(headAngleForGaze(neckLimit) - (neckLimit - eyeRange)) < 1e-9 &&
         std::abs(headAngleForGaze(1.0) - (1.0 - eyeRange)) < 1e-9;
