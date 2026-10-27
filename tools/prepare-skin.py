@@ -27,8 +27,8 @@ def normalized_albedo(image):
     if len(sample) < 1000:
         raise RuntimeError('Could not estimate the generic skin albedo')
     base = np.percentile(sample, 56, axis=0)
-    detail = 1.0 + (pixels / np.maximum(base, 0.05) - 1.0) * 0.68
-    detail = np.clip(detail, 0.28, 1.42)
+    ratio = np.clip(pixels / np.maximum(base, 0.05), 0.05, 2.5)
+    detail = np.clip(np.power(ratio, 1.22), 0.24, 1.42)
     return Image.fromarray(np.uint8(np.clip(detail * 255.0, 0, 255)), 'RGB'), pixels
 
 
@@ -45,9 +45,9 @@ def surface_maps(image, pixels):
     normal_image = Image.fromarray(encoded, 'RGB')
 
     red_excess = pixels[..., 0] - (pixels[..., 1] + pixels[..., 2]) * 0.5
-    roughness = 0.76 - np.maximum(red_excess - 0.12, 0.0) * 0.72
+    roughness = 0.68 - np.maximum(red_excess - 0.12, 0.0) * 0.90
     roughness += np.clip(height, -0.035, 0.035) * 0.55
-    roughness = np.uint8(np.clip(roughness * 255.0, 80, 220))
+    roughness = np.uint8(np.clip(roughness * 255.0, 70, 215))
     return normal_image, Image.fromarray(roughness, 'L')
 
 

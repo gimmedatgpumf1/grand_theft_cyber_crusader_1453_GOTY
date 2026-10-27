@@ -318,7 +318,7 @@ function paintSkin(canvas, appearance) {
     context.ellipse(mouth[0], mouth[1], 4, 27, 0, 0, Math.PI * 2);
     context.fill();
   }
-  context.globalAlpha = appearance.makeup ? 0.76 : young?.naturalWidth ? 0.52 : 0.70;
+  context.globalAlpha = appearance.makeup ? 0.76 : young?.naturalWidth ? 0.30 : 0.70;
   const browColor = appearance.hairColor >= 6 && appearance.hairColor <= 7 ? '#68503d' :
     appearance.hairColor === 2 ? '#493326' :
     appearance.hairColor === 8 || appearance.hairColor === 4 ? '#4e4b47' : PALETTES.hairColor[appearance.hairColor];
@@ -348,9 +348,15 @@ function skinTexture(appearance) {
   canvas.width = canvas.height = 1024;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  let queued = false;
   const repaint = () => {
-    paintSkin(canvas, appearance);
-    texture.needsUpdate = true;
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      paintSkin(canvas, appearance);
+      texture.needsUpdate = true;
+    });
   };
   mask('lips', repaint);
   mask('eyelids', repaint);
@@ -440,7 +446,7 @@ export function createHuman(data) {
   const sex = appearance.male ? 'male' : 'female';
   const textureAge = (appearance.morphs[0] || 0) >= 44 ? 'old' : 'young';
   skin.normalMap = skinSurfaceTexture(`skin-${sex}-${textureAge}-normal.png`);
-  skin.normalScale.set(0.32, 0.32);
+  skin.normalScale.set(0.42, 0.42);
   skin.roughnessMap = skinSurfaceTexture(`skin-${sex}-${textureAge}-roughness.jpg`);
   const shirt = surface(PALETTES.shirt[appearance.shirt]);
   const pants = surface(PALETTES.pants[appearance.pants]);

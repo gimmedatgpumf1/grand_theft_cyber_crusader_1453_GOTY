@@ -27,9 +27,9 @@ FEATURE = {1,4,10,13,14,33,133,159,145,362,263,386,374,61,291,17,0,61,291,152}
 FIT = sorted(set(range(0, 468, 6)) | KEY)
 COORDINATE = [
     'headWidth', 'headHeight', 'faceShape', 'faceFullness', 'forehead', 'cheekBones', 'cheekFullness',
-    'cheekHeight', 'jawWidth', 'jawHeight', 'chinWidth', 'chinHeight', 'chinProjection', 'chinBones',
+    'cheekHeight', 'jawWidth', 'jawDrop', 'chinHeight', 'chinProjection', 'chinBones',
     'noseWidth', 'noseLength', 'noseVertical', 'noseProjection', 'noseBridge', 'noseTip', 'nostrils',
-    'eyeSize', 'eyeHeight', 'eyeSpacing', 'eyeDepth', 'eyeTilt', 'browHeight', 'browAngle',
+    'eyeSize', 'eyeOpening', 'eyeHeight2', 'eyeHeight3', 'eyeSpacing', 'eyeDepth', 'eyeTilt', 'browHeight', 'browAngle',
     'mouthWidth', 'mouthVertical', 'smile', 'lipHeight', 'upperLip', 'lowerLip',
 ]
 EXCLUDE = {'neckWidth','shoulders','chest','torsoWidth','stomach','muscles','armWidth','legWidth','african','asian'}
@@ -310,6 +310,10 @@ class Driver:
 
 def detect(face_mesh, key):
     image = cv2.imread(str(BUILD / f'render-fit-{key}.png'))
+    if image.shape[:2] == (720, 1280):
+        # The creator face stays in this region. Detection is normalized by the
+        # eyes, so cropping does not change the fitting coordinate system.
+        image = image[150:550, 420:820]
     result = face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     if not result.multi_face_landmarks:
         raise RuntimeError(f'No generated face detected for {key}')
@@ -429,7 +433,7 @@ def main():
     references = {key: normalize(np.array(REFS[key]['points'])[:, :2])[0] for key in selected}
     driver = Driver()
     atexit.register(driver.close)
-    with mp.solutions.face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True,
+    with mp.solutions.face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=False,
                                         min_detection_confidence=.3) as face_mesh:
         driver.render(candidates, selected)
         for key in selected:

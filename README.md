@@ -32,7 +32,9 @@ actions as browser players.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
 - **C** opens the character creator: sex, skin, hair, colors, facial hair, coat and sunglasses
-  are server-validated and replicated. JC, field-agent and classic presets are included.
+  are server-validated and replicated. Every preset uses the same 107 anatomical sliders;
+  there are no person-specific morphs or portrait textures. Reusable CC0 MakeHuman skin maps
+  provide age/sex surface detail across the full skin palette.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
   Holding F outside a toilet action empties only the bladder and leaves shared, persistent puddles.
 - **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
@@ -94,8 +96,9 @@ The server binds **0.0.0.0:1453** by default. Advanced overrides:
   source archives and compressed seed are deliberately committed for GitHub-hosted acceleration.
 - **No npm install, CDN, download, or network connection is needed to build or play.** Three.js
   r170 and its license are vendored under `web/js/vendor/`. The CC0 MakeHuman geometry, rigs,
-  shape targets and MPFB detail masks are also vendored; see `web/assets/human/LICENSE.md`.
-  Clothing, fabric, skin-color compositing and the remaining art are procedural.
+  shape targets, universal skin maps and MPFB detail masks are also vendored; see
+  `web/assets/human/LICENSE.md`. Clothing, fabric, skin-color compositing and the remaining art
+  are procedural.
 
 ## The 1,000-line nagger
 

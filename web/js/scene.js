@@ -106,12 +106,12 @@ export class GameScene {
     floor.position.y = -0.012;
     floor.receiveShadow = true;
     this.studioRoot.add(floor);
-    const ambient = new THREE.HemisphereLight('#f4f5ff', '#343b36', 1.2);
-    const key = new THREE.DirectionalLight('#ffffff', 2.1);
+    const ambient = new THREE.HemisphereLight('#f4f5ff', '#343b36', 0.8);
+    const key = new THREE.DirectionalLight('#ffffff', 1.9);
     key.position.set(-3, 6, 5);
-    const fill = new THREE.DirectionalLight('#c9ddf2', 0.9);
+    const fill = new THREE.DirectionalLight('#c9ddf2', 0.55);
     fill.position.set(4, 3, 1);
-    const rim = new THREE.DirectionalLight('#ffffff', 1.1);
+    const rim = new THREE.DirectionalLight('#ffffff', 0.9);
     rim.position.set(0, 4, -5);
     this.studioRoot.add(ambient, key, fill, rim);
     this.scene.add(this.studioRoot);
