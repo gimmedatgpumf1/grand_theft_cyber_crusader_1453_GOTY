@@ -313,15 +313,20 @@ int main() {
             boundaryWorld.setInput(boundary, {0, -1}, false, false, 3.14159265F, 0);
             boundaryWorld.update(0.05F);
         }
-        bool exactRiseSlow = false;
+        bool exactRiseSlow = false, roseFromLow = false;
+        float previousElevation = boundaryWorld.character(boundary).elevation;
         for (int i = 0; i < 50; ++i) {
             boundaryWorld.setInput(boundary, {0, -1}, false, false, 3.14159265F, 0);
             boundaryWorld.update(0.05F);
             const auto& c = boundaryWorld.character(boundary);
             exactRiseSlow = exactRiseSlow || (c.grounded && std::abs(c.elevation - 0.18F) < 0.001F &&
                 c.position.y < -1.0F && c.speed <= 0.7501F && c.speed > 0.0F);
+            roseFromLow = roseFromLow || (std::abs(previousElevation - 0.18F) < 0.001F &&
+                std::abs(c.elevation - 0.45F) < 0.001F);
+            previousElevation = c.elevation;
         }
-        check(exactRiseSlow, "an exact 27 centimetre rise uses the slow-step speed");
+        check(exactRiseSlow && roseFromLow,
+              "an exact 27 centimetre rise uses current altitude rather than assuming ground");
     });
 
     test("toilet grab, climb, release, and mid-air grab", [] {

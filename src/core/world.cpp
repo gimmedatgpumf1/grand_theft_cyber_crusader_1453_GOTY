@@ -674,10 +674,11 @@ void World::moveBody(Character& character, const Vec2& delta) {
                 }
                 continue;
             }
-            character.elevation = stepTop;
-            character.verticalVelocity = 0.0F;
-            if (!bodyHitsWorld(candidate, kBodyRadius, character.elevation, bodyHeight(character),
-                               obstacles_, kHalfWidth, kHalfDepth)) character.position = candidate;
+            if (!bodyHitsWorld(candidate, kBodyRadius, stepTop, bodyHeight(character),
+                               obstacles_, kHalfWidth, kHalfDepth)) {
+                character.position = candidate; character.elevation = stepTop;
+                character.verticalVelocity = 0.0F;
+            }
         }
     }
 }
