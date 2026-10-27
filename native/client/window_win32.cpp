@@ -1,0 +1,208 @@
+#include "client/window.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <windowsx.h>
+
+#include <cctype>
+
+namespace gtc::native {
+
+struct NativeWindow::Impl {
+    HWND window = nullptr;
+    bool open = false;
+    bool captured = false;
+    double lastX = 240;
+    double lastY = 320;
+    std::vector<WindowEvent> events;
+    std::vector<unsigned char> bgra;
+
+    static int key(WPARAM value) {
+        if (value >= 'A' && value <= 'Z') return static_cast<int>(value - 'A' + 'a');
+        if (value >= '0' && value <= '9') return static_cast<int>(value);
+        switch (value) {
+            case VK_ESCAPE: return kKeyEscape;
+            case VK_F1: return kKeyF1;
+            case VK_F12: return kKeyF12;
+            case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT: return kKeyShift;
+            case VK_RETURN: return kKeyEnter;
+            case VK_LEFT: return kKeyLeft;
+            case VK_RIGHT: return kKeyRight;
+            case VK_UP: return kKeyUp;
+            case VK_DOWN: return kKeyDown;
+            case VK_PRIOR: return kKeyPageUp;
+            case VK_NEXT: return kKeyPageDown;
+            case VK_TAB: return kKeyTab;
+            case VK_SPACE: return ' ';
+            default: return 0;
+        }
+    }
+
+    void centerMouse() {
+        POINT point{240, 320};
+        ClientToScreen(window, &point);
+        SetCursorPos(point.x, point.y);
+    }
+
+    static LRESULT CALLBACK procedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+        Impl* self = reinterpret_cast<Impl*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            self = static_cast<Impl*>(reinterpret_cast<CREATESTRUCT*>(lParam)->lpCreateParams);
+            SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        if (!self) return DefWindowProc(hwnd, message, wParam, lParam);
+        switch (message) {
+            case WM_KEYDOWN: case WM_SYSKEYDOWN:
+                self->events.push_back({WindowEvent::Type::KeyDown, key(wParam)});
+                return 0;
+            case WM_KEYUP: case WM_SYSKEYUP:
+                self->events.push_back({WindowEvent::Type::KeyUp, key(wParam)});
+                return 0;
+            case WM_MOUSEMOVE: {
+                WindowEvent moved{WindowEvent::Type::MouseMove};
+                moved.x = GET_X_LPARAM(lParam);
+                moved.y = GET_Y_LPARAM(lParam);
+                if (self->captured) {
+                    moved.dx = moved.x - 240;
+                    moved.dy = moved.y - 320;
+                    if (moved.dx != 0 || moved.dy != 0) self->centerMouse();
+                } else {
+                    moved.dx = moved.x - self->lastX;
+                    moved.dy = moved.y - self->lastY;
+                }
+                self->lastX = moved.x;
+                self->lastY = moved.y;
+                self->events.push_back(moved);
+                return 0;
+            }
+            case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN:
+            case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP: {
+                const bool down = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN;
+                WindowEvent click{down ? WindowEvent::Type::MouseDown : WindowEvent::Type::MouseUp};
+                click.button = message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ? 1 :
+                               message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ? 2 : 3;
+                click.x = GET_X_LPARAM(lParam);
+                click.y = GET_Y_LPARAM(lParam);
+                self->events.push_back(click);
+                return 0;
+            }
+            case WM_MOUSEWHEEL: {
+                WindowEvent wheel{WindowEvent::Type::Wheel};
+                wheel.wheel = GET_WHEEL_DELTA_WPARAM(wParam) / 120.0;
+                self->events.push_back(wheel);
+                return 0;
+            }
+            case WM_KILLFOCUS:
+                self->events.push_back({WindowEvent::Type::FocusLoss});
+                return 0;
+            case WM_CLOSE:
+                self->events.push_back({WindowEvent::Type::Close});
+                self->open = false;
+                DestroyWindow(hwnd);
+                return 0;
+            case WM_DESTROY:
+                self->open = false;
+                return 0;
+            default:
+                return DefWindowProc(hwnd, message, wParam, lParam);
+        }
+    }
+};
+
+NativeWindow::NativeWindow() = default;
+NativeWindow::~NativeWindow() { close(); }
+
+bool NativeWindow::open(const std::string& title, std::string& error) {
+    close();
+    impl_ = new Impl;
+    const HINSTANCE instance = GetModuleHandle(nullptr);
+    WNDCLASSEX description{};
+    description.cbSize = sizeof(description);
+    description.hInstance = instance;
+    description.lpfnWndProc = Impl::procedure;
+    description.lpszClassName = "GTC1453NativeWindow";
+    description.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    description.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    if (!RegisterClassEx(&description) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        error = "Could not register the native Win32 window class";
+        close();
+        return false;
+    }
+    constexpr DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    RECT rectangle{0, 0, 480, 640};
+    AdjustWindowRect(&rectangle, style, false);
+    impl_->window = CreateWindowEx(0, description.lpszClassName, title.c_str(), style,
+        CW_USEDEFAULT, CW_USEDEFAULT, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
+        nullptr, nullptr, instance, impl_);
+    if (!impl_->window) {
+        error = "Could not create the native 480x640 Win32 window";
+        close();
+        return false;
+    }
+    impl_->bgra.resize(480U * 640U * 4U);
+    impl_->open = true;
+    ShowWindow(impl_->window, SW_SHOW);
+    UpdateWindow(impl_->window);
+    return true;
+}
+
+void NativeWindow::close() {
+    if (impl_) {
+        if (impl_->window) DestroyWindow(impl_->window);
+        delete impl_;
+        impl_ = nullptr;
+    }
+}
+
+bool NativeWindow::poll(std::vector<WindowEvent>& events) {
+    events.clear();
+    if (!impl_ || !impl_->open) return false;
+    MSG message;
+    while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE)) {
+        if (message.message == WM_QUIT) impl_->open = false;
+        TranslateMessage(&message);
+        DispatchMessage(&message);
+    }
+    events.swap(impl_->events);
+    impl_->events.clear();
+    return impl_->open;
+}
+
+bool NativeWindow::present(const NativeFrame& frame) {
+    if (!impl_ || !impl_->open || frame.width != 480 || frame.height != 640) return false;
+    for (std::size_t i = 0; i < 480U * 640U; ++i) {
+        impl_->bgra[i * 4] = frame.rgb[i * 3 + 2];
+        impl_->bgra[i * 4 + 1] = frame.rgb[i * 3 + 1];
+        impl_->bgra[i * 4 + 2] = frame.rgb[i * 3];
+        impl_->bgra[i * 4 + 3] = 255;
+    }
+    BITMAPINFO bitmap{};
+    bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmap.bmiHeader.biWidth = 480;
+    bitmap.bmiHeader.biHeight = -640;
+    bitmap.bmiHeader.biPlanes = 1;
+    bitmap.bmiHeader.biBitCount = 32;
+    bitmap.bmiHeader.biCompression = BI_RGB;
+    const HDC device = GetDC(impl_->window);
+    const int result = StretchDIBits(device, 0, 0, 480, 640, 0, 0, 480, 640,
+                                     impl_->bgra.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
+    ReleaseDC(impl_->window, device);
+    return result != 0;
+}
+
+void NativeWindow::captureMouse(bool capture) {
+    if (!impl_ || !impl_->window || impl_->captured == capture) return;
+    impl_->captured = capture;
+    if (capture) {
+        SetCapture(impl_->window);
+        ShowCursor(false);
+        impl_->centerMouse();
+    } else {
+        ReleaseCapture();
+        ShowCursor(true);
+    }
+}
+
+bool NativeWindow::opened() const { return impl_ && impl_->open; }
+
+} // namespace gtc::native

@@ -115,18 +115,22 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     }
 }
 
+void Camera::basis() const {
+    if (basisReady) return;
+    forward = normalized(target - position);
+    right = normalized(cross(forward, up));
+    vertical = normalized(cross(right, forward));
+    basisReady = true;
+}
+
 Vec3 Camera::view(Vec3 point) const {
-    const Vec3 forward = normalized(target - position);
-    const Vec3 right = normalized(cross(forward, up));
-    const Vec3 vertical = normalized(cross(right, forward));
+    basis();
     const Vec3 relative = point - position;
     return {dot(relative, right), dot(relative, vertical), dot(relative, forward)};
 }
 
 Vec3 Camera::viewDirection(Vec3 direction) const {
-    const Vec3 forward = normalized(target - position);
-    const Vec3 right = normalized(cross(forward, up));
-    const Vec3 vertical = normalized(cross(right, forward));
+    basis();
     return {dot(direction, right), dot(direction, vertical), dot(direction, forward)};
 }
 
@@ -144,15 +148,16 @@ Rasterizer::Rasterizer(int width, int height, Color background, double focal) : 
 
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     constexpr double near = 0.035;
-    std::vector<RenderVertex> polygon;
+    std::array<RenderVertex, 4> polygon;
+    std::size_t polygonSize = 0;
     for (int i = 0; i < 3; ++i) {
         const RenderVertex& a = input[i];
         const RenderVertex& b = input[(i + 1) % 3];
         const bool insideA = a.view.z >= near, insideB = b.view.z >= near;
-        if (insideA) polygon.push_back(a);
-        if (insideA != insideB) polygon.push_back(interpolate(a, b, (near - a.view.z) / (b.view.z - a.view.z)));
+        if (insideA) polygon[polygonSize++] = a;
+        if (insideA != insideB) polygon[polygonSize++] = interpolate(a, b, (near - a.view.z) / (b.view.z - a.view.z));
     }
-    for (std::size_t face = 1; face + 1 < polygon.size(); ++face) {
+    for (std::size_t face = 1; face + 1 < polygonSize; ++face) {
         const std::array<RenderVertex, 3> vertices = {polygon[0], polygon[face], polygon[face + 1]};
         std::array<Projected, 3> p;
         for (int i = 0; i < 3; ++i) {

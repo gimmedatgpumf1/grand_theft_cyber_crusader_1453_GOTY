@@ -50,7 +50,9 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
     const Vec3 citizen = local ? Vec3{local->position.x, 0, local->position.y} : Vec3{};
     const float yaw = local ? view.yaw : 0.0F;
     if (view.mode == ViewMode::God) {
-        camera.position = {view.godX, 13.5, view.godZ + 10.5};
+        camera.position = {view.godX + std::sin(view.godYaw) * view.godDistance * 0.72,
+                           view.godDistance * 0.82,
+                           view.godZ + std::cos(view.godYaw) * view.godDistance * 0.72};
         camera.target = {view.godX, 0.2, view.godZ};
         camera.fovDegrees = 48;
         return camera;
@@ -64,13 +66,13 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
         camera.fovDegrees = 65;
     } else {
         camera.target = citizen + Vec3{0, 1.12, 0};
-        camera.position = camera.target - forward * 4.7;
+        camera.position = camera.target - forward * view.distance;
         camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
         camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
         const Vec3 direct = unobstructedCamera(world, camera.target, camera.position);
         camera.position = direct;
         if (length(direct - camera.target) < 1.8) {
-            Vec3 lifted = camera.target - forward * 4.7 + Vec3{0, 1.4, 0};
+            Vec3 lifted = camera.target - forward * view.distance + Vec3{0, 1.4, 0};
             lifted.x = std::clamp(lifted.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
             lifted.z = std::clamp(lifted.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
             lifted = unobstructedCamera(world, camera.target, lifted);
@@ -199,9 +201,9 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     if (local) {
         drawText(frame, 285, 7, local->name.substr(0, 10), text);
         const double range = distance(local->position, world.toiletFront);
-        if (range <= world.interactionRange) {
+        if (local->toiletAction != ToiletAction::None || range <= world.interactionRange) {
             frame.rectangle(0, 478, frame.width, 34, panel);
-            drawText(frame, 8, 484, "E TOILET", text);
+            drawText(frame, 8, 484, local->toiletAction != ToiletAction::None ? "E STAND" : "E TOILET", text);
         }
         if (!local->notice.empty()) {
             frame.rectangle(0, 518, frame.width, 34, panel);
@@ -234,6 +236,15 @@ bool WorldRenderer::load(const std::string& root, std::string& error) {
     return true;
 }
 
+const std::vector<MorphSpec>& WorldRenderer::morphSpecs(bool male) const {
+    return male ? male_.specs : female_.specs;
+}
+
+Camera makeViewCamera(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
+                      const ViewState& view) {
+    return makeCamera(world, state, localId, view);
+}
+
 bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
                            const ViewState& view, NativeFrame& frame, std::string& error) const {
     if (!ready_) {
@@ -243,6 +254,12 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const Camera camera = makeCamera(world, state, localId, view);
     Rasterizer rasterizer(480, 640, colorHex("#17231f"), camera.focal());
     drawFloor(rasterizer, camera, world);
+    if (view.highlightToilet) {
+        Material highlight;
+        highlight.color = colorHex("#86b83e");
+        drawEllipsoid(rasterizer, camera, Vec3{world.toilet.x, 0.025, world.toilet.y},
+                      Vec3{0.82, 0.018, 0.94}, highlight, 24, 5);
+    }
     drawObstacles(rasterizer, camera, world);
     drawPaths(rasterizer, camera, state, localId);
     drawPuddles(rasterizer, camera, state);

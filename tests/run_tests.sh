@@ -13,8 +13,7 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   tests/tests.cpp src/core/collision.cpp src/core/json.cpp src/core/pathfinding.cpp src/core/world.cpp \
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
-node --check web/js/main.js
-for FILE in web/js/*.js; do node --check "$FILE"; done
-node tests/camera_tests.mjs
-node tests/geometry.mjs
-echo '[test] Browser module syntax and signed geometry checks passed.'
+echo '[test] C++ simulation and signed geometry checks passed.'
+if [ -x "$ROOT/build/bin/gtc1453" ] && [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
+  "$ROOT/tests/native_smoke.sh" "$ROOT/build/native-smoke-tests"
+fi

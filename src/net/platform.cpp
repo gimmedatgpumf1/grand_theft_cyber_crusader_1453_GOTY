@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -84,6 +85,16 @@ int readSome(SocketHandle socket, char* buffer, int size) {
 #else
     return static_cast<int>(::recv(socket, buffer, static_cast<std::size_t>(size), 0));
 #endif
+}
+
+bool waitReadable(SocketHandle socket, int milliseconds) {
+    fd_set readers;
+    FD_ZERO(&readers);
+    FD_SET(socket, &readers);
+    timeval timeout{};
+    timeout.tv_sec = milliseconds / 1000;
+    timeout.tv_usec = (milliseconds % 1000) * 1000;
+    return ::select(static_cast<int>(socket + 1), &readers, nullptr, nullptr, &timeout) > 0;
 }
 
 bool sendAll(SocketHandle socket, const char* data, std::size_t size) {

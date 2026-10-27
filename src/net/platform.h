@@ -22,6 +22,7 @@ SocketHandle acceptClient(SocketHandle listener);
 SocketHandle connectClient(const std::string& host, std::uint16_t port);
 void closeSocket(SocketHandle socket);
 int readSome(SocketHandle socket, char* buffer, int size);
+bool waitReadable(SocketHandle socket, int milliseconds);
 bool sendAll(SocketHandle socket, const char* data, std::size_t size);
 bool sendAll(SocketHandle socket, const std::string& data);
 std::string lastError();

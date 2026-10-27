@@ -6,16 +6,27 @@ A goofy, low-poly, server-authoritative bathroom sim. One city sector, one toile
 questionable citizens, and biology with a network tick rate.
 
 This repository currently implements the **first playable vertical slice**, not the whole
-kitchen-sink game concept. It includes the foundations needed by that concept: C++ server,
-offline browser UI, multiplayer, shared AI/player actions, collision, pathfinding, needs,
-object interaction, and three camera modes.
+kitchen-sink game concept. It includes a C++ authoritative server, a native C++ software-rendered
+client, multiplayer, shared AI/player actions, collision, pathfinding, needs, object interaction,
+and three camera modes. The old browser UI is retained only as a legacy checkpoint.
 
 ## Play
 
-Open **http://localhost:1453** after starting the server. Open the same address in another
-browser window or on another machine on the LAN to join as a different citizen. There is no
-local-player-only action path: the AI uses the same movement, pathfinding, pissing, and toilet
-actions as browser players.
+Build both native targets, start the authoritative server, then start the native client:
+
+```bash
+./build.sh
+./native/build.sh
+./build/bin/gtc1453 --port 1453 --web web
+# In another terminal:
+./build/bin/gtc-native-client --name "Native Citizen"
+```
+
+On Windows use `build.cmd` and `native\\build.cmd`, then run `build\\bin\\gtc1453.exe` and
+`build\\bin\\gtc-native-client.exe`. Separate native clients on the LAN join as different citizens.
+There is no local-player-only action path: AI and players share movement, pathfinding, pissing,
+and toilet actions. The client sends inputs, never authoritative positions. Use `--headless` for
+native PNG output without a display. See [`native/README.md`](native/README.md) for all options.
 
 ### Controls
 
@@ -31,23 +42,26 @@ actions as browser players.
 - The throne is multi-use: E opens a real choice wheel for **Sit**, **Shit**, and **Piss**.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
-- **C** opens the character creator: sex, skin, hair, colors, facial hair, coat and sunglasses
-  are server-validated and replicated. Every preset uses the same 107 anatomical sliders;
-  there are no person-specific morphs or portrait textures. Reusable CC0 MakeHuman skin maps
-  provide age/sex surface detail across the full skin palette.
+- **C** opens the native character creator: generic styles and all 107 universal anatomical
+  sliders are available through arrows/Page Up/Page Down; Enter sends the server-validated
+  `customize` message. There are no person-specific morphs or portrait textures. Reusable CC0
+  MakeHuman skin maps provide age/sex surface detail across the full skin palette.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
   Holding F outside a toilet action empties only the bladder and leaves shared, persistent puddles.
 - **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
-- **H** opens the field manual and identity editor.
+- **H** opens the native field manual. **F12** saves the current native 480×640 framebuffer.
+  Native UI text is 21 pixels high.
 
 ## One-click Windows build
 
 Requirements: Visual Studio 2022 with **Desktop development with C++**, including the
 **MSVC v143 C++ x64/x86 build tools** and a **Windows 10 or 11 SDK**.
 
-1. Double-click **`build.cmd`** (or run **`build.ps1`**).
-2. Double-click **`run.cmd`** to build (if needed) and start the game.
+1. Double-click **`build.cmd`** (or run **`build.ps1`**) for the authoritative server.
+2. Double-click **`native\\build.cmd`** (or **`native\\build.ps1`**) for the native client,
+   smoke driver, and fitter.
+3. Start `build\\bin\\gtc1453.exe`, then `build\\bin\\gtc-native-client.exe`.
 
 The script always initializes the Visual Studio environment through `vcvars64.bat` (finding
 VS2022 through `vswhere` when necessary), then verifies that the C++ standard library compiles.
@@ -67,13 +81,15 @@ those are supplied by MSVC.
 Requirements: a C++17 compiler (`g++` preferred, `clang++` fallback) and Bash.
 
 ```bash
-./build.sh          # build
-./run.sh            # build and run
+./build.sh          # authoritative server
+./native/build.sh   # native client, smoke driver, and fitter
+./run.sh            # build and run the server
 # or: ./build.sh --run
 ```
 
-Output goes to `build/bin/gtc1453`, with a committed copy at `prebuilt/linux-x86_64/gtc1453`.
-On Linux x86-64 you can run that prebuilt binary directly without compiling. The build uses the
+Server output goes to `build/bin/gtc1453`; native outputs are `gtc-native-client`,
+`gtc-native-smoke`, and `gtc-native-fit`. Committed Linux x86-64 copies and checksums live under
+`prebuilt/linux-x86_64/`. The build uses the
 vendored ccache 4.14.2 automatically, with system ccache and direct compilation as fallbacks.
 The server binds **0.0.0.0:1453** by default. Advanced overrides:
 
@@ -94,11 +110,11 @@ The server binds **0.0.0.0:1453** by default. Advanced overrides:
   hashes the compiler; `hash_dir = false` permits reuse from another checkout path.
 - Local build products and cache state remain ignored by Git. The prebuilt binary, ccache tool,
   source archives and compressed seed are deliberately committed for GitHub-hosted acceleration.
-- **No npm install, CDN, download, or network connection is needed to build or play.** Three.js
-  r170 and its license are vendored under `web/js/vendor/`. The CC0 MakeHuman geometry, rigs,
-  shape targets, universal skin maps and MPFB detail masks are also vendored; see
-  `web/assets/human/LICENSE.md`. Clothing, fabric, skin-color compositing and the remaining art
-  are procedural.
+- **No npm install, CDN, or runtime download is needed.** The native client uses Win32 or the
+  system X11 library and local assets. The CC0 MakeHuman geometry, rigs, shape targets, universal
+  skin maps and MPFB detail masks are vendored; see `web/assets/human/LICENSE.md` for asset
+  provenance. Clothing, fabric, skin-color compositing and the remaining art are procedural.
+  Three.js under `web/js/vendor/` belongs only to the preserved legacy checkpoint.
 
 ## The 1,000-line nagger
 
@@ -116,26 +132,20 @@ bash tools/nagger.sh
 ./tests/run_tests.sh
 ```
 
-The test runner builds and executes simulation tests for JSON, collision/sliding, A* path
+The test runner builds and executes C++ simulation tests for JSON, collision/sliding, A* path
 validity, strict interaction range without player auto-walk, persistent sitting, separate
 bowel/bladder relief, standing male and seated female toilet piss, appearance validation,
-clamped cheat adjustments, puddles, and autonomous AI toilet use. It also checks camera-relative
-strafe directions, the input protocol's world-space x/z mapping, mouse-look direction,
-godview pan speed, and syntax-checks every first-party
-browser module with Node.js. Node is only a test convenience, not a game dependency.
+clamped cheat adjustments, puddles, and autonomous AI toilet use. When the native binaries are
+built, it also starts a separate test server and runs two real native clients through replication,
+customization, movement, pathfinding, and toilet interaction. It does not invoke browser tooling.
 
-### Portrait fitting harness
-
-`web/fit.html` is a standalone **480×640** head-only, render-on-demand canvas used by
-`tools/render-fit-driver.cjs` and `tools/render-fit.py`. It loads no networking, world, AI,
-HUD, or creator UI and has no continuous render loop. Bulk fitting must use this harness;
-the full game is reserved for actual gameplay and creator-UI regression checks.
-
-## Native C++ portrait fitter
+## Native C++ runtime and portrait fitter
 
 The native-only path is in [`native/`](native/README.md). Build `./native/build.sh` (or
-`native\\build.cmd` with Visual Studio 2022) and run `./build/bin/gtc-native-fit --iterations 8`.
-It performs direct numeric universal-morph/camera fitting and writes separate **480×640**
+`native\\build.cmd` with Visual Studio 2022). `gtc-native-client` is the interactive/headless
+multiplayer client; `gtc-native-smoke` is the two-player network test. For portrait work,
+`./build/bin/gtc-native-fit --iterations 8` performs direct numeric universal-morph/camera fitting
+and writes separate **480×640**
 CPU-rasterized initial/final PNGs for visual review. It does not use a browser, JavaScript,
 Chromium, portrait textures, or per-candidate image detection. Native presets live in
 `native/presets.json`; candidates are never promoted automatically.
@@ -146,14 +156,12 @@ Chromium, portrait textures, or per-candidate image detection. Native presets li
 src/
   core/       World state, needs, collision, A*, JSON protocol
   net/        POSIX/Winsock abstraction, SHA-1 handshake, WebSocket frames
-  server/     HTTP static files + WebSocket transport + threaded simulation
+  server/     WebSocket transport + threaded authoritative simulation
   main.cpp    Port/web-root options
-web/
-  index.html  HUD and field manual
-  styles.css  Acid-green CRT-ish interface
-  js/         Renderer, cameras, controls, networking, characters, HUD
-  js/vendor/  Offline Three.js and generated CC0 human packs
-  assets/human/ Local facial masks and asset provenance
+native/
+  client/     Protocol, software world renderer, Win32/X11 window, input, native UI
+  vendor/     stb image decoding/encoding
+web/          Legacy browser checkpoint and reusable local generic asset files
 tools/convert-human.py Offline human-pack generator
 tools/human-source/ CC0 MakeHuman source geometry, targets and weights
 build.cmd     VS2022 auto-detection and one-click MSVC build
@@ -165,8 +173,8 @@ tools/ccache/ Vendored ccache, licenses and corresponding sources
 ```
 
 The simulation runs at 20 Hz on its own thread; each accepted connection has a network thread.
-World mutations are mutex-protected and state snapshots are broadcast at 10 Hz. The browser
-sends inputs, not positions, so collision and interaction range remain server-authoritative.
+World mutations are mutex-protected and state snapshots are broadcast at 10 Hz. Native clients
+send inputs, not positions, so collision and interaction range remain server-authoritative.
 
 ## Third party
 
@@ -174,5 +182,5 @@ Three.js is MIT licensed. See `web/js/vendor/THREE-LICENSE.txt` and `NOTICE.md`.
 The optional build accelerator is ccache 4.14.2, GPL-3.0-or-later; its license and complete
 corresponding source archives are under `tools/ccache/`. Character geometry, rigs, targets and
 facial masks are CC0 MakeHuman/MPFB assets; provenance and regeneration instructions are in
-`web/assets/human/LICENSE.md`. No MakeHuman/MPFB program code is distributed. The game itself
-is repository-local C++, HTML, CSS and JavaScript.
+`web/assets/human/LICENSE.md`. No MakeHuman/MPFB program code is distributed. The active game
+runtime is repository-local C++; legacy HTML/CSS/JavaScript is not the active client.

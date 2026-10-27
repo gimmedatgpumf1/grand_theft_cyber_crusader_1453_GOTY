@@ -61,6 +61,13 @@ struct Camera {
     Vec3 view(Vec3 point) const;
     Vec3 viewDirection(Vec3 direction) const;
     double focal() const;
+
+private:
+    void basis() const;
+    mutable bool basisReady = false;
+    mutable Vec3 forward;
+    mutable Vec3 right;
+    mutable Vec3 vertical;
 };
 
 struct RenderVertex {

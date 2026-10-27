@@ -38,7 +38,7 @@ public:
 
     bool connect(const std::string& host, std::uint16_t port, std::string& error);
     void disconnect();
-    bool receive(std::string& error);
+    bool receive(std::string& error, int timeoutMilliseconds = -1);
 
     bool sendJoin(const std::string& name);
     bool sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch);

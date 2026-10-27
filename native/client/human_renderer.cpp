@@ -280,6 +280,28 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             rasterizer.triangle(vertices, scalp);
         }
     }
+    if (character.appearance.makeup > 0 || character.appearance.lipColor > 0) {
+        static const char* makeupColors[] = {"#6b4d45", "#74545f", "#4c6170", "#76505f", "#4f684f"};
+        static const char* lipColors[] = {"#9a5b50", "#a44f52", "#763f4c", "#b47162", "#6e3538"};
+        Material makeup;
+        makeup.color = colorHex(makeupColors[std::clamp(character.appearance.makeup, 0, 4)]);
+        Material lips;
+        lips.color = colorHex(lipColors[std::clamp(character.appearance.lipColor, 0, 4)]);
+        for (const Triangle& triangle : model.headTriangles) {
+            const Vec3 center = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
+            const bool eyePaint = character.appearance.makeup > 0 && center.z > eyeRest.z - 0.015 &&
+                center.y > eyeRest.y - 0.035 && center.y < eyeRest.y + 0.035;
+            const bool lipPaint = character.appearance.lipColor > 0 && center.z > eyeRest.z - 0.005 &&
+                center.y < eyeRest.y - 0.085 && center.y > eyeRest.y - 0.155 && std::abs(center.x) < 0.05;
+            if (!eyePaint && !lipPaint) continue;
+            std::array<RenderVertex, 3> vertices;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                vertices[corner] = cameraVertex(camera, posed[index] + normals[index] * 0.003, normals[index], rest[index]);
+            }
+            rasterizer.triangle(vertices, lipPaint ? lips : makeup);
+        }
+    }
     if (const HairStyle* style = hair.find(character.appearance.hair)) {
         drawHair(rasterizer, camera, model, *style, rest, head, character, rootY);
     }
@@ -302,6 +324,37 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         Material beret; beret.color = colorHex("#70413d");
         drawEllipsoid(rasterizer, camera, world(head.point(eyeRest + Vec3{0, 0.15, -0.01})),
                       Vec3{0.105, 0.035, 0.095}, beret, 18, 8);
+    }
+    Material metal;
+    metal.color = colorHex("#b99b56");
+    metal.specular = 0.32;
+    if (character.appearance.earrings) for (int side : {-1, 1}) {
+        drawEllipsoid(rasterizer, camera, world(head.point(eyeRest + Vec3{side * 0.072, -0.055, 0})),
+                      Vec3{0.009, 0.018, 0.009}, metal, 10, 6);
+    }
+    if (character.appearance.necklace) {
+        for (int i = 0; i < 14; ++i) {
+            const double angle = i * 2 * pi / 14;
+            drawEllipsoid(rasterizer, camera, world(Vec3{0.066 * std::cos(angle), 1.42,
+                0.052 * std::sin(angle)}), Vec3{0.006, 0.006, 0.006}, metal, 6, 4);
+        }
+        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
+    }
+    if (character.appearance.tie > 0) {
+        static const char* ties[] = {"#7e3838", "#334f72", "#4d683c", "#79613a", "#69436e", "#30383d"};
+        Material tie;
+        tie.color = colorHex(ties[std::clamp(character.appearance.tie, 0, 5)]);
+        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
+        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
+    }
+    if (character.appearance.fur) {
+        Material fur;
+        fur.color = colorHex("#a3937c");
+        for (int i = 0; i < 16; ++i) {
+            const double angle = i * 2 * pi / 16;
+            drawEllipsoid(rasterizer, camera, world(Vec3{0.12 * std::cos(angle), 1.39,
+                0.085 * std::sin(angle)}), Vec3{0.035, 0.030, 0.035}, fur, 8, 5);
+        }
     }
 }
 

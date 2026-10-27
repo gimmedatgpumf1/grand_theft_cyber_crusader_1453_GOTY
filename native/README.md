@@ -28,10 +28,20 @@ Start the existing authoritative server from the repository root, then connect a
 
 ```sh
 ./build/bin/gtc1453 --port 1453 --web web
-./build/bin/gtc-native-client --name "Native Citizen" --frames 1 --output build/native-client/frame.png
+./build/bin/gtc-native-client --name "Native Citizen"
 ```
 
-The client uses the existing `/ws` welcome/world, state, input, path, toilet, customize, and cheat messages. It sends no positions and has no offline player-only action path. Useful headless options include `--mode tps|fps|god`, `--path X Z`, `--move X Z`, `--toilet sit|shit|piss`, `--yaw`, and `--pitch`. Toilet requests never auto-walk.
+The client uses the existing `/ws` welcome/world, state, input, path, toilet, customize, and cheat messages. It sends no positions and has no offline player-only action path. Toilet requests never auto-walk.
+
+The default is a native **480×640 Win32 window** on Windows or a dynamically loaded **system X11 window** on Linux. There is no X11 link-time dependency and no downloaded windowing runtime. On a machine without a display, use `--headless`; useful headless options include `--frames N`, `--mode tps|fps|god`, `--path X Z`, `--move X Z`, `--toilet sit|shit|piss`, `--yaw`, `--pitch`, and `--output PNG`.
+
+Native controls: **1/2/3** select TPS/god/FPS; WASD moves or fast-pans god view; Shift sprints/boosts; click captures the mouse and Esc releases it; the wheel zooms; **hold F** to piss in FPS; **E** opens the in-range Sit/Shit/Piss wheel or stands; god-view floor clicks explicitly pathfind. **C** opens the generic style + 107-universal-morph creator (arrows, Page Up/Down, Enter to replicate), **F1** opens cheats, **H** opens help, and **F12** saves a native PNG. Every UI glyph is 21 pixels high.
+
+To review the exact native overlay pixels without a display:
+
+```sh
+./build/bin/gtc-native-client --review-ui build/native-ui-review
+```
 
 With the server running, execute the two-player test:
 
@@ -73,7 +83,7 @@ A candidate is **not** promoted automatically. Lower landmark error is not liken
 - The CPU rasterizer has perspective-correct UV interpolation, a depth buffer, generic skin detail/normal maps, procedural eyes, MHCLO barycentric hair, alpha-tested generic hair textures, and a parametric scalp/hairline pass. Head/neck face selection uses the vendored CC0 skeleton weights rather than a person-specific cut.
 - The reference landmark JSON is development fitting data only. It is never sampled as an image or transferred to a material.
 
-The preserved browser implementation is a legacy checkpoint only. Native networking, rendering, and the headless multiplayer driver are implemented here; the native interactive window/input layer is the next runtime milestone.
+The preserved browser implementation is a legacy checkpoint only. Native networking, software world rendering, interactive Win32/X11 window/input, native overlays, and the headless multiplayer driver are implemented here. Actual native PNG review remains required for visual acceptance.
 
 ## Vendored decoder
 

@@ -1,4 +1,5 @@
 #include "client/client.h"
+#include "client/interactive.h"
 #include "client/renderer.h"
 
 #include <iostream>
@@ -14,14 +15,16 @@ double number(const std::string& value, double fallback = 0) {
 
 int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
-    std::string output = "build/native-client/frame.png", mode = "tps", toilet;
+    std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
     int port = 1453, frames = 1;
-    bool path = false, move = false;
+    bool path = false, move = false, headless = false;
     gtc::Vec2 destination{}, movement{};
     gtc::native::ViewState view;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
-        if (argument == "--host" && i + 1 < argc) host = argv[++i];
+        if (argument == "--headless") headless = true;
+        else if (argument == "--review-ui" && i + 1 < argc) reviewUi = argv[++i];
+        else if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = static_cast<int>(number(argv[++i], 1453));
         else if (argument == "--name" && i + 1 < argc) name = argv[++i];
         else if (argument == "--root" && i + 1 < argc) root = argv[++i];
@@ -38,8 +41,9 @@ int main(int argc, char** argv) {
         else if (argument == "--yaw" && i + 1 < argc) view.yaw = static_cast<float>(number(argv[++i]));
         else if (argument == "--pitch" && i + 1 < argc) view.pitch = static_cast<float>(number(argv[++i]));
         else {
-            std::cerr << "Usage: gtc-native-client [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
+            std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
+                         "  [--review-ui DIR] (render native overlays without a display)\n"
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
             return 2;
         }
@@ -47,6 +51,15 @@ int main(int argc, char** argv) {
     if (mode == "fps") view.mode = gtc::native::ViewMode::FirstPerson;
     else if (mode == "god") view.mode = gtc::native::ViewMode::God;
     else view.mode = gtc::native::ViewMode::ThirdPerson;
+    if (!headless || !reviewUi.empty()) {
+        gtc::native::InteractiveOptions options;
+        options.host = host;
+        options.port = static_cast<std::uint16_t>(port);
+        options.name = name;
+        options.root = root;
+        if (!reviewUi.empty()) return gtc::native::runInteractiveReview(options, reviewUi);
+        return gtc::native::runInteractive(options);
+    }
     std::string error;
     gtc::native::NativeClient client;
     if (!client.connect(host, static_cast<std::uint16_t>(port), error) || !client.sendJoin(name)) {

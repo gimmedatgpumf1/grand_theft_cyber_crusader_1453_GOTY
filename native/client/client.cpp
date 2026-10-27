@@ -246,8 +246,9 @@ bool NativeClient::connect(const std::string& host, std::uint16_t port, std::str
     return true;
 }
 
-bool NativeClient::receive(std::string& error) {
+bool NativeClient::receive(std::string& error, int timeoutMilliseconds) {
     while (connected()) {
+        if (timeoutMilliseconds >= 0 && !net::waitReadable(socket_, timeoutMilliseconds)) return true;
         std::string payload;
         int opcode = 0;
         if (!net::receiveWebSocket(socket_, payload, opcode, false)) {
