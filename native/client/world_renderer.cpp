@@ -559,8 +559,11 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     camera.height = std::max(1, view.height);
     camera.fovDegrees = 62;
     camera.position = humanEyePosition(model, cache.rest, *local, state.tick);
+    constexpr double neckLimit = 100.0 * 3.141592653589793 / 180.0;
+    const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
+    const double headYaw = local->yaw + std::clamp(relativeYaw, -neckLimit, neckLimit);
     const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
-    const Vec3 forward{std::sin(view.yaw) * cp, sp, std::cos(view.yaw) * cp};
+    const Vec3 forward{std::sin(headYaw) * cp, sp, std::cos(headYaw) * cp};
     camera.target = camera.position + forward;
     return camera;
 }

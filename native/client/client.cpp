@@ -118,6 +118,8 @@ Character parseCharacter(const JsonValue& value) {
     character.position = {static_cast<float>(value.numberAt("x")), static_cast<float>(value.numberAt("z"))};
     character.yaw = static_cast<float>(value.numberAt("yaw"));
     character.pitch = static_cast<float>(value.numberAt("pitch"));
+    character.manualMove = {static_cast<float>(value.numberAt("moveX")),
+                            static_cast<float>(value.numberAt("moveZ"))};
     character.speed = static_cast<float>(value.numberAt("speed"));
     character.needs.bladder = static_cast<float>(value.numberAt("bladder"));
     character.needs.bowel = static_cast<float>(value.numberAt("bowel"));

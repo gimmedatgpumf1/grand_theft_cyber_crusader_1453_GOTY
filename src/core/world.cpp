@@ -54,6 +54,8 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"z\":" << jsonNumber(character.position.y)
         << ",\"yaw\":" << jsonNumber(character.yaw)
         << ",\"pitch\":" << jsonNumber(character.pitch)
+        << ",\"moveX\":" << jsonNumber(character.manualMove.x)
+        << ",\"moveZ\":" << jsonNumber(character.manualMove.y)
         << ",\"speed\":" << jsonNumber(character.speed)
         << ",\"bladder\":" << jsonNumber(character.needs.bladder)
         << ",\"bowel\":" << jsonNumber(character.needs.bowel)
@@ -429,8 +431,9 @@ void World::updateCharacter(Character& character, float dt) {
 
     character.needs.bladder = std::min(100.0F, character.needs.bladder + 0.065F * dt);
     character.needs.bowel = std::min(100.0F, character.needs.bowel + 0.042F * dt);
+    const bool manualMovement = length(character.manualMove) > 0.05F;
     Vec2 direction = character.manualMove;
-    if (length(direction) > 0.05F) {
+    if (manualMovement) {
         character.path.clear();
         character.pendingToilet = false;
     } else if (!character.path.empty()) {
@@ -447,7 +450,7 @@ void World::updateCharacter(Character& character, float dt) {
     if (moving) {
         character.position = moveWithCollisions(character.position, normalized(direction) * (character.speed * dt),
                                                 kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);
-        if (!character.wantsPiss) {
+        if (!character.wantsPiss && !manualMovement) {
             character.yaw = std::atan2(direction.x, direction.y);
         }
     }

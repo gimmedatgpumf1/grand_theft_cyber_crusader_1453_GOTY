@@ -27,6 +27,10 @@ case "$TARGET" in
     ;;
 esac
 
+if [ "$TARGET" = all ]; then
+  bash "$ROOT/tests/run_tests.sh"
+fi
+
 if [ -z "$(git status --porcelain)" ]; then
   echo '[agent-build] Build succeeded; no source or prebuilt changes to upload.'
   exit 0

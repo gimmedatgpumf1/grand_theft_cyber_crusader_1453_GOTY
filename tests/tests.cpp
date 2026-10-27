@@ -100,6 +100,22 @@ int main() {
               "WASD interrupts sitting and returns movement control");
     });
 
+    test("manual backward movement preserves body facing", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Backward Subject", false);
+        const gtc::Vec2 spawn = world.character(id).position;
+        constexpr float facing = 3.14159265F;
+        world.setInput(id, {0, 1}, false, false, facing, 0);
+        world.update(0.05F);
+        const gtc::Character backward = world.character(id);
+        check(backward.position.y > spawn.y, "backward input moves opposite the facing direction");
+        check(std::abs(backward.yaw - facing) < 0.0001F,
+              "manual backward movement must not rotate the body toward velocity");
+        check(backward.manualMove.y > 0.99F, "authoritative movement remains backward");
+        check(world.snapshot().find("\"moveZ\":1") != std::string::npos,
+              "movement direction is replicated for backward gait rendering");
+    });
+
     test("shitting drains bowel without magically emptying bladder", [] {
         gtc::World world;
         const auto id = world.addCharacter("Bowel Subject", false);

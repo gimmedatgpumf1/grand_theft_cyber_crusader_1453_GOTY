@@ -72,7 +72,10 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     const bool seated = character.onToilet;
     const double movement = seated ? 0.0 : std::clamp(character.speed / 2.8, 0.0, 1.4);
     const double phase = tick * 0.055 * (4.0 + character.speed) + character.id * 0.7;
-    const double swing = std::sin(phase) * 0.48 * movement;
+    const double forwardMovement = character.manualMove.x * std::sin(character.yaw) +
+        character.manualMove.y * std::cos(character.yaw);
+    const double gait = forwardMovement < -0.05 ? -1.0 : 1.0;
+    const double swing = std::sin(phase) * 0.48 * movement * gait;
     auto local = [&](const RigBone& bone) {
         double angle = 0;
         if (seated) {
