@@ -1,6 +1,7 @@
 #include "client/client.h"
 #include "client/renderer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -178,6 +179,17 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 pitchForward = normalized(pitched.target - pitched.position);
     const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 &&
         length(expectedPitchEye - expectedSeatedEye) > 0.01 && std::abs(pitchForward.y - std::sin(pitchDown)) < 1e-6;
+    ViewState extremeView = neckView;
+    extremeView.pitch = -1.5F;
+    const Camera extreme = renderer.viewCamera(world, state, citizen.id, extremeView);
+    const Vec3 expectedExtremeEye = expectedEye(state.characters[0], neckLimit, pitchDown);
+    double armClearance = 1000;
+    for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
+        for (const auto& vertex : batch.vertices) {
+            armClearance = std::min(armClearance, length(extreme.position - Vec3{vertex.x, vertex.y, vertex.z}));
+        }
+    }
+    const bool clearance = length(extreme.position - expectedExtremeEye) < 1e-6 && armClearance > 0.04;
     const int headHeight = eyeModel.specIndex("headHeight");
     bool shaped = headHeight >= 0;
     double shortY = 0, tallY = 0;
@@ -209,9 +221,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
     else if (!pitch) error = "first-person neck pitch pivot";
+    else if (!clearance) error = "first-person arm clearance";
     else if (!shaped) error = "first-person morphed head attachment";
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && seated && neck && pitch && shaped && look;
+    return eyeMatrix && attached && seated && neck && pitch && clearance && shaped && look;
 }
 
 } // namespace
@@ -333,6 +346,24 @@ int main(int argc, char** argv) {
             if (!renderer.render(capture.client->world(), capture.client->state(), capture.client->playerId(),
                                  capture.view, frame, error) || !frame.save(output + "/" + capture.name + ".png")) {
                 std::cerr << "Native capture failed: " << error << '\n';
+                return 1;
+            }
+        }
+        gtc::native::ClientState standing = alpha.state();
+        auto male = std::find_if(standing.characters.begin(), standing.characters.end(), [&](const gtc::Character& character) {
+            return character.id == alpha.playerId();
+        });
+        if (male != standing.characters.end()) {
+            male->onToilet = false;
+            male->toiletAction = gtc::ToiletAction::None;
+            male->position = {-2, 2.3};
+            male->yaw = 3.14159265358979323846;
+            gtc::native::ViewState standingFps = fps;
+            standingFps.yaw = male->yaw;
+            gtc::native::NativeFrame frame;
+            if (!renderer.render(alpha.world(), standing, alpha.playerId(), standingFps, frame, error) ||
+                !frame.save(output + "/alpha-standing-fps.png")) {
+                std::cerr << "Native standing male capture failed: " << error << '\n';
                 return 1;
             }
         }

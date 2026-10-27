@@ -297,8 +297,17 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     if (neckIndex >= 0 && (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9)) {
         const RigBone& neckBone = model.rigBones[neckIndex];
         const Vec3 neck = transforms[neckIndex].point(joint(rest, neckBone.head));
-        const Vec3 neckToEye = apply(rotationX(-headPitch), posed - neck);
-        posed = neck + rotateWorld(neckToEye, static_cast<float>(headYaw));
+        Vec3 headPivot = posed;
+        if (headIndex >= 0) headPivot = head.point(joint(rest, model.rigBones[headIndex].head));
+        auto articulate = [](Vec3 point, double yaw, double pitch) {
+            return rotateWorld(apply(rotationX(-pitch), point), static_cast<float>(yaw));
+        };
+        // The neck and head each contribute half of the rotation. Rotating the
+        // whole eye offset around the lower neck drops it into the shoulders.
+        constexpr double neckShare = 0.5;
+        const Vec3 movedHead = neck + articulate(headPivot - neck, headYaw * neckShare, headPitch * neckShare);
+        const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckShare, headPitch * neckShare);
+        posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckShare), headPitch * (1 - neckShare));
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
