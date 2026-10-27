@@ -575,10 +575,9 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
         std::abs(gazeYaw) / gazeYawLimit;
     const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
     const double headYaw = headAngleForGaze(gazeYaw);
-    // Downward head pose is solved by chin/manubrium contact; only upward
-    // gaze uses the separate comfortable eye-in-head contribution.
-    const double headPitch = gazePitch > 0 ? headAngleForGaze(gazePitch) : gazePitch;
-    camera.position = humanEyePosition(model, cache.rest, *local, state.tick, headYaw, headPitch);
+    // The anatomical pose applies eye-in-head motion and solves downward
+    // chin/manubrium contact from the total requested gaze angle.
+    camera.position = humanEyePosition(model, cache.rest, *local, state.tick, headYaw, gazePitch);
     const double viewYaw = local->yaw + gazeYaw;
     const double cp = std::cos(gazePitch), sp = std::sin(gazePitch);
     const Vec3 forward{std::sin(viewYaw) * cp, sp, std::cos(viewYaw) * cp};

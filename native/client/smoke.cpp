@@ -208,8 +208,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     ViewState extremeUpView = neckView;
     extremeUpView.pitch = 1.5F;
     const Camera extremeUp = renderer.viewCamera(world, state, citizen.id, extremeUpView);
-    const Vec3 expectedExtremeUpEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit),
-                                                  headAngleForGaze(1.0));
+    const Vec3 expectedExtremeUpEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit), 1.0);
     double upwardClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
         for (const auto& vertex : batch.vertices) {
@@ -269,6 +268,29 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             length(scaledDown - baseDown * scale) < 1e-6 &&
             length(scaledContact.chin - scaledContact.manubrium) < 1e-6 &&
             length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
+    }
+    HumanModel femaleEyeModel;
+    if (!femaleEyeModel.loadRuntime(".", false, error)) {
+        cleanup();
+        return false;
+    }
+    bool morphContacts = true;
+    for (HumanModel* model : {&eyeModel, &femaleEyeModel}) {
+        for (int spec = -1; spec < static_cast<int>(model->specs.size()); ++spec) {
+            for (int endpoint = 0; endpoint < (spec < 0 ? 1 : 2); ++endpoint) {
+                gtc::Character contactCitizen = scaledCitizen;
+                contactCitizen.appearance.male = model == &eyeModel;
+                if (spec >= 0) contactCitizen.appearance.morphs[spec] = endpoint ?
+                    model->specs[spec].maximum : model->specs[spec].minimum;
+                HumanRenderCache contactCache;
+                prepareHuman(*model, contactCitizen, contactCache);
+                const HumanGazePose neutral = humanGazePose(*model, contactCache.rest, contactCitizen, state.tick);
+                const HumanGazePose contact = humanGazePose(*model, contactCache.rest, contactCitizen,
+                                                            state.tick, 0, pitchDown);
+                morphContacts = morphContacts && length(contact.chin - contact.manubrium) < 1e-6 &&
+                    contact.eye.z > neutral.eye.z && contact.eye.y < neutral.eye.y;
+            }
+        }
     }
     ViewState standingView = view;
     standingView.yaw = bodyYaw;
@@ -369,9 +391,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
-    else if (!fullChain) error = "first-person complete spine01-neck01-neck02-neck03-head chain";
+    else if (!fullChain) error = "first-person chin/manubrium contact through complete neck-head chain";
     else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
+    else if (!morphContacts) error = "first-person chin/manubrium contact across body morphs";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
     else if (!pitch) error = "first-person neck pitch pivot, forward travel=" + std::to_string(forwardTravel);
@@ -382,7 +405,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         "=" + std::to_string(leastMorphClearance);
     else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && seated && neck && pitch && clearance &&
+    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
         lowerBody && shaped && heightClearance && look;
 }
 

@@ -290,6 +290,7 @@ struct GazeChain {
     std::vector<int> indices;
     std::vector<Vec3> pivots;
     std::vector<double> flexionLimits;
+    std::vector<double> extensionLimits;
     std::vector<double> yawShares;
     std::vector<double> extensionShares;
     Vec3 eye;
@@ -313,6 +314,8 @@ GazeChain gazeChain(const HumanModel& model, const std::vector<Vec3>& rest,
         chain.indices.push_back(index);
         chain.pivots.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
         chain.flexionLimits.push_back(flexionDegrees[i] * pi / 180.0);
+        const double extensionDegrees = i == 2 ? 10.9 : i == 3 ? 21.0 : 0.0;
+        chain.extensionLimits.push_back(extensionDegrees * pi / 180.0);
         chain.yawShares.push_back(yaw[i]);
         chain.extensionShares.push_back(extension[i]);
     }
@@ -372,7 +375,7 @@ std::vector<double> solveChinContact(const GazeChain& chain, Vec3 target) {
     };
     // Base-to-tip CCD converges without the upper-joint unloading produced by
     // tip-to-base CCD here. All four biological joints remain in the solve.
-    for (int iteration = 0; iteration < 64; ++iteration) {
+    for (int iteration = 0; iteration < 256; ++iteration) {
         for (std::size_t i = 0; i < count; ++i) {
             Vec3 chin;
             forward(chin);
@@ -380,7 +383,7 @@ std::vector<double> solveChinContact(const GazeChain& chain, Vec3 target) {
             const Vec3 to = normalized(target - chain.pivots[i]);
             double angle = std::acos(std::clamp(dot(from, to), -1.0, 1.0));
             if (cross(from, to).x > 0) angle = -angle;
-            angles[i] = std::clamp(angles[i] + angle, -chain.flexionLimits[i], 0.0);
+            angles[i] = std::clamp(angles[i] + angle, -chain.flexionLimits[i], chain.extensionLimits[i]);
         }
         Vec3 chin;
         forward(chin);
@@ -403,7 +406,8 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
         std::vector<double> pitches(count, 0.0);
         if (gazePitch < 0) {
             const std::vector<double> contact = solveChinContact(chain, chain.manubrium);
-            const double amount = std::clamp(-gazePitch / (pi * 0.5), 0.0, 1.0);
+            const double amount = std::clamp((-gazePitch - kEyeInHeadRange) /
+                (pi * 0.5 - kEyeInHeadRange), 0.0, 1.0);
             for (std::size_t i = 0; i < count; ++i) pitches[i] = contact[i] * amount;
         } else {
             const double physical = gazePitch - std::clamp(gazePitch, -kEyeInHeadRange, kEyeInHeadRange);
