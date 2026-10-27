@@ -57,7 +57,7 @@ public:
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;
-        view_.pitch = -0.34F;
+        view_.pitch = -0.18F;
         using Clock = std::chrono::steady_clock;
         auto previous = Clock::now();
         auto inputTime = previous;
@@ -122,7 +122,7 @@ public:
         buildCreator();
         if (const Character* citizen = local()) draft_ = citizen->appearance;
         view_.yaw = 3.14159265F;
-        view_.pitch = -0.34F;
+        view_.pitch = -0.18F;
         NativeFrame base;
         if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, base, error) ||
             !base.save(output + "/base.png")) {
@@ -211,7 +211,7 @@ private:
             view_.pitch = 0;
             if (const Character* citizen = local()) view_.yaw = citizen->yaw;
         }
-        if (mode == ViewMode::ThirdPerson) view_.pitch = -0.34F;
+        if (mode == ViewMode::ThirdPerson) view_.pitch = -0.18F;
         if (mode == ViewMode::God) {
             if (const Character* citizen = local()) {
                 view_.godX = citizen->position.x;
@@ -531,7 +531,7 @@ private:
             drawText(frame, 230, 35, "FIELD MANUAL", text);
             const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP",
                 "HOLD CTRL CHARGE / GRAB", "W CLIMB S RELEASE", "ALT CROUCH 3.6 KM/H",
-                "ALT+CTRL PRONE 2 KM/H", "LOW TUNNELS AUTO PRONE", "CLICK CAPTURE ESC RELEASE",
+                "ALT+CTRL PRONE 2 KM/H", "LOW CEILINGS HOLD STANCE", "CLICK CAPTURE ESC RELEASE",
                 "E TOILET F FPS PISS", "C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
             for (int i = 0; i < 12; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
         } else if (overlay_ == Overlay::Creator) {

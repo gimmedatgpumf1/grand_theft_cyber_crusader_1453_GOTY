@@ -302,7 +302,8 @@ int main() {
         check(driveTo(world, id, {0, -3.25F}), "move within arm reach of the toilet");
         world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
         world.update(0.05F);
-        check(world.character(id).grabbing, "Ctrl grabs a reachable toilet ledge");
+        check(world.character(id).grabbing && std::abs(world.character(id).grabHeight - 1.4F) < 0.001F,
+              "Ctrl grabs a reachable toilet ledge and replicates its height");
         world.setInput(id, {0, 1}, false, false, 3.14159265F, 0, false, false, true);
         world.update(0.05F);
         check(!world.character(id).grabbing, "moving backward releases the ledge");
@@ -340,22 +341,55 @@ int main() {
               "Ctrl can catch a reachable ledge in mid-air");
     });
 
-    test("low tunnel automatically forces prone crawling", [] {
+    test("ordinary crate uses the same grab and climb mechanics", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Crate Climber", false);
+        check(driveTo(world, id, {6.7F, 4.75F}), "approach the ordinary crate");
+        world.setInput(id, {}, false, false, 3.14159265F, 0, false, false, true);
+        world.update(0.05F);
+        check(world.character(id).grabbing && std::abs(world.character(id).grabHeight - 0.85F) < 0.001F,
+              "Ctrl grabs an ordinary wooden crate and replicates its height");
+        bool climbed = false;
+        for (int i = 0; i < 40 && !climbed; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0, false, false, true);
+            world.update(0.05F);
+            climbed = !world.character(id).grabbing && world.character(id).grounded &&
+                std::abs(world.character(id).elevation - 0.85F) < 0.001F;
+        }
+        check(climbed, "moving forward climbs onto the crate and remains supported");
+    });
+
+    test("low tunnel preserves manually selected prone crawling", [] {
         gtc::World world;
         const auto id = world.addCharacter("Tunnel Subject", false);
         check(driveTo(world, id, {-5.0F, 1.4F}), "approach the low tunnel");
-        bool prone = false;
+        bool unsolicitedStance = false;
+        for (int i = 0; i < 45; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0);
+            world.update(0.05F);
+            unsolicitedStance = unsolicitedStance || world.character(id).prone || world.character(id).crouched;
+        }
+        check(!unsolicitedStance, "walking into low clearance never initiates crouch or prone");
+        check(world.character(id).position.y > 1.0F, "standing profile is stopped by the tunnel");
+
+        for (int i = 0; i < 90 && world.character(id).position.y > 0.25F; ++i) {
+            world.setInput(id, {0, -1}, false, false, 3.14159265F, 0, false, true, true);
+            world.update(0.05F);
+        }
+        check(world.character(id).prone && world.character(id).position.y < 0.30F,
+              "manual prone enters the low tunnel");
         bool correctSpeed = true;
+        world.setInput(id, {0, -1}, false, false, 3.14159265F, 0);
+        world.update(0.05F);
+        check(world.character(id).prone, "low clearance preserves prone after stance keys are released");
         for (int i = 0; i < 180 && world.character(id).position.y > -1.35F; ++i) {
             world.setInput(id, {0, -1}, false, false, 3.14159265F, 0);
             world.update(0.05F);
-            prone = prone || world.character(id).prone;
             if (world.character(id).prone && std::abs(world.character(id).speed * 3.6F - 2.0F) > 0.001F) {
                 correctSpeed = false;
             }
         }
-        check(prone, "low clearance automatically lays the citizen down");
-        check(correctSpeed, "automatic tunnel crawling uses two kilometres per hour");
+        check(correctSpeed, "continued tunnel crawling uses two kilometres per hour");
         check(world.character(id).position.y < -1.2F, "prone profile physically passes through the tunnel");
         check(!world.character(id).prone && !world.character(id).crouched,
               "citizen stands automatically after leaving the tunnel");

@@ -15,7 +15,7 @@ enum class ViewMode { ThirdPerson, FirstPerson, God };
 struct ViewState {
     ViewMode mode = ViewMode::ThirdPerson;
     float yaw = 0.0F;
-    float pitch = -0.22F;
+    float pitch = -0.18F;
     float distance = 5.1F;
     float godX = 0.0F;
     float godZ = 0.0F;

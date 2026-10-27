@@ -100,6 +100,7 @@ struct Character {
     float verticalVelocity = 0.0F;
     float charge = 0.0F;
     float fullChargeTime = 0.0F;
+    float grabHeight = 0.0F;
     bool grounded = true;
     bool crouched = false;
     bool prone = false;

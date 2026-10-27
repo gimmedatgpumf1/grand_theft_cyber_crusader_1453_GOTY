@@ -66,8 +66,8 @@ Camera makeExternalCamera(const ClientWorld& world, const ClientState& state, st
     const double cp = std::cos(view.pitch), sp = std::sin(view.pitch);
     const Vec3 forward{std::sin(yaw) * cp, sp, std::cos(yaw) * cp};
     const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
-    const double targetHeight = local && local->prone ? 0.35 : local && local->crouched ? 0.82 : 1.25;
-    camera.target = citizen + Vec3{0, targetHeight, 0} + right * 0.42;
+    const double targetHeight = local && local->prone ? 0.35 : local && local->crouched ? 0.82 : 1.15;
+    camera.target = citizen + Vec3{0, targetHeight, 0} + right * 0.20;
     camera.position = camera.target - forward * view.distance;
     camera.position.x = std::clamp(camera.position.x, -world.width * 0.5 + 0.35, world.width * 0.5 - 0.35);
     camera.position.z = std::clamp(camera.position.z, -world.depth * 0.5 + 0.35, world.depth * 0.5 - 0.35);
@@ -394,7 +394,8 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         const Character& right = b.characters[i];
         if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
             left.speed != right.speed || left.elevation != right.elevation || left.charge != right.charge ||
-            left.grounded != right.grounded || left.crouched != right.crouched || left.prone != right.prone ||
+            left.grabHeight != right.grabHeight || left.grounded != right.grounded ||
+            left.crouched != right.crouched || left.prone != right.prone ||
             left.grabbing != right.grabbing || left.pissing != right.pissing || left.onToilet != right.onToilet ||
             left.toiletAction != right.toiletAction || left.path.size() != right.path.size()) return false;
         for (std::size_t p = 0; p < left.path.size(); ++p) {

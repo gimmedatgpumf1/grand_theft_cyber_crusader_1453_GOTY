@@ -792,7 +792,25 @@ int main(int argc, char** argv) {
             alpha.state().toiletUser == alpha.playerId() && beta.state().toiletUser == alpha.playerId());
         if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen) break;
     }
-    const bool passed = replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen;
+    bool crouchReplicated = false, proneReplicated = false, chargeReplicated = false;
+    if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen) {
+        for (int i = 0; i < 30; ++i) {
+            if (i == 0 && !beta.sendInput({}, false, false, 0, 0, false, true, false)) return 1;
+            if (i == 5 && !beta.sendInput({}, false, false, 0, 0, false, true, true)) return 1;
+            if (i == 10 && !beta.sendInput({}, false, false, 0, 0, false, false, true)) return 1;
+            if (i == 20 && !beta.sendInput({}, false, false, 0, 0)) return 1;
+            if (!receivePair(alpha, beta, error)) {
+                std::cerr << error << '\n';
+                return 1;
+            }
+            const gtc::Character* remote = alpha.state().character(beta.playerId());
+            crouchReplicated = crouchReplicated || (remote && remote->crouched && !remote->prone);
+            proneReplicated = proneReplicated || (remote && remote->prone);
+            chargeReplicated = chargeReplicated || (remote && remote->charge > 0.02F);
+        }
+    }
+    const bool passed = replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen &&
+        toiletSeen && crouchReplicated && proneReplicated && chargeReplicated;
     bool motion = false;
     std::error_code code;
     std::filesystem::create_directories(output, code);
@@ -877,6 +895,25 @@ int main(int argc, char** argv) {
             male->elevation = 0.5F;
             male->grounded = false;
             if (!stanceCapture("alpha-jump-tps", tps)) return 1;
+            for (gtc::Character& other : standing.characters) {
+                if (other.id != alpha.playerId()) other.position = {8.0F, 6.0F};
+            }
+            male->elevation = 0;
+            male->grounded = true;
+            male->speed = gtc::kFastWalkSpeed;
+            male->manualMove = {0, 1};
+            if (!stanceCapture("alpha-walk-tps", tps)) return 1;
+            male->position = {0, -3.25F};
+            male->yaw = 3.14159265F;
+            male->elevation = 0.55F;
+            male->grounded = false;
+            male->grabbing = true;
+            male->grabHeight = 1.4F;
+            male->speed = gtc::kCrouchSpeed;
+            male->manualMove = {0, -1};
+            gtc::native::ViewState grabView = tps;
+            grabView.yaw = male->yaw + 0.85F;
+            if (!stanceCapture("alpha-grab-tps", grabView)) return 1;
         }
     }
     std::ofstream report(output + "/report.json");
@@ -887,12 +924,17 @@ int main(int argc, char** argv) {
            << ",\"inputMoved\":" << (inputMoved ? "true" : "false")
            << ",\"pathSeen\":" << (pathSeen ? "true" : "false")
            << ",\"toiletSeen\":" << (toiletSeen ? "true" : "false")
+           << ",\"crouchReplicated\":" << (crouchReplicated ? "true" : "false")
+           << ",\"proneReplicated\":" << (proneReplicated ? "true" : "false")
+           << ",\"chargeReplicated\":" << (chargeReplicated ? "true" : "false")
            << ",\"motion\":" << (motion ? "true" : "false")
            << ",\"iterations\":" << iterations << "}\n";
     std::cout << "native smoke: " << (passed ? "PASS" : "FAIL") << ", alpha=" << alpha.playerId()
               << ", beta=" << beta.playerId() << ", tick=" << alpha.state().tick << '\n';
     if (!passed) std::cerr << "replication=" << replicated << " customize=" << customized
                            << " input=" << inputMoved << " backward=" << backwardReplicated
-                           << " slow=" << slowReplicated << " path=" << pathSeen << " toilet=" << toiletSeen << '\n';
+                           << " slow=" << slowReplicated << " path=" << pathSeen << " toilet=" << toiletSeen
+                           << " crouch=" << crouchReplicated << " prone=" << proneReplicated
+                           << " charge=" << chargeReplicated << '\n';
     return passed ? 0 : 1;
 }

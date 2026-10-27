@@ -33,11 +33,13 @@ float overheadClearance(const Character& character, const Vec2& point,
 
 void applyStance(Character& character, const Vec2& point, const std::vector<Obstacle>& obstacles) {
     const float clearance = overheadClearance(character, point, obstacles);
-    const bool forcedProne = clearance < kCrouchingHeight - 0.02F;
-    const bool forcedCrouch = clearance < kStandingHeight - 0.02F;
-    character.prone = forcedProne ||
+    // Low ceilings only preserve a stance the player already chose. Merely
+    // walking near a tunnel must never initiate a crouch or lie-down action.
+    const bool keepProne = character.prone && clearance < kStandingHeight - 0.02F;
+    const bool keepCrouched = character.crouched && clearance < kStandingHeight - 0.02F;
+    character.prone = keepProne ||
         (character.grounded && character.crouchInput && character.grabInput && !character.grabbing);
-    character.crouched = !character.prone && (character.crouchInput || forcedCrouch);
+    character.crouched = !character.prone && (character.crouchInput || keepCrouched);
 }
 
 float supportHeight(const Character& character, const std::vector<Obstacle>& obstacles) {
@@ -124,6 +126,7 @@ void appendCharacter(std::ostringstream& out, const Character& character) {
         << ",\"verticalVelocity\":" << jsonNumber(character.verticalVelocity)
         << ",\"charge\":" << jsonNumber(character.charge)
         << ",\"fullChargeTime\":" << jsonNumber(character.fullChargeTime)
+        << ",\"grabHeight\":" << jsonNumber(character.grabHeight)
         << ",\"grounded\":" << (character.grounded ? "true" : "false")
         << ",\"crouched\":" << (character.crouched ? "true" : "false")
         << ",\"prone\":" << (character.prone ? "true" : "false")
@@ -321,6 +324,7 @@ void World::setDestinationLocked(Character& character, const Vec2& destination) 
     character.wantsPiss = false;
     character.grabbing = false;
     character.grabbedObstacle = -1;
+    character.grabHeight = 0.0F;
     character.charge = character.fullChargeTime = 0.0F;
     character.path = pathfinder_.findPath(character.position, destination);
     if (character.path.empty()) notify(character, "No route. Try being less geographically challenged.");
@@ -388,6 +392,7 @@ void World::beginToilet(Character& character, ToiletAction action) {
     character.grounded = true;
     character.crouched = character.prone = character.grabbing = false;
     character.grabbedObstacle = -1;
+    character.grabHeight = 0.0F;
     character.position = character.onToilet ? toiletSeat() : toiletFront();
     character.yaw = character.onToilet ? 0.0F : 3.14159265F;
     character.actionTime = 0.0F;
@@ -412,6 +417,7 @@ void World::finishToilet(Character& character, const std::string& message) {
     character.grounded = true;
     character.crouched = character.prone = character.grabbing = false;
     character.grabbedObstacle = -1;
+    character.grabHeight = 0.0F;
     character.position = toiletFront();
     character.yaw = 0.0F;
     character.actionTime = 0.0F;
@@ -621,6 +627,7 @@ void World::updateCharacter(Character& character, float dt) {
     if (!character.grabInput) {
         character.grabbing = false;
         character.grabbedObstacle = -1;
+        character.grabHeight = 0.0F;
         character.charge = character.fullChargeTime = 0.0F;
         character.chargeLocked = false;
     }
@@ -630,6 +637,7 @@ void World::updateCharacter(Character& character, float dt) {
         if (target >= 0) {
             character.grabbing = true;
             character.grabbedObstacle = target;
+            character.grabHeight = obstacles_[target].height;
             character.grounded = false;
             character.verticalVelocity = character.charge = character.fullChargeTime = 0.0F;
         }
@@ -641,6 +649,7 @@ void World::updateCharacter(Character& character, float dt) {
         if (!obstacle || !character.grabInput) {
             character.grabbing = false;
             character.grabbedObstacle = -1;
+            character.grabHeight = 0.0F;
         } else {
             character.speed = character.verticalVelocity = character.charge = character.fullChargeTime = 0.0F;
             const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
@@ -648,6 +657,7 @@ void World::updateCharacter(Character& character, float dt) {
             if (climb < -0.2F) {
                 character.grabbing = false;
                 character.grabbedObstacle = -1;
+                character.grabHeight = 0.0F;
                 character.chargeLocked = true;
             } else if (climb > 0.2F) {
                 character.elevation += kClimbSpeed * dt;
@@ -656,6 +666,7 @@ void World::updateCharacter(Character& character, float dt) {
                     character.elevation = obstacle->height;
                     character.grabbing = false;
                     character.grabbedObstacle = -1;
+                    character.grabHeight = 0.0F;
                     character.grounded = true;
                     character.chargeLocked = true;
                     const Vec2 candidate = character.position + forward * (kBodyRadius + 0.12F);

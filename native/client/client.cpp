@@ -125,6 +125,7 @@ Character parseCharacter(const JsonValue& value) {
     character.verticalVelocity = static_cast<float>(value.numberAt("verticalVelocity"));
     character.charge = static_cast<float>(value.numberAt("charge"));
     character.fullChargeTime = static_cast<float>(value.numberAt("fullChargeTime"));
+    character.grabHeight = static_cast<float>(value.numberAt("grabHeight"));
     character.grounded = value.boolAt("grounded", true);
     character.crouched = value.boolAt("crouched");
     character.prone = value.boolAt("prone");

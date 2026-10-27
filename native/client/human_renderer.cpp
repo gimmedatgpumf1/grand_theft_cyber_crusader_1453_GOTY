@@ -101,6 +101,10 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     const double idle = prone ? 0.0 : standingIdleWeight(character);
     const double idleHip = 8.0 * pi / 180.0 * idle;
     const double idleAdduction = 5.0 * pi / 180.0 * idle;
+    const double armRelax = seated ? 0.0 : character.grabbing ? 0.58 : prone ? 0.35 : 0.60;
+    const double reachHeight = character.grabHeight > 0.0F ? character.grabHeight - character.elevation : 1.40;
+    const double climbAngle = -std::acos(std::clamp((1.35 - reachHeight) / 0.62, -0.96, 0.98));
+    const double climbReach = character.grabbing && forwardMovement > 0.05 ? std::sin(phase * 1.4) * 0.18 : 0.0;
     auto local = [&](const RigBone& bone) {
         double angle = 0;
         if (seated) {
@@ -119,14 +123,17 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
                 if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle += (-1.25 - angle) * crouch;
                 if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += (1.90 - angle) * crouch;
                 if (bone.name == "spine05") angle += 0.32 * crouch;
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle -= 0.45 * crouch;
             }
             if (airborne) {
                 if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle -= 0.18;
                 if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += 0.32;
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle -= 0.35;
             }
             if (character.grabbing) {
-                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -1.55;
-                if (bone.name == "upperarm02.L" || bone.name == "upperarm02.R") angle = -0.15;
+                if (bone.name == "upperarm01.L") angle = climbAngle + climbReach;
+                if (bone.name == "upperarm01.R") angle = climbAngle - climbReach;
+                if (bone.name == "upperarm02.L" || bone.name == "upperarm02.R") angle = -0.10;
             } else if (prone && (bone.name == "upperarm01.L" || bone.name == "upperarm01.R")) {
                 angle = -0.55 + swing * 0.25;
             }
@@ -135,6 +142,10 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
         if (idleAdduction != 0.0 && (bone.name == "upperleg01.L" || bone.name == "upperleg01.R")) {
             const double direction = bone.name == "upperleg01.L" ? -1.0 : 1.0;
             rotation = multiply(rotationZ(direction * idleAdduction), rotation);
+        }
+        if (armRelax > 0.0 && (bone.name == "upperarm01.L" || bone.name == "upperarm01.R")) {
+            const double direction = bone.name == "upperarm01.L" ? -1.0 : 1.0;
+            rotation = multiply(rotationZ(direction * armRelax), rotation);
         }
         return around(joint(rest, bone.head), rotation);
     };
@@ -551,6 +562,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseX != character.position.x || cache.poseZ != character.position.y ||
         cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
         cache.poseElevation != character.elevation || cache.poseCharge != character.charge ||
+        cache.poseGrabHeight != character.grabHeight ||
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
         cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
         cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing;
@@ -589,6 +601,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseSpeed = character.speed;
         cache.poseElevation = character.elevation;
         cache.poseCharge = character.charge;
+        cache.poseGrabHeight = character.grabHeight;
         cache.poseAction = static_cast<int>(character.toiletAction);
         cache.poseOnToilet = character.onToilet;
         cache.poseGrounded = character.grounded;
