@@ -623,6 +623,40 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool yawBoundary = std::abs(leftYaw - yawLimit) < 1e-5 && std::abs(rightYaw + yawLimit) < 1e-5 &&
         std::abs(leftBoundary.yaw - yawLimit) < 1e-6 && std::abs(rightBoundary.yaw + yawLimit) < 1e-6 &&
         std::abs(largeDelta.yaw - yawLimit) < 1e-6 && std::abs(fullTurn.yaw - 0.35F) < 1e-6;
+    const auto crosshairPixels = [&] {
+        const int cx = frame.width / 2, cy = frame.height / 2;
+        int mask = 0, bit = 1;
+        for (const auto& point : {std::pair<int, int>{0, 0}, {-4, 0}, {4, 0}, {0, -4}, {0, 4}}) {
+            const std::size_t offset = (static_cast<std::size_t>(cy + point.second) * frame.width + cx + point.first) * 3;
+            if (frame.rgb[offset] > 32 || frame.rgb[offset + 1] > 32 || frame.rgb[offset + 2] > 32) mask |= bit;
+            bit <<= 1;
+        }
+        return mask;
+    };
+    ViewState crosshairView = view;
+    crosshairView.mode = ViewMode::ThirdPerson;
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
+        cleanup();
+        return false;
+    }
+    const bool thirdCrosshair = crosshairPixels() == 31;
+    crosshairView.mode = ViewMode::FirstPerson;
+    crosshairView.width = 97;
+    crosshairView.height = 83;
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
+        cleanup();
+        return false;
+    }
+    const bool firstCrosshair = crosshairPixels() == 31;
+    crosshairView.mode = ViewMode::God;
+    crosshairView.width = 480;
+    crosshairView.height = 640;
+    if (!renderer.render(world, turnState, citizen.id, crosshairView, frame, error)) {
+        cleanup();
+        return false;
+    }
+    const int godCrosshairPixels = crosshairPixels();
+    const bool crosshairs = thirdCrosshair && firstCrosshair && godCrosshairPixels == 0;
     const bool eyeMatrix = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
     const bool attached = length(eye.position - attachedEye) < 1e-6 && torsoRetained;
     const bool look = std::abs(mouse.yaw + 0.022F) < 1e-6F && std::abs(mouse.pitch - 0.044F) < 1e-6F;
@@ -647,9 +681,11 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
     else if (!bodyTurn) error = "first-person camera did not follow seated body yaw";
     else if (!yawBoundary) error = "first-person head yaw flipped across the 180-degree boundary";
+    else if (!crosshairs) error = "first/third-person centered crosshair, third=" + std::to_string(thirdCrosshair) +
+        ", first=" + std::to_string(firstCrosshair) + ", god pixels=" + std::to_string(godCrosshairPixels);
     else if (!look) error = "first-person look input";
     return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
-        lowerBody && shaped && heightClearance && bodyTurn && yawBoundary && look;
+        lowerBody && shaped && heightClearance && bodyTurn && yawBoundary && crosshairs && look;
 }
 
 } // namespace

@@ -480,6 +480,34 @@ void drawMinimap(NativeFrame& frame, const ClientWorld& world, const ClientState
     }
 }
 
+void drawCrosshair(NativeFrame& frame, ViewMode mode) {
+    if (mode == ViewMode::God) return;
+    const int cx = frame.width / 2, cy = frame.height / 2;
+    const int unit = std::clamp(static_cast<int>(std::lround(std::min(frame.width, frame.height) / 640.0)), 1, 4);
+    const int gap = 3 * unit, arm = 7 * unit, length = arm - gap + 1;
+    const int x = cx - unit / 2, y = cy - unit / 2;
+    const double scale = frame.uiScale, offsetX = frame.uiOffsetX, offsetY = frame.uiOffsetY;
+    frame.uiScale = 1.0;
+    frame.uiOffsetX = frame.uiOffsetY = 0.0;
+    const Color shadow = colorHex("#020604"), ink = colorHex("#d7ff54");
+    const auto stroke = [&](int sx, int sy, int width, int height, bool outline) {
+        const int border = outline ? unit : 0;
+        frame.rectangle(sx - border, sy - border, width + 2 * border, height + 2 * border,
+                        outline ? shadow : ink);
+    };
+    for (int pass = 0; pass < 2; ++pass) {
+        const bool outline = pass == 0;
+        stroke(x, y, unit, unit, outline);
+        stroke(cx - arm, y, length, unit, outline);
+        stroke(cx + gap, y, length, unit, outline);
+        stroke(x, cy - arm, unit, length, outline);
+        stroke(x, cy + gap, unit, length, outline);
+    }
+    frame.uiScale = scale;
+    frame.uiOffsetX = offsetX;
+    frame.uiOffsetY = offsetY;
+}
+
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
              std::uint32_t localId, const ViewState& view) {
     const Character* local = state.character(localId);
@@ -733,6 +761,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     drawLabels(frame, camera, state, localId);
     frame.logicalUi();
     drawHud(frame, world, state, localId, view);
+    drawCrosshair(frame, view.mode);
     return true;
 }
 
