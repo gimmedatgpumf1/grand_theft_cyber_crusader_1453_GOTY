@@ -547,6 +547,13 @@ const std::vector<MorphSpec>& WorldRenderer::morphSpecs(bool male) const {
     return male ? male_.specs : female_.specs;
 }
 
+double headAngleForGaze(double gazeAngle) {
+    // Small gaze shifts are ocular; beyond a comfortable 30 degrees the head
+    // supplies the remainder instead of rotating the skull by the full gaze.
+    constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
+    return gazeAngle - std::clamp(gazeAngle, -eyeRange, eyeRange);
+}
+
 Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& state,
                                  std::uint32_t localId, const ViewState& view) const {
     const Character* local = state.character(localId);
@@ -558,17 +565,16 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
     camera.fovDegrees = 62;
-    constexpr double neckLimit = 100.0 * 3.141592653589793 / 180.0;
+    constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
     const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
-    const double neckYaw = std::clamp(relativeYaw, -neckLimit, neckLimit);
-    const double headYaw = local->yaw + neckYaw;
-    // A human cannot combine maximum horizontal and vertical neck rotation.
-    // Tapering the downward range keeps the posed arm out of the eye at full yaw.
-    const double downwardLimit = 1.45 - 0.95 * std::abs(neckYaw) / neckLimit;
-    const double headPitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
-    camera.position = humanEyePosition(model, cache.rest, *local, state.tick, neckYaw, headPitch);
-    const double cp = std::cos(headPitch), sp = std::sin(headPitch);
-    const Vec3 forward{std::sin(headYaw) * cp, sp, std::cos(headYaw) * cp};
+    const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
+    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -1.45, 1.0);
+    const double headYaw = headAngleForGaze(gazeYaw);
+    const double headPitch = headAngleForGaze(gazePitch);
+    camera.position = humanEyePosition(model, cache.rest, *local, state.tick, headYaw, headPitch);
+    const double viewYaw = local->yaw + gazeYaw;
+    const double cp = std::cos(gazePitch), sp = std::sin(gazePitch);
+    const Vec3 forward{std::sin(viewYaw) * cp, sp, std::cos(viewYaw) * cp};
     camera.target = camera.position + forward;
     return camera;
 }

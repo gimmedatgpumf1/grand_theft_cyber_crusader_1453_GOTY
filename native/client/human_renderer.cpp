@@ -291,7 +291,11 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     const int headIndex = boneIndex(model, "head");
     const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
-    const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
+    const Vec3 eyeCenter = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
+    const Vec3 gazeDirection = normalized(model.eyeDirection[0] + model.eyeDirection[1]);
+    // The rendered globe is about 24 mm across: put the camera at the corneal
+    // surface between the pupils, not at the center of the skull or eyeballs.
+    const Vec3 eyes = eyeCenter + gazeDirection * 0.012;
     Vec3 posed = head.point(eyes);
     const int neckIndex = boneIndex(model, "neck01");
     if (neckIndex >= 0 && (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9)) {
@@ -302,17 +306,14 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
         auto articulate = [](Vec3 point, double yaw, double pitch) {
             return rotateWorld(apply(rotationX(-pitch), point), static_cast<float>(yaw));
         };
-        // Share yaw evenly, but let the head joint provide most of the pitch.
-        // Rotating the full eye offset around the lower neck drops it into an arm.
-        constexpr double neckYawShare = 0.5;
-        constexpr double neckPitchShare = 0.25;
+        // The skull joint contributes little axial rotation and roughly a nod's
+        // worth of pitch; the cervical chain supplies the remaining motion.
+        constexpr double neckYawShare = 0.95;
+        constexpr double neckPitchShare = 0.75;
         const Vec3 movedHead = neck + articulate(headPivot - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
         const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
         posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckYawShare),
                                       headPitch * (1 - neckPitchShare));
-        // Neck flexion also carries the head slightly forward; a pure rotation
-        // leaves the eye behind the chest when looking at the legs.
-        posed.z += 0.05 * std::sin(std::max(0.0, -headPitch));
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
