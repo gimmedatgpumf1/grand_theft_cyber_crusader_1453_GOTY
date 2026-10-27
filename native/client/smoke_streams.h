@@ -2,6 +2,7 @@
 
 #include "client/client.h"
 #include "client/human_renderer.h"
+#include "client/view_controls.h"
 #include "core/projectile.h"
 
 namespace gtc::native {
@@ -63,7 +64,8 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
     const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
     const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
     if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 ||
-        length(cache.genitalExit - cache.posed[cache.genitalTip]) < 0.001 ||
+        length(cache.genitalExit - cache.posed[cache.genitalTip]) > 1e-6 ||
+        length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
         dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
         length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
     const Vec3 tip = cache.genitalExit;
@@ -77,6 +79,29 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
         tip.y + moved.elevation - cache.poseElevation,
         moved.position.y - s * (tip.x - cache.poseX) + c * (tip.z - cache.poseZ)};
     return length(humanStreamOrigin(moved, &cache, 0) - expected) < 1e-6;
+}
+
+inline bool orbitKeepsControlsFrozen() {
+    constexpr float east = 1.57079633F, north = 0.0F;
+    ViewState view;
+    view.mode = ViewMode::ThirdPerson;
+    view.yaw = east;
+    view.pitch = -0.2F;
+    OrbitPreview orbit;
+    const bool capture = orbit.begin(view, false);
+    view.yaw = north;
+    view.pitch = -0.8F;
+    const ViewState control = orbit.controls(view);
+    const gtc::Vec2 walk{std::sin(control.yaw), std::cos(control.yaw)};
+    const bool frozenWalk = std::abs(walk.x - 1.0F) < 1e-5F && std::abs(walk.y) < 1e-5F;
+    const bool frozenAim = std::abs(control.yaw - east) < 1e-5F && std::abs(control.pitch + 0.2F) < 1e-5F;
+    const bool previewsCamera = std::abs(view.yaw - north) < 1e-5F && !control.orbitPreview;
+    const bool released = orbit.end(view);
+    const bool restored = released && std::abs(view.yaw - east) < 1e-6F && std::abs(view.pitch + 0.2F) < 1e-6F;
+    ViewState firstPerson;
+    firstPerson.mode = ViewMode::FirstPerson;
+    OrbitPreview rejected;
+    return capture && frozenWalk && frozenAim && previewsCamera && restored && !rejected.begin(firstPerson, false);
 }
 
 inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,

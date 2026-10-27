@@ -929,20 +929,20 @@ int main(int argc, char** argv) {
             }
             male->toiletAction = gtc::ToiletAction::None; male->pissing = false;
             const auto stanceCapture = [&](const char* name, const gtc::native::ViewState& stanceView) {
-                return renderer.render(alpha.world(), standing, alpha.playerId(), stanceView, frame, error) &&
-                    frame.save(output + "/" + name + ".png");
+                return renderer.render(alpha.world(), standing, alpha.playerId(), stanceView, frame, error) && frame.save(output + "/" + name + ".png");
             };
             male->unzipped = male->pissing = true; male->pitch = 1.57079633F; seedStream();
             gtc::native::ViewState airView = tps; airView.yaw = 0.85F;
             if (!stanceCapture("alpha-air-piss-tps", airView)) return 1;
             gtc::native::ViewState toiletView = fpsLevel; toiletView.yaw = 3.14159265F; toiletView.pitch = -0.9F;
-            if (!gtc::native::seedToiletStreamExhibit(standing, alpha.playerId(), root, standing.tick) ||
+            if (!gtc::native::orbitKeepsControlsFrozen() ||
+                !gtc::native::seedToiletStreamExhibit(standing, alpha.playerId(), root, standing.tick) ||
                 !stanceCapture("toilet-water-fps", toiletView)) return 1;
             gtc::native::ViewState npcView = tps; npcView.yaw = -0.65F; npcView.pitch = -0.18F; npcView.distance = 2.4F; npcView.width = 960; npcView.height = 720;
             if (!stanceCapture("npc-piss-tps", npcView)) return 1;
             for (auto& citizen : standing.characters) citizen.pissing = citizen.unzipped = false;
             standing.projectiles.clear(); standing.waterRipples.clear();
-            male->position = {0, 0}; male->yaw = male->pitch = 0;
+            male->position = {0, 0}; male->yaw = male->pitch = male->pissYaw = male->pissPitch = 0;
             male->crouched = true;
             if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
             male->crouched = false;

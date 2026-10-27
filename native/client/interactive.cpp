@@ -2,6 +2,7 @@
 
 #include "client/client.h"
 #include "client/renderer.h"
+#include "client/view_controls.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -89,6 +90,7 @@ public:
             }
             updatePresentation();
             updateHighlight();
+            updateReticle();
             const auto renderStart = Clock::now();
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 std::cerr << error << '\n';
@@ -199,12 +201,24 @@ private:
         interpolateState(presentationPrevious_, presentationTarget_, presentation_, partialTick);
     }
 
+    ViewState controlView() const { return orbit_.controls(view_); }
+
+    void beginOrbit() {
+        if (overlay_ != Overlay::None) return;
+        if (orbit_.begin(view_, captured_)) { window_.captureMouse(true); captured_ = true; }
+    }
+
+    void endOrbit() {
+        if (orbit_.end(view_) && captured_) { window_.captureMouse(false); captured_ = false; }
+    }
+
     void setMode(ViewMode mode) {
         if (view_.mode == mode) return;
         const ViewMode previous = view_.mode;
         view_.mode = mode;
         if (previous == ViewMode::God || mode == ViewMode::God) keys_.clear();
-        leftDown_ = rightDown_ = middleDown_ = false;
+        endOrbit();
+        leftDown_ = rightDown_ = false;
         lastLeftClick_ = lastRightClick_ = {};
         view_.aiming = false;
         if (mode == ViewMode::God && captured_) {
@@ -244,7 +258,8 @@ private:
         }
         if (overlay_ == Overlay::None) restoreMouseCapture_ = captured_ && view_.mode == ViewMode::FirstPerson;
         overlay_ = overlay;
-        keys_.clear(); middleDown_ = false;
+        endOrbit();
+        keys_.clear();
         window_.captureMouse(false);
         captured_ = false;
         if (overlay == Overlay::Creator) {
@@ -323,6 +338,28 @@ private:
         return result;
     }
 
+    void updateReticle() {
+        view_.orbitPreview = false;
+        if (!orbit_.active) return;
+        const ViewState control = controlView();
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        gtc::Vec2 target{};
+        float height = 0.0F;
+        Vec3 world;
+        const bool ranged = local() && local()->appearance.male && local()->unzipped;
+        if (ranged && crosshairTarget(control, target, height)) {
+            world = {target.x, height, target.y};
+        } else {
+            const Camera frozen = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), control);
+            world = frozen.position + normalized(frozen.target - frozen.position) * 6.0;
+        }
+        const Vec3 point = camera.view(world);
+        if (point.z <= 0.05) return;
+        view_.orbitPreview = true;
+        view_.reticleX = static_cast<float>(view_.width * 0.5 + camera.focal() * point.x / point.z);
+        view_.reticleY = static_cast<float>(view_.height * 0.5 - camera.focal() * point.y / point.z);
+    }
+
     void updateHighlight() {
         const Character* citizen = local();
         view_.highlightToilet = citizen &&
@@ -333,7 +370,8 @@ private:
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
             keys_.clear();
-            leftDown_ = rightDown_ = middleDown_ = false;
+            endOrbit();
+            leftDown_ = rightDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
             restoreMouseCapture_ = false;
@@ -342,13 +380,13 @@ private:
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
-            if (captured_) {
+            if (orbit_.active) {
+                rotateView(view_, event.dx, event.dy);
+            } else if (captured_) {
                 rotateView(view_, event.dx, event.dy);
                 if (view_.mode == ViewMode::FirstPerson) {
                     if (const Character* citizen = local()) clampViewToBody(view_, citizen->yaw);
                 }
-            } else if (middleDown_ && overlay_ == Overlay::None && view_.mode == ViewMode::ThirdPerson) {
-                rotateView(view_, event.dx, event.dy);
             }
             return;
         }
@@ -361,7 +399,7 @@ private:
             mouseX_ = event.x;
             mouseY_ = event.y;
             if (event.button == 2) {
-                middleDown_ = overlay_ == Overlay::None && view_.mode == ViewMode::ThirdPerson;
+                beginOrbit();
                 return;
             }
             if (event.button != 1 && event.button != 3) return;
@@ -408,7 +446,7 @@ private:
         }
         if (event.type == WindowEvent::Type::MouseUp) {
             if (event.button == 1) leftDown_ = false;
-            if (event.button == 2) middleDown_ = false;
+            if (event.button == 2) endOrbit();
             if (event.button == 3) rightDown_ = false;
             sendInput();
             return;
@@ -444,7 +482,8 @@ private:
         }
         if (event.key == kKeyEscape) {
             keys_.clear();
-            leftDown_ = rightDown_ = middleDown_ = false;
+            endOrbit();
+            leftDown_ = rightDown_ = false;
             window_.captureMouse(false);
             captured_ = false;
         } else if (event.key == '1') setMode(ViewMode::ThirdPerson);
@@ -476,8 +515,8 @@ private:
         if (delta != 0) client_.sendCheat(need, delta);
     }
 
-    bool crosshairTarget(gtc::Vec2& target, float& height) const {
-        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), view_);
+    bool crosshairTarget(const ViewState& from, gtc::Vec2& target, float& height) const {
+        const Camera camera = renderer_.viewCamera(client_.world(), visualState(), client_.playerId(), from);
         const Vec3 direction = normalized(camera.target - camera.position);
         const projectile_detail::Point from{static_cast<float>(camera.position.x), static_cast<float>(camera.position.y),
                                             static_cast<float>(camera.position.z)};
@@ -507,28 +546,28 @@ private:
         gtc::Vec2 move{};
         bool sprint = false, piss = false, crouch = false, grab = false, jump = false, block = false;
         const bool ranged = local() && local()->appearance.male && local()->unzipped;
-        float yaw = local() ? local()->yaw : view_.yaw;
+        const ViewState control = controlView();
+        float yaw = local() ? local()->yaw : control.yaw;
         view_.aiming = false;
         crouch = overlay_ == Overlay::None && keys_.count(kKeyAlt) != 0;
         if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
             const double right = (keys_.count('d') ? 1 : 0) - (keys_.count('a') ? 1 : 0);
-            move = {static_cast<float>(std::sin(view_.yaw) * forward - std::cos(view_.yaw) * right),
-                    static_cast<float>(std::cos(view_.yaw) * forward + std::sin(view_.yaw) * right)};
+            move = {static_cast<float>(std::sin(control.yaw) * forward - std::cos(control.yaw) * right),
+                    static_cast<float>(std::cos(control.yaw) * forward + std::sin(control.yaw) * right)};
             sprint = keys_.count(kKeyShift) != 0;
             piss = ranged && (leftDown_ || (view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0));
             block = rightDown_ && !ranged;
             view_.aiming = rightDown_ && ranged;
             grab = keys_.count(kKeyLeftControl) != 0;
             jump = keys_.count(' ') != 0;
-            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab ||
-                (ranged && !middleDown_)) yaw = view_.yaw;
+            if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab || ranged) yaw = control.yaw;
         }
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
         float aimHeight = 0.0F;
-        const bool hasAimTarget = ranged && view_.mode != ViewMode::God && crosshairTarget(aimTarget, aimHeight);
-        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_, crouch, grab, jump, block,
+        const bool hasAimTarget = ranged && view_.mode != ViewMode::God && crosshairTarget(control, aimTarget, aimHeight);
+        client_.sendInput(move, sprint, piss, yaw, control.pitch, slowWalk_, crouch, grab, jump, block,
                           aimTarget, aimHeight, hasAimTarget);
     }
 
@@ -666,7 +705,8 @@ private:
     std::set<int> keys_;
     bool captured_ = false;
     bool restoreMouseCapture_ = false;
-    bool leftDown_ = false, rightDown_ = false, middleDown_ = false;
+    bool leftDown_ = false, rightDown_ = false;
+    OrbitPreview orbit_;
     std::chrono::steady_clock::time_point lastLeftClick_{}, lastRightClick_{};
     double lastLeftX_ = 0, lastLeftY_ = 0, lastRightX_ = 0, lastRightY_ = 0;
     bool bodyTrackReady_ = false;

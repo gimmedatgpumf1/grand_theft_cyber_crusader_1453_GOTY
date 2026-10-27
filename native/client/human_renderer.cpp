@@ -705,7 +705,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             }
             cache.genitalPivot = rootId; cache.genitalTip = tipId;
             const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
-            const Vec3 exit = cache.posed[tipId] * 0.35 + cache.posed[ventralId] * 0.65;
+            const Vec3 exit = cache.posed[tipId];
             const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
             const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
             const double yaw = active ? character.pissYaw : character.yaw;

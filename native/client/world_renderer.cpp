@@ -676,15 +676,16 @@ void drawMinimap(NativeFrame& frame, const ClientWorld& world, const ClientState
     }
 }
 
-void drawCrosshair(NativeFrame& frame, ViewMode mode) {
-    if (mode == ViewMode::God) return;
-    const int cx = frame.width / 2, cy = frame.height / 2;
+void drawCrosshair(NativeFrame& frame, const ViewState& view) {
+    if (view.mode == ViewMode::God) return;
+    int cx = frame.width / 2, cy = frame.height / 2;
+    if (view.orbitPreview) { cx = static_cast<int>(std::lround(view.reticleX)); cy = static_cast<int>(std::lround(view.reticleY)); }
+    cx = std::clamp(cx, 12, frame.width - 13); cy = std::clamp(cy, 12, frame.height - 13);
     const int unit = std::clamp(static_cast<int>(std::lround(std::min(frame.width, frame.height) / 640.0)), 1, 4);
     const int gap = 3 * unit, arm = 7 * unit, length = arm - gap + 1;
     const int x = cx - unit / 2, y = cy - unit / 2;
     const double scale = frame.uiScale, offsetX = frame.uiOffsetX, offsetY = frame.uiOffsetY;
-    frame.uiScale = 1.0;
-    frame.uiOffsetX = frame.uiOffsetY = 0.0;
+    frame.uiScale = 1.0; frame.uiOffsetX = frame.uiOffsetY = 0.0;
     const Color shadow = colorHex("#020604"), ink = colorHex("#d7ff54");
     const auto stroke = [&](int sx, int sy, int width, int height, bool outline) {
         const int border = outline ? unit : 0;
@@ -699,9 +700,7 @@ void drawCrosshair(NativeFrame& frame, ViewMode mode) {
         stroke(x, cy - arm, unit, length, outline);
         stroke(x, cy + gap, unit, length, outline);
     }
-    frame.uiScale = scale;
-    frame.uiOffsetX = offsetX;
-    frame.uiOffsetY = offsetY;
+    frame.uiScale = scale; frame.uiOffsetX = offsetX; frame.uiOffsetY = offsetY;
 }
 
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
@@ -993,7 +992,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     drawLabels(frame, camera, state, localId);
     frame.logicalUi();
     drawHud(frame, world, state, localId, view);
-    drawCrosshair(frame, view.mode);
+    drawCrosshair(frame, view);
     return true;
 }
 

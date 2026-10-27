@@ -30,6 +30,8 @@ struct ViewState {
     bool highlightToilet = false;
     bool slowWalk = false;
     bool aiming = false;
+    bool orbitPreview = false;
+    float reticleX = 0.0F, reticleY = 0.0F;
 };
 
 class WorldRenderer {
