@@ -65,6 +65,7 @@ public:
     std::vector<Vec3> vertices;
     std::vector<Vec2> texcoords;
     std::vector<Triangle> triangles;
+    std::vector<Triangle> mappingTriangles;
     std::vector<Triangle> headTriangles;
     std::vector<int> headVertices;
     std::vector<MorphSpec> specs;
@@ -74,6 +75,9 @@ public:
     std::vector<double> canonicalDistance;
     std::vector<int> fitIndices;
     std::vector<int> fitVertices;
+    std::vector<std::array<int, 3>> fitSurfaceTriangles;
+    std::vector<std::array<double, 3>> fitSurfaceBary;
+    bool surfaceReady = false;
     std::vector<double> fitWeights;
     std::vector<int> eyeSource[2];
     Vec3 eyeDirection[2];
@@ -81,6 +85,7 @@ public:
     Vec3 runtime(Vec3 raw) const;
     Vec3 joint(const std::vector<int>& ids) const;
     std::vector<Vec3> shape(const std::vector<int>& ids, const std::vector<double>& values) const;
+    std::vector<Vec3> shapeFit(const std::vector<double>& values, bool useSurface = true) const;
     Vec3 shapedJoint(const std::vector<int>& ids, const std::vector<double>& values) const;
     int specIndex(const std::string& key) const;
 
@@ -141,7 +146,7 @@ struct FitResult {
 };
 
 FitResult fitPortrait(const HumanModel& model, const Reference& reference, const Preset& initial,
-                      int iterations, bool verbose);
+                      int iterations, bool verbose, bool useSurface = true);
 
 bool renderPortrait(const HumanModel& model, const Preset& preset, const std::string& root,
                     const std::string& output, int width, int height, std::string& error);

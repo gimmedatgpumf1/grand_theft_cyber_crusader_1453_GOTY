@@ -46,6 +46,62 @@ bool parseFace(const std::string& token, int& vertex, int& uv) {
     return vertex >= 0 && uv >= 0;
 }
 
+struct SurfaceHit {
+    Vec3 point;
+    double distance = 1e100;
+    std::array<int, 3> face = {0, 0, 0};
+    std::array<double, 3> bary = {1, 0, 0};
+};
+
+Vec3 closestTriangle(Vec3 point, Vec3 a, Vec3 b, Vec3 c, std::array<double, 3>& weights) {
+    const Vec3 ab = b - a, ac = c - a, ap = point - a;
+    const double d1 = dot(ab, ap), d2 = dot(ac, ap);
+    if (d1 <= 0 && d2 <= 0) { weights = {1, 0, 0}; return a; }
+    const Vec3 bp = point - b;
+    const double d3 = dot(ab, bp), d4 = dot(ac, bp);
+    if (d3 >= 0 && d4 <= d3) { weights = {0, 1, 0}; return b; }
+    const double vc = d1 * d4 - d3 * d2;
+    if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+        const double v = d1 / (d1 - d3);
+        weights = {1 - v, v, 0}; return a + ab * v;
+    }
+    const Vec3 cp = point - c;
+    const double d5 = dot(ab, cp), d6 = dot(ac, cp);
+    if (d6 >= 0 && d5 <= d6) { weights = {0, 0, 1}; return c; }
+    const double vb = d5 * d2 - d1 * d6;
+    if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+        const double w = d2 / (d2 - d6);
+        weights = {1 - w, 0, w}; return a + ac * w;
+    }
+    const double va = d3 * d6 - d5 * d4;
+    if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+        const double w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        weights = {0, 1 - w, w}; return b + (c - b) * w;
+    }
+    const double denominator = va + vb + vc;
+    if (std::abs(denominator) < 1e-14) { weights = {1, 0, 0}; return a; }
+    const double v = vb / denominator, w = vc / denominator;
+    weights = {1 - v - w, v, w};
+    return a + ab * v + ac * w;
+}
+
+SurfaceHit nearestSurface(Vec3 point, const std::vector<Triangle>& faces, const std::vector<Vec3>& vertices) {
+    SurfaceHit best;
+    for (const auto& triangle : faces) {
+        std::array<double, 3> weights;
+        const Vec3 candidate = closestTriangle(point, vertices[triangle.v[0]], vertices[triangle.v[1]],
+                                               vertices[triangle.v[2]], weights);
+        const double distance = length(point - candidate);
+        if (distance < best.distance) {
+            best.distance = distance;
+            best.point = candidate;
+            best.face = {triangle.v[0], triangle.v[1], triangle.v[2]};
+            best.bary = weights;
+        }
+    }
+    return best;
+}
+
 } // namespace
 
 std::string readText(const std::string& path, bool& ok) {
@@ -199,6 +255,7 @@ bool HumanModel::loadRig(const std::string& root, std::string& error) {
     headVertices.assign(headSet.begin(), headSet.end());
     for (const auto& triangle : triangles) {
         const Vec3 center = (vertices[triangle.v[0]] + vertices[triangle.v[1]] + vertices[triangle.v[2]]) / 3.0;
+        if (center.y > headCutoff - 0.25) mappingTriangles.push_back(triangle);
         if (center.y > headCutoff + 0.36) headTriangles.push_back(triangle);
     }
     Vec3 low{1e100, 1e100, 1e100};
@@ -334,14 +391,63 @@ bool HumanModel::loadLandmarks(const std::string& root, std::string& error) {
         else if (index == 10 || index == 152 || index == 234 || index == 454) weight = 0.7;
         fitWeights.push_back(weight);
     }
+    if (!fitIndices.empty()) {
+        std::array<double, 3> scales = {scale, scale, scale};
+        Vec3 translation{eyeCenter.x - sourceCenter.x * scale,
+                         eyeCenter.y - sourceCenter.y * scale,
+                         eyeCenter.z - sourceCenter.z * scale};
+        std::vector<SurfaceHit> hits(fitIndices.size());
+        for (int iteration = 0; iteration < 8; ++iteration) {
+            for (std::size_t i = 0; i < fitIndices.size(); ++i) {
+                const Vec3 source = canonical[fitIndices[i]];
+                const Vec3 aligned{source.x * scales[0] + translation.x,
+                                   source.y * scales[1] + translation.y,
+                                   source.z * scales[2] + translation.z};
+                hits[i] = nearestSurface(aligned, mappingTriangles, vertices);
+            }
+            for (int axis = 0; axis < 3; ++axis) {
+                double sw = 0, sx = 0, sxx = 0, sy = 0, sxy = 0;
+                for (std::size_t i = 0; i < fitIndices.size(); ++i) {
+                    const Vec3 source = canonical[fitIndices[i]];
+                    const double coordinate = axis == 0 ? source.x : axis == 1 ? source.y : source.z;
+                    const double target = axis == 0 ? hits[i].point.x : axis == 1 ? hits[i].point.y : hits[i].point.z;
+                    const double weight = std::min(1.0, 0.08 / std::max(0.08, hits[i].distance));
+                    sw += weight; sx += weight * coordinate; sxx += weight * coordinate * coordinate;
+                    sy += weight * target; sxy += weight * coordinate * target;
+                }
+                const double determinant = sw * sxx - sx * sx;
+                if (std::abs(determinant) < 1e-12) continue;
+                const double newScale = (sw * sxy - sx * sy) / determinant;
+                const double newTranslation = (sy - newScale * sx) / sw;
+                scales[axis] = std::clamp(newScale, 0.005, 2.0);
+                if (axis == 0) translation.x = newTranslation;
+                else if (axis == 1) translation.y = newTranslation;
+                else translation.z = newTranslation;
+            }
+        }
+        fitSurfaceTriangles.reserve(fitIndices.size());
+        fitSurfaceBary.reserve(fitIndices.size());
+        surfaceReady = true;
+        for (std::size_t i = 0; i < fitIndices.size(); ++i) {
+            const Vec3 source = canonical[fitIndices[i]];
+            const Vec3 aligned{source.x * scales[0] + translation.x,
+                               source.y * scales[1] + translation.y,
+                               source.z * scales[2] + translation.z};
+            const SurfaceHit hit = nearestSurface(aligned, mappingTriangles, vertices);
+            fitSurfaceTriangles.push_back(hit.face);
+            fitSurfaceBary.push_back(hit.bary);
+            if (hit.distance > 0.80) surfaceReady = false;
+        }
+    }
     return !fitIndices.empty();
 }
 
 bool HumanModel::load(const std::string& root, bool isMale, std::string& error) {
     male = isMale;
     sourceRoot_ = root + "/tools/human-source";
-    vertices.clear(); texcoords.clear(); triangles.clear(); headTriangles.clear(); headVertices.clear();
+    vertices.clear(); texcoords.clear(); triangles.clear(); mappingTriangles.clear(); headTriangles.clear(); headVertices.clear();
     specs.clear(); positive.clear(); negative.clear(); fitIndices.clear(); fitVertices.clear(); fitWeights.clear();
+    fitSurfaceTriangles.clear(); fitSurfaceBary.clear(); surfaceReady = false;
     targetCache_.clear(); baseMacro_.clear(); neckSource_.clear();
     return loadMesh(root, error) && loadRig(root, error) && loadMorphs(root, error) && loadLandmarks(root, error);
 }
@@ -369,6 +475,25 @@ std::vector<Vec3> HumanModel::shape(const std::vector<int>& ids, const std::vect
             const int index = ids[point];
             if (index >= 0 && static_cast<std::size_t>(index) < deltas.size()) result[point] += deltas[index] * amount;
         }
+    }
+    return result;
+}
+
+std::vector<Vec3> HumanModel::shapeFit(const std::vector<double>& values, bool useSurface) const {
+    if (!useSurface || !surfaceReady || fitSurfaceTriangles.size() != fitIndices.size()) return shape(fitVertices, values);
+    std::vector<int> ids;
+    std::set<int> unique;
+    for (const auto& triangle : fitSurfaceTriangles) for (int index : triangle) unique.insert(index);
+    ids.assign(unique.begin(), unique.end());
+    const std::vector<Vec3> shaped = shape(ids, values);
+    std::unordered_map<int, Vec3> points;
+    for (std::size_t i = 0; i < ids.size(); ++i) points[ids[i]] = shaped[i];
+    std::vector<Vec3> result;
+    result.reserve(fitIndices.size());
+    for (std::size_t i = 0; i < fitSurfaceTriangles.size(); ++i) {
+        const auto& triangle = fitSurfaceTriangles[i];
+        const auto& bary = fitSurfaceBary[i];
+        result.push_back(points[triangle[0]] * bary[0] + points[triangle[1]] * bary[1] + points[triangle[2]] * bary[2]);
     }
     return result;
 }

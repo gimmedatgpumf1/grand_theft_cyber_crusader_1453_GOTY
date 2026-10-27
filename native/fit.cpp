@@ -73,8 +73,8 @@ bool solve(std::vector<double> matrix, std::vector<double>& rhs, int n) {
 
 class Problem {
 public:
-    Problem(const HumanModel& human, const Reference& ref, const Preset& preset)
-        : model(human), reference(ref), initial(preset), values(preset.morphs) {
+    Problem(const HumanModel& human, const Reference& ref, const Preset& preset, bool surface)
+        : model(human), reference(ref), initial(preset), values(preset.morphs), useSurface(surface) {
         for (const char* name : kCoordinate) {
             const int index = model.specIndex(name);
             if (index >= 0) variables.push_back(index);
@@ -109,7 +109,7 @@ public:
         ++evaluations;
         std::vector<double> shapedValues = values;
         for (std::size_t i = 0; i < variables.size(); ++i) shapedValues[variables[i]] = parameters[i] * 100.0;
-        const std::vector<Vec3> points = model.shape(model.fitVertices, shapedValues);
+        const std::vector<Vec3> points = model.shapeFit(shapedValues, useSurface);
         std::vector<Vec2> projected;
         projected.reserve(points.size());
         const double yaw = parameters[variables.size()];
@@ -181,6 +181,7 @@ public:
     const Reference& reference;
     Preset initial;
     std::vector<double> values;
+    bool useSurface = true;
     std::vector<int> variables;
     std::vector<double> parameters;
     std::vector<double> lower;
@@ -195,9 +196,9 @@ public:
 } // namespace
 
 FitResult fitPortrait(const HumanModel& model, const Reference& reference, const Preset& initial,
-                      int iterations, bool verbose) {
+                      int iterations, bool verbose, bool useSurface) {
     const auto started = std::chrono::steady_clock::now();
-    Problem problem(model, reference, initial);
+    Problem problem(model, reference, initial, useSurface);
     FitResult result;
     result.preset = initial;
     result.initialScore = problem.evaluate(problem.parameters).score;

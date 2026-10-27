@@ -31,6 +31,7 @@ Fit one or more named presets, or render the authoritative native presets withou
 ```sh
 ./build/bin/gtc-native-fit --render-only marilyn obama
 ./build/bin/gtc-native-fit --no-render xi
+./build/bin/gtc-native-fit --direct --output build/native-direct marilyn
 ```
 
 The review resolution is deliberately fixed at **480×640**. Outputs are written after each person to `build/native-fit/`:
@@ -45,7 +46,7 @@ A candidate is **not** promoted automatically. Lower landmark error is not liken
 
 - `native/presets.json` is the authoritative native source for the seven people and their camera poses. It contains only universal morph values and generic style choices.
 - The model is read directly from the vendored CC0 MakeHuman OBJ, skeleton, and universal target files. No person-specific sculpt targets or portrait textures are used.
-- Canonical landmark correspondences are built once per sex. Each trial evaluates deformed vertices and a perspective camera numerically: coarse pose search, bounded Levenberg–Marquardt with a prior penalty, then integer-slider refinement.
+- Canonical landmark correspondences are built once per sex with bounded anisotropic alignment and closest-triangle barycentric mapping. Each trial evaluates deformed surface points and a perspective camera numerically: coarse pose search, bounded Levenberg–Marquardt with a prior penalty, then integer-slider refinement. `--direct` retains the nearest-vertex mapping for A/B regression checks.
 - The CPU rasterizer has perspective-correct UV interpolation, a depth buffer, generic skin detail/normal maps, procedural eyes, MHCLO barycentric hair, alpha-tested generic hair textures, and a parametric scalp/hairline pass.
 - The reference landmark JSON is development fitting data only. It is never sampled as an image or transferred to a material.
 

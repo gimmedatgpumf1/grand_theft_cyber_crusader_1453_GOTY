@@ -26,7 +26,7 @@ std::string metricsJson(const std::vector<gtc::native::FitResult>& results) {
 }
 
 void usage() {
-    std::cout << "native-fit [--root PATH] [--iterations N] [--render-only] [--no-render] [names...]\n"
+    std::cout << "native-fit [--root PATH] [--iterations N] [--direct] [--output PATH] [--render-only] [--no-render] [names...]\n"
               << "Names: marilyn ibrahim xi putin trump taylor obama\n";
 }
 
@@ -39,11 +39,15 @@ int main(int argc, char** argv) {
     int iterations = 8;
     bool render = true;
     bool renderOnly = false;
+    bool useSurface = true;
+    std::string outputDirectory;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
         if (argument == "--help" || argument == "-h") { usage(); return 0; }
         if (argument == "--root" && i + 1 < argc) root = argv[++i];
         else if (argument == "--iterations" && i + 1 < argc) iterations = std::max(0, std::atoi(argv[++i]));
+        else if (argument == "--direct") useSurface = false;
+        else if (argument == "--output" && i + 1 < argc) outputDirectory = argv[++i];
         else if (argument == "--render-only") renderOnly = true;
         else if (argument == "--no-render") render = false;
         else if (!argument.empty() && argument[0] == '-') { usage(); return 2; }
@@ -69,7 +73,7 @@ int main(int argc, char** argv) {
     bool femaleLoaded = false;
     std::vector<Preset> finalPresets;
     std::vector<FitResult> results;
-    const std::string outputDirectory = root + "/build/native-fit";
+    if (outputDirectory.empty()) outputDirectory = root + "/build/native-fit";
     std::error_code code;
     std::filesystem::create_directories(outputDirectory, code);
     if (!writeText(outputDirectory + "/initial-presets.json", presetsJson(presets), error)) {
@@ -97,7 +101,7 @@ int main(int argc, char** argv) {
         std::cout << "fit " << preset.key << " (" << (preset.male ? "male" : "female") << ")\n" << std::flush;
         FitResult result;
         result.preset = preset;
-        if (!renderOnly) result = fitPortrait(*model, reference->second, preset, iterations, true);
+        if (!renderOnly) result = fitPortrait(*model, reference->second, preset, iterations, true, useSurface);
         if (render) {
             if (!renderPortrait(*model, preset, root, outputDirectory + "/" + preset.key + "-initial.png", 480, 640, error) ||
                 !renderPortrait(*model, result.preset, root, outputDirectory + "/" + preset.key + "-final.png", 480, 640, error)) {
