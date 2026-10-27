@@ -91,7 +91,7 @@ inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
         if (citizen.ai && citizen.appearance.male && !npc) npc = &citizen;
     }
     if (!player || !npc) return false;
-    player->position = {0, -3.55F};
+    player->position = {-0.55F, -3.55F};
     npc->position = {0.55F, -3.55F};
     seedAimedToiletStream(state, *player, {0, -4.69F});
     seedAimedToiletStream(state, *npc, {0, -4.69F});

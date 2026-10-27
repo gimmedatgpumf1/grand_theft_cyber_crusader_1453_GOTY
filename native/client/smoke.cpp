@@ -938,7 +938,7 @@ int main(int argc, char** argv) {
             gtc::native::ViewState toiletView = fpsLevel; toiletView.yaw = 3.14159265F; toiletView.pitch = -0.9F;
             if (!gtc::native::seedToiletStreamExhibit(standing, alpha.playerId(), root, standing.tick) ||
                 !stanceCapture("toilet-water-fps", toiletView)) return 1;
-            gtc::native::ViewState npcView = tps; npcView.yaw = -0.65F; npcView.pitch = -0.22F; npcView.distance = 2.6F;
+            gtc::native::ViewState npcView = tps; npcView.yaw = -0.65F; npcView.pitch = 0.08F; npcView.distance = 2.2F;
             if (!stanceCapture("npc-piss-tps", npcView)) return 1;
             for (auto& citizen : standing.characters) citizen.pissing = citizen.unzipped = false;
             standing.projectiles.clear(); standing.waterRipples.clear();
