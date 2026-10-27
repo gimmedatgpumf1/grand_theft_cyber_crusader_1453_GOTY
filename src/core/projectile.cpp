@@ -101,20 +101,29 @@ void World::spawnBullet(Character& attacker, const Character& target) {
 
 void World::spawnBullet(Character& attacker, Vec2 target, float targetHeight, std::uint32_t) {
     if (inWater(target, toiletPosition())) target = bulletApproachTarget(attacker, target, targetHeight);
-    const Vec2 initial{std::sin(attacker.yaw), std::cos(attacker.yaw)};
     Projectile projectile;
     projectile.id = nextProjectileId_++;
     projectile.owner = attacker.id;
     projectile.kind = ProjectileKind::Bullet;
-    projectile.position = attacker.position + initial * 0.16F;
-    projectile.height = attacker.elevation + 0.79F;
-    const Vec2 delta = target - projectile.position;
-    const float yaw = std::atan2(delta.x, delta.y);
-    const float pitch = ballisticPitch(length(delta), targetHeight - projectile.height, kBulletSpeed);
+    // Solve the shot from where the penis actually is, not from a hip point in
+    // front of the crotch; otherwise the round appears in mid-air.
+    float yaw = attacker.yaw;
+    float pitch = attacker.pitch;
+    for (int pass = 0; pass < 2; ++pass) {
+        const Vec2 forward{std::sin(yaw), std::cos(yaw)};
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        projectile.position = attacker.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+        projectile.height = attacker.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp;
+        const Vec2 delta = target - projectile.position;
+        yaw = std::atan2(delta.x, delta.y);
+        pitch = ballisticPitch(length(delta), targetHeight - projectile.height, kBulletSpeed);
+    }
     attacker.yaw = yaw;
     attacker.pitch = pitch;
     const float cp = std::cos(pitch), sp = std::sin(pitch);
     const Vec2 forward{std::sin(yaw), std::cos(yaw)};
+    projectile.position = attacker.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    projectile.height = attacker.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp;
     projectile.velocity = forward * (kBulletSpeed * cp);
     projectile.verticalVelocity = kBulletSpeed * sp;
     if (projectiles_.size() >= 768) projectiles_.erase(projectiles_.begin());

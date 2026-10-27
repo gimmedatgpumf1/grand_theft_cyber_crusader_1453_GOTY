@@ -260,8 +260,10 @@ inline float pissLaunchPitch(const Character& character, Vec2 target, float targ
         float pitch = initialPitch;
         const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
         for (int iteration = 0; iteration < 3; ++iteration) {
-            const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
-            const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
+            const Vec2 origin = character.position +
+                forward * (kPissEmitterPivotForward + kPissEmitterShaft * std::cos(pitch));
+            const float originHeight = character.elevation + kPissEmitterPivotHeight +
+                kPissEmitterShaft * std::sin(pitch);
             pitch = ballisticPitch(length(target - origin), targetHeight - originHeight, kPissSpeed);
         }
         return pitch;
@@ -274,14 +276,17 @@ inline float pissLaunchPitch(const Character& character, Vec2 target, float targ
         float pitch = initialPitch;
         const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
         for (int iteration = 0; iteration < 3; ++iteration) {
-            const Vec2 origin = character.position + forward * (0.10F + 0.06F * std::cos(pitch));
-            const float originHeight = character.elevation + 0.79F + 0.10F * std::sin(pitch);
+            const Vec2 origin = character.position +
+                forward * (kPissEmitterPivotForward + kPissEmitterShaft * std::cos(pitch));
+            const float originHeight = character.elevation + kPissEmitterPivotHeight +
+                kPissEmitterShaft * std::sin(pitch);
             pitch = ballisticPitch(length(target - origin), targetHeight - originHeight, speed);
         }
         const float cp = std::cos(pitch), sp = std::sin(pitch);
-        const Vec2 origin = character.position + forward * (0.10F + 0.06F * cp);
+        const Vec2 origin = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
         const Vec2 direction = normalized(target - origin);
-        projectile_detail::Point at{origin.x, character.elevation + 0.79F + 0.10F * sp, origin.y};
+        projectile_detail::Point at{origin.x,
+            character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
         Vec2 velocity = direction * (speed * cp);
         float vertical = speed * sp;
         for (int step = 0; step < 120 && !found; ++step) {

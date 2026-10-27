@@ -810,6 +810,20 @@ int main() {
               "ranged click spawns a physical round instead of applying instant damage");
         check(ranged.character(pisser).path.empty() && ranged.character(pisser).attackAnim > 0.0F,
               "ranged attack never creates an approach path");
+        {
+            // The round must leave the meatus, not a point in front of the crotch.
+            const auto shots = ranged.projectiles();
+            const auto& shot = shots.front();
+            const auto shooter = ranged.character(pisser);
+            const float cp = std::cos(shooter.pitch), sp = std::sin(shooter.pitch);
+            const gtc::Vec2 forward{std::sin(shooter.yaw), std::cos(shooter.yaw)};
+            const gtc::Vec2 origin = shooter.position +
+                forward * (gtc::kPissEmitterPivotForward + gtc::kPissEmitterShaft * cp);
+            const float height = shooter.elevation + gtc::kPissEmitterPivotHeight + gtc::kPissEmitterShaft * sp;
+            const float gap = std::hypot(shot.position.x - origin.x, shot.position.y - origin.y);
+            check(gap < 1e-4F && std::abs(shot.height - height) < 1e-4F,
+                  "ranged round leaves the anatomical meatus");
+        }
         for (int i = 0; i < 20 && !ranged.projectiles().empty(); ++i) ranged.update(0.05F);
         check(ranged.character(victim).health == 93.0F, "the physical round damages only after swept impact");
         place(ranged, victim, {0, 4.0F});
