@@ -294,8 +294,15 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         }
     }
     const Vec3 standingForward = normalized(standingCamera.target - standingCamera.position);
+    const Vec3 basisX = standingCamera.viewDirection({1, 0, 0});
+    const Vec3 basisY = standingCamera.viewDirection({0, 1, 0});
+    const Vec3 basisZ = standingCamera.viewDirection({0, 0, 1});
+    const bool verticalBasis = std::abs(length(basisX) - 1) < 1e-6 &&
+        std::abs(length(basisY) - 1) < 1e-6 && std::abs(length(basisZ) - 1) < 1e-6 &&
+        std::abs(dot(basisX, basisY)) < 1e-6 && std::abs(dot(basisX, basisZ)) < 1e-6 &&
+        std::abs(dot(basisY, basisZ)) < 1e-6;
     const bool lowerBody = visiblePelvis > 8 && visibleLegs > 8 && standingClearance > 0.04 &&
-        std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
+        verticalBasis && std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
     const auto sceneClearance = [&](const Camera& camera) {
         double nearest = 1000;
         for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {

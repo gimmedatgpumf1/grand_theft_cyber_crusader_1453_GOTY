@@ -211,7 +211,17 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
 void Camera::basis() const {
     if (basisReady) return;
     forward = normalized(target - position);
-    right = normalized(cross(forward, up));
+    Vec3 lateral = cross(forward, up);
+    if (length(lateral) < 1e-10) {
+        // At vertical gaze the tiny horizontal component still carries yaw.
+        // Use it as the screen-up reference instead of normalizing a zero
+        // cross product; this keeps both CPU projection and the GPU matrix valid.
+        Vec3 horizontal{forward.x, 0, forward.z};
+        if (length(horizontal) < 1e-12) horizontal = {0, 0, 1};
+        horizontal = normalized(horizontal) * (forward.y < 0 ? 1.0 : -1.0);
+        lateral = cross(forward, horizontal);
+    }
+    right = normalized(lateral);
     vertical = normalized(cross(right, forward));
     basisReady = true;
 }
