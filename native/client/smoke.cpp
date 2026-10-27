@@ -45,6 +45,9 @@ int main(int argc, char** argv) {
     aAppearance.hair = 2;
     aAppearance.hairColor = 1;
     aAppearance.shirt = 1;
+    aAppearance.coat = true;
+    aAppearance.suit = true;
+    aAppearance.tie = 2;
     aAppearance.morphs[0] = 35;
     aAppearance.morphs[3] = 8;
     gtc::Appearance bAppearance;
@@ -54,6 +57,7 @@ int main(int argc, char** argv) {
     bAppearance.hairColor = 3;
     bAppearance.shirt = 2;
     bAppearance.pants = 1;
+    bAppearance.dress = true;
     bAppearance.morphs[0] = 28;
     bAppearance.morphs[7] = 12;
     if (!alpha.sendJoin("Native Alpha") || !beta.sendJoin("Native Beta") ||
@@ -79,8 +83,10 @@ int main(int argc, char** argv) {
         const gtc::Character* aInB = beta.state().character(alpha.playerId());
         const gtc::Character* bInA = alpha.state().character(beta.playerId());
         replicated = a && b && aInB && bInA && aInB->name == "Native Alpha" && bInA->name == "Native Beta";
-        customized = a && b && a->appearance.morphs[0] == 35 && a->appearance.morphs[3] == 8 &&
-                     !b->appearance.male && b->appearance.hair == 5 && b->appearance.morphs[7] == 12;
+        customized = a && b && aInB && bInA && a->appearance.morphs[0] == 35 && a->appearance.morphs[3] == 8 &&
+                     !b->appearance.male && b->appearance.hair == 5 && b->appearance.morphs[7] == 12 &&
+                     aInB->appearance.coat && aInB->appearance.suit && aInB->appearance.tie == 2 &&
+                     bInA->appearance.dress && bInA->appearance.morphs[7] == 12;
         inputMoved = inputMoved || (b && b->speed > 0.1F);
         pathSeen = pathSeen || (a && !a->path.empty()) || (b && !b->path.empty());
         if (a && !toiletRequested && gtc::distance(a->position, alpha.world().toiletFront) <= 1.55F) {

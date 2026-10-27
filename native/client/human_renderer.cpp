@@ -149,10 +149,64 @@ Material skinMaterial(const HumanModel& model, const Character& character, const
     return material;
 }
 
+const Texture& fabricTexture() {
+    static const Texture texture = [] {
+        Texture result;
+        result.width = result.height = 128;
+        result.pixels.resize(128U * 128U * 4U, 255);
+        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+            const bool vertical = x % 4 == 0, horizontal = y % 4 == 0;
+            const bool dark = (vertical && x % 8) || (horizontal && y % 8);
+            const unsigned char value = (vertical || horizontal) ? (dark ? 237 : 245) : 244;
+            const std::size_t offset = (static_cast<std::size_t>(y) * 128 + x) * 4;
+            result.pixels[offset] = result.pixels[offset + 1] = result.pixels[offset + 2] = value;
+        }
+        return result;
+    }();
+    return texture;
+}
+
 Color hairColor(int index) {
     static const char* colors[] = {"#171a1c", "#3b281d", "#75604a", "#b5a075", "#5b6268",
                                    "#69362c", "#e5d5aa", "#d2b477", "#a9adb0"};
     return colorHex(colors[std::clamp(index, 0, 8)]);
+}
+
+struct LoftRing { double y, x, z; };
+
+void drawLoft(Rasterizer& rasterizer, const Camera& camera, const std::function<Vec3(Vec3)>& world,
+              const std::vector<LoftRing>& rings, const Material& material,
+              double arcStart = 0, double arcLength = 2 * pi) {
+    constexpr int segments = 24;
+    std::vector<Vec3> positions;
+    positions.reserve(rings.size() * (segments + 1));
+    for (const LoftRing& ring : rings) for (int i = 0; i <= segments; ++i) {
+        const double angle = arcStart + arcLength * i / segments;
+        positions.push_back(world({std::cos(angle) * ring.x, ring.y, std::sin(angle) * ring.z}));
+    }
+    std::vector<std::array<int, 3>> triangles;
+    for (std::size_t ring = 0; ring + 1 < rings.size(); ++ring) for (int i = 0; i < segments; ++i) {
+        const int a = static_cast<int>(ring * (segments + 1) + i), b = a + 1, c = a + segments + 1;
+        triangles.push_back({a, c, b});
+        triangles.push_back({b, c, c + 1});
+    }
+    std::vector<Vec3> normals(positions.size());
+    for (const auto& triangle : triangles) {
+        const Vec3 normal = cross(positions[triangle[1]] - positions[triangle[0]],
+                                  positions[triangle[2]] - positions[triangle[0]]);
+        for (int index : triangle) normals[index] += normal;
+    }
+    std::vector<RenderVertex> transformed(positions.size());
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        const int ring = static_cast<int>(index / (segments + 1));
+        const int segment = static_cast<int>(index % (segments + 1));
+        const Vec2 uv{static_cast<double>(segment) / segments,
+                      static_cast<double>(ring) / std::max<std::size_t>(1, rings.size() - 1)};
+        transformed[index] = cameraVertex(camera, positions[index], normalized(normals[index]), positions[index], uv);
+    }
+    for (const auto& triangle : triangles) {
+        rasterizer.triangle({transformed[triangle[0]], transformed[triangle[1]], transformed[triangle[2]]}, material);
+    }
 }
 
 void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
@@ -264,16 +318,20 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     Material shirt;
     shirt.kind = Material::Kind::Cloth;
     shirt.specular = 0.0;
-    shirt.color = colorHex(shirts[std::clamp(character.appearance.shirt, 0, 6)]);
+    shirt.texture = &fabricTexture();
+    const Color shirtBase = colorHex(shirts[std::clamp(character.appearance.shirt, 0, 6)]);
+    shirt.color = shirtBase;
     if (character.appearance.suit) shirt.color = shirt.color * 1.18;
     if (character.appearance.coat) shirt.color = shirt.color * 0.82;
     Material trousers;
     trousers.kind = Material::Kind::Cloth;
     trousers.specular = 0.0;
+    trousers.texture = &fabricTexture();
     trousers.color = colorHex(pants[std::clamp(character.appearance.pants, 0, 3)]);
     Material shoes;
     shoes.color = colorHex("#202421");
     shoes.specular = 0.12;
+    const bool coveredSleeve = character.appearance.coat || character.appearance.shirt % 2 == 0;
     for (std::size_t triangleIndex = 0; triangleIndex < model.triangles.size(); ++triangleIndex) {
         const Triangle& triangle = model.triangles[triangleIndex];
         const Vec3 restCenter = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
@@ -290,12 +348,59 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         };
         const BodyMaterial region = triangleIndex < model.bodyMaterials.size() ?
             model.bodyMaterials[triangleIndex] : BodyMaterial::Skin;
-        const bool coveredSleeve = character.appearance.coat || character.appearance.shirt % 2 == 0;
         if (region == BodyMaterial::Shirt || region == BodyMaterial::Torso ||
             (region == BodyMaterial::Sleeve && coveredSleeve)) rasterizer.triangle(vertices(0.009), shirt);
         else if (region == BodyMaterial::Pants) rasterizer.triangle(vertices(0.008), trousers);
         else if (region == BodyMaterial::Boots) rasterizer.triangle(vertices(0.009), shoes);
         else rasterizer.triangle(vertices(0), skin);
+    }
+    Material belt;
+    belt.kind = Material::Kind::Cloth;
+    belt.color = colorHex("#151a1d");
+    belt.texture = &fabricTexture();
+    double beltX = 0.24, beltZ = 0.166;
+    for (std::size_t triangleIndex = 0; triangleIndex < model.triangles.size(); ++triangleIndex) {
+        const BodyMaterial region = triangleIndex < model.bodyMaterials.size() ?
+            model.bodyMaterials[triangleIndex] : BodyMaterial::Skin;
+        if (region != BodyMaterial::Pants && region != BodyMaterial::Torso) continue;
+        for (int index : model.triangles[triangleIndex].v) {
+            const Vec3& point = rest[index];
+            if (point.y < 0.88 || point.y > 1.04 || std::abs(point.x) > 0.48) continue;
+            beltX = std::max(beltX, std::abs(point.x) + 0.012);
+            beltZ = std::max(beltZ, std::abs(point.z) + 0.015);
+        }
+    }
+    drawLoft(rasterizer, camera, world, {{0.945, beltX, beltZ}, {0.975, beltX, beltZ}}, belt);
+    const double garmentX = std::clamp(beltX / 0.24, 1.0, 1.8);
+    const double garmentZ = std::clamp(beltZ / 0.166, 1.0, 1.8);
+    double neckY = 1.42;
+    const int neckIndex = boneIndex(model, "neck01");
+    if (neckIndex >= 0) neckY = joint(rest, model.rigBones[neckIndex].head).y - 0.85 * model.scale;
+    Material collar;
+    collar.kind = Material::Kind::Cloth;
+    collar.color = character.appearance.suit ? colorHex("#dfe3df") : shirtBase;
+    collar.texture = &fabricTexture();
+    const double collarHeight = character.appearance.beret ? 0.035 : character.appearance.suit ? 0.026 : 0.020;
+    const double collarX = character.appearance.suit ? 0.112 : 0.094;
+    const double collarZ = character.appearance.suit ? 0.095 : 0.082;
+    drawLoft(rasterizer, camera, world, {{neckY - 0.018, collarX, collarZ},
+        {neckY + collarHeight, collarX * 0.93, collarZ * 0.94}}, collar);
+    if (character.appearance.coat) {
+        Material coat;
+        coat.kind = Material::Kind::Cloth;
+        coat.color = shirtBase * 0.82;
+        coat.texture = &fabricTexture();
+        drawLoft(rasterizer, camera, world, {{0.43, 0.34 * garmentX, 0.21 * garmentZ},
+            {0.70, 0.29 * garmentX, 0.18 * garmentZ}, {0.98, 0.23 * garmentX, 0.15 * garmentZ}},
+                 coat, pi / 2 + 0.42, 2 * pi - 0.84);
+    }
+    if (character.appearance.dress) {
+        Material dress;
+        dress.kind = Material::Kind::Cloth;
+        dress.color = shirtBase;
+        dress.texture = &fabricTexture();
+        drawLoft(rasterizer, camera, world, {{0.40, 0.36 * garmentX, 0.25 * garmentZ},
+            {0.72, 0.29 * garmentX, 0.21 * garmentZ}, {1.04, 0.22 * garmentX, 0.16 * garmentZ}}, dress);
     }
     if (hideHead) return;
     const int headIndex = boneIndex(model, "head");

@@ -238,9 +238,14 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     for (const GpuBatch& batch : scene.batches) {
         if (batch.vertices.empty()) continue;
         const Material& material = batch.material;
+        glMatrixMode(GL_TEXTURE);
+        glLoadIdentity();
+        if (material.kind == Material::Kind::Cloth) glScalef(5, 5, 1);
+        glMatrixMode(GL_MODELVIEW);
         const bool textured = material.texture && !material.texture->pixels.empty() &&
             (material.kind == Material::Kind::Skin || material.kind == Material::Kind::Hair ||
-             material.kind == Material::Kind::Floor || material.kind == Material::Kind::Textured);
+             material.kind == Material::Kind::Cloth || material.kind == Material::Kind::Floor ||
+             material.kind == Material::Kind::Textured);
         if (textured) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, gpu.texture(*material.texture));
