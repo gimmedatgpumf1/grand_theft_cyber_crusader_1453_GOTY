@@ -595,6 +595,13 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     return camera;
 }
 
+void turnViewWithBody(ViewState& view, float previousBodyYaw, float currentBodyYaw) {
+    const double delta = std::atan2(std::sin(currentBodyYaw - previousBodyYaw),
+                                    std::cos(currentBodyYaw - previousBodyYaw));
+    const double yaw = view.yaw + delta;
+    view.yaw = static_cast<float>(std::atan2(std::sin(yaw), std::cos(yaw)));
+}
+
 void rotateView(ViewState& view, double mouseX, double mouseY) {
     if (view.mode == ViewMode::God) return;
     view.yaw -= static_cast<float>(mouseX * 0.0022);

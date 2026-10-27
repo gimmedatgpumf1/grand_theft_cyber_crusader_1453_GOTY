@@ -588,6 +588,19 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     mouse.mode = ViewMode::FirstPerson;
     mouse.pitch = 0;
     rotateView(mouse, 10, -20);
+    ViewState turned;
+    turned.mode = ViewMode::FirstPerson;
+    turned.yaw = 3.141592653589793F + 0.35F;
+    turned.pitch = 0;
+    turnViewWithBody(turned, 3.141592653589793F, 0.0F);
+    ClientState turnState = standingState;
+    turnState.characters[0].yaw = 0;
+    turnState.characters[0].onToilet = true;
+    turnState.characters[0].toiletAction = gtc::ToiletAction::Sit;
+    const Camera turnedCamera = renderer.viewCamera(world, turnState, citizen.id, turned);
+    const Vec3 turnedForward = normalized(turnedCamera.target - turnedCamera.position);
+    const double turnedYaw = std::atan2(turnedForward.x, turnedForward.z);
+    const bool bodyTurn = std::abs(turned.yaw - 0.35F) < 1e-6 && std::abs(turnedYaw - 0.35) < 1e-5;
     const bool eyeMatrix = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
     const bool attached = length(eye.position - attachedEye) < 1e-6 && torsoRetained;
     const bool look = std::abs(mouse.yaw + 0.022F) < 1e-6F && std::abs(mouse.pitch - 0.044F) < 1e-6F;
@@ -610,9 +623,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
         "=" + std::to_string(leastMorphClearance);
     else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
+    else if (!bodyTurn) error = "first-person camera did not follow seated body yaw";
     else if (!look) error = "first-person look input";
     return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && morphContacts && seated && neck && pitch && clearance &&
-        lowerBody && shaped && heightClearance && look;
+        lowerBody && shaped && heightClearance && bodyTurn && look;
 }
 
 } // namespace

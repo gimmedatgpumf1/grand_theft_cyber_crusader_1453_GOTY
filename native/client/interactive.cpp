@@ -73,6 +73,7 @@ public:
                 std::cerr << error << '\n';
                 return 1;
             }
+            trackBodyTurn();
             std::vector<WindowEvent> events;
             if (!window_.poll(events)) break;
             window_.size(view_.width, view_.height);
@@ -147,6 +148,33 @@ private:
         return presentationReady_ ? presentation_ : client_.state();
     }
 
+    void trackBodyTurn() {
+        const Character* citizen = local();
+        if (!citizen) {
+            bodyTrackReady_ = false;
+            return;
+        }
+        if (!bodyTrackReady_ || trackedPlayerId_ != citizen->id) {
+            trackedPlayerId_ = citizen->id;
+            trackedBodyYaw_ = citizen->yaw;
+            trackedToiletAction_ = citizen->toiletAction;
+            bodyTrackReady_ = true;
+            return;
+        }
+        const bool wasActing = trackedToiletAction_ != ToiletAction::None;
+        const bool isActing = citizen->toiletAction != ToiletAction::None;
+        const double cameraDelta = std::atan2(std::sin(citizen->yaw - view_.yaw),
+                                              std::cos(citizen->yaw - view_.yaw));
+        // A movement exit can rotate the body directly toward the current
+        // camera in the same server input. Do not apply that turn twice.
+        const bool alreadyCameraAligned = wasActing && !isActing && std::abs(cameraDelta) < 1e-4;
+        if (view_.mode == ViewMode::FirstPerson && (wasActing || isActing) && !alreadyCameraAligned) {
+            turnViewWithBody(view_, trackedBodyYaw_, citizen->yaw);
+        }
+        trackedBodyYaw_ = citizen->yaw;
+        trackedToiletAction_ = citizen->toiletAction;
+    }
+
     void updatePresentation(float dt) {
         const ClientState& latest = client_.state();
         if (!presentationReady_) {
@@ -177,7 +205,10 @@ private:
             window_.captureMouse(false);
             captured_ = false;
         }
-        if (mode == ViewMode::FirstPerson) view_.pitch = 0;
+        if (mode == ViewMode::FirstPerson) {
+            view_.pitch = 0;
+            if (const Character* citizen = local()) view_.yaw = citizen->yaw;
+        }
         if (mode == ViewMode::ThirdPerson) view_.pitch = -0.34F;
         if (mode == ViewMode::God) {
             if (const Character* citizen = local()) {
@@ -187,11 +218,23 @@ private:
         }
     }
 
+    void closeOverlay() {
+        if (overlay_ == Overlay::None) return;
+        overlay_ = Overlay::None;
+        const bool recapture = restoreMouseCapture_ && view_.mode == ViewMode::FirstPerson;
+        restoreMouseCapture_ = false;
+        if (recapture) {
+            window_.captureMouse(true);
+            captured_ = true;
+        }
+    }
+
     void openOverlay(Overlay overlay) {
         if (overlay_ == overlay) {
-            overlay_ = Overlay::None;
+            closeOverlay();
             return;
         }
+        if (overlay_ == Overlay::None) restoreMouseCapture_ = captured_ && view_.mode == ViewMode::FirstPerson;
         overlay_ = overlay;
         keys_.clear();
         window_.captureMouse(false);
@@ -218,7 +261,7 @@ private:
         if (choice == 1) client_.sendToilet("sit");
         if (choice == 2) client_.sendToilet("shit");
         if (choice == 3) client_.sendToilet("piss");
-        overlay_ = Overlay::None;
+        closeOverlay();
     }
 
     bool ground(double x, double y, gtc::Vec2& point) const {
@@ -257,6 +300,7 @@ private:
             keys_.clear();
             window_.captureMouse(false);
             captured_ = false;
+            restoreMouseCapture_ = false;
             return;
         }
         if (event.type == WindowEvent::Type::MouseMove) {
@@ -311,7 +355,7 @@ private:
             event.key == '2' || event.key == '3' || event.key == 'e' || event.key == 'c' || event.key == 'h')) return;
         if (overlay_ == Overlay::Wheel) {
             if (event.key >= '1' && event.key <= '3') toiletChoice(event.key - '0');
-            else if (event.key == 'e' || event.key == kKeyEscape) overlay_ = Overlay::None;
+            else if (event.key == 'e' || event.key == kKeyEscape) closeOverlay();
             return;
         }
         if (overlay_ == Overlay::Cheats) {
@@ -323,7 +367,7 @@ private:
             return;
         }
         if (overlay_ == Overlay::Help) {
-            if (event.key == 'h' || event.key == kKeyEscape) overlay_ = Overlay::None;
+            if (event.key == 'h' || event.key == kKeyEscape) closeOverlay();
             return;
         }
         if (event.key == kKeyEscape) {
@@ -343,7 +387,7 @@ private:
 
     void cheat(int key) {
         if (key == kKeyF1 || key == kKeyEscape) {
-            overlay_ = Overlay::None;
+            closeOverlay();
             return;
         }
         const char* need = key >= '5' ? "bowel" : "bladder";
@@ -423,7 +467,7 @@ private:
 
     void creatorKey(int key) {
         if (key == 'c' || key == kKeyEscape) {
-            overlay_ = Overlay::None;
+            closeOverlay();
             return;
         }
         if (key == kKeyEnter) {
@@ -502,6 +546,11 @@ private:
     Overlay overlay_ = Overlay::None;
     std::set<int> keys_;
     bool captured_ = false;
+    bool restoreMouseCapture_ = false;
+    bool bodyTrackReady_ = false;
+    std::uint32_t trackedPlayerId_ = 0;
+    float trackedBodyYaw_ = 0;
+    ToiletAction trackedToiletAction_ = ToiletAction::None;
     bool slowWalk_ = false;
     bool screenshot_ = false;
     double mouseX_ = 240, mouseY_ = 320;
