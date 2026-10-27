@@ -429,8 +429,10 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.lightfv(c::light1, c::position, fillPosition);
     api_.colorMaterial(c::frontAndBack, c::ambientAndDiffuse);
     api_.enable(c::colorMaterial);
-    api_.loadMatrixd(scene.viewMatrix.data());
+    // Camera::viewMatrix() uses positive Z for forward depth. OpenGL's frustum
+    // looks down negative Z, so compose scale * view (not view * scale).
     api_.scalef(1, 1, -1);
+    api_.multMatrixd(scene.viewMatrix.data());
     api_.enableClientState(c::vertexArray);
     api_.enableClientState(c::normalArray);
     api_.enableClientState(c::textureCoordArray);
@@ -449,9 +451,10 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         api_.loadIdentity();
         if (material.kind == Material::Kind::Cloth) api_.scalef(5, 5, 1);
         api_.matrixMode(c::modelView);
-        api_.loadMatrixd(scene.viewMatrix.data());
-        api_.multMatrixd(batch.modelMatrix.data());
+        api_.loadIdentity();
         api_.scalef(1, 1, -1);
+        api_.multMatrixd(scene.viewMatrix.data());
+        api_.multMatrixd(batch.modelMatrix.data());
         const bool textured = material.texture && !material.texture->pixels.empty() &&
             (material.kind == Material::Kind::Skin || material.kind == Material::Kind::Hair ||
              material.kind == Material::Kind::Cloth || material.kind == Material::Kind::Floor ||
