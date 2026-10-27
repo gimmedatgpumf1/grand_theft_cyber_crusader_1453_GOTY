@@ -101,11 +101,14 @@ private:
     gl::Api api_;
     gl::BufferApi buffers_;
     std::vector<gl::UInt> bufferIds_;
+    const GpuScene* uploadedScene_ = nullptr;
+    std::uint64_t uploadedRevision_ = 0;
     bool vbo_ = false;
     std::map<const Texture*, gl::UInt> textures_;
     std::vector<unsigned char> bottomUp_;
     std::vector<unsigned char> overlay_;
-    gl::UInt overlayTexture_ = 0;
+    gl::UInt overlayTextures_[3] = {0, 0, 0};
+    int overlayIndex_ = 0;
     int overlayWidth_ = 0;
     int overlayHeight_ = 0;
     bool loaded_ = false;

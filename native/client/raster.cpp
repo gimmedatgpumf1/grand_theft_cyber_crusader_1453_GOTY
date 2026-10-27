@@ -116,6 +116,10 @@ GpuRenderer activeGpuRenderer = nullptr;
 
 void setGpuRenderer(GpuRenderer renderer) { activeGpuRenderer = renderer; }
 
+bool renderGpuScene(const GpuScene& scene, NativeFrame& frame) {
+    return activeGpuRenderer && activeGpuRenderer(scene, frame);
+}
+
 Color operator+(Color a, Color b) { return {a.r + b.r, a.g + b.g, a.b + b.b}; }
 Color operator*(Color a, double b) { return {a.r * b, a.g * b, a.b * b}; }
 Color mix(Color a, Color b, double amount) { return a * (1 - amount) + b * amount; }
@@ -418,7 +422,7 @@ NativeFrame Rasterizer::finish() const {
     frame.width = width_;
     frame.height = height_;
     if (gpu_) {
-        if (activeGpuRenderer && activeGpuRenderer(scene_, frame)) return frame;
+        if (renderGpuScene(scene_, frame)) return frame;
         frame.rgb.clear();
         return frame;
     }

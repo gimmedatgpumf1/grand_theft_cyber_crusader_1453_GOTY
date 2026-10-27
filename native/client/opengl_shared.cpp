@@ -53,7 +53,7 @@ constexpr gl::Enum vertexArray = 0x8074;
 constexpr gl::Enum normalArray = 0x8075;
 constexpr gl::Enum textureCoordArray = 0x8078;
 constexpr gl::Enum arrayBuffer = 0x8892;
-constexpr gl::Enum streamDraw = 0x88E0;
+constexpr gl::Enum dynamicDraw = 0x88E8;
 constexpr gl::Enum unpackAlignment = 0x0CF5;
 constexpr gl::Enum packAlignment = 0x0D05;
 constexpr gl::Enum cullFace = 0x0B44;
@@ -168,12 +168,19 @@ void OpenGlRenderer::shutdown() {
         buffers_.deleteBuffers(static_cast<gl::Sizei>(bufferIds_.size()), bufferIds_.data());
     }
     bufferIds_.clear();
+    uploadedScene_ = nullptr;
+    uploadedRevision_ = 0;
     vbo_ = false;
-    if (loaded_ && overlayTexture_) api_.deleteTextures(1, &overlayTexture_);
+    if (loaded_) {
+        for (gl::UInt& texture : overlayTextures_) {
+            if (texture) api_.deleteTextures(1, &texture);
+            texture = 0;
+        }
+    }
     textures_.clear();
     bottomUp_.clear();
     overlay_.clear();
-    overlayTexture_ = 0;
+    overlayIndex_ = 0;
     overlayWidth_ = overlayHeight_ = 0;
     api_ = {};
     loaded_ = false;
@@ -211,6 +218,7 @@ gl::UInt OpenGlRenderer::texture(const Texture& source) {
 
 bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     if (!loaded_ || scene.width <= 0 || scene.height <= 0) return false;
+    const bool refresh = scene.revision == 0 || uploadedScene_ != &scene || uploadedRevision_ != scene.revision;
     api_.viewport(0, 0, scene.width, scene.height);
     api_.drawBuffer(c::back);
     api_.clearColor(displayChannel(scene.background.r), displayChannel(scene.background.g),
@@ -287,16 +295,18 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         const GpuVertex* vertices = batch.vertices.data();
         bool uploaded = false;
         if (vbo_) {
+            bool upload = refresh;
             while (bufferIds_.size() <= batchIndex) {
                 gl::UInt id = 0;
                 buffers_.genBuffers(1, &id);
                 bufferIds_.push_back(id);
+                upload = true;
             }
             const gl::UInt id = bufferIds_[batchIndex];
             if (id) {
                 buffers_.bindBuffer(c::arrayBuffer, id);
-                buffers_.bufferData(c::arrayBuffer,
-                    static_cast<std::ptrdiff_t>(batch.vertices.size() * sizeof(GpuVertex)), vertices, c::streamDraw);
+                if (upload) buffers_.bufferData(c::arrayBuffer,
+                    static_cast<std::ptrdiff_t>(batch.vertices.size() * sizeof(GpuVertex)), vertices, c::dynamicDraw);
                 api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), nullptr);
                 api_.normalPointer(c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 3));
                 api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 6));
@@ -317,6 +327,8 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.disable(c::lighting);
     api_.disable(c::texture2D);
     api_.disable(c::alphaTest);
+    uploadedScene_ = &scene;
+    uploadedRevision_ = scene.revision;
     frame.width = scene.width;
     frame.height = scene.height;
     const std::size_t pixels = static_cast<std::size_t>(scene.width) * scene.height;
@@ -354,24 +366,34 @@ bool OpenGlRenderer::present(const NativeFrame& frame) {
     api_.loadIdentity();
     api_.matrixMode(c::modelView);
     api_.enable(c::texture2D);
-    if (!overlayTexture_) {
-        api_.genTextures(1, &overlayTexture_);
-        api_.bindTexture(c::texture2D, overlayTexture_);
+    if (overlayWidth_ != frame.width || overlayHeight_ != frame.height) {
+        for (gl::UInt& texture : overlayTextures_) {
+            if (texture) api_.deleteTextures(1, &texture);
+            texture = 0;
+        }
+        overlayWidth_ = frame.width;
+        overlayHeight_ = frame.height;
+        overlayIndex_ = 0;
+    }
+    gl::UInt& overlayTexture = overlayTextures_[overlayIndex_];
+    overlayIndex_ = (overlayIndex_ + 1) % 3;
+    const bool allocate = !overlayTexture;
+    if (allocate) {
+        api_.genTextures(1, &overlayTexture);
+        api_.bindTexture(c::texture2D, overlayTexture);
         api_.texParameteri(c::texture2D, c::textureMinFilter, c::nearest);
         api_.texParameteri(c::texture2D, c::textureMagFilter, c::nearest);
         api_.texParameteri(c::texture2D, c::textureWrapS, c::clamp);
         api_.texParameteri(c::texture2D, c::textureWrapT, c::clamp);
     } else {
-        api_.bindTexture(c::texture2D, overlayTexture_);
+        api_.bindTexture(c::texture2D, overlayTexture);
     }
     api_.texEnvi(c::textureEnv, c::textureEnvMode, c::modulate);
     api_.color3f(1, 1, 1);
     api_.pixelStorei(c::unpackAlignment, 1);
-    if (overlayWidth_ != frame.width || overlayHeight_ != frame.height) {
+    if (allocate) {
         api_.texImage2D(c::texture2D, 0, c::rgba, frame.width, frame.height, 0,
                         c::rgba, c::unsignedByte, overlay_.data());
-        overlayWidth_ = frame.width;
-        overlayHeight_ = frame.height;
     } else {
         api_.texSubImage2D(c::texture2D, 0, 0, 0, frame.width, frame.height,
                            c::rgba, c::unsignedByte, overlay_.data());

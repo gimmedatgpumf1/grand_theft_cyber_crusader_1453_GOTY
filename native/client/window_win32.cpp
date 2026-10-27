@@ -75,6 +75,12 @@ struct NativeWindow::Impl {
             if (void* address = reinterpret_cast<void*>(GetProcAddress(openGl, name))) return address;
             return reinterpret_cast<void*>(wglGetProcAddress(name));
         });
+        if (gpu) {
+            using SwapInterval = BOOL (WINAPI*)(int);
+            if (const PROC address = wglGetProcAddress("wglSwapIntervalEXT")) {
+                reinterpret_cast<SwapInterval>(address)(0);
+            }
+        }
         return gpu;
     }
 

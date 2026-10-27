@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gtc::native {
@@ -104,6 +105,7 @@ struct GpuScene {
     int width = 480;
     int height = 640;
     double focal = 640;
+    std::uint64_t revision = 0;
     Color background;
     std::array<double, 16> viewMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     std::vector<GpuBatch> batches;
@@ -111,6 +113,7 @@ struct GpuScene {
 
 using GpuRenderer = bool (*)(const GpuScene& scene, NativeFrame& frame);
 void setGpuRenderer(GpuRenderer renderer);
+bool renderGpuScene(const GpuScene& scene, NativeFrame& frame);
 
 class Rasterizer {
 public:
@@ -118,6 +121,7 @@ public:
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     void setCamera(const Camera& camera);
+    GpuScene takeGpuScene() { return std::move(scene_); }
     NativeFrame finish() const;
 
 private:

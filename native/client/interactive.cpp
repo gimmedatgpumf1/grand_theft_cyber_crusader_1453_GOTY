@@ -63,6 +63,7 @@ public:
         auto previous = Clock::now();
         auto inputTime = previous;
         auto nextFrame = previous;
+        NativeFrame frame;
         bool running = true;
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
@@ -87,7 +88,6 @@ public:
                 inputTime = now;
             }
             updateHighlight();
-            NativeFrame frame;
             const auto renderStart = Clock::now();
             if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, frame, error)) {
                 std::cerr << error << '\n';
@@ -108,7 +108,7 @@ public:
                 }
                 screenshot_ = false;
             }
-            nextFrame += std::chrono::milliseconds(16);
+            nextFrame += std::chrono::microseconds(4000);
             std::this_thread::sleep_until(nextFrame);
             if (Clock::now() - nextFrame > std::chrono::milliseconds(250)) nextFrame = Clock::now();
         }

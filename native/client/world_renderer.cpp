@@ -486,6 +486,7 @@ bool WorldRenderer::load(const std::string& root, std::string& error) {
     if (!male_.loadRuntime(root, true, error) || !female_.loadRuntime(root, false, error)) return false;
     if (!maleHair_.load(root, male_, error) || !femaleHair_.load(root, female_, error)) return false;
     humanCache_.clear();
+    gpuValid_ = false;
     ready_ = true;
     return true;
 }
@@ -508,40 +509,66 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const auto profileStart = std::chrono::steady_clock::now();
     Camera camera = makeCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
-    Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
-    rasterizer.setCamera(camera);
-    drawFloor(rasterizer, camera, world);
-    if (view.mode != ViewMode::God) {
-        Material ceiling;
-        ceiling.color = colorHex("#1b2720");
-        drawBox(rasterizer, camera, {0, 3.41, 0}, {world.width, 0.04, world.depth}, ceiling);
-    }
-    drawDressing(rasterizer, camera, world, state, view);
-    if (view.highlightToilet) {
-        Material highlight;
-        highlight.color = colorHex("#86b83e");
-        drawEllipsoid(rasterizer, camera, Vec3{world.toilet.x, 0.025, world.toilet.y},
-                      Vec3{0.82, 0.018, 0.94}, highlight, 24, 5);
-    }
-    drawObstacles(rasterizer, camera, world);
-    drawPaths(rasterizer, camera, state, localId);
-    drawPuddles(rasterizer, camera, state);
-    const auto humanStart = std::chrono::steady_clock::now();
-    for (const Character& character : state.characters) {
-        const HumanModel& model = character.appearance.male ? male_ : female_;
-        const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
-        const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
-        if (character.id == localId && view.mode != ViewMode::FirstPerson && character.toiletAction == ToiletAction::None) {
-            Material ring;
-            ring.color = colorHex("#d7ff54");
-            ring.unlit = true;
-            drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
+    const bool rebuild = !view.gpu || !gpuValid_ || gpuTick_ != state.tick || gpuLocalId_ != localId ||
+        gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
+    auto humanStart = profileStart;
+    auto finishStart = profileStart;
+    if (rebuild) {
+        Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
+        rasterizer.setCamera(camera);
+        drawFloor(rasterizer, camera, world);
+        if (view.mode != ViewMode::God) {
+            Material ceiling;
+            ceiling.color = colorHex("#1b2720");
+            drawBox(rasterizer, camera, {0, 3.41, 0}, {world.width, 0.04, world.depth}, ceiling);
         }
-        drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
-        drawPissing(rasterizer, camera, character);
+        drawDressing(rasterizer, camera, world, state, view);
+        if (view.highlightToilet) {
+            Material highlight;
+            highlight.color = colorHex("#86b83e");
+            drawEllipsoid(rasterizer, camera, Vec3{world.toilet.x, 0.025, world.toilet.y},
+                          Vec3{0.82, 0.018, 0.94}, highlight, 24, 5);
+        }
+        drawObstacles(rasterizer, camera, world);
+        drawPaths(rasterizer, camera, state, localId);
+        drawPuddles(rasterizer, camera, state);
+        humanStart = std::chrono::steady_clock::now();
+        for (const Character& character : state.characters) {
+            const HumanModel& model = character.appearance.male ? male_ : female_;
+            const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
+            const bool hideHead = view.mode == ViewMode::FirstPerson && character.id == localId;
+            if (character.id == localId && view.mode != ViewMode::FirstPerson && character.toiletAction == ToiletAction::None) {
+                Material ring;
+                ring.color = colorHex("#d7ff54");
+                ring.unlit = true;
+                drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
+            }
+            drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
+            drawPissing(rasterizer, camera, character);
+        }
+        finishStart = std::chrono::steady_clock::now();
+        if (view.gpu) {
+            gpuScene_ = rasterizer.takeGpuScene();
+            gpuScene_.revision = ++gpuRevision_;
+            gpuTick_ = state.tick;
+            gpuLocalId_ = localId;
+            gpuMode_ = static_cast<int>(view.mode);
+            gpuHighlight_ = view.highlightToilet;
+            gpuValid_ = true;
+        } else {
+            frame = rasterizer.finish();
+        }
     }
-    const auto finishStart = std::chrono::steady_clock::now();
-    frame = rasterizer.finish();
+    if (view.gpu) {
+        gpuScene_.width = std::max(1, view.width);
+        gpuScene_.height = std::max(1, view.height);
+        gpuScene_.focal = camera.focal();
+        gpuScene_.viewMatrix = camera.viewMatrix();
+        if (!renderGpuScene(gpuScene_, frame)) {
+            error = "Native GPU scene rendering failed";
+            return false;
+        }
+    }
     const std::size_t framePixels = static_cast<std::size_t>(frame.width) * frame.height;
     if (view.gpu && (frame.rgb.size() != framePixels * 3 || frame.alpha.size() != framePixels)) {
         error = "Native GPU scene rendering failed";

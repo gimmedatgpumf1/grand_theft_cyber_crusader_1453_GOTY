@@ -165,6 +165,7 @@ struct GlxApi {
     void (*destroyContext)(Display*, GLXContext) = nullptr;
     Bool (*makeCurrent)(Display*, GLXDrawable, GLXContext) = nullptr;
     void (*swapBuffers)(Display*, GLXDrawable) = nullptr;
+    void* (*getProcAddress)(const char*) = nullptr;
 };
 
 int keySymbol(Api& api, XKeyEvent& event) {
@@ -263,7 +264,23 @@ struct NativeWindow::Impl {
         GTC_LOAD_GLX(makeCurrent, "glXMakeCurrent");
         GTC_LOAD_GLX(swapBuffers, "glXSwapBuffers");
 #undef GTC_LOAD_GLX
+        glx.getProcAddress = reinterpret_cast<decltype(glx.getProcAddress)>(dlsym(glLibrary, "glXGetProcAddressARB"));
+        if (!glx.getProcAddress) glx.getProcAddress = reinterpret_cast<decltype(glx.getProcAddress)>(dlsym(glLibrary, "glXGetProcAddress"));
         return true;
+    }
+
+    void disableVsync() {
+        if (!glx.getProcAddress) return;
+        using SwapIntervalExt = void (*)(Display*, GLXDrawable, int);
+        using SwapIntervalMesa = int (*)(unsigned int);
+        using SwapIntervalSgi = int (*)(int);
+        if (void* address = glx.getProcAddress("glXSwapIntervalEXT")) {
+            reinterpret_cast<SwapIntervalExt>(address)(display, window, 0);
+        } else if (void* address = glx.getProcAddress("glXSwapIntervalMESA")) {
+            reinterpret_cast<SwapIntervalMesa>(address)(0);
+        } else if (void* address = glx.getProcAddress("glXSwapIntervalSGI")) {
+            reinterpret_cast<SwapIntervalSgi>(address)(0);
+        }
     }
 
     void shutdown() {
@@ -380,6 +397,7 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
             return dlsym(impl_->glLibrary, name);
         });
         if (impl_->gpu) {
+            impl_->disableVsync();
             activeGpu = impl_;
             setGpuRenderer(&renderGpu);
             const std::string gpuTitle = title + " - " + impl_->renderer.name();
