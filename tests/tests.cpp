@@ -573,6 +573,9 @@ int main() {
         spots.push_back(gtc::placePuddle(spots, separated, 3, {}, 9, 7));
         gtc::placePuddle(spots, input, 4, {}, 9, 7);
         check(spots.size() == 1, "growth coalesces every newly overlapping floor puddle");
+        for (std::uint32_t next = 4; next < 220; ++next) gtc::placePuddle(spots, input, next, {}, 9, 7);
+        check(spots.size() == 1 && spots.front().size > 1.5F && std::isfinite(spots.front().size),
+              "piss blob keeps conserving area and growing beyond the old 0.65 metre ceiling");
 
         gtc::World upward;
         const auto shooter = upward.addCharacter("Postal Arc", false);

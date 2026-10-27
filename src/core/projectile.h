@@ -281,7 +281,7 @@ inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::
             into.height = (into.height * a + added.height * b) / sum;
             into.normal = normalized(into.normal * a + added.normal * b);
         }
-        into.size = std::min(0.65F, std::sqrt(sum));
+        into.size = std::sqrt(sum); // Area is conserved; growth has no artificial radius ceiling.
         into.age = std::min(into.age, added.age);
     };
     std::size_t first = 0;
