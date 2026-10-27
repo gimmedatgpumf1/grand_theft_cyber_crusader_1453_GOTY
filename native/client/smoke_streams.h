@@ -18,10 +18,8 @@ inline void seedAimedToiletStream(ClientState& state, Character& character, gtc:
     character.pitch = pissLaunchPitch(character, target, kToiletWaterHeight, -0.9F, &speed);
     const float cp = std::cos(character.pitch), sp = std::sin(character.pitch);
     const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
-    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
-    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + reach);
-    const float originHeight = character.elevation + kPissEmitterPivotHeight + drop;
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    const float originHeight = character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp;
     const gtc::Vec2 direction = normalized(target - origin);
     character.pissYaw = std::atan2(direction.x, direction.y);
     character.pissPitch = character.pitch;
@@ -43,6 +41,26 @@ inline void seedAimedToiletStream(ClientState& state, Character& character, gtc:
         drop.toilet = true;
         drop.target = target;
         drop.targetHeight = kToiletWaterHeight;
+        state.projectiles.push_back(drop);
+    }
+}
+
+// Seed a visible stream that starts at the same meatus the physics uses.
+inline void seedMeatusStream(ClientState& state, Character& character) {
+    state.projectiles.clear();
+    const float cp = std::cos(character.pitch), sp = std::sin(character.pitch);
+    const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    for (int i = 0; i < 18; ++i) {
+        const float t = static_cast<float>(i) / 30.0F;
+        Projectile drop;
+        drop.id = 9000U + static_cast<std::uint32_t>(i);
+        drop.owner = character.id;
+        drop.position = origin + gtc::Vec2{0.4F * t * t, kPissSpeed * cp * t};
+        drop.height = character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp +
+            kPissSpeed * sp * t - 0.5F * kProjectileGravity * t * t;
+        drop.velocity = {0, kPissSpeed * cp};
+        drop.verticalVelocity = kPissSpeed * sp - kProjectileGravity * t;
         state.projectiles.push_back(drop);
     }
 }
@@ -83,6 +101,36 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
         tip.y + moved.elevation - cache.poseElevation,
         moved.position.y - s * (tip.x - cache.poseX) + c * (tip.z - cache.poseZ)};
     return length(humanStreamOrigin(moved, &cache, 0) - expected) < 1e-6;
+}
+
+// The physical droplet spawn and the visible meatus must be the same point at
+// every aim angle; otherwise the stream appears to start in mid-air.
+inline bool streamSpawnMatchesMeatus(const HumanModel& model, Character character, double tick,
+                                     const std::string& root) {
+    character.ai = character.appearance.male = true;
+    character.onToilet = false;
+    character.unzipped = character.pissing = true;
+    character.toiletAction = ToiletAction::None;
+    HumanRenderCache cache;
+    Camera camera;
+    camera.width = camera.height = 16;
+    camera.worldSpaceGpu = true;
+    Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
+    HairLibrary hair;
+    for (float pitch : {-0.9F, -0.32F, 0.0F, 0.45F, 1.3F}) {
+        character.pissPitch = pitch;
+        character.pissYaw = character.yaw;
+        drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+        const gtc::Vec2 spawn = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+        const Vec3 physical{spawn.x, character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, spawn.y};
+        // The mesh apex sits 4 mm off the sagittal midline, so allow that much
+        // sideways error; the droplet radius is 10 mm. The old hip offset was
+        // 50 mm off, which is what made the stream start in mid-air.
+        if (length(humanStreamOrigin(character, &cache, 0) - physical) > 0.006) return false;
+    }
+    return true;
 }
 
 inline bool orbitKeepsControlsFrozen() {
@@ -131,7 +179,7 @@ inline bool npcPissingReposesGenitals(const HumanModel& model, Character charact
     drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
     const Vec3 fallback = humanStreamOrigin(character, nullptr, character.pissPitch);
     return cache.genitalTip >= 0 && length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) < 1e-6 &&
-        length(cache.genitalExit - fallback) > 0.01;
+        length(cache.genitalExit - fallback) < 0.01;
 }
 
 // The reported NPC case: ranged urine attack. The attacker is unzipped but the
@@ -180,6 +228,7 @@ inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
     npc->pissing = false;
     return model.loadRuntime(root, true, error) && npcPissingReposesGenitals(model, *npc, tick, root) &&
         npcRangedAttackKeepsStreamAttached(model, *npc, tick, root) &&
+        streamSpawnMatchesMeatus(model, *npc, tick, root) &&
         npcStreamOriginMatchesPose(model, *npc, tick, root);
 }
 

@@ -73,12 +73,10 @@ void World::spawnPiss(Character& character) {
     if (targeted && !projectile.toilet) character.pitch = pitch;
     const float cp = std::cos(pitch), sp = std::sin(pitch);
     const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    // Rotate the meatus about the shaft pivot so droplets leave the visible hole
-    // at every aim angle instead of a fixed hip offset.
-    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
-    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
-    projectile.position = character.position + forward * (kPissEmitterPivotForward + reach);
-    projectile.height = character.elevation + kPissEmitterPivotHeight + drop;
+    // The posed organ points the meatus along the aim line, so the droplet must
+    // spawn where that hole actually is: pivot + shaft length * aim direction.
+    projectile.position = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    projectile.height = character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp;
     Vec2 direction = forward;
     if (targeted) {
         const Vec2 delta = target - projectile.position;
@@ -86,6 +84,10 @@ void World::spawnPiss(Character& character) {
     }
     character.pissYaw = std::atan2(direction.x, direction.y);
     character.pissPitch = pitch;
+    // The renderer aims the organ by pissYaw, so re-anchor the emitter on that
+    // axis; otherwise a locked target yanks the ribbon off the meatus.
+    const Vec2 aim{std::sin(character.pissYaw), std::cos(character.pissYaw)};
+    projectile.position = character.position + aim * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
     projectile.velocity = direction * (speed * cp);
     projectile.verticalVelocity = speed * sp;
     if (projectiles_.size() >= 768) projectiles_.erase(projectiles_.begin());

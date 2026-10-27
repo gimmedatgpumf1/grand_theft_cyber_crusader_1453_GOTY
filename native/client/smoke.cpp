@@ -902,17 +902,7 @@ int main(int argc, char** argv) {
         if (male != standing.characters.end()) {
             male->onToilet = false; male->toiletAction = gtc::ToiletAction::None;
             male->position = {0, 0}; male->yaw = 0;
-            const auto seedStream = [&] {
-                standing.projectiles.clear(); const float cp = std::cos(male->pitch), sp = std::sin(male->pitch);
-                for (int i = 0; i < 18; ++i) {
-                    const float t = static_cast<float>(i) / 30.0F; gtc::Projectile drop;
-                    drop.id = 9000U + static_cast<std::uint32_t>(i); drop.owner = male->id;
-                    drop.position = male->position + gtc::Vec2{0.4F * t * t, gtc::kPissSpeed * cp * t};
-                    drop.height = male->elevation + 0.79F + gtc::kPissSpeed * sp * t - 0.5F * gtc::kProjectileGravity * t * t;
-                    drop.velocity = {0, gtc::kPissSpeed * cp}; drop.verticalVelocity = gtc::kPissSpeed * sp - gtc::kProjectileGravity * t;
-                    standing.projectiles.push_back(drop);
-                }
-            };
+            const auto seedStream = [&] { gtc::native::seedMeatusStream(standing, *male); };
             gtc::native::ViewState standingFps = fps; standingFps.yaw = male->yaw;
             gtc::native::NativeFrame frame;
             if (!renderer.render(alpha.world(), standing, alpha.playerId(), standingFps, frame, error) ||

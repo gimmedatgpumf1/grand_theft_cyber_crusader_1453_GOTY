@@ -598,10 +598,8 @@ Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache
     }
     const float cp = std::cos(fallbackPitch), sp = std::sin(fallbackPitch);
     const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    const float drop = -kPissEmitterDrop * cp + kPissEmitterReach * sp;
-    const float reach = kPissEmitterDrop * sp + kPissEmitterReach * cp;
-    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + reach);
-    return {origin.x, character.elevation + kPissEmitterPivotHeight + drop, origin.y};
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    return {origin.x, character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
 }
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
