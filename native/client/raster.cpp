@@ -153,9 +153,9 @@ bool NativeFrame::save(const std::string& path) const {
 }
 
 void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
-    uiScale = std::min(width / static_cast<double>(logicalWidth), height / static_cast<double>(logicalHeight));
+    uiScale = std::min(1.0, std::min(width / static_cast<double>(logicalWidth), height / static_cast<double>(logicalHeight)));
     uiOffsetX = (width - logicalWidth * uiScale) * 0.5;
-    uiOffsetY = (height - logicalHeight * uiScale) * 0.5;
+    uiOffsetY = 0.0;
 }
 
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {

@@ -45,17 +45,6 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         error = "character interpolation";
         return false;
     }
-    Camera desired, previous;
-    desired.position = {4, 5, 6};
-    desired.target = {1, 2, 3};
-    const Camera third = smoothViewCamera(desired, previous, ViewMode::ThirdPerson, 0.1F, false);
-    const Camera first = smoothViewCamera(desired, previous, ViewMode::FirstPerson, 0.1F, false);
-    if (std::abs(third.position.x - 4 * (1.0 - std::exp(-1.6))) > 1e-6 ||
-        first.position.x != 4 || third.target.x != 1) {
-        error = "camera smoothing";
-        return false;
-    }
-
     ClientWorld world;
     ClientState state;
     state.tick = 1;
@@ -138,10 +127,19 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     };
     const Vec3 eyeView = transform(eye.position);
     const Vec3 targetView = transform(eye.target);
-    const bool firstPerson = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
+    const Vec3 attachedEye{1 + std::sin(0.5) * 0.17, 1.65, 2 + std::cos(0.5) * 0.17};
+    ViewState mouse;
+    mouse.mode = ViewMode::FirstPerson;
+    mouse.pitch = 0;
+    rotateView(mouse, 10, -20);
+    const bool eyeMatrix = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
+    const bool attached = length(eye.position - attachedEye) < 1e-6;
+    const bool look = std::abs(mouse.yaw - 0.022F) < 1e-6F && std::abs(mouse.pitch + 0.044F) < 1e-6F;
     cleanup();
-    if (!firstPerson) error = "first-person eye matrix";
-    return firstPerson;
+    if (!eyeMatrix) error = "first-person eye matrix";
+    else if (!attached) error = "first-person body attachment";
+    else if (!look) error = "first-person look input";
+    return eyeMatrix && attached && look;
 }
 
 } // namespace

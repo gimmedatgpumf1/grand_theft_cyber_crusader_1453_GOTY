@@ -66,8 +66,9 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
     const Vec3 forward{std::sin(yaw) * cp, sp, std::cos(yaw) * cp};
     if (view.mode == ViewMode::FirstPerson) {
         const bool seated = local && local->onToilet && !(local->appearance.male && local->toiletAction == ToiletAction::Piss);
+        const float bodyYaw = local ? local->yaw : yaw;
         camera.position = citizen + Vec3{0, seated ? 1.43 : 1.65, 0} +
-                          Vec3{std::sin(yaw) * 0.17, 0, std::cos(yaw) * 0.17};
+                          Vec3{std::sin(bodyYaw) * 0.17, 0, std::cos(bodyYaw) * 0.17};
         camera.target = camera.position + forward;
     } else {
         const Vec3 right{-std::cos(yaw), 0, std::sin(yaw)};
@@ -482,6 +483,7 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     const Color text = colorHex("#d7ff54");
     const Color muted = colorHex("#b4c5ba");
     const Color cyan = colorHex("#6edbd2");
+    const double centeredX = frame.uiOffsetX;
     panel(frame, 0, 0, 480, 60, true);
     drawText(frame, 12, 5, "GTC // 1453", text);
     drawText(frame, 12, 34, "PORCELAIN PROTOCOL", muted);
@@ -491,6 +493,7 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     if (view.fps > 0) performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
     drawText(frame, 316, 34, performance, muted);
     if (local) {
+        frame.uiOffsetX = 0.0;
         panel(frame, 12, 74, 218, 174, true);
         drawText(frame, 24, 82, "MEAT STATUS", text);
         drawText(frame, 24, 112, local->name.substr(0, 15), muted);
@@ -501,10 +504,13 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
         frame.rectangle(24, 220, 194, 8, colorHex("#29332d"));
         frame.rectangle(24, 220, static_cast<int>(194 * std::clamp(local->needs.bowel / 100.0F, 0.0F, 1.0F)), 8,
                         colorHex("#ffcc62"));
+        frame.uiOffsetX = frame.width - 480 * frame.uiScale;
         panel(frame, 318, 74, 150, 162);
         drawText(frame, 328, 82, "SECTOR 01", text);
         drawMinimap(frame, world, state, localId);
         drawText(frame, 328, 222, "LOCAL / AI", muted);
+        frame.uiOffsetX = centeredX;
+        frame.uiOffsetY = std::max(0.0, frame.height - 640 * frame.uiScale);
         panel(frame, 12, 462, 456, 44);
         if (!local->notice.empty()) drawText(frame, 24, 470, local->notice.substr(0, 36), muted);
         else if (!state.events.empty()) drawText(frame, 24, 470, state.events.back().text.substr(0, 36), muted);
@@ -515,6 +521,8 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
         else if (range <= world.interactionRange) drawText(frame, 24, 522, "E // CHOOSE ACTION", text);
         else drawText(frame, 24, 522, "MOVE CLOSER TO INTERACT", muted);
     }
+    frame.uiOffsetX = centeredX;
+    frame.uiOffsetY = std::max(0.0, frame.height - 640 * frame.uiScale);
     panel(frame, 0, 568, 480, 72);
     drawText(frame, 12, 576, "1 THIRD", view.mode == ViewMode::ThirdPerson ? text : muted);
     drawText(frame, 132, 576, "2 GOD", view.mode == ViewMode::God ? text : muted);
@@ -551,6 +559,14 @@ Camera makeViewCamera(const ClientWorld& world, const ClientState& state, std::u
     return makeCamera(world, state, localId, view);
 }
 
+void rotateView(ViewState& view, double mouseX, double mouseY) {
+    if (view.mode == ViewMode::God) return;
+    view.yaw += static_cast<float>(mouseX * 0.0022);
+    view.pitch += static_cast<float>(mouseY * 0.0022);
+    view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.5F : -1.05F,
+                            view.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
+}
+
 void interpolateCharacters(const ClientState& target, ClientState& current, float dt) {
     const double blend = 1.0 - std::exp(-15.0 * dt);
     for (Character& character : current.characters) {
@@ -569,25 +585,14 @@ void interpolateCharacters(const ClientState& target, ClientState& current, floa
     }
 }
 
-Camera smoothViewCamera(const Camera& desired, const Camera& previous, ViewMode mode, float dt, bool reset) {
-    Camera result = desired;
-    if (!reset && mode != ViewMode::FirstPerson) {
-        const double rate = mode == ViewMode::God ? 12.0 : 16.0;
-        const double blend = 1.0 - std::exp(-rate * dt);
-        result.position = previous.position + (desired.position - previous.position) * blend;
-    }
-    return result;
-}
-
 bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
-                           const ViewState& view, NativeFrame& frame, std::string& error,
-                           const Camera* cameraOverride) const {
+                           const ViewState& view, NativeFrame& frame, std::string& error) const {
     if (!ready_) {
         error = "Native world renderer is not loaded";
         return false;
     }
     const auto profileStart = std::chrono::steady_clock::now();
-    Camera camera = cameraOverride ? *cameraOverride : makeCamera(world, state, localId, view);
+    Camera camera = makeCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
     const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;

@@ -86,11 +86,9 @@ public:
                 inputTime = now;
             }
             updatePresentation(dt);
-            updateCamera(dt);
             updateHighlight();
             const auto renderStart = Clock::now();
-            const Camera* renderCamera = view_.mode == ViewMode::FirstPerson ? nullptr : &activeCamera();
-            if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error, renderCamera)) {
+            if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 std::cerr << error << '\n';
                 return 1;
             }
@@ -171,20 +169,9 @@ private:
         interpolateCharacters(latest, presentation_, dt);
     }
 
-    void updateCamera(float dt) {
-        const Camera desired = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
-        const bool reset = !cameraReady_ || cameraMode_ != view_.mode;
-        camera_ = smoothViewCamera(desired, camera_, view_.mode, dt, reset);
-        cameraMode_ = view_.mode;
-        cameraReady_ = true;
-    }
-
-    const Camera& activeCamera() const { return camera_; }
-
     void setMode(ViewMode mode) {
         if (view_.mode == mode) return;
         view_.mode = mode;
-        cameraReady_ = false;
         keys_.clear();
         if (mode == ViewMode::God && captured_) {
             window_.captureMouse(false);
@@ -235,7 +222,7 @@ private:
     }
 
     bool ground(double x, double y, gtc::Vec2& point) const {
-        const Camera camera = cameraReady_ ? camera_ : makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const Camera camera = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 forward = normalized(camera.target - camera.position);
         const Vec3 right = normalized(cross(forward, camera.up));
         const Vec3 vertical = normalized(cross(right, forward));
@@ -249,7 +236,7 @@ private:
     }
 
     bool toiletHit(double x, double y) const {
-        const Camera camera = cameraReady_ ? camera_ : makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
+        const Camera camera = makeViewCamera(client_.world(), visualState(), client_.playerId(), view_);
         const Vec3 point = camera.view({client_.world().toilet.x, 0.72, client_.world().toilet.y});
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
@@ -275,12 +262,7 @@ private:
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
-            if (captured_ && view_.mode != ViewMode::God) {
-                view_.yaw -= static_cast<float>(event.dx * 0.0022);
-                view_.pitch -= static_cast<float>(event.dy * 0.0022);
-                view_.pitch = std::clamp(view_.pitch, view_.mode == ViewMode::FirstPerson ? -1.5F : -1.05F,
-                                         view_.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
-            }
+            if (captured_) rotateView(view_, event.dx, event.dy);
             return;
         }
         if (event.type == WindowEvent::Type::Wheel) {
@@ -293,9 +275,9 @@ private:
             mouseY_ = event.y;
             if (event.button != 1) return;
             if (overlay_ == Overlay::Wheel) {
-                const double scale = std::min(view_.width / 480.0, view_.height / 640.0);
+                const double scale = std::min(1.0, std::min(view_.width / 480.0, view_.height / 640.0));
                 const double x = (event.x - (view_.width - 480 * scale) * 0.5) / scale;
-                const double y = (event.y - (view_.height - 640 * scale) * 0.5) / scale;
+                const double y = (event.y - (view_.height - 640 * scale)) / scale;
                 if (std::hypot(x - 240, y - 210) < 88) toiletChoice(1);
                 else if (std::hypot(x - 140, y - 405) < 88) toiletChoice(2);
                 else if (std::hypot(x - 340, y - 405) < 88) toiletChoice(3);
@@ -510,9 +492,6 @@ private:
     ClientState presentation_;
     std::uint64_t presentationVersion_ = 0;
     bool presentationReady_ = false;
-    Camera camera_;
-    ViewMode cameraMode_ = ViewMode::ThirdPerson;
-    bool cameraReady_ = false;
     InteractiveOptions options_;
     NativeClient client_;
     WorldRenderer renderer_;
