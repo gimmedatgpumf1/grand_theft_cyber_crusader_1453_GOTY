@@ -231,9 +231,19 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 standingForward = normalized(standingCamera.target - standingCamera.position);
     const bool lowerBody = visiblePelvis > 8 && visibleLegs > 8 && standingClearance > 0.04 &&
         std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
+    const auto sceneClearance = [&](const Camera& camera) {
+        double nearest = 1000;
+        for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
+            for (const auto& vertex : batch.vertices) {
+                nearest = std::min(nearest, length(camera.position - Vec3{vertex.x, vertex.y, vertex.z}));
+            }
+        }
+        return nearest;
+    };
     const int headHeight = eyeModel.specIndex("headHeight");
     bool shaped = headHeight >= 0;
-    double shortY = 0, tallY = 0;
+    double shortY = 0, tallY = 0, leastMorphClearance = 1000;
+    std::string leastMorphStage;
     for (int value : {-100, 100}) {
         if (!shaped) break;
         ClientState shapeState = state;
@@ -241,10 +251,34 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         character.appearance.morphs[headHeight] = value;
         const Camera seatedShape = renderer.viewCamera(world, shapeState, citizen.id, view);
         shaped = length(seatedShape.position - expectedEye(character)) < 1e-6;
+        ViewState shapeExtremeView = neckView;
+        shapeExtremeView.pitch = -1.5F;
+        if (!renderer.render(world, shapeState, citizen.id, shapeExtremeView, frame, error)) {
+            cleanup();
+            return false;
+        }
+        const Camera seatedExtreme = renderer.viewCamera(world, shapeState, citizen.id, shapeExtremeView);
+        const double seatedClearance = sceneClearance(seatedExtreme);
+        if (seatedClearance < leastMorphClearance) {
+            leastMorphClearance = seatedClearance;
+            leastMorphStage = "seated " + std::to_string(value);
+        }
+        shaped = shaped && seatedClearance > 0.04;
         character.onToilet = false;
         character.toiletAction = gtc::ToiletAction::None;
         const Camera standingShape = renderer.viewCamera(world, shapeState, citizen.id, view);
         shaped = shaped && length(standingShape.position - expectedEye(character)) < 1e-6;
+        if (!renderer.render(world, shapeState, citizen.id, standingView, frame, error)) {
+            cleanup();
+            return false;
+        }
+        const Camera standingExtreme = renderer.viewCamera(world, shapeState, citizen.id, standingView);
+        const double standingMorphClearance = sceneClearance(standingExtreme);
+        if (standingMorphClearance < leastMorphClearance) {
+            leastMorphClearance = standingMorphClearance;
+            leastMorphStage = "standing " + std::to_string(value);
+        }
+        shaped = shaped && standingMorphClearance > 0.04;
         if (value < 0) shortY = standingShape.position.y;
         else tallY = standingShape.position.y;
     }
@@ -265,7 +299,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!clearance) error = "first-person arm clearance";
     else if (!lowerBody) error = "standing male lower-body visibility, clearance=" + std::to_string(standingClearance) +
         ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
-    else if (!shaped) error = "first-person morphed head attachment";
+    else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
+        "=" + std::to_string(leastMorphClearance);
     else if (!look) error = "first-person look input";
     return eyeMatrix && attached && seated && neck && pitch && clearance && lowerBody && shaped && look;
 }
@@ -399,8 +434,8 @@ int main(int argc, char** argv) {
         if (male != standing.characters.end()) {
             male->onToilet = false;
             male->toiletAction = gtc::ToiletAction::None;
-            male->position = {-2, 2.3};
-            male->yaw = 3.14159265358979323846;
+            male->position = {0, 0};
+            male->yaw = 0;
             gtc::native::ViewState standingFps = fps;
             standingFps.yaw = male->yaw;
             gtc::native::NativeFrame frame;
