@@ -15,4 +15,5 @@ done < <(find "$ROOT" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.js' -o
 if [ "$FAILED" -eq 0 ]; then
   echo '[nagger] All first-party files are <= 1000 lines. Readability survives.'
 fi
+echo '[nagger] Build successful? Push to GitHub!'
 exit "$FAILED"

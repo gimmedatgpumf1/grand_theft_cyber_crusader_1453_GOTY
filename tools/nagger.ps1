@@ -22,6 +22,7 @@ foreach ($File in $Files) {
 }
 if (-not $Failed) {
     Write-Host "[nagger] All first-party files are <= 1000 lines. Readability survives."
-    exit 0
 }
-exit 1
+Write-Host "[nagger] Build successful? Push to GitHub!"
+if ($Failed) { exit 1 }
+exit 0
