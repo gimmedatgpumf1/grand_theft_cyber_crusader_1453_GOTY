@@ -686,6 +686,15 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             const auto central = [&](int id) { return std::abs(rest[id].x) < 0.015; };
             int tipId = ids.front();
             for (int id : ids) if (rest[id].z > rest[tipId].z) tipId = id;
+            // The urethral opening is the ventral midline point of the distal
+            // cap, roughly 16 mm below the dorsal apex. Emitting from the apex
+            // drew the ribbon out of the top of the glans, which reads as the
+            // stream starting above the organ.
+            int meatusId = tipId;
+            for (int id : ids) {
+                if (std::abs(rest[id].x) > 0.004 || rest[id].z < rest[tipId].z - 0.006) continue;
+                if (rest[id].y < rest[meatusId].y) meatusId = id;
+            }
             int ventralId = tipId;
             for (int id : edges[tipId]) if (central(id) && rest[id].y < rest[tipId].y &&
                 (ventralId == tipId || rest[id].z > rest[ventralId].z)) ventralId = id;
@@ -707,10 +716,9 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 if (next < 0) break;
                 previous = lowerRootId; lowerRootId = next;
             }
-            // The distal-most midline vertex is the mesh apex, i.e. the meatus.
-            // The visible stream must leave that exact point, not an offset.
-            const Vec3 exit = cache.posed[tipId];
-            cache.genitalPivot = rootId; cache.genitalTip = tipId;
+            // The visible stream must leave the urethral opening exactly.
+            const Vec3 exit = cache.posed[meatusId];
+            cache.genitalPivot = rootId; cache.genitalTip = meatusId;
             const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
             const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
             const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
@@ -727,8 +735,10 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
                 cache.posedNormals[id] = normalized(articulate(cache.posedNormals[id]));
             }
             cache.genitalRoot = pivot;
-            const Vec3 meatus = pivot + articulate(exit - pivot);
-            cache.genitalExit = meatus + normalized(meatus - pivot) * 0.0015; // Clear the skin surface.
+            // The opening itself is the emit point; the ribbon is drawn from here,
+            // so it cannot begin in front of the organ even if skinning puts the
+            // posed pelvis a few millimetres off the logical body axis.
+            cache.genitalExit = pivot + articulate(exit - pivot);
         }
     }
     cache.transformed.resize(rest.size());

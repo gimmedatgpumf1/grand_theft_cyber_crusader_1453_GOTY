@@ -524,9 +524,9 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
             !humanStreamAttached(*owner) || newest.age > 0.075) continue;
         const float pitch = std::atan2(newest.verticalVelocity + kProjectileGravity * newest.age, length(newest.velocity));
         const auto cached = humanCaches.find(newest.owner);
-        const Vec3 origin = humanStreamOrigin(*owner,
-            cached == humanCaches.end() ? nullptr : &cached->second, pitch);
-        link(origin, point(newest), owner->id * 0.713 + state.tick * 0.17);
+        const Vec3 exit = humanStreamOrigin(*owner, cached == humanCaches.end() ? nullptr : &cached->second, pitch);
+        // Start inside the organ so the ribbon emerges from the opening itself.
+        link(exit - normalized(point(newest) - exit) * 0.006, point(newest), owner->id * 0.713 + state.tick * 0.17);
     }
     for (const Projectile& projectile : state.projectiles) {
         if (projectile.kind != ProjectileKind::Bullet) continue;

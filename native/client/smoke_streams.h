@@ -104,7 +104,40 @@ inline bool seedNpcToiletExhibit(ClientState& state, const std::string& root, do
     const gtc::Vec2 origin = npc->position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
     const Vec3 physical{origin.x, npc->elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
     return cache.genitalTip >= 0 && humanStreamAttached(*npc) &&
-        length(humanStreamOrigin(*npc, &cache, 0) - physical) < 0.006;
+        length(humanStreamOrigin(*npc, &cache, 0) - cache.genitalExit) < 1e-9 &&
+        length(cache.genitalExit - physical) < 0.010;
+}
+
+// The opening must be the ventral (underneath) point of the distal cap. Using the
+// dorsal apex put the ribbon out of the top of the glans, which looked like the
+// stream began above the organ.
+inline bool meatusIsVentralOpening(const HumanModel& model, Character character, double tick,
+                                   const std::string& root) {
+    character.ai = character.appearance.male = true;
+    character.unzipped = character.pissing = true;
+    character.onToilet = false;
+    character.toiletAction = ToiletAction::None;
+    HumanRenderCache cache;
+    Camera camera;
+    camera.width = camera.height = 16;
+    camera.worldSpaceGpu = true;
+    Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
+    HairLibrary hair;
+    drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
+    if (cache.genitalTip < 0) return false;
+    double distal = -1e9;
+    for (const Triangle& triangle : model.genitalTriangles)
+        for (int id : triangle.v) distal = std::max(distal, cache.rest[id].z);
+    double dorsal = -1e9, ventral = 1e9;
+    for (const Triangle& triangle : model.genitalTriangles) {
+        for (int id : triangle.v) {
+            if (std::abs(cache.rest[id].x) > 0.004 || cache.rest[id].z < distal - 0.020) continue;
+            dorsal = std::max(dorsal, cache.rest[id].y);
+            ventral = std::min(ventral, cache.rest[id].y);
+        }
+    }
+    const double meatus = cache.rest[cache.genitalTip].y;
+    return dorsal - meatus > 0.010 && meatus - ventral < 0.006;
 }
 
 inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character character, double tick,
@@ -128,9 +161,9 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
     const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
     const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
     const double capOffset = length(cache.genitalExit - cache.posed[cache.genitalTip]);
-    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset < 0.001 || capOffset > 0.003 ||
+    if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset > 1e-9 ||
         !humanStreamAttached(character) || length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
-        dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
+        dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99 ||
         length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
     const Vec3 tip = cache.genitalExit;
     Character moved = character;
@@ -167,10 +200,11 @@ inline bool streamSpawnMatchesMeatus(const HumanModel& model, Character characte
         const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
         const gtc::Vec2 spawn = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
         const Vec3 physical{spawn.x, character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, spawn.y};
-        // The mesh apex sits 4 mm off the sagittal midline, so allow that much
-        // sideways error; the droplet radius is 10 mm. The old hip offset was
-        // 50 mm off, which is what made the stream start in mid-air.
-        if (length(humanStreamOrigin(character, &cache, 0) - physical) > 0.006) return false;
+        // The ribbon must start exactly on the opening, and the droplet must
+        // spawn inside a 10 mm droplet radius of it so the two read as one
+        // stream. The old hip offset was 50 mm away; the dorsal apex 18 mm.
+        if (length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-9) return false;
+        if (length(cache.genitalExit - physical) > 0.010) return false;
     }
     return true;
 }
@@ -271,6 +305,11 @@ inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
     return model.loadRuntime(root, true, error) && npcPissingReposesGenitals(model, *npc, tick, root) &&
         npcRangedAttackKeepsStreamAttached(model, *npc, tick, root) &&
         streamSpawnMatchesMeatus(model, *npc, tick, root) &&
+        meatusIsVentralOpening(model, *npc, tick, root) &&
+        npcStreamOriginMatchesPose(model, *npc, tick, root);
+        npcRangedAttackKeepsStreamAttached(model, *npc, tick, root) &&
+        streamSpawnMatchesMeatus(model, *npc, tick, root) &&
+        meatusIsVentralOpening(model, *npc, tick, root) &&
         npcStreamOriginMatchesPose(model, *npc, tick, root);
 }
 
