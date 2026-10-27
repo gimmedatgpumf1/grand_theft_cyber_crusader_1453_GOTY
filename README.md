@@ -34,7 +34,7 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 | Mode | Move citizen | Camera | Interact |
 | --- | --- | --- | --- |
 | **1 — Third person** | WASD; Shift to sprint | Click view for mouse orbit; Esc releases; wheel zoom | E; **T** toggles a male zip; unzipped LMB pees; RMB aims/blocks |
-| **2 — Godview** | RMB paths; Shift-RMB auto-runs; double-RMB uses advanced traversal | WASD fast-pans; Shift boosts; wheel zoom | LMB attacks; double-LMB melee uses advanced traversal; E interacts |
+| **2 — Godview** | RMB paths; Shift-RMB auto-runs; double-RMB uses advanced traversal; hold Alt to crouch | WASD fast-pans; Shift boosts; wheel zoom | LMB attacks; double-LMB melee uses advanced traversal; E interacts |
 | **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E; **T** toggles a male zip; unzipped LMB/F pees; RMB aims/blocks |
 
 - Targeted objects glow. **[E] Interact** appears only inside the **1.8 m interaction range**.
@@ -52,7 +52,9 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   Male anatomy starts zipped behind a cloth bulge in FPS and TPS; **T** intentionally exposes it.
   Holding LMB (or F in FPS) outside a toilet action works only while unzipped, empties only the
   bladder, and leaves shared persistent puddles. God LMB uses melee while zipped and the unzipped
-  ranged weapon otherwise; RMB blocks melee or applies modest ranged aim zoom.
+  ranged weapon otherwise; RMB blocks melee or applies modest ranged aim zoom. Ranged clicks always
+  attempt a shot, even when a distant target stays dry. Ballistic piss can stain floors, object tops,
+  and walls with small translucent spots that spread sideways instead of merging into large blobs.
 - **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
 - **H** opens the native field manual. **F12** saves the current native 480×640 framebuffer.

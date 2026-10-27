@@ -139,6 +139,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(getError, "glGetError");
     GTC_LOAD_GL(getString, "glGetString");
     GTC_LOAD_GL(color3f, "glColor3f");
+    GTC_LOAD_GL(color4f, "glColor4f");
     GTC_LOAD_GL(alphaFunc, "glAlphaFunc");
     GTC_LOAD_GL(rasterPos2i, "glRasterPos2i");
     GTC_LOAD_GL(drawPixels, "glDrawPixels");
@@ -259,6 +260,7 @@ uniform int normalMapped;
 uniform int unlit;
 uniform int hair;
 uniform float specularAmount;
+uniform float opacity;
 uniform vec3 fogColor;
 varying vec3 vPosition;
 varying vec3 vNormal;
@@ -306,7 +308,7 @@ void main() {
         float fog = clamp((-vPosition.z - 20.0) / 18.0, 0.0, 1.0);
         color = mix(color, fogColor, fog);
     }
-    gl_FragColor = vec4(toSrgb(toneMap(color)), 1.0);
+    gl_FragColor = vec4(toSrgb(toneMap(color)), opacity);
 }
 )GLSL";
     auto compile = [&](gl::Enum type, const char* source) {
@@ -360,6 +362,7 @@ void main() {
     shaderUniforms_.unlit = shaderApi_.getUniformLocation(shaderProgram_, "unlit");
     shaderUniforms_.hair = shaderApi_.getUniformLocation(shaderProgram_, "hair");
     shaderUniforms_.specular = shaderApi_.getUniformLocation(shaderProgram_, "specularAmount");
+    shaderUniforms_.opacity = shaderApi_.getUniformLocation(shaderProgram_, "opacity");
     shaderUniforms_.fogColor = shaderApi_.getUniformLocation(shaderProgram_, "fogColor");
     shaderApi_.useProgram(0);
     return true;
@@ -466,8 +469,17 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         } else {
             api_.disable(c::texture2D);
         }
-        if (material.kind == Material::Kind::Floor && textured) api_.color3f(1, 1, 1);
-        else api_.color3f(sceneChannel(material.color.r), sceneChannel(material.color.g), sceneChannel(material.color.b));
+        const float opacity = static_cast<float>(material.opacity);
+        if (material.kind == Material::Kind::Floor && textured) api_.color4f(1, 1, 1, opacity);
+        else api_.color4f(sceneChannel(material.color.r), sceneChannel(material.color.g), sceneChannel(material.color.b), opacity);
+        if (material.opacity < 0.999) {
+            api_.enable(c::blend);
+            api_.blendFunc(c::srcAlpha, c::oneMinusSrcAlpha);
+            api_.depthMask(0);
+        } else {
+            api_.disable(c::blend);
+            api_.depthMask(1);
+        }
         const gl::Float specular[] = {static_cast<float>(material.specular), static_cast<float>(material.specular),
                                       static_cast<float>(material.specular), 1.0F};
         api_.materialfv(c::frontAndBack, c::specular, specular);
@@ -497,6 +509,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             shaderApi_.uniform1i(shaderUniforms_.unlit, material.unlit ? 1 : 0);
             shaderApi_.uniform1i(shaderUniforms_.hair, material.kind == Material::Kind::Hair ? 1 : 0);
             shaderApi_.uniform1f(shaderUniforms_.specular, static_cast<float>(material.specular));
+            shaderApi_.uniform1f(shaderUniforms_.opacity, opacity);
         }
         const GpuVertex* vertices = batch.vertices.data();
         bool uploaded = false;
@@ -526,6 +539,8 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         }
         api_.drawArrays(c::triangles, 0, static_cast<gl::Sizei>(batch.vertices.size()));
     }
+    api_.disable(c::blend);
+    api_.depthMask(1);
     if (vbo_) buffers_.bindBuffer(c::arrayBuffer, 0);
     if (shaders_) shaderApi_.useProgram(0);
     if (shaderApi_.activeTexture) shaderApi_.activeTexture(c::texture0);

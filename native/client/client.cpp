@@ -191,7 +191,10 @@ void parseState(const JsonValue& value, ClientState& state) {
             Puddle puddle;
             puddle.id = static_cast<std::uint32_t>(item.numberAt("id"));
             puddle.position = {static_cast<float>(item.numberAt("x")), static_cast<float>(item.numberAt("z"))};
-            puddle.size = static_cast<float>(item.numberAt("size", 0.25));
+            puddle.size = static_cast<float>(item.numberAt("size", 0.12));
+            puddle.height = static_cast<float>(item.numberAt("height", 0.018));
+            puddle.normal = {static_cast<float>(item.numberAt("nx")), static_cast<float>(item.numberAt("nz"))};
+            puddle.vertical = item.boolAt("vertical");
             state.puddles.push_back(puddle);
         }
     }

@@ -371,6 +371,14 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
             constantDiffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
                               0.24 * std::max(0.0, dot(normal, fill));
         }
+        auto write = [&](std::size_t pixel, const Color& color, double depth) {
+            if (material.opacity >= 0.999) {
+                pixels_[pixel] = color;
+                depth_[pixel] = depth;
+            } else {
+                pixels_[pixel] = pixels_[pixel] * (1.0 - material.opacity) + color * material.opacity;
+            }
+        };
         const double step0X = (p[1].y - p[2].y) * inverseArea;
         const double step1X = (p[2].y - p[0].y) * inverseArea;
         for (int y = minY; y <= maxY; ++y) {
@@ -431,13 +439,11 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                     base = base * (weave == 0 ? 1.055 : weave == 1 ? 0.955 : 1.0);
                 }
                 if (material.unlit) {
-                    pixels_[pixel] = base;
-                    depth_[pixel] = depth;
+                    write(pixel, base, depth);
                     continue;
                 }
                 if (constantLighting) {
-                    pixels_[pixel] = base * constantDiffuse;
-                    depth_[pixel] = depth;
+                    write(pixel, base * constantDiffuse, depth);
                     continue;
                 }
                 if (dot(normal, view) > 0) normal = normal * -1.0;
@@ -448,8 +454,7 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                     const Vec3 toward = normalized(view * -1.0);
                     specular = specularPower42(std::max(0.0, dot(normal, normalized(key + toward)))) * material.specular;
                 }
-                pixels_[pixel] = base * diffuse + Color{specular, specular, specular};
-                depth_[pixel] = depth;
+                write(pixel, base * diffuse + Color{specular, specular, specular}, depth);
             }
         }
     }

@@ -1,6 +1,7 @@
 #include "core/collision.h"
 #include "core/json.h"
 #include "core/pathfinding.h"
+#include "core/piss.h"
 #include "core/world.h"
 
 #include <cmath>
@@ -521,6 +522,43 @@ int main() {
         check(!world.character(id).unzipped, "T restores the zipped default");
     });
 
+    test("strong piss splashes surfaces and spreads small spots", [] {
+        gtc::Character shooter;
+        shooter.position = {0, 0};
+        shooter.unzipped = true;
+        shooter.yaw = 1.57079632679F;
+        const gtc::Obstacle wall{{1, 0}, {0.1F, 2}, 2.0F, "boundary"};
+        const auto wallHit = gtc::tracePiss(shooter, {wall});
+        check(wallHit.hit && wallHit.puddle.vertical && wallHit.puddle.normal.x < -0.9F &&
+              wallHit.puddle.height > 0.3F && wallHit.time < gtc::kPissDuration,
+              "ballistic piss leaves a vertical wall stain");
+        shooter.pitch = -0.1F;
+        const gtc::Obstacle crate{{1.4F, 0}, {0.6F, 0.6F}, 0.6F, "crate"};
+        const auto topHit = gtc::tracePiss(shooter, {crate}, 1.0F);
+        check(topHit.hit && !topHit.puddle.vertical && std::abs(topHit.puddle.height - 0.612F) < 0.001F,
+              "ballistic piss can stain the top of an object");
+        shooter.pitch = 1.3F;
+        check(!gtc::tracePiss(shooter, {}).hit, "a strong upward stream stays airborne");
+        std::vector<gtc::Puddle> spots;
+        gtc::Puddle input;
+        const auto first = gtc::placePuddle(spots, input, 1, {}, 9, 7);
+        spots.push_back(first);
+        const auto second = gtc::placePuddle(spots, input, 2, {}, 9, 7);
+        check(first.id == 1 && second.id == 2 && second.size < 0.2F &&
+              gtc::distance(first.position, second.position) > 0.15F,
+              "overlapping piss creates a small spot shifted to the side");
+
+        gtc::World world;
+        const auto id = world.addCharacter("Wall Painter", false);
+        place(world, id, {-7.5F, 2});
+        world.toggleZip(id);
+        world.adjustNeed(id, "bladder", 100);
+        world.setInput(id, {}, false, true, -1.57079632679F, 0);
+        world.update(0.05F);
+        check(world.snapshot().find("\"vertical\":true") != std::string::npos,
+              "wall splash height and orientation replicate");
+    });
+
     test("god attacks are authoritative, ranged, and blockable", [] {
         gtc::World melee;
         const auto attacker = melee.addCharacter("Bonker", false);
@@ -559,9 +597,12 @@ int main() {
         place(ranged, victim, {0, 4.0F});
         for (int i = 0; i < 12; ++i) ranged.update(0.05F);
         const float health = ranged.character(victim).health;
+        const float attemptBladder = ranged.character(pisser).needs.bladder;
         ranged.attack(pisser, victim, true);
-        check(ranged.character(victim).health == health && ranged.character(pisser).path.empty(),
-              "ranged attack rejects out-of-range targets instead of chasing");
+        const auto attempt = ranged.character(pisser);
+        check(ranged.character(victim).health == health && attempt.path.empty() && attempt.attackAnim > 0.0F &&
+              attempt.needs.bladder < attemptBladder && attempt.notice.find("Long-distance") != std::string::npos,
+              "long ranged attacks always shoot without chasing or refusing");
 
         gtc::World approach;
         const auto chaser = approach.addCharacter("Chaser", false);

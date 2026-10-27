@@ -470,6 +470,7 @@ private:
         const bool ranged = local() && local()->appearance.male && local()->unzipped;
         float yaw = local() ? local()->yaw : view_.yaw;
         view_.aiming = false;
+        crouch = overlay_ == Overlay::None && keys_.count(kKeyAlt) != 0;
         if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
             const double right = (keys_.count('d') ? 1 : 0) - (keys_.count('a') ? 1 : 0);
@@ -479,7 +480,6 @@ private:
             piss = ranged && (leftDown_ || (view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0));
             block = rightDown_ && !ranged;
             view_.aiming = rightDown_ && ranged;
-            crouch = keys_.count(kKeyAlt) != 0;
             grab = keys_.count(kKeyLeftControl) != 0;
             jump = keys_.count(' ') != 0;
             if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0 || grab || ranged) yaw = view_.yaw;
@@ -589,7 +589,7 @@ private:
             drawText(frame, 230, 35, "FIELD MANUAL", text);
             const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
                 "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
-                "RMB AIM RANGED / BLOCK MELEE", "GOD RMB GO / SHIFT RUN", "GOD 2X RMB ADV PATH",
+                "RMB AIM RANGED / BLOCK MELEE", "GOD RMB GO SHIFT RUN ALT CROUCH", "GOD 2X RMB ADV PATH",
                 "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS", "F12 PNG H CLOSES MANUAL"};
             for (int i = 0; i < 12; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
         } else if (overlay_ == Overlay::Creator) {

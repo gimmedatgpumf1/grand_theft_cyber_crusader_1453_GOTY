@@ -708,16 +708,40 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     }
     const bool showGenitals = character.appearance.male &&
         (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
-    for (const Triangle& triangle : model.genitalTriangles) {
-        std::array<RenderVertex, 3> vertices;
-        for (int corner = 0; corner < 3; ++corner) {
-            const int index = triangle.v[corner];
-            vertices[corner] = transformed[index];
-            if (!showGenitals) vertices[corner].view += transformed[index].normal * (0.010 * kHumanHeightScale);
-            vertices[corner].uv = model.texcoords[triangle.uv[corner]];
+    if (showGenitals) {
+        for (const Triangle& triangle : model.genitalTriangles) {
+            std::array<RenderVertex, 3> vertices;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                vertices[corner] = transformed[index];
+                vertices[corner].uv = model.texcoords[triangle.uv[corner]];
+            }
+            rasterizer.triangle(vertices, skin);
         }
-        if (showGenitals) rasterizer.triangle(vertices, skin);
-        else if (character.appearance.male) rasterizer.triangle(vertices, trousers);
+    } else if (character.appearance.male && !model.genitalTriangles.empty()) {
+        double minZ = 1e100, maxZ = -1e100;
+        for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) {
+            minZ = std::min(minZ, rest[id].z); maxZ = std::max(maxZ, rest[id].z);
+        }
+        int pivot = model.genitalTriangles.front().v[0];
+        for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) {
+            if (rest[id].z <= minZ + 0.3 * (maxZ - minZ) && rest[id].y > rest[pivot].y) pivot = id;
+        }
+        const Vec3 center = cache.posed[pivot];
+        const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
+        const Vec3 right{std::cos(character.yaw), 0, -std::sin(character.yaw)};
+        const Vec3 left = center - right * 0.075 - forward * 0.015 + Vec3{0, -0.045, 0};
+        const Vec3 other = center + right * 0.075 - forward * 0.015 + Vec3{0, -0.045, 0};
+        const Vec3 top = center - forward * 0.025 + Vec3{0, 0.045, 0};
+        const Vec3 tip = center + forward * 0.025 + Vec3{0, -0.010, 0};
+        auto fold = [&](Vec3 a, Vec3 b, Vec3 c) {
+            const Vec3 normal = normalized(cross(b - a, c - a));
+            rasterizer.triangle({cameraVertex(camera, a, normal, a, {0, 0}),
+                cameraVertex(camera, b, normal, b, {1, 0}), cameraVertex(camera, c, normal, c, {0.5, 1})}, trousers);
+        };
+        fold(left, tip, top);
+        fold(top, other, tip);
+        fold(left, other, tip);
     }
     const int collarBone = boneIndex(model, "neck01");
     const Transform collarTransform = collarBone >= 0 ? transforms[collarBone] : rootTransform;

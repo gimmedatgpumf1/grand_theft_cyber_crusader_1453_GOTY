@@ -1,27 +1,22 @@
 #include "client/client.h"
 #include "client/renderer.h"
-
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
-
 namespace {
-
 gtc::native::Vec3 jointPosition(const std::vector<gtc::native::Vec3>& points, const std::vector<int>& ids) {
     gtc::native::Vec3 result;
     for (int id : ids) result += points.at(id);
     return result / static_cast<double>(ids.size());
 }
-
 struct BodyHit {
     double distance = 1e100;
     int triangle = -1;
     bool genital = false;
 };
-
 BodyHit bodyHit(const gtc::native::HumanModel& model, const std::vector<gtc::native::Vec3>& posed,
                 gtc::native::Vec3 origin, gtc::native::Vec3 target) {
     using namespace gtc::native;
@@ -86,9 +81,8 @@ bool genitalMode(const gtc::native::HumanModel& model, const gtc::Character& cha
     drawHuman(rasterizer, geometryCamera, model, hair, character, cache, ".", tick, hideHead);
     const GpuScene scene = rasterizer.takeGpuScene();
     const int skin = submittedGenital(scene, cache, ids);
-    const int cloth = submittedGenital(scene, cache, ids, Material::Kind::Cloth, 0.010 * kHumanHeightScale);
-    if (!ids.empty() && (exposed ? skin == static_cast<int>(ids.size()) && cloth == 0 :
-        cloth == static_cast<int>(ids.size()) && skin == 0)) {
+    const int cloth = submittedGenital(scene, cache, ids, Material::Kind::Cloth);
+    if (!ids.empty() && (exposed ? skin == static_cast<int>(ids.size()) && cloth == 0 : cloth == 0 && skin == 0)) {
         if (character.unzipped && character.toiletAction == gtc::ToiletAction::None && cache.genitalTip >= 0) {
             const Vec3 actual = normalized(cache.posed[cache.genitalTip] - cache.posed[cache.genitalPivot]);
             const Vec3 expected{std::cos(character.pitch) * std::sin(character.yaw), std::sin(character.pitch),
@@ -97,7 +91,7 @@ bool genitalMode(const gtc::native::HumanModel& model, const gtc::Character& cha
         }
         return true;
     }
-    error = exposed ? "unzipped genital skin submission" : "zipped trouser-bulge cloth submission";
+    error = exposed ? "unzipped genital skin submission" : "zipped anatomical mesh must be hidden";
     return false;
 }
 bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& character,
@@ -831,7 +825,7 @@ int main(int argc, char** argv) {
             std::abs(b->speed * 3.6F - 4.0F) < 0.01F);
         pathSeen = pathSeen || (a && !a->path.empty()) || (b && !b->path.empty());
         zipReplicated = zipReplicated || (a && aInB && a->unzipped && aInB->unzipped);
-        attackReplied = attackReplied || (a && a->notice.find("Ranged weapon") != std::string::npos);
+        attackReplied = attackReplied || (a && a->notice.find("Long-distance") != std::string::npos);
         if (zipReplicated && attackReplied && !zipRestoreSent) {
             if (!alpha.sendToggleZip()) return 1;
             zipRestoreSent = true;
@@ -909,8 +903,7 @@ int main(int argc, char** argv) {
             return character.id == alpha.playerId();
         });
         if (male != standing.characters.end()) {
-            male->onToilet = false;
-            male->toiletAction = gtc::ToiletAction::None;
+            male->onToilet = false; male->toiletAction = gtc::ToiletAction::None;
             male->position = {0, 0};
             male->yaw = 0;
             gtc::native::ViewState standingFps = fps;
@@ -934,6 +927,12 @@ int main(int argc, char** argv) {
                 return renderer.render(alpha.world(), standing, alpha.playerId(), stanceView, frame, error) &&
                     frame.save(output + "/" + name + ".png");
             };
+            male->unzipped = male->pissing = true; male->pitch = 0.9F;
+            gtc::native::ViewState airView = tps; airView.yaw = 0.85F;
+            if (!stanceCapture("alpha-air-piss-tps", airView)) return 1;
+            male->unzipped = male->pissing = false; male->pitch = 0;
+            gtc::native::ViewState toiletView = god; toiletView.godZ = -4.4F; toiletView.godDistance = 7;
+            if (!stanceCapture("toilet-close-god", toiletView)) return 1;
             male->crouched = true;
             if (!stanceCapture("alpha-crouch-tps", tps)) return 1;
             male->crouched = false;

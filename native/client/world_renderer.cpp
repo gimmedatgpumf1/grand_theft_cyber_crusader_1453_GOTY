@@ -1,6 +1,7 @@
 #include "client/renderer.h"
 
 #include "client/human_renderer.h"
+#include "core/piss.h"
 
 #include <algorithm>
 #include <chrono>
@@ -255,6 +256,29 @@ void drawDressing(Rasterizer& rasterizer, const Camera& camera, const ClientWorl
                    view.highlightToilet ? 0.22 : 0.16, marker);
 }
 
+void drawBowl(Rasterizer& rasterizer, const Camera& camera, Vec3 center,
+              const Material& porcelain, const Material& water) {
+    constexpr double pi = 3.141592653589793;
+    auto point = [&](double rx, double rz, double y, double angle) {
+        return center + Vec3{std::cos(angle) * rx, y, 0.06 + std::sin(angle) * rz};
+    };
+    for (int i = 0; i < 32; ++i) {
+        const double a = i * 2 * pi / 32, b = (i + 1) * 2 * pi / 32, middle = (a + b) * 0.5;
+        const Vec3 outerA = point(0.53, 0.64, kToiletSeatHeight, a);
+        const Vec3 outerB = point(0.53, 0.64, kToiletSeatHeight, b);
+        const Vec3 innerA = point(0.34, 0.43, kToiletSeatHeight, a);
+        const Vec3 innerB = point(0.34, 0.43, kToiletSeatHeight, b);
+        const Vec3 baseA = point(0.34, 0.44, 0.32, a), baseB = point(0.34, 0.44, 0.32, b);
+        const Vec3 lowerA = point(0.19, 0.26, 0.43, a), lowerB = point(0.19, 0.26, 0.43, b);
+        drawQuad(rasterizer, camera, {baseA, outerA, outerB, baseB},
+                 normalized(Vec3{std::cos(middle), 0.15, std::sin(middle)}), porcelain);
+        drawQuad(rasterizer, camera, {outerA, innerA, innerB, outerB}, {0, 1, 0}, porcelain);
+        drawQuad(rasterizer, camera, {innerA, lowerA, lowerB, innerB},
+                 normalized(Vec3{-std::cos(middle), 0.45, -std::sin(middle)}), porcelain);
+    }
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.45, 0.06}, Vec3{0.205, 0.018, 0.28}, water, 20, 4);
+}
+
 void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) {
     Material porcelain;
     porcelain.color = colorHex("#d7ddc9");
@@ -264,11 +288,7 @@ void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) 
     dark.specular = 0.42;
     const Vec3 center{toilet.x, 0, toilet.y};
     drawBox(rasterizer, camera, center + Vec3{0, 0.20, -0.10}, Vec3{0.58, 0.40, 0.55}, porcelain);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.48, 0.03}, Vec3{0.49, 0.34, 0.62}, porcelain, 12, 6);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletSeatHeight - 0.065, 0.05},
-                  Vec3{0.53, 0.065, 0.64}, porcelain, 16, 4);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletSeatHeight - 0.020, 0.08},
-                  Vec3{0.32, 0.018, 0.40}, dark, 12, 4);
+    drawBowl(rasterizer, camera, center, porcelain, dark);
     drawBox(rasterizer, camera, center + Vec3{0, 1.02, -0.52}, Vec3{1.02, 0.92, 0.34}, porcelain);
     drawBox(rasterizer, camera, center + Vec3{0, 1.51, -0.52}, Vec3{1.08, 0.08, 0.39}, porcelain);
     Material flush;
@@ -341,29 +361,44 @@ void drawPaths(Rasterizer& rasterizer, const Camera& camera, const ClientState& 
 void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
     Material puddle;
     puddle.kind = Material::Kind::Puddle;
-    puddle.color = colorHex("#b5a636");
-    puddle.specular = 0.65;
+    puddle.color = colorHex("#414713");
+    puddle.specular = 0.18;
+    puddle.opacity = 0.54;
     for (const Puddle& puddleValue : state.puddles) {
-        drawEllipsoid(rasterizer, camera, Vec3{puddleValue.position.x, 0.018, puddleValue.position.y},
-                      Vec3{puddleValue.size, 0.012, puddleValue.size * 0.72}, puddle, 18, 5);
+        const Vec3 center{puddleValue.position.x, puddleValue.height, puddleValue.position.y};
+        const bool xWall = puddleValue.vertical && std::abs(puddleValue.normal.x) > 0.5F;
+        const Vec3 axisA = puddleValue.vertical ? (xWall ? Vec3{0, 0, puddleValue.size * 0.72} :
+            Vec3{puddleValue.size * 0.72, 0, 0}) : Vec3{puddleValue.size, 0, 0};
+        const Vec3 axisB = puddleValue.vertical ? Vec3{0, puddleValue.size, 0} : Vec3{0, 0, puddleValue.size * 0.72};
+        const Vec3 normal = puddleValue.vertical ? Vec3{puddleValue.normal.x, 0, puddleValue.normal.y} : Vec3{0, 1, 0};
+        for (int i = 0; i < 14; ++i) {
+            const double a = i * 2.0 * 3.141592653589793 / 14.0, b = (i + 1) * 2.0 * 3.141592653589793 / 14.0;
+            const Vec3 first = center + axisA * std::cos(a) + axisB * std::sin(a);
+            const Vec3 second = center + axisA * std::cos(b) + axisB * std::sin(b);
+            rasterizer.triangle({cameraVertex(camera, center, normal, center), cameraVertex(camera, first, normal, first),
+                                 cameraVertex(camera, second, normal, second)}, puddle);
+        }
     }
 }
 
-void drawPissing(Rasterizer& rasterizer, const Camera& camera,
+void drawPissing(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world,
                  const HumanRenderCache& cache, const Character& character) {
     if (!character.pissing) return;
     Material stream;
-    stream.color = colorHex("#b9c862");
-    stream.specular = 0.4;
+    stream.color = colorHex("#d4ce68");
+    stream.specular = 0.35;
     const double pitch = character.unzipped && character.toiletAction == ToiletAction::None ? character.pitch : 0.0;
     const double cp = std::cos(pitch);
     const Vec3 forward{std::sin(character.yaw) * cp, std::sin(pitch), std::cos(character.yaw) * cp};
     Vec3 origin{character.position.x, character.elevation + 0.77, character.position.y};
     if (cache.genitalTip >= 0 && cache.posed.size() == cache.rest.size()) origin = cache.posed[cache.genitalTip];
-    for (int i = 0; i < 12; ++i) {
-        const double t = i / 11.0;
-        const Vec3 at = origin + forward * (0.18 + t * 0.68) + Vec3{0, -0.70 * t * t, 0};
-        drawEllipsoid(rasterizer, camera, at, Vec3{0.018, 0.035, 0.018}, stream, 6, 4);
+    const gtc::Vec2 offset{static_cast<float>(origin.x - character.position.x), static_cast<float>(origin.z - character.position.y)};
+    const PissImpact impact = tracePiss(character, world.obstacles, static_cast<float>(origin.y), offset);
+    for (int i = 0; i < 24; ++i) {
+        const double t = gtc::kPissDuration * i / 23.0;
+        if (impact.hit && t > impact.time) break;
+        const Vec3 at = origin + forward * (gtc::kPissSpeed * t) + Vec3{0, -gtc::kPissGravity * t * t, 0};
+        drawEllipsoid(rasterizer, camera, at, Vec3{0.025, 0.045, 0.025}, stream, 6, 4);
     }
 }
 
@@ -404,7 +439,8 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         const Puddle& left = a.puddles[i];
         const Puddle& right = b.puddles[i];
         if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
-            left.size != right.size) return false;
+            left.size != right.size || left.height != right.height || left.normal.x != right.normal.x ||
+            left.normal.y != right.normal.y || left.vertical != right.vertical) return false;
     }
     return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
 }
@@ -732,7 +768,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                          0.36, 0.41, ring, 24);
             }
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
-            drawPissing(rasterizer, camera, humanCache_[character.id], character);
+            drawPissing(rasterizer, camera, world, humanCache_[character.id], character);
         }
         rasterizer.setObject(0, {}, 0);
         finishStart = std::chrono::steady_clock::now();

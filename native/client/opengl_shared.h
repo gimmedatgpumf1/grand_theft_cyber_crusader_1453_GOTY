@@ -69,6 +69,7 @@ struct Api {
     Enum (GTC_GL_CALL *getError)() = nullptr;
     const UByte* (GTC_GL_CALL *getString)(Enum) = nullptr;
     void (GTC_GL_CALL *color3f)(Float, Float, Float) = nullptr;
+    void (GTC_GL_CALL *color4f)(Float, Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *alphaFunc)(Enum, Float) = nullptr;
     void (GTC_GL_CALL *rasterPos2i)(Int, Int) = nullptr;
     void (GTC_GL_CALL *drawPixels)(Sizei, Sizei, Enum, Enum, const void*) = nullptr;
@@ -125,7 +126,7 @@ private:
 
     struct ShaderUniforms {
         gl::Int textured = -1, normalMapped = -1, unlit = -1, hair = -1;
-        gl::Int specular = -1, fogColor = -1;
+        gl::Int specular = -1, fogColor = -1, opacity = -1;
     };
 
     gl::Api api_;

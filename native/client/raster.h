@@ -59,6 +59,7 @@ struct Material {
     const Texture* normalOld = nullptr;
     double age = 25;
     double specular = 0.0;
+    double opacity = 1.0;
     bool unlit = false;
     bool constantLighting = false;
 };

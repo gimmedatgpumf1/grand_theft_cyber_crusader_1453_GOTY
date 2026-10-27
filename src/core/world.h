@@ -71,7 +71,7 @@ private:
     void updateVertical(Character& character, float dt);
     void updateAI(Character& character, float dt);
     void updatePissing(Character& character, float dt);
-    void addPuddle(const Vec2& position);
+    void addPuddle(const Puddle& puddle);
     void addEvent(const std::string& text);
     void notify(Character& character, const std::string& text);
 };

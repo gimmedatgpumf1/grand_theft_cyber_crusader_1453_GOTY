@@ -20,6 +20,9 @@ inline constexpr float kStandingHeight = 1.7F;
 inline constexpr float kCrouchingHeight = 1.1F;
 inline constexpr float kProneHeight = 0.45F;
 inline constexpr float kToiletSeatForwardOffset = 0.45F;
+inline constexpr float kPissSpeed = 3.4F;
+inline constexpr float kPissGravity = 1.6F;
+inline constexpr float kPissDuration = 1.5F;
 
 struct Vec2 {
     float x = 0.0F;
@@ -140,7 +143,10 @@ struct Character {
 struct Puddle {
     std::uint32_t id = 0;
     Vec2 position;
-    float size = 0.25F;
+    float size = 0.12F;
+    float height = 0.018F;
+    Vec2 normal;
+    bool vertical = false;
 };
 
 struct GameEvent {

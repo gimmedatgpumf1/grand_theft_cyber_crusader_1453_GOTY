@@ -1,6 +1,7 @@
 #include "core/world.h"
 
 #include "core/collision.h"
+#include "core/piss.h"
 #include "core/json.h"
 
 #include <algorithm>
@@ -281,14 +282,14 @@ void World::toggleZip(std::uint32_t id) {
     character->pissing = false;
     character->blocking = false;
     notify(*character, character->unzipped ? "Trousers unzipped. Concealment has left the building." :
-        "Trousers zipped. The bulge returns to not-so-hidden carry.");
+        "Trousers zipped. Loose civilian fabric restored.");
 }
 
 void World::performAttack(Character& attacker, Character& target) {
     const bool ranged = attacker.appearance.male && attacker.unzipped;
-    const float range = ranged ? 3.0F : 1.15F;
-    if (attacker.attackCooldown > 0.0F || distance(attacker.position, target.position) > range ||
-        std::abs(attacker.elevation - target.elevation) > (ranged ? 1.5F : 0.8F)) return;
+    const float targetDistance = distance(attacker.position, target.position);
+    if (attacker.attackCooldown > 0.0F || (!ranged && (targetDistance > 1.15F ||
+        std::abs(attacker.elevation - target.elevation) > 0.8F))) return;
     if (ranged && attacker.needs.bladder < 2.0F) {
         notify(attacker, "The ranged weapon is dry. Hydrate or embarrass yourself later.");
         return;
@@ -302,6 +303,11 @@ void World::performAttack(Character& attacker, Character& target) {
     if (target.blocking) damage *= 0.35F;
     attacker.attackAnim = ranged ? 0.32F : 0.26F;
     attacker.attackCooldown = ranged ? 0.55F : 0.45F;
+    if (ranged && targetDistance > 3.0F) {
+        notify(attacker, "Long-distance golden attempt launched. No hit, but magnificent commitment.");
+        addEvent(attacker.name + " sprayed heroically toward " + target.name + ".");
+        return;
+    }
     target.health = std::max(0.0F, target.health - damage);
     notify(target, attacker.name + (ranged ? " scored a direct golden hit." : " landed a melee bonk."));
     addEvent(attacker.name + (ranged ? " weaponized poor decisions against " : " bonked ") + target.name + ".");
@@ -349,14 +355,13 @@ void World::attack(std::uint32_t id, std::uint32_t targetId, bool advanced) {
     Character* target = find(targetId);
     if (!attacker || !target || attacker == target || attacker->toiletAction != ToiletAction::None) return;
     const bool ranged = attacker->appearance.male && attacker->unzipped;
-    const float range = ranged ? 3.0F : 1.15F;
-    if (distance(attacker->position, target->position) <= range &&
-        std::abs(attacker->elevation - target->elevation) <= (ranged ? 1.5F : 0.8F)) {
+    if (ranged) {
         performAttack(*attacker, *target);
         return;
     }
-    if (ranged) {
-        notify(*attacker, "Ranged weapon is out of range. Three metres of dignity, maximum.");
+    if (distance(attacker->position, target->position) <= 1.15F &&
+        std::abs(attacker->elevation - target->elevation) <= 0.8F) {
+        performAttack(*attacker, *target);
         return;
     }
     setDestinationLocked(*attacker, target->position, false, advanced);
@@ -890,24 +895,15 @@ void World::updatePissing(Character& character, float dt) {
     character.puddleTimer -= dt;
     if (character.puddleTimer > 0.0F) return;
     character.puddleTimer = 0.32F;
-    const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
-    const Vec2 landing = character.position + forward * 1.25F;
-    const Vec2 toToilet = normalized(toiletPosition() - character.position);
-    const float aimAtToilet = forward.x * toToilet.x + forward.y * toToilet.y;
-    if (distance(character.position, toiletPosition()) < 2.4F && aimAtToilet > 0.65F) return;
-    if (!circleHitsWorld(landing, 0.05F, obstacles_, kHalfWidth, kHalfDepth)) addPuddle(landing);
+    const PissImpact impact = tracePiss(character, obstacles_, character.elevation + 0.77F);
+    if (impact.hit) addPuddle(impact.puddle);
 }
 
-void World::addPuddle(const Vec2& position) {
-    for (Puddle& puddle : puddles_) {
-        if (distance(puddle.position, position) < 0.75F) {
-            puddle.size = std::min(1.3F, puddle.size + 0.07F);
-            puddle.position = (puddle.position + position) * 0.5F;
-            return;
-        }
-    }
+void World::addPuddle(const Puddle& puddle) {
+    Puddle placed = placePuddle(puddles_, puddle, nextPuddleId_++, obstacles_, kHalfWidth, kHalfDepth);
+    if (!placed.id) return;
     if (puddles_.size() >= 40) puddles_.erase(puddles_.begin());
-    puddles_.push_back({nextPuddleId_++, position, 0.28F});
+    puddles_.push_back(placed);
 }
 
 void World::addEvent(const std::string& text) {
@@ -950,7 +946,10 @@ std::string World::snapshot() const {
     for (std::size_t i = 0; i < puddles_.size(); ++i) {
         if (i != 0) out << ',';
         out << "{\"id\":" << puddles_[i].id << ",\"x\":" << jsonNumber(puddles_[i].position.x)
-            << ",\"z\":" << jsonNumber(puddles_[i].position.y) << ",\"size\":" << jsonNumber(puddles_[i].size) << '}';
+            << ",\"z\":" << jsonNumber(puddles_[i].position.y) << ",\"size\":" << jsonNumber(puddles_[i].size)
+            << ",\"height\":" << jsonNumber(puddles_[i].height) << ",\"nx\":" << jsonNumber(puddles_[i].normal.x)
+            << ",\"nz\":" << jsonNumber(puddles_[i].normal.y)
+            << ",\"vertical\":" << (puddles_[i].vertical ? "true" : "false") << '}';
     }
     out << "],\"events\":[";
     for (std::size_t i = 0; i < events_.size(); ++i) {
