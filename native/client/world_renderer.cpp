@@ -568,7 +568,10 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
     const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
     const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
-    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -1.45, 1.0);
+    // Cervical motion is coupled rather than two independent maximum angles.
+    // Keep the combined downward gaze clear of the posed shoulder and arm.
+    const double downwardLimit = 1.45 - 0.95 * std::abs(gazeYaw) / gazeYawLimit;
+    const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
     const double headYaw = headAngleForGaze(gazeYaw);
     const double headPitch = headAngleForGaze(gazePitch);
     camera.position = humanEyePosition(model, cache.rest, *local, state.tick, headYaw, headPitch);

@@ -188,13 +188,16 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     constexpr double pitchDown = -1.45;
     const Vec3 expectedPitchEye = expectedEye(state.characters[0], 0, headAngleForGaze(pitchDown));
     const Vec3 pitchForward = normalized(pitched.target - pitched.position);
-    const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 &&
+    const Vec3 bodyForward{std::sin(bodyYaw), 0, std::cos(bodyYaw)};
+    const double forwardTravel = dot(expectedPitchEye - expectedSeatedEye, bodyForward);
+    const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 && forwardTravel > 0.005 &&
         length(expectedPitchEye - expectedSeatedEye) > 0.01 && std::abs(pitchForward.y - std::sin(pitchDown)) < 1e-6;
     ViewState extremeView = neckView;
     extremeView.pitch = -1.5F;
     const Camera extreme = renderer.viewCamera(world, state, citizen.id, extremeView);
+    constexpr double extremePitchDown = -0.5;
     const Vec3 expectedExtremeEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit),
-                                                headAngleForGaze(pitchDown));
+                                                headAngleForGaze(extremePitchDown));
     const Vec3 extremeForward = normalized(extreme.target - extreme.position);
     double armClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
@@ -214,7 +217,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         }
     }
     const bool clearance = length(extreme.position - expectedExtremeEye) < 1e-6 && armClearance > 0.04 &&
-        std::abs(extremeForward.y - std::sin(pitchDown)) < 1e-6 &&
+        std::abs(extremeForward.y - std::sin(extremePitchDown)) < 1e-6 &&
         length(extremeUp.position - expectedExtremeUpEye) < 1e-6 && upwardClearance > 0.04;
     ClientState standingState = state;
     standingState.characters[0].onToilet = false;
@@ -330,7 +333,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!gazeSplit) error = "first-person biological gaze split";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
-    else if (!pitch) error = "first-person neck pitch pivot";
+    else if (!pitch) error = "first-person neck pitch pivot, forward travel=" + std::to_string(forwardTravel);
     else if (!clearance) error = "first-person arm clearance";
     else if (!lowerBody) error = "standing male lower-body visibility, clearance=" + std::to_string(standingClearance) +
         ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
