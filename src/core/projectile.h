@@ -273,6 +273,8 @@ inline float pissLaunchPitch(const Character& character, Vec2 target, float targ
     const std::vector<Obstacle> surfaces{toilet};
     bool found = false;
     for (float speed : {2.4F, 2.8F, 3.2F, 3.6F, 4.0F}) {
+        // Every speed that lands in the bowl is a candidate; the slowest ones
+        // lob the urine up over the organ, so keep the most downward arc.
         float pitch = initialPitch;
         const Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
         for (int iteration = 0; iteration < 3; ++iteration) {
@@ -289,7 +291,8 @@ inline float pissLaunchPitch(const Character& character, Vec2 target, float targ
             character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
         Vec2 velocity = direction * (speed * cp);
         float vertical = speed * sp;
-        for (int step = 0; step < 120 && !found; ++step) {
+        bool landed = false;
+        for (int step = 0; step < 120 && !landed; ++step) {
             const float nextVertical = vertical - kProjectileGravity * 0.01F;
             const projectile_detail::Point next{at.x + velocity.x * 0.01F,
                 at.y + (vertical + nextVertical) * 0.005F, at.z + velocity.y * 0.01F};
@@ -297,13 +300,13 @@ inline float pissLaunchPitch(const Character& character, Vec2 target, float targ
             if (hit.hit) {
                 const projectile_detail::Point contact = at + (next - at) * hit.amount;
                 if (hit.absorb && distance({contact.x, contact.z}, target) < 0.035F) {
-                    bestPitch = pitch; bestSpeed = speed; found = true;
+                    landed = true;
+                    if (!found || pitch < bestPitch) { bestPitch = pitch; bestSpeed = speed; found = true; }
                 }
                 break;
             }
             at = next; vertical = nextVertical;
         }
-        if (found) break;
     }
     if (launchSpeed) *launchSpeed = bestSpeed;
     return bestPitch;

@@ -930,6 +930,9 @@ int main(int argc, char** argv) {
                 !stanceCapture("toilet-water-fps", toiletView)) return 1;
             gtc::native::ViewState npcView = tps; npcView.yaw = -0.65F; npcView.pitch = -0.18F; npcView.distance = 2.4F; npcView.width = 960; npcView.height = 720;
             if (!stanceCapture("npc-piss-tps", npcView)) return 1;
+            gtc::native::ViewState toiletNpcView = npcView; toiletNpcView.yaw = 0.9F; toiletNpcView.pitch = -0.22F;
+            if (!gtc::native::seedNpcToiletExhibit(standing, root, standing.tick) ||
+                !stanceCapture("npc-toilet-tps", toiletNpcView)) return 1;
             for (auto& citizen : standing.characters) citizen.pissing = citizen.unzipped = false;
             standing.projectiles.clear(); standing.waterRipples.clear();
             male->position = {0, 0}; male->yaw = male->pitch = male->pissYaw = male->pissPitch = 0;

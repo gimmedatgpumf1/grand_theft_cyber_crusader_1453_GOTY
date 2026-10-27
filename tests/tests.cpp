@@ -467,6 +467,8 @@ int main() {
                 std::abs(std::sin(launch.pissYaw - std::atan2(drop.velocity.x, drop.velocity.y))) < 0.00001F;
         }
         check(replicatedLaunch, "posed organ receives the exact physical stream yaw and pitch");
+        check(launch.pissPitch < 0.0F,
+              "toilet stream descends from the meatus instead of lobbing up over the body");
         for (int i = 1; i < 700 && world.character(id).toiletAction != gtc::ToiletAction::None; ++i) {
             world.update(0.05F);
         }

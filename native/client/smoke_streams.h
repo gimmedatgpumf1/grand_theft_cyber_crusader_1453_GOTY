@@ -65,6 +65,48 @@ inline void seedMeatusStream(ClientState& state, Character& character) {
     }
 }
 
+// Put the exhibit NPC at the real porcelain, exactly where beginToilet() places
+// him: facing the bowl with the body pitch of a standing toilet piss.
+inline void seedNpcToiletStream(ClientState& state, Character& npc) {
+    state.projectiles.clear();
+    seedAimedToiletStream(state, npc, gtc::Vec2{0.0F, -4.69F});
+    npc.toiletAction = ToiletAction::Piss;
+    npc.onToilet = false;
+    npc.unzipped = false;
+    npc.pitch = -0.32F;
+    npc.pissPitch = pissLaunchPitch(npc, gtc::Vec2{0.0F, -4.69F}, kToiletWaterHeight, -0.32F);
+}
+
+// Stand the exhibit NPC at the porcelain and prove the ribbon begins on the
+// glans there too, not only in the open floor.
+inline bool seedNpcToiletExhibit(ClientState& state, const std::string& root, double tick) {
+    Character* npc = nullptr;
+    for (auto& citizen : state.characters)
+        if (citizen.ai && citizen.appearance.male && !npc) npc = &citizen;
+    if (!npc) return false;
+    npc->position = {0.0F, -3.55F};
+    npc->elevation = 0.0F;
+    npc->yaw = 3.14159265F;
+    npc->crouched = npc->prone = false;
+    seedNpcToiletStream(state, *npc);
+    HumanModel model;
+    std::string error;
+    if (!model.loadRuntime(root, true, error)) return false;
+    HumanRenderCache cache;
+    Camera camera;
+    camera.width = camera.height = 16;
+    camera.worldSpaceGpu = true;
+    Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
+    HairLibrary hair;
+    drawHuman(rasterizer, camera, model, hair, *npc, cache, root, tick, true);
+    const float cp = std::cos(npc->pissPitch), sp = std::sin(npc->pissPitch);
+    const gtc::Vec2 forward{std::sin(npc->pissYaw), std::cos(npc->pissYaw)};
+    const gtc::Vec2 origin = npc->position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    const Vec3 physical{origin.x, npc->elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
+    return cache.genitalTip >= 0 && humanStreamAttached(*npc) &&
+        length(humanStreamOrigin(*npc, &cache, 0) - physical) < 0.006;
+}
+
 inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character character, double tick,
                                        const std::string& root) {
     character.ai = character.appearance.male = true;
