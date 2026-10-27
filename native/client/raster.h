@@ -102,6 +102,7 @@ struct GpuBatch {
     std::vector<GpuVertex> vertices;
     std::uint32_t objectId = 0;
     float pivotX = 0, pivotZ = 0, yaw = 0;
+    double projectionScale = 1.0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
@@ -126,6 +127,7 @@ public:
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);
+    void setProjectionScale(double scale) { projectionScale_ = scale; }
     GpuScene takeGpuScene() { return std::move(scene_); }
     NativeFrame finish() const;
 
@@ -137,6 +139,7 @@ private:
     std::uint32_t objectId_ = 0;
     Vec2 objectPivot_{};
     float objectYaw_ = 0;
+    double projectionScale_ = 1.0;
     std::size_t activeBatch_ = static_cast<std::size_t>(-1);
     GpuScene scene_;
     std::vector<double> depth_;

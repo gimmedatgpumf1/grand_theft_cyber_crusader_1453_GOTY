@@ -564,6 +564,11 @@ double headAngleForGaze(double gazeAngle) {
     return gazeAngle - std::clamp(gazeAngle, -kEyeInHeadRange, kEyeInHeadRange);
 }
 
+double firstPersonBodyProjectionScale() {
+    constexpr double pi = 3.141592653589793;
+    return std::tan(62.0 * pi / 360.0) / std::tan(120.0 * pi / 360.0);
+}
+
 double gazePitchForView(const Character& local, const ViewState& view) {
     constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
     const double relativeYaw = std::atan2(std::sin(view.yaw - local.yaw), std::cos(view.yaw - local.yaw));
@@ -589,9 +594,7 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
     // Cervical motion is coupled rather than two independent maximum angles.
     const double gazePitch = gazePitchForView(*local, view);
-    constexpr double pi = 3.141592653589793;
-    const double bodyView = std::clamp((-gazePitch - kEyeInHeadRange) / (pi * 0.5 - kEyeInHeadRange), 0.0, 1.0);
-    camera.fovDegrees = 62.0 + (135.0 - 62.0) * bodyView;
+    camera.fovDegrees = 62;
     const double headYaw = headAngleForGaze(gazeYaw);
     // The anatomical pose applies eye-in-head motion and solves downward
     // chin/manubrium contact from the total requested gaze angle.
@@ -677,9 +680,11 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                 drawRing(rasterizer, camera, {character.position.x, 0.028, character.position.y}, 0.36, 0.41, ring, 24);
             }
             const double characterGazePitch = hideHead ? bodyGazePitch : 0.0;
+            rasterizer.setProjectionScale(hideHead ? firstPersonBodyProjectionScale() : 1.0);
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick,
                       hideHead, characterGazePitch);
             drawPissing(rasterizer, camera, model, humanCache_[character.id], character);
+            rasterizer.setProjectionScale(1.0);
         }
         rasterizer.setObject(0, {}, 0);
         finishStart = std::chrono::steady_clock::now();

@@ -443,10 +443,21 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     } else if (shaderApi_.useProgram) {
         shaderApi_.useProgram(0);
     }
+    double activeProjectionScale = 1.0;
     for (std::size_t batchIndex = 0; batchIndex < scene.batches.size(); ++batchIndex) {
         const GpuBatch& batch = scene.batches[batchIndex];
         if (batch.vertices.empty()) continue;
         const Material& material = batch.material;
+        if (batch.projectionScale != activeProjectionScale) {
+            api_.matrixMode(c::projection);
+            api_.loadIdentity();
+            api_.frustum(-horizontal, horizontal, -vertical, vertical, nearPlane, 70.0);
+            if (batch.projectionScale != 1.0) {
+                api_.scalef(static_cast<gl::Float>(batch.projectionScale),
+                            static_cast<gl::Float>(batch.projectionScale), 1);
+            }
+            activeProjectionScale = batch.projectionScale;
+        }
         api_.matrixMode(c::textureMatrix);
         api_.loadIdentity();
         if (material.kind == Material::Kind::Cloth) api_.scalef(5, 5, 1);

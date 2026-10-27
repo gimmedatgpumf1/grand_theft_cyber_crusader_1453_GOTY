@@ -58,6 +58,7 @@ private:
 };
 
 double headAngleForGaze(double gazeAngle);
+double firstPersonBodyProjectionScale();
 void rotateView(ViewState& view, double mouseX, double mouseY);
 void interpolateCharacters(const ClientState& target, ClientState& current, float dt);
 
