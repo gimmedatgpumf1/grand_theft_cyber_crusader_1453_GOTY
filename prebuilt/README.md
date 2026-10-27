@@ -14,3 +14,15 @@ Run it from the repository root so the default `web` path resolves. `build.sh` r
 ```
 
 Windows builds remain a local MSVC compile through `build.cmd`/`build.ps1`; no untested Windows game executable is claimed.
+
+## Native fitter
+
+`linux-x86_64/gtc-native-fit` is the offline C++17 480×640 portrait fitter/software renderer.
+It does not serve the game or require a browser. Run it from the repository root, for example:
+
+```sh
+./prebuilt/linux-x86_64/gtc-native-fit --iterations 8
+```
+
+Verify it with `(cd prebuilt && sha256sum -c NATIVE_SHA256SUMS)`. `native/build.sh` refreshes
+this copy; `native/build.cmd` builds the corresponding local MSVC executable.

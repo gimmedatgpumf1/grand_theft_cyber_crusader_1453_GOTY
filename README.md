@@ -131,6 +131,15 @@ browser module with Node.js. Node is only a test convenience, not a game depende
 HUD, or creator UI and has no continuous render loop. Bulk fitting must use this harness;
 the full game is reserved for actual gameplay and creator-UI regression checks.
 
+## Native C++ portrait fitter
+
+The native-only path is in [`native/`](native/README.md). Build `./native/build.sh` (or
+`native\\build.cmd` with Visual Studio 2022) and run `./build/bin/gtc-native-fit --iterations 8`.
+It performs direct numeric universal-morph/camera fitting and writes separate **480×640**
+CPU-rasterized initial/final PNGs for visual review. It does not use a browser, JavaScript,
+Chromium, portrait textures, or per-candidate image detection. Native presets live in
+`native/presets.json`; candidates are never promoted automatically.
+
 ## Architecture
 
 ```text

@@ -4,7 +4,7 @@ $Failed = $false
 $Extensions = @(".cpp", ".h", ".js", ".css", ".html", ".sh", ".ps1", ".cmd", ".py")
 $Files = Get-ChildItem -LiteralPath $Root -Recurse -File | Where-Object {
     $Extensions -contains $_.Extension.ToLowerInvariant() -and
-    $_.FullName -notmatch '[\\/](web[\\/]js[\\/]vendor|\.git|build|\.cache)[\\/]'
+    $_.FullName -notmatch '[\\/](web[\\/]js[\\/]vendor|native[\\/]vendor|\.git|build|\.cache)[\\/]'
 }
 foreach ($File in $Files) {
     $Lines = 0
