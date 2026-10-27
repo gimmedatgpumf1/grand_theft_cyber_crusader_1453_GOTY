@@ -506,8 +506,10 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         return false;
     }
     const auto profileStart = std::chrono::steady_clock::now();
-    const Camera camera = makeCamera(world, state, localId, view);
+    Camera camera = makeCamera(world, state, localId, view);
+    camera.worldSpaceGpu = view.gpu;
     Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
+    rasterizer.setCamera(camera);
     drawFloor(rasterizer, camera, world);
     if (view.mode != ViewMode::God) {
         Material ceiling;

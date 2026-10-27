@@ -281,35 +281,50 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.morphs = character.appearance.morphs;
         cache.male = character.appearance.male;
         cache.valid = true;
+        cache.poseValid = false;
     }
     const std::vector<Vec3>& rest = cache.rest;
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
-    std::vector<Vec3> posed = rest;
-    std::vector<Vec3> normals(posed.size());
-    for (std::size_t index = 0; index < posed.size(); ++index) {
-        double total = 0;
-        Vec3 point, normal;
-        for (const auto& [bone, weight] : model.rigWeights[index]) {
-            if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
-            point += transforms[bone].point(rest[index]) * weight;
-            normal += transforms[bone].direction(cache.normals[index]) * weight;
-            total += weight;
-        }
-        if (total > 1e-8) {
-            posed[index] = point / total;
-            normals[index] = rotateWorld(normalized(normal), character.yaw);
-        } else {
-            normals[index] = rotateWorld(cache.normals[index], character.yaw);
-        }
-    }
+    const bool freshPose = !cache.poseValid || cache.poseTick != tick ||
+        cache.poseX != character.position.x || cache.poseZ != character.position.y ||
+        cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
+        cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet;
     const double rootY = character.onToilet ? -0.35 : 0.0;
     auto world = [&](Vec3 point) {
         return rotateWorld(point, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
     };
-    for (Vec3& point : posed) point = world(point);
-    std::vector<RenderVertex> transformed(posed.size());
-    for (std::size_t index = 0; index < posed.size(); ++index) {
-        transformed[index] = cameraVertex(camera, posed[index], normals[index], rest[index]);
+    if (freshPose) {
+        cache.posed = rest;
+        cache.posedNormals.resize(rest.size());
+        for (std::size_t index = 0; index < rest.size(); ++index) {
+            double total = 0;
+            Vec3 point, normal;
+            for (const auto& [bone, weight] : model.rigWeights[index]) {
+                if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+                point += transforms[bone].point(rest[index]) * weight;
+                normal += transforms[bone].direction(cache.normals[index]) * weight;
+                total += weight;
+            }
+            if (total > 1e-8) {
+                cache.posed[index] = world(point / total);
+                cache.posedNormals[index] = rotateWorld(normalized(normal), character.yaw);
+            } else {
+                cache.posed[index] = world(rest[index]);
+                cache.posedNormals[index] = rotateWorld(cache.normals[index], character.yaw);
+            }
+        }
+        cache.poseTick = tick;
+        cache.poseX = character.position.x;
+        cache.poseZ = character.position.y;
+        cache.poseYaw = character.yaw;
+        cache.poseSpeed = character.speed;
+        cache.poseAction = static_cast<int>(character.toiletAction);
+        cache.poseOnToilet = character.onToilet;
+        cache.poseValid = true;
+    }
+    std::vector<RenderVertex> transformed(rest.size());
+    for (std::size_t index = 0; index < rest.size(); ++index) {
+        transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
     }
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     const Material skin = skinMaterial(model, character, root, morphs);

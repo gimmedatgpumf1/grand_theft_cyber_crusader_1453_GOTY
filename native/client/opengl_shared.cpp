@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace gtc::native {
 namespace {
@@ -51,6 +52,8 @@ constexpr gl::Enum light1 = 0x4001;
 constexpr gl::Enum vertexArray = 0x8074;
 constexpr gl::Enum normalArray = 0x8075;
 constexpr gl::Enum textureCoordArray = 0x8078;
+constexpr gl::Enum arrayBuffer = 0x8892;
+constexpr gl::Enum streamDraw = 0x88E0;
 constexpr gl::Enum unpackAlignment = 0x0CF5;
 constexpr gl::Enum packAlignment = 0x0D05;
 constexpr gl::Enum cullFace = 0x0B44;
@@ -67,6 +70,8 @@ constexpr gl::Enum ambient = 0x1200;
 constexpr gl::Enum diffuse = 0x1201;
 constexpr gl::Enum specular = 0x1202;
 constexpr gl::Enum position = 0x1203;
+constexpr gl::Enum vendor = 0x1F00;
+constexpr gl::Enum renderer = 0x1F01;
 } // namespace c
 
 } // namespace
@@ -90,6 +95,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(shadeModel, "glShadeModel");
     GTC_LOAD_GL(matrixMode, "glMatrixMode");
     GTC_LOAD_GL(loadIdentity, "glLoadIdentity");
+    GTC_LOAD_GL(loadMatrixd, "glLoadMatrixd");
     GTC_LOAD_GL(frustum, "glFrustum");
     GTC_LOAD_GL(scalef, "glScalef");
     GTC_LOAD_GL(lightModelfv, "glLightModelfv");
@@ -115,6 +121,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(pixelStorei, "glPixelStorei");
     GTC_LOAD_GL(readPixels, "glReadPixels");
     GTC_LOAD_GL(getError, "glGetError");
+    GTC_LOAD_GL(getString, "glGetString");
     GTC_LOAD_GL(color3f, "glColor3f");
     GTC_LOAD_GL(alphaFunc, "glAlphaFunc");
     GTC_LOAD_GL(rasterPos2i, "glRasterPos2i");
@@ -123,12 +130,27 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     return true;
 }
 
+bool loadBufferApi(BufferApi& api, const std::function<void*(const char*)>& symbol) {
+    if (!symbol) return false;
+#define GTC_LOAD_BUFFER(member, name) \
+    do { api.member = reinterpret_cast<decltype(api.member)>(symbol(name)); \
+         if (!api.member) { api = {}; return false; } } while (false)
+    GTC_LOAD_BUFFER(genBuffers, "glGenBuffers");
+    GTC_LOAD_BUFFER(deleteBuffers, "glDeleteBuffers");
+    GTC_LOAD_BUFFER(bindBuffer, "glBindBuffer");
+    GTC_LOAD_BUFFER(bufferData, "glBufferData");
+#undef GTC_LOAD_BUFFER
+    return true;
+}
+
 } // namespace gl
 
 bool OpenGlRenderer::load(const std::function<void*(const char*)>& symbol) {
     loaded_ = false;
+    debug_ = std::getenv("GTC_GL_DEBUG") != nullptr;
     textures_.clear();
     if (!gl::loadApi(api_, symbol)) return false;
+    vbo_ = gl::loadBufferApi(buffers_, symbol);
     loaded_ = true;
     api_.enable(c::depthTest);
     api_.depthFunc(c::less);
@@ -142,6 +164,11 @@ void OpenGlRenderer::shutdown() {
     if (loaded_ && !textures_.empty()) {
         for (const auto& [source, id] : textures_) api_.deleteTextures(1, &id);
     }
+    if (loaded_ && vbo_ && !bufferIds_.empty()) {
+        buffers_.deleteBuffers(static_cast<gl::Sizei>(bufferIds_.size()), bufferIds_.data());
+    }
+    bufferIds_.clear();
+    vbo_ = false;
     if (loaded_ && overlayTexture_) api_.deleteTextures(1, &overlayTexture_);
     textures_.clear();
     bottomUp_.clear();
@@ -150,6 +177,19 @@ void OpenGlRenderer::shutdown() {
     overlayWidth_ = overlayHeight_ = 0;
     api_ = {};
     loaded_ = false;
+}
+
+bool OpenGlRenderer::checkError() {
+    return !debug_ || api_.getError() == c::noError;
+}
+
+std::string OpenGlRenderer::name() const {
+    if (!loaded_) return {};
+    const gl::UByte* vendorName = api_.getString(c::vendor);
+    const gl::UByte* rendererName = api_.getString(c::renderer);
+    const std::string vendorText = vendorName ? reinterpret_cast<const char*>(vendorName) : "Unknown vendor";
+    const std::string rendererText = rendererName ? reinterpret_cast<const char*>(rendererName) : "Unknown renderer";
+    return vendorText + " / " + rendererText;
 }
 
 gl::UInt OpenGlRenderer::texture(const Texture& source) {
@@ -188,7 +228,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     const double vertical = nearPlane * scene.height / (2 * scene.focal);
     api_.frustum(-horizontal, horizontal, -vertical, vertical, nearPlane, 70.0);
     api_.matrixMode(c::modelView);
-    api_.loadIdentity();
+    api_.loadMatrixd(scene.viewMatrix.data());
     const gl::Float ambient[] = {0.38F, 0.38F, 0.38F, 1.0F};
     const gl::Float keyDiffuse[] = {0.78F, 0.78F, 0.78F, 1.0F};
     const gl::Float fillDiffuse[] = {0.24F, 0.24F, 0.24F, 1.0F};
@@ -206,7 +246,8 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.enableClientState(c::vertexArray);
     api_.enableClientState(c::normalArray);
     api_.enableClientState(c::textureCoordArray);
-    for (const GpuBatch& batch : scene.batches) {
+    for (std::size_t batchIndex = 0; batchIndex < scene.batches.size(); ++batchIndex) {
+        const GpuBatch& batch = scene.batches[batchIndex];
         if (batch.vertices.empty()) continue;
         const Material& material = batch.material;
         api_.matrixMode(c::textureMatrix);
@@ -243,11 +284,32 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             api_.disable(c::alphaTest);
         }
         const GpuVertex* vertices = batch.vertices.data();
-        api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), &vertices->x);
-        api_.normalPointer(c::floatType, sizeof(GpuVertex), &vertices->nx);
-        api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), &vertices->u);
+        bool uploaded = false;
+        if (vbo_) {
+            while (bufferIds_.size() <= batchIndex) {
+                gl::UInt id = 0;
+                buffers_.genBuffers(1, &id);
+                bufferIds_.push_back(id);
+            }
+            const gl::UInt id = bufferIds_[batchIndex];
+            if (id) {
+                buffers_.bindBuffer(c::arrayBuffer, id);
+                buffers_.bufferData(c::arrayBuffer,
+                    static_cast<std::ptrdiff_t>(batch.vertices.size() * sizeof(GpuVertex)), vertices, c::streamDraw);
+                api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), nullptr);
+                api_.normalPointer(c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 3));
+                api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 6));
+                uploaded = true;
+            }
+        }
+        if (!uploaded) {
+            api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), &vertices->x);
+            api_.normalPointer(c::floatType, sizeof(GpuVertex), &vertices->nx);
+            api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), &vertices->u);
+        }
         api_.drawArrays(c::triangles, 0, static_cast<gl::Sizei>(batch.vertices.size()));
     }
+    if (vbo_) buffers_.bindBuffer(c::arrayBuffer, 0);
     api_.disableClientState(c::vertexArray);
     api_.disableClientState(c::normalArray);
     api_.disableClientState(c::textureCoordArray);
@@ -261,7 +323,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     frame.alpha.assign(pixels, 0);
     frame.uiScale = 1.0;
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
-    return api_.getError() == c::noError;
+    return checkError();
 }
 
 bool OpenGlRenderer::present(const NativeFrame& frame) {
@@ -326,7 +388,7 @@ bool OpenGlRenderer::present(const NativeFrame& frame) {
     api_.disable(c::blend);
     api_.disable(c::texture2D);
     api_.depthMask(1);
-    return api_.getError() == c::noError;
+    return checkError();
 }
 
 bool OpenGlRenderer::capture(int width, int height, const std::string& path) {

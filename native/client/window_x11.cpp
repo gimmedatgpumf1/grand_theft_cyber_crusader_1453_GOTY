@@ -382,6 +382,8 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         if (impl_->gpu) {
             activeGpu = impl_;
             setGpuRenderer(&renderGpu);
+            const std::string gpuTitle = title + " - " + impl_->renderer.name();
+            impl_->api.storeName(impl_->display, impl_->window, gpuTitle.c_str());
         } else {
             impl_->glx.makeCurrent(impl_->display, 0, nullptr);
         }

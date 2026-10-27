@@ -72,7 +72,8 @@ struct NativeWindow::Impl {
         openGl = LoadLibraryW(L"opengl32.dll");
         if (!openGl) return false;
         gpu = renderer.load([this](const char* name) -> void* {
-            return reinterpret_cast<void*>(GetProcAddress(openGl, name));
+            if (void* address = reinterpret_cast<void*>(GetProcAddress(openGl, name))) return address;
+            return reinterpret_cast<void*>(wglGetProcAddress(name));
         });
         return gpu;
     }
@@ -209,6 +210,8 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     if (impl_->initializeGpu()) {
         activeGpu = impl_;
         setGpuRenderer(&renderGpu);
+        const std::string gpuTitle = title + " - " + impl_->renderer.name();
+        SetWindowTextA(impl_->window, gpuTitle.c_str());
     }
     ShowWindow(impl_->window, SW_SHOW);
     UpdateWindow(impl_->window);

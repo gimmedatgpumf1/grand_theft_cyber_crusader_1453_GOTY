@@ -223,11 +223,20 @@ Vec3 Camera::viewDirection(Vec3 direction) const {
     return {dot(direction, right), dot(direction, vertical), dot(direction, forward)};
 }
 
+std::array<double, 16> Camera::viewMatrix() const {
+    basis();
+    return {right.x, vertical.x, forward.x, 0,
+            right.y, vertical.y, forward.y, 0,
+            right.z, vertical.z, forward.z, 0,
+            -dot(right, position), -dot(vertical, position), -dot(forward, position), 1};
+}
+
 double Camera::focal() const {
     return height / (2.0 * std::tan(fovDegrees * 3.141592653589793 / 360.0));
 }
 
 RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 source, Vec2 uv) {
+    if (camera.worldSpaceGpu) return {point, normal, source, uv};
     return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
@@ -241,6 +250,10 @@ Rasterizer::Rasterizer(int width, int height, Color background, double focal, bo
         depth_.resize(static_cast<std::size_t>(width) * height, 1e100);
         pixels_.resize(static_cast<std::size_t>(width) * height, background);
     }
+}
+
+void Rasterizer::setCamera(const Camera& camera) {
+    if (gpu_) scene_.viewMatrix = camera.viewMatrix();
 }
 
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {

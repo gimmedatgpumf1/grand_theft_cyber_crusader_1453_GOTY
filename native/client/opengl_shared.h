@@ -2,6 +2,7 @@
 
 #include "client/raster.h"
 
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <vector>
@@ -20,6 +21,7 @@ using Bitfield = unsigned int;
 using Boolean = unsigned char;
 using Int = int;
 using UInt = unsigned int;
+using UByte = unsigned char;
 using Sizei = int;
 using Float = float;
 using Double = double;
@@ -37,6 +39,7 @@ struct Api {
     void (GTC_GL_CALL *shadeModel)(Enum) = nullptr;
     void (GTC_GL_CALL *matrixMode)(Enum) = nullptr;
     void (GTC_GL_CALL *loadIdentity)() = nullptr;
+    void (GTC_GL_CALL *loadMatrixd)(const Double*) = nullptr;
     void (GTC_GL_CALL *frustum)(Double, Double, Double, Double, Double, Double) = nullptr;
     void (GTC_GL_CALL *scalef)(Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *lightModelfv)(Enum, const Float*) = nullptr;
@@ -62,13 +65,22 @@ struct Api {
     void (GTC_GL_CALL *pixelStorei)(Enum, Int) = nullptr;
     void (GTC_GL_CALL *readPixels)(Int, Int, Sizei, Sizei, Enum, Enum, void*) = nullptr;
     Enum (GTC_GL_CALL *getError)() = nullptr;
+    const UByte* (GTC_GL_CALL *getString)(Enum) = nullptr;
     void (GTC_GL_CALL *color3f)(Float, Float, Float) = nullptr;
     void (GTC_GL_CALL *alphaFunc)(Enum, Float) = nullptr;
     void (GTC_GL_CALL *rasterPos2i)(Int, Int) = nullptr;
     void (GTC_GL_CALL *drawPixels)(Sizei, Sizei, Enum, Enum, const void*) = nullptr;
 };
 
+struct BufferApi {
+    void (GTC_GL_CALL *genBuffers)(Sizei, UInt*) = nullptr;
+    void (GTC_GL_CALL *deleteBuffers)(Sizei, const UInt*) = nullptr;
+    void (GTC_GL_CALL *bindBuffer)(Enum, UInt) = nullptr;
+    void (GTC_GL_CALL *bufferData)(Enum, std::ptrdiff_t, const void*, Enum) = nullptr;
+};
+
 bool loadApi(Api& api, const std::function<void*(const char*)>& symbol);
+bool loadBufferApi(BufferApi& api, const std::function<void*(const char*)>& symbol);
 
 } // namespace gl
 
@@ -80,11 +92,16 @@ public:
     bool render(const GpuScene& scene, NativeFrame& frame);
     bool present(const NativeFrame& frame);
     bool capture(int width, int height, const std::string& path);
+    std::string name() const;
 
 private:
     gl::UInt texture(const Texture& source);
+    bool checkError();
 
     gl::Api api_;
+    gl::BufferApi buffers_;
+    std::vector<gl::UInt> bufferIds_;
+    bool vbo_ = false;
     std::map<const Texture*, gl::UInt> textures_;
     std::vector<unsigned char> bottomUp_;
     std::vector<unsigned char> overlay_;
@@ -92,6 +109,7 @@ private:
     int overlayWidth_ = 0;
     int overlayHeight_ = 0;
     bool loaded_ = false;
+    bool debug_ = false;
 };
 
 } // namespace gtc::native

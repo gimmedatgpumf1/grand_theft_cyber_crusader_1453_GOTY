@@ -65,9 +65,11 @@ struct Camera {
     double fovDegrees = 50;
     int width = 480;
     int height = 640;
+    bool worldSpaceGpu = false;
 
     Vec3 view(Vec3 point) const;
     Vec3 viewDirection(Vec3 direction) const;
+    std::array<double, 16> viewMatrix() const;
     double focal() const;
 
 private:
@@ -103,6 +105,7 @@ struct GpuScene {
     int height = 640;
     double focal = 640;
     Color background;
+    std::array<double, 16> viewMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     std::vector<GpuBatch> batches;
 };
 
@@ -114,6 +117,7 @@ public:
     Rasterizer(int width, int height, Color background, double focal, bool gpu = false);
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
+    void setCamera(const Camera& camera);
     NativeFrame finish() const;
 
 private:
