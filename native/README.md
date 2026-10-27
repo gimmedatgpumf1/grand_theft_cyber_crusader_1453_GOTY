@@ -24,7 +24,10 @@ native\build.cmd
 
 ## Native multiplayer client and smoke test
 
-Start the existing authoritative server from the repository root, then connect a native client:
+For the automatic launcher, double-click **`run.cmd`** on Windows or run **`./run.sh`** on Linux.
+Both build the server and native client, wait for the authoritative port, and open the native GUI.
+
+To start the pieces manually from the repository root:
 
 ```sh
 ./build/bin/gtc1453 --port 1453 --web web

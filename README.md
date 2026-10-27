@@ -12,7 +12,8 @@ and three camera modes. The old browser UI is retained only as a legacy checkpoi
 
 ## Play
 
-Build both native targets, start the authoritative server, then start the native client:
+On Windows, **double-click `run.cmd`** to build both targets, wait for port 1453, and open the
+native GUI client automatically. On Linux, `./run.sh` does the same. The manual alternative is:
 
 ```bash
 ./build.sh
@@ -61,7 +62,8 @@ Requirements: Visual Studio 2022 with **Desktop development with C++**, includin
 1. Double-click **`build.cmd`** (or run **`build.ps1`**) for the authoritative server.
 2. Double-click **`native\\build.cmd`** (or **`native\\build.ps1`**) for the native client,
    smoke driver, and fitter.
-3. Start `build\\bin\\gtc1453.exe`, then `build\\bin\\gtc-native-client.exe`.
+3. Or skip these manual steps and double-click **`run.cmd`**; it performs both builds, starts the
+   server, waits for the port, and opens `gtc-native-client.exe` automatically.
 
 The script always initializes the Visual Studio environment through `vcvars64.bat` (finding
 VS2022 through `vswhere` when necessary), then verifies that the C++ standard library compiles.
