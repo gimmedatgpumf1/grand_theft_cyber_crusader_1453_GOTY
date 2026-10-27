@@ -291,29 +291,41 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     const int headIndex = boneIndex(model, "head");
     const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
-    const Vec3 eyeCenter = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
-    const Vec3 gazeDirection = normalized(model.eyeDirection[0] + model.eyeDirection[1]);
-    // The rendered globe is about 24 mm across: put the camera at the corneal
-    // surface between the pupils, not at the center of the skull or eyeballs.
-    const Vec3 eyes = eyeCenter + gazeDirection * 0.012;
+    const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     Vec3 posed = head.point(eyes);
-    const int neckIndex = boneIndex(model, "neck01");
-    if (neckIndex >= 0 && (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9)) {
-        const RigBone& neckBone = model.rigBones[neckIndex];
-        const Vec3 neck = transforms[neckIndex].point(joint(rest, neckBone.head));
-        Vec3 headPivot = posed;
-        if (headIndex >= 0) headPivot = head.point(joint(rest, model.rigBones[headIndex].head));
+    if (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9) {
+        static const char* chainNames[] = {"neck01", "neck02", "neck03", "head"};
+        // C1/C2 supplies about half of axial rotation. Sagittal shares group
+        // published C0-C7 mobility into this rig's four joints: lower cervical,
+        // middle cervical, atlanto-axial, then atlanto-occipital (Aho/Werne).
+        constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
+        constexpr double pitchShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 11.5 + 10.9, 3.5 + 21.0};
+        std::vector<Vec3> points;
+        std::vector<int> segments;
+        double yawTotal = 0, pitchTotal = 0;
+        for (int segment = 0; segment < 4; ++segment) {
+            const int index = boneIndex(model, chainNames[segment]);
+            if (index < 0) continue;
+            points.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
+            segments.push_back(segment);
+            yawTotal += yawShares[segment];
+            pitchTotal += pitchShares[segment];
+        }
+        points.push_back(posed);
         auto articulate = [](Vec3 point, double yaw, double pitch) {
             return rotateWorld(apply(rotationX(-pitch), point), static_cast<float>(yaw));
         };
-        // The skull joint contributes little axial rotation and roughly a nod's
-        // worth of pitch; the cervical chain supplies the remaining motion.
-        constexpr double neckYawShare = 0.95;
-        constexpr double neckPitchShare = 0.75;
-        const Vec3 movedHead = neck + articulate(headPivot - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
-        const Vec3 movedEye = neck + articulate(posed - neck, headYaw * neckYawShare, headPitch * neckPitchShare);
-        posed = movedHead + articulate(movedEye - movedHead, headYaw * (1 - neckYawShare),
-                                      headPitch * (1 - neckPitchShare));
+        // Parent-to-child forward kinematics: every joint moves the remaining
+        // chain around its own morphed pivot. No fixed-distance eye translation.
+        for (std::size_t i = 0; i < segments.size(); ++i) {
+            const int segment = segments[i];
+            const double yaw = headYaw * yawShares[segment] / std::max(1e-9, yawTotal);
+            const double pitch = headPitch * pitchShares[segment] / std::max(1e-9, pitchTotal);
+            for (std::size_t j = i + 1; j < points.size(); ++j) {
+                points[j] = points[i] + articulate(points[j] - points[i], yaw, pitch);
+            }
+        }
+        posed = points.back();
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};

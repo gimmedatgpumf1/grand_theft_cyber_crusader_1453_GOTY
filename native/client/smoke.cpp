@@ -190,7 +190,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 pitchForward = normalized(pitched.target - pitched.position);
     const Vec3 bodyForward{std::sin(bodyYaw), 0, std::cos(bodyYaw)};
     const double forwardTravel = dot(expectedPitchEye - expectedSeatedEye, bodyForward);
-    const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 && forwardTravel > 0.005 &&
+    const bool pitch = length(pitched.position - expectedPitchEye) < 1e-6 && forwardTravel > 1e-6 &&
         length(expectedPitchEye - expectedSeatedEye) > 0.01 && std::abs(pitchForward.y - std::sin(pitchDown)) < 1e-6;
     ViewState extremeView = neckView;
     extremeView.pitch = -1.5F;
@@ -231,16 +231,34 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     prepareHuman(eyeModel, standingState.characters[0], corneaCache);
     const Vec3 eyeCenter = (jointPosition(corneaCache.rest, eyeModel.eyeSource[0]) +
                             jointPosition(corneaCache.rest, eyeModel.eyeSource[1])) * 0.5;
-    const Vec3 eyeDirection = normalized(eyeModel.eyeDirection[0] + eyeModel.eyeDirection[1]);
-    const Vec3 cornea = eyeCenter + eyeDirection * 0.012;
     const gtc::Character& standingCitizen = standingState.characters[0];
-    const Vec3 expectedCornea = rotateBody(cornea, standingCitizen.yaw) +
+    const Vec3 expectedEyeJoint = rotateBody(eyeCenter, standingCitizen.yaw) +
         Vec3{standingCitizen.position.x, 0, standingCitizen.position.y};
     constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
-    const bool corneal = length(neutralStanding.position - expectedCornea) < 1e-6;
+    const bool eyeJoint = length(neutralStanding.position - expectedEyeJoint) < 1e-6;
     const bool gazeSplit = std::abs(headAngleForGaze(0.2)) < 1e-9 &&
         std::abs(headAngleForGaze(neckLimit) - (neckLimit - eyeRange)) < 1e-9 &&
         std::abs(headAngleForGaze(pitchDown) - (pitchDown + eyeRange)) < 1e-9;
+    gtc::Character scaledCitizen = standingCitizen;
+    scaledCitizen.position = {0, 0};
+    scaledCitizen.yaw = 0;
+    HumanRenderCache similarityCache;
+    prepareHuman(eyeModel, scaledCitizen, similarityCache);
+    const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
+    const Vec3 baseDown = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick,
+                                           0, headAngleForGaze(pitchDown));
+    bool heightScaling = true;
+    for (double scale : {0.75, 1.30}) {
+        std::vector<Vec3> scaledRest;
+        scaledRest.reserve(similarityCache.rest.size());
+        for (const Vec3& point : similarityCache.rest) scaledRest.push_back(point * scale);
+        const Vec3 scaledNeutral = humanEyePosition(eyeModel, scaledRest, scaledCitizen, state.tick);
+        const Vec3 scaledDown = humanEyePosition(eyeModel, scaledRest, scaledCitizen, state.tick,
+                                                 0, headAngleForGaze(pitchDown));
+        heightScaling = heightScaling && length(scaledNeutral - baseNeutral * scale) < 1e-6 &&
+            length(scaledDown - baseDown * scale) < 1e-6 &&
+            length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
+    }
     ViewState standingView = view;
     standingView.yaw = bodyYaw;
     standingView.pitch = -1.5F;
@@ -329,8 +347,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     cleanup();
     if (!eyeMatrix) error = "first-person eye matrix";
     else if (!attached) error = "first-person body attachment";
-    else if (!corneal) error = "first-person corneal eye-level attachment";
+    else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
+    else if (!heightScaling) error = "first-person neck motion must scale with body height";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
     else if (!pitch) error = "first-person neck pitch pivot, forward travel=" + std::to_string(forwardTravel);
@@ -340,7 +359,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
         "=" + std::to_string(leastMorphClearance);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && corneal && gazeSplit && seated && neck && pitch && clearance && lowerBody && shaped && look;
+    return eyeMatrix && attached && eyeJoint && gazeSplit && heightScaling && seated && neck && pitch && clearance &&
+        lowerBody && shaped && look;
 }
 
 } // namespace
