@@ -4,7 +4,7 @@ $Failed = $false
 $Extensions = @(".cpp", ".h", ".js", ".css", ".html", ".sh", ".ps1", ".cmd", ".py")
 $Files = Get-ChildItem -LiteralPath $Root -Recurse -File | Where-Object {
     $Extensions -contains $_.Extension.ToLowerInvariant() -and
-    $_.FullName -notmatch '[\\/](web[\\/]js[\\/]vendor|\.git|build|\.cache)[\\/]'
+    $_.FullName -notmatch '[\\/](web[\\/]js[\\/]vendor|native[\\/]vendor|\.git|build|\.cache)[\\/]'
 }
 foreach ($File in $Files) {
     $Lines = 0
@@ -22,6 +22,8 @@ foreach ($File in $Files) {
 }
 if (-not $Failed) {
     Write-Host "[nagger] All first-party files are <= 1000 lines. Readability survives."
-    exit 0
 }
-exit 1
+Write-Host "[nagger] Build successful? Push to GitHub!"
+Write-Host "[nagger] Less yapping, more coding! Don't bother the King until you have fixed it!"
+if ($Failed) { exit 1 }
+exit 0

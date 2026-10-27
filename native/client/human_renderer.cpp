@@ -1,0 +1,986 @@
+#include "client/human_renderer.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <functional>
+#include <map>
+#include <unordered_map>
+
+namespace gtc::native {
+namespace {
+
+constexpr double pi = 3.141592653589793;
+
+struct Mat3 {
+    std::array<double, 9> v{1, 0, 0, 0, 1, 0, 0, 0, 1};
+};
+
+Vec3 apply(const Mat3& m, Vec3 p) {
+    return {m.v[0] * p.x + m.v[1] * p.y + m.v[2] * p.z,
+            m.v[3] * p.x + m.v[4] * p.y + m.v[5] * p.z,
+            m.v[6] * p.x + m.v[7] * p.y + m.v[8] * p.z};
+}
+
+Mat3 multiply(const Mat3& a, const Mat3& b) {
+    Mat3 result;
+    for (int row = 0; row < 3; ++row) for (int column = 0; column < 3; ++column) {
+        result.v[row * 3 + column] = 0;
+        for (int k = 0; k < 3; ++k) result.v[row * 3 + column] += a.v[row * 3 + k] * b.v[k * 3 + column];
+    }
+    return result;
+}
+
+Mat3 rotationX(double angle) {
+    Mat3 result;
+    const double c = std::cos(angle), s = std::sin(angle);
+    result.v = {1, 0, 0, 0, c, -s, 0, s, c};
+    return result;
+}
+
+Mat3 rotationBetween(Vec3 from, Vec3 to) {
+    if (length(from) < 1e-9 || length(to) < 1e-9) return {};
+    from = normalized(from); to = normalized(to);
+    Vec3 axis = cross(from, to);
+    double sine = length(axis), angle = 0;
+    const double cosine = std::clamp(dot(from, to), -1.0, 1.0);
+    if (sine < 1e-9) {
+        if (cosine > 0) return {};
+        axis = normalized(cross(from, std::abs(from.y) < 0.9 ? Vec3{0, 1, 0} : Vec3{1, 0, 0}));
+        angle = pi;
+    } else {
+        axis = axis / sine;
+        angle = std::atan2(sine, cosine);
+    }
+    const double c = std::cos(angle), s = std::sin(angle), t = 1 - c;
+    const double x = axis.x, y = axis.y, z = axis.z;
+    Mat3 result;
+    result.v = {x * x * t + c, x * y * t - z * s, x * z * t + y * s,
+                y * x * t + z * s, y * y * t + c, y * z * t - x * s,
+                z * x * t - y * s, z * y * t + x * s, z * z * t + c};
+    return result;
+}
+
+Mat3 rotationZ(double angle) {
+    Mat3 result;
+    const double c = std::cos(angle), s = std::sin(angle);
+    result.v = {c, -s, 0, s, c, 0, 0, 0, 1};
+    return result;
+}
+
+struct Transform {
+    Mat3 rotation;
+    Vec3 translation;
+
+    Vec3 point(Vec3 value) const { return apply(rotation, value) + translation; }
+    Vec3 direction(Vec3 value) const { return apply(rotation, value); }
+};
+
+Transform multiply(const Transform& a, const Transform& b) {
+    return {multiply(a.rotation, b.rotation), a.point(b.translation)};
+}
+
+Transform around(Vec3 pivot, const Mat3& rotation) {
+    return {rotation, pivot - apply(rotation, pivot)};
+}
+
+Vec3 joint(const std::vector<Vec3>& positions, const std::vector<int>& ids) {
+    Vec3 result;
+    for (int index : ids) if (index >= 0 && static_cast<std::size_t>(index) < positions.size()) result += positions[index];
+    return result / static_cast<double>(std::max<std::size_t>(1, ids.size()));
+}
+
+int boneIndex(const HumanModel& model, const std::string& name) {
+    for (std::size_t i = 0; i < model.rigBones.size(); ++i) if (model.rigBones[i].name == name) return static_cast<int>(i);
+    return -1;
+}
+
+double standingIdleWeight(const Character& character) {
+    if (character.onToilet) return 0.0;
+    const double movement = std::clamp(static_cast<double>(character.speed) / kFastWalkSpeed, 0.0, 1.0);
+    return 1.0 - std::clamp(movement * 4.0, 0.0, 1.0);
+}
+
+std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& rest,
+                            const Character& character, double tick) {
+    std::vector<Transform> transforms(model.rigBones.size());
+    std::vector<int> states(model.rigBones.size(), 0);
+    const bool seated = character.onToilet;
+    const bool prone = character.prone && !seated;
+    const bool airborne = !character.grounded && !character.grabbing && !seated;
+    const double crouch = prone || seated ? 0.0 :
+        std::max(character.crouched ? 1.0 : 0.0, static_cast<double>(character.charge) * 0.65);
+    const double movement = seated ? 0.0 : std::clamp(static_cast<double>(character.speed) / kFastWalkSpeed, 0.0, 1.4);
+    const double phase = tick * 0.055 * (4.0 + character.speed) + character.id * 0.7;
+    const double forwardMovement = character.manualMove.x * std::sin(character.yaw) +
+        character.manualMove.y * std::cos(character.yaw);
+    const double gait = forwardMovement < -0.05 ? -1.0 : 1.0;
+    const double swing = std::sin(phase) * 0.48 * movement * gait;
+    // Relaxed standing corrects the source A-pose to hip-width feet and uses
+    // a small hip angle so the anterior tibia is not exactly hidden behind
+    // the femur from the anatomical eye position. This ordinary rig pose
+    // fades out with locomotion and has no gaze or vertex-deformation input;
+    // one-shot actions can replace the idle layer.
+    const double idle = prone ? 0.0 : standingIdleWeight(character);
+    const double idleHip = 8.0 * pi / 180.0 * idle;
+    const double idleAdduction = 5.0 * pi / 180.0 * idle;
+    const double armRelax = seated ? 0.0 : character.grabbing ? 0.58 : prone ? 0.35 : 0.60;
+    const bool freeArms = !seated && !character.grabbing && !prone && !character.blocking &&
+        character.attackAnim <= 0.0F && character.toiletAction == ToiletAction::None;
+    const double elbowRelax = freeArms ? 0.65 : 0.0;
+    const double reachHeight = character.grabHeight > 0.0F ? character.grabHeight - character.elevation : 1.40;
+    const double climbAngle = -std::acos(std::clamp((1.35 - reachHeight) / 0.62, -0.96, 0.98));
+    const double climbReach = character.grabbing && forwardMovement > 0.05 ? std::sin(phase * 1.4) * 0.18 : 0.0;
+    auto local = [&](const RigBone& bone) {
+        double angle = 0;
+        if (seated) {
+            if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle = -1.28;
+            if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle = 1.28;
+            if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -0.20;
+        } else {
+            if (bone.name == "upperleg01.L") angle = -swing - idleHip;
+            if (bone.name == "upperleg01.R") angle = swing - idleHip;
+            if (bone.name == "lowerleg01.L") angle = std::max(0.0, swing) * 0.75;
+            if (bone.name == "lowerleg01.R") angle = std::max(0.0, -swing) * 0.75;
+            if (bone.name == "upperarm01.L") angle = swing * 0.72;
+            if (bone.name == "upperarm01.R") angle = -swing * 0.72;
+            if (bone.name == "lowerarm01.L" || bone.name == "lowerarm01.R") angle = elbowRelax;
+            if (character.toiletAction == ToiletAction::Piss && bone.name == "upperarm01.R") angle = -0.42;
+            if (crouch > 0.0) {
+                if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle += (-1.25 - angle) * crouch;
+                if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += (1.90 - angle) * crouch;
+                if (bone.name == "spine05") angle += 0.32 * crouch;
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle -= 0.45 * crouch;
+            }
+            if (airborne) {
+                if (bone.name == "upperleg01.L" || bone.name == "upperleg01.R") angle -= 0.18;
+                if (bone.name == "lowerleg01.L" || bone.name == "lowerleg01.R") angle += 0.32;
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle -= 0.35;
+            }
+            if (character.blocking) {
+                if (bone.name == "upperarm01.L" || bone.name == "upperarm01.R") angle = -0.85;
+                if (bone.name == "lowerarm01.L" || bone.name == "lowerarm01.R") angle = 1.15;
+            } else if (character.attackAnim > 0.0F && !character.unzipped) {
+                if (bone.name == "upperarm01.R") angle = -1.35;
+                if (bone.name == "upperarm01.L") angle = -0.35;
+                if (bone.name == "lowerarm01.R") angle = 0.35;
+            } else if (character.grabbing) {
+                if (bone.name == "upperarm01.L") angle = climbAngle + climbReach;
+                if (bone.name == "upperarm01.R") angle = climbAngle - climbReach;
+                if (bone.name == "upperarm02.L" || bone.name == "upperarm02.R") angle = -0.10;
+            } else if (prone && (bone.name == "upperarm01.L" || bone.name == "upperarm01.R")) {
+                angle = -0.55 + swing * 0.25;
+            }
+        }
+        Mat3 rotation = rotationX(prone && bone.name == "root" ? pi * 0.5 : angle);
+        if (idleAdduction != 0.0 && (bone.name == "upperleg01.L" || bone.name == "upperleg01.R")) {
+            const double direction = bone.name == "upperleg01.L" ? -1.0 : 1.0;
+            rotation = multiply(rotationZ(direction * idleAdduction), rotation);
+        }
+        if (armRelax > 0.0 && (bone.name == "upperarm01.L" || bone.name == "upperarm01.R")) {
+            const double direction = bone.name == "upperarm01.L" ? -1.0 : 1.0;
+            rotation = multiply(rotationZ(direction * armRelax), rotation);
+        }
+        return around(joint(rest, bone.head), rotation);
+    };
+    std::function<void(int)> compute = [&](int index) {
+        if (states[index] == 2) return;
+        const RigBone& bone = model.rigBones[index];
+        const Transform own = local(bone);
+        if (bone.parentIndex >= 0) {
+            compute(bone.parentIndex);
+            transforms[index] = multiply(transforms[bone.parentIndex], own);
+        } else {
+            transforms[index] = own;
+        }
+        states[index] = 2;
+    };
+    for (std::size_t i = 0; i < transforms.size(); ++i) compute(static_cast<int>(i));
+    return transforms;
+}
+
+Vec3 rotateWorld(Vec3 point, float yaw) {
+    const double c = std::cos(yaw), s = std::sin(yaw);
+    return {c * point.x + s * point.z, point.y, -s * point.x + c * point.z};
+}
+
+const Texture& agedSkinTexture(const std::string& root, const std::string& sex, int age, bool normal) {
+    const double old = std::clamp((age - 24) / 58.0, 0.0, 1.0);
+    const double blend = old * old * (3 - 2 * old) * (normal ? 1.0 : 0.94);
+    const std::string key = root + sex + std::to_string(age) + (normal ? "normal" : "detail");
+    static std::map<std::string, Texture> cache;
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+    const std::string base = root + "/web/assets/human/skin-" + sex;
+    const Texture& young = loadTexture(base + (normal ? "-young-normal.png" : "-young-detail.jpg"));
+    const Texture& aged = loadTexture(base + (normal ? "-old-normal.png" : "-old-detail.jpg"));
+    if (young.width != aged.width || young.height != aged.height || young.pixels.empty()) return young;
+    Texture result;
+    result.width = young.width;
+    result.height = young.height;
+    result.pixels.resize(young.pixels.size());
+    for (std::size_t i = 0; i < result.pixels.size(); ++i) {
+        result.pixels[i] = static_cast<unsigned char>(std::lround(young.pixels[i] * (1 - blend) + aged.pixels[i] * blend));
+    }
+    return cache.emplace(key, std::move(result)).first->second;
+}
+
+Material skinMaterial(const HumanModel& model, const Character& character, const std::string& root,
+                      const std::vector<double>& morphs) {
+    static const char* colors[] = {"#f0c8a8", "#d9a17d", "#b97c58", "#8a573e", "#714a38", "#e5b894"};
+    Material material;
+    material.kind = Material::Kind::Skin;
+    material.color = colorHex(colors[std::clamp(character.appearance.skin, 0, 5)]);
+    material.specular = 0.035;
+    const std::string sex = model.male ? "male" : "female";
+    const int ageIndex = model.specIndex("age");
+    const int age = ageIndex >= 0 && static_cast<std::size_t>(ageIndex) < morphs.size() ?
+        static_cast<int>(morphs[ageIndex]) : 25;
+    material.texture = &agedSkinTexture(root, sex, age, false);
+    material.normalYoung = &agedSkinTexture(root, sex, age, true);
+    material.age = age;
+    return material;
+}
+
+const Texture& fabricTexture() {
+    static const Texture texture = [] {
+        Texture result;
+        result.width = result.height = 128;
+        result.pixels.resize(128U * 128U * 4U, 255);
+        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+            const bool vertical = x % 4 == 0, horizontal = y % 4 == 0;
+            const bool dark = (vertical && x % 8) || (horizontal && y % 8);
+            const unsigned char value = (vertical || horizontal) ? (dark ? 237 : 245) : 244;
+            const std::size_t offset = (static_cast<std::size_t>(y) * 128 + x) * 4;
+            result.pixels[offset] = result.pixels[offset + 1] = result.pixels[offset + 2] = value;
+        }
+        return result;
+    }();
+    return texture;
+}
+
+Color hairColor(int index) {
+    static const char* colors[] = {"#171a1c", "#3b281d", "#75604a", "#b5a075", "#5b6268",
+                                   "#69362c", "#e5d5aa", "#d2b477", "#a9adb0"};
+    return colorHex(colors[std::clamp(index, 0, 8)]);
+}
+
+struct LoftRing { double y, x, z; };
+
+void drawLoft(Rasterizer& rasterizer, const Camera& camera, const std::function<Vec3(Vec3)>& world,
+              const std::vector<LoftRing>& rings, const Material& material,
+              double arcStart = 0, double arcLength = 2 * pi) {
+    constexpr int segments = 24;
+    std::vector<Vec3> positions;
+    positions.reserve(rings.size() * (segments + 1));
+    for (const LoftRing& ring : rings) for (int i = 0; i <= segments; ++i) {
+        const double angle = arcStart + arcLength * i / segments;
+        positions.push_back(world({std::cos(angle) * ring.x, ring.y, std::sin(angle) * ring.z}));
+    }
+    std::vector<std::array<int, 3>> triangles;
+    for (std::size_t ring = 0; ring + 1 < rings.size(); ++ring) for (int i = 0; i < segments; ++i) {
+        const int a = static_cast<int>(ring * (segments + 1) + i), b = a + 1, c = a + segments + 1;
+        triangles.push_back({a, c, b});
+        triangles.push_back({b, c, c + 1});
+    }
+    std::vector<Vec3> normals(positions.size());
+    for (const auto& triangle : triangles) {
+        const Vec3 normal = cross(positions[triangle[1]] - positions[triangle[0]],
+                                  positions[triangle[2]] - positions[triangle[0]]);
+        for (int index : triangle) normals[index] += normal;
+    }
+    std::vector<RenderVertex> transformed(positions.size());
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        const int ring = static_cast<int>(index / (segments + 1));
+        const int segment = static_cast<int>(index % (segments + 1));
+        const Vec2 uv{static_cast<double>(segment) / segments,
+                      static_cast<double>(ring) / std::max<std::size_t>(1, rings.size() - 1)};
+        transformed[index] = cameraVertex(camera, positions[index], normalized(normals[index]), positions[index], uv);
+    }
+    for (const auto& triangle : triangles) {
+        rasterizer.triangle({transformed[triangle[0]], transformed[triangle[1]], transformed[triangle[2]]}, material);
+    }
+}
+
+void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
+              const HairStyle& style, const std::vector<Vec3>& rest, const Transform& head,
+              const Character& character, const std::function<Vec3(Vec3)>& world) {
+    std::unordered_map<int, Vec3> refs;
+    for (int id : style.required) if (id >= 0 && static_cast<std::size_t>(id) < rest.size()) refs[id] = rest[id];
+    double ratios[3] = {1, 1, 1};
+    for (int axis = 0; axis < 3; ++axis) {
+        if (!style.scaleValid[axis]) continue;
+        const Vec3 a = refs[style.scaleRefs[axis][0]], b = refs[style.scaleRefs[axis][1]];
+        const double distance = axis == 0 ? std::abs(a.x - b.x) : axis == 1 ? std::abs(a.y - b.y) : std::abs(a.z - b.z);
+        ratios[axis] = distance / std::max(1e-9, style.scaleDefaults[axis] * model.scale);
+    }
+    std::vector<Vec3> positions;
+    positions.reserve(style.vertices.size());
+    for (const HairVertex& vertex : style.vertices) {
+        Vec3 point = vertex.offset * model.scale;
+        point.x *= ratios[0]; point.y *= ratios[1]; point.z *= ratios[2];
+        for (int anchor = 0; anchor < 3; ++anchor) point += refs[vertex.refs[anchor]] * vertex.weights[anchor];
+        positions.push_back(point);
+    }
+    if (style.key == "short01" || style.key == "short02" || style.key == "short04") {
+        double top = -1e100;
+        for (int id : model.headVertices) if (id >= 0 && static_cast<std::size_t>(id) < rest.size()) top = std::max(top, rest[id].y);
+        top -= 0.035;
+        const double factor = style.key == "short04" ? 1.15 : 0.48;
+        for (Vec3& point : positions) if (point.y > top) point.y = top + (point.y - top) * factor;
+    }
+    for (Vec3& point : positions) point = world(head.point(point));
+    std::vector<Vec3> normals(positions.size());
+    for (const auto& triangle : style.triangles) {
+        const Vec3 normal = cross(positions[triangle[1]] - positions[triangle[0]],
+                                  positions[triangle[2]] - positions[triangle[0]]);
+        for (int index : triangle) normals[index] += normal;
+    }
+    std::vector<RenderVertex> transformed(positions.size());
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        transformed[index] = cameraVertex(camera, positions[index], normalized(normals[index]),
+                                          positions[index], style.vertices[index].uv);
+    }
+    Material material;
+    material.kind = Material::Kind::Hair;
+    material.color = hairColor(character.appearance.hairColor) * 1.35;
+    material.texture = &loadTexture(style.texture);
+    material.specular = 0.12;
+    for (const auto& triangle : style.triangles) {
+        std::array<RenderVertex, 3> vertices;
+        for (int corner = 0; corner < 3; ++corner) vertices[corner] = transformed[triangle[corner]];
+        rasterizer.triangle(vertices, material);
+    }
+}
+
+} // namespace
+
+void prepareHuman(const HumanModel& model, const Character& character, HumanRenderCache& cache) {
+    if (cache.valid && cache.male == character.appearance.male && cache.morphs == character.appearance.morphs) return;
+    std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
+    std::vector<int> ids(model.vertices.size());
+    for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
+    cache.rest = model.shape(ids, morphs);
+    cache.normals.assign(cache.rest.size(), Vec3{});
+    for (const Triangle& triangle : model.triangles) {
+        const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
+                                  cache.rest[triangle.v[2]] - cache.rest[triangle.v[0]]);
+        for (int index : triangle.v) cache.normals[index] += normal;
+    }
+    for (const Triangle& triangle : model.genitalTriangles) {
+        const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
+                                  cache.rest[triangle.v[2]] - cache.rest[triangle.v[0]]);
+        for (int index : triangle.v) cache.normals[index] += normal;
+    }
+    for (Vec3& normal : cache.normals) normal = normalized(normal);
+    cache.morphs = character.appearance.morphs;
+    cache.male = character.appearance.male;
+    cache.valid = true;
+    cache.poseValid = false;
+}
+
+namespace {
+
+double humanRootHeight(const HumanModel& model, const std::vector<Vec3>& rest,
+                       const Character& character, const std::vector<Transform>& transforms) {
+    if (!character.onToilet) {
+        const bool prone = character.prone;
+        const double idle = standingIdleWeight(character);
+        const double supportWeight = prone || character.crouched || character.charge > 0.001F ||
+            !character.grounded ? 1.0 : idle;
+        if (supportWeight <= 0.0) return character.elevation;
+        double sole = 1e100;
+        for (std::size_t index = 0; index < rest.size(); ++index) {
+            if (!prone && rest[index].y > 0.18) continue;
+            Vec3 point;
+            double total = 0, support = 0;
+            for (const auto& [bone, weight] : model.rigWeights[index]) {
+                if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+                point += transforms[bone].point(rest[index]) * weight;
+                total += weight;
+                const std::string& name = model.rigBones[bone].name;
+                if (name.rfind("foot.", 0) == 0 || name.rfind("toe", 0) == 0) support += weight;
+            }
+            if (total > 1e-8 && (prone || support > 0.25)) {
+                sole = std::min(sole, point.y / total * kHumanHeightScale);
+            }
+        }
+        const double offset = sole < 1e99 ? -sole * supportWeight + (prone ? 0.025 : 0.0) : 0.0;
+        return character.elevation + offset;
+    }
+    std::vector<bool> supportBone(model.rigBones.size(), false);
+    for (std::size_t i = 0; i < model.rigBones.size(); ++i) {
+        const std::string& name = model.rigBones[i].name;
+        supportBone[i] = name == "root" || name == "spine05" ||
+            name == "upperleg01.L" || name == "upperleg01.R" ||
+            name == "upperleg02.L" || name == "upperleg02.R";
+    }
+    double lowest = 1e100;
+    for (std::size_t index = 0; index < rest.size(); ++index) {
+        const Vec3& source = rest[index];
+        if (source.y < 0.55 || source.y > 1.10 || std::abs(source.x) > 0.30 || source.z > 0.02) continue;
+        Vec3 point;
+        double total = 0, support = 0;
+        for (const auto& [bone, weight] : model.rigWeights[index]) {
+            if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+            point += transforms[bone].point(source) * weight;
+            total += weight;
+            if (supportBone[bone]) support += weight;
+        }
+        if (support < 0.25 || total < 1e-8) continue;
+        const Vec3 local = (point / total) * kHumanHeightScale;
+        const double outerX = local.x / 0.1905;
+        const double outerZ = (local.z - (0.06 - kToiletSeatForwardOffset)) / 0.270;
+        const double innerX = local.x / 0.145;
+        const double innerZ = (local.z - (0.06 - kToiletSeatForwardOffset)) / 0.205;
+        if (outerX * outerX + outerZ * outerZ > 1.0 || innerX * innerX + innerZ * innerZ < 1.0) continue;
+        lowest = std::min(lowest, local.y);
+    }
+    // Place the real posed buttock/posterior-thigh support surface on the
+    // porcelain seat ring, outside the open bowl and inside its front edge.
+    return character.elevation + (lowest < 1e99 ? kToiletSeatHeight - lowest : 0.0);
+}
+
+struct GazeChain {
+    std::vector<int> indices;
+    std::vector<Vec3> pivots;
+    std::vector<double> flexionLimits;
+    std::vector<double> yawShares;
+    std::vector<double> extensionShares;
+    Vec3 eye;
+    Vec3 chin;
+    Vec3 manubrium;
+    bool valid = false;
+};
+
+GazeChain gazeChain(const HumanModel& model, const std::vector<Vec3>& rest,
+                    const std::vector<Transform>& transforms) {
+    static const char* names[] = {"neck01", "neck02", "neck03", "head"};
+    // Direction-specific published mobility: grouped lower/middle cervical
+    // flexion, then C1/C2 and C0/C1. These are limits, not arbitrary weights.
+    constexpr double flexionDegrees[] = {65.0, 27.0, 11.5, 3.5};
+    constexpr double yaw[] = {0.25, 0.25, 0.50, 0.0};
+    constexpr double extension[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
+    GazeChain chain;
+    for (int i = 0; i < 4; ++i) {
+        const int index = boneIndex(model, names[i]);
+        if (index < 0) continue;
+        chain.indices.push_back(index);
+        chain.pivots.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
+        chain.flexionLimits.push_back(flexionDegrees[i] * pi / 180.0);
+        chain.yawShares.push_back(yaw[i]);
+        chain.extensionShares.push_back(extension[i]);
+    }
+    const int headIndex = boneIndex(model, "head"), jawIndex = boneIndex(model, "jaw");
+    const int leftClavicle = boneIndex(model, "clavicle.L");
+    const int rightClavicle = boneIndex(model, "clavicle.R");
+    chain.valid = chain.indices.size() == 4 && headIndex >= 0 && jawIndex >= 0 &&
+        leftClavicle >= 0 && rightClavicle >= 0;
+    const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
+    const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
+    chain.eye = head.point(eyes);
+    chain.chin = jawIndex >= 0 ? head.point(joint(rest, model.rigBones[jawIndex].tail)) : chain.eye;
+    if (leftClavicle >= 0 && rightClavicle >= 0) {
+        chain.manubrium = (joint(rest, model.rigBones[leftClavicle].head) +
+            joint(rest, model.rigBones[rightClavicle].head)) * 0.5;
+    }
+    return chain;
+}
+
+Vec3 anteriorManubrium(const HumanModel& model, const std::vector<Vec3>& rest, Vec3 sternum) {
+    // Intersect the actual morphed skin with a vertical ray at the two
+    // sternoclavicular joints' midpoint. The joint is internal; the foremost
+    // intersected triangle is the anterior manubrium surface the chin contacts.
+    double front = -1e100;
+    for (const Triangle& triangle : model.triangles) {
+        const Vec3& a = rest[triangle.v[0]];
+        const Vec3& b = rest[triangle.v[1]];
+        const Vec3& c = rest[triangle.v[2]];
+        if (std::min({a.y, b.y, c.y}) > sternum.y || std::max({a.y, b.y, c.y}) < sternum.y ||
+            std::min({a.x, b.x, c.x}) > sternum.x || std::max({a.x, b.x, c.x}) < sternum.x) continue;
+        const double denominator = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+        if (std::abs(denominator) < 1e-12) continue;
+        const double wa = ((b.y - c.y) * (sternum.x - c.x) +
+            (c.x - b.x) * (sternum.y - c.y)) / denominator;
+        const double wb = ((c.y - a.y) * (sternum.x - c.x) +
+            (a.x - c.x) * (sternum.y - c.y)) / denominator;
+        const double wc = 1.0 - wa - wb;
+        if (wa < -1e-7 || wb < -1e-7 || wc < -1e-7) continue;
+        front = std::max(front, wa * a.z + wb * b.z + wc * c.z);
+    }
+    if (front > -1e99) sternum.z = front;
+    return sternum;
+}
+
+
+} // namespace
+
+HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& rest,
+                            const Character& character, double tick,
+                            double headYaw, double gazePitch) {
+    const std::vector<Transform> transforms = pose(model, rest, character, tick);
+    GazeChain chain = gazeChain(model, rest, transforms);
+    chain.manubrium = anteriorManubrium(model, rest, chain.manubrium);
+    Vec3 posedEye = chain.eye, posedChin = chain.chin;
+    if (chain.valid && (std::abs(headYaw) > 1e-9 || std::abs(gazePitch) > 1e-9)) {
+        const std::size_t count = chain.pivots.size();
+        std::vector<double> pitches(count, 0.0);
+        Vec3 protraction;
+        if (gazePitch < 0) {
+            const Vec3 eyeOverChin = chain.eye - chain.chin;
+            const double headFlexion = std::atan2(eyeOverChin.y, eyeOverChin.z);
+            double mobility = 0;
+            for (double limit : chain.flexionLimits) mobility += limit;
+            std::vector<Vec3> contactPoints = chain.pivots;
+            contactPoints.push_back(chain.chin);
+            for (std::size_t i = 0; i < count; ++i) {
+                pitches[i] = -headFlexion * chain.flexionLimits[i] / std::max(1e-9, mobility);
+                for (std::size_t j = i + 1; j < contactPoints.size(); ++j) {
+                    contactPoints[j] = contactPoints[i] +
+                        apply(rotationX(-pitches[i]), contactPoints[j] - contactPoints[i]);
+                }
+            }
+            // Rigid rotation alone cannot reach this fully flexed pose on the
+            // MakeHuman pivots. Solve the remaining cervicothoracic translation
+            // from the actual contact landmark; never offset the camera directly.
+            protraction = chain.manubrium - contactPoints.back();
+            const double amount = std::clamp((-gazePitch - kEyeInHeadRange) /
+                (pi * 0.5 - kEyeInHeadRange), 0.0, 1.0);
+            for (double& pitch : pitches) pitch *= amount;
+            protraction = protraction * amount;
+        } else {
+            const double physical = gazePitch - std::clamp(gazePitch, -kEyeInHeadRange, kEyeInHeadRange);
+            double total = 0;
+            for (double share : chain.extensionShares) total += share;
+            for (std::size_t i = 0; i < count; ++i) {
+                pitches[i] = physical * chain.extensionShares[i] / std::max(1e-9, total);
+            }
+        }
+        std::vector<Vec3> points = chain.pivots;
+        points.push_back(posedEye);
+        points.push_back(posedChin);
+        double yawTotal = 0;
+        for (double share : chain.yawShares) yawTotal += share;
+        for (std::size_t i = 0; i < count; ++i) {
+            const double yaw = headYaw * chain.yawShares[i] / std::max(1e-9, yawTotal);
+            for (std::size_t j = i + 1; j < points.size(); ++j) {
+                points[j] = points[i] + rotateWorld(apply(rotationX(-pitches[i]), points[j] - points[i]),
+                                                    static_cast<float>(yaw));
+            }
+        }
+        posedEye = points[count] + protraction;
+        posedChin = points[count + 1] + protraction;
+    }
+    const double rootY = humanRootHeight(model, rest, character, transforms);
+    auto world = [&](Vec3 point) {
+        return rotateWorld(point * kHumanHeightScale, character.yaw) +
+            Vec3{character.position.x, rootY, character.position.y};
+    };
+    return {world(posedEye), world(posedChin), world(chain.manubrium)};
+}
+
+Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
+                      const Character& character, double tick,
+                      double headYaw, double gazePitch) {
+    return humanGazePose(model, rest, character, tick, headYaw, gazePitch).eye;
+}
+
+Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache, float fallbackPitch) {
+    if (cache && cache->poseValid && cache->genitalTip >= 0 &&
+        static_cast<std::size_t>(cache->genitalTip) < cache->posed.size()) {
+        const Vec3 tip = cache->genitalExit;
+        const double yaw = character.yaw - cache->poseYaw;
+        const double c = std::cos(yaw), s = std::sin(yaw);
+        const double x = tip.x - cache->poseX, z = tip.z - cache->poseZ;
+        return {character.position.x + c * x + s * z,
+                tip.y + character.elevation - cache->poseElevation,
+                character.position.y - s * x + c * z};
+    }
+    const float cp = std::cos(fallbackPitch), sp = std::sin(fallbackPitch);
+    const gtc::Vec2 forward{std::sin(character.yaw), std::cos(character.yaw)};
+    const gtc::Vec2 origin = character.position + forward * (kPissEmitterPivotForward + kPissEmitterShaft * cp);
+    return {origin.x, character.elevation + kPissEmitterPivotHeight + kPissEmitterShaft * sp, origin.y};
+}
+
+void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
+               const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
+               const std::string& root, double tick, bool hideHead) {
+    std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
+    prepareHuman(model, character, cache);
+    const std::vector<Vec3>& rest = cache.rest;
+    const std::vector<Transform> transforms = pose(model, rest, character, tick);
+    const bool freshPose = !cache.poseValid || cache.poseTick != tick ||
+        cache.poseX != character.position.x || cache.poseZ != character.position.y ||
+        cache.poseYaw != character.yaw || cache.poseSpeed != character.speed ||
+        cache.poseElevation != character.elevation || cache.poseCharge != character.charge ||
+        cache.poseGrabHeight != character.grabHeight || cache.posePitch != character.pitch ||
+        cache.posePissYaw != character.pissYaw || cache.posePissPitch != character.pissPitch ||
+        cache.poseAttackAnim != character.attackAnim ||
+        cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet ||
+        cache.poseGrounded != character.grounded || cache.poseCrouched != character.crouched ||
+        cache.poseProne != character.prone || cache.poseGrabbing != character.grabbing ||
+        cache.poseUnzipped != character.unzipped || cache.poseBlocking != character.blocking ||
+        cache.posePissing != character.pissing;
+    const double rootY = humanRootHeight(model, rest, character, transforms);
+    auto world = [&](Vec3 point) {
+        return rotateWorld(point * kHumanHeightScale, character.yaw) +
+            Vec3{character.position.x, rootY, character.position.y};
+    };
+    const int rootIndex = boneIndex(model, "root");
+    const Transform rootTransform = rootIndex >= 0 ? transforms[rootIndex] : Transform{};
+    const auto rootWorld = [&](Vec3 point) { return world(rootTransform.point(point)); };
+    if (freshPose) {
+        cache.posed = rest;
+        cache.posedNormals.resize(rest.size());
+        for (std::size_t index = 0; index < rest.size(); ++index) {
+            double total = 0;
+            Vec3 point, normal;
+            for (const auto& [bone, weight] : model.rigWeights[index]) {
+                if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
+                point += transforms[bone].point(rest[index]) * weight;
+                normal += transforms[bone].direction(cache.normals[index]) * weight;
+                total += weight;
+            }
+            if (total > 1e-8) {
+                cache.posed[index] = world(point / total);
+                cache.posedNormals[index] = rotateWorld(normalized(normal), character.yaw);
+            } else {
+                cache.posed[index] = rootWorld(rest[index]);
+                cache.posedNormals[index] = rotateWorld(rootTransform.direction(cache.normals[index]), character.yaw);
+            }
+        }
+        cache.poseTick = tick;
+        cache.poseX = character.position.x;
+        cache.poseZ = character.position.y;
+        cache.poseYaw = character.yaw;
+        cache.poseSpeed = character.speed;
+        cache.poseElevation = character.elevation;
+        cache.poseCharge = character.charge;
+        cache.poseGrabHeight = character.grabHeight;
+        cache.posePitch = character.pitch;
+        cache.posePissYaw = character.pissYaw; cache.posePissPitch = character.pissPitch;
+        cache.poseAttackAnim = character.attackAnim;
+        cache.poseUnzipped = character.unzipped;
+        cache.posePissing = character.pissing;
+        cache.poseBlocking = character.blocking;
+        cache.poseAction = static_cast<int>(character.toiletAction);
+        cache.poseOnToilet = character.onToilet;
+        cache.poseGrounded = character.grounded;
+        cache.poseCrouched = character.crouched;
+        cache.poseProne = character.prone;
+        cache.poseGrabbing = character.grabbing;
+        cache.poseValid = true;
+        const bool exposed = character.appearance.male &&
+            (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+        cache.genitalPivot = cache.genitalTip = -1;
+        if (exposed && !character.onToilet && !model.genitalTriangles.empty()) {
+            std::vector<int> ids;
+            for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) ids.push_back(id);
+            std::sort(ids.begin(), ids.end());
+            ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+            std::unordered_map<int, std::vector<int>> edges;
+            for (const Triangle& triangle : model.genitalTriangles) for (int corner = 0; corner < 3; ++corner) {
+                const int a = triangle.v[corner], b = triangle.v[(corner + 1) % 3];
+                edges[a].push_back(b); edges[b].push_back(a);
+            }
+            const auto central = [&](int id) { return std::abs(rest[id].x) < 0.015; };
+            int tipId = ids.front();
+            for (int id : ids) if (rest[id].z > rest[tipId].z) tipId = id;
+            int ventralId = tipId;
+            for (int id : edges[tipId]) if (central(id) && rest[id].y < rest[tipId].y &&
+                (ventralId == tipId || rest[id].z > rest[ventralId].z)) ventralId = id;
+            // The pivot is the midline shaft landmark that the core emitter
+            // constants are measured from, so organ and droplets agree.
+            int rootId = tipId, previous = -1;
+            for (int step = 0; step < 4; ++step) {
+                int next = -1;
+                for (int id : edges[rootId]) if (id != previous && central(id) && rest[id].y > rest[rootId].y &&
+                    rest[id].z < rest[rootId].z && (next < 0 || rest[id].z > rest[next].z)) next = id;
+                if (next < 0) break;
+                previous = rootId; rootId = next;
+            }
+            int lowerRootId = ventralId; previous = -1;
+            for (int step = 0; step < 7; ++step) {
+                int next = -1;
+                for (int id : edges[lowerRootId]) if (id != previous && central(id) && rest[id].z < rest[lowerRootId].z &&
+                    (next < 0 || rest[id].z > rest[next].z)) next = id;
+                if (next < 0) break;
+                previous = lowerRootId; lowerRootId = next;
+            }
+            // The distal-most midline vertex is the mesh apex, i.e. the meatus.
+            // The visible stream must leave that exact point, not an offset.
+            const Vec3 exit = cache.posed[tipId];
+            cache.genitalPivot = rootId; cache.genitalTip = tipId;
+            const Vec3 pivot = (cache.posed[rootId] + cache.posed[lowerRootId]) * 0.5;
+            const Vec3 restDirection = rotateWorld(exit - pivot, -character.yaw);
+            const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
+            const double yaw = active ? character.pissYaw : character.yaw;
+            const double pitch = active ? character.pissPitch : character.pitch;
+            const Vec3 desired = rotateWorld({std::cos(pitch) * std::sin(yaw), std::sin(pitch),
+                                              std::cos(pitch) * std::cos(yaw)}, -character.yaw);
+            const Mat3 rotation = rotationBetween(restDirection, desired);
+            auto articulate = [&](Vec3 direction) {
+                return rotateWorld(apply(rotation, rotateWorld(direction, -character.yaw)), character.yaw);
+            };
+            for (int id : ids) {
+                cache.posed[id] = pivot + articulate(cache.posed[id] - pivot);
+                cache.posedNormals[id] = normalized(articulate(cache.posedNormals[id]));
+            }
+            cache.genitalRoot = pivot;
+            const Vec3 meatus = pivot + articulate(exit - pivot);
+            cache.genitalExit = meatus + normalized(meatus - pivot) * 0.0015; // Clear the skin surface.
+        }
+    }
+    cache.transformed.resize(rest.size());
+    auto& transformed = cache.transformed;
+    for (std::size_t index = 0; index < rest.size(); ++index) {
+        transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
+    }
+    const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
+    const Material skin = skinMaterial(model, character, root, morphs);
+    static const char* shirts[] = {"#20262b", "#b3453c", "#56765f", "#c4b58d", "#334c6b", "#6b4c70", "#c7ccd1"};
+    static const char* pants[] = {"#303b44", "#2d3338", "#4a453e", "#23384a"};
+    Material shirt;
+    shirt.kind = Material::Kind::Cloth;
+    shirt.specular = 0.0;
+    shirt.texture = &fabricTexture();
+    const Color shirtBase = colorHex(shirts[std::clamp(character.appearance.shirt, 0, 6)]);
+    shirt.color = shirtBase;
+    if (character.appearance.suit) shirt.color = shirt.color * 1.18;
+    if (character.appearance.coat) shirt.color = shirt.color * 0.82;
+    Material trousers;
+    trousers.kind = Material::Kind::Cloth;
+    trousers.specular = 0.0;
+    trousers.texture = &fabricTexture();
+    trousers.color = colorHex(pants[std::clamp(character.appearance.pants, 0, 3)]);
+    Material shoes;
+    shoes.color = colorHex("#202421");
+    shoes.specular = 0.12;
+    const bool coveredSleeve = character.appearance.coat || character.appearance.shirt % 2 == 0;
+    for (std::size_t triangleIndex = 0; triangleIndex < model.triangles.size(); ++triangleIndex) {
+        const Triangle& triangle = model.triangles[triangleIndex];
+        const Vec3 restCenter = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
+        if (hideHead && restCenter.y > eyeRest.y - 0.14) continue;
+        auto vertices = [&](double offset) {
+            std::array<RenderVertex, 3> result;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                result[corner] = transformed[index];
+                result[corner].view += transformed[index].normal * (offset * kHumanHeightScale);
+                result[corner].uv = model.texcoords[triangle.uv[corner]];
+            }
+            return result;
+        };
+        const BodyMaterial region = triangleIndex < model.bodyMaterials.size() ?
+            model.bodyMaterials[triangleIndex] : BodyMaterial::Skin;
+        if (region == BodyMaterial::Shirt || region == BodyMaterial::Torso ||
+            (region == BodyMaterial::Sleeve && coveredSleeve)) rasterizer.triangle(vertices(0.009), shirt);
+        else if (region == BodyMaterial::Pants) rasterizer.triangle(vertices(0.008), trousers);
+        else if (region == BodyMaterial::Boots) rasterizer.triangle(vertices(0.009), shoes);
+        else rasterizer.triangle(vertices(0), skin);
+    }
+    const bool showGenitals = character.appearance.male &&
+        (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+    if (showGenitals) {
+        for (const Triangle& triangle : model.genitalTriangles) {
+            std::array<RenderVertex, 3> vertices;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                vertices[corner] = transformed[index];
+                vertices[corner].uv = model.texcoords[triangle.uv[corner]];
+            }
+            rasterizer.triangle(vertices, skin);
+        }
+    } else if (character.appearance.male && !model.genitalTriangles.empty()) {
+        double minZ = 1e100, maxZ = -1e100;
+        for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) {
+            minZ = std::min(minZ, rest[id].z); maxZ = std::max(maxZ, rest[id].z);
+        }
+        int pivot = model.genitalTriangles.front().v[0];
+        for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) {
+            if (rest[id].z <= minZ + 0.3 * (maxZ - minZ) && rest[id].y > rest[pivot].y) pivot = id;
+        }
+        const Vec3 center = cache.posed[pivot];
+        const Vec3 forward{std::sin(character.yaw), 0, std::cos(character.yaw)};
+        const Vec3 right{std::cos(character.yaw), 0, -std::sin(character.yaw)};
+        const Vec3 rows[3][3] = {
+            {center - right * 0.105 - forward * 0.018 + Vec3{0, 0.085, 0},
+             center + forward * 0.050 + Vec3{0, 0.065, 0},
+             center + right * 0.105 - forward * 0.018 + Vec3{0, 0.085, 0}},
+            {center - right * 0.102 - forward * 0.012 + Vec3{0, -0.015, 0},
+             center + forward * 0.115 + Vec3{0, -0.010, 0},
+             center + right * 0.102 - forward * 0.012 + Vec3{0, -0.015, 0}},
+            {center - right * 0.085 - forward * 0.004 + Vec3{0, -0.115, 0},
+             center + forward * 0.045 + Vec3{0, -0.105, 0},
+             center + right * 0.085 - forward * 0.004 + Vec3{0, -0.115, 0}}};
+        Material tent = trousers;
+        tent.kind = Material::Kind::Textured;
+        auto fold = [&](Vec3 a, Vec3 b, Vec3 c) {
+            const Vec3 normal = normalized(cross(b - a, c - a));
+            rasterizer.triangle({cameraVertex(camera, a, normal, a, {0, 0}),
+                cameraVertex(camera, b, normal, b, {1, 0}), cameraVertex(camera, c, normal, c, {0.5, 1})}, tent);
+        };
+        for (int row = 0; row < 2; ++row) for (int side = 0; side < 2; ++side) {
+            fold(rows[row][side], rows[row + 1][side], rows[row + 1][side + 1]);
+            fold(rows[row][side], rows[row + 1][side + 1], rows[row][side + 1]);
+        }
+    }
+    const int collarBone = boneIndex(model, "neck01");
+    const Transform collarTransform = collarBone >= 0 ? transforms[collarBone] : rootTransform;
+    const auto collarWorld = [&](Vec3 point) { return world(collarTransform.point(point)); };
+    const int torsoBone = boneIndex(model, "spine01");
+    const Transform torsoTransform = torsoBone >= 0 ? transforms[torsoBone] : rootTransform;
+    const auto torsoWorld = [&](Vec3 point) { return world(torsoTransform.point(point)); };
+    Material belt;
+    belt.kind = Material::Kind::Cloth;
+    belt.color = colorHex("#151a1d");
+    belt.texture = &fabricTexture();
+    double beltX = 0.24, beltZ = 0.166;
+    for (std::size_t triangleIndex = 0; triangleIndex < model.triangles.size(); ++triangleIndex) {
+        const BodyMaterial region = triangleIndex < model.bodyMaterials.size() ?
+            model.bodyMaterials[triangleIndex] : BodyMaterial::Skin;
+        if (region != BodyMaterial::Pants && region != BodyMaterial::Torso) continue;
+        for (int index : model.triangles[triangleIndex].v) {
+            const Vec3& point = rest[index];
+            if (point.y < 0.88 || point.y > 1.04 || std::abs(point.x) > 0.48) continue;
+            beltX = std::max(beltX, std::abs(point.x) + 0.012);
+            beltZ = std::max(beltZ, std::abs(point.z) + 0.015);
+        }
+    }
+    drawLoft(rasterizer, camera, rootWorld, {{0.945, beltX, beltZ}, {0.975, beltX, beltZ}}, belt);
+    const double garmentX = std::clamp(beltX / 0.24, 1.0, 1.8);
+    const double garmentZ = std::clamp(beltZ / 0.166, 1.0, 1.8);
+    double neckY = 1.42;
+    const int neckIndex = boneIndex(model, "neck01");
+    if (neckIndex >= 0) neckY = joint(rest, model.rigBones[neckIndex].head).y - 0.85 * model.scale;
+    Material collar;
+    collar.kind = Material::Kind::Cloth;
+    collar.color = character.appearance.suit ? colorHex("#dfe3df") : shirtBase;
+    collar.texture = &fabricTexture();
+    const double collarHeight = character.appearance.beret ? 0.035 : character.appearance.suit ? 0.026 : 0.020;
+    const double collarX = character.appearance.suit ? 0.112 : 0.094;
+    const double collarZ = character.appearance.suit ? 0.095 : 0.082;
+    drawLoft(rasterizer, camera, collarWorld, {{neckY - 0.018, collarX, collarZ},
+        {neckY + collarHeight, collarX * 0.93, collarZ * 0.94}}, collar);
+    if (character.appearance.coat) {
+        Material coat;
+        coat.kind = Material::Kind::Cloth;
+        coat.color = shirtBase * 0.82;
+        coat.texture = &fabricTexture();
+        drawLoft(rasterizer, camera, rootWorld, {{0.43, 0.34 * garmentX, 0.21 * garmentZ},
+            {0.70, 0.29 * garmentX, 0.18 * garmentZ}, {0.98, 0.23 * garmentX, 0.15 * garmentZ}},
+                 coat, pi / 2 + 0.42, 2 * pi - 0.84);
+    }
+    if (character.appearance.dress) {
+        Material dress;
+        dress.kind = Material::Kind::Cloth;
+        dress.color = shirtBase;
+        dress.texture = &fabricTexture();
+        drawLoft(rasterizer, camera, rootWorld, {{0.40, 0.36 * garmentX, 0.25 * garmentZ},
+            {0.72, 0.29 * garmentX, 0.21 * garmentZ}, {1.04, 0.22 * garmentX, 0.16 * garmentZ}}, dress);
+    }
+    if (hideHead) return;
+    const int headIndex = boneIndex(model, "head");
+    const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
+    Material scalp;
+    scalp.color = hairColor(character.appearance.hairColor) * 0.65;
+    if (character.appearance.hair > 0 || character.appearance.beard > 0) {
+        for (const Triangle& triangle : model.headTriangles) {
+            const Vec3 center = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
+            const bool cap = character.appearance.hair > 0 &&
+                (center.y > eyeRest.y + 0.095 || (center.z < eyeRest.z - 0.035 && center.y > eyeRest.y - 0.035));
+            const bool beard = character.appearance.beard > 0 && center.z > eyeRest.z - 0.025 &&
+                center.y < eyeRest.y - 0.075 && center.y > eyeRest.y - (character.appearance.beard == 2 ? 0.29 : 0.19);
+            if (!cap && !beard) continue;
+            std::array<RenderVertex, 3> vertices;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                vertices[corner] = transformed[index];
+                vertices[corner].view += transformed[index].normal * (0.0025 * kHumanHeightScale);
+            }
+            rasterizer.triangle(vertices, scalp);
+        }
+    }
+    if (character.appearance.makeup > 0 || character.appearance.lipColor > 0) {
+        static const char* makeupColors[] = {"#6b4d45", "#74545f", "#4c6170", "#76505f", "#4f684f"};
+        static const char* lipColors[] = {"#9a5b50", "#a44f52", "#763f4c", "#b47162", "#6e3538"};
+        Material makeup;
+        makeup.color = colorHex(makeupColors[std::clamp(character.appearance.makeup, 0, 4)]);
+        Material lips;
+        lips.color = colorHex(lipColors[std::clamp(character.appearance.lipColor, 0, 4)]);
+        for (const Triangle& triangle : model.headTriangles) {
+            const Vec3 center = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
+            const bool eyePaint = character.appearance.makeup > 0 && center.z > eyeRest.z - 0.015 &&
+                center.y > eyeRest.y - 0.035 && center.y < eyeRest.y + 0.035;
+            const bool lipPaint = character.appearance.lipColor > 0 && center.z > eyeRest.z - 0.005 &&
+                center.y < eyeRest.y - 0.085 && center.y > eyeRest.y - 0.155 && std::abs(center.x) < 0.05;
+            if (!eyePaint && !lipPaint) continue;
+            std::array<RenderVertex, 3> vertices;
+            for (int corner = 0; corner < 3; ++corner) {
+                const int index = triangle.v[corner];
+                vertices[corner] = transformed[index];
+                vertices[corner].view += transformed[index].normal * (0.003 * kHumanHeightScale);
+            }
+            rasterizer.triangle(vertices, lipPaint ? lips : makeup);
+        }
+    }
+    if (const HairStyle* style = hair.find(character.appearance.hair)) {
+        drawHair(rasterizer, camera, model, *style, rest, head, character, world);
+    }
+    static const char* eyeColors[] = {"#34271f", "#6a4d2c", "#496b82", "#4c6854", "#777d82", "#171b1d"};
+    Material white; white.color = colorHex("#d8d5ca");
+    Material iris; iris.color = colorHex(eyeColors[std::clamp(character.appearance.eyeColor, 0, 5)]);
+    Material pupil; pupil.color = colorHex("#090c0d");
+    Material glasses; glasses.color = colorHex("#10171a"); glasses.specular = 0.35;
+    auto accessory = [&](Vec3 center, Vec3 radii, const Material& material, int segments, int rings) {
+        drawEllipsoid(rasterizer, camera, center, radii * kHumanHeightScale, material, segments, rings);
+    };
+    for (int side = 0; side < 2; ++side) {
+        const Vec3 center = world(head.point(joint(rest, model.eyeSource[side])));
+        const Vec3 direction = normalized(rotateWorld(head.direction(model.eyeDirection[side]), character.yaw));
+        accessory(center, Vec3{0.011, 0.011, 0.011}, white, 12, 8);
+        accessory(center + direction * (0.010 * kHumanHeightScale), Vec3{0.0054, 0.0054, 0.0054}, iris, 10, 6);
+        accessory(center + direction * (0.013 * kHumanHeightScale), Vec3{0.0024, 0.0024, 0.0024}, pupil, 8, 6);
+        if (character.appearance.sunglasses) {
+            accessory(center + direction * (0.017 * kHumanHeightScale), Vec3{0.018, 0.013, 0.018}, glasses, 12, 8);
+        }
+    }
+    if (character.appearance.beret) {
+        Material beret; beret.color = colorHex("#70413d");
+        accessory(world(head.point(eyeRest + Vec3{0, 0.15, -0.01})),
+                      Vec3{0.105, 0.035, 0.095}, beret, 18, 8);
+    }
+    Material metal;
+    metal.color = colorHex("#b99b56");
+    metal.specular = 0.32;
+    if (character.appearance.earrings) for (int side : {-1, 1}) {
+        accessory(world(head.point(eyeRest + Vec3{side * 0.072, -0.055, 0})),
+                      Vec3{0.009, 0.018, 0.009}, metal, 10, 6);
+    }
+    if (character.appearance.necklace) {
+        for (int i = 0; i < 14; ++i) {
+            const double angle = i * 2 * pi / 14;
+            accessory(collarWorld(Vec3{0.066 * std::cos(angle), 1.42,
+                0.052 * std::sin(angle)}), Vec3{0.006, 0.006, 0.006}, metal, 6, 4);
+        }
+        accessory(torsoWorld(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
+    }
+    if (character.appearance.tie > 0) {
+        static const char* ties[] = {"#20262b", "#243b60", "#7d2528", "#375a80", "#454c55", "#b2924a"};
+        Material tie;
+        tie.color = colorHex(ties[std::clamp(character.appearance.tie, 0, 5)]);
+        accessory(torsoWorld(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
+        accessory(torsoWorld(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
+    }
+    if (character.appearance.fur) {
+        Material fur;
+        fur.color = colorHex("#a3937c");
+        for (int i = 0; i < 16; ++i) {
+            const double angle = i * 2 * pi / 16;
+            accessory(collarWorld(Vec3{0.12 * std::cos(angle), 1.39,
+                0.085 * std::sin(angle)}), Vec3{0.035, 0.030, 0.035}, fur, 8, 5);
+        }
+    }
+}
+
+} // namespace gtc::native

@@ -1,11 +1,65 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace gtc {
+
+inline constexpr float kSlowWalkSpeed = 4.0F / 3.6F;
+inline constexpr float kFastWalkSpeed = 6.4F / 3.6F;
+inline constexpr float kSprintSpeed = 20.0F / 3.6F;
+inline constexpr float kCrouchSpeed = 3.6F / 3.6F;
+inline constexpr float kProneSpeed = 2.0F / 3.6F;
+inline constexpr float kJumpHeight = 0.5F;
+inline constexpr float kMaximumJumpHeight = 1.0F;
+inline constexpr float kAutomaticStepHeight = 0.27F;
+inline constexpr float kStandingHeight = 1.7F;
+inline constexpr float kCrouchingHeight = 1.1F;
+inline constexpr float kProneHeight = 0.45F;
+// Kohler Wellworth K-3987: 368 mm rim, 381 mm seat, 743 mm tank,
+// 705 mm depth, 457 mm width, and water 133 mm below the rim.
+inline constexpr float kToiletSeatForwardOffset = 0.06F;
+inline constexpr float kToiletRimHeight = 0.368F;
+inline constexpr float kToiletSeatHeight = 0.381F;
+inline constexpr float kToiletWaterHeight = kToiletRimHeight - 0.133F;
+inline constexpr float kToiletTankHeight = 0.743F;
+// Anatomical emitter measured from the posed CC0 male mesh: the organ pivots
+// 0.8118 m above the soles and 0.1209 m forward, and the meatus sits 34.2 mm
+// out along the shaft. The renderer rotates that shaft onto the aim direction,
+// so droplets must spawn at pivot + (shaft + skin clearance) * aim, never at
+// the old hip offset 50 mm behind and below the visible hole.
+inline constexpr float kPissEmitterPivotHeight = 0.8118F;
+inline constexpr float kPissEmitterPivotForward = 0.1209F;
+inline constexpr float kPissEmitterShaft = 0.0357F;
+inline constexpr float kPissSpeed = 9.0F;
+inline constexpr float kBulletSpeed = 32.0F;
+inline constexpr float kProjectileGravity = 9.81F;
+inline constexpr float kPissLifetime = 4.0F;
+inline constexpr float kPissEmissionInterval = 1.0F / 30.0F;
+inline constexpr float kBladderDrainPerSecond = 75.0F / 21.0F;
+inline constexpr float kGameTimeScale = 15.0F;
+inline constexpr float kPissFullBladderVolumeMl = 600.0F;
+inline constexpr float kPissFilmDepth = 0.001F; // Geometry conversion only; simulation stores ml.
+inline constexpr float kPissDropletsPerFullBladder =
+    100.0F / kBladderDrainPerSecond / kPissEmissionInterval;
+inline constexpr float kPissDropletVolumeMl = kPissFullBladderVolumeMl / kPissDropletsPerFullBladder;
+inline constexpr float kPissDropletArea = kPissDropletVolumeMl * 0.000001F / kPissFilmDepth;
+// The measured 0.185 mm/h water flux is 185 ml/m²/h, rounded to 200.
+inline constexpr float kPissEvaporationMlPerSquareMeterGameHour = 200.0F;
+inline constexpr float kPissMinimumVolumeMl = 0.0000314159F;
+
+inline float puddleAreaForVolume(float volumeMl) {
+    return (volumeMl > 0.0F ? volumeMl : 0.0F) * 0.000001F / kPissFilmDepth;
+}
+inline float puddleRadiusForVolume(float volumeMl) {
+    return std::sqrt(puddleAreaForVolume(volumeMl) / 3.141592653589793F);
+}
+inline float puddleVolumeForRadius(float radius) {
+    return radius * radius * 3.141592653589793F * kPissFilmDepth * 1000000.0F;
+}
 
 struct Vec2 {
     float x = 0.0F;
@@ -20,6 +74,10 @@ struct Vec2 {
         return *this;
     }
 };
+
+inline constexpr float kToiletBowlOffset = kToiletSeatForwardOffset;
+inline constexpr Vec2 kToiletBowlInner{0.145F, 0.205F};
+inline constexpr Vec2 kToiletWater{0.1335F, 0.0985F}; // 267 × 197 mm.
 
 inline float length(const Vec2& value) {
     return std::sqrt(value.x * value.x + value.y * value.y);
@@ -39,11 +97,37 @@ struct Obstacle {
     Vec2 halfSize;
     float height = 3.0F;
     std::string kind;
+    float base = 0.0F;
 };
 
 struct Needs {
     float bladder = 65.0F;
     float bowel = 40.0F;
+};
+
+enum class ToiletAction { None, Sit, Shit, Piss };
+
+struct Appearance {
+    bool male = true;
+    int skin = 1;
+    int hair = 2;
+    int hairColor = 0;
+    int shirt = 0;
+    int pants = 0;
+    int beard = 0;
+    bool coat = false;
+    bool sunglasses = false;
+    int eyeColor = 2;
+    int makeup = 0;
+    int lipColor = 0;
+    bool suit = false;
+    int tie = 0;
+    bool dress = false;
+    bool beret = false;
+    bool earrings = false;
+    bool necklace = false;
+    bool fur = false;
+    std::array<int, 128> morphs{};
 };
 
 struct Character {
@@ -55,25 +139,87 @@ struct Character {
     Vec2 manualMove;
     float yaw = 3.14159265F;
     float pitch = 0.0F;
+    float pissYaw = 3.14159265F;
+    float pissPitch = 0.0F;
     float speed = 0.0F;
+    float elevation = 0.0F;
+    float verticalVelocity = 0.0F;
+    float charge = 0.0F;
+    float fullChargeTime = 0.0F;
+    float grabHeight = 0.0F;
+    float health = 100.0F;
+    float attackAnim = 0.0F;
+    float attackCooldown = 0.0F;
+    bool grounded = true;
+    bool crouched = false;
+    bool prone = false;
+    bool grabbing = false;
+    bool unzipped = false;
+    bool blocking = false;
+    bool pathSprint = false;
+    bool pathAdvanced = false;
+    std::uint32_t pendingAttack = 0;
     bool sprint = false;
+    bool slowWalk = false;
     bool wantsPiss = false;
+    bool waterContact = false;
+    float waterRippleTimer = 0.0F;
+    Vec2 aimTarget;
+    float aimHeight = 0.0F;
+    bool hasAimTarget = false;
+    bool crouchInput = false;
+    bool grabInput = false;
+    bool jumpInput = false;
+    bool jumpHeld = false;
+    bool chargeLocked = false;
+    int grabbedObstacle = -1;
     bool pissing = false;
     bool onToilet = false;
+    ToiletAction toiletAction = ToiletAction::None;
+    ToiletAction queuedToiletAction = ToiletAction::None;
     bool pendingToilet = false;
+    Appearance appearance;
     Needs needs;
     std::vector<Vec2> path;
     float actionTime = 0.0F;
-    float puddleTimer = 0.0F;
+    float projectileTimer = 0.0F;
     float aiTimer = 0.0F;
     std::uint32_t noticeSequence = 0;
     std::string notice;
 };
 
+enum class ProjectileKind { Piss, Bullet };
+
+struct Projectile {
+    std::uint32_t id = 0;
+    std::uint32_t owner = 0;
+    ProjectileKind kind = ProjectileKind::Piss;
+    Vec2 position;
+    Vec2 velocity;
+    float height = 0.0F;
+    float verticalVelocity = 0.0F;
+    float age = 0.0F;
+    bool toilet = false;
+    Vec2 target;
+    float targetHeight = 0.0F;
+};
+
 struct Puddle {
     std::uint32_t id = 0;
     Vec2 position;
-    float size = 0.25F;
+    float size = 0.12F;
+    double volumeMl = 0.0;
+    float height = 0.018F;
+    Vec2 normal;
+    bool vertical = false;
+    double age = 0.0;
+};
+
+struct WaterRipple {
+    std::uint32_t id = 0;
+    Vec2 position;
+    double age = 0.0;
+    float strength = 1.0F;
 };
 
 struct GameEvent {

@@ -48,7 +48,7 @@ export class GameScene {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#111913');
     this.scene.fog = new THREE.Fog('#111913', 20, 38);
-    this.camera = new THREE.PerspectiveCamera(62, 1, 0.06, 70);
+    this.camera = new THREE.PerspectiveCamera(62, 1, 0.02, 70);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = true;
@@ -57,19 +57,26 @@ export class GameScene {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.raycaster = new THREE.Raycaster();
+    this.cameraRaycaster = new THREE.Raycaster();
+    this.cameraBlockers = [];
     this.pointer = new THREE.Vector2();
     this.clickTargets = [];
+    this.toiletMaterials = new Set();
+    this.highlightedKind = null;
     this.puddles = new Map();
     this.worldRoot = null;
     this.destinationLife = 0;
     this.addLights();
+    this.createStudio();
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
 
   addLights() {
+    this.worldLights = [];
     const hemisphere = new THREE.HemisphereLight('#c8e3c1', '#273125', 1.55);
     this.scene.add(hemisphere);
+    this.worldLights.push(hemisphere);
     const sun = new THREE.DirectionalLight('#fff1c7', 2.15);
     sun.position.set(-4, 11, 6);
     sun.castShadow = true;
@@ -82,9 +89,40 @@ export class GameScene {
     sun.shadow.camera.far = 30;
     sun.shadow.bias = -0.0007;
     this.scene.add(sun);
+    this.worldLights.push(sun);
     const sickly = new THREE.PointLight('#b7ff6a', 9, 9, 2);
     sickly.position.set(0, 2.8, -4.5);
     this.scene.add(sickly);
+    this.worldLights.push(sickly);
+  }
+
+  createStudio() {
+    this.baseFog = this.scene.fog;
+    this.studioRoot = new THREE.Group();
+    this.studioRoot.visible = false;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80),
+      new THREE.MeshStandardMaterial({ color: '#202824', roughness: 0.94 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.012;
+    floor.receiveShadow = true;
+    this.studioRoot.add(floor);
+    const ambient = new THREE.HemisphereLight('#f4f5ff', '#343b36', 0.8);
+    const key = new THREE.DirectionalLight('#ffffff', 1.9);
+    key.position.set(-3, 6, 5);
+    const fill = new THREE.DirectionalLight('#c9ddf2', 0.55);
+    fill.position.set(4, 3, 1);
+    const rim = new THREE.DirectionalLight('#ffffff', 0.9);
+    rim.position.set(0, 4, -5);
+    this.studioRoot.add(ambient, key, fill, rim);
+    this.scene.add(this.studioRoot);
+  }
+
+  setCreatorMode(active) {
+    if (this.worldRoot) this.worldRoot.visible = !active;
+    this.studioRoot.visible = active;
+    for (const light of this.worldLights) light.visible = !active;
+    this.scene.background.set(active ? '#111713' : '#111913');
+    this.scene.fog = active ? null : this.baseFog;
   }
 
   buildWorld(world) {
@@ -93,6 +131,9 @@ export class GameScene {
     this.worldRoot = new THREE.Group();
     this.scene.add(this.worldRoot);
     this.clickTargets = [];
+    this.cameraBlockers = [];
+    this.toiletMaterials = new Set();
+    this.highlightedKind = null;
     for (const puddle of this.puddles.values()) this.scene.remove(puddle);
     this.puddles.clear();
     this.createFloor(world);
@@ -101,6 +142,7 @@ export class GameScene {
     this.ceiling.position.y = 3.39;
     this.ceiling.receiveShadow = true;
     this.worldRoot.add(this.ceiling);
+    this.cameraBlockers.push(this.ceiling);
     for (const obstacle of world.obstacles) {
       if (obstacle.kind === 'boundary') this.createWall(obstacle);
       else if (obstacle.kind === 'toilet') this.createToilet(obstacle);
@@ -109,6 +151,7 @@ export class GameScene {
     }
     this.createDressing();
     this.createInteractionMarkers();
+    this.worldRoot.updateMatrixWorld(true);
   }
 
   createFloor(world) {
@@ -156,6 +199,7 @@ export class GameScene {
     const wall = box(obstacle.hx * 2, obstacle.height, obstacle.hz * 2, material);
     wall.position.set(obstacle.x, obstacle.height / 2, obstacle.z);
     this.worldRoot.add(wall);
+    this.cameraBlockers.push(wall);
     if (tall) {
       const trim = box(obstacle.hx * 2 + 0.04, 0.16, obstacle.hz * 2 + 0.04, standard('#1c2d25'));
       trim.position.set(obstacle.x, 1.05, obstacle.z);
@@ -199,7 +243,16 @@ export class GameScene {
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.7, 7), dark);
     pipe.position.set(0, 0.42, -0.68);
     toilet.add(pipe);
-    toilet.traverse(child => { child.userData.kind = 'toilet'; });
+    toilet.traverse(child => {
+      child.userData.kind = 'toilet';
+      if (!child.isMesh) return;
+      for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+        if (!material.emissive || this.toiletMaterials.has(material)) continue;
+        material.userData.baseEmissive = material.emissive.getHex();
+        material.userData.baseEmissiveIntensity = material.emissiveIntensity;
+        this.toiletMaterials.add(material);
+      }
+    });
     this.worldRoot.add(toilet);
     this.clickTargets.push(toilet);
   }
@@ -210,6 +263,7 @@ export class GameScene {
     const cabinet = box(1.35, 0.72, 0.75, standard('#354b40'));
     cabinet.position.y = 0.36;
     group.add(cabinet);
+    this.cameraBlockers.push(cabinet);
     const basin = new THREE.Mesh(new THREE.CylinderGeometry(0.61, 0.48, 0.24, 8), standard('#bdc9b5'));
     basin.scale.z = 0.72;
     basin.position.y = 0.85;
@@ -231,6 +285,7 @@ export class GameScene {
     const crate = box(obstacle.hx * 2, obstacle.height, obstacle.hz * 2, standard('#5e5135'));
     crate.position.set(obstacle.x, obstacle.height / 2, obstacle.z);
     this.worldRoot.add(crate);
+    this.cameraBlockers.push(crate);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(crate.geometry), new THREE.LineBasicMaterial({ color: '#211f16' }));
     edges.position.copy(crate.position);
     this.worldRoot.add(edges);
@@ -317,6 +372,20 @@ export class GameScene {
     }
   }
 
+  resolveCamera(target, desired) {
+    const direction = desired.clone().sub(target);
+    const distance = direction.length();
+    if (distance < 0.01 || this.cameraBlockers.length === 0) return desired;
+    direction.multiplyScalar(1 / distance);
+    this.cameraRaycaster.near = 0.05;
+    this.cameraRaycaster.far = distance;
+    this.cameraRaycaster.set(target, direction);
+    const hit = this.cameraRaycaster.intersectObjects(this.cameraBlockers, false)[0];
+    if (!hit) return desired;
+    const safeDistance = Math.max(0.35, hit.distance - 0.24);
+    return target.clone().addScaledVector(direction, safeDistance);
+  }
+
   setMode(mode) {
     if (this.ceiling) this.ceiling.visible = mode !== 'god';
   }
@@ -325,6 +394,18 @@ export class GameScene {
     if (!this.destination) return;
     this.destination.position.set(point.x, 0.035, point.z);
     this.destinationLife = 1;
+  }
+
+  setHighlight(kind) {
+    const activeKind = kind || null;
+    if (this.highlightedKind === activeKind) return;
+    this.highlightedKind = activeKind;
+    const active = activeKind === 'toilet';
+    for (const material of this.toiletMaterials) {
+      material.emissive.setHex(active ? 0x526b24 : material.userData.baseEmissive);
+      material.emissiveIntensity = active ? 0.72 : material.userData.baseEmissiveIntensity;
+    }
+    if (this.questMarker) this.questMarker.material.color.set(active ? '#ffffff' : '#d7ff54');
   }
 
   pick(clientX, clientY, camera) {
@@ -345,8 +426,12 @@ export class GameScene {
     if (this.questMarker) {
       this.questMarker.rotation.y = time * 1.7;
       this.questMarker.position.y = 2.04 + Math.sin(time * 2.8) * 0.1;
+      this.questMarker.scale.setScalar(this.highlightedKind === 'toilet' ? 1.45 : 1);
     }
-    if (this.interactionRing) this.interactionRing.material.opacity = 0.15 + Math.sin(time * 2) * 0.06;
+    if (this.interactionRing) {
+      this.interactionRing.material.opacity = this.highlightedKind === 'toilet' ? 0.72 :
+        0.15 + Math.sin(time * 2) * 0.06;
+    }
     if (this.destinationLife > 0) {
       this.destinationLife = Math.max(0, this.destinationLife - dt * 0.8);
       this.destination.material.opacity = this.destinationLife;

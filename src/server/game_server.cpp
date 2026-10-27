@@ -223,13 +223,55 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -1.0, 1.0));
         world_.setInput(id, {x, z}, message.boolAt("sprint"), message.boolAt("piss"),
                         static_cast<float>(message.numberAt("yaw")),
-                        static_cast<float>(message.numberAt("pitch")));
+                        static_cast<float>(message.numberAt("pitch")), message.boolAt("slow"),
+                        message.boolAt("crouch"), message.boolAt("grab"), message.boolAt("jump"),
+                        message.boolAt("block"),
+                        {static_cast<float>(message.numberAt("aimX")), static_cast<float>(message.numberAt("aimZ"))},
+                        static_cast<float>(message.numberAt("aimY")), message.boolAt("aim"));
+    } else if (type == "zip") {
+        world_.toggleZip(id);
     } else if (type == "path") {
         const float x = static_cast<float>(std::clamp(message.numberAt("x"), -8.7, 8.7));
         const float z = static_cast<float>(std::clamp(message.numberAt("z"), -6.7, 6.7));
-        world_.setDestination(id, {x, z});
+        world_.setDestination(id, {x, z}, message.boolAt("sprint"), message.boolAt("advanced"));
+    } else if (type == "attack") {
+        const double target = std::clamp(message.numberAt("target"), 0.0, 4294967295.0);
+        world_.attack(id, static_cast<std::uint32_t>(target), message.boolAt("advanced"));
+    } else if (type == "attackAt") {
+        world_.attackAt(id, {static_cast<float>(message.numberAt("x")), static_cast<float>(message.numberAt("z"))},
+                        static_cast<float>(message.numberAt("y")));
     } else if (type == "toilet") {
-        world_.requestToilet(id);
+        world_.requestToilet(id, message.stringAt("action", "sit"));
+    } else if (type == "customize") {
+        Appearance appearance = world_.character(id).appearance;
+        appearance.male = message.boolAt("male", appearance.male);
+        appearance.skin = static_cast<int>(message.numberAt("skin", appearance.skin));
+        appearance.hair = static_cast<int>(message.numberAt("hair", appearance.hair));
+        appearance.hairColor = static_cast<int>(message.numberAt("hairColor", appearance.hairColor));
+        appearance.shirt = static_cast<int>(message.numberAt("shirt", appearance.shirt));
+        appearance.pants = static_cast<int>(message.numberAt("pants", appearance.pants));
+        appearance.beard = static_cast<int>(message.numberAt("beard", appearance.beard));
+        appearance.coat = message.boolAt("coat", appearance.coat);
+        appearance.sunglasses = message.boolAt("sunglasses", appearance.sunglasses);
+        appearance.eyeColor = static_cast<int>(message.numberAt("eyeColor", appearance.eyeColor));
+        appearance.makeup = static_cast<int>(message.numberAt("makeup", appearance.makeup));
+        appearance.lipColor = static_cast<int>(message.numberAt("lipColor", appearance.lipColor));
+        appearance.suit = message.boolAt("suit", appearance.suit);
+        appearance.tie = static_cast<int>(message.numberAt("tie", appearance.tie));
+        appearance.dress = message.boolAt("dress", appearance.dress);
+        appearance.beret = message.boolAt("beret", appearance.beret);
+        appearance.earrings = message.boolAt("earrings", appearance.earrings);
+        appearance.necklace = message.boolAt("necklace", appearance.necklace);
+        appearance.fur = message.boolAt("fur", appearance.fur);
+        if (const JsonValue* morphs = message.get("morphs")) {
+            const auto& values = morphs->array();
+            for (std::size_t i = 0; i < appearance.morphs.size() && i < values.size(); ++i) {
+                appearance.morphs[i] = static_cast<int>(values[i].number(appearance.morphs[i]));
+            }
+        }
+        world_.customizeCharacter(id, appearance);
+    } else if (type == "cheat") {
+        world_.adjustNeed(id, message.stringAt("need"), static_cast<float>(message.numberAt("delta")));
     } else if (type == "join") {
         world_.renameCharacter(id, message.stringAt("name", "Fresh Mistake"));
     }
@@ -284,14 +326,10 @@ void GameServer::serveHttp(SocketHandle socket, const std::string& method, const
 void GameServer::simulationLoop() {
     using Clock = std::chrono::steady_clock;
     auto next = Clock::now();
-    int broadcastDivider = 0;
     while (running_) {
         next += std::chrono::milliseconds(50);
         world_.update(0.05F);
-        if (++broadcastDivider >= 2) {
-            broadcastDivider = 0;
-            broadcast(world_.snapshot());
-        }
+        broadcast(world_.snapshot());
         std::this_thread::sleep_until(next);
         if (Clock::now() - next > std::chrono::milliseconds(250)) next = Clock::now();
     }

@@ -13,3 +13,7 @@ Thumbs.db
 # Logs and temporary files
 *.log
 *.tmp
+
+# Python development caches
+__pycache__/
+*.pyc

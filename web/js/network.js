@@ -1,3 +1,5 @@
+import { normalizeAppearance, savedAppearance, saveAppearance } from './appearance.js';
+
 const FIRST = ['Dumpster', 'Crusader', 'Moist', 'Turbo', 'Baron', 'Soggy', 'Cyber', 'Illegitimate'];
 const LAST = ['Kevin', 'ofVenlo', 'Pissington', 'McFlushed', 'theUnflushed', 'vonBidet', 'Sock', '1453'];
 
@@ -16,6 +18,7 @@ export function saveIdentity(name) {
 export class Network {
   constructor(identity) {
     this.identity = identity;
+    this.appearance = savedAppearance();
     this.id = 0;
     this.world = null;
     this.socket = null;
@@ -42,6 +45,7 @@ export class Network {
         this.id = message.id;
         this.world = message.world;
         this.send({ type: 'join', name: this.identity });
+        if (this.appearance) this.send({ type: 'customize', ...this.appearance });
         this.onWelcome(message);
       } else if (message.type === 'state') {
         this.onState(message);
@@ -64,7 +68,14 @@ export class Network {
 
   input(input) { this.send({ type: 'input', ...input }); }
   path(point) { this.send({ type: 'path', x: point.x, z: point.z }); }
-  toilet() { this.send({ type: 'toilet' }); }
+  toilet(action = 'sit') { this.send({ type: 'toilet', action }); }
+  cheat(need, delta) { this.send({ type: 'cheat', need, delta }); }
+
+  customize(appearance) {
+    this.appearance = normalizeAppearance(appearance);
+    saveAppearance(this.appearance);
+    this.send({ type: 'customize', ...this.appearance });
+  }
 
   rename(name) {
     this.identity = name;

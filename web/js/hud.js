@@ -15,6 +15,7 @@ export class HUD {
     this.lastEvent = 0;
     this.toastTimer = null;
     this.mode = 'third';
+    this.targetedKind = null;
     this.map = byId('minimap').getContext('2d');
   }
 
@@ -46,6 +47,8 @@ export class HUD {
     byId('ai-tag').textContent = local.ai ? 'AI' : 'HUMAN?';
     this.need('bladder', local.bladder);
     this.need('bowel', local.bowel);
+    this.cheatNeed('bladder', local.bladder);
+    this.cheatNeed('bowel', local.bowel);
     this.context(local, state, world);
     this.minimap(state, localId, world);
     if (local.notice > this.lastNotice) {
@@ -63,6 +66,31 @@ export class HUD {
     byId(`${kind}-need`).classList.toggle('critical', value >= 90);
   }
 
+  cheatNeed(kind, value) {
+    byId(`cheat-${kind}-value`).textContent = `${Math.round(value)}%`;
+    byId(`cheat-${kind}-bar`).style.width = `${clamp(value, 0, 100)}%`;
+  }
+
+  cheats(open) {
+    byId('cheats').classList.toggle('hidden', !open);
+  }
+
+  wheel(open, local) {
+    byId('action-wheel').classList.toggle('hidden', !open);
+    if (!open || !local) return;
+    const active = local.toiletAction !== 'none';
+    document.querySelectorAll('[data-toilet-action]').forEach(button => {
+      button.classList.toggle('hidden', active ? button.dataset.toiletAction !== 'stand' : button.dataset.toiletAction === 'stand');
+    });
+    document.querySelector('.wheel-core').classList.toggle('hidden', active);
+    byId('wheel-piss-detail').textContent = local.male ? 'STANDING' : 'SEATED';
+  }
+
+  target(kind) {
+    this.targetedKind = kind || null;
+    byId('crosshair').classList.toggle('targeted', this.targetedKind === 'toilet');
+  }
+
   context(local, state, world) {
     const prompt = byId('context-prompt');
     const key = document.querySelector('.context-key');
@@ -72,38 +100,36 @@ export class HUD {
     const dz = local.z - world.toilet.frontZ;
     const near = Math.hypot(dx, dz) <= world.interactionRange;
     const occupied = state.toiletUser !== 0 && state.toiletUser !== local.id;
-    prompt.classList.toggle('available', near && !occupied && !local.onToilet);
-    if (local.onToilet) {
-      key.textContent = '…';
-      title.textContent = 'VOIDING BIOLOGICAL PAYLOAD';
-      detail.textContent = 'MULTIPURPOSE THRONE ACTIVE · PLEASE KEEP YOUR HANDS INSIDE THE BLOODLINE';
+    const busy = local.toiletAction !== 'none';
+    prompt.classList.toggle('available', (near || busy) && !occupied);
+    if (busy) {
+      key.textContent = 'E';
+      title.textContent = '[E] Stand up';
+      const actions = { sit: 'SITTING · STAY A WHILE', shit: 'BOWEL DOWNLOAD', piss: local.male ? 'STANDING BLADDER RELIEF' : 'SEATED BLADDER RELIEF' };
+      detail.textContent = `${actions[local.toiletAction] || 'THRONE ACTIVE'} · E / WASD STANDS`;
     } else if (near && occupied) {
       key.textContent = '⌛';
       title.textContent = 'THRONE OCCUPIED';
-      detail.textContent = 'AWAIT YOUR TERRIBLE INHERITANCE · CLICK TO QUEUE';
+      detail.textContent = 'AWAIT YOUR TERRIBLE INHERITANCE · NO QUEUE-CAMPING THE BOWL';
     } else if (near) {
       key.textContent = 'E';
-      title.textContent = 'USE PORCELAIN THRONE';
-      detail.textContent = 'EMPTIES BLADDER + BOWEL · SATISFACTION NOT GUARANTEED';
-    } else if (this.mode === 'first') {
-      key.textContent = 'F';
-      title.textContent = 'HOLD TO COMMIT LIQUID HERESY';
-      detail.textContent = 'E: APPROACH THRONE · CLICK VIEW: CAPTURE MOUSE · ESC: RELEASE';
+      title.textContent = '[E] Interact';
+      detail.textContent = `CHOICE WHEEL · SIT / SHIT / PISS ${local.male ? 'STANDING' : 'SEATED'}`;
     } else {
       key.textContent = '↖';
-      title.textContent = 'CLICK THRONE TO AUTO-WALK';
-      detail.textContent = `INTERACTION RANGE ${world.interactionRange.toFixed(1)} M · CLICK FLOOR TO PATHFIND`;
+      title.textContent = this.targetedKind === 'toilet' ? 'THRONE OUT OF RANGE' : 'MOVE CLOSER TO INTERACT';
+      detail.textContent = `INTERACTION RANGE ${world.interactionRange.toFixed(1)} M · NO AUTO-WALK · F1 CHEATS`;
     }
   }
 
   setMode(mode) {
     this.mode = mode;
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
-    byId('crosshair').classList.toggle('hidden', mode !== 'first');
+    byId('crosshair').classList.toggle('hidden', mode === 'god');
     const hints = {
-      third: '<b>WASD</b> MOVE <span>·</span> <b>RMB</b> ORBIT <span>·</span> <b>LMB</b> INTERACT <span>·</span> <b>SHIFT</b> SPRINT',
-      god: '<b>WASD</b> PAN CAMERA <span>·</span> <b>LMB</b> MOVE CITIZEN / INTERACT <span>·</span> <b>WHEEL</b> ZOOM',
-      first: '<b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> LOOK <span>·</span> <b>HOLD F</b> PISS <span>·</span> <b>E</b> THRONE',
+      third: '<b>CLICK</b> CAPTURE MOUSE <span>·</span> <b>WASD</b> MOVE <span>·</span> <b>E</b> ACTION WHEEL <span>·</span> <b>C</b> CREATOR <span>·</span> <b>F1</b> CHEATS',
+      god: '<b>WASD</b> FAST PAN <span>·</span> <b>SHIFT</b> BOOST <span>·</span> <b>LMB</b> MOVE / INTERACT IN RANGE <span>·</span> <b>C</b> CREATOR',
+      first: '<b>WASD</b> MOVE <span>·</span> <b>MOUSE</b> LOOK <span>·</span> <b>HOLD F</b> PISS <span>·</span> <b>E</b> WHEEL <span>·</span> <b>C</b> CREATOR',
     };
     byId('control-hint').innerHTML = hints[mode];
     byId('piss-indicator').classList.add('hidden');

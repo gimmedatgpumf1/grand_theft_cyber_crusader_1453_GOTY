@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
-call "%~dp0build.cmd" --run
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run.ps1" %*
 exit /b %ERRORLEVEL%

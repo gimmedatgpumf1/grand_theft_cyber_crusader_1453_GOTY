@@ -8,6 +8,8 @@
 namespace gtc {
 namespace {
 const std::string kEmptyString;
+const JsonValue::Array kEmptyArray;
+const JsonValue::Object kEmptyObject;
 } // namespace
 
 class JsonParser {
@@ -235,6 +237,14 @@ double JsonValue::number(double fallback) const {
 
 const std::string& JsonValue::string() const {
     return type_ == Type::String ? text_ : kEmptyString;
+}
+
+const JsonValue::Array& JsonValue::array() const {
+    return type_ == Type::Array ? array_ : kEmptyArray;
+}
+
+const JsonValue::Object& JsonValue::object() const {
+    return type_ == Type::Object ? object_ : kEmptyObject;
 }
 
 const JsonValue* JsonValue::get(const std::string& key) const {

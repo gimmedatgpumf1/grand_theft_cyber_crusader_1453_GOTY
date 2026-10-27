@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAILED=0
 while IFS= read -r -d '' FILE; do
   case "$FILE" in
-    */web/js/vendor/*|*/.git/*|*/build/*|*/.cache/*) continue ;;
+    */web/js/vendor/*|*/native/vendor/*|*/.git/*|*/build/*|*/.cache/*) continue ;;
   esac
   LINES="$(wc -l < "$FILE")"
   if [ "$LINES" -gt 1000 ]; then
@@ -15,4 +15,6 @@ done < <(find "$ROOT" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.js' -o
 if [ "$FAILED" -eq 0 ]; then
   echo '[nagger] All first-party files are <= 1000 lines. Readability survives.'
 fi
+echo '[nagger] Build successful? Push to GitHub!'
+echo '[nagger] Less yapping, more coding! Don'"'"'t bother the King until you have fixed it!'
 exit "$FAILED"
