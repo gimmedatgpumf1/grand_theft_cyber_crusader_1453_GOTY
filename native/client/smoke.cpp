@@ -253,10 +253,13 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool defaultHeight = std::abs((canonicalTop - canonicalBottom) * kHumanHeightScale - 1.7) < 1e-6;
     const HumanGazePose baseContact = humanGazePose(eyeModel, similarityCache.rest, scaledCitizen,
                                                      state.tick, 0, pitchDown);
-    const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
+    const HumanGazePose baseNeutralPose = humanGazePose(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
+    const Vec3 baseNeutral = baseNeutralPose.eye;
     const Vec3 baseDown = baseContact.eye;
+    const double expectedForward = length(baseNeutralPose.eye - baseNeutralPose.chin);
     const bool fullChain = length(baseContact.chin - baseContact.manubrium) < 1e-6 &&
-        baseDown.y < baseNeutral.y && baseDown.z > baseNeutral.z;
+        length((baseContact.eye - baseContact.manubrium) - Vec3{0, 0, expectedForward}) < 1e-6 &&
+        std::abs(expectedForward - 0.1172) < 0.001 && baseDown.y < baseNeutral.y && baseDown.z > baseNeutral.z;
     bool heightScaling = true;
     for (double scale : {0.75, 1.30}) {
         std::vector<Vec3> scaledRest;
@@ -269,6 +272,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         heightScaling = heightScaling && length(scaledNeutral - baseNeutral * scale) < 1e-6 &&
             length(scaledDown - baseDown * scale) < 1e-6 &&
             length(scaledContact.chin - scaledContact.manubrium) < 1e-6 &&
+            std::abs(scaledContact.eye.y - scaledContact.manubrium.y) < 1e-9 &&
             length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
     }
     HumanModel femaleEyeModel;
@@ -289,7 +293,9 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
                 const HumanGazePose neutral = humanGazePose(*model, contactCache.rest, contactCitizen, state.tick);
                 const HumanGazePose contact = humanGazePose(*model, contactCache.rest, contactCitizen,
                                                             state.tick, 0, pitchDown);
+                const Vec3 expectedOffset{0, 0, length(neutral.eye - neutral.chin)};
                 morphContacts = morphContacts && length(contact.chin - contact.manubrium) < 1e-6 &&
+                    length((contact.eye - contact.manubrium) - expectedOffset) < 1e-6 &&
                     contact.eye.z > neutral.eye.z && contact.eye.y < neutral.eye.y;
             }
         }
@@ -393,7 +399,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!attached) error = "first-person body attachment";
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
-    else if (!fullChain) error = "first-person chin/manubrium contact through complete neck-head chain";
+    else if (!fullChain) error = "first-person 117.2 mm forward, zero-vertical eye/manubrium geometry";
     else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
     else if (!morphContacts) error = "first-person chin/manubrium contact across body morphs";

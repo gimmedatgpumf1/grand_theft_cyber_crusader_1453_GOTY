@@ -326,7 +326,6 @@ struct GazeChain {
     std::vector<int> indices;
     std::vector<Vec3> pivots;
     std::vector<double> flexionLimits;
-    std::vector<double> extensionLimits;
     std::vector<double> yawShares;
     std::vector<double> extensionShares;
     Vec3 eye;
@@ -350,8 +349,6 @@ GazeChain gazeChain(const HumanModel& model, const std::vector<Vec3>& rest,
         chain.indices.push_back(index);
         chain.pivots.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
         chain.flexionLimits.push_back(flexionDegrees[i] * pi / 180.0);
-        const double extensionDegrees = i == 2 ? 10.9 : i == 3 ? 21.0 : 0.0;
-        chain.extensionLimits.push_back(extensionDegrees * pi / 180.0);
         chain.yawShares.push_back(yaw[i]);
         chain.extensionShares.push_back(extension[i]);
     }
@@ -396,37 +393,6 @@ Vec3 anteriorManubrium(const HumanModel& model, const std::vector<Vec3>& rest, V
     return sternum;
 }
 
-std::vector<double> solveChinContact(const GazeChain& chain, Vec3 target) {
-    const std::size_t count = chain.pivots.size();
-    std::vector<double> angles(count, 0.0);
-    auto forward = [&](Vec3& chin) {
-        std::vector<Vec3> points = chain.pivots;
-        points.push_back(chain.chin);
-        for (std::size_t i = 0; i < count; ++i) {
-            for (std::size_t j = i + 1; j < points.size(); ++j) {
-                points[j] = points[i] + apply(rotationX(-angles[i]), points[j] - points[i]);
-            }
-        }
-        chin = points.back();
-    };
-    // Base-to-tip CCD converges without the upper-joint unloading produced by
-    // tip-to-base CCD here. All four biological joints remain in the solve.
-    for (int iteration = 0; iteration < 256; ++iteration) {
-        for (std::size_t i = 0; i < count; ++i) {
-            Vec3 chin;
-            forward(chin);
-            const Vec3 from = normalized(chin - chain.pivots[i]);
-            const Vec3 to = normalized(target - chain.pivots[i]);
-            double angle = std::acos(std::clamp(dot(from, to), -1.0, 1.0));
-            if (cross(from, to).x > 0) angle = -angle;
-            angles[i] = std::clamp(angles[i] + angle, -chain.flexionLimits[i], chain.extensionLimits[i]);
-        }
-        Vec3 chin;
-        forward(chin);
-        if (length(chin - target) < 1e-7) break;
-    }
-    return angles;
-}
 
 } // namespace
 
@@ -440,11 +406,29 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
     if (chain.valid && (std::abs(headYaw) > 1e-9 || std::abs(gazePitch) > 1e-9)) {
         const std::size_t count = chain.pivots.size();
         std::vector<double> pitches(count, 0.0);
+        Vec3 protraction;
         if (gazePitch < 0) {
-            const std::vector<double> contact = solveChinContact(chain, chain.manubrium);
+            const Vec3 eyeOverChin = chain.eye - chain.chin;
+            const double headFlexion = std::atan2(eyeOverChin.y, eyeOverChin.z);
+            double mobility = 0;
+            for (double limit : chain.flexionLimits) mobility += limit;
+            std::vector<Vec3> contactPoints = chain.pivots;
+            contactPoints.push_back(chain.chin);
+            for (std::size_t i = 0; i < count; ++i) {
+                pitches[i] = -headFlexion * chain.flexionLimits[i] / std::max(1e-9, mobility);
+                for (std::size_t j = i + 1; j < contactPoints.size(); ++j) {
+                    contactPoints[j] = contactPoints[i] +
+                        apply(rotationX(-pitches[i]), contactPoints[j] - contactPoints[i]);
+                }
+            }
+            // Rigid rotation alone cannot reach this fully flexed pose on the
+            // MakeHuman pivots. Solve the remaining cervicothoracic translation
+            // from the actual contact landmark; never offset the camera directly.
+            protraction = chain.manubrium - contactPoints.back();
             const double amount = std::clamp((-gazePitch - kEyeInHeadRange) /
                 (pi * 0.5 - kEyeInHeadRange), 0.0, 1.0);
-            for (std::size_t i = 0; i < count; ++i) pitches[i] = contact[i] * amount;
+            for (double& pitch : pitches) pitch *= amount;
+            protraction = protraction * amount;
         } else {
             const double physical = gazePitch - std::clamp(gazePitch, -kEyeInHeadRange, kEyeInHeadRange);
             double total = 0;
@@ -465,8 +449,8 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
                                                     static_cast<float>(yaw));
             }
         }
-        posedEye = points[count];
-        posedChin = points[count + 1];
+        posedEye = points[count] + protraction;
+        posedChin = points[count + 1] + protraction;
     }
     const double rootY = humanRootHeight(model, rest, character, transforms);
     auto world = [&](Vec3 point) {
