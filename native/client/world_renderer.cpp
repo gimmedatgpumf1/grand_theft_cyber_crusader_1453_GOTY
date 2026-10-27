@@ -564,6 +564,22 @@ double headAngleForGaze(double gazeAngle) {
     return gazeAngle - std::clamp(gazeAngle, -kEyeInHeadRange, kEyeInHeadRange);
 }
 
+double clampedBodyRelativeYaw(float viewYaw, float bodyYaw) {
+    constexpr double limit = 100.0 * 3.141592653589793 / 180.0;
+    constexpr double fullTurn = 2.0 * 3.141592653589793;
+    // Reduce only complete turns. Wrapping through atan2 first would change
+    // +180 degrees into -180 degrees and snap the clamped head to the other side.
+    const double continuous = std::fmod(static_cast<double>(viewYaw) - bodyYaw, fullTurn);
+    return std::clamp(continuous, -limit, limit);
+}
+
+void clampViewToBody(ViewState& view, float bodyYaw, bool normalize) {
+    constexpr double limit = 100.0 * 3.141592653589793 / 180.0;
+    double relative = static_cast<double>(view.yaw) - bodyYaw;
+    if (normalize) relative = std::atan2(std::sin(relative), std::cos(relative));
+    view.yaw = bodyYaw + static_cast<float>(std::clamp(relative, -limit, limit));
+}
+
 Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& state,
                                  std::uint32_t localId, const ViewState& view) const {
     const Character* local = state.character(localId);
@@ -575,9 +591,8 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     camera.width = std::max(1, view.width);
     camera.height = std::max(1, view.height);
     camera.fovDegrees = 62;
+    const double gazeYaw = clampedBodyRelativeYaw(view.yaw, local->yaw);
     constexpr double gazeYawLimit = 100.0 * 3.141592653589793 / 180.0;
-    const double relativeYaw = std::atan2(std::sin(view.yaw - local->yaw), std::cos(view.yaw - local->yaw));
-    const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
     // Cervical motion is coupled rather than two independent maximum angles.
     // Keep the combined downward gaze clear of the posed shoulder and arm.
     constexpr double maximumDowngaze = 3.141592653589793 * 0.5;

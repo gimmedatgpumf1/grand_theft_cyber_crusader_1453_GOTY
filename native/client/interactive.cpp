@@ -170,6 +170,7 @@ private:
         const bool alreadyCameraAligned = wasActing && !isActing && std::abs(cameraDelta) < 1e-4;
         if (view_.mode == ViewMode::FirstPerson && (wasActing || isActing) && !alreadyCameraAligned) {
             turnViewWithBody(view_, trackedBodyYaw_, citizen->yaw);
+            clampViewToBody(view_, citizen->yaw, true);
         }
         trackedBodyYaw_ = citizen->yaw;
         trackedToiletAction_ = citizen->toiletAction;
@@ -306,7 +307,12 @@ private:
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
-            if (captured_) rotateView(view_, event.dx, event.dy);
+            if (captured_) {
+                rotateView(view_, event.dx, event.dy);
+                if (view_.mode == ViewMode::FirstPerson) {
+                    if (const Character* citizen = local()) clampViewToBody(view_, citizen->yaw);
+                }
+            }
             return;
         }
         if (event.type == WindowEvent::Type::Wheel) {
