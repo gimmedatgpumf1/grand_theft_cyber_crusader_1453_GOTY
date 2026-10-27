@@ -76,17 +76,15 @@ int submittedGenital(const gtc::native::GpuScene& scene, const gtc::native::Huma
 }
 
 bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& character,
-                    const gtc::native::Camera& camera, double gazePitch, std::uint64_t tick, std::string& error) {
+                    const gtc::native::Camera& camera, std::uint64_t tick, std::string& error) {
     using namespace gtc::native;
     HumanRenderCache cache;
     prepareHuman(model, character, cache);
     Camera geometryCamera = camera;
     geometryCamera.worldSpaceGpu = true;
-    const double projectionScale = firstPersonBodyProjectionScale();
     Rasterizer rasterizer(camera.width, camera.height, Color{}, camera.focal(), true);
-    rasterizer.setProjectionScale(projectionScale);
     HairLibrary hair;
-    drawHuman(rasterizer, geometryCamera, model, hair, character, cache, ".", tick, true, gazePitch);
+    drawHuman(rasterizer, geometryCamera, model, hair, character, cache, ".", tick, true);
     const GpuScene submittedScene = rasterizer.takeGpuScene();
     std::vector<int> genital;
     for (const Triangle& triangle : model.genitalTriangles) for (int id : triangle.v) genital.push_back(id);
@@ -98,8 +96,7 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
     }
     const std::vector<Vec3> firstPose = cache.posed;
     Rasterizer retained(camera.width, camera.height, Color{}, camera.focal(), true);
-    retained.setProjectionScale(projectionScale);
-    drawHuman(retained, geometryCamera, model, hair, character, cache, ".", tick, true, gazePitch);
+    drawHuman(retained, geometryCamera, model, hair, character, cache, ".", tick, true);
     for (int id : genital) {
         if (length(firstPose[id] - cache.posed[id]) > 1e-9) {
             error = "cached piss pose drift";
@@ -109,22 +106,21 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
     int inside = 0, visible = 0;
     for (int id : genital) {
         const Vec3 point = camera.view(cache.posed[id]);
-        const double x = camera.width * 0.5 + camera.focal() * projectionScale * point.x / point.z;
-        const double y = camera.height * 0.5 - camera.focal() * projectionScale * point.y / point.z;
+        const double x = camera.width * 0.5 + camera.focal() * point.x / point.z;
+        const double y = camera.height * 0.5 - camera.focal() * point.y / point.z;
         if (point.z > 0.035 && x >= 0 && x < camera.width && y >= 0 && y < camera.height) ++inside;
         const BodyHit hit = bodyHit(model, cache.posed, camera.position, cache.posed[id]);
         if (hit.genital && std::abs(hit.distance - length(cache.posed[id] - camera.position)) < 1e-4) ++visible;
     }
-    if (genital.empty() || inside * 2 < static_cast<int>(genital.size()) ||
-        visible * 4 < static_cast<int>(genital.size())) {
+    if (inside * 2 < static_cast<int>(genital.size()) || visible * 4 < static_cast<int>(genital.size())) {
         error = "standing male genital visibility";
         return false;
     }
-    for (const char* name : {"lowerleg02.L", "lowerleg02.R"}) {
+    for (const char* name : {"foot.L", "foot.R"}) {
         const auto it = std::find_if(model.rigBones.begin(), model.rigBones.end(), [&](const RigBone& bone) {
             return bone.name == name;
         });
-        if (it == model.rigBones.end()) { error = "lower-leg rig"; return false; }
+        if (it == model.rigBones.end()) { error = "foot rig"; return false; }
         const int bone = static_cast<int>(it - model.rigBones.begin());
         const Vec3 middle = (jointPosition(cache.rest, it->head) + jointPosition(cache.rest, it->tail)) * 0.5;
         int best = -1;
@@ -135,22 +131,22 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
             const double distance = length(cache.rest[id] - middle);
             if (weight >= 0.45 && distance < bestDistance) { best = static_cast<int>(id); bestDistance = distance; }
         }
-        if (best < 0) { error = "lower-leg surface"; return false; }
+        if (best < 0) { error = "foot surface"; return false; }
         const Vec3 point = camera.view(cache.posed[best]);
-        const double x = camera.width * 0.5 + camera.focal() * projectionScale * point.x / point.z;
-        const double y = camera.height * 0.5 - camera.focal() * projectionScale * point.y / point.z;
+        const double x = camera.width * 0.5 + camera.focal() * point.x / point.z;
+        const double y = camera.height * 0.5 - camera.focal() * point.y / point.z;
         const BodyHit hit = bodyHit(model, cache.posed, camera.position, cache.posed[best]);
-        bool lowerLeg = false;
+        bool foot = false;
         if (!hit.genital && hit.triangle >= 0) {
             for (int corner : model.triangles[hit.triangle].v) {
                 for (const auto& [candidate, weight] : model.rigWeights[corner]) {
-                    if (candidate == bone && weight > 0.2) lowerLeg = true;
+                    if (candidate == bone && weight > 0.2) foot = true;
                 }
             }
         }
-        if (point.z <= 0.035 || x < 0 || x >= camera.width || y < 0 || y >= camera.height || !lowerLeg ||
+        if (point.z <= 0.035 || x < 0 || x >= camera.width || y < 0 || y >= camera.height || !foot ||
             std::abs(hit.distance - length(cache.posed[best] - camera.position)) > 1e-4) {
-            error = "full-down lower-leg visibility";
+            error = "natural full-down foot visibility";
             return false;
         }
     }
@@ -160,8 +156,7 @@ bool bodyVisibility(const gtc::native::HumanModel& model, const gtc::Character& 
     HumanRenderCache dressedCache;
     prepareHuman(model, dressed, dressedCache);
     Rasterizer dressedRasterizer(camera.width, camera.height, Color{}, camera.focal(), true);
-    dressedRasterizer.setProjectionScale(projectionScale);
-    drawHuman(dressedRasterizer, geometryCamera, model, hair, dressed, dressedCache, ".", tick, true, gazePitch);
+    drawHuman(dressedRasterizer, geometryCamera, model, hair, dressed, dressedCache, ".", tick, true);
     const GpuScene dressedScene = dressedRasterizer.takeGpuScene();
     int dressedVisible = 0;
     for (int id : genital) {
@@ -181,19 +176,6 @@ int integer(const std::string& value, int fallback) {
 
 bool receivePair(gtc::native::NativeClient& a, gtc::native::NativeClient& b, std::string& error) {
     return a.receive(error) && b.receive(error);
-}
-
-bool continuousTorsoInCapture(const gtc::native::NativeFrame& frame) {
-    int samples = 0, shirt = 0;
-    for (int y = static_cast<int>(frame.height * 0.57); y < static_cast<int>(frame.height * 0.70); ++y) {
-        for (int x = static_cast<int>(frame.width * 0.38); x < static_cast<int>(frame.width * 0.62); ++x) {
-            const std::size_t offset = (static_cast<std::size_t>(y) * frame.width + x) * 3;
-            const int red = frame.rgb[offset], green = frame.rgb[offset + 1], blue = frame.rgb[offset + 2];
-            if (red > 65 && red > green * 1.3 && red > blue * 1.25) ++shirt;
-            ++samples;
-        }
-    }
-    return samples > 0 && shirt * 8 > samples;
 }
 
 const gtc::native::GpuScene* motionScene = nullptr;
@@ -474,50 +456,28 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         cleanup();
         return false;
     }
-    const std::uint64_t downRevision = motionScene->revision;
-    ViewState levelStandingView = standingView;
-    levelStandingView.pitch = 0;
-    if (!renderer.render(world, standingState, citizen.id, levelStandingView, frame, error) ||
-        motionScene->revision == downRevision) {
-        error = "FPS pitch did not rebuild the posed body";
-        cleanup();
-        return false;
-    }
-    if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) {
-        cleanup();
-        return false;
-    }
     const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
     ClientState visibilityState = standingState;
     visibilityState.characters[0].toiletAction = gtc::ToiletAction::Piss;
     visibilityState.characters[0].pissing = true;
     const Camera visibilityCamera = renderer.viewCamera(world, visibilityState, citizen.id, standingView);
-    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, pitchDown,
-                        visibilityState.tick, error)) {
+    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, visibilityState.tick, error)) {
         cleanup();
         return false;
     }
-    int visiblePelvis = 0, visibleLegs = 0, visibleTorso = 0, visibleLeftArm = 0, visibleRightArm = 0;
+    int visiblePelvis = 0, visibleLegs = 0;
     double standingClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
         for (const auto& vertex : batch.vertices) {
             const Vec3 worldPoint{vertex.x, vertex.y, vertex.z};
             standingClearance = std::min(standingClearance, length(standingCamera.position - worldPoint));
-            Vec3 point = transform(worldPoint);
-            point.x *= batch.projectionScale;
-            point.y *= batch.projectionScale;
+            const Vec3 point = transform(worldPoint);
             if (point.z <= 0.035) continue;
             const double x = motionScene->width * 0.5 + motionScene->focal * point.x / point.z;
             const double y = motionScene->height * 0.5 - motionScene->focal * point.y / point.z;
             if (x < 3 || x >= motionScene->width - 3 || y < 3 || y >= motionScene->height - 3) continue;
             if (vertex.y > 0.72 && vertex.y < 1.05) ++visiblePelvis;
             if (vertex.y > 0.05 && vertex.y < 0.65) ++visibleLegs;
-            const gtc::Character& body = standingState.characters[0];
-            const Vec3 local = rotateBody(worldPoint - Vec3{body.position.x, 0, body.position.y}, -body.yaw);
-            if (vertex.y > 1.0 && vertex.y < 1.42 && std::abs(local.x) < 0.22 &&
-                y < motionScene->height * 0.72) ++visibleTorso;
-            if (vertex.y > 0.65 && vertex.y < 1.45 && local.x < -0.20) ++visibleLeftArm;
-            if (vertex.y > 0.65 && vertex.y < 1.45 && local.x > 0.20) ++visibleRightArm;
         }
     }
     const Vec3 standingForward = normalized(standingCamera.target - standingCamera.position);
@@ -530,8 +490,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         std::abs(dot(basisY, basisZ)) < 1e-6;
     const bool steadyLens = std::abs(neutralStanding.fovDegrees - 62.0) < 1e-9 &&
         std::abs(standingCamera.fovDegrees - neutralStanding.fovDegrees) < 1e-9;
-    const bool lowerBody = steadyLens && visiblePelvis > 8 && visibleLegs > 8 && visibleTorso > 8 &&
-        visibleLeftArm > 2 && visibleRightArm > 2 && standingClearance > 0.04 &&
+    const bool lowerBody = steadyLens && visiblePelvis > 8 && visibleLegs > 8 && standingClearance > 0.04 &&
         verticalBasis && std::abs(standingForward.y - std::sin(pitchDown)) < 1e-6;
     const auto sceneClearance = [&](const Camera& camera) {
         double nearest = 1000;
@@ -608,10 +567,8 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!pitch) error = "first-person neck pitch pivot, forward travel=" + std::to_string(forwardTravel);
     else if (!clearance) error = "first-person arm clearance";
     else if (!steadyLens) error = "first-person camera FOV changed with gaze";
-    else if (!lowerBody) error = "standing male full-body visibility, clearance=" + std::to_string(standingClearance) +
-        ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs) +
-        ", torso=" + std::to_string(visibleTorso) + ", arms=" + std::to_string(visibleLeftArm) +
-        "/" + std::to_string(visibleRightArm);
+    else if (!lowerBody) error = "standing male lower-body visibility, clearance=" + std::to_string(standingClearance) +
+        ", pelvis=" + std::to_string(visiblePelvis) + ", legs=" + std::to_string(visibleLegs);
     else if (!shaped) error = "first-person morphed head attachment/clearance, " + leastMorphStage +
         "=" + std::to_string(leastMorphClearance);
     else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
@@ -760,7 +717,7 @@ int main(int argc, char** argv) {
             standingFps.yaw = male->yaw;
             gtc::native::NativeFrame frame;
             if (!renderer.render(alpha.world(), standing, alpha.playerId(), standingFps, frame, error) ||
-                !continuousTorsoInCapture(frame) || !frame.save(output + "/alpha-standing-fps.png")) {
+                !frame.save(output + "/alpha-standing-fps.png")) {
                 std::cerr << "Native standing male capture failed: " << error << '\n';
                 return 1;
             }

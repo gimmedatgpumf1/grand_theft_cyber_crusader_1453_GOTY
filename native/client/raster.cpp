@@ -283,20 +283,17 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         bool reuse = index < scene_.batches.size();
         if (reuse) {
             const GpuBatch& candidate = scene_.batches[index];
-            reuse = candidate.objectId == objectId_ && candidate.projectionScale == projectionScale_ &&
-                sameMaterial(candidate.material, material);
+            reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
         }
         if (!reuse) {
             auto found = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
-                return candidate.objectId == objectId_ && candidate.projectionScale == projectionScale_ &&
-                    sameMaterial(candidate.material, material);
+                return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
             });
             if (found == scene_.batches.end()) {
                 scene_.batches.push_back({});
                 GpuBatch& created = scene_.batches.back();
                 created.material = material;
                 created.objectId = objectId_;
-                created.projectionScale = projectionScale_;
                 created.pivotX = static_cast<float>(objectPivot_.x);
                 created.pivotZ = static_cast<float>(objectPivot_.y);
                 created.yaw = objectYaw_;
@@ -337,8 +334,8 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const std::array<RenderVertex, 3> vertices = {polygon[0], polygon[face], polygon[face + 1]};
         std::array<Projected, 3> p;
         for (int i = 0; i < 3; ++i) {
-            p[i].x = width_ * 0.5 + focal_ * projectionScale_ * vertices[i].view.x / vertices[i].view.z;
-            p[i].y = height_ * 0.5 - focal_ * projectionScale_ * vertices[i].view.y / vertices[i].view.z;
+            p[i].x = width_ * 0.5 + focal_ * vertices[i].view.x / vertices[i].view.z;
+            p[i].y = height_ * 0.5 - focal_ * vertices[i].view.y / vertices[i].view.z;
             p[i].inverseDepth = 1.0 / vertices[i].view.z;
             p[i].view = vertices[i].view;
             p[i].normal = vertices[i].normal;
