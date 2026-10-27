@@ -25,6 +25,7 @@ using UByte = unsigned char;
 using Sizei = int;
 using Float = float;
 using Double = double;
+using Char = char;
 
 struct Api {
     void (GTC_GL_CALL *viewport)(Int, Int, Sizei, Sizei) = nullptr;
@@ -79,8 +80,30 @@ struct BufferApi {
     void (GTC_GL_CALL *bufferData)(Enum, std::ptrdiff_t, const void*, Enum) = nullptr;
 };
 
+struct ShaderApi {
+    UInt (GTC_GL_CALL *createShader)(Enum) = nullptr;
+    void (GTC_GL_CALL *shaderSource)(UInt, Sizei, const Char* const*, const Int*) = nullptr;
+    void (GTC_GL_CALL *compileShader)(UInt) = nullptr;
+    void (GTC_GL_CALL *getShaderiv)(UInt, Enum, Int*) = nullptr;
+    void (GTC_GL_CALL *getShaderInfoLog)(UInt, Sizei, Sizei*, Char*) = nullptr;
+    void (GTC_GL_CALL *deleteShader)(UInt) = nullptr;
+    UInt (GTC_GL_CALL *createProgram)() = nullptr;
+    void (GTC_GL_CALL *attachShader)(UInt, UInt) = nullptr;
+    void (GTC_GL_CALL *linkProgram)(UInt) = nullptr;
+    void (GTC_GL_CALL *getProgramiv)(UInt, Enum, Int*) = nullptr;
+    void (GTC_GL_CALL *getProgramInfoLog)(UInt, Sizei, Sizei*, Char*) = nullptr;
+    void (GTC_GL_CALL *deleteProgram)(UInt) = nullptr;
+    void (GTC_GL_CALL *useProgram)(UInt) = nullptr;
+    Int (GTC_GL_CALL *getUniformLocation)(UInt, const Char*) = nullptr;
+    void (GTC_GL_CALL *uniform1i)(Int, Int) = nullptr;
+    void (GTC_GL_CALL *uniform1f)(Int, Float) = nullptr;
+    void (GTC_GL_CALL *uniform3f)(Int, Float, Float, Float) = nullptr;
+    void (GTC_GL_CALL *activeTexture)(Enum) = nullptr;
+};
+
 bool loadApi(Api& api, const std::function<void*(const char*)>& symbol);
 bool loadBufferApi(BufferApi& api, const std::function<void*(const char*)>& symbol);
+bool loadShaderApi(ShaderApi& api, const std::function<void*(const char*)>& symbol);
 
 } // namespace gl
 
@@ -97,9 +120,16 @@ public:
 private:
     gl::UInt texture(const Texture& source);
     bool checkError();
+    bool buildShader();
+
+    struct ShaderUniforms {
+        gl::Int textured = -1, normalMapped = -1, unlit = -1, hair = -1;
+        gl::Int specular = -1, fogColor = -1;
+    };
 
     gl::Api api_;
     gl::BufferApi buffers_;
+    gl::ShaderApi shaderApi_;
     std::vector<gl::UInt> bufferIds_;
     const GpuScene* uploadedScene_ = nullptr;
     std::uint64_t uploadedRevision_ = 0;
@@ -111,6 +141,9 @@ private:
     int overlayIndex_ = 0;
     int overlayWidth_ = 0;
     int overlayHeight_ = 0;
+    gl::UInt shaderProgram_ = 0;
+    ShaderUniforms shaderUniforms_;
+    bool shaders_ = false;
     bool loaded_ = false;
     bool debug_ = false;
 };

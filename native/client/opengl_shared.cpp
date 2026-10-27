@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
 
 namespace gtc::native {
 namespace {
@@ -11,6 +13,13 @@ float displayChannel(double value) {
     value = std::clamp(value, 0.0, 1.0);
     return static_cast<float>(value <= 0.0031308 ? value * 12.92 :
         1.055 * std::pow(value, 1.0 / 2.4) - 0.055);
+}
+
+float litDisplayChannel(double value) {
+    const double x = std::max(0.0, value);
+    const double tone = std::clamp((x * (2.51 * x + 0.03)) /
+        (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    return displayChannel(tone);
 }
 
 namespace c {
@@ -54,6 +63,12 @@ constexpr gl::Enum normalArray = 0x8075;
 constexpr gl::Enum textureCoordArray = 0x8078;
 constexpr gl::Enum arrayBuffer = 0x8892;
 constexpr gl::Enum dynamicDraw = 0x88E8;
+constexpr gl::Enum vertexShader = 0x8B31;
+constexpr gl::Enum fragmentShader = 0x8B30;
+constexpr gl::Enum compileStatus = 0x8B81;
+constexpr gl::Enum linkStatus = 0x8B82;
+constexpr gl::Enum texture0 = 0x84C0;
+constexpr gl::Enum texture1 = 0x84C1;
 constexpr gl::Enum unpackAlignment = 0x0CF5;
 constexpr gl::Enum packAlignment = 0x0D05;
 constexpr gl::Enum cullFace = 0x0B44;
@@ -143,6 +158,33 @@ bool loadBufferApi(BufferApi& api, const std::function<void*(const char*)>& symb
     return true;
 }
 
+bool loadShaderApi(ShaderApi& api, const std::function<void*(const char*)>& symbol) {
+    if (!symbol) return false;
+#define GTC_LOAD_SHADER(member, name) \
+    do { api.member = reinterpret_cast<decltype(api.member)>(symbol(name)); \
+         if (!api.member) { api = {}; return false; } } while (false)
+    GTC_LOAD_SHADER(createShader, "glCreateShader");
+    GTC_LOAD_SHADER(shaderSource, "glShaderSource");
+    GTC_LOAD_SHADER(compileShader, "glCompileShader");
+    GTC_LOAD_SHADER(getShaderiv, "glGetShaderiv");
+    GTC_LOAD_SHADER(getShaderInfoLog, "glGetShaderInfoLog");
+    GTC_LOAD_SHADER(deleteShader, "glDeleteShader");
+    GTC_LOAD_SHADER(createProgram, "glCreateProgram");
+    GTC_LOAD_SHADER(attachShader, "glAttachShader");
+    GTC_LOAD_SHADER(linkProgram, "glLinkProgram");
+    GTC_LOAD_SHADER(getProgramiv, "glGetProgramiv");
+    GTC_LOAD_SHADER(getProgramInfoLog, "glGetProgramInfoLog");
+    GTC_LOAD_SHADER(deleteProgram, "glDeleteProgram");
+    GTC_LOAD_SHADER(useProgram, "glUseProgram");
+    GTC_LOAD_SHADER(getUniformLocation, "glGetUniformLocation");
+    GTC_LOAD_SHADER(uniform1i, "glUniform1i");
+    GTC_LOAD_SHADER(uniform1f, "glUniform1f");
+    GTC_LOAD_SHADER(uniform3f, "glUniform3f");
+    GTC_LOAD_SHADER(activeTexture, "glActiveTexture");
+#undef GTC_LOAD_SHADER
+    return true;
+}
+
 } // namespace gl
 
 bool OpenGlRenderer::load(const std::function<void*(const char*)>& symbol) {
@@ -151,6 +193,7 @@ bool OpenGlRenderer::load(const std::function<void*(const char*)>& symbol) {
     textures_.clear();
     if (!gl::loadApi(api_, symbol)) return false;
     vbo_ = gl::loadBufferApi(buffers_, symbol);
+    shaders_ = gl::loadShaderApi(shaderApi_, symbol) && buildShader();
     loaded_ = true;
     api_.enable(c::depthTest);
     api_.depthFunc(c::less);
@@ -171,6 +214,9 @@ void OpenGlRenderer::shutdown() {
     uploadedScene_ = nullptr;
     uploadedRevision_ = 0;
     vbo_ = false;
+    if (loaded_ && shaderProgram_) shaderApi_.deleteProgram(shaderProgram_);
+    shaderProgram_ = 0;
+    shaders_ = false;
     if (loaded_) {
         for (gl::UInt& texture : overlayTextures_) {
             if (texture) api_.deleteTextures(1, &texture);
@@ -190,13 +236,141 @@ bool OpenGlRenderer::checkError() {
     return !debug_ || api_.getError() == c::noError;
 }
 
+bool OpenGlRenderer::buildShader() {
+    static const char vertexSource[] = R"GLSL(#version 110
+varying vec3 vPosition;
+varying vec3 vNormal;
+varying vec2 vUv;
+varying vec3 vColor;
+void main() {
+    vPosition = (gl_ModelViewMatrix * gl_Vertex).xyz;
+    vNormal = gl_NormalMatrix * gl_Normal;
+    vUv = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    vColor = gl_Color.rgb;
+    gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+}
+)GLSL";
+    static const char fragmentSource[] = R"GLSL(#version 110
+uniform sampler2D baseMap;
+uniform sampler2D normalMap;
+uniform int textured;
+uniform int normalMapped;
+uniform int unlit;
+uniform int hair;
+uniform float specularAmount;
+uniform vec3 fogColor;
+varying vec3 vPosition;
+varying vec3 vNormal;
+varying vec2 vUv;
+varying vec3 vColor;
+vec3 toLinear(vec3 value) {
+    vec3 usePower = step(vec3(0.04045), value);
+    return mix(value / 12.92, pow((value + 0.055) / 1.055, vec3(2.4)), usePower);
+}
+vec3 toSrgb(vec3 value) {
+    vec3 usePower = step(vec3(0.0031308), value);
+    return mix(value * 12.92, 1.055 * pow(value, vec3(1.0 / 2.4)) - 0.055, usePower);
+}
+vec3 toneMap(vec3 value) {
+    return clamp((value * (2.51 * value + 0.03)) /
+                 (value * (2.43 * value + 0.59) + 0.14), 0.0, 1.0);
+}
+void main() {
+    vec4 detail = textured != 0 ? texture2D(baseMap, vUv) : vec4(1.0);
+    if (hair != 0 && detail.a < 0.32) discard;
+    vec3 base = vColor * (textured != 0 ? toLinear(detail.rgb) : vec3(1.0));
+    vec3 normal = normalize(vNormal);
+    if (normalMapped != 0) {
+        vec3 edge1 = dFdx(vPosition), edge2 = dFdy(vPosition);
+        vec2 uv1 = dFdx(vUv), uv2 = dFdy(vUv);
+        float denominator = uv1.x * uv2.y - uv2.x * uv1.y;
+        if (abs(denominator) > 0.00000001) {
+            vec3 tangent = normalize((edge1 * uv2.y - edge2 * uv1.y) / denominator);
+            vec3 bitangent = normalize((edge2 * uv1.x - edge1 * uv2.x) / denominator);
+            vec3 mapped = texture2D(normalMap, vUv).xyz * 2.0 - 1.0;
+            normal = normalize(normal + tangent * (mapped.x * 0.32) + bitangent * (mapped.y * 0.32));
+        }
+    }
+    if (dot(normal, vPosition) > 0.0) normal = -normal;
+    vec3 color = base;
+    if (unlit == 0) {
+        vec3 key = normalize(vec3(-0.45, 0.78, -0.55));
+        vec3 fill = normalize(vec3(0.65, 0.25, -0.35));
+        vec3 toward = normalize(-vPosition);
+        float diffuse = 0.38 + 0.78 * max(0.0, dot(normal, key)) +
+                        0.24 * max(0.0, dot(normal, fill));
+        float rim = 0.10 * pow(1.0 - max(0.0, dot(normal, toward)), 3.0);
+        float specular = specularAmount * pow(max(0.0, dot(normal, normalize(key + toward))), 42.0);
+        color = base * (diffuse + rim) + vec3(specular);
+        float fog = clamp((-vPosition.z - 20.0) / 18.0, 0.0, 1.0);
+        color = mix(color, fogColor, fog);
+    }
+    gl_FragColor = vec4(toSrgb(toneMap(color)), 1.0);
+}
+)GLSL";
+    auto compile = [&](gl::Enum type, const char* source) {
+        const gl::UInt shader = shaderApi_.createShader(type);
+        const gl::Int length = static_cast<gl::Int>(std::strlen(source));
+        shaderApi_.shaderSource(shader, 1, &source, &length);
+        shaderApi_.compileShader(shader);
+        gl::Int status = 0;
+        shaderApi_.getShaderiv(shader, c::compileStatus, &status);
+        if (!status && debug_) {
+            char log[2048]{};
+            shaderApi_.getShaderInfoLog(shader, static_cast<gl::Sizei>(sizeof(log)), nullptr, log);
+            std::cerr << "Native GLSL compile: " << log << '\n';
+        }
+        if (!status) {
+            shaderApi_.deleteShader(shader);
+            return gl::UInt{0};
+        }
+        return shader;
+    };
+    const gl::UInt vertex = compile(c::vertexShader, vertexSource);
+    const gl::UInt fragment = compile(c::fragmentShader, fragmentSource);
+    if (!vertex || !fragment) {
+        if (vertex) shaderApi_.deleteShader(vertex);
+        if (fragment) shaderApi_.deleteShader(fragment);
+        return false;
+    }
+    shaderProgram_ = shaderApi_.createProgram();
+    shaderApi_.attachShader(shaderProgram_, vertex);
+    shaderApi_.attachShader(shaderProgram_, fragment);
+    shaderApi_.linkProgram(shaderProgram_);
+    shaderApi_.deleteShader(vertex);
+    shaderApi_.deleteShader(fragment);
+    gl::Int status = 0;
+    shaderApi_.getProgramiv(shaderProgram_, c::linkStatus, &status);
+    if (!status) {
+        if (debug_) {
+            char log[2048]{};
+            shaderApi_.getProgramInfoLog(shaderProgram_, static_cast<gl::Sizei>(sizeof(log)), nullptr, log);
+            std::cerr << "Native GLSL link: " << log << '\n';
+        }
+        shaderApi_.deleteProgram(shaderProgram_);
+        shaderProgram_ = 0;
+        return false;
+    }
+    shaderApi_.useProgram(shaderProgram_);
+    shaderApi_.uniform1i(shaderApi_.getUniformLocation(shaderProgram_, "baseMap"), 0);
+    shaderApi_.uniform1i(shaderApi_.getUniformLocation(shaderProgram_, "normalMap"), 1);
+    shaderUniforms_.textured = shaderApi_.getUniformLocation(shaderProgram_, "textured");
+    shaderUniforms_.normalMapped = shaderApi_.getUniformLocation(shaderProgram_, "normalMapped");
+    shaderUniforms_.unlit = shaderApi_.getUniformLocation(shaderProgram_, "unlit");
+    shaderUniforms_.hair = shaderApi_.getUniformLocation(shaderProgram_, "hair");
+    shaderUniforms_.specular = shaderApi_.getUniformLocation(shaderProgram_, "specularAmount");
+    shaderUniforms_.fogColor = shaderApi_.getUniformLocation(shaderProgram_, "fogColor");
+    shaderApi_.useProgram(0);
+    return true;
+}
+
 std::string OpenGlRenderer::name() const {
     if (!loaded_) return {};
     const gl::UByte* vendorName = api_.getString(c::vendor);
     const gl::UByte* rendererName = api_.getString(c::renderer);
     const std::string vendorText = vendorName ? reinterpret_cast<const char*>(vendorName) : "Unknown vendor";
     const std::string rendererText = rendererName ? reinterpret_cast<const char*>(rendererName) : "Unknown renderer";
-    return vendorText + " / " + rendererText;
+    return vendorText + " / " + rendererText + (shaders_ ? " / GLSL" : " / fixed-function");
 }
 
 gl::UInt OpenGlRenderer::texture(const Texture& source) {
@@ -221,9 +395,13 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     const bool refresh = scene.revision == 0 || uploadedScene_ != &scene || uploadedRevision_ != scene.revision;
     api_.viewport(0, 0, scene.width, scene.height);
     api_.drawBuffer(c::back);
-    api_.clearColor(displayChannel(scene.background.r), displayChannel(scene.background.g),
-                    displayChannel(scene.background.b), 1);
+    const auto sceneChannel = [&](double value) {
+        return shaders_ ? litDisplayChannel(value) : displayChannel(value);
+    };
+    api_.clearColor(sceneChannel(scene.background.r), sceneChannel(scene.background.g),
+                    sceneChannel(scene.background.b), 1);
     api_.clear(c::colorBufferBit | c::depthBufferBit);
+    if (shaderApi_.activeTexture) shaderApi_.activeTexture(c::texture0);
     api_.enable(c::depthTest);
     api_.depthMask(1);
     api_.disable(c::blend);
@@ -255,6 +433,13 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
     api_.enableClientState(c::vertexArray);
     api_.enableClientState(c::normalArray);
     api_.enableClientState(c::textureCoordArray);
+    if (shaders_) {
+        shaderApi_.useProgram(shaderProgram_);
+        shaderApi_.uniform3f(shaderUniforms_.fogColor, static_cast<float>(scene.background.r),
+            static_cast<float>(scene.background.g), static_cast<float>(scene.background.b));
+    } else if (shaderApi_.useProgram) {
+        shaderApi_.useProgram(0);
+    }
     for (std::size_t batchIndex = 0; batchIndex < scene.batches.size(); ++batchIndex) {
         const GpuBatch& batch = scene.batches[batchIndex];
         if (batch.vertices.empty()) continue;
@@ -275,7 +460,7 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             api_.disable(c::texture2D);
         }
         if (material.kind == Material::Kind::Floor && textured) api_.color3f(1, 1, 1);
-        else api_.color3f(displayChannel(material.color.r), displayChannel(material.color.g), displayChannel(material.color.b));
+        else api_.color3f(sceneChannel(material.color.r), sceneChannel(material.color.g), sceneChannel(material.color.b));
         const gl::Float specular[] = {static_cast<float>(material.specular), static_cast<float>(material.specular),
                                       static_cast<float>(material.specular), 1.0F};
         api_.materialfv(c::frontAndBack, c::specular, specular);
@@ -291,6 +476,20 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
             api_.alphaFunc(c::greater, 0.32F);
         } else {
             api_.disable(c::alphaTest);
+        }
+        if (shaders_) {
+            const bool normalMapped = material.kind == Material::Kind::Skin && material.normalYoung &&
+                !material.normalYoung->pixels.empty();
+            if (normalMapped) {
+                shaderApi_.activeTexture(c::texture1);
+                api_.bindTexture(c::texture2D, texture(*material.normalYoung));
+                shaderApi_.activeTexture(c::texture0);
+            }
+            shaderApi_.uniform1i(shaderUniforms_.textured, textured ? 1 : 0);
+            shaderApi_.uniform1i(shaderUniforms_.normalMapped, normalMapped ? 1 : 0);
+            shaderApi_.uniform1i(shaderUniforms_.unlit, material.unlit ? 1 : 0);
+            shaderApi_.uniform1i(shaderUniforms_.hair, material.kind == Material::Kind::Hair ? 1 : 0);
+            shaderApi_.uniform1f(shaderUniforms_.specular, static_cast<float>(material.specular));
         }
         const GpuVertex* vertices = batch.vertices.data();
         bool uploaded = false;
@@ -321,6 +520,8 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
         api_.drawArrays(c::triangles, 0, static_cast<gl::Sizei>(batch.vertices.size()));
     }
     if (vbo_) buffers_.bindBuffer(c::arrayBuffer, 0);
+    if (shaders_) shaderApi_.useProgram(0);
+    if (shaderApi_.activeTexture) shaderApi_.activeTexture(c::texture0);
     api_.disableClientState(c::vertexArray);
     api_.disableClientState(c::normalArray);
     api_.disableClientState(c::textureCoordArray);
@@ -343,6 +544,7 @@ bool OpenGlRenderer::present(const NativeFrame& frame) {
     const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
     if (!loaded_ || frame.width <= 0 || frame.height <= 0 ||
         frame.rgb.size() < pixels * 3 || frame.alpha.size() < pixels) return false;
+    if (shaders_) shaderApi_.useProgram(0);
     overlay_.resize(pixels * 4);
     for (std::size_t i = 0; i < pixels; ++i) {
         overlay_[i * 4] = frame.rgb[i * 3];
