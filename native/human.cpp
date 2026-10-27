@@ -283,6 +283,45 @@ bool HumanModel::loadRig(const std::string& root, std::string& error) {
             }
         }
     }
+    auto bonePoint = [&](const std::string& name, bool tail) {
+        const auto found = boneIndices.find(name);
+        if (found == boneIndices.end()) return Vec3{};
+        const RigBone& bone = rigBones[found->second];
+        return joint(tail ? bone.tail : bone.head);
+    };
+    const double collarRegion = bonePoint("neck01", false).y - 0.85;
+    const double pantsRegion = bonePoint("root", true).y;
+    const double bootsRegion = bonePoint("foot.L", false).y + 0.3978;
+    const double handX = std::abs(bonePoint("wrist.L", false).x) - 0.03;
+    const double handY = bonePoint("wrist.L", false).y + 0.75;
+    const double bodyShift = bonePoint("upperleg01.L", false).y - 0.4862;
+    static const std::set<std::string> legBones = {"pelvis.L", "pelvis.R", "upperleg01.L", "upperleg01.R",
+        "upperleg02.L", "upperleg02.R", "lowerleg01.L", "lowerleg01.R", "lowerleg02.L", "lowerleg02.R"};
+    static const std::set<std::string> lowerArmBones = {"lowerarm01.L", "lowerarm01.R", "lowerarm02.L", "lowerarm02.R"};
+    bodyMaterials.reserve(triangles.size());
+    for (const Triangle& triangle : triangles) {
+        const Vec3 center = (vertices[triangle.v[0]] + vertices[triangle.v[1]] + vertices[triangle.v[2]]) / 3.0;
+        double neck = 0, hand = 0, leg = 0, lower = 0;
+        for (int vertex : triangle.v) {
+            for (const auto& [bone, weight] : rigWeights[vertex]) {
+                if (bone < 0 || static_cast<std::size_t>(bone) >= rigBones.size()) continue;
+                const std::string& name = rigBones[bone].name;
+                const double share = weight / 3.0;
+                if (name == "neck01" || name == "head" || name == "jaw") neck += share;
+                if (name == "wrist.L" || name == "wrist.R") hand += share;
+                if (legBones.count(name)) leg += share;
+                if (lowerArmBones.count(name)) lower += share;
+            }
+        }
+        BodyMaterial material = BodyMaterial::Shirt;
+        if (center.y > headCutoff || (center.y > collarRegion && neck > 0.42) ||
+            hand > 0.53 || (std::abs(center.x) > handX && center.y < handY)) material = BodyMaterial::Skin;
+        else if (center.y < bootsRegion) material = BodyMaterial::Boots;
+        else if (center.y < pantsRegion || leg > 0.43) material = BodyMaterial::Pants;
+        else if (lower > 0.42) material = BodyMaterial::Sleeve;
+        else if (std::abs(center.x) < 1.45 && center.y > 2.4 + bodyShift) material = BodyMaterial::Torso;
+        bodyMaterials.push_back(material);
+    }
     const std::set<std::string> keep = {
         "root", "spine03", "spine02", "spine01", "neck01", "head", "jaw",
         "clavicle.L", "shoulder01.L", "upperarm01.L", "upperarm02.L", "lowerarm01.L",
@@ -519,7 +558,7 @@ bool HumanModel::loadRuntime(const std::string& root, bool isMale, std::string& 
 bool HumanModel::loadImpl(const std::string& root, bool isMale, bool landmarks, std::string& error) {
     male = isMale;
     sourceRoot_ = root + "/tools/human-source";
-    vertices.clear(); texcoords.clear(); triangles.clear(); mappingTriangles.clear(); headTriangles.clear(); headVertices.clear();
+    vertices.clear(); texcoords.clear(); triangles.clear(); bodyMaterials.clear(); mappingTriangles.clear(); headTriangles.clear(); headVertices.clear();
     specs.clear(); positive.clear(); negative.clear(); fitIndices.clear(); fitVertices.clear(); fitWeights.clear();
     fitSurfaceTriangles.clear(); fitSurfaceBary.clear(); surfaceReady = false;
     targetCache_.clear(); baseMacro_.clear(); neckSource_.clear();

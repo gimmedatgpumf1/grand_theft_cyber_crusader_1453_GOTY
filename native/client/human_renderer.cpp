@@ -155,17 +155,6 @@ Color hairColor(int index) {
     return colorHex(colors[std::clamp(index, 0, 8)]);
 }
 
-bool shirtTriangle(const Character& character, Vec3 point) {
-    const Appearance& a = character.appearance;
-    const double low = a.dress ? 0.43 : a.coat ? 0.62 : 0.80;
-    const double width = a.coat ? 0.47 : 0.42;
-    return point.y > low && point.y < 1.49 && std::abs(point.x) < width;
-}
-
-bool pantsTriangle(Vec3 point) {
-    return point.y > 0.12 && point.y <= 0.86 && std::abs(point.x) < 0.34;
-}
-
 void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
               const HairStyle& style, const std::vector<Vec3>& rest, const Transform& head,
               const Character& character, double rootY) {
@@ -285,7 +274,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     Material shoes;
     shoes.color = colorHex("#202421");
     shoes.specular = 0.12;
-    for (const Triangle& triangle : model.triangles) {
+    for (std::size_t triangleIndex = 0; triangleIndex < model.triangles.size(); ++triangleIndex) {
+        const Triangle& triangle = model.triangles[triangleIndex];
         const Vec3 restCenter = (rest[triangle.v[0]] + rest[triangle.v[1]] + rest[triangle.v[2]]) / 3.0;
         if (hideHead && restCenter.y > eyeRest.y - 0.14) continue;
         auto vertices = [&](double offset) {
@@ -298,9 +288,13 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             }
             return result;
         };
-        if (shirtTriangle(character, restCenter)) rasterizer.triangle(vertices(0.009), shirt);
-        else if (!character.appearance.dress && pantsTriangle(restCenter)) rasterizer.triangle(vertices(0.008), trousers);
-        else if (restCenter.y < 0.13) rasterizer.triangle(vertices(0.009), shoes);
+        const BodyMaterial region = triangleIndex < model.bodyMaterials.size() ?
+            model.bodyMaterials[triangleIndex] : BodyMaterial::Skin;
+        const bool coveredSleeve = character.appearance.coat || character.appearance.shirt % 2 == 0;
+        if (region == BodyMaterial::Shirt || region == BodyMaterial::Torso ||
+            (region == BodyMaterial::Sleeve && coveredSleeve)) rasterizer.triangle(vertices(0.009), shirt);
+        else if (region == BodyMaterial::Pants) rasterizer.triangle(vertices(0.008), trousers);
+        else if (region == BodyMaterial::Boots) rasterizer.triangle(vertices(0.009), shoes);
         else rasterizer.triangle(vertices(0), skin);
     }
     if (hideHead) return;

@@ -42,6 +42,8 @@ struct Triangle {
     int uv[3] = {0, 0, 0};
 };
 
+enum class BodyMaterial : std::uint8_t { Skin, Shirt, Sleeve, Pants, Boots, Torso };
+
 struct MorphSpec {
     std::string key;
     std::string tab;
@@ -75,6 +77,7 @@ public:
     std::vector<Vec3> vertices;
     std::vector<Vec2> texcoords;
     std::vector<Triangle> triangles;
+    std::vector<BodyMaterial> bodyMaterials;
     std::vector<Triangle> mappingTriangles;
     std::vector<Triangle> headTriangles;
     std::vector<int> headVertices;
