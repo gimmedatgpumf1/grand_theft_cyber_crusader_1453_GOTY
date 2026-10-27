@@ -16,11 +16,6 @@ gtc::native::Vec3 jointPosition(const std::vector<gtc::native::Vec3>& points, co
     return result / static_cast<double>(ids.size());
 }
 
-gtc::native::Vec3 rotateBody(gtc::native::Vec3 point, float yaw) {
-    const double c = std::cos(yaw), s = std::sin(yaw);
-    return {c * point.x + s * point.z, point.y, -s * point.x + c * point.z};
-}
-
 struct BodyHit {
     double distance = 1e100;
     int triangle = -1;
