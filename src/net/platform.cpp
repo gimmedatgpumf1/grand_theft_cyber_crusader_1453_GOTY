@@ -4,6 +4,7 @@
 
 #ifndef _WIN32
 #include <cerrno>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -45,6 +46,27 @@ SocketHandle createListener(std::uint16_t port) {
 
 SocketHandle acceptClient(SocketHandle listener) {
     return ::accept(listener, nullptr, nullptr);
+}
+
+SocketHandle connectClient(const std::string& host, std::uint16_t port) {
+    addrinfo hints{};
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+    addrinfo* addresses = nullptr;
+    const std::string service = std::to_string(port);
+    if (::getaddrinfo(host.c_str(), service.c_str(), &hints, &addresses) != 0) return kInvalidSocket;
+    SocketHandle result = kInvalidSocket;
+    for (addrinfo* address = addresses; address; address = address->ai_next) {
+        const SocketHandle socket = ::socket(address->ai_family, address->ai_socktype, address->ai_protocol);
+        if (socket == kInvalidSocket) continue;
+        if (::connect(socket, address->ai_addr, static_cast<int>(address->ai_addrlen)) == 0) {
+            result = socket;
+            break;
+        }
+        closeSocket(socket);
+    }
+    ::freeaddrinfo(addresses);
+    return result;
 }
 
 void closeSocket(SocketHandle socket) {

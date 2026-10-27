@@ -19,6 +19,7 @@ bool initialize();
 void cleanup();
 SocketHandle createListener(std::uint16_t port);
 SocketHandle acceptClient(SocketHandle listener);
+SocketHandle connectClient(const std::string& host, std::uint16_t port);
 void closeSocket(SocketHandle socket);
 int readSome(SocketHandle socket, char* buffer, int size);
 bool sendAll(SocketHandle socket, const char* data, std::size_t size);
