@@ -212,10 +212,10 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     glDisable(GL_TEXTURE_2D);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    constexpr double near = 0.035;
-    const double horizontal = near * scene.width / (2 * scene.focal);
-    const double vertical = near * scene.height / (2 * scene.focal);
-    glFrustum(-horizontal, horizontal, -vertical, vertical, near, 70.0);
+    constexpr double nearPlane = 0.035;
+    const double horizontal = nearPlane * scene.width / (2 * scene.focal);
+    const double vertical = nearPlane * scene.height / (2 * scene.focal);
+    glFrustum(-horizontal, horizontal, -vertical, vertical, nearPlane, 70.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     const GLfloat ambient[] = {0.38F, 0.38F, 0.38F, 1.0F};

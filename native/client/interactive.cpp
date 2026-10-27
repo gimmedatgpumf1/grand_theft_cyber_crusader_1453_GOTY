@@ -244,8 +244,8 @@ private:
             return;
         }
         if (event.type == WindowEvent::Type::Wheel) {
-            if (view_.mode == ViewMode::God) view_.godDistance = std::clamp(view_.godDistance - event.wheel * 0.9, 8.0, 25.0);
-            else view_.distance = std::clamp(view_.distance - event.wheel * 0.35, 2.4, 8.0);
+            if (view_.mode == ViewMode::God) view_.godDistance = static_cast<float>(std::clamp(view_.godDistance - event.wheel * 0.9, 8.0, 25.0));
+            else view_.distance = static_cast<float>(std::clamp(view_.distance - event.wheel * 0.35, 2.4, 8.0));
             return;
         }
         if (event.type == WindowEvent::Type::MouseDown) {

@@ -57,7 +57,7 @@ Transform around(Vec3 pivot, const Mat3& rotation) {
 Vec3 joint(const std::vector<Vec3>& positions, const std::vector<int>& ids) {
     Vec3 result;
     for (int index : ids) if (index >= 0 && static_cast<std::size_t>(index) < positions.size()) result += positions[index];
-    return result / std::max<std::size_t>(1, ids.size());
+    return result / static_cast<double>(std::max<std::size_t>(1, ids.size()));
 }
 
 int boneIndex(const HumanModel& model, const std::string& name) {

@@ -27,9 +27,9 @@ for %%S in (native\human.cpp native\io.cpp native\hair.cpp native\fit.cpp native
   set "OBJECT=%ROOT%\build\obj\native\%%~nS.obj"
   set "OBJECTS=!OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
@@ -41,9 +41,9 @@ for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.
   set "OBJECT=%ROOT%\build\obj\native-client\%%~nS.obj"
   set "CLIENT_OBJECTS=!CLIENT_OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
