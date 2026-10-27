@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <random>
 #include <sstream>
@@ -178,7 +179,7 @@ void parseWorld(const JsonValue& value, ClientWorld& world) {
 }
 
 void parseState(const JsonValue& value, ClientState& state) {
-    state.tick = static_cast<std::uint64_t>(value.numberAt("tick"));
+    state.tick = value.numberAt("tick");
     state.time = static_cast<std::uint64_t>(value.numberAt("time"));
     state.gameTime = value.numberAt("gameTime", state.gameTime);
     state.day = static_cast<std::uint32_t>(value.numberAt("day", 1));
@@ -241,6 +242,79 @@ void parseState(const JsonValue& value, ClientState& state) {
 const Character* ClientState::character(std::uint32_t id) const {
     for (const Character& character : characters) if (character.id == id) return &character;
     return nullptr;
+}
+
+void interpolateState(const ClientState& previous, const ClientState& target,
+                      ClientState& output, double partialTick) {
+    const double t = std::clamp(partialTick, 0.0, 1.0);
+    const auto lerp = [t](double a, double b) { return a + (b - a) * t; };
+    const auto vec = [&](Vec2 a, Vec2 b) { return Vec2{static_cast<float>(lerp(a.x, b.x)), static_cast<float>(lerp(a.y, b.y))}; };
+    const auto angle = [&](float a, float b) {
+        const double delta = std::atan2(std::sin(b - a), std::cos(b - a));
+        return static_cast<float>(a + delta * t);
+    };
+    output.tick = lerp(previous.tick, target.tick);
+    double gameDelta = target.gameTime - previous.gameTime;
+    if (gameDelta < -43200.0) gameDelta += 86400.0;
+    output.gameTime = std::fmod(previous.gameTime + gameDelta * t, 86400.0);
+    output.day = t < 1.0 ? previous.day : target.day;
+    output.wind = vec(previous.wind, target.wind);
+    for (Character& value : output.characters) {
+        const Character* a = previous.character(value.id);
+        const Character* b = target.character(value.id);
+        if (!a || !b) continue;
+        value.position = vec(a->position, b->position);
+        value.manualMove = vec(a->manualMove, b->manualMove);
+        value.yaw = angle(a->yaw, b->yaw);
+        value.pitch = static_cast<float>(lerp(a->pitch, b->pitch));
+        value.speed = static_cast<float>(lerp(a->speed, b->speed));
+        value.elevation = static_cast<float>(lerp(a->elevation, b->elevation));
+        value.verticalVelocity = static_cast<float>(lerp(a->verticalVelocity, b->verticalVelocity));
+        value.charge = static_cast<float>(lerp(a->charge, b->charge));
+        value.fullChargeTime = static_cast<float>(lerp(a->fullChargeTime, b->fullChargeTime));
+        value.grabHeight = static_cast<float>(lerp(a->grabHeight, b->grabHeight));
+        value.health = static_cast<float>(lerp(a->health, b->health));
+        value.attackAnim = static_cast<float>(lerp(a->attackAnim, b->attackAnim));
+        value.attackCooldown = static_cast<float>(lerp(a->attackCooldown, b->attackCooldown));
+        value.waterRippleTimer = static_cast<float>(lerp(a->waterRippleTimer, b->waterRippleTimer));
+        value.aimTarget = vec(a->aimTarget, b->aimTarget);
+        value.aimHeight = static_cast<float>(lerp(a->aimHeight, b->aimHeight));
+        value.needs.bladder = static_cast<float>(lerp(a->needs.bladder, b->needs.bladder));
+        value.needs.bowel = static_cast<float>(lerp(a->needs.bowel, b->needs.bowel));
+        value.actionTime = static_cast<float>(lerp(a->actionTime, b->actionTime));
+        value.projectileTimer = static_cast<float>(lerp(a->projectileTimer, b->projectileTimer));
+        value.aiTimer = static_cast<float>(lerp(a->aiTimer, b->aiTimer));
+    }
+    std::size_t old = 0;
+    for (Projectile& value : output.projectiles) {
+        while (old < previous.projectiles.size() && previous.projectiles[old].id < value.id) ++old;
+        if (old >= previous.projectiles.size() || previous.projectiles[old].id != value.id) continue;
+        const Projectile& a = previous.projectiles[old];
+        value.position = vec(a.position, value.position);
+        value.velocity = vec(a.velocity, value.velocity);
+        value.height = static_cast<float>(lerp(a.height, value.height));
+        value.verticalVelocity = static_cast<float>(lerp(a.verticalVelocity, value.verticalVelocity));
+        value.age = static_cast<float>(lerp(a.age, value.age));
+    }
+    for (std::size_t i = 0; i < output.puddles.size() && i < previous.puddles.size(); ++i) {
+        if (output.puddles[i].id != previous.puddles[i].id) continue;
+        const Puddle& a = previous.puddles[i];
+        Puddle& value = output.puddles[i];
+        value.position = vec(a.position, value.position);
+        value.size = static_cast<float>(lerp(a.size, value.size));
+        value.height = static_cast<float>(lerp(a.height, value.height));
+        value.normal = vec(a.normal, value.normal);
+        value.age = lerp(a.age, value.age);
+    }
+    old = 0;
+    for (WaterRipple& value : output.waterRipples) {
+        while (old < previous.waterRipples.size() && previous.waterRipples[old].id < value.id) ++old;
+        if (old >= previous.waterRipples.size() || previous.waterRipples[old].id != value.id) continue;
+        const WaterRipple& a = previous.waterRipples[old];
+        value.position = vec(a.position, value.position);
+        value.age = lerp(a.age, value.age);
+        value.strength = static_cast<float>(lerp(a.strength, value.strength));
+    }
 }
 
 NativeClient::~NativeClient() { disconnect(); }

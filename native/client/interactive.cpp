@@ -87,7 +87,7 @@ public:
                 sendInput();
                 inputTime = now;
             }
-            updatePresentation(dt);
+            updatePresentation();
             updateHighlight();
             const auto renderStart = Clock::now();
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
@@ -177,37 +177,26 @@ private:
         trackedToiletAction_ = citizen->toiletAction;
     }
 
-    void updatePresentation(float dt) {
+    void updatePresentation() {
+        const auto now = std::chrono::steady_clock::now();
         const ClientState& latest = client_.state();
         if (!presentationReady_) {
-            presentation_ = latest;
+            presentationPrevious_ = presentationTarget_ = presentation_ = latest;
             presentationVersion_ = client_.stateVersion();
+            snapshotAt_ = now;
             presentationReady_ = true;
             return;
         }
         if (presentationVersion_ != client_.stateVersion()) {
-            const ClientState previous = presentation_;
-            presentation_ = latest;
+            const double measured = std::chrono::duration<double>(now - snapshotAt_).count();
+            if (measured > 0.005) snapshotInterval_ = std::clamp(snapshotInterval_ * 0.75 + measured * 0.25, 0.025, 0.15);
+            presentationPrevious_ = presentationTarget_;
+            presentationTarget_ = presentation_ = latest;
             presentationVersion_ = client_.stateVersion();
-            for (Character& character : presentation_.characters) {
-                if (const Character* old = previous.character(character.id)) {
-                    character.position = old->position;
-                    character.elevation = old->elevation;
-                    character.yaw = old->yaw;
-                }
-            }
-            for (Projectile& projectile : presentation_.projectiles) {
-                const auto old = std::find_if(previous.projectiles.begin(), previous.projectiles.end(),
-                    [&](const Projectile& candidate) { return candidate.id == projectile.id; });
-                if (old != previous.projectiles.end()) {
-                    projectile.position = old->position;
-                    projectile.height = old->height;
-                    projectile.velocity = old->velocity;
-                    projectile.verticalVelocity = old->verticalVelocity;
-                }
-            }
+            snapshotAt_ = now;
         }
-        interpolateCharacters(latest, presentation_, dt);
+        const double partialTick = std::chrono::duration<double>(now - snapshotAt_).count() / snapshotInterval_;
+        interpolateState(presentationPrevious_, presentationTarget_, presentation_, partialTick);
     }
 
     void setMode(ViewMode mode) {
@@ -654,8 +643,10 @@ private:
         }
     }
 
-    ClientState presentation_;
+    ClientState presentationPrevious_, presentationTarget_, presentation_;
     std::uint64_t presentationVersion_ = 0;
+    std::chrono::steady_clock::time_point snapshotAt_{};
+    double snapshotInterval_ = 0.05;
     bool presentationReady_ = false;
     InteractiveOptions options_;
     NativeClient client_;

@@ -234,18 +234,19 @@ bool captureMotionScene(const gtc::native::GpuScene& scene, gtc::native::NativeF
 }
 bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     using namespace gtc::native;
-    ClientState target, current;
-    gtc::Character citizen;
-    citizen.id = 1;
-    current.characters.push_back(citizen);
-    citizen.position = {4, 2};
-    citizen.yaw = 1;
+    ClientState previous, target, current; previous.tick = 40; target.tick = 42;
+    gtc::Character citizen; citizen.id = 1; citizen.yaw = 3;
+    previous.characters.push_back(citizen); citizen.position = {4, 2}; citizen.yaw = -3;
     target.characters.push_back(citizen);
-    interpolateCharacters(target, current, 0.1F);
-    const double characterBlend = 1.0 - std::exp(-1.5);
-    if (std::abs(current.characters[0].position.x - 4 * characterBlend) > 1e-5 ||
-        std::abs(current.characters[0].position.y - 2 * characterBlend) > 1e-5) {
-        error = "character interpolation";
+    gtc::Projectile interpolatedDrop; interpolatedDrop.id = 9; previous.projectiles.push_back(interpolatedDrop);
+    interpolatedDrop.position = {4, 2}; interpolatedDrop.height = 2; target.projectiles.push_back(interpolatedDrop);
+    current = target; interpolateState(previous, target, current, 0.25);
+    const double expectedYaw = 3 + std::atan2(std::sin(-6.0), std::cos(-6.0)) * 0.25;
+    if (std::abs(current.tick - 40.5) > 1e-9 || std::abs(current.characters[0].position.x - 1) > 1e-6 ||
+        std::abs(current.characters[0].position.y - 0.5) > 1e-6 || std::abs(current.characters[0].yaw - expectedYaw) > 1e-6 ||
+        current.projectiles.size() != 1 || std::abs(current.projectiles[0].position.x - 1) > 1e-6 ||
+        std::abs(current.projectiles[0].height - 0.5) > 1e-6) {
+        error = "partial tick interpolation";
         return false;
     }
     ClientWorld world;

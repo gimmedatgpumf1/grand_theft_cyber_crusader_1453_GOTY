@@ -79,7 +79,7 @@ double standingIdleWeight(const Character& character) {
 }
 
 std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& rest,
-                            const Character& character, std::uint64_t tick) {
+                            const Character& character, double tick) {
     std::vector<Transform> transforms(model.rigBones.size());
     std::vector<int> states(model.rigBones.size(), 0);
     const bool seated = character.onToilet;
@@ -493,7 +493,7 @@ Vec3 anteriorManubrium(const HumanModel& model, const std::vector<Vec3>& rest, V
 } // namespace
 
 HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& rest,
-                            const Character& character, std::uint64_t tick,
+                            const Character& character, double tick,
                             double headYaw, double gazePitch) {
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     GazeChain chain = gazeChain(model, rest, transforms);
@@ -557,14 +557,14 @@ HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& re
 }
 
 Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, std::uint64_t tick,
+                      const Character& character, double tick,
                       double headYaw, double gazePitch) {
     return humanGazePose(model, rest, character, tick, headYaw, gazePitch).eye;
 }
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
-               const std::string& root, std::uint64_t tick, bool hideHead) {
+               const std::string& root, double tick, bool hideHead) {
     std::vector<double> morphs(character.appearance.morphs.begin(), character.appearance.morphs.end());
     prepareHuman(model, character, cache);
     const std::vector<Vec3>& rest = cache.rest;

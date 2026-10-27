@@ -67,6 +67,5 @@ double clampedBodyRelativeYaw(float viewYaw, float bodyYaw);
 void clampViewToBody(ViewState& view, float bodyYaw, bool normalize = false);
 void turnViewWithBody(ViewState& view, float previousBodyYaw, float currentBodyYaw);
 void rotateView(ViewState& view, double mouseX, double mouseY);
-void interpolateCharacters(const ClientState& target, ClientState& current, float dt);
 
 } // namespace gtc::native

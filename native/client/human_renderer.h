@@ -20,7 +20,7 @@ struct HumanRenderCache {
     std::vector<Vec3> rest;
     std::vector<Vec3> normals;
     bool poseValid = false;
-    std::uint64_t poseTick = 0;
+    double poseTick = 0;
     float poseX = 0, poseZ = 0, poseYaw = 0, poseSpeed = 0;
     float poseElevation = 0, poseCharge = 0, poseGrabHeight = 0;
     float posePitch = 0, poseAttackAnim = 0;
@@ -41,14 +41,14 @@ struct HumanGazePose {
     Vec3 manubrium;
 };
 HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& rest,
-                            const Character& character, std::uint64_t tick,
+                            const Character& character, double tick,
                             double headYaw = 0, double gazePitch = 0);
 Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, std::uint64_t tick,
+                      const Character& character, double tick,
                       double headYaw = 0, double gazePitch = 0);
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,
-               const std::string& root, std::uint64_t tick, bool hideHead);
+               const std::string& root, double tick, bool hideHead);
 
 } // namespace gtc::native

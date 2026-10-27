@@ -19,7 +19,7 @@ struct ClientWorld {
 };
 
 struct ClientState {
-    std::uint64_t tick = 0;
+    double tick = 0;
     std::uint64_t time = 0;
     double gameTime = 8.0 * 60.0 * 60.0;
     std::uint32_t day = 1;
@@ -33,6 +33,10 @@ struct ClientState {
 
     const Character* character(std::uint32_t id) const;
 };
+
+// Render between two fixed simulation snapshots; partialTick is in [0, 1].
+void interpolateState(const ClientState& previous, const ClientState& target,
+                      ClientState& output, double partialTick);
 
 class NativeClient {
 public:

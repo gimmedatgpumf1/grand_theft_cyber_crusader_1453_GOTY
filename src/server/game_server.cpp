@@ -326,14 +326,10 @@ void GameServer::serveHttp(SocketHandle socket, const std::string& method, const
 void GameServer::simulationLoop() {
     using Clock = std::chrono::steady_clock;
     auto next = Clock::now();
-    int broadcastDivider = 0;
     while (running_) {
         next += std::chrono::milliseconds(50);
         world_.update(0.05F);
-        if (++broadcastDivider >= 2) {
-            broadcastDivider = 0;
-            broadcast(world_.snapshot());
-        }
+        broadcast(world_.snapshot());
         std::this_thread::sleep_until(next);
         if (Clock::now() - next > std::chrono::milliseconds(250)) next = Clock::now();
     }

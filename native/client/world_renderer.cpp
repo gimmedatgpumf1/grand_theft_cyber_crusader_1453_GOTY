@@ -452,6 +452,40 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
     piss.specular = 0.35;
     bullet.color = colorHex("#fff0a0");
     bullet.unlit = true;
+    std::vector<const Projectile*> stream;
+    for (const Projectile& projectile : state.projectiles) {
+        if (projectile.kind == ProjectileKind::Piss) stream.push_back(&projectile);
+    }
+    std::sort(stream.begin(), stream.end(), [](const Projectile* a, const Projectile* b) {
+        return a->owner != b->owner ? a->owner < b->owner : a->id < b->id;
+    });
+    for (std::size_t index = 1; index < stream.size(); ++index) {
+        const Projectile& older = *stream[index - 1];
+        const Projectile& newer = *stream[index];
+        if (older.owner != newer.owner) continue;
+        const double ageGap = older.age - newer.age;
+        const Vec3 a{older.position.x, older.height, older.position.y};
+        const Vec3 b{newer.position.x, newer.height, newer.position.y};
+        const Vec3 delta = b - a;
+        const double span = length(delta);
+        if (ageGap < -0.001 || ageGap > 0.075 || span < 0.015 || span > 0.8) continue;
+        const Vec3 direction = delta / span;
+        Vec3 side = cross(direction, Vec3{0, 1, 0});
+        if (length(side) < 0.001) side = {1, 0, 0};
+        side = normalized(side) * 0.0045;
+        const Vec3 up = normalized(cross(side, direction)) * 0.0045;
+        const Vec3 radial[4] = {side, up, side * -1.0, up * -1.0};
+        for (int sideIndex = 0; sideIndex < 4; ++sideIndex) {
+            const int next = (sideIndex + 1) % 4;
+            const Vec3 normal = normalized(radial[sideIndex] + radial[next]);
+            const Vec3 a0 = a + radial[sideIndex], a1 = a + radial[next];
+            const Vec3 b0 = b + radial[sideIndex], b1 = b + radial[next];
+            rasterizer.triangle({cameraVertex(camera, a0, normal, a0), cameraVertex(camera, b0, normal, b0),
+                                 cameraVertex(camera, b1, normal, b1)}, piss);
+            rasterizer.triangle({cameraVertex(camera, a0, normal, a0), cameraVertex(camera, b1, normal, b1),
+                                 cameraVertex(camera, a1, normal, a1)}, piss);
+        }
+    }
     for (const Projectile& projectile : state.projectiles) {
         const bool isBullet = projectile.kind == ProjectileKind::Bullet;
         const Vec3 center{projectile.position.x, projectile.height, projectile.position.y};
@@ -496,9 +530,11 @@ bool animatedPose(const ClientState& state) {
 
 bool samePuddles(const std::vector<Puddle>& a, const std::vector<Puddle>& b) {
     if (a.size() != b.size()) return false;
+    const auto near = [](float x, float y) { return std::abs(static_cast<double>(x) - y) <= 0.001; };
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (a[i].id != b[i].id || a[i].position.x != b[i].position.x || a[i].position.y != b[i].position.y ||
-            a[i].size != b[i].size || a[i].height != b[i].height || a[i].normal.x != b[i].normal.x ||
+        if (a[i].id != b[i].id || !near(a[i].position.x, b[i].position.x) ||
+            !near(a[i].position.y, b[i].position.y) || !near(a[i].size, b[i].size) ||
+            !near(a[i].height, b[i].height) || a[i].normal.x != b[i].normal.x ||
             a[i].normal.y != b[i].normal.y || a[i].vertical != b[i].vertical) return false;
     }
     return true;
@@ -785,38 +821,6 @@ void rotateView(ViewState& view, double mouseX, double mouseY) {
     view.pitch -= static_cast<float>(mouseY * 0.0022);
     view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.57079633F : -1.05F,
                             view.mode == ViewMode::FirstPerson ? 1.57079633F : -0.06F);
-}
-
-void interpolateCharacters(const ClientState& target, ClientState& current, float dt) {
-    const double blend = 1.0 - std::exp(-15.0 * dt);
-    for (Character& character : current.characters) {
-        const Character* destination = target.character(character.id);
-        if (!destination) continue;
-        if (destination->onToilet || destination->toiletAction == ToiletAction::Piss) {
-            character.position = destination->position;
-            character.elevation = destination->elevation;
-            character.yaw = destination->yaw;
-            continue;
-        }
-        character.elevation += static_cast<float>((destination->elevation - character.elevation) * blend);
-        character.position.x += static_cast<float>((destination->position.x - character.position.x) * blend);
-        character.position.y += static_cast<float>((destination->position.y - character.position.y) * blend);
-        const double angle = std::atan2(std::sin(destination->yaw - character.yaw),
-                                        std::cos(destination->yaw - character.yaw));
-        character.yaw = static_cast<float>(character.yaw + angle * blend);
-    }
-    for (Projectile& projectile : current.projectiles) {
-        const auto found = std::find_if(target.projectiles.begin(), target.projectiles.end(), [&](const Projectile& candidate) {
-            return candidate.id == projectile.id;
-        });
-        if (found == target.projectiles.end()) continue;
-        projectile.position.x += static_cast<float>((found->position.x - projectile.position.x) * blend);
-        projectile.position.y += static_cast<float>((found->position.y - projectile.position.y) * blend);
-        projectile.height += static_cast<float>((found->height - projectile.height) * blend);
-        projectile.velocity.x += static_cast<float>((found->velocity.x - projectile.velocity.x) * blend);
-        projectile.velocity.y += static_cast<float>((found->velocity.y - projectile.velocity.y) * blend);
-        projectile.verticalVelocity += static_cast<float>((found->verticalVelocity - projectile.verticalVelocity) * blend);
-    }
 }
 
 bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
