@@ -333,6 +333,7 @@ private:
         } else if (event.key == '1') setMode(ViewMode::ThirdPerson);
         else if (event.key == '2') setMode(ViewMode::God);
         else if (event.key == '3') setMode(ViewMode::FirstPerson);
+        else if (event.key == kKeyCapsLock) { if (!event.repeat) slowWalk_ = !slowWalk_; }
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
         else if (event.key == 'c') openOverlay(Overlay::Creator);
@@ -367,7 +368,8 @@ private:
             piss = view_.mode == ViewMode::FirstPerson && keys_.count('f') != 0;
             if (view_.mode == ViewMode::FirstPerson || forward != 0 || right != 0) yaw = view_.yaw;
         }
-        client_.sendInput(move, sprint, piss, yaw, view_.pitch);
+        view_.slowWalk = slowWalk_;
+        client_.sendInput(move, sprint, piss, yaw, view_.pitch, slowWalk_);
     }
 
     void updateGod(float dt) {
@@ -470,7 +472,7 @@ private:
         } else if (overlay_ == Overlay::Help) {
             frame.rectangle(15, 70, 450, 530, panel);
             drawText(frame, 145, 85, "FIELD MANUAL", text);
-            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT RUN", "CLICK CAPTURES MOUSE", "ESC RELEASES MOUSE",
+            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "CAPS SLOW SHIFT SPRINT", "CLICK CAPTURES MOUSE", "ESC RELEASES MOUSE",
                 "E TOILET IN RANGE", "SIT SHIT PISS WHEEL", "HOLD F PISS IN FPS", "GOD CLICK PATHS",
                 "GOD WASD FAST PANS", "C CREATOR F1 CHEATS", "F12 SAVES NATIVE PNG", "H CLOSES MANUAL"};
             for (int i = 0; i < 12; ++i) drawText(frame, 32, 140 + i * 37, lines[i], muted);
@@ -500,6 +502,7 @@ private:
     Overlay overlay_ = Overlay::None;
     std::set<int> keys_;
     bool captured_ = false;
+    bool slowWalk_ = false;
     bool screenshot_ = false;
     double mouseX_ = 240, mouseY_ = 320;
     std::vector<CreatorEntry> creator_;

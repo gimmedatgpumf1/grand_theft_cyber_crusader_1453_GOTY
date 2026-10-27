@@ -232,7 +232,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Vec3 eyeCenter = (jointPosition(corneaCache.rest, eyeModel.eyeSource[0]) +
                             jointPosition(corneaCache.rest, eyeModel.eyeSource[1])) * 0.5;
     const gtc::Character& standingCitizen = standingState.characters[0];
-    const Vec3 expectedEyeJoint = rotateBody(eyeCenter, standingCitizen.yaw) +
+    const Vec3 expectedEyeJoint = rotateBody(eyeCenter * kHumanHeightScale, standingCitizen.yaw) +
         Vec3{standingCitizen.position.x, 0, standingCitizen.position.y};
     constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
     const bool eyeJoint = length(neutralStanding.position - expectedEyeJoint) < 1e-6;
@@ -244,10 +244,16 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     scaledCitizen.yaw = 0;
     HumanRenderCache similarityCache;
     prepareHuman(eyeModel, scaledCitizen, similarityCache);
+    double canonicalBottom = 1e100, canonicalTop = -1e100;
+    for (const Triangle& triangle : eyeModel.triangles) for (int index : triangle.v) {
+        canonicalBottom = std::min(canonicalBottom, similarityCache.rest[index].y);
+        canonicalTop = std::max(canonicalTop, similarityCache.rest[index].y);
+    }
+    const bool defaultHeight = std::abs((canonicalTop - canonicalBottom) * kHumanHeightScale - 1.7) < 1e-6;
     const auto expectedFullChain = [&](const std::vector<Vec3>& rest, double yaw, double pitch) {
         static const char* names[] = {"neck01", "neck02", "neck03", "head"};
         constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
-        constexpr double flexion[] = {65.0, 27.0, 11.5, 3.5};
+        constexpr double flexion[] = {0.85, 0.075, 0.0375, 0.0375};
         constexpr double extension[] = {65.0, 27.0, 10.9, 21.0};
         const double* pitchShares = pitch < 0 ? flexion : extension;
         std::vector<Vec3> points(5);
@@ -270,7 +276,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
             const Vec3 rotated{delta.x, c * delta.y - s * delta.z, s * delta.y + c * delta.z};
             points[j] = points[i] + rotateBody(rotated, static_cast<float>(yaw * yawShares[i] / yawTotal));
         }
-        return points[4];
+        return points[4] * kHumanHeightScale;
     };
     const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
     const Vec3 baseDown = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick,
@@ -382,6 +388,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     else if (!eyeJoint) error = "first-person actual eye-joint attachment";
     else if (!gazeSplit) error = "first-person biological gaze split";
     else if (!fullChain) error = "first-person complete neck01-neck02-neck03-head chain";
+    else if (!defaultHeight) error = "default citizen height must be exactly 1.7 metres";
     else if (!heightScaling) error = "first-person neck motion must scale with body height";
     else if (!seated) error = "first-person sit-down head attachment";
     else if (!neck) error = "first-person human neck limit";
@@ -393,7 +400,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         "=" + std::to_string(leastMorphClearance);
     else if (!heightClearance) error = "short-character near-plane clearance=" + std::to_string(leastHeightClearance);
     else if (!look) error = "first-person look input";
-    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && heightScaling && seated && neck && pitch && clearance &&
+    return eyeMatrix && attached && eyeJoint && gazeSplit && fullChain && defaultHeight && heightScaling && seated && neck && pitch && clearance &&
         lowerBody && shaped && heightClearance && look;
 }
 
@@ -444,12 +451,12 @@ int main(int argc, char** argv) {
     if (!alpha.sendJoin("Native Alpha") || !beta.sendJoin("Native Beta") ||
         !alpha.sendCustomize(aAppearance) || !beta.sendCustomize(bAppearance) ||
         !alpha.sendCheat("bowel", 100) || !beta.sendCheat("bladder", 100) ||
-        !alpha.sendPath(alpha.world().toiletFront) || !beta.sendInput({0, 1}, false, false, 3.14159265F, 0)) {
+        !alpha.sendPath(alpha.world().toiletFront) || !beta.sendInput({0, 1}, false, false, 3.14159265F, 0, true)) {
         std::cerr << "Could not send native smoke commands\n";
         return 1;
     }
     bool replicated = false, customized = false, inputMoved = false, pathSeen = false;
-    bool backwardReplicated = false;
+    bool backwardReplicated = false, slowReplicated = false;
     bool toiletRequested = false, toiletSeen = false;
     int iterations = 0;
     for (; iterations < 100; ++iterations) {
@@ -472,6 +479,8 @@ int main(int argc, char** argv) {
         inputMoved = inputMoved || (b && b->speed > 0.1F);
         backwardReplicated = backwardReplicated || (b && b->speed > 0.1F && b->manualMove.y > 0.9F &&
             std::abs(b->yaw - 3.14159265F) < 0.001F);
+        slowReplicated = slowReplicated || (b && b->manualMove.y > 0.9F &&
+            std::abs(b->speed * 3.6F - 4.0F) < 0.01F);
         pathSeen = pathSeen || (a && !a->path.empty()) || (b && !b->path.empty());
         if (a && !toiletRequested && gtc::distance(a->position, alpha.world().toiletFront) <= 1.55F) {
             if (!alpha.sendToilet("shit")) return 1;
@@ -481,9 +490,9 @@ int main(int argc, char** argv) {
         toiletSeen = toiletSeen || (a && aOther && a->toiletAction == gtc::ToiletAction::Shit &&
             aOther->toiletAction == gtc::ToiletAction::Shit && a->onToilet &&
             alpha.state().toiletUser == alpha.playerId() && beta.state().toiletUser == alpha.playerId());
-        if (replicated && customized && inputMoved && backwardReplicated && pathSeen && toiletSeen) break;
+        if (replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen) break;
     }
-    const bool passed = replicated && customized && inputMoved && backwardReplicated && pathSeen && toiletSeen;
+    const bool passed = replicated && customized && inputMoved && backwardReplicated && slowReplicated && pathSeen && toiletSeen;
     bool motion = false;
     std::error_code code;
     std::filesystem::create_directories(output, code);
@@ -554,6 +563,7 @@ int main(int argc, char** argv) {
     std::cout << "native smoke: " << (passed ? "PASS" : "FAIL") << ", alpha=" << alpha.playerId()
               << ", beta=" << beta.playerId() << ", tick=" << alpha.state().tick << '\n';
     if (!passed) std::cerr << "replication=" << replicated << " customize=" << customized
-                           << " input=" << inputMoved << " path=" << pathSeen << " toilet=" << toiletSeen << '\n';
+                           << " input=" << inputMoved << " backward=" << backwardReplicated
+                           << " slow=" << slowReplicated << " path=" << pathSeen << " toilet=" << toiletSeen << '\n';
     return passed ? 0 : 1;
 }

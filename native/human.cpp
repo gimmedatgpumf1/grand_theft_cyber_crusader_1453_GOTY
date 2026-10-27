@@ -210,7 +210,7 @@ bool HumanModel::loadMesh(const std::string& root, std::string& error) {
         }
     }
     ground = -minimum;
-    scale = 1.8 / std::max(1e-9, maximum - minimum);
+    scale = kCanonicalHumanHeight / std::max(1e-9, maximum - minimum);
     return true;
 }
 

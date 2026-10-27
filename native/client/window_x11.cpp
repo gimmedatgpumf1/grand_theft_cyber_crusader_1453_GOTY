@@ -178,6 +178,7 @@ int keySymbol(Api& api, XKeyEvent& event) {
         case 0xffbe: return kKeyF1;
         case 0xffc9: return kKeyF12;
         case 0xffe1: case 0xffe2: return kKeyShift;
+        case 0xffe5: return kKeyCapsLock;
         case 0xff0d: return kKeyEnter;
         case 0xff51: return kKeyLeft;
         case 0xff53: return kKeyRight;

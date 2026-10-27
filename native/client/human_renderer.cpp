@@ -70,7 +70,7 @@ std::vector<Transform> pose(const HumanModel& model, const std::vector<Vec3>& re
     std::vector<Transform> transforms(model.rigBones.size());
     std::vector<int> states(model.rigBones.size(), 0);
     const bool seated = character.onToilet;
-    const double movement = seated ? 0.0 : std::clamp(character.speed / 2.8, 0.0, 1.4);
+    const double movement = seated ? 0.0 : std::clamp(static_cast<double>(character.speed) / kFastWalkSpeed, 0.0, 1.4);
     const double phase = tick * 0.055 * (4.0 + character.speed) + character.id * 0.7;
     const double forwardMovement = character.manualMove.x * std::sin(character.yaw) +
         character.manualMove.y * std::cos(character.yaw);
@@ -214,7 +214,7 @@ void drawLoft(Rasterizer& rasterizer, const Camera& camera, const std::function<
 
 void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
               const HairStyle& style, const std::vector<Vec3>& rest, const Transform& head,
-              const Character& character, double rootY) {
+              const Character& character, const std::function<Vec3(Vec3)>& world) {
     std::unordered_map<int, Vec3> refs;
     for (int id : style.required) if (id >= 0 && static_cast<std::size_t>(id) < rest.size()) refs[id] = rest[id];
     double ratios[3] = {1, 1, 1};
@@ -239,8 +239,7 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
         const double factor = style.key == "short04" ? 1.15 : 0.48;
         for (Vec3& point : positions) if (point.y > top) point.y = top + (point.y - top) * factor;
     }
-    for (Vec3& point : positions) point = rotateWorld(head.point(point), character.yaw) +
-        Vec3{character.position.x, rootY, character.position.y};
+    for (Vec3& point : positions) point = world(head.point(point));
     std::vector<Vec3> normals(positions.size());
     for (const auto& triangle : style.triangles) {
         const Vec3 normal = cross(positions[triangle[1]] - positions[triangle[0]],
@@ -295,12 +294,12 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
     Vec3 posed = head.point(eyes);
     if (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9) {
         static const char* chainNames[] = {"neck01", "neck02", "neck03", "head"};
-        // C1/C2 supplies about half of axial rotation. Sagittal shares group
-        // published C0-C7 mobility into this rig's four joints: lower cervical,
-        // middle cervical, atlanto-axial, then atlanto-occipital (Aho/Werne).
-        // Flexion and extension differ, especially at the occiput-C1 joint.
+        // C1/C2 supplies about half of axial rotation. Extension shares group
+        // published C0-C7 mobility into this rig's four joints (Aho/Werne).
+        // Terminal flexion instead emphasizes the lower cervical contribution
+        // measured in dynamic studies, while retaining every joint's motion.
         constexpr double yawShares[] = {0.25, 0.25, 0.50, 0.0};
-        constexpr double flexionShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 11.5, 3.5};
+        constexpr double flexionShares[] = {0.85, 0.075, 0.0375, 0.0375};
         constexpr double extensionShares[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
         const double* pitchShares = headPitch < 0 ? flexionShares : extensionShares;
         std::vector<Vec3> points;
@@ -331,7 +330,8 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
         posed = points.back();
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
-    return rotateWorld(posed, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
+    return rotateWorld(posed * kHumanHeightScale, character.yaw) +
+        Vec3{character.position.x, rootY, character.position.y};
 }
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
@@ -347,7 +347,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseAction != static_cast<int>(character.toiletAction) || cache.poseOnToilet != character.onToilet;
     const double rootY = character.onToilet ? -0.35 : 0.0;
     auto world = [&](Vec3 point) {
-        return rotateWorld(point, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
+        return rotateWorld(point * kHumanHeightScale, character.yaw) +
+            Vec3{character.position.x, rootY, character.position.y};
     };
     if (freshPose) {
         cache.posed = rest;
@@ -413,7 +414,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
                 result[corner] = transformed[index];
-                result[corner].view += transformed[index].normal * offset;
+                result[corner].view += transformed[index].normal * (offset * kHumanHeightScale);
                 result[corner].uv = model.texcoords[triangle.uv[corner]];
             }
             return result;
@@ -491,7 +492,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
                 vertices[corner] = transformed[index];
-                vertices[corner].view += transformed[index].normal * 0.0025;
+                vertices[corner].view += transformed[index].normal * (0.0025 * kHumanHeightScale);
             }
             rasterizer.triangle(vertices, scalp);
         }
@@ -514,62 +515,65 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
                 vertices[corner] = transformed[index];
-                vertices[corner].view += transformed[index].normal * 0.003;
+                vertices[corner].view += transformed[index].normal * (0.003 * kHumanHeightScale);
             }
             rasterizer.triangle(vertices, lipPaint ? lips : makeup);
         }
     }
     if (const HairStyle* style = hair.find(character.appearance.hair)) {
-        drawHair(rasterizer, camera, model, *style, rest, head, character, rootY);
+        drawHair(rasterizer, camera, model, *style, rest, head, character, world);
     }
     static const char* eyeColors[] = {"#34271f", "#6a4d2c", "#496b82", "#4c6854", "#777d82", "#171b1d"};
     Material white; white.color = colorHex("#d8d5ca");
     Material iris; iris.color = colorHex(eyeColors[std::clamp(character.appearance.eyeColor, 0, 5)]);
     Material pupil; pupil.color = colorHex("#090c0d");
     Material glasses; glasses.color = colorHex("#10171a"); glasses.specular = 0.35;
+    auto accessory = [&](Vec3 center, Vec3 radii, const Material& material, int segments, int rings) {
+        drawEllipsoid(rasterizer, camera, center, radii * kHumanHeightScale, material, segments, rings);
+    };
     for (int side = 0; side < 2; ++side) {
         const Vec3 center = world(head.point(joint(rest, model.eyeSource[side])));
         const Vec3 direction = normalized(rotateWorld(head.direction(model.eyeDirection[side]), character.yaw));
-        drawEllipsoid(rasterizer, camera, center, Vec3{0.011, 0.011, 0.011}, white, 12, 8);
-        drawEllipsoid(rasterizer, camera, center + direction * 0.010, Vec3{0.0054, 0.0054, 0.0054}, iris, 10, 6);
-        drawEllipsoid(rasterizer, camera, center + direction * 0.013, Vec3{0.0024, 0.0024, 0.0024}, pupil, 8, 6);
+        accessory(center, Vec3{0.011, 0.011, 0.011}, white, 12, 8);
+        accessory(center + direction * (0.010 * kHumanHeightScale), Vec3{0.0054, 0.0054, 0.0054}, iris, 10, 6);
+        accessory(center + direction * (0.013 * kHumanHeightScale), Vec3{0.0024, 0.0024, 0.0024}, pupil, 8, 6);
         if (character.appearance.sunglasses) {
-            drawEllipsoid(rasterizer, camera, center + direction * 0.017, Vec3{0.018, 0.013, 0.018}, glasses, 12, 8);
+            accessory(center + direction * (0.017 * kHumanHeightScale), Vec3{0.018, 0.013, 0.018}, glasses, 12, 8);
         }
     }
     if (character.appearance.beret) {
         Material beret; beret.color = colorHex("#70413d");
-        drawEllipsoid(rasterizer, camera, world(head.point(eyeRest + Vec3{0, 0.15, -0.01})),
+        accessory(world(head.point(eyeRest + Vec3{0, 0.15, -0.01})),
                       Vec3{0.105, 0.035, 0.095}, beret, 18, 8);
     }
     Material metal;
     metal.color = colorHex("#b99b56");
     metal.specular = 0.32;
     if (character.appearance.earrings) for (int side : {-1, 1}) {
-        drawEllipsoid(rasterizer, camera, world(head.point(eyeRest + Vec3{side * 0.072, -0.055, 0})),
+        accessory(world(head.point(eyeRest + Vec3{side * 0.072, -0.055, 0})),
                       Vec3{0.009, 0.018, 0.009}, metal, 10, 6);
     }
     if (character.appearance.necklace) {
         for (int i = 0; i < 14; ++i) {
             const double angle = i * 2 * pi / 14;
-            drawEllipsoid(rasterizer, camera, world(Vec3{0.066 * std::cos(angle), 1.42,
+            accessory(world(Vec3{0.066 * std::cos(angle), 1.42,
                 0.052 * std::sin(angle)}), Vec3{0.006, 0.006, 0.006}, metal, 6, 4);
         }
-        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
+        accessory(world(Vec3{0, 1.34, 0.075}), Vec3{0.018, 0.025, 0.010}, metal, 10, 6);
     }
     if (character.appearance.tie > 0) {
         static const char* ties[] = {"#20262b", "#243b60", "#7d2528", "#375a80", "#454c55", "#b2924a"};
         Material tie;
         tie.color = colorHex(ties[std::clamp(character.appearance.tie, 0, 5)]);
-        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
-        drawEllipsoid(rasterizer, camera, world(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
+        accessory(world(Vec3{0, 1.20, 0.125}), Vec3{0.026, 0.15, 0.018}, tie, 12, 8);
+        accessory(world(Vec3{0, 1.37, 0.12}), Vec3{0.035, 0.032, 0.022}, tie, 10, 6);
     }
     if (character.appearance.fur) {
         Material fur;
         fur.color = colorHex("#a3937c");
         for (int i = 0; i < 16; ++i) {
             const double angle = i * 2 * pi / 16;
-            drawEllipsoid(rasterizer, camera, world(Vec3{0.12 * std::cos(angle), 1.39,
+            accessory(world(Vec3{0.12 * std::cos(angle), 1.39,
                 0.085 * std::sin(angle)}), Vec3{0.035, 0.030, 0.035}, fur, 8, 5);
         }
     }

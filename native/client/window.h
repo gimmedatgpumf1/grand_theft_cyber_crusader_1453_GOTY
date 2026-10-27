@@ -19,6 +19,7 @@ constexpr int kKeyDown = 264;
 constexpr int kKeyPageUp = 265;
 constexpr int kKeyPageDown = 266;
 constexpr int kKeyTab = 267;
+constexpr int kKeyCapsLock = 268;
 
 struct WindowEvent {
     enum class Type { KeyDown, KeyUp, MouseMove, MouseDown, MouseUp, Wheel, FocusLoss, Close } type;

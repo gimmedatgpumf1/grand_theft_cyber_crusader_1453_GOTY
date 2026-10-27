@@ -520,6 +520,7 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     drawText(frame, 12, 576, "1 THIRD", view.mode == ViewMode::ThirdPerson ? text : muted);
     drawText(frame, 132, 576, "2 GOD", view.mode == ViewMode::God ? text : muted);
     drawText(frame, 232, 576, "3 FIRST", view.mode == ViewMode::FirstPerson ? text : muted);
+    if (local && view.mode != ViewMode::God) drawText(frame, 384, 576, view.slowWalk ? "SLOW" : "FAST", muted);
     if (!local) {
         drawText(frame, 12, 608, "WAITING FOR CITIZEN", text);
     } else if (view.mode == ViewMode::God) {

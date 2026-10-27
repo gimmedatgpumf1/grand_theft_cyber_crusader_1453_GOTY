@@ -302,10 +302,11 @@ bool NativeClient::sendJoin(const std::string& name) {
     return send("{\"type\":\"join\",\"name\":\"" + jsonEscape(name) + "\"}");
 }
 
-bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch) {
+bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk) {
     std::ostringstream out;
     out << "{\"type\":\"input\",\"x\":" << jsonNumber(move.x) << ",\"z\":" << jsonNumber(move.y)
-        << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"piss\":" << (piss ? "true" : "false")
+        << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"slow\":" << (slowWalk ? "true" : "false")
+        << ",\"piss\":" << (piss ? "true" : "false")
         << ",\"yaw\":" << jsonNumber(yaw) << ",\"pitch\":" << jsonNumber(pitch) << '}';
     return send(out.str());
 }

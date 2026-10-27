@@ -12,8 +12,6 @@ namespace gtc {
 namespace {
 
 constexpr float kBodyRadius = 0.36F;
-constexpr float kWalkSpeed = 2.8F;
-constexpr float kSprintSpeed = 4.4F;
 
 const char* actionName(ToiletAction action) {
     switch (action) {
@@ -206,7 +204,7 @@ Vec2 World::spawnPoint(std::uint32_t id) const {
 }
 
 void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
-                     float yaw, float pitch) {
+                     float yaw, float pitch, bool slowWalk) {
     std::lock_guard<std::mutex> lock(mutex_);
     Character* character = find(id);
     if (character == nullptr) return;
@@ -223,6 +221,7 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     }
     character->manualMove = magnitude > 1.0F ? move * (1.0F / magnitude) : move;
     character->sprint = sprint;
+    character->slowWalk = slowWalk;
     character->wantsPiss = piss;
     if (std::isfinite(yaw)) character->yaw = yaw;
     if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.5F, 1.35F);
@@ -445,8 +444,9 @@ void World::updateCharacter(Character& character, float dt) {
     }
 
     const bool moving = length(direction) > 0.05F;
-    character.speed = moving ? (character.sprint ? kSprintSpeed : kWalkSpeed) : 0.0F;
-    if (character.wantsPiss) character.speed *= 0.65F;
+    const float walkSpeed = character.ai ? (character.pendingToilet ? kFastWalkSpeed : kSlowWalkSpeed) :
+        (character.slowWalk ? kSlowWalkSpeed : kFastWalkSpeed);
+    character.speed = moving ? (character.sprint ? kSprintSpeed : walkSpeed) : 0.0F;
     if (moving) {
         character.position = moveWithCollisions(character.position, normalized(direction) * (character.speed * dt),
                                                 kBodyRadius, obstacles_, kHalfWidth, kHalfDepth);

@@ -116,6 +116,44 @@ int main() {
               "movement direction is replicated for backward gait rendering");
     });
 
+    test("player and NPC locomotion use measured speeds", [] {
+        gtc::World world;
+        const auto id = world.addCharacter("Speed Subject", false);
+        gtc::Vec2 previous = world.character(id).position;
+        world.setInput(id, {0, 1}, false, false, 0, 0);
+        world.update(0.05F);
+        gtc::Character current = world.character(id);
+        check(std::abs(current.speed * 3.6F - 6.0F) < 0.001F,
+              "player defaults to six kilometres per hour");
+        check(std::abs(gtc::distance(current.position, previous) - current.speed * 0.05F) < 0.0001F,
+              "fast walking displacement matches metres per second");
+        previous = current.position;
+        world.setInput(id, {0, 1}, false, false, 0, 0, true);
+        world.update(0.05F);
+        current = world.character(id);
+        check(std::abs(current.speed * 3.6F - 4.0F) < 0.001F,
+              "Caps Lock input selects four kilometres per hour");
+        check(std::abs(gtc::distance(current.position, previous) - current.speed * 0.05F) < 0.0001F,
+              "slow walking displacement matches metres per second");
+        world.setInput(id, {0, 1}, true, false, 0, 0, true);
+        world.update(0.05F);
+        check(std::abs(world.character(id).speed * 3.6F - 20.0F) < 0.001F,
+              "Shift overrides slow walking with twenty kilometres per hour");
+
+        gtc::World npcWorld;
+        const auto npc = npcWorld.addCharacter("Measured NPC", true);
+        npcWorld.setDestination(npc, {0, 2.3F});
+        npcWorld.update(0.05F);
+        check(std::abs(npcWorld.character(npc).speed * 3.6F - 4.0F) < 0.001F,
+              "ordinary NPC travel uses slow walking");
+        npcWorld.adjustNeed(npc, "bladder", 100);
+        for (int i = 0; i < 60; ++i) npcWorld.update(0.05F);
+        const gtc::Character urgent = npcWorld.character(npc);
+        check(urgent.pendingToilet, "NPC has an urgent toilet destination");
+        check(std::abs(urgent.speed * 3.6F - 6.0F) < 0.001F && !urgent.sprint,
+              "urgent NPC travel uses fast walking without sprinting");
+    });
+
     test("shitting drains bowel without magically emptying bladder", [] {
         gtc::World world;
         const auto id = world.addCharacter("Bowel Subject", false);

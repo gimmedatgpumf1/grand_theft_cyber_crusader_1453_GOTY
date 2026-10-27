@@ -36,6 +36,7 @@ struct NativeWindow::Impl {
             case VK_F1: return kKeyF1;
             case VK_F12: return kKeyF12;
             case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT: return kKeyShift;
+            case VK_CAPITAL: return kKeyCapsLock;
             case VK_RETURN: return kKeyEnter;
             case VK_LEFT: return kKeyLeft;
             case VK_RIGHT: return kKeyRight;

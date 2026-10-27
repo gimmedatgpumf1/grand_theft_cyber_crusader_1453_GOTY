@@ -13,6 +13,12 @@
 
 namespace gtc::native {
 
+// Mesh, rig, and authored accessories share a canonical space; the final
+// uniform transform establishes the actual default citizen height.
+constexpr double kCanonicalHumanHeight = 1.8;
+constexpr double kDefaultHumanHeight = 1.7;
+constexpr double kHumanHeightScale = kDefaultHumanHeight / kCanonicalHumanHeight;
+
 struct Vec2 {
     double x = 0;
     double y = 0;

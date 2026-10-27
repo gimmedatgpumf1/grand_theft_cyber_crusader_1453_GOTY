@@ -27,6 +27,7 @@ struct ViewState {
     double frameMilliseconds = 0.0;
     bool gpu = false;
     bool highlightToilet = false;
+    bool slowWalk = false;
 };
 
 class WorldRenderer {

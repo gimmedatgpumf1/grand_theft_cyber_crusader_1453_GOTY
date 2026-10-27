@@ -8,6 +8,10 @@
 
 namespace gtc {
 
+inline constexpr float kSlowWalkSpeed = 4.0F / 3.6F;
+inline constexpr float kFastWalkSpeed = 6.0F / 3.6F;
+inline constexpr float kSprintSpeed = 20.0F / 3.6F;
+
 struct Vec2 {
     float x = 0.0F;
     float y = 0.0F;
@@ -83,6 +87,7 @@ struct Character {
     float pitch = 0.0F;
     float speed = 0.0F;
     bool sprint = false;
+    bool slowWalk = false;
     bool wantsPiss = false;
     bool pissing = false;
     bool onToilet = false;
