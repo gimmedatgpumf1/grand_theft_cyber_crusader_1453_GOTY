@@ -2,6 +2,8 @@
 #include "client/interactive.h"
 #include "client/renderer.h"
 
+#include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <string>
 
@@ -16,7 +18,7 @@ double number(const std::string& value, double fallback = 0) {
 int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
-    int port = 1453, frames = 1;
+    int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false;
     gtc::Vec2 destination{}, movement{};
     gtc::native::ViewState view;
@@ -30,6 +32,9 @@ int main(int argc, char** argv) {
         else if (argument == "--root" && i + 1 < argc) root = argv[++i];
         else if (argument == "--output" && i + 1 < argc) output = argv[++i];
         else if (argument == "--frames" && i + 1 < argc) frames = static_cast<int>(number(argv[++i], 1));
+        else if (argument == "--benchmark" && i + 1 < argc) benchmark = std::max(1, static_cast<int>(number(argv[++i], 1)));
+        else if (argument == "--width" && i + 1 < argc) view.width = std::max(1, static_cast<int>(number(argv[++i], 480)));
+        else if (argument == "--height" && i + 1 < argc) view.height = std::max(1, static_cast<int>(number(argv[++i], 640)));
         else if (argument == "--mode" && i + 1 < argc) mode = argv[++i];
         else if (argument == "--path" && i + 2 < argc) {
             destination = {static_cast<float>(number(argv[++i])), static_cast<float>(number(argv[++i]))};
@@ -44,6 +49,7 @@ int main(int argc, char** argv) {
             std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
                          "  [--review-ui DIR] (render native overlays without a display)\n"
+                         "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
             return 2;
         }
@@ -81,8 +87,24 @@ int main(int argc, char** argv) {
         }
     }
     gtc::native::NativeFrame frame;
-    if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error) || !frame.save(output)) {
+    if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
         std::cerr << "Native render failed: " << error << '\n';
+        return 1;
+    }
+    const auto benchmarkStart = std::chrono::steady_clock::now();
+    for (int iteration = 1; iteration < benchmark; ++iteration) {
+        if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
+            std::cerr << "Native render failed: " << error << '\n';
+            return 1;
+        }
+    }
+    if (benchmark > 1) {
+        const double milliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - benchmarkStart).count() / (benchmark - 1);
+        std::cout << "native render: " << milliseconds << " ms/frame at " << view.width << "x" << view.height << '\n';
+    }
+    if (!frame.save(output)) {
+        std::cerr << "Native render failed: cannot save " << output << '\n';
         return 1;
     }
     std::cout << "native client: id=" << client.playerId() << " tick=" << client.state().tick

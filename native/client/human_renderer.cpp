@@ -201,6 +201,11 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
                                   positions[triangle[2]] - positions[triangle[0]]);
         for (int index : triangle) normals[index] += normal;
     }
+    std::vector<RenderVertex> transformed(positions.size());
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        transformed[index] = cameraVertex(camera, positions[index], normalized(normals[index]),
+                                          positions[index], style.vertices[index].uv);
+    }
     Material material;
     material.kind = Material::Kind::Hair;
     material.color = hairColor(character.appearance.hairColor) * 1.35;
@@ -208,11 +213,7 @@ void drawHair(Rasterizer& rasterizer, const Camera& camera, const HumanModel& mo
     material.specular = 0.12;
     for (const auto& triangle : style.triangles) {
         std::array<RenderVertex, 3> vertices;
-        for (int corner = 0; corner < 3; ++corner) {
-            const int index = triangle[corner];
-            vertices[corner] = cameraVertex(camera, positions[index], normalized(normals[index]),
-                                            positions[index], style.vertices[index].uv);
-        }
+        for (int corner = 0; corner < 3; ++corner) vertices[corner] = transformed[triangle[corner]];
         rasterizer.triangle(vertices, material);
     }
 }
@@ -227,6 +228,13 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         std::vector<int> ids(model.vertices.size());
         for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
         cache.rest = model.shape(ids, morphs);
+        cache.normals.assign(cache.rest.size(), Vec3{});
+        for (const Triangle& triangle : model.triangles) {
+            const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
+                                      cache.rest[triangle.v[2]] - cache.rest[triangle.v[0]]);
+            for (int index : triangle.v) cache.normals[index] += normal;
+        }
+        for (Vec3& normal : cache.normals) normal = normalized(normal);
         cache.morphs = character.appearance.morphs;
         cache.male = character.appearance.male;
         cache.valid = true;
@@ -234,41 +242,45 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     const std::vector<Vec3>& rest = cache.rest;
     const std::vector<Transform> transforms = pose(model, rest, character, tick);
     std::vector<Vec3> posed = rest;
+    std::vector<Vec3> normals(posed.size());
     for (std::size_t index = 0; index < posed.size(); ++index) {
         double total = 0;
-        Vec3 point;
+        Vec3 point, normal;
         for (const auto& [bone, weight] : model.rigWeights[index]) {
             if (bone < 0 || static_cast<std::size_t>(bone) >= transforms.size()) continue;
             point += transforms[bone].point(rest[index]) * weight;
+            normal += transforms[bone].direction(cache.normals[index]) * weight;
             total += weight;
         }
-        if (total > 1e-8) posed[index] = point / total;
+        if (total > 1e-8) {
+            posed[index] = point / total;
+            normals[index] = rotateWorld(normalized(normal), character.yaw);
+        } else {
+            normals[index] = rotateWorld(cache.normals[index], character.yaw);
+        }
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
     auto world = [&](Vec3 point) {
         return rotateWorld(point, character.yaw) + Vec3{character.position.x, rootY, character.position.y};
     };
     for (Vec3& point : posed) point = world(point);
-    std::vector<Vec3> normals(posed.size());
-    for (const Triangle& triangle : model.triangles) {
-        const Vec3 normal = cross(posed[triangle.v[1]] - posed[triangle.v[0]],
-                                  posed[triangle.v[2]] - posed[triangle.v[0]]);
-        for (int index : triangle.v) normals[index] += normal;
+    std::vector<RenderVertex> transformed(posed.size());
+    for (std::size_t index = 0; index < posed.size(); ++index) {
+        transformed[index] = cameraVertex(camera, posed[index], normals[index], rest[index]);
     }
-    for (Vec3& normal : normals) normal = normalized(normal);
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
     const Material skin = skinMaterial(model, character, root, morphs);
     static const char* shirts[] = {"#20262b", "#b3453c", "#56765f", "#c4b58d", "#334c6b", "#6b4c70", "#c7ccd1"};
     static const char* pants[] = {"#1c2328", "#2d3338", "#4a453e", "#23384a"};
     Material shirt;
     shirt.kind = Material::Kind::Cloth;
-    shirt.specular = 0.015;
+    shirt.specular = 0.0;
     shirt.color = colorHex(shirts[std::clamp(character.appearance.shirt, 0, 6)]);
     if (character.appearance.suit) shirt.color = shirt.color * 1.18;
     if (character.appearance.coat) shirt.color = shirt.color * 0.82;
     Material trousers;
     trousers.kind = Material::Kind::Cloth;
-    trousers.specular = 0.015;
+    trousers.specular = 0.0;
     trousers.color = colorHex(pants[std::clamp(character.appearance.pants, 0, 3)]);
     Material shoes;
     shoes.color = colorHex("#202421");
@@ -280,8 +292,9 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             std::array<RenderVertex, 3> result;
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
-                result[corner] = cameraVertex(camera, posed[index] + normals[index] * offset, normals[index],
-                                              rest[index], model.texcoords[triangle.uv[corner]]);
+                result[corner] = transformed[index];
+                result[corner].view += transformed[index].normal * offset;
+                result[corner].uv = model.texcoords[triangle.uv[corner]];
             }
             return result;
         };
@@ -306,7 +319,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             std::array<RenderVertex, 3> vertices;
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
-                vertices[corner] = cameraVertex(camera, posed[index] + normals[index] * 0.0025, normals[index], rest[index]);
+                vertices[corner] = transformed[index];
+                vertices[corner].view += transformed[index].normal * 0.0025;
             }
             rasterizer.triangle(vertices, scalp);
         }
@@ -328,7 +342,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
             std::array<RenderVertex, 3> vertices;
             for (int corner = 0; corner < 3; ++corner) {
                 const int index = triangle.v[corner];
-                vertices[corner] = cameraVertex(camera, posed[index] + normals[index] * 0.003, normals[index], rest[index]);
+                vertices[corner] = transformed[index];
+                vertices[corner].view += transformed[index].normal * 0.003;
             }
             rasterizer.triangle(vertices, lipPaint ? lips : makeup);
         }

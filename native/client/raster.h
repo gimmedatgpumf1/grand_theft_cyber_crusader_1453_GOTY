@@ -51,8 +51,9 @@ struct Material {
     const Texture* normalYoung = nullptr;
     const Texture* normalOld = nullptr;
     double age = 25;
-    double specular = 0.06;
+    double specular = 0.0;
     bool unlit = false;
+    bool constantLighting = false;
 };
 
 struct Camera {

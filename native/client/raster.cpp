@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <thread>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "vendor/stb_image.h"
@@ -48,6 +49,15 @@ double toSrgb(double value) {
 
 Color linear(Color value) { return {toLinear(value.r), toLinear(value.g), toLinear(value.b)}; }
 
+double specularPower42(double value) {
+    const double square = value * value;
+    const double fourth = square * square;
+    const double eighth = fourth * fourth;
+    const double sixteenth = eighth * eighth;
+    const double thirtySecond = sixteenth * sixteenth;
+    return thirtySecond * eighth * square;
+}
+
 RenderVertex interpolate(const RenderVertex& a, const RenderVertex& b, double t) {
     return {a.view * (1 - t) + b.view * t, a.normal * (1 - t) + b.normal * t,
             a.source * (1 - t) + b.source * t,
@@ -57,7 +67,7 @@ RenderVertex interpolate(const RenderVertex& a, const RenderVertex& b, double t)
 Color sample(const Texture* texture, double u, double v) {
     if (!texture || texture->pixels.empty()) return {1, 1, 1};
     u -= std::floor(u);
-    v = std::clamp(v, 0.0, 1.0);
+    v -= std::floor(v);
     const double x = u * (texture->width - 1);
     const double y = (1.0 - v) * (texture->height - 1);
     const int x0 = static_cast<int>(x), y0 = static_cast<int>(y);
@@ -172,7 +182,7 @@ double Camera::focal() const {
 }
 
 RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 source, Vec2 uv) {
-    return {camera.view(point), normalized(camera.viewDirection(normal)), source, uv};
+    return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
 Rasterizer::Rasterizer(int width, int height, Color background, double focal) : width_(width), height_(height), focal_(focal),
@@ -209,6 +219,7 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const double area = (p[1].x - p[0].x) * (p[2].y - p[0].y) -
                             (p[1].y - p[0].y) * (p[2].x - p[0].x);
         if (std::abs(area) < 1e-9) continue;
+        if ((material.kind == Material::Kind::Skin || material.kind == Material::Kind::Cloth) && area > 0) continue;
         const double inverseArea = 1.0 / area;
         const int minX = std::max(0, static_cast<int>(std::floor(std::min({p[0].x, p[1].x, p[2].x}))));
         const int maxX = std::min(width_ - 1, static_cast<int>(std::ceil(std::max({p[0].x, p[1].x, p[2].x}))));
@@ -225,6 +236,14 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 tangent = normalized((e1 * dv2 - e2 * dv1) / denominator);
                 bitangent = normalized((e2 * du1 - e1 * du2) / denominator);
             }
+        }
+        double constantDiffuse = 0.0;
+        const bool constantLighting = material.constantLighting && material.specular <= 0.0;
+        if (constantLighting) {
+            Vec3 normal = p[0].normal;
+            if (dot(normal, p[0].view) > 0) normal = normal * -1.0;
+            constantDiffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
+                              0.24 * std::max(0.0, dot(normal, fill));
         }
         const double step0X = (p[1].y - p[2].y) * inverseArea;
         const double step1X = (p[2].y - p[0].y) * inverseArea;
@@ -247,17 +266,21 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 const Vec2 uv{p[0].uv.x * a + p[1].uv.x * b + p[2].uv.x * c,
                               p[0].uv.y * a + p[1].uv.y * b + p[2].uv.y * c};
                 if (material.kind == Material::Kind::Hair && alpha(material.texture, uv.x, uv.y) < 0.32) continue;
-                const Vec3 view = p[0].view * a + p[1].view * b + p[2].view * c;
-                Vec3 normal = normalized(p[0].normal * a + p[1].normal * b + p[2].normal * c);
+                Vec3 view, normal;
+                if (!constantLighting) {
+                    view = p[0].view * a + p[1].view * b + p[2].view * c;
+                    normal = normalized(p[0].normal * a + p[1].normal * b + p[2].normal * c);
+                }
                 Color base = material.color;
                 if (material.kind == Material::Kind::Floor) {
-                    const double sx = p[0].source.x * a + p[1].source.x * b + p[2].source.x * c;
-                    const double sz = p[0].source.z * a + p[1].source.z * b + p[2].source.z * c;
-                    const int tile = (static_cast<int>(std::floor(sx)) + static_cast<int>(std::floor(sz))) & 1;
-                    base = tile ? material.second : material.color;
-                    const double fx = std::abs(sx - std::floor(sx));
-                    const double fz = std::abs(sz - std::floor(sz));
-                    if (std::min(fx, 1 - fx) < 0.025 || std::min(fz, 1 - fz) < 0.025) base = base * 0.43;
+                    if (material.texture) {
+                        base = linear(sample(material.texture, uv.x, uv.y));
+                    } else {
+                        const double sx = p[0].source.x * a + p[1].source.x * b + p[2].source.x * c;
+                        const double sz = p[0].source.z * a + p[1].source.z * b + p[2].source.z * c;
+                        const int tile = (static_cast<int>(std::floor(sx)) + static_cast<int>(std::floor(sz))) & 1;
+                        base = tile ? material.second : material.color;
+                    }
                 } else if (material.kind == Material::Kind::Skin) {
                     Color detail;
                     if (material.texture) {
@@ -286,13 +309,18 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                     depth_[pixel] = depth;
                     continue;
                 }
+                if (constantLighting) {
+                    pixels_[pixel] = base * constantDiffuse;
+                    depth_[pixel] = depth;
+                    continue;
+                }
                 if (dot(normal, view) > 0) normal = normal * -1.0;
                 const double diffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
                                        0.24 * std::max(0.0, dot(normal, fill));
                 double specular = 0.0;
                 if (material.specular > 0.0) {
                     const Vec3 toward = normalized(view * -1.0);
-                    specular = std::pow(std::max(0.0, dot(normal, normalized(key + toward))), 42) * material.specular;
+                    specular = specularPower42(std::max(0.0, dot(normal, normalized(key + toward)))) * material.specular;
                 }
                 pixels_[pixel] = base * diffuse + Color{specular, specular, specular};
                 depth_[pixel] = depth;
@@ -306,14 +334,36 @@ NativeFrame Rasterizer::finish() const {
     frame.width = width_;
     frame.height = height_;
     frame.rgb.resize(pixels_.size() * 3);
-    const auto tone = [](double x) {
-        return std::clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-    };
-    for (std::size_t i = 0; i < pixels_.size(); ++i) {
-        for (int channel = 0; channel < 3; ++channel) {
-            const double value = channel == 0 ? pixels_[i].r : channel == 1 ? pixels_[i].g : pixels_[i].b;
-            frame.rgb[i * 3 + channel] = static_cast<unsigned char>(std::clamp(toSrgb(tone(value)), 0.0, 1.0) * 255);
+    constexpr int size = 4096;
+    constexpr double range = 4.0;
+    static const auto output = [] {
+        std::array<unsigned char, size> values{};
+        for (int i = 0; i < size; ++i) {
+            const double x = range * i / (size - 1);
+            const double tone = std::clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+            values[i] = static_cast<unsigned char>(std::clamp(toSrgb(tone), 0.0, 1.0) * 255);
         }
+        return values;
+    }();
+    const auto encode = [](double value) {
+        if (value <= 0.0) return static_cast<unsigned char>(0);
+        if (value >= range) return static_cast<unsigned char>(255);
+        return output[static_cast<int>(value * ((size - 1) / range) + 0.5)];
+    };
+    const auto convert = [&](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            frame.rgb[i * 3] = encode(pixels_[i].r);
+            frame.rgb[i * 3 + 1] = encode(pixels_[i].g);
+            frame.rgb[i * 3 + 2] = encode(pixels_[i].b);
+        }
+    };
+    if (pixels_.size() > 100000) {
+        const std::size_t middle = pixels_.size() / 2;
+        std::thread worker(convert, middle, pixels_.size());
+        convert(0, middle);
+        worker.join();
+    } else {
+        convert(0, pixels_.size());
     }
     return frame;
 }
@@ -328,38 +378,53 @@ void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 siz
         center + Vec3{half.x, half.y, half.z}, center + Vec3{-half.x, half.y, half.z}};
     const int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 4, 7, 3}, {1, 2, 6, 5}, {0, 1, 5, 4}, {3, 7, 6, 2}};
     const Vec3 normals[6] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0}};
+    Material flat = material;
+    flat.constantLighting = true;
     for (int face = 0; face < 6; ++face) {
         const RenderVertex a = cameraVertex(camera, points[faces[face][0]], normals[face], points[faces[face][0]], {0, 0});
         const RenderVertex b = cameraVertex(camera, points[faces[face][1]], normals[face], points[faces[face][1]], {1, 0});
         const RenderVertex c = cameraVertex(camera, points[faces[face][2]], normals[face], points[faces[face][2]], {1, 1});
         const RenderVertex d = cameraVertex(camera, points[faces[face][3]], normals[face], points[faces[face][3]], {0, 1});
-        rasterizer.triangle({a, b, c}, material);
-        rasterizer.triangle({a, c, d}, material);
+        rasterizer.triangle({a, b, c}, flat);
+        rasterizer.triangle({a, c, d}, flat);
     }
 }
 
 void drawEllipsoid(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 radii,
                    const Material& material, int segments, int rings) {
     constexpr double pi = 3.141592653589793;
-    auto point = [&](int ring, int segment) {
-        const double t = pi * ring / rings, p = 2 * pi * segment / segments;
-        return center + Vec3{radii.x * std::sin(t) * std::cos(p), radii.y * std::cos(t),
-                             radii.z * std::sin(t) * std::sin(p)};
-    };
+    segments = std::max(3, segments);
+    rings = std::max(2, rings);
+    const std::uint64_t key = (static_cast<std::uint64_t>(segments) << 32) | static_cast<unsigned>(rings);
+    static std::map<std::uint64_t, std::vector<Vec3>> cache;
+    auto found = cache.find(key);
+    if (found == cache.end()) {
+        std::vector<Vec3> unit;
+        unit.reserve(static_cast<std::size_t>(rings + 1) * (segments + 1));
+        for (int ring = 0; ring <= rings; ++ring) for (int segment = 0; segment <= segments; ++segment) {
+            const double t = pi * ring / rings, p = 2 * pi * segment / segments;
+            unit.push_back({std::sin(t) * std::cos(p), std::cos(t), std::sin(t) * std::sin(p)});
+        }
+        found = cache.emplace(key, std::move(unit)).first;
+    }
+    const std::vector<Vec3>& unit = found->second;
+    std::vector<RenderVertex> vertices(unit.size());
+    for (std::size_t i = 0; i < unit.size(); ++i) {
+        const Vec3 point = center + Vec3{unit[i].x * radii.x, unit[i].y * radii.y, unit[i].z * radii.z};
+        const Vec3 normal = normalized(Vec3{unit[i].x / radii.x, unit[i].y / radii.y, unit[i].z / radii.z});
+        const int ring = static_cast<int>(i) / (segments + 1);
+        const int segment = static_cast<int>(i) % (segments + 1);
+        vertices[i] = cameraVertex(camera, point, normal, point,
+            {segment / static_cast<double>(segments), ring / static_cast<double>(rings)});
+    }
+    auto index = [&](int ring, int segment) { return static_cast<std::size_t>(ring * (segments + 1) + segment); };
     for (int ring = 0; ring < rings; ++ring) for (int segment = 0; segment < segments; ++segment) {
-        const Vec3 a = point(ring, segment), b = point(ring + 1, segment);
-        const Vec3 c = point(ring + 1, segment + 1), d = point(ring, segment + 1);
-        auto normal = [&](Vec3 value) {
-            return normalized(Vec3{(value.x - center.x) / (radii.x * radii.x),
-                                   (value.y - center.y) / (radii.y * radii.y),
-                                   (value.z - center.z) / (radii.z * radii.z)});
-        };
-        const RenderVertex va = cameraVertex(camera, a, normal(a), a, {0, 0});
-        const RenderVertex vb = cameraVertex(camera, b, normal(b), b, {0, 1});
-        const RenderVertex vc = cameraVertex(camera, c, normal(c), c, {1, 1});
-        const RenderVertex vd = cameraVertex(camera, d, normal(d), d, {1, 0});
-        rasterizer.triangle({va, vb, vc}, material);
-        rasterizer.triangle({va, vc, vd}, material);
+        const RenderVertex& a = vertices[index(ring, segment)];
+        const RenderVertex& b = vertices[index(ring + 1, segment)];
+        const RenderVertex& c = vertices[index(ring + 1, segment + 1)];
+        const RenderVertex& d = vertices[index(ring, segment + 1)];
+        rasterizer.triangle({a, b, c}, material);
+        rasterizer.triangle({a, c, d}, material);
     }
 }
 

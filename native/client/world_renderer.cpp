@@ -3,7 +3,10 @@
 #include "client/human_renderer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 
 namespace gtc::native {
 namespace {
@@ -84,19 +87,56 @@ Camera makeCamera(const ClientWorld& world, const ClientState& state, std::uint3
     return camera;
 }
 
+const Texture& floorTexture() {
+    static const Texture texture = [] {
+        Texture result;
+        result.width = result.height = 512;
+        result.pixels.resize(512U * 512U * 4U, 255);
+        for (int y = 0; y < 512; ++y) for (int x = 0; x < 512; ++x) {
+            const int tx = x / 64, ty = y / 64;
+            const bool pale = ((tx + ty) & 1) == 0;
+            unsigned char rgb[3] = {0, 0, 0};
+            const unsigned char paleColor[3] = {131, 145, 122};
+            const unsigned char darkColor[3] = {49, 71, 62};
+            for (int channel = 0; channel < 3; ++channel) rgb[channel] = pale ? paleColor[channel] : darkColor[channel];
+            double stain = 1.0;
+            for (int spot = 0; spot < 6; ++spot) {
+                const unsigned hash = static_cast<unsigned>(tx * 73 + ty * 151 + spot * 997);
+                const double cx = tx * 64 + 8 + (hash * 37U % 48U);
+                const double cy = ty * 64 + 8 + (hash * 53U % 48U);
+                const double radius = 2 + (hash * 29U % 8U);
+                const double dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy < radius * radius) stain = 0.82;
+            }
+            const bool grout = x % 64 < 2 || y % 64 < 2;
+            const std::size_t offset = (static_cast<std::size_t>(y) * 512 + x) * 4;
+            for (int channel = 0; channel < 3; ++channel) {
+                const unsigned char groutColor[3] = {26, 40, 33};
+                result.pixels[offset + channel] = grout ? groutColor[channel] :
+                    static_cast<unsigned char>(rgb[channel] * stain);
+            }
+        }
+        return result;
+    }();
+    return texture;
+}
+
 void drawFloor(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world) {
     Material floor;
     floor.kind = Material::Kind::Floor;
     floor.color = colorHex("#83917a");
     floor.second = colorHex("#31473e");
-    floor.specular = 0.04;
+    floor.texture = &floorTexture();
+    floor.specular = 0.0;
+    floor.constantLighting = true;
     const double x = world.width * 0.5, z = world.depth * 0.5;
     const Vec3 a{-x, 0, -z}, b{x, 0, -z}, c{x, 0, z}, d{-x, 0, z};
     const Vec3 normal{0, 1, 0};
-    rasterizer.triangle({cameraVertex(camera, a, normal, a), cameraVertex(camera, b, normal, b),
-                         cameraVertex(camera, c, normal, c)}, floor);
-    rasterizer.triangle({cameraVertex(camera, a, normal, a), cameraVertex(camera, c, normal, c),
-                         cameraVertex(camera, d, normal, d)}, floor);
+    const double u = world.width / 8, v = world.depth / 8;
+    rasterizer.triangle({cameraVertex(camera, a, normal, a, {0, 0}), cameraVertex(camera, b, normal, b, {u, 0}),
+                         cameraVertex(camera, c, normal, c, {u, v})}, floor);
+    rasterizer.triangle({cameraVertex(camera, a, normal, a, {0, 0}), cameraVertex(camera, c, normal, c, {u, v}),
+                         cameraVertex(camera, d, normal, d, {0, v})}, floor);
 }
 
 void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) {
@@ -108,15 +148,15 @@ void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) 
     dark.specular = 0.42;
     const Vec3 center{toilet.x, 0, toilet.y};
     drawBox(rasterizer, camera, center + Vec3{0, 0.20, -0.10}, Vec3{0.58, 0.40, 0.55}, porcelain);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.48, 0.03}, Vec3{0.49, 0.34, 0.62}, porcelain, 22, 12);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.72, 0.05}, Vec3{0.53, 0.065, 0.64}, porcelain, 24, 8);
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.765, 0.08}, Vec3{0.32, 0.018, 0.40}, dark, 22, 6);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.48, 0.03}, Vec3{0.49, 0.34, 0.62}, porcelain, 12, 6);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.72, 0.05}, Vec3{0.53, 0.065, 0.64}, porcelain, 16, 4);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0, 0.765, 0.08}, Vec3{0.32, 0.018, 0.40}, dark, 12, 4);
     drawBox(rasterizer, camera, center + Vec3{0, 1.02, -0.52}, Vec3{1.02, 0.92, 0.34}, porcelain);
     drawBox(rasterizer, camera, center + Vec3{0, 1.51, -0.52}, Vec3{1.08, 0.08, 0.39}, porcelain);
     Material flush;
     flush.color = colorHex("#9ca9a4");
     flush.specular = 0.5;
-    drawEllipsoid(rasterizer, camera, center + Vec3{0.34, 1.55, -0.50}, Vec3{0.07, 0.025, 0.05}, flush, 12, 6);
+    drawEllipsoid(rasterizer, camera, center + Vec3{0.34, 1.55, -0.50}, Vec3{0.07, 0.025, 0.05}, flush, 8, 4);
 }
 
 void drawObstacles(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world) {
@@ -138,7 +178,7 @@ void drawObstacles(Rasterizer& rasterizer, const Camera& camera, const ClientWor
             basin.color = colorHex("#b7c5bf");
             basin.specular = 0.32;
             drawEllipsoid(rasterizer, camera, Vec3{center.x, obstacle.height + 0.05, center.z},
-                          Vec3{0.65, 0.12, 0.40}, basin, 18, 8);
+                          Vec3{0.65, 0.12, 0.40}, basin, 10, 5);
             drawBox(rasterizer, camera, Vec3{center.x, obstacle.height + 0.28, center.z - 0.28},
                     Vec3{0.08, 0.45, 0.08}, basin);
         }
@@ -255,6 +295,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         error = "Native world renderer is not loaded";
         return false;
     }
+    const auto profileStart = std::chrono::steady_clock::now();
     const Camera camera = makeCamera(world, state, localId, view);
     Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal());
     drawFloor(rasterizer, camera, world);
@@ -267,6 +308,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     drawObstacles(rasterizer, camera, world);
     drawPaths(rasterizer, camera, state, localId);
     drawPuddles(rasterizer, camera, state);
+    const auto humanStart = std::chrono::steady_clock::now();
     for (const Character& character : state.characters) {
         const HumanModel& model = character.appearance.male ? male_ : female_;
         const HairLibrary& hair = character.appearance.male ? maleHair_ : femaleHair_;
@@ -274,7 +316,17 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
         drawPissing(rasterizer, camera, character);
     }
+    const auto finishStart = std::chrono::steady_clock::now();
     frame = rasterizer.finish();
+    if (std::getenv("GTC_PROFILE")) {
+        const auto end = std::chrono::steady_clock::now();
+        const auto milliseconds = [](auto start, auto stop) {
+            return std::chrono::duration<double, std::milli>(stop - start).count();
+        };
+        std::cerr << "profile world=" << milliseconds(profileStart, humanStart)
+                  << " humans=" << milliseconds(humanStart, finishStart)
+                  << " finish=" << milliseconds(finishStart, end) << " ms\n";
+    }
     frame.logicalUi();
     drawHud(frame, world, state, localId, view);
     return true;

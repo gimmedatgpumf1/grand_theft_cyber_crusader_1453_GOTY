@@ -16,6 +16,7 @@ struct HumanRenderCache {
     bool male = true;
     std::array<int, 128> morphs{};
     std::vector<Vec3> rest;
+    std::vector<Vec3> normals;
 };
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
