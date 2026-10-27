@@ -521,7 +521,7 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
         const Projectile& newest = *stream[index];
         const Character* owner = state.character(newest.owner);
         if ((index + 1 < stream.size() && stream[index + 1]->owner == newest.owner) || !owner ||
-            !(owner->pissing || owner->toiletAction == ToiletAction::Piss) || newest.age > 0.075) continue;
+            !humanStreamAttached(*owner) || newest.age > 0.075) continue;
         const float pitch = std::atan2(newest.verticalVelocity + kProjectileGravity * newest.age, length(newest.velocity));
         const auto cached = humanCaches.find(newest.owner);
         const Vec3 origin = humanStreamOrigin(*owner,

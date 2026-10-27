@@ -48,6 +48,12 @@ Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
                       const Character& character, double tick,
                       double headYaw = 0, double gazePitch = 0);
 Vec3 humanStreamOrigin(const Character& character, const HumanRenderCache* cache, float fallbackPitch);
+// A stream needs the emit span whenever exposed urine leaves the body. Ranged
+// NPC attacks are unzipped but never set the continuous-piss flag.
+inline bool humanStreamAttached(const Character& character) {
+    return character.appearance.male &&
+        (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+}
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,

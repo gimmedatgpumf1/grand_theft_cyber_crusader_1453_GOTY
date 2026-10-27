@@ -59,13 +59,15 @@ inline bool npcStreamOriginMatchesPose(const HumanModel& model, Character charac
     Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
     HairLibrary hair;
     drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
-    const Vec3 launch{std::cos(character.pissPitch) * std::sin(character.pissYaw), std::sin(character.pissPitch),
-                      std::cos(character.pissPitch) * std::cos(character.pissYaw)};
+    const bool active = character.pissing || character.toiletAction == ToiletAction::Piss;
+    const double aimYaw = active ? character.pissYaw : character.yaw;
+    const double aimPitch = active ? character.pissPitch : character.pitch;
+    const Vec3 launch{std::cos(aimPitch) * std::sin(aimYaw), std::sin(aimPitch), std::cos(aimPitch) * std::cos(aimYaw)};
     const Vec3 rootDelta = cache.genitalRoot - Vec3{character.position.x, character.elevation, character.position.y};
     const double rootX = std::cos(character.yaw) * rootDelta.x - std::sin(character.yaw) * rootDelta.z;
     const double capOffset = length(cache.genitalExit - cache.posed[cache.genitalTip]);
     if (cache.genitalTip < 0 || std::abs(rootX) > 0.01 || capOffset < 0.001 || capOffset > 0.003 ||
-        length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
+        !humanStreamAttached(character) || length(cache.genitalExit - cache.genitalRoot) < 0.03 ||
         dot(normalized(cache.genitalExit - cache.genitalRoot), launch) < 0.99999 ||
         length(humanStreamOrigin(character, &cache, 0) - cache.genitalExit) > 1e-6) return false;
     const Vec3 tip = cache.genitalExit;
@@ -130,6 +132,30 @@ inline bool npcPissingReposesGenitals(const HumanModel& model, Character charact
         length(cache.genitalExit - fallback) > 0.01;
 }
 
+// The reported NPC case: ranged urine attack. The attacker is unzipped but the
+// continuous `pissing` flag stays false, so attachment must not depend on it.
+inline bool npcRangedAttackKeepsStreamAttached(const HumanModel& model, Character character, double tick,
+                                               const std::string& root) {
+    character.ai = character.appearance.male = true;
+    character.onToilet = false;
+    character.toiletAction = ToiletAction::None;
+    character.pissing = false;
+    character.unzipped = true;
+    character.attackAnim = 0.32F;
+    character.pitch = -0.45F;
+    HumanRenderCache cache;
+    Camera camera;
+    camera.width = camera.height = 16;
+    camera.worldSpaceGpu = true;
+    Rasterizer rasterizer(16, 16, Color{}, 1.0, true);
+    HairLibrary hair;
+    drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
+    Character zipped = character;
+    zipped.unzipped = zipped.attackAnim = false;
+    return humanStreamAttached(character) && !humanStreamAttached(zipped) && cache.genitalTip >= 0 &&
+        length(humanStreamOrigin(character, &cache, character.pitch) - cache.genitalExit) < 1e-6;
+}
+
 inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
                                     const std::string& root, double tick) {
     state.projectiles.clear();
@@ -148,7 +174,10 @@ inline bool seedToiletStreamExhibit(ClientState& state, std::uint32_t localId,
     seedAimedToiletStream(state, *npc, {0, -4.69F});
     HumanModel model;
     std::string error;
+    // Reproduce a ranged NPC attack in the exhibit, not only a toilet stream.
+    npc->pissing = false;
     return model.loadRuntime(root, true, error) && npcPissingReposesGenitals(model, *npc, tick, root) &&
+        npcRangedAttackKeepsStreamAttached(model, *npc, tick, root) &&
         npcStreamOriginMatchesPose(model, *npc, tick, root);
 }
 
