@@ -530,11 +530,11 @@ bool animatedPose(const ClientState& state) {
 
 bool samePuddles(const std::vector<Puddle>& a, const std::vector<Puddle>& b) {
     if (a.size() != b.size()) return false;
-    const auto near = [](float x, float y) { return std::abs(static_cast<double>(x) - y) <= 0.001; };
+    const auto withinMillimeter = [](float x, float y) { return std::abs(static_cast<double>(x) - y) <= 0.001; };
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (a[i].id != b[i].id || !near(a[i].position.x, b[i].position.x) ||
-            !near(a[i].position.y, b[i].position.y) || !near(a[i].size, b[i].size) ||
-            !near(a[i].height, b[i].height) || a[i].normal.x != b[i].normal.x ||
+        if (a[i].id != b[i].id || !withinMillimeter(a[i].position.x, b[i].position.x) ||
+            !withinMillimeter(a[i].position.y, b[i].position.y) || !withinMillimeter(a[i].size, b[i].size) ||
+            !withinMillimeter(a[i].height, b[i].height) || a[i].normal.x != b[i].normal.x ||
             a[i].normal.y != b[i].normal.y || a[i].vertical != b[i].vertical) return false;
     }
     return true;
