@@ -268,28 +268,20 @@ inline float pissAimPitch(const Character& character, Vec2 target, float targetH
     return pitch;
 }
 
-inline Puddle placePuddle(const std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,
+inline Puddle placePuddle(std::vector<Puddle>& existing, Puddle candidate, std::uint32_t id,
                           const std::vector<Obstacle>& obstacles, float halfWidth, float halfDepth) {
     candidate.id = id;
     candidate.size = 0.09F + static_cast<float>(id % 4U) * 0.015F;
-    for (int attempt = 0; attempt < 18; ++attempt) {
-        const Puddle* overlap = nullptr;
-        for (const Puddle& other : existing) if (projectile_detail::overlaps(candidate, other)) { overlap = &other; break; }
-        if (!overlap && projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return candidate;
-        if (!overlap) { candidate.id = 0; return candidate; }
-        const float spacing = overlap->size + candidate.size + 0.035F;
-        const float angle = static_cast<float>(id + attempt) * 2.39996323F;
-        if (candidate.vertical) {
-            const float side = ((id + static_cast<std::uint32_t>(attempt)) & 1U) ? 1.0F : -1.0F;
-            const Vec2 tangent{-candidate.normal.y * side, candidate.normal.x * side};
-            candidate.position = overlap->position + tangent * spacing;
-            candidate.normal = overlap->normal;
-        } else {
-            candidate.position = overlap->position + Vec2{std::cos(angle), std::sin(angle)} * spacing;
-            candidate.height = overlap->height;
-        }
+    if (!projectile_detail::supported(candidate, obstacles, halfWidth, halfDepth)) return {};
+    if (candidate.vertical) return candidate; // Wall hits stay exactly where the physical sweep landed.
+    for (Puddle& other : existing) {
+        if (!projectile_detail::overlaps(candidate, other)) continue;
+        const float a = other.size * other.size, b = candidate.size * candidate.size;
+        other.position = (other.position * a + candidate.position * b) * (1.0F / (a + b));
+        other.size = std::min(0.65F, std::sqrt(a + b));
+        other.age = std::min(other.age, candidate.age);
+        return {};
     }
-    candidate.id = 0;
     return candidate;
 }
 

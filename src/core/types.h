@@ -49,6 +49,10 @@ struct Vec2 {
     }
 };
 
+inline constexpr float kToiletBowlOffset = kToiletSeatForwardOffset;
+inline constexpr Vec2 kToiletBowlInner{0.145F, 0.205F};
+inline constexpr Vec2 kToiletWater{0.1335F, 0.0985F}; // 267 × 197 mm.
+
 inline float length(const Vec2& value) {
     return std::sqrt(value.x * value.x + value.y * value.y);
 }
@@ -130,6 +134,8 @@ struct Character {
     bool sprint = false;
     bool slowWalk = false;
     bool wantsPiss = false;
+    bool waterContact = false;
+    float waterRippleTimer = 0.0F;
     Vec2 aimTarget;
     float aimHeight = 0.0F;
     bool hasAimTarget = false;
@@ -165,7 +171,6 @@ struct Projectile {
     float height = 0.0F;
     float verticalVelocity = 0.0F;
     float age = 0.0F;
-    bool stain = false;
     bool toilet = false;
 };
 
@@ -177,6 +182,13 @@ struct Puddle {
     Vec2 normal;
     bool vertical = false;
     double age = 0.0;
+};
+
+struct WaterRipple {
+    std::uint32_t id = 0;
+    Vec2 position;
+    double age = 0.0;
+    float strength = 1.0F;
 };
 
 struct GameEvent {

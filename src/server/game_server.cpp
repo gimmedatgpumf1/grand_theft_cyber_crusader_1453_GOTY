@@ -237,6 +237,9 @@ void GameServer::handleMessage(const std::shared_ptr<Client>& client, const std:
     } else if (type == "attack") {
         const double target = std::clamp(message.numberAt("target"), 0.0, 4294967295.0);
         world_.attack(id, static_cast<std::uint32_t>(target), message.boolAt("advanced"));
+    } else if (type == "attackAt") {
+        world_.attackAt(id, {static_cast<float>(message.numberAt("x")), static_cast<float>(message.numberAt("z"))},
+                        static_cast<float>(message.numberAt("y")));
     } else if (type == "toilet") {
         world_.requestToilet(id, message.stringAt("action", "sit"));
     } else if (type == "customize") {

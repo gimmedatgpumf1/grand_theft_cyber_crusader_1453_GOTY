@@ -889,6 +889,17 @@ void World::updateCharacter(Character& character, float dt) {
         if (!character.wantsPiss && !manualMovement) character.yaw = std::atan2(direction.x, direction.y);
     }
     updateVertical(character, dt);
+    const Vec2 waterLocal = character.position - toiletPosition() - Vec2{0.0F, kToiletBowlOffset};
+    const float waterMetric = waterLocal.x * waterLocal.x / (kToiletWater.x * kToiletWater.x) +
+        waterLocal.y * waterLocal.y / (kToiletWater.y * kToiletWater.y);
+    const bool inWater = waterMetric <= 1.0F && character.elevation < kToiletWaterHeight;
+    character.waterRippleTimer = std::max(0.0F, character.waterRippleTimer - dt);
+    if (inWater && character.waterRippleTimer <= 0.0F && (moving || !character.waterContact)) {
+        const float scale = waterMetric > 0.64F ? 0.8F / std::sqrt(waterMetric) : 1.0F;
+        rippleWater(toiletPosition() + Vec2{0.0F, kToiletBowlOffset} + waterLocal * scale, moving ? 0.8F : 1.1F);
+        character.waterRippleTimer = 0.22F;
+    }
+    character.waterContact = inWater;
     updatePissing(character, dt);
     updatePendingAttack(character);
 
@@ -955,6 +966,13 @@ std::string World::snapshot() const {
             << ",\"nz\":" << jsonNumber(puddles_[i].normal.y)
             << ",\"vertical\":" << (puddles_[i].vertical ? "true" : "false")
             << ",\"age\":" << jsonNumber(puddles_[i].age) << '}';
+    }
+    out << "],\"ripples\":[";
+    for (std::size_t i = 0; i < waterRipples_.size(); ++i) {
+        const WaterRipple& r = waterRipples_[i];
+        if (i) out << ',';
+        out << "{\"id\":" << r.id << ",\"x\":" << jsonNumber(r.position.x) << ",\"z\":" << jsonNumber(r.position.y)
+            << ",\"age\":" << jsonNumber(r.age) << ",\"strength\":" << jsonNumber(r.strength) << '}';
     }
     out << "],\"projectiles\":[";
     for (std::size_t i = 0; i < projectiles_.size(); ++i) {

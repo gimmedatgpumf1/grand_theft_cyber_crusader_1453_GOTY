@@ -255,8 +255,7 @@ void drawDressing(Rasterizer& rasterizer, const Camera& camera, const ClientWorl
                    view.highlightToilet ? 0.22 : 0.16, marker);
 }
 
-void drawBowl(Rasterizer& rasterizer, const Camera& camera, Vec3 center,
-              const Material& porcelain, const Material& water) {
+void drawBowl(Rasterizer& rasterizer, const Camera& camera, Vec3 center, const Material& porcelain) {
     constexpr double pi = 3.141592653589793;
     auto point = [&](double rx, double rz, double y, double angle) {
         return center + Vec3{std::cos(angle) * rx, y, 0.06 + std::sin(angle) * rz};
@@ -280,20 +279,15 @@ void drawBowl(Rasterizer& rasterizer, const Camera& camera, Vec3 center,
         drawQuad(rasterizer, camera, {innerA, lowerA, lowerB, innerB},
                  normalized(Vec3{-std::cos(middle), 0.65, -std::sin(middle)}), porcelain);
     }
-    drawEllipsoid(rasterizer, camera, center + Vec3{0, kToiletWaterHeight, 0.06},
-                  Vec3{0.1335, 0.006, 0.0985}, water, 24, 4);
 }
 
 void drawToilet(Rasterizer& rasterizer, const Camera& camera, gtc::Vec2 toilet) {
     Material porcelain;
     porcelain.color = colorHex("#d7ddc9");
     porcelain.specular = 0.30;
-    Material dark;
-    dark.color = colorHex("#25443a");
-    dark.specular = 0.42;
     const Vec3 center{toilet.x, 0, toilet.y};
     drawBox(rasterizer, camera, center + Vec3{0, 0.10, 0.02}, Vec3{0.24, 0.20, 0.30}, porcelain);
-    drawBowl(rasterizer, camera, center, porcelain, dark);
+    drawBowl(rasterizer, camera, center, porcelain);
     drawBox(rasterizer, camera, center + Vec3{0, 0.5425, -0.2445}, Vec3{0.457, 0.365, 0.216}, porcelain);
     drawBox(rasterizer, camera, center + Vec3{0, 0.734, -0.2445}, Vec3{0.467, 0.018, 0.226}, porcelain);
     Material flush;
@@ -363,6 +357,72 @@ void drawPaths(Rasterizer& rasterizer, const Camera& camera, const ClientState& 
     }
 }
 
+void drawWater(Rasterizer& rasterizer, const Camera& camera, const ClientWorld& world,
+               const ClientState& state, double time) {
+    constexpr double pi = 3.141592653589793;
+    const Vec3 center{world.toilet.x, kToiletWaterHeight, world.toilet.y + kToiletBowlOffset};
+    auto heightAt = [&](double x, double z) {
+        double height = 0.0018 * std::sin(x * 31.0 + time * 3.4) * std::cos(z * 37.0 - time * 2.7);
+        for (const WaterRipple& ripple : state.waterRipples) {
+            const double d = std::hypot(x + center.x - ripple.position.x, z + center.z - ripple.position.y);
+            height += std::sin(d * 68.0 - ripple.age * 19.0) * std::exp(-d * 10.0 - ripple.age * 2.4) *
+                0.009 * ripple.strength;
+        }
+        return height;
+    };
+    auto point = [&](double radius, double angle) {
+        const double x = std::cos(angle) * kToiletWater.x * radius;
+        const double z = std::sin(angle) * kToiletWater.y * radius;
+        return center + Vec3{x, heightAt(x, z), z};
+    };
+    Material water;
+    water.color = colorHex("#55a894");
+    water.specular = 0.82;
+    water.opacity = 0.38;
+    for (int ring = 0; ring < 5; ++ring) {
+        for (int i = 0; i < 36; ++i) {
+            const double a = i * 2.0 * pi / 36.0, b = (i + 1) * 2.0 * pi / 36.0;
+            drawQuad(rasterizer, camera, {point(ring / 5.0, a), point((ring + 1) / 5.0, a),
+                point((ring + 1) / 5.0, b), point(ring / 5.0, b)}, {0, 1, 0}, water);
+        }
+    }
+    int splashed = 0;
+    for (const WaterRipple& ripple : state.waterRipples) {
+        const double fade = std::clamp(1.0 - ripple.age / 1.8, 0.0, 1.0);
+        Material foam;
+        foam.color = colorHex("#b5e4cf");
+        foam.specular = 0.5;
+        foam.opacity = 0.62 * fade;
+        const double radius = 0.012 + ripple.age * 0.095;
+        for (int i = 0; i < 28; ++i) {
+            const double a = i * 2.0 * pi / 28.0, b = (i + 1) * 2.0 * pi / 28.0;
+            auto edge = [&](double r, double angle) {
+                return Vec3{ripple.position.x + std::cos(angle) * r,
+                    kToiletWaterHeight + 0.005, ripple.position.y + std::sin(angle) * r};
+            };
+            const Vec3 a0 = edge(radius, a), a1 = edge(radius + 0.0035, a);
+            const Vec3 b0 = edge(radius, b), b1 = edge(radius + 0.0035, b);
+            auto inside = [&](Vec3 p) {
+                const double x = (p.x - center.x) / kToiletWater.x, z = (p.z - center.z) / kToiletWater.y;
+                return x * x + z * z < 0.98;
+            };
+            if (inside(a0) && inside(b0)) drawQuad(rasterizer, camera, {a0, a1, b1, b0}, {0, 1, 0}, foam);
+        }
+        if (ripple.age < 0.48 && splashed++ < 20) {
+            Material splash = water;
+            splash.opacity = 0.7 * (1.0 - ripple.age / 0.48);
+            for (int j = 0; j < 4; ++j) {
+                const double angle = j * 2.39996323 + ripple.id;
+                const double travel = ripple.age * 0.12;
+                const double lift = std::sin(ripple.age / 0.48 * pi) * 0.075 * ripple.strength;
+                drawEllipsoid(rasterizer, camera, {ripple.position.x + std::cos(angle) * travel,
+                    kToiletWaterHeight + 0.012 + lift, ripple.position.y + std::sin(angle) * travel},
+                    {0.005, 0.014, 0.005}, splash, 6, 3);
+            }
+        }
+    }
+}
+
 void drawPuddles(Rasterizer& rasterizer, const Camera& camera, const ClientState& state) {
     Material puddle;
     puddle.kind = Material::Kind::Puddle;
@@ -402,7 +462,7 @@ void drawProjectiles(Rasterizer& rasterizer, const Camera& camera, const ClientS
         if (length(side) < 0.001) side = {1, 0, 0};
         side = normalized(side);
         const Vec3 up = normalized(cross(side, direction));
-        const double radius = isBullet ? 0.018 : 0.030, length = isBullet ? 0.24 : 0.17;
+        const double radius = isBullet ? 0.018 : 0.010, length = isBullet ? 0.24 : 0.065;
         const Vec3 front = center + direction * (length * 0.5), back = center - direction * (length * 0.5);
         const Vec3 ring[4] = {center + side * radius, center + up * radius, center - side * radius, center - up * radius};
         const Material& material = isBullet ? bullet : piss;
@@ -435,7 +495,7 @@ bool animatedPose(const ClientState& state) {
 }
 
 bool sameGeometry(const ClientState& a, const ClientState& b) {
-    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size()) return false;
+    if (a.characters.size() != b.characters.size()) return false;
     for (std::size_t i = 0; i < a.characters.size(); ++i) {
         const Character& left = a.characters[i];
         const Character& right = b.characters[i];
@@ -450,13 +510,6 @@ bool sameGeometry(const ClientState& a, const ClientState& b) {
         for (std::size_t p = 0; p < left.path.size(); ++p) {
             if (left.path[p].x != right.path[p].x || left.path[p].y != right.path[p].y) return false;
         }
-    }
-    for (std::size_t i = 0; i < a.puddles.size(); ++i) {
-        const Puddle& left = a.puddles[i];
-        const Puddle& right = b.puddles[i];
-        if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
-            left.size != right.size || left.height != right.height || left.normal.x != right.normal.x ||
-            left.normal.y != right.normal.y || left.vertical != right.vertical) return false;
     }
     return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
 }
@@ -787,7 +840,6 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         }
         drawObstacles(rasterizer, camera, world);
         drawPaths(rasterizer, camera, state, localId);
-        drawPuddles(rasterizer, camera, state);
         humanStart = std::chrono::steady_clock::now();
         for (const Character& character : state.characters) {
             rasterizer.setObject(character.id, {character.position.x, character.position.y}, character.yaw);
@@ -804,7 +856,12 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             drawHuman(rasterizer, camera, model, hair, character, humanCache_[character.id], root_, state.tick, hideHead);
         }
         rasterizer.setObject(0, {}, 0);
-        if (!view.gpu) drawProjectiles(rasterizer, camera, state);
+        if (!view.gpu) {
+            const double time = std::chrono::duration<double>(profileStart.time_since_epoch()).count();
+            drawWater(rasterizer, camera, world, state, time);
+            drawPuddles(rasterizer, camera, state);
+            drawProjectiles(rasterizer, camera, state);
+        }
         finishStart = std::chrono::steady_clock::now();
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();
@@ -820,12 +877,14 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         }
     }
     if (view.gpu) {
-        // Droplets move every rendered frame, but must not invalidate the retained
-        // room/human meshes. Only their small tail buffers are re-uploaded.
+        // Water, stains and droplets change without rebuilding retained room/human meshes.
         gpuScene_.batches.resize(gpuStaticBatchCount_);
         Rasterizer particles(std::max(1, view.width), std::max(1, view.height), gpuScene_.background,
                              camera.focal(), true);
         particles.setCamera(camera);
+        const double time = std::chrono::duration<double>(profileStart.time_since_epoch()).count();
+        drawWater(particles, camera, world, state, time);
+        drawPuddles(particles, camera, state);
         drawProjectiles(particles, camera, state);
         GpuScene dynamic = particles.takeGpuScene();
         const std::uint64_t dynamicRevision = ++gpuProjectileRevision_;

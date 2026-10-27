@@ -389,6 +389,8 @@ private:
                     }
                 } else if (const std::uint32_t target = characterAt(event.x, event.y)) {
                     client_.sendAttack(target, doubled);
+                } else if (local() && local()->appearance.male && local()->unzipped && toiletHit(event.x, event.y)) {
+                    client_.sendAttackAt(client_.world().toilet + gtc::Vec2{0.0F, kToiletBowlOffset}, kToiletWaterHeight);
                 }
                 return;
             }

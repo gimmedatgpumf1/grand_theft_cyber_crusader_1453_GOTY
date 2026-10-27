@@ -543,9 +543,9 @@ int main() {
         const auto first = gtc::placePuddle(spots, input, 1, {}, 9, 7);
         spots.push_back(first);
         const auto second = gtc::placePuddle(spots, input, 2, {}, 9, 7);
-        check(first.id == 1 && second.id == 2 && second.size < 0.2F &&
-              gtc::distance(first.position, second.position) > 0.15F,
-              "overlapping piss creates a small spot shifted to the side");
+        check(first.id == 1 && second.id == 0 && spots.size() == 1 &&
+              spots.front().size > first.size && gtc::length(spots.front().position) < 0.001F,
+              "overlapping floor impacts merge into one growing puddle without displacement");
 
         gtc::World upward;
         const auto shooter = upward.addCharacter("Postal Arc", false);
@@ -574,6 +574,9 @@ int main() {
         for (int i = 0; i < 12; ++i) world.update(0.05F);
         check(world.snapshot().find("\"vertical\":true") != std::string::npos,
               "wall splash height and orientation replicate after physical impact");
+        const auto wallSpots = world.puddles();
+        check(std::count_if(wallSpots.begin(), wallSpots.end(), [](const gtc::Puddle& p) {
+            return p.vertical; }) >= 4, "multiple physical wall impacts stain reliably rather than only sampled droplets");
 
         gtc::World aimed;
         const auto aimer = aimed.addCharacter("Porcelain Marksman", false);
@@ -589,6 +592,8 @@ int main() {
         }
         check(emitted && aimed.puddles().empty(),
               "crosshair-converged physical droplets enter the toilet water instead of falling short");
+        check(!aimed.waterRipples().empty() && aimed.snapshot().find("\"ripples\":[{\"id\":") != std::string::npos,
+              "urine impacts replicate animated toilet-water ripple impulses");
 
         gtc::World elevated;
         const auto painter = elevated.addCharacter("High Wall Marksman", false);
@@ -603,6 +608,43 @@ int main() {
             accurate = accurate || (puddle.vertical && std::abs(puddle.height - 1.5F) < 0.08F);
         }
         check(accurate, "close-range aimed piss compensates gravity and strikes an elevated wall target");
+    });
+
+    test("unified floor puddles and reactive hollow toilet water", [] {
+        gtc::World floor;
+        const auto id = floor.addCharacter("One Puddle", false);
+        place(floor, id, {0, 0});
+        floor.toggleZip(id);
+        floor.adjustNeed(id, "bladder", 100);
+        floor.setInput(id, {}, false, true, 0, 0, false, false, false, false, false,
+                       {0, 1.0F}, 0.018F, true);
+        for (int i = 0; i < 60; ++i) floor.update(0.05F);
+        const auto spots = floor.puddles();
+        check(spots.size() == 1 && spots.front().size > 0.15F,
+              "a sustained stream grows one unified floor puddle at physical impacts");
+
+        gtc::World bullet;
+        const auto shooter = bullet.addCharacter("Water Shooter", false);
+        place(bullet, shooter, {0, -3.55F});
+        bullet.toggleZip(shooter);
+        bullet.attackAt(shooter, {0, -4.69F}, gtc::kToiletWaterHeight);
+        for (int i = 0; i < 12; ++i) bullet.update(0.05F);
+        check(!bullet.waterRipples().empty(), "an aimed physical bullet splashes the real water ellipse");
+
+        gtc::World legs;
+        const auto wader = legs.addCharacter("Bowl Wader", false);
+        place(legs, wader, {0, -4.69F});
+        for (int i = 0; i < 20 && gtc::distance(legs.character(wader).position, {0, -4.69F}) > 0.025F; ++i) {
+            const gtc::Vec2 direction = gtc::normalized(gtc::Vec2{0, -4.69F} - legs.character(wader).position);
+            legs.setInput(wader, direction, false, false, std::atan2(direction.x, direction.y), 0);
+            legs.update(0.05F);
+        }
+        legs.setInput(wader, {}, false, false, 0, 0);
+        for (int i = 0; i < 20; ++i) legs.update(0.05F);
+        const auto settled = legs.character(wader);
+        check(settled.elevation < 0.08F && settled.waterContact,
+              "feet enter the hollow bowl instead of standing on an invisible seat plane");
+        check(!legs.waterRipples().empty(), "legs entering and moving in water create ripple feedback");
     });
 
     test("fifteen-times clock, bladder calibration, and day-long drying", [] {

@@ -28,6 +28,7 @@ public:
     void setDestination(std::uint32_t id, const Vec2& destination, bool sprint = false, bool advanced = false);
     void toggleZip(std::uint32_t id);
     void attack(std::uint32_t id, std::uint32_t targetId, bool advanced = false);
+    void attackAt(std::uint32_t id, Vec2 target, float height);
     void requestToilet(std::uint32_t id, const std::string& action);
     void adjustNeed(std::uint32_t id, const std::string& need, float delta);
     void update(float deltaSeconds);
@@ -36,6 +37,7 @@ public:
     std::size_t characterCount() const;
     std::vector<Projectile> projectiles() const;
     std::vector<Puddle> puddles() const;
+    std::vector<WaterRipple> waterRipples() const;
     double gameSeconds() const;
     std::string snapshot() const;
     std::string description() const;
@@ -51,6 +53,7 @@ private:
     Pathfinder pathfinder_;
     std::vector<Puddle> puddles_;
     std::vector<Projectile> projectiles_;
+    std::vector<WaterRipple> waterRipples_;
     std::deque<GameEvent> events_;
     std::uint32_t nextCharacterId_ = 1;
     std::uint32_t nextPuddleId_ = 1;
@@ -72,6 +75,8 @@ private:
     void damageCharacter(Character& attacker, Character& target, float damage, bool ranged);
     void spawnPiss(Character& character);
     void spawnBullet(Character& attacker, const Character& target);
+    void spawnBullet(Character& attacker, Vec2 target, float height, std::uint32_t targetId);
+    void rippleWater(Vec2 position, float strength, bool refresh = false);
     void updateProjectiles(float dt);
     void updatePendingAttack(Character& character);
     void beginToilet(Character& character, ToiletAction action);

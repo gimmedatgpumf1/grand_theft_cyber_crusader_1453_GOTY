@@ -5,6 +5,13 @@
 #include <algorithm>
 
 namespace gtc {
+namespace {
+bool inWater(Vec2 point, Vec2 center) {
+    const Vec2 p = point - center - Vec2{0.0F, kToiletBowlOffset};
+    const float x = p.x / kToiletWater.x, z = p.y / kToiletWater.y;
+    return x * x + z * z <= 1.0F;
+}
+}
 
 std::vector<Projectile> World::projectiles() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -14,6 +21,40 @@ std::vector<Projectile> World::projectiles() const {
 std::vector<Puddle> World::puddles() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return puddles_;
+}
+
+std::vector<WaterRipple> World::waterRipples() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return waterRipples_;
+}
+
+void World::rippleWater(Vec2 position, float strength, bool refresh) {
+    if (refresh) {
+        for (auto& ripple : waterRipples_) {
+            if (ripple.strength < 1.4F && distance(ripple.position, position) < 0.11F) {
+                ripple.age = 0.0;
+                ripple.strength = std::min(1.4F, ripple.strength + strength * 0.15F);
+                return;
+            }
+        }
+    }
+    if (waterRipples_.size() >= 48) waterRipples_.erase(waterRipples_.begin());
+    waterRipples_.push_back({nextEventId_++, position, 0.0, std::clamp(strength, 0.2F, 1.5F)});
+}
+
+void World::attackAt(std::uint32_t id, Vec2 target, float height) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Character* attacker = find(id);
+    if (!attacker || !attacker->appearance.male || !attacker->unzipped ||
+        attacker->toiletAction != ToiletAction::None || attacker->attackCooldown > 0.0F ||
+        attacker->needs.bladder < 4.0F || !std::isfinite(height) || height < 0.0F || height > 3.5F ||
+        !std::isfinite(target.x) || !std::isfinite(target.y) || distance(attacker->position, target) > 20.0F) return;
+    attacker->path.clear();
+    attacker->pendingAttack = 0;
+    attacker->yaw = std::atan2(target.x - attacker->position.x, target.y - attacker->position.y);
+    attacker->attackAnim = attacker->attackCooldown = 0.48F;
+    attacker->needs.bladder -= 4.0F;
+    spawnBullet(*attacker, target, height, 0);
 }
 
 double World::gameSeconds() const {
@@ -26,7 +67,6 @@ void World::spawnPiss(Character& character) {
     projectile.id = nextProjectileId_++;
     projectile.owner = character.id;
     projectile.kind = ProjectileKind::Piss;
-    projectile.stain = projectile.id % 6U == 0;
     projectile.toilet = character.toiletAction == ToiletAction::Piss;
     float pitch = projectile.toilet ? -0.32F : character.pitch;
     const bool targeted = projectile.toilet || character.hasAimTarget;
@@ -53,6 +93,12 @@ void World::spawnPiss(Character& character) {
 }
 
 void World::spawnBullet(Character& attacker, const Character& target) {
+    const float height = target.elevation + (target.prone ? 0.24F : target.crouched ? 0.65F : 0.95F);
+    spawnBullet(attacker, target.position, height, target.id);
+}
+
+void World::spawnBullet(Character& attacker, Vec2 target, float targetHeight, std::uint32_t) {
+    if (inWater(target, toiletPosition())) target = pissApproachTarget(attacker, target, targetHeight);
     const Vec2 initial{std::sin(attacker.yaw), std::cos(attacker.yaw)};
     Projectile projectile;
     projectile.id = nextProjectileId_++;
@@ -60,9 +106,8 @@ void World::spawnBullet(Character& attacker, const Character& target) {
     projectile.kind = ProjectileKind::Bullet;
     projectile.position = attacker.position + initial * 0.16F;
     projectile.height = attacker.elevation + 0.79F;
-    const Vec2 delta = target.position - projectile.position;
+    const Vec2 delta = target - projectile.position;
     const float yaw = std::atan2(delta.x, delta.y);
-    const float targetHeight = target.elevation + (target.prone ? 0.24F : target.crouched ? 0.65F : 0.95F);
     const float pitch = ballisticPitch(length(delta), targetHeight - projectile.height, kBulletSpeed);
     attacker.yaw = yaw;
     attacker.pitch = pitch;
@@ -98,14 +143,18 @@ void World::updatePissing(Character& character, float dt) {
 }
 
 void World::addPuddle(const Puddle& puddle) {
-    Puddle placed = placePuddle(puddles_, puddle, nextPuddleId_++, obstacles_, kHalfWidth, kHalfDepth);
-    if (!placed.id) return;
+    Puddle placed = placePuddle(puddles_, puddle, nextPuddleId_, obstacles_, kHalfWidth, kHalfDepth);
+    if (placed.id == 0) return;
+    placed.id = nextPuddleId_++;
     if (puddles_.size() >= 4096) puddles_.erase(puddles_.begin());
     puddles_.push_back(placed);
 }
 
 void World::updateProjectiles(float dt) {
     for (Puddle& puddle : puddles_) puddle.age += dt;
+    for (WaterRipple& ripple : waterRipples_) ripple.age += dt;
+    waterRipples_.erase(std::remove_if(waterRipples_.begin(), waterRipples_.end(),
+        [](const WaterRipple& ripple) { return ripple.age >= 1.8; }), waterRipples_.end());
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const Puddle& puddle) {
         return puddle.age >= kPuddleLifetimeSeconds;
     }), puddles_.end());
@@ -122,7 +171,7 @@ void World::updateProjectiles(float dt) {
         next.z = old.z + (projectile.velocity.y + nextVelocity.y) * (0.5F * dt);
         next.y = old.y + (projectile.verticalVelocity + nextVertical) * (0.5F * dt);
         projectile.age += dt;
-        const float radius = bullet ? 0.015F : 0.022F;
+        const float radius = bullet ? 0.015F : 0.010F;
         projectile_detail::SurfaceHit hit = projectile_detail::sweepSurfaces(old, next, radius, obstacles_);
         Character* victim = nullptr;
         float victimAmount = hit.hit ? hit.amount : 1.0F;
@@ -139,12 +188,17 @@ void World::updateProjectiles(float dt) {
         }
         const auto erase = [&] { projectiles_.erase(projectiles_.begin() + static_cast<std::ptrdiff_t>(index)); };
         if (victim) {
+            if (victim->waterContact) rippleWater(victim->position, 1.25F);
             if (Character* attacker = find(projectile.owner)) damageCharacter(*attacker, *victim, 7.0F, true);
             erase();
             continue;
         }
         if (hit.hit) {
-            if (!bullet && projectile.stain && !hit.absorb && !(projectile.toilet && hit.toilet)) addPuddle(hit.puddle);
+            const Vec2 impact{old.x + (next.x - old.x) * hit.amount, old.z + (next.z - old.z) * hit.amount};
+            if (hit.toilet && inWater(impact, toiletPosition())) {
+                rippleWater(impact, bullet ? 1.25F : 0.65F, !bullet);
+            }
+            if (!bullet && !hit.absorb && !(projectile.toilet && hit.toilet)) addPuddle(hit.puddle);
             erase();
             continue;
         }

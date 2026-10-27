@@ -27,6 +27,7 @@ struct ClientState {
     std::uint32_t toiletUser = 0;
     std::vector<Character> characters;
     std::vector<Puddle> puddles;
+    std::vector<WaterRipple> waterRipples;
     std::vector<Projectile> projectiles;
     std::vector<GameEvent> events;
 
@@ -50,6 +51,7 @@ public:
                    Vec2 aimTarget = {}, float aimHeight = 0.0F, bool hasAimTarget = false);
     bool sendPath(Vec2 destination, bool sprint = false, bool advanced = false);
     bool sendAttack(std::uint32_t targetId, bool advanced = false);
+    bool sendAttackAt(Vec2 target, float height);
     bool sendToggleZip();
     bool sendToilet(const std::string& action);
     bool sendCheat(const std::string& need, float delta);

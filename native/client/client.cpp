@@ -202,6 +202,17 @@ void parseState(const JsonValue& value, ClientState& state) {
             state.puddles.push_back(puddle);
         }
     }
+    state.waterRipples.clear();
+    if (const JsonValue* ripples = value.get("ripples")) {
+        for (const JsonValue& item : ripples->array()) {
+            WaterRipple ripple;
+            ripple.id = static_cast<std::uint32_t>(item.numberAt("id"));
+            ripple.position = {static_cast<float>(item.numberAt("x")), static_cast<float>(item.numberAt("z"))};
+            ripple.age = item.numberAt("age");
+            ripple.strength = static_cast<float>(item.numberAt("strength", 1.0));
+            state.waterRipples.push_back(ripple);
+        }
+    }
     state.projectiles.clear();
     if (const JsonValue* projectiles = value.get("projectiles")) {
         for (const JsonValue& item : projectiles->array()) {
@@ -365,6 +376,11 @@ bool NativeClient::sendPath(Vec2 destination, bool sprint, bool advanced) {
 bool NativeClient::sendAttack(std::uint32_t targetId, bool advanced) {
     return send("{\"type\":\"attack\",\"target\":" + std::to_string(targetId) +
                 ",\"advanced\":" + (advanced ? "true" : "false") + "}");
+}
+
+bool NativeClient::sendAttackAt(Vec2 target, float height) {
+    return send("{\"type\":\"attackAt\",\"x\":" + jsonNumber(target.x) +
+                ",\"z\":" + jsonNumber(target.y) + ",\"y\":" + jsonNumber(height) + "}");
 }
 
 bool NativeClient::sendToggleZip() {
