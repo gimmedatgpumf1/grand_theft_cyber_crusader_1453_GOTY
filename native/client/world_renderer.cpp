@@ -551,8 +551,7 @@ const std::vector<MorphSpec>& WorldRenderer::morphSpecs(bool male) const {
 double headAngleForGaze(double gazeAngle) {
     // Small gaze shifts are ocular; beyond a comfortable 30 degrees the head
     // supplies the remainder instead of rotating the skull by the full gaze.
-    constexpr double eyeRange = 30.0 * 3.141592653589793 / 180.0;
-    return gazeAngle - std::clamp(gazeAngle, -eyeRange, eyeRange);
+    return gazeAngle - std::clamp(gazeAngle, -kEyeInHeadRange, kEyeInHeadRange);
 }
 
 Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& state,
@@ -571,10 +570,14 @@ Camera WorldRenderer::viewCamera(const ClientWorld& world, const ClientState& st
     const double gazeYaw = std::clamp(relativeYaw, -gazeYawLimit, gazeYawLimit);
     // Cervical motion is coupled rather than two independent maximum angles.
     // Keep the combined downward gaze clear of the posed shoulder and arm.
-    const double downwardLimit = 1.45 - 0.95 * std::abs(gazeYaw) / gazeYawLimit;
+    constexpr double maximumDowngaze = 3.141592653589793 * 0.5;
+    const double downwardLimit = maximumDowngaze - (maximumDowngaze - 0.5) *
+        std::abs(gazeYaw) / gazeYawLimit;
     const double gazePitch = std::clamp(static_cast<double>(view.pitch), -downwardLimit, 1.0);
     const double headYaw = headAngleForGaze(gazeYaw);
-    const double headPitch = headAngleForGaze(gazePitch);
+    // Downward head pose is solved by chin/manubrium contact; only upward
+    // gaze uses the separate comfortable eye-in-head contribution.
+    const double headPitch = gazePitch > 0 ? headAngleForGaze(gazePitch) : gazePitch;
     camera.position = humanEyePosition(model, cache.rest, *local, state.tick, headYaw, headPitch);
     const double viewYaw = local->yaw + gazeYaw;
     const double cp = std::cos(gazePitch), sp = std::sin(gazePitch);
@@ -587,7 +590,7 @@ void rotateView(ViewState& view, double mouseX, double mouseY) {
     if (view.mode == ViewMode::God) return;
     view.yaw -= static_cast<float>(mouseX * 0.0022);
     view.pitch -= static_cast<float>(mouseY * 0.0022);
-    view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.45F : -1.05F,
+    view.pitch = std::clamp(view.pitch, view.mode == ViewMode::FirstPerson ? -1.57079633F : -1.05F,
                             view.mode == ViewMode::FirstPerson ? 1.25F : -0.06F);
 }
 

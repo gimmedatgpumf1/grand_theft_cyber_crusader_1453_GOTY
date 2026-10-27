@@ -183,10 +183,10 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         length(limited.position - expectedNeckEye) < 1e-6 &&
         length(expectedNeckEye - expectedSeatedEye) > 0.01;
     ViewState pitchView = view;
-    pitchView.pitch = -1.5F;
+    pitchView.pitch = -2.0F;
     const Camera pitched = renderer.viewCamera(world, state, citizen.id, pitchView);
-    constexpr double pitchDown = -1.45;
-    const Vec3 expectedPitchEye = expectedEye(state.characters[0], 0, headAngleForGaze(pitchDown));
+    constexpr double pitchDown = -3.141592653589793 * 0.5;
+    const Vec3 expectedPitchEye = expectedEye(state.characters[0], 0, pitchDown);
     const Vec3 pitchForward = normalized(pitched.target - pitched.position);
     const Vec3 bodyForward{std::sin(bodyYaw), 0, std::cos(bodyYaw)};
     const double forwardTravel = dot(expectedPitchEye - expectedSeatedEye, bodyForward);
@@ -197,7 +197,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const Camera extreme = renderer.viewCamera(world, state, citizen.id, extremeView);
     constexpr double extremePitchDown = -0.5;
     const Vec3 expectedExtremeEye = expectedEye(state.characters[0], headAngleForGaze(neckLimit),
-                                                headAngleForGaze(extremePitchDown));
+                                                extremePitchDown);
     const Vec3 extremeForward = normalized(extreme.target - extreme.position);
     double armClearance = 1000;
     for (const auto& batch : motionScene->batches) if (batch.objectId == citizen.id) {
@@ -238,7 +238,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool eyeJoint = length(neutralStanding.position - expectedEyeJoint) < 1e-6;
     const bool gazeSplit = std::abs(headAngleForGaze(0.2)) < 1e-9 &&
         std::abs(headAngleForGaze(neckLimit) - (neckLimit - eyeRange)) < 1e-9 &&
-        std::abs(headAngleForGaze(pitchDown) - (pitchDown + eyeRange)) < 1e-9;
+        std::abs(headAngleForGaze(1.0) - (1.0 - eyeRange)) < 1e-9;
     gtc::Character scaledCitizen = standingCitizen;
     scaledCitizen.position = {0, 0};
     scaledCitizen.yaw = 0;
@@ -250,54 +250,29 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         canonicalTop = std::max(canonicalTop, similarityCache.rest[index].y);
     }
     const bool defaultHeight = std::abs((canonicalTop - canonicalBottom) * kHumanHeightScale - 1.7) < 1e-6;
-    const auto expectedFullChain = [&](const std::vector<Vec3>& rest, double yaw, double pitch) {
-        static const char* names[] = {"spine01", "neck01", "neck02", "neck03", "head"};
-        constexpr double yawShares[] = {0.0, 0.25, 0.25, 0.50, 0.0};
-        constexpr double flexion[] = {0.10, 0.75, 0.075, 0.0375, 0.0375};
-        constexpr double extension[] = {0.0, 65.0, 27.0, 10.9, 21.0};
-        const double* pitchShares = pitch < 0 ? flexion : extension;
-        std::vector<Vec3> points(6);
-        double yawTotal = 0, pitchTotal = 0;
-        for (int segment = 0; segment < 5; ++segment) {
-            int index = -1;
-            for (std::size_t i = 0; i < eyeModel.rigBones.size(); ++i) {
-                if (eyeModel.rigBones[i].name == names[segment]) index = static_cast<int>(i);
-            }
-            if (index < 0) return Vec3{};
-            points[segment] = jointPosition(rest, eyeModel.rigBones[index].head);
-            yawTotal += yawShares[segment];
-            pitchTotal += pitchShares[segment];
-        }
-        points[5] = (jointPosition(rest, eyeModel.eyeSource[0]) + jointPosition(rest, eyeModel.eyeSource[1])) * 0.5;
-        for (int i = 0; i < 5; ++i) for (int j = i + 1; j < 6; ++j) {
-            const double angle = pitch * pitchShares[i] / pitchTotal;
-            const double c = std::cos(-angle), s = std::sin(-angle);
-            const Vec3 delta = points[j] - points[i];
-            const Vec3 rotated{delta.x, c * delta.y - s * delta.z, s * delta.y + c * delta.z};
-            points[j] = points[i] + rotateBody(rotated, static_cast<float>(yaw * yawShares[i] / yawTotal));
-        }
-        return points[5] * kHumanHeightScale;
-    };
+    const HumanGazePose baseContact = humanGazePose(eyeModel, similarityCache.rest, scaledCitizen,
+                                                     state.tick, 0, pitchDown);
     const Vec3 baseNeutral = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick);
-    const Vec3 baseDown = humanEyePosition(eyeModel, similarityCache.rest, scaledCitizen, state.tick,
-                                           0, headAngleForGaze(pitchDown));
-    const bool fullChain = length(baseDown - expectedFullChain(similarityCache.rest, 0, headAngleForGaze(pitchDown))) < 1e-6;
+    const Vec3 baseDown = baseContact.eye;
+    const bool fullChain = length(baseContact.chin - baseContact.manubrium) < 1e-6 &&
+        baseDown.y < baseNeutral.y && baseDown.z > baseNeutral.z;
     bool heightScaling = true;
     for (double scale : {0.75, 1.30}) {
         std::vector<Vec3> scaledRest;
         scaledRest.reserve(similarityCache.rest.size());
         for (const Vec3& point : similarityCache.rest) scaledRest.push_back(point * scale);
         const Vec3 scaledNeutral = humanEyePosition(eyeModel, scaledRest, scaledCitizen, state.tick);
-        const Vec3 scaledDown = humanEyePosition(eyeModel, scaledRest, scaledCitizen, state.tick,
-                                                 0, headAngleForGaze(pitchDown));
+        const HumanGazePose scaledContact = humanGazePose(eyeModel, scaledRest, scaledCitizen,
+                                                          state.tick, 0, pitchDown);
+        const Vec3 scaledDown = scaledContact.eye;
         heightScaling = heightScaling && length(scaledNeutral - baseNeutral * scale) < 1e-6 &&
             length(scaledDown - baseDown * scale) < 1e-6 &&
-            length(scaledDown - expectedFullChain(scaledRest, 0, headAngleForGaze(pitchDown))) < 1e-6 &&
+            length(scaledContact.chin - scaledContact.manubrium) < 1e-6 &&
             length((scaledDown - scaledNeutral) - (baseDown - baseNeutral) * scale) < 1e-6;
     }
     ViewState standingView = view;
     standingView.yaw = bodyYaw;
-    standingView.pitch = -1.5F;
+    standingView.pitch = -2.0F;
     if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) {
         cleanup();
         return false;
@@ -512,7 +487,7 @@ int main(int argc, char** argv) {
         tps.yaw = 0;
         gtc::native::ViewState fps;
         fps.mode = gtc::native::ViewMode::FirstPerson;
-        fps.pitch = -1.50;
+        fps.pitch = -2.0F;
         gtc::native::ViewState fpsLevel;
         fpsLevel.mode = gtc::native::ViewMode::FirstPerson;
         gtc::native::ViewState fpsExtreme = fps;

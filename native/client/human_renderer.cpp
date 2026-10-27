@@ -284,54 +284,162 @@ void prepareHuman(const HumanModel& model, const Character& character, HumanRend
     cache.poseValid = false;
 }
 
-Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
-                      const Character& character, std::uint64_t tick,
-                      double headYaw, double headPitch) {
-    const std::vector<Transform> transforms = pose(model, rest, character, tick);
-    const int headIndex = boneIndex(model, "head");
+namespace {
+
+struct GazeChain {
+    std::vector<int> indices;
+    std::vector<Vec3> pivots;
+    std::vector<double> flexionLimits;
+    std::vector<double> yawShares;
+    std::vector<double> extensionShares;
+    Vec3 eye;
+    Vec3 chin;
+    Vec3 manubrium;
+    bool valid = false;
+};
+
+GazeChain gazeChain(const HumanModel& model, const std::vector<Vec3>& rest,
+                    const std::vector<Transform>& transforms) {
+    static const char* names[] = {"neck01", "neck02", "neck03", "head"};
+    // Direction-specific published mobility: grouped lower/middle cervical
+    // flexion, then C1/C2 and C0/C1. These are limits, not arbitrary weights.
+    constexpr double flexionDegrees[] = {65.0, 27.0, 11.5, 3.5};
+    constexpr double yaw[] = {0.25, 0.25, 0.50, 0.0};
+    constexpr double extension[] = {22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
+    GazeChain chain;
+    for (int i = 0; i < 4; ++i) {
+        const int index = boneIndex(model, names[i]);
+        if (index < 0) continue;
+        chain.indices.push_back(index);
+        chain.pivots.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
+        chain.flexionLimits.push_back(flexionDegrees[i] * pi / 180.0);
+        chain.yawShares.push_back(yaw[i]);
+        chain.extensionShares.push_back(extension[i]);
+    }
+    const int headIndex = boneIndex(model, "head"), jawIndex = boneIndex(model, "jaw");
+    const int leftClavicle = boneIndex(model, "clavicle.L");
+    const int rightClavicle = boneIndex(model, "clavicle.R");
+    chain.valid = chain.indices.size() == 4 && headIndex >= 0 && jawIndex >= 0 &&
+        leftClavicle >= 0 && rightClavicle >= 0;
     const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
     const Vec3 eyes = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
-    Vec3 posed = head.point(eyes);
-    if (std::abs(headYaw) > 1e-9 || std::abs(headPitch) > 1e-9) {
-        static const char* chainNames[] = {"spine01", "neck01", "neck02", "neck03", "head"};
-        // C1/C2 supplies about half of axial rotation; the upper spine does not
-        // add yaw. Extension shares group published C0-C7 mobility (Aho/Werne).
-        // Looking at one's own body also flexes the upper thorax; a small spine01
-        // share complements terminal lower-cervical dominance without translation.
-        constexpr double yawShares[] = {0.0, 0.25, 0.25, 0.50, 0.0};
-        constexpr double flexionShares[] = {0.10, 0.75, 0.075, 0.0375, 0.0375};
-        constexpr double extensionShares[] = {0.0, 22.0 + 28.0 + 15.0, 12.0 + 15.0, 10.9, 21.0};
-        const double* pitchShares = headPitch < 0 ? flexionShares : extensionShares;
-        std::vector<Vec3> points;
-        std::vector<int> segments;
-        double yawTotal = 0, pitchTotal = 0;
-        for (int segment = 0; segment < 5; ++segment) {
-            const int index = boneIndex(model, chainNames[segment]);
-            if (index < 0) continue;
-            points.push_back(transforms[index].point(joint(rest, model.rigBones[index].head)));
-            segments.push_back(segment);
-            yawTotal += yawShares[segment];
-            pitchTotal += pitchShares[segment];
-        }
-        points.push_back(posed);
-        auto articulate = [](Vec3 point, double yaw, double pitch) {
-            return rotateWorld(apply(rotationX(-pitch), point), static_cast<float>(yaw));
-        };
-        // Parent-to-child forward kinematics: every joint moves the remaining
-        // chain around its own morphed pivot. No fixed-distance eye translation.
-        for (std::size_t i = 0; i < segments.size(); ++i) {
-            const int segment = segments[i];
-            const double yaw = headYaw * yawShares[segment] / std::max(1e-9, yawTotal);
-            const double pitch = headPitch * pitchShares[segment] / std::max(1e-9, pitchTotal);
+    chain.eye = head.point(eyes);
+    chain.chin = jawIndex >= 0 ? head.point(joint(rest, model.rigBones[jawIndex].tail)) : chain.eye;
+    if (leftClavicle >= 0 && rightClavicle >= 0) {
+        chain.manubrium = (joint(rest, model.rigBones[leftClavicle].head) +
+            joint(rest, model.rigBones[rightClavicle].head)) * 0.5;
+    }
+    return chain;
+}
+
+Vec3 anteriorManubrium(const HumanModel& model, const std::vector<Vec3>& rest, Vec3 sternum) {
+    // Intersect the actual morphed skin with a vertical ray at the two
+    // sternoclavicular joints' midpoint. The joint is internal; the foremost
+    // intersected triangle is the anterior manubrium surface the chin contacts.
+    double front = -1e100;
+    for (const Triangle& triangle : model.triangles) {
+        const Vec3& a = rest[triangle.v[0]];
+        const Vec3& b = rest[triangle.v[1]];
+        const Vec3& c = rest[triangle.v[2]];
+        if (std::min({a.y, b.y, c.y}) > sternum.y || std::max({a.y, b.y, c.y}) < sternum.y ||
+            std::min({a.x, b.x, c.x}) > sternum.x || std::max({a.x, b.x, c.x}) < sternum.x) continue;
+        const double denominator = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+        if (std::abs(denominator) < 1e-12) continue;
+        const double wa = ((b.y - c.y) * (sternum.x - c.x) +
+            (c.x - b.x) * (sternum.y - c.y)) / denominator;
+        const double wb = ((c.y - a.y) * (sternum.x - c.x) +
+            (a.x - c.x) * (sternum.y - c.y)) / denominator;
+        const double wc = 1.0 - wa - wb;
+        if (wa < -1e-7 || wb < -1e-7 || wc < -1e-7) continue;
+        front = std::max(front, wa * a.z + wb * b.z + wc * c.z);
+    }
+    if (front > -1e99) sternum.z = front;
+    return sternum;
+}
+
+std::vector<double> solveChinContact(const GazeChain& chain, Vec3 target) {
+    const std::size_t count = chain.pivots.size();
+    std::vector<double> angles(count, 0.0);
+    auto forward = [&](Vec3& chin) {
+        std::vector<Vec3> points = chain.pivots;
+        points.push_back(chain.chin);
+        for (std::size_t i = 0; i < count; ++i) {
             for (std::size_t j = i + 1; j < points.size(); ++j) {
-                points[j] = points[i] + articulate(points[j] - points[i], yaw, pitch);
+                points[j] = points[i] + apply(rotationX(-angles[i]), points[j] - points[i]);
             }
         }
-        posed = points.back();
+        chin = points.back();
+    };
+    // Base-to-tip CCD converges without the upper-joint unloading produced by
+    // tip-to-base CCD here. All four biological joints remain in the solve.
+    for (int iteration = 0; iteration < 64; ++iteration) {
+        for (std::size_t i = 0; i < count; ++i) {
+            Vec3 chin;
+            forward(chin);
+            const Vec3 from = normalized(chin - chain.pivots[i]);
+            const Vec3 to = normalized(target - chain.pivots[i]);
+            double angle = std::acos(std::clamp(dot(from, to), -1.0, 1.0));
+            if (cross(from, to).x > 0) angle = -angle;
+            angles[i] = std::clamp(angles[i] + angle, -chain.flexionLimits[i], 0.0);
+        }
+        Vec3 chin;
+        forward(chin);
+        if (length(chin - target) < 1e-7) break;
+    }
+    return angles;
+}
+
+} // namespace
+
+HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& rest,
+                            const Character& character, std::uint64_t tick,
+                            double headYaw, double gazePitch) {
+    const std::vector<Transform> transforms = pose(model, rest, character, tick);
+    GazeChain chain = gazeChain(model, rest, transforms);
+    chain.manubrium = anteriorManubrium(model, rest, chain.manubrium);
+    Vec3 posedEye = chain.eye, posedChin = chain.chin;
+    if (chain.valid && (std::abs(headYaw) > 1e-9 || std::abs(gazePitch) > 1e-9)) {
+        const std::size_t count = chain.pivots.size();
+        std::vector<double> pitches(count, 0.0);
+        if (gazePitch < 0) {
+            const std::vector<double> contact = solveChinContact(chain, chain.manubrium);
+            const double amount = std::clamp(-gazePitch / (pi * 0.5), 0.0, 1.0);
+            for (std::size_t i = 0; i < count; ++i) pitches[i] = contact[i] * amount;
+        } else {
+            const double physical = gazePitch - std::clamp(gazePitch, -kEyeInHeadRange, kEyeInHeadRange);
+            double total = 0;
+            for (double share : chain.extensionShares) total += share;
+            for (std::size_t i = 0; i < count; ++i) {
+                pitches[i] = physical * chain.extensionShares[i] / std::max(1e-9, total);
+            }
+        }
+        std::vector<Vec3> points = chain.pivots;
+        points.push_back(posedEye);
+        points.push_back(posedChin);
+        double yawTotal = 0;
+        for (double share : chain.yawShares) yawTotal += share;
+        for (std::size_t i = 0; i < count; ++i) {
+            const double yaw = headYaw * chain.yawShares[i] / std::max(1e-9, yawTotal);
+            for (std::size_t j = i + 1; j < points.size(); ++j) {
+                points[j] = points[i] + rotateWorld(apply(rotationX(-pitches[i]), points[j] - points[i]),
+                                                    static_cast<float>(yaw));
+            }
+        }
+        posedEye = points[count];
+        posedChin = points[count + 1];
     }
     const double rootY = character.onToilet ? -0.35 : 0.0;
-    return rotateWorld(posed * kHumanHeightScale, character.yaw) +
-        Vec3{character.position.x, rootY, character.position.y};
+    auto world = [&](Vec3 point) {
+        return rotateWorld(point * kHumanHeightScale, character.yaw) +
+            Vec3{character.position.x, rootY, character.position.y};
+    };
+    return {world(posedEye), world(posedChin), world(chain.manubrium)};
+}
+
+Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
+                      const Character& character, std::uint64_t tick,
+                      double headYaw, double gazePitch) {
+    return humanGazePose(model, rest, character, tick, headYaw, gazePitch).eye;
 }
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,

@@ -11,6 +11,8 @@
 
 namespace gtc::native {
 
+inline constexpr double kEyeInHeadRange = 30.0 * 3.141592653589793 / 180.0;
+
 struct HumanRenderCache {
     bool valid = false;
     bool male = true;
@@ -28,9 +30,17 @@ struct HumanRenderCache {
 };
 
 void prepareHuman(const HumanModel& model, const Character& character, HumanRenderCache& cache);
+struct HumanGazePose {
+    Vec3 eye;
+    Vec3 chin;
+    Vec3 manubrium;
+};
+HumanGazePose humanGazePose(const HumanModel& model, const std::vector<Vec3>& rest,
+                            const Character& character, std::uint64_t tick,
+                            double headYaw = 0, double gazePitch = 0);
 Vec3 humanEyePosition(const HumanModel& model, const std::vector<Vec3>& rest,
                       const Character& character, std::uint64_t tick,
-                      double headYaw = 0, double headPitch = 0);
+                      double headYaw = 0, double gazePitch = 0);
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,
                const HairLibrary& hair, const Character& character, HumanRenderCache& cache,

@@ -224,7 +224,7 @@ void World::setInput(std::uint32_t id, const Vec2& move, bool sprint, bool piss,
     character->slowWalk = slowWalk;
     character->wantsPiss = piss;
     if (std::isfinite(yaw)) character->yaw = yaw;
-    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.5F, 1.35F);
+    if (std::isfinite(pitch)) character->pitch = std::clamp(pitch, -1.57079633F, 1.35F);
 }
 
 void World::setDestination(std::uint32_t id, const Vec2& destination) {
