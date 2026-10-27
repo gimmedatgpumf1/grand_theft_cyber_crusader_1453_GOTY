@@ -322,7 +322,8 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         cache.poseOnToilet = character.onToilet;
         cache.poseValid = true;
     }
-    std::vector<RenderVertex> transformed(rest.size());
+    cache.transformed.resize(rest.size());
+    auto& transformed = cache.transformed;
     for (std::size_t index = 0; index < rest.size(); ++index) {
         transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
     }

@@ -365,6 +365,43 @@ void drawPissing(Rasterizer& rasterizer, const Camera& camera, const Character& 
     }
 }
 
+bool sameAppearance(const Appearance& a, const Appearance& b) {
+    return a.male == b.male && a.skin == b.skin && a.hair == b.hair && a.hairColor == b.hairColor &&
+        a.shirt == b.shirt && a.pants == b.pants && a.beard == b.beard && a.coat == b.coat &&
+        a.sunglasses == b.sunglasses && a.eyeColor == b.eyeColor && a.makeup == b.makeup &&
+        a.lipColor == b.lipColor && a.suit == b.suit && a.tie == b.tie && a.dress == b.dress &&
+        a.beret == b.beret && a.earrings == b.earrings && a.necklace == b.necklace && a.fur == b.fur &&
+        a.morphs == b.morphs;
+}
+
+bool animatedPose(const ClientState& state) {
+    for (const Character& character : state.characters) {
+        if (!character.onToilet && character.speed > 0.01F) return true;
+    }
+    return false;
+}
+
+bool sameGeometry(const ClientState& a, const ClientState& b) {
+    if (a.characters.size() != b.characters.size() || a.puddles.size() != b.puddles.size()) return false;
+    for (std::size_t i = 0; i < a.characters.size(); ++i) {
+        const Character& left = a.characters[i];
+        const Character& right = b.characters[i];
+        if (left.id != right.id || !sameAppearance(left.appearance, right.appearance) ||
+            left.speed != right.speed || left.pissing != right.pissing || left.onToilet != right.onToilet ||
+            left.toiletAction != right.toiletAction || left.path.size() != right.path.size()) return false;
+        for (std::size_t p = 0; p < left.path.size(); ++p) {
+            if (left.path[p].x != right.path[p].x || left.path[p].y != right.path[p].y) return false;
+        }
+    }
+    for (std::size_t i = 0; i < a.puddles.size(); ++i) {
+        const Puddle& left = a.puddles[i];
+        const Puddle& right = b.puddles[i];
+        if (left.id != right.id || left.position.x != right.position.x || left.position.y != right.position.y ||
+            left.size != right.size) return false;
+    }
+    return !(animatedPose(a) || animatedPose(b)) || a.tick == b.tick;
+}
+
 void updateObjectTransforms(GpuScene& scene, const ClientState& state) {
     for (GpuBatch& batch : scene.batches) {
         if (!batch.objectId) continue;
@@ -552,12 +589,13 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const auto profileStart = std::chrono::steady_clock::now();
     Camera camera = cameraOverride ? *cameraOverride : makeCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
-    const bool rebuild = !view.gpu || !gpuValid_ || gpuTick_ != state.tick || gpuLocalId_ != localId ||
+    const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
     auto humanStart = profileStart;
     auto finishStart = profileStart;
     if (rebuild) {
-        Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu);
+        Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu,
+                              view.gpu ? std::move(gpuScene_) : GpuScene{});
         rasterizer.setCamera(camera);
         drawFloor(rasterizer, camera, world);
         if (view.mode != ViewMode::God) {
@@ -595,7 +633,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         if (view.gpu) {
             gpuScene_ = rasterizer.takeGpuScene();
             gpuScene_.revision = ++gpuRevision_;
-            gpuTick_ = state.tick;
+            gpuGeometryState_ = state;
             gpuLocalId_ = localId;
             gpuMode_ = static_cast<int>(view.mode);
             gpuHighlight_ = view.highlightToilet;

@@ -47,7 +47,7 @@ private:
     mutable std::unordered_map<std::uint32_t, HumanRenderCache> humanCache_;
     mutable GpuScene gpuScene_;
     mutable bool gpuValid_ = false;
-    mutable std::uint64_t gpuTick_ = 0;
+    mutable ClientState gpuGeometryState_;
     mutable std::uint64_t gpuRevision_ = 0;
     mutable std::uint32_t gpuLocalId_ = 0;
     mutable int gpuMode_ = -1;

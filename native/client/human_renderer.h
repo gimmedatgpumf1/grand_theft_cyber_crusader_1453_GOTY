@@ -24,6 +24,7 @@ struct HumanRenderCache {
     bool poseOnToilet = false;
     std::vector<Vec3> posed;
     std::vector<Vec3> posedNormals;
+    std::vector<RenderVertex> transformed;
 };
 
 void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& model,

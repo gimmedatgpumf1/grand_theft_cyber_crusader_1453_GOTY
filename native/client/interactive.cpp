@@ -89,7 +89,8 @@ public:
             updateCamera(dt);
             updateHighlight();
             const auto renderStart = Clock::now();
-            if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error, &activeCamera())) {
+            const Camera* renderCamera = view_.mode == ViewMode::FirstPerson ? nullptr : &activeCamera();
+            if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error, renderCamera)) {
                 std::cerr << error << '\n';
                 return 1;
             }

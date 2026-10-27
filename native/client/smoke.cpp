@@ -79,6 +79,12 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     }
     const std::uint64_t revision = motionScene->revision;
     const auto initialView = motionScene->viewMatrix;
+    ++state.tick;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || motionScene->revision != revision) {
+        error = "idle tick rebuilt the scene";
+        cleanup();
+        return false;
+    }
     state.characters[0].position = {1, 2};
     state.characters[0].yaw = 0.5F;
     if (!renderer.render(world, state, citizen.id, view, frame, error) || !motionScene) {
@@ -104,9 +110,38 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     const bool matrix = std::abs(body->modelMatrix[0] - c) < 1e-9 &&
         std::abs(body->modelMatrix[2] + s) < 1e-9 && std::abs(body->modelMatrix[8] - s) < 1e-9 &&
         std::abs(body->modelMatrix[12] - 1) < 1e-9 && std::abs(body->modelMatrix[14] - 2) < 1e-9;
+    if (!matrix) {
+        error = "character model transform";
+        cleanup();
+        return false;
+    }
+    const std::uint64_t idleRevision = motionScene->revision;
+    state.characters[0].speed = 1;
+    ++state.tick;
+    if (!renderer.render(world, state, citizen.id, view, frame, error) || motionScene->revision == idleRevision) {
+        error = "walk pose did not rebuild";
+        cleanup();
+        return false;
+    }
+    view.mode = ViewMode::FirstPerson;
+    view.pitch = 0;
+    if (!renderer.render(world, state, citizen.id, view, frame, error)) {
+        cleanup();
+        return false;
+    }
+    const Camera eye = makeViewCamera(world, state, citizen.id, view);
+    const auto& m = motionScene->viewMatrix;
+    const auto transform = [&](Vec3 point) {
+        return Vec3{m[0] * point.x + m[4] * point.y + m[8] * point.z + m[12],
+                    m[1] * point.x + m[5] * point.y + m[9] * point.z + m[13],
+                    m[2] * point.x + m[6] * point.y + m[10] * point.z + m[14]};
+    };
+    const Vec3 eyeView = transform(eye.position);
+    const Vec3 targetView = transform(eye.target);
+    const bool firstPerson = length(eyeView) < 1e-8 && std::abs(targetView.z - 1) < 1e-8;
     cleanup();
-    if (!matrix) error = "character model transform";
-    return matrix;
+    if (!firstPerson) error = "first-person eye matrix";
+    return firstPerson;
 }
 
 } // namespace

@@ -3,6 +3,7 @@
 #include "native.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -120,7 +121,7 @@ bool renderGpuScene(const GpuScene& scene, NativeFrame& frame);
 
 class Rasterizer {
 public:
-    Rasterizer(int width, int height, Color background, double focal, bool gpu = false);
+    Rasterizer(int width, int height, Color background, double focal, bool gpu = false, GpuScene recycled = {});
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     void setCamera(const Camera& camera);
@@ -136,6 +137,7 @@ private:
     std::uint32_t objectId_ = 0;
     Vec2 objectPivot_{};
     float objectYaw_ = 0;
+    std::size_t activeBatch_ = static_cast<std::size_t>(-1);
     GpuScene scene_;
     std::vector<double> depth_;
     std::vector<Color> pixels_;

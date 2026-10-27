@@ -244,8 +244,9 @@ RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 so
     return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
-Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu)
-    : width_(width), height_(height), focal_(focal), gpu_(gpu) {
+Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu, GpuScene recycled)
+    : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)) {
+    for (GpuBatch& batch : scene_.batches) batch.vertices.clear();
     scene_.width = width;
     scene_.height = height;
     scene_.focal = focal;
@@ -268,21 +269,37 @@ void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw) {
 
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
-        auto batch = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
-            return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
-        });
-        if (batch == scene_.batches.end()) {
-            scene_.batches.push_back({});
-            batch = std::prev(scene_.batches.end());
-            batch->material = material;
-            batch->objectId = objectId_;
-            batch->pivotX = static_cast<float>(objectPivot_.x);
-            batch->pivotZ = static_cast<float>(objectPivot_.y);
-            batch->yaw = objectYaw_;
-            batch->vertices.reserve(12288);
+        std::size_t index = activeBatch_;
+        bool reuse = index < scene_.batches.size();
+        if (reuse) {
+            const GpuBatch& candidate = scene_.batches[index];
+            reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
         }
+        if (!reuse) {
+            auto found = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
+                return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+            });
+            if (found == scene_.batches.end()) {
+                scene_.batches.push_back({});
+                GpuBatch& created = scene_.batches.back();
+                created.material = material;
+                created.objectId = objectId_;
+                created.pivotX = static_cast<float>(objectPivot_.x);
+                created.pivotZ = static_cast<float>(objectPivot_.y);
+                created.yaw = objectYaw_;
+                created.vertices.reserve(12288);
+                index = scene_.batches.size() - 1;
+            } else {
+                index = static_cast<std::size_t>(std::distance(scene_.batches.begin(), found));
+            }
+        }
+        activeBatch_ = index;
+        GpuBatch& batch = scene_.batches[index];
+        batch.pivotX = static_cast<float>(objectPivot_.x);
+        batch.pivotZ = static_cast<float>(objectPivot_.y);
+        batch.yaw = objectYaw_;
         for (const RenderVertex& vertex : input) {
-            batch->vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
+            batch.vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
                 static_cast<float>(vertex.view.z), static_cast<float>(vertex.normal.x),
                 static_cast<float>(vertex.normal.y), static_cast<float>(vertex.normal.z),
                 static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y)});
