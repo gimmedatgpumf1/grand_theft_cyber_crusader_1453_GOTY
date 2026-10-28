@@ -389,31 +389,40 @@ bool Renderer::createPipeline() {
 
     // One interleaved vertex: position, normal, texture coordinate -- the same
     // GpuVertex the OpenGL path uploads.
-    VkVertexInputBindingDescription binding{};
-    binding.binding = 0;
-    binding.stride = sizeof(GpuVertex);
-    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    // Two shapes of vertex, and two pipelines to match. Position and normal are
+    // in one array for every vertex; the texture coordinate is in a second array
+    // that only textured batches are bound to, because fetching eight bytes of
+    // coordinate for a skeleton bone or a wall tile is eight bytes per vertex of
+    // the frame spent to fill a lane the shader never reads.
+    VkVertexInputBindingDescription bindings[2]{};
+    bindings[0].binding = 0;
+    bindings[0].stride = sizeof(PackedVertex);
+    bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    bindings[1].binding = 1;
+    bindings[1].stride = sizeof(UvVertex);
+    bindings[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     VkVertexInputAttributeDescription attributes[3]{};
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributes[0].offset = offsetof(GpuVertex, x);
+    attributes[0].offset = offsetof(PackedVertex, x);
     attributes[1].location = 1;
     attributes[1].binding = 0;
     attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributes[1].offset = offsetof(GpuVertex, nx);
+    attributes[1].offset = offsetof(PackedVertex, nx);
     attributes[2].location = 2;
-    attributes[2].binding = 0;
+    attributes[2].binding = 1;
     attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attributes[2].offset = offsetof(GpuVertex, u);
+    attributes[2].offset = offsetof(UvVertex, u);
 
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-
-    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount = 1;
-    vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 3;
-    vertexInput.pVertexAttributeDescriptions = attributes;
+    VkPipelineVertexInputStateCreateInfo vertexInput[2]{};
+    for (int variant = 0; variant < 2; ++variant) {
+        vertexInput[variant].sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInput[variant].vertexBindingDescriptionCount = variant == 0 ? 1 : 2;
+        vertexInput[variant].pVertexBindingDescriptions = bindings;
+        vertexInput[variant].vertexAttributeDescriptionCount = variant == 0 ? 2 : 3;
+        vertexInput[variant].pVertexAttributeDescriptions = attributes;
+    }
 
     VkPipelineInputAssemblyStateCreateInfo assembly{};
 
@@ -482,12 +491,16 @@ bool Renderer::createPipeline() {
         return false;
     }
 
-    VkGraphicsPipelineCreateInfo info[2]{};
-    for (VkGraphicsPipelineCreateInfo& entry : info) {
+    // Four pipelines from one call: with and without a texture coordinate, into
+    // the pass that clears and into the pass that does not. A pipeline is built
+    // against a render pass, so they have to exist as pairs.
+    VkGraphicsPipelineCreateInfo info[4]{};
+    for (int index = 0; index < 4; ++index) {
+        VkGraphicsPipelineCreateInfo& entry = info[index];
         entry.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         entry.stageCount = 2;
         entry.pStages = stages;
-        entry.pVertexInputState = &vertexInput;
+        entry.pVertexInputState = &vertexInput[index / 2];
         entry.pInputAssemblyState = &assembly;
         entry.pViewportState = &viewport;
         entry.pRasterizationState = &raster;
@@ -497,14 +510,10 @@ bool Renderer::createPipeline() {
         entry.pDynamicState = &dynamic;
         entry.layout = pipelineLayout_;
         entry.subpass = 0;
+        entry.renderPass = index % 2 == 0 ? renderPass_ : renderPassCovered_;
     }
-    // Two pipelines from one call: the pass that clears and the pass that does
-    // not. A pipeline is built against a render pass, so the pair has to exist
-    // as a pair.
-    info[0].renderPass = renderPass_;
-    info[1].renderPass = renderPassCovered_;
-    VkPipeline built[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 2, info, nullptr, built);
+    VkPipeline built[4] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 4, info, nullptr, built);
     destroyShaderModule(device_, vertexModule, nullptr);
     destroyShaderModule(device_, fragmentModule, nullptr);
     if (result != VK_SUCCESS) {
@@ -513,6 +522,8 @@ bool Renderer::createPipeline() {
     }
     pipeline_ = built[0];
     pipelineCovered_ = built[1];
+    pipelineUv_ = built[2];
+    pipelineUvCovered_ = built[3];
     return true;
 }
 
@@ -725,18 +736,17 @@ void Renderer::stop() {
     destroySwapchain();
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
-        if (vertexBuffer_) destroyBuffer(device_, vertexBuffer_, nullptr);
+        for (DeviceArray* array : {&vertex_, &uv_}) {
+            if (array->buffer) destroyBuffer(device_, array->buffer, nullptr);
+            if (array->memory) freeMemory(device_, array->memory, nullptr);
+            *array = DeviceArray{};
+        }
         if (stagingBuffer_) destroyBuffer(device_, stagingBuffer_, nullptr);
         if (stagingMemory_) freeMemory(device_, stagingMemory_, nullptr);
         stagingBuffer_ = VK_NULL_HANDLE;
         stagingMemory_ = VK_NULL_HANDLE;
         stagingMap_ = nullptr;
         stagingCapacity_ = 0;
-        if (vertexMemory_) freeMemory(device_, vertexMemory_, nullptr);
-        vertexBuffer_ = VK_NULL_HANDLE;
-        vertexMemory_ = VK_NULL_HANDLE;
-        vertexMap_ = nullptr;
-        vertexCapacity_ = 0;
         for (auto& entry : textures_) {
             if (entry.second.view) destroyImageView(device_, entry.second.view, nullptr);
             if (entry.second.image) destroyImage(device_, entry.second.image, nullptr);
@@ -755,6 +765,8 @@ void Renderer::stop() {
         frameMap_ = nullptr;
         if (pipeline_) destroyPipeline(device_, pipeline_, nullptr);
         if (pipelineCovered_) destroyPipeline(device_, pipelineCovered_, nullptr);
+        if (pipelineUv_) destroyPipeline(device_, pipelineUv_, nullptr);
+        if (pipelineUvCovered_) destroyPipeline(device_, pipelineUvCovered_, nullptr);
         if (pipelineLayout_) destroyPipelineLayout(device_, pipelineLayout_, nullptr);
         if (renderPass_) destroyRenderPass(device_, renderPass_, nullptr);
         if (renderPassCovered_) destroyRenderPass(device_, renderPassCovered_, nullptr);
@@ -783,6 +795,8 @@ void Renderer::stop() {
     textureLayout_ = VK_NULL_HANDLE;
     pipeline_ = VK_NULL_HANDLE;
     pipelineCovered_ = VK_NULL_HANDLE;
+    pipelineUv_ = VK_NULL_HANDLE;
+    pipelineUvCovered_ = VK_NULL_HANDLE;
     pipelineLayout_ = VK_NULL_HANDLE;
     renderPass_ = VK_NULL_HANDLE;
     renderPassCovered_ = VK_NULL_HANDLE;

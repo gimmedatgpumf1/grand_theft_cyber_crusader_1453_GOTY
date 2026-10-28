@@ -565,20 +565,9 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
         // window's own path -- the same call the game makes.
         std::string windowError;
         gtc::native::NativeWindow window;
-        const bool wasSet = std::getenv("GTC_NO_VULKAN") != nullptr;
-#ifdef _WIN32
-        _putenv_s("GTC_NO_VULKAN", "1");
-#else
-        setenv("GTC_NO_VULKAN", "1", 1);
-#endif
-        const bool opened = window.open("GTC skull benchmark", windowError);
-        if (!wasSet) {
-#ifdef _WIN32
-            _putenv_s("GTC_NO_VULKAN", "");
-#else
-            unsetenv("GTC_NO_VULKAN");
-#endif
-        }
+        // Asked for by name. There is no environment variable for this any more:
+        // it was how the game ended up on the other backend without saying so.
+        const bool opened = window.open("GTC skull benchmark", windowError, true);
         if (!opened) {
             std::cout << "  opengl                    unavailable: " << windowError << '\n';
         } else {

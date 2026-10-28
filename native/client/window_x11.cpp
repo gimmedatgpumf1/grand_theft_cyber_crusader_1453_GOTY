@@ -334,19 +334,16 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
 }
 
 // Vulkan first: it needs no window and no GL context, and it is the path that
-// carries the frame. `GTC_NO_VULKAN=1` keeps a driver with a bad day from
-// taking the client with it.
-bool wantVulkan() {
-    const char* skip = std::getenv("GTC_NO_VULKAN");
-    return !(skip && *skip && *skip != '0');
-}
+// carries the frame. The benchmark's OpenGL window asks for that backend by
+// name; nothing else does.
+bool wantVulkan(bool preferOpenGl) { return !preferOpenGl; }
 
 } // namespace
 
 NativeWindow::NativeWindow() = default;
 NativeWindow::~NativeWindow() { close(); }
 
-bool NativeWindow::open(const std::string& title, std::string& error) {
+bool NativeWindow::open(const std::string& title, std::string& error, bool preferOpenGl) {
     close();
     impl_ = new Impl;
     if (!impl_->load()) {
@@ -411,7 +408,7 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     impl_->api.flush(impl_->display);
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
-    if (wantVulkan() && vulkanAvailable()) {
+    if (wantVulkan(preferOpenGl) && vulkanAvailable()) {
         impl_->vulkan = true;
         impl_->gpu = true;
         activeGpu = impl_;

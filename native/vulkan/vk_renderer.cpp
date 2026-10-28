@@ -155,15 +155,10 @@ void Renderer::destroyTargets() {
     target_ = Target{};
 }
 
-bool Renderer::uploadVertices(const GpuScene& scene) {
-    std::size_t total = 0;
-    for (const GpuBatch& batch : scene.batches) total += batch.vertices.size();
-    firstVertex_.assign(scene.batches.size(), 0);
-    if (total == 0) return true;
-    const VkDeviceSize bytes = static_cast<VkDeviceSize>(total) * sizeof(GpuVertex);
-
-    // Asked once: this is a driver query, and the answer cannot change while
-    // the device lives.
+// Makes sure one device-side array can hold `bytes`, growing it when it cannot.
+// The memory type is chosen on the way: device-local, and host-visible too when
+// the device offers such a type, which is the case everywhere this has run.
+bool Renderer::reserveArray(DeviceArray& array, VkDeviceSize bytes) {
     if (!memoryQueried_) {
         getPhysicalDeviceMemoryProperties(physical_, &memory_);
         memoryQueried_ = true;
@@ -177,75 +172,91 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
         }
         return memory.memoryTypeCount;
     };
-
-    if (bytes > vertexCapacity_) {
-        if (vertexBuffer_) destroyBuffer(device_, vertexBuffer_, nullptr);
-        if (vertexMemory_) freeMemory(device_, vertexMemory_, nullptr);
-        vertexBuffer_ = VK_NULL_HANDLE;
-        vertexMemory_ = VK_NULL_HANDLE;
-        vertexMap_ = nullptr;
-        vertexCapacity_ = 0;
-        vertexStaged_ = false;
-
-        VkBufferCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        info.size = bytes;
-        // Transfer destination so a device-local buffer can be filled from a
-        // staging buffer where there is no memory type that is both.
-        info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        if (createBuffer(device_, &info, nullptr, &vertexBuffer_) != VK_SUCCESS) return false;
-        VkMemoryRequirements requirements{};
-        getBufferMemoryRequirements(device_, vertexBuffer_, &requirements);
-
-        // The geometry is read by the GPU every frame and written by the host
-        // only when it changes, so device-local memory is the right home for it.
-        // Host-visible memory that is *not* device local is often write-combined
-        // system memory, where the GPU's read of a few megabytes drags -- which
-        // is exactly what made a single skull cost milliseconds.
-        const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        std::uint32_t type = pickType(requirements, ideal);
-        if (type != memory.memoryTypeCount) {
-            VkMemoryAllocateInfo allocation{};
-            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            allocation.allocationSize = requirements.size;
-            allocation.memoryTypeIndex = type;
-            if (allocateMemory(device_, &allocation, nullptr, &vertexMemory_) != VK_SUCCESS) return false;
-            if (bindBufferMemory(device_, vertexBuffer_, vertexMemory_, 0) != VK_SUCCESS) return false;
-            if (mapMemory(device_, vertexMemory_, 0, VK_WHOLE_SIZE, 0, &vertexMap_) != VK_SUCCESS) return false;
-        } else {
-            // No such type: device-local buffer, filled through a staging buffer.
-            type = pickType(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-            if (type == memory.memoryTypeCount) type = pickType(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-            if (type == memory.memoryTypeCount) return false;
-            VkMemoryAllocateInfo allocation{};
-            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            allocation.allocationSize = requirements.size;
-            allocation.memoryTypeIndex = type;
-            if (allocateMemory(device_, &allocation, nullptr, &vertexMemory_) != VK_SUCCESS) return false;
-            if (bindBufferMemory(device_, vertexBuffer_, vertexMemory_, 0) != VK_SUCCESS) return false;
-            vertexStaged_ = true;
-        }
-        vertexCapacity_ = bytes;
+    if (array.buffer != VK_NULL_HANDLE && bytes <= array.capacity) return true;
+    if (array.buffer) destroyBuffer(device_, array.buffer, nullptr);
+    if (array.memory) freeMemory(device_, array.memory, nullptr);
+    array = DeviceArray{};
+    VkBufferCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    info.size = bytes;
+    // Transfer destination so a device-local buffer can be filled through the
+    // staging buffer where there is no memory type that is both.
+    info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (createBuffer(device_, &info, nullptr, &array.buffer) != VK_SUCCESS) return false;
+    VkMemoryRequirements requirements{};
+    getBufferMemoryRequirements(device_, array.buffer, &requirements);
+    // Host-visible memory that is *not* device local is often write-combined
+    // system memory, where the GPU's read of a few megabytes drags -- which is
+    // exactly what made a single skull cost milliseconds.
+    const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    std::uint32_t type = pickType(requirements, ideal);
+    VkMemoryAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocation.allocationSize = requirements.size;
+    if (type != memory.memoryTypeCount) {
+        allocation.memoryTypeIndex = type;
+        if (allocateMemory(device_, &allocation, nullptr, &array.memory) != VK_SUCCESS) return false;
+        if (bindBufferMemory(device_, array.buffer, array.memory, 0) != VK_SUCCESS) return false;
+        if (mapMemory(device_, array.memory, 0, VK_WHOLE_SIZE, 0, &array.map) != VK_SUCCESS) return false;
+    } else {
+        type = pickType(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (type == memory.memoryTypeCount) type = pickType(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        if (type == memory.memoryTypeCount) return false;
+        allocation.memoryTypeIndex = type;
+        if (allocateMemory(device_, &allocation, nullptr, &array.memory) != VK_SUCCESS) return false;
+        if (bindBufferMemory(device_, array.buffer, array.memory, 0) != VK_SUCCESS) return false;
+        array.staged = true;
     }
+    array.capacity = bytes;
+    return true;
+}
 
-    if (vertexMap_) {
-        char* cursor = static_cast<char*>(vertexMap_);
+// Fills an array from the scene: either every vertex's position and normal, or
+// the texture coordinates of the batches that have a texture to sample.
+bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes) {
+    if (!reserveArray(array, bytes)) return false;
+    const auto write = [&](char* cursor) {
         std::uint32_t running = 0;
+        // One array per call: the offsets of the array being written are the only
+        // ones this pass may touch, or the second pass would blank the first.
+        std::vector<std::uint32_t>& offsets = uvs ? firstUv_ : firstVertex_;
+        offsets.assign(scene.batches.size(), 0);
         for (std::size_t index = 0; index < scene.batches.size(); ++index) {
-            const std::vector<GpuVertex>& vertices = scene.batches[index].vertices;
-            firstVertex_[index] = running;
-            if (!vertices.empty()) {
-                std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(GpuVertex),
-                            vertices.data(), vertices.size() * sizeof(GpuVertex));
+            const GpuBatch& batch = scene.batches[index];
+            const std::vector<GpuVertex>& vertices = batch.vertices;
+            // Only the batches that sample an image have a coordinate, so only
+            // they take up room in the coordinate array -- and only they move the
+            // offset on.
+            const bool keep = !uvs || texturedMaterial(batch.material);
+            if (!keep) continue;
+            offsets[index] = running;
+            for (std::size_t vertex = 0; vertex < vertices.size(); ++vertex) {
+                if (uvs) {
+                    UvVertex coordinate{vertices[vertex].u, vertices[vertex].v};
+                    std::memcpy(cursor + static_cast<VkDeviceSize>(running + vertex) * sizeof(UvVertex),
+                                &coordinate, sizeof(UvVertex));
+                } else {
+                    PackedVertex packed;
+                    packed.x = vertices[vertex].x;
+                    packed.y = vertices[vertex].y;
+                    packed.z = vertices[vertex].z;
+                    packed.nx = vertices[vertex].nx;
+                    packed.ny = vertices[vertex].ny;
+                    packed.nz = vertices[vertex].nz;
+                    std::memcpy(cursor + static_cast<VkDeviceSize>(running + vertex) * sizeof(PackedVertex),
+                                &packed, sizeof(PackedVertex));
+                }
             }
             running += static_cast<std::uint32_t>(vertices.size());
         }
-        uploadedVertices_ = total;
+        if (!uvs) uploadedVertices_ = running;
+    };
+    if (array.map) {
+        write(static_cast<char*>(array.map));
         return true;
     }
-
     // Staged path: one host-visible buffer, reused, then copied on the device.
     if (bytes > stagingCapacity_) {
         if (stagingBuffer_) destroyBuffer(device_, stagingBuffer_, nullptr);
@@ -262,9 +273,19 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
         if (createBuffer(device_, &info, nullptr, &stagingBuffer_) != VK_SUCCESS) return false;
         VkMemoryRequirements requirements{};
         getBufferMemoryRequirements(device_, stagingBuffer_, &requirements);
+        if (!memoryQueried_) {
+            getPhysicalDeviceMemoryProperties(physical_, &memory_);
+            memoryQueried_ = true;
+        }
         const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        const std::uint32_t type = pickType(requirements, wanted);
-        if (type == memory.memoryTypeCount) return false;
+        std::uint32_t type = memory_.memoryTypeCount;
+        for (std::uint32_t index = 0; index < memory_.memoryTypeCount; ++index) {
+            if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
+            if ((memory_.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
+            type = index;
+            break;
+        }
+        if (type == memory_.memoryTypeCount) return false;
         VkMemoryAllocateInfo allocation{};
         allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocation.allocationSize = requirements.size;
@@ -274,28 +295,59 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
         if (mapMemory(device_, stagingMemory_, 0, VK_WHOLE_SIZE, 0, &stagingMap_) != VK_SUCCESS) return false;
         stagingCapacity_ = bytes;
     }
-    char* cursor = static_cast<char*>(stagingMap_);
-    std::uint32_t running = 0;
-    for (std::size_t index = 0; index < scene.batches.size(); ++index) {
-        const std::vector<GpuVertex>& vertices = scene.batches[index].vertices;
-        firstVertex_[index] = running;
-        if (!vertices.empty()) {
-            std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(GpuVertex),
-                        vertices.data(), vertices.size() * sizeof(GpuVertex));
-        }
-        running += static_cast<std::uint32_t>(vertices.size());
+    write(static_cast<char*>(stagingMap_));
+    return submitNow([&](VkCommandBuffer buffer) {
+        VkBufferCopy region{};
+        region.srcOffset = 0;
+        region.dstOffset = 0;
+        region.size = bytes;
+        copyBufferFn(buffer, stagingBuffer_, array.buffer, 1, &region);
+    });
+}
+
+bool Renderer::uploadVertices(const GpuScene& scene) {
+    std::size_t total = 0, coordinates = 0;
+    for (const GpuBatch& batch : scene.batches) {
+        total += batch.vertices.size();
+        if (texturedMaterial(batch.material)) coordinates += batch.vertices.size();
     }
-    const VkDeviceSize copyBytes = static_cast<VkDeviceSize>(total) * sizeof(GpuVertex);
-    if (!submitNow([&](VkCommandBuffer buffer) {
-            VkBufferCopy region{};
-            region.srcOffset = 0;
-            region.dstOffset = 0;
-            region.size = copyBytes;
-            copyBufferFn(buffer, stagingBuffer_, vertexBuffer_, 1, &region);
-        })) {
+    if (total == 0) {
+        firstVertex_.assign(scene.batches.size(), 0);
+        firstUv_.assign(scene.batches.size(), 0);
+        return true;
+    }
+    if (!fillArray(vertex_, scene, false, static_cast<VkDeviceSize>(total) * sizeof(PackedVertex))) return false;
+    // A batch with no texture samples nothing, so it is never bound to this
+    // array and never has a coordinate fetched for it.
+    if (coordinates > 0 &&
+        !fillArray(uv_, scene, true, static_cast<VkDeviceSize>(coordinates) * sizeof(UvVertex))) {
         return false;
     }
-    uploadedVertices_ = total;
+    // The draw loop indexes both arrays by these offsets. A wrong one samples
+    // another batch's pixels, which would look like a texture bug rather than an
+    // offset bug, so they are checked once per upload instead of diagnosed later.
+    std::size_t positions = 0, coordinatesUsed = 0;
+    for (std::size_t index = 0; index < scene.batches.size(); ++index) {
+        const GpuBatch& batch = scene.batches[index];
+        if (firstVertex_[index] != positions) {
+            std::fprintf(stderr, "[vk] vertex offset %u is not where batch %zu starts\n", firstVertex_[index],
+                         index);
+            return false;
+        }
+        positions += batch.vertices.size();
+        if (!texturedMaterial(batch.material)) continue;
+        if (firstUv_[index] != coordinatesUsed) {
+            std::fprintf(stderr, "[vk] texture coordinate offset %u is not where batch %zu starts\n",
+                         firstUv_[index], index);
+            return false;
+        }
+        coordinatesUsed += batch.vertices.size();
+    }
+    if (positions != total || coordinatesUsed != coordinates) {
+        std::fprintf(stderr, "[vk] upload counted %zu of %zu vertices, %zu of %zu coordinates\n", positions, total,
+                     coordinatesUsed, coordinates);
+        return false;
+    }
     return true;
 }
 
@@ -359,16 +411,22 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         uploadedValid_ = true;
     } else if (totalVertices == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
+        firstUv_.assign(scene.batches.size(), 0);
     }
     // The offsets are indexed by batch below, so they are made to fit the batch
     // list that is actually being recorded rather than the one that was
     // uploaded.
-    if (firstVertex_.size() != scene.batches.size()) {
+    if (firstVertex_.size() != scene.batches.size() || firstUv_.size() != scene.batches.size()) {
         firstVertex_.assign(scene.batches.size(), 0);
-        std::uint32_t running = 0;
+        firstUv_.assign(scene.batches.size(), 0);
+        std::uint32_t running = 0, coordinates = 0;
         for (std::size_t index = 0; index < scene.batches.size(); ++index) {
             firstVertex_[index] = running;
+            firstUv_[index] = coordinates;
             running += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
+            if (texturedMaterial(scene.batches[index].material)) {
+                coordinates += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
+            }
         }
     }
 
@@ -457,12 +515,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     scissor.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
     setScissor(command_, 0, 1, &scissor);
 
-    bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, covered ? pipelineCovered_ : pipeline_);
     bindDescriptorSets(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &frameSet_, 0, nullptr);
     const VkDeviceSize offset = 0;
-    if (vertexBuffer_ != VK_NULL_HANDLE) {
-        bindVertexBuffers(command_, 0, 1, &vertexBuffer_, &offset);
+    if (vertex_.buffer != VK_NULL_HANDLE) {
+        bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &offset);
     }
+    // The pipeline is chosen per batch below: a batch that samples nothing is
+    // drawn with the layout that has no texture coordinate in it at all.
+    VkPipeline boundPipeline = VK_NULL_HANDLE;
 
     // A room's bones are 56 batches that mostly share one material, so the same
     // texture set gets bound over and over. Binding it again changes nothing and
@@ -471,7 +531,20 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
+        const bool textured = texturedMaterial(batch.material);
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
+        if (textured) {
+            // The coordinates of this batch, and only this batch: a body that
+            // samples nothing has eight bytes fewer per vertex to fetch.
+            const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
+            bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
+        }
+        const VkPipeline wanted = textured ? (covered ? pipelineUvCovered_ : pipelineUv_)
+                                           : (covered ? pipelineCovered_ : pipeline_);
+        if (wanted != boundPipeline) {
+            bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
+            boundPipeline = wanted;
+        }
         if (textureSet != boundTexture) {
             bindDescriptorSets(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 1, 1, &textureSet, 0,
                                nullptr);
@@ -483,11 +556,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         push.colour[1] = static_cast<float>(batch.material.color.g);
         push.colour[2] = static_cast<float>(batch.material.color.b);
         push.colour[3] = static_cast<float>(batch.material.opacity);
-        const bool usable = batch.material.texture && !batch.material.texture->pixels.empty() &&
-            (batch.material.kind == Material::Kind::Skin || batch.material.kind == Material::Kind::Hair ||
-             batch.material.kind == Material::Kind::Cloth || batch.material.kind == Material::Kind::Floor ||
-             batch.material.kind == Material::Kind::Textured);
-        push.flags[0] = usable ? 1.0f : 0.0f;
+        push.flags[0] = textured ? 1.0f : 0.0f;
         push.flags[1] = (batch.material.constantLighting || batch.material.unlit) ? 1.0f : 0.0f;
         // A bone matrix is a rotation and a translation: the normal it produces
         // is already unit length, so the vertex stage does not have to pay for a

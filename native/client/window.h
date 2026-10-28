@@ -44,7 +44,12 @@ public:
     NativeWindow(const NativeWindow&) = delete;
     NativeWindow& operator=(const NativeWindow&) = delete;
 
-    bool open(const std::string& title, std::string& error);
+    // `preferOpenGl` exists for one caller: the benchmark's reminder of what the
+    // other backend costs. The game itself is Vulkan or nothing, which is why
+    // there is no environment variable for it any more -- a hidden switch that
+    // quietly ran the whole session on the other backend is exactly how the
+    // frames being optimised stopped being the frames on screen.
+    bool open(const std::string& title, std::string& error, bool preferOpenGl = false);
     void close();
     bool poll(std::vector<WindowEvent>& events);
     bool present(const NativeFrame& frame);

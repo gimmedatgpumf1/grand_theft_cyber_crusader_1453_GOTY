@@ -38,7 +38,10 @@ const float AMBIENT = 0.38;
 void main() {
     vec4 world = batch.model * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
-    outTexCoord = inTexCoord;
+    // A batch with no texture is drawn with a pipeline that carries no texture
+    // coordinate at all, so the attribute is not there to read. It is only ever
+    // looked at by the fragment stage when flags.x says a texture is sampled.
+    outTexCoord = batch.flags.x > 0.5 ? inTexCoord : vec2(0.0);
     outColour = vec4(batch.colour.rgb, batch.colour.a);
 
     // flags.w is a batch with a single colour: the host encoded it, the fragment

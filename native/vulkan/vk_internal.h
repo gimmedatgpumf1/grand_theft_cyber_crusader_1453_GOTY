@@ -38,6 +38,32 @@ static_assert(sizeof(FrameUniform) == 80, "frame block must match the shader");
 
 // What both stages read from the push constant block, in the order the shader
 // declares: model matrix, colour, then the flag word.
+// A vertex without a texture coordinate: the shape most of every scene is drawn
+// in. The coordinate lives in its own array, bound only for the batches that
+// read it.
+struct PackedVertex {
+    float x = 0, y = 0, z = 0;
+    float nx = 0, ny = 0, nz = 0;
+};
+
+struct UvVertex {
+    float u = 0, v = 0;
+};
+static_assert(sizeof(PackedVertex) == 24, "the position and normal array is the frame's vertex traffic");
+static_assert(sizeof(UvVertex) == 8, "a texture coordinate is two floats");
+
+// One device-side array of geometry. Read by the GPU every frame, written by the
+// host only when the geometry changes, so it belongs in device-local memory.
+// Where the device also allows the host to map that memory it is filled
+// directly; otherwise a reused staging buffer carries it over.
+struct DeviceArray {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    void* map = nullptr;
+    VkDeviceSize capacity = 0;
+    bool staged = false;
+};
+
 struct PushConstants {
     float model[16];
     float colour[4];
@@ -84,6 +110,22 @@ inline bool sameChannelBytes(VkFormat left, VkFormat right) {
 
 inline bool isBgraFormat(VkFormat format) {
     return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
+// Whether a batch will sample its material's image. Shared by the uploader
+// (which decides whether the batch needs texture coordinates at all) and the
+// draw loop (which picks the pipeline and the flag word), so the two cannot
+// disagree about what a textured batch is.
+inline bool texturedMaterial(const Material& material) {
+    if (material.texture == nullptr || material.texture->pixels.empty()) return false;
+    switch (material.kind) {
+        case Material::Kind::Skin:
+        case Material::Kind::Hair:
+        case Material::Kind::Cloth:
+        case Material::Kind::Floor:
+        case Material::Kind::Textured: return true;
+        default: return false;
+    }
 }
 
 inline bool isColourFormat(VkFormat format) {
@@ -273,6 +315,8 @@ private:
     TextureSlot& textureFor(const Material& material);
     bool createTransferTable();
     bool uploadVertices(const GpuScene& scene);
+    bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
+    bool fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes);
     void destroyTargets();
     // -- swapchain ---------------------------------------------------------
     bool createSwapchain(int width, int height);
@@ -457,16 +501,18 @@ private:
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
     VkPipeline pipelineCovered_ = VK_NULL_HANDLE;
+    // The same two, for batches that actually sample a texture. A skeleton bone
+    // and a wall tile have no use for a texture coordinate, and asking the
+    // hardware to fetch one anyway is eight bytes of every vertex in the frame.
+    VkPipeline pipelineUv_ = VK_NULL_HANDLE;
+    VkPipeline pipelineUvCovered_ = VK_NULL_HANDLE;
 
     VkBuffer frameBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory frameMemory_ = VK_NULL_HANDLE;
     FrameUniform* frameMap_ = nullptr;
 
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory vertexMemory_ = VK_NULL_HANDLE;
-    void* vertexMap_ = nullptr;
-    VkDeviceSize vertexCapacity_ = 0;
-    bool vertexStaged_ = false;
+    DeviceArray vertex_;
+    DeviceArray uv_;
     VkBuffer stagingBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
     void* stagingMap_ = nullptr;
@@ -481,6 +527,7 @@ private:
     TextureSlot white_;
     TextureSlot transfer_;
     std::vector<std::uint32_t> firstVertex_;
+    std::vector<std::uint32_t> firstUv_;
     bool ready_ = false;
     int frames_ = 0;
 };

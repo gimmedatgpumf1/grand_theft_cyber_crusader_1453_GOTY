@@ -188,11 +188,10 @@ namespace {
 NativeWindow::Impl* activeGpu = nullptr;
 
 // Vulkan is tried before WGL: it needs no device context and no GL context, and
-// it is the path meant to carry the frame. GTC_NO_VULKAN=1 turns it off.
-bool wantVulkan() {
-    const char* skip = std::getenv("GTC_NO_VULKAN");
-    return !(skip && *skip && *skip != '0');
-}
+// it is the path that carries the frame. Vulkan or nothing, then -- the one
+// exception is the benchmark's OpenGL window, which asks for that backend by
+// name and says so on the console.
+bool wantVulkan(bool preferOpenGl) { return !preferOpenGl; }
 
 bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     if (!activeGpu || !activeGpu->gpu) return false;
@@ -205,7 +204,7 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
 NativeWindow::NativeWindow() = default;
 NativeWindow::~NativeWindow() { close(); }
 
-bool NativeWindow::open(const std::string& title, std::string& error) {
+bool NativeWindow::open(const std::string& title, std::string& error, bool preferOpenGl) {
     close();
     impl_ = new Impl;
     const HINSTANCE instance = GetModuleHandle(nullptr);
@@ -235,15 +234,19 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
     trace("window: created");
-    if (wantVulkan()) {
+    const bool vulkan = wantVulkan(preferOpenGl);
+    if (vulkan) {
         trace("window: trying vulkan");
     } else {
-        trace("window: vulkan disabled by GTC_NO_VULKAN");
+        trace("window: opengl asked for by name");
+        std::fflush(stdout);
+        std::fprintf(stderr, "window: this window is the OpenGL backend, because the caller asked for it\n");
+        std::fflush(stderr);
     }
     // Offered before the device is created, because the surface extensions have
     // to be requested at instance creation.
-    if (wantVulkan()) setVulkanSurfaceTarget(impl_->window, 1);
-    if (wantVulkan()) {
+    if (vulkan) setVulkanSurfaceTarget(impl_->window, 1);
+    if (vulkan) {
         // Vulkan or nothing. A quiet slide onto the other backend is how a
         // backend sits broken for weeks without anybody noticing.
         if (!vulkanAvailable()) {
