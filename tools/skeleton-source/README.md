@@ -1,68 +1,77 @@
 # Skeleton source
 
-Two pinned anatomical skeletons, male and female, decimated to a polycount the
-game can afford but keeping every bone: skull, mandible and teeth, the whole
-spine, ribs, sternum, scapulae, clavicles, pelvis, both arms (humerus, forearm,
-carpals, and all five fingers per hand) and both legs (femur, patella,
-tibia/fibula, tarsals, metatarsals and toes).
+`tools/skeleton-source/` holds the anatomical bodies the game and the test room
+draw, plus the scripts that produce and check them.
 
-| file | parts | vertices | triangles | height |
-| --- | --- | --- | --- | --- |
-| `skeleton-male.obj` | 28 | 8,544 | 16,252 | 1.706 m |
-| `skeleton-female.obj` | 28 | 7,560 | 14,254 | 1.608 m |
+| file | parts | bones | vertices | triangles | height |
+| --- | --- | --- | --- | --- | --- |
+| `skeleton-male.obj` | 28 | 272 | 9,739 | 18,699 | 1.696 m |
+| `skeleton-female.obj` | 28 | — | 7,560 | 14,254 | 1.608 m |
+
+The male is a real anatomical model (Z-Anatomy, CC BY-SA 4.0, derived from
+BodyParts3D): every bone is present, including all eight carpals and every finger
+phalanx, the ossicles, the teeth, and every toe. The female is **not** a female
+scan — see the last section of `ATTRIBUTION.md` and `VERIFICATION.md`.
 
 ## Canonical height
 
-Measured from the files, not assumed: bone-only height is **170.6 cm** (male)
-and **160.8 cm** (female), feet on `y = 0`. Those are the numbers the room
-caption prints, read out of the loaded meshes at render time.
+Measured from the file, not assumed: the male is **1.6958 m** from the lowest
+bone vertex to the crown, the female **1.6081 m**, both with the feet on `y = 0`.
 
-Both are the scans' own size and **nothing in this repo scales them**. Living
-stature is roughly 2-3 cm more than bone-only height, because articular
-cartilage, intervertebral discs and the soft tissue of scalp and heel pad are
-not bone: the male reads as a ~173 cm man, the female as a ~163 cm woman. That
-is consistent with the source data being adult scans at 1:1, and there is no
-evidence of any rescale upstream -- the pelvis fit in
-`pipeline/f_build.mjs` is a *similarity* transform (rotation + uniform scale +
-translation) that only seats the female pelvis on the male skeleton, and the
-male skeleton itself is untouched BodyParts3D geometry.
+Nothing in this repo scales either body. The pipeline applies a centimetre to
+metre conversion and a translation that puts the feet on the floor, and that is
+all. Bone height reads ~2–3 cm short of living stature because cartilage, discs
+and the soft tissue of the scalp and heel pad are not bone.
 
 A rig that needs a taller body gets a taller body, never a scaled one.
 
-Units are metres, feet on `y = 0`, facing +z. Each bone is its own `o` group
-with the upstream node name (`skull`, `femur_l`, `hand_r`, `ribs_l`, …), so the
-rigging stage binds by name instead of guessing from coordinates.
-`skeleton-*.parts.json` carries the per-group triangle counts and the bounding
-box.
+## Format
 
-`reference-*.png` are renders of the two files from this repo's own rasterizer:
-front and three-quarter, for eyeballing the decimation.
+Units are metres, feet on `y = 0`, facing +z. Each of the 28 parts is an `o`
+group named after the rig bone it hangs from (`skull`, `femur_l`, `hand_r`,
+`ribs_l`, …), so the rig binds by name rather than by guessing from coordinates.
 
-## Provenance, and one caveat
+`skeleton-male.parts.json` carries the per-part triangle counts, the bounding box
+and **one record per bone** — source name, part, side, centre and extent in
+metres — which is what the finger and toe rig will be built from.
 
-Derived from the skeleton meshes of **open-anatomy-3d**
-(`anatomy-male.glb`, `anatomy-female.glb`), built from **BodyParts3D 4.0**,
-© The Database Center for Life Science (DBCLS), **CC BY 4.0**. The required
-credit line and the list of changes are in `ATTRIBUTION.md`.
+## Checking it
 
-**The male is scanned anatomy. The female is not.** Her skeleton upstream is the
-male skeleton pushed through a thin-plate-spline warp onto female surface
-landmarks, which distorts her long-bone proportions and breaks her left/right
-symmetry (scapulae differ by 18 mm). She is faithful to the source and
-inaccurate as anatomy. `VERIFICATION.md` has the measurements; `verify.mjs`
-reproduces them.
+```bash
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+```
+
+It parses only the shipped file, so it answers "is the thing we actually load
+anatomically sane", not "does the exporter believe it copied correctly". It
+reports:
+
+* height, feet height, bounding box, vertex and triangle counts;
+* long-bone length as a percentage of stature against adult reference bands
+  (Trotter & Gleser ±2 SD), with the miss in millimetres where a part sits
+  outside its band;
+* left/right mirror error for every paired part, in millimetres.
+
+A proportion outside its band is reported as `off` and tolerated up to 10 mm —
+one real individual can sit outside a population range. A miss larger than that,
+a missing part, or a mirror error over 3 mm is a `FAIL` and exits non-zero.
+
+Current state: the male passes, with the foot 8.7 mm below the low end of its
+band (a short foot on the source individual, not a deformation). The female
+fails 12 checks, and the worst of them are structural rather than proportional:
+her scapulae are 17.8 mm out of mirror, her humeri 13.6 mm.
 
 ## Regenerating
 
 ```bash
-npm i @gltf-transform/core @gltf-transform/extensions meshoptimizer
-OPEN_ANATOMY=/path/to/open-anatomy-3d node tools/skeleton-source/prepare.mjs
-SEXES=male node tools/skeleton-source/prepare.mjs   # one body only
+npm i meshoptimizer --prefix tools/skeleton-source
+node tools/skeleton-source/prepare-zanatomy.mjs /path/to/SkeletalSystem100.fbx \
+     tools/skeleton-source/skeleton-male.obj
 ```
 
-`prepare.mjs` bakes the glTF node transforms into world space, welds coincident
-vertices, then simplifies each connected shell separately. That last detail
-matters: a hand is 46 separate bones and a jaw holds 32 teeth, so treating a
-part as one blob shrank every phalanx to a spike. Per-shell simplification plus
-a retry pass against the part's triangle budget keeps fingers and toes
-recognisable.
+`prepare.mjs` regenerates the female from a checkout of open-anatomy-3d;
+`verify.mjs` re-derives that body's measurements from its source; `fbx.mjs` is a
+dependency-free binary FBX reader and `measure-zanatomy.mjs` assembles a Z-Anatomy
+FBX through its node transforms and prints osteometry.
+
+`reference-*.png` are renders of the two bodies from this repo's own rasterizer,
+front and three-quarter.

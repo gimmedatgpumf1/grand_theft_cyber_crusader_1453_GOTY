@@ -1,87 +1,129 @@
 # Verification
 
-`verify.mjs` re-derives everything below from the upstream GLBs. It is a test,
-not a claim: it exits non-zero if a check fails.
+Everything below is produced by the scripts in this directory, from the files
+that are actually shipped. Nothing here is an assertion about what a pipeline
+"should" have done.
+
+Two checkers, two questions:
+
+| script | question | needs |
+| --- | --- | --- |
+| `verify-obj.mjs` | is the *shipped OBJ* anatomically sane? | nothing but the file |
+| `verify.mjs` | did the export from open-anatomy-3d move anything? | that checkout + glTF deps |
 
 ```bash
-npm i @gltf-transform/core @gltf-transform/extensions meshoptimizer
-OPEN_ANATOMY=/path/to/open-anatomy-3d node tools/skeleton-source/verify.mjs
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj
 ```
 
-## What it checks
+`verify-obj.mjs` exits non-zero on a missing part, a mirrored-part error over
+3 mm, or a long bone more than 10 mm outside its reference band. A smaller
+proportional miss is reported as `off` and tolerated, because the reference
+bands are population limits and a skeleton is one individual.
 
-1. **Size and position are untouched.** The OBJ's skeletal height, its ground
-   plane and its crown must match the world-space bounds of the upstream GLB to
-   within 5 mm.
-2. **No vertex was moved.** Every OBJ vertex must appear verbatim in the
-   undecimated source set, to 1e-5 m. Decimation is allowed to delete vertices;
-   it is not allowed to relocate them.
-3. **Proportions.** Femur, tibia, humerus, forearm and hand lengths, measured
-   along each bone's own principal axis, as a fraction of skeletal stature,
-   against adult reference ranges.
-4. **Bilateral symmetry.** Each paired bone must mirror across `x = 0` within
-   3 mm.
+## The shipped male — passes
 
-## Results
-
-### Male — passes
+Source: Z-Anatomy `SkeletalSystem100.fbx` (CC BY-SA 4.0, derived from
+BodyParts3D), assembled through its node transforms, filtered to the 177
+skeletal objects, 99 of them mirrored to complete the body, grouped into 28 rig
+parts, each bone simplified on its own.
 
 | check | result |
 | --- | --- |
-| height | source 170.657 cm, OBJ 170.635 cm |
-| ground plane / crown | identical to source |
-| vertices | 8,544 / 8,544 present verbatim, 0 moved |
-| femur | 27.35% of stature (reference 26.0-27.5%) |
-| tibia | 23.39% (21.5-23.5%) |
-| humerus | 18.11% (17.5-18.5%) |
-| forearm | 15.35% (14.5-15.5%) |
-| hand | 10.34% (10.5-11.5%) |
-| symmetry | worst pair 1.9 mm (femur) |
+| source objects kept | 177 skeletal of 1,851 meshes (rest is muscle attachment geometry) |
+| bones in the shipped file | 272 (177 + 99 mirrored, 1 already had a right twin) |
+| height | source crown 170.55 cm, lowest bone 0.71 cm → **169.58 cm of bone** |
+| shipped height | 1.6958 m, lowest vertex at y = 0.0002 m |
+| mesh | 9,739 vertices, 18,699 triangles, 28 parts |
+| femur | 26.87% / 26.77% of stature (band 25.5–27.5%) |
+| tibia + fibula | 22.29% / 22.27% (band 21.0–24.2%) |
+| humerus | 18.77% / 18.80% (band 17.6–19.6%) |
+| radius + ulna | 15.90% / 15.79% (band 14.2–16.2%) |
+| hand | 10.79% / 10.71% (band 10.0–11.8%) |
+| foot | 13.49% / 13.49% (band 14.0–16.2%) — **8.7 mm short** |
+| mirror error | worst pair 1.8 mm (femur), most pairs under 1 mm |
 
-The male is genuine BodyParts3D scan data, unscaled and unreshaped. Note that
-27.35% femur and 23.39% tibia both sit at the top of their ranges — that is the
-scan's own build, not an artifact of this pipeline.
+Two honest notes:
 
-### Female — **fails, and the failure is upstream**
+* The foot is short by 8.7 mm against the population band. It is continuous —
+  calcaneus, talus, navicular, cuneiforms, metatarsals and every phalanx meet —
+  so it is the source individual's build, not a break in the mesh.
+* The right side is a mirror of the left. The FBX stores only the left half of
+  paired bones. Symmetry error is therefore near zero by construction, and real
+  left/right asymmetry is not represented.
+
+The scan's own proportions do not match the old body that used to be shipped
+here (that one had a 22.1 cm foot and a 30.6 cm humerus). Those numbers came
+from decimating BodyParts3D through a different pipeline; this one is the
+curated atlas at full resolution.
+
+## The shipped female — fails, and always did
+
+She is still the mesh from `open-anatomy-3d` (`anatomy-female.glb`), unchanged,
+because no female alternative has been found. Current measurement:
 
 | check | result |
 | --- | --- |
-| height | source 160.828 cm, OBJ 160.809 cm |
-| vertices | 7,560 / 7,560 present verbatim, 0 moved |
-| femur | 25.25% of stature (reference 26.0-27.5%) |
-| tibia | **25.95%** (21.5-23.5%) |
-| humerus | **15.68%** (17.5-18.5%) |
-| forearm | **17.11%** (14.5-15.5%) |
-| hand | 10.93% (10.5-11.5%) |
-| symmetry | **scapula 18.0 mm, humerus 12.4 mm**, clavicle 4.1 mm, femur 3.1 mm |
+| height | 1.6081 m |
+| femur | 25.24% / 25.20% (band 25.5–27.5%) — 4.4 mm and 4.9 mm short |
+| tibia + fibula | 25.51% / 25.51% (21.0–24.2%) — 33 mm long |
+| humerus | 15.52% / 15.92% (17.6–19.6%) — 33.4 mm and 26.9 mm short |
+| radius + ulna | 17.13% / 16.02% (14.2–16.2%) — 15 mm long on the left only |
+| foot | 11.00% / 11.10% (14.0–16.2%) — 48 mm short |
+| mirror error | **scapula 17.8 mm, humerus 13.6 mm**, ribs 6.2 mm, clavicle 4.1 mm, femur 3.2 mm |
+| verdict | **12 FAILED** |
 
-The pipeline imported her faithfully — every vertex is where upstream put it —
-but upstream never had a female skeleton. In `pipeline/f_build.mjs` the female
-body is built by:
+### Why
+
+Upstream does not have a female skeleton. `pipeline/f_build.mjs` builds her by
+taking the **male** BodyParts3D skeleton and pushing it through a
+thin-plate-spline warp fitted to female surface landmarks:
 
 ```js
 for (const p of maleParts) { ... warpPoint(tps, p.pos[i], ...) ... }
 ```
 
-That is the **male** BodyParts3D skeleton pushed through a thin-plate-spline warp
-fitted to female surface landmarks, plus a segment-based hand remap
-(`warpHand`). A TPS warp is a smooth global deformation, which is exactly why
-her long bones come out at the wrong fractions of stature and why her left and
-right scapulae differ by 18 mm. It is fine as anatomy *illustration*, where a
-skeleton is a landmark scaffold under a skin, and wrong as anatomy *data*.
+A TPS warp is a smooth global deformation. That is why her long bones land at
+the wrong fractions of stature and why her left and right scapulae no longer
+match: the landmark set that drives the warp is not symmetric. The only female
+scan data inside her is the pelvic region (`VH_F_femur_*`,
+`VH_F_ilium_compact_bone_*`, `VH_F_lumbar_vertebra_5`), which is why the pelvis
+is the one part that looks right.
 
-Everything the upstream female model does have from a female scan is the pelvic
-region (`VH_F_femur_*`, `VH_F_ilium_compact_bone_*`, `VH_F_lumbar_vertebra_5`),
-which is why her pelvis is the most credible part of her.
+Her import was faithful — `verify.mjs` confirms 7,560 of 7,560 vertices are
+present verbatim with 0 moved, and the height is preserved to 2 mm. Faithful
+copying of a deformed source is still a deformed body.
 
-## Consequence for this project
+## Why Z-Anatomy cannot fix her
 
-The male skeleton is a trustworthy anatomical reference and can be used for
-rigging as-is, at 170.6 cm.
+Z-Anatomy's models **are** BodyParts3D (its readme says "models derived from
+'BodyParts3D'"). BodyParts3D's own database description says it is "a
+three-dimensional whole-body model for an adult human **male**". The lineage is
+male-only from top to bottom, so a different file from the same family cannot
+supply a female.
 
-The female skeleton must not be presented as female anatomy until it is rebuilt.
-The defensible reconstruction is: take the male skeleton (verified above), scale
-it *uniformly* to female stature (which preserves every proportion — long-bone
-fractions do not meaningfully differ between sexes), and substitute the real
-female pelvis that upstream already has. That is a rebuild, not a rescale of the
-decimated file, and it is not done yet.
+What that leaves, checked and exhausted:
+
+| source | has a female skeleton? |
+| --- | --- |
+| Z-Anatomy / BodyParts3D | no — single adult male |
+| open-anatomy-3d female | no — TPS warp of the male |
+| Human Reference Atlas v1.10 (united-female) | no — skin, organs, pelvis and legs only; no skull, ribs or arms |
+| Visible Human Female | not published as per-bone surface meshes on a reachable host |
+
+The room caption says so on screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+
+## Consequence
+
+The male is a trustworthy anatomical reference and is ready for rigging at
+1.696 m.
+
+The female is not female anatomy and must not be rigged as if she were. Options,
+in order of how much they can be trusted:
+
+1. **A female scan or segmented CT.** The only route that is both honest and
+   correct. Everything else in the rig would fall into place around it.
+2. **A real female pelvis plus a female-stature body proportioned from the male
+   data** — defensible only if every substituted part is labelled, because it is
+   a reconstruction, not a scan.
+3. Keep the male-only room until (1) or (2) is decided.

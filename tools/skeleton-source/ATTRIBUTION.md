@@ -1,72 +1,104 @@
 # Skeleton source
 
-`skeleton-male.obj` and `skeleton-female.obj` are the anatomical reference
-bodies: decimated human skeletons with every bone kept — skull, jaw, teeth,
-spine, ribs, sternum, scapulae, clavicles, pelvis, both arms (humerus, forearm,
-carpals and all five fingers) and both legs (femur, patella, tibia/fibula,
-tarsals, metatarsals and toes).
+`skeleton-male.obj` is the anatomical reference body: a real human skeleton with
+every bone kept — skull, jaw, teeth, ossicles, all 24 vertebrae, ribs and costal
+cartilages, sternum, scapulae, clavicles, pelvis and sacrum, both arms (humerus,
+radius, ulna, all eight carpals, five metacarpals, every finger phalanx) and both
+legs (femur, patella, tibia, fibula, tarsals, metatarsals, every toe phalanx).
+
+`skeleton-female.obj` is **not** a female skeleton. Read the last section before
+using it for anything.
 
 ## Where they come from
 
-Both are derived from the skeleton meshes of **open-anatomy-3d**
-(https://github.com/MervinR07/open-anatomy-3d: `anatomy-male.glb` and
-`anatomy-female.glb`), which are built from **BodyParts3D 4.0**, © The Database
-Center for Life Science (DBCLS), published under **CC BY 4.0**.
+The male comes from **Z-Anatomy** (https://github.com/LluisV/Z-Anatomy), the
+libre 3D atlas of anatomy, published under **CC BY-SA 4.0**. The models in that
+project are themselves derived from **BodyParts3D**, © The Database Center for
+Life Science (DBCLS), **CC BY-SA 2.1 Japan**, and the Z-Anatomy readme says so.
 
-Credit line, as required by the licence:
+The file used is `Assets/Models/1.0 Models/SkeletalSystem100.fbx` from the
+sample project (https://github.com/LluisV/Z-Anatomy-Sample), a binary FBX 7400
+holding 1,851 named meshes, 721,832 vertices and 1,069,941 triangles.
 
-> Anatomy: BodyParts3D © The Database Center for Life Science (CC BY 4.0).
-> Modified by open-anatomy-3d (https://github.com/MervinR07/open-anatomy-3d),
-> CC BY 4.0. Further modified for this project: decimated, flattened into OBJ,
-> part node names preserved.
+Credit lines, as the licences require:
 
-## Nature of each body
+> Anatomy: BodyParts3D © The Database Center for Life Science (CC BY-SA 2.1
+> Japan). Z-Anatomy — the libre 3D atlas of anatomy — CC BY-SA 4.0.
+> Further modified for this project: filtered to the skeletal system, mirrored
+> to a complete body, grouped into 28 rig parts, decimated, written as OBJ.
 
-`anatomy-male.glb` carries BodyParts3D's scanned male skeleton; the male OBJ
-here is that data, decimated only.
+The female is still the old `open-anatomy-3d` mesh and carries its own credit
+line, given in the section at the end.
 
-`anatomy-female.glb` does **not** carry a scanned female skeleton. Upstream
-produces her by taking the male skeleton and deforming it with a
-thin-plate-spline fit to female surface landmarks (`pipeline/f_build.mjs`). The
-female OBJ here is therefore warped male bone data, presented as the male's
-counterpart rather than as female anatomy. Only her pelvic region comes from
-female scan data (`VH_F_*`). See `VERIFICATION.md`.
+This asset — the modified skeleton and any derivative of it — has to stay under
+CC BY-SA 4.0 when it is redistributed. That is a share-alike obligation inherited
+from the source, and it is the price of using real anatomy.
+
+## What the transform does, and what it does not
+
+Exactly two operations are applied to the source coordinates:
+
+1. **× 0.01**, because Z-Anatomy is in centimetres and the game is in metres.
+2. **a translation in y**, so that the lowest bone vertex sits on `y = 0`.
+
+There is no scale-to-fit, no normalisation, and no target height anywhere in the
+pipeline. The output height is whatever the source body is: **1.6958 m**. If a
+future rig wants a different stature it must come from different source data,
+never from a scale factor.
 
 ## What was changed
 
-The upstream bodies are ~136,000 triangles each (skeleton only) split across one
-glTF node per bone at full anatomical resolution. Here they were:
+The FBX stores each bone as its own object, in a half-body layout: left-hand
+bones carry a `.l` suffix and most have **no right-hand twin** in the file. Muscle
+markings (`.i`, `.j`, `.o1l`, `.e1r`, …) and the cross-section helpers are
+sub-meshes of bones and are dropped. Then:
 
-1. read with the upstream node transforms baked into world space, so the meshes
-   are in metres, feet at `y = 0` (male 1.706 m, female 1.608 m);
-2. welded on position (0.01 mm) so the simplifier can close shared seams;
-3. split into connected shells and simplified per shell — a hand is 46 separate
-   bones and a jaw holds 32 teeth, so simplifying a whole part as one blob turns
-   every phalanx into a spike;
-4. trimmed in retry passes against an explicit per-bone triangle budget, with a
-   floor of 12 triangles per shell so no bone disappears;
-5. compacted to the vertices that survive and written as one OBJ per body, with
-   the upstream part names kept as `o` groups.
+1. skeletal objects only — 177 of them, the rest of the file is muscle
+   attachment geometry;
+2. every `.l` object whose `.r` twin is absent is mirrored through `x = 0` with
+   reversed winding — 99 of them, giving 272 bones in a complete body;
+3. per-object transforms (`Lcl Translation`/`Rotation`/`Scaling`, which include a
+   −1/3 uniform scale, and the node hierarchy) are composed into world space;
+4. bones are grouped into the 28 parts the renderer and rig already use
+   (`skull`, `femur_l`, `hand_r`, …), keeping the source name of every bone in
+   `skeleton-male.parts.json`;
+5. each *bone* is welded and simplified on its own towards the part's triangle
+   budget, with a floor of 12 triangles per bone so no phalanx disappears.
 
-| body | vertices | triangles |
-| --- | --- | --- |
-| male | 8,544 | 16,252 |
-| female | 7,560 | 14,254 |
+| body | parts | bones | vertices | triangles | height |
+| --- | --- | --- | --- | --- | --- |
+| male | 28 | 272 | 9,739 | 18,699 | 1.696 m |
+| female | 28 | — | 7,560 | 14,254 | 1.608 m |
 
-The per-part counts are in `skeleton-male.parts.json` and
-`skeleton-female.parts.json`.
+Mirroring is the one compromise: the right half of this skeleton is an exact
+mirror of the left, so it is symmetric to the micron. Real people are not — a
+left and right femur differ by a few millimetres. The alternative in this file
+was no right arm at all.
 
 ## Regenerating
 
-`prepare.mjs` is the exact script that produced these files. It needs Node with
-`@gltf-transform/core`, `@gltf-transform/extensions` and `meshoptimizer`, plus a
-checkout of open-anatomy-3d:
-
 ```bash
-npm i @gltf-transform/core @gltf-transform/extensions meshoptimizer
-OPEN_ANATOMY=/path/to/open-anatomy-3d node tools/skeleton-source/prepare.mjs
-SEXES=male OPEN_ANATOMY=... node tools/skeleton-source/prepare.mjs
+npm i meshoptimizer --prefix tools/skeleton-source
+node tools/skeleton-source/prepare-zanatomy.mjs /path/to/SkeletalSystem100.fbx \
+     tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
 ```
 
-The output is stable: the decimator is deterministic for a given input, so a
-regenerated file differs only in floating point noise.
+`prepare.mjs` (the older, open-anatomy-3d route) still regenerates the female
+file; `verify.mjs` reproduces the measurements of that body against its source.
+
+## The female is not female anatomy
+
+`anatomy-female.glb` upstream does not contain a scanned female skeleton. It is
+built by taking the male skeleton and deforming it with a thin-plate-spline fit
+to female *surface* landmarks (`pipeline/f_build.mjs`): only the illum, femur and
+fifth lumbar vertebra come from female scan data (`VH_F_*`). The result has a
+plausible pelvis and male proportions everywhere else, and it loses left/right
+symmetry in the process — her scapulae differ by 17.8 mm.
+
+Z-Anatomy cannot replace her: its models are BodyParts3D, and BodyParts3D is "a
+three-dimensional whole-body model for an adult human male" (DBCLS database
+description). There is no female body in that lineage at all.
+
+`VERIFICATION.md` has the measurements and `verify-obj.mjs` reproduces them from
+the shipped file.

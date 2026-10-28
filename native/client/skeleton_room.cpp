@@ -106,8 +106,13 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         return std::string(buffer);
     };
     drawText(frame, 24, 24, "TEST ROOM // SKELETON BENCH", colorHex("#d7ff54"));
-    drawText(frame, 24, 56, "MALE " + centimetres(male_.height()), colorHex("#b4c5ba"), 2);
-    drawText(frame, 24, 80, "FEMALE " + centimetres(female_.height()), colorHex("#b4c5ba"), 2);
+    drawText(frame, 24, 56, "MALE " + centimetres(male_.height()) + " // SCANNED ANATOMY",
+             colorHex("#b4c5ba"), 2);
+    // The female is not a female scan and the caption says so: she is the male
+    // body warped onto female surface landmarks upstream, and nothing about the
+    // shape of her bones can be trusted until a real one is sourced.
+    drawText(frame, 24, 80, "FEMALE " + centimetres(female_.height()) + " // WARPED MALE, NOT A SCAN",
+             colorHex("#e0a05a"), 2);
     drawText(frame, 24, 108, "C RETURNS TO THE STREET", colorHex("#b4c5ba"), 2);
 }
 
