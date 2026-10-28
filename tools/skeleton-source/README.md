@@ -38,12 +38,19 @@ box.
 `reference-*.png` are renders of the two files from this repo's own rasterizer:
 front and three-quarter, for eyeballing the decimation.
 
-## Provenance
+## Provenance, and one caveat
 
 Derived from the skeleton meshes of **open-anatomy-3d**
-(`anatomy-male.glb`, `anatomy-female.glb`), which are built from **BodyParts3D
-4.0**, © The Database Center for Life Science (DBCLS), **CC BY 4.0**. The
-required credit line and the list of changes are in `ATTRIBUTION.md`.
+(`anatomy-male.glb`, `anatomy-female.glb`), built from **BodyParts3D 4.0**,
+© The Database Center for Life Science (DBCLS), **CC BY 4.0**. The required
+credit line and the list of changes are in `ATTRIBUTION.md`.
+
+**The male is scanned anatomy. The female is not.** Her skeleton upstream is the
+male skeleton pushed through a thin-plate-spline warp onto female surface
+landmarks, which distorts her long-bone proportions and breaks her left/right
+symmetry (scapulae differ by 18 mm). She is faithful to the source and
+inaccurate as anatomy. `VERIFICATION.md` has the measurements; `verify.mjs`
+reproduces them.
 
 ## Regenerating
 

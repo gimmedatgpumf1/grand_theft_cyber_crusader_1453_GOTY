@@ -20,6 +20,18 @@ Credit line, as required by the licence:
 > CC BY 4.0. Further modified for this project: decimated, flattened into OBJ,
 > part node names preserved.
 
+## Nature of each body
+
+`anatomy-male.glb` carries BodyParts3D's scanned male skeleton; the male OBJ
+here is that data, decimated only.
+
+`anatomy-female.glb` does **not** carry a scanned female skeleton. Upstream
+produces her by taking the male skeleton and deforming it with a
+thin-plate-spline fit to female surface landmarks (`pipeline/f_build.mjs`). The
+female OBJ here is therefore warped male bone data, presented as the male's
+counterpart rather than as female anatomy. Only her pelvic region comes from
+female scan data (`VH_F_*`). See `VERIFICATION.md`.
+
 ## What was changed
 
 The upstream bodies are ~136,000 triangles each (skeleton only) split across one
