@@ -181,7 +181,8 @@ bool Renderer::reserveArray(DeviceArray& array, VkDeviceSize bytes) {
     info.size = bytes;
     // Transfer destination so a device-local buffer can be filled through the
     // staging buffer where there is no memory type that is both.
-    info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (createBuffer(device_, &info, nullptr, &array.buffer) != VK_SUCCESS) return false;
     VkMemoryRequirements requirements{};
@@ -253,6 +254,14 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
         }
         if (!uvs) uploadedVertices_ = running;
     };
+    return uploadArray(array, bytes, write);
+}
+
+// Where an array actually lands: straight into the mapping when the memory is
+// both device local and visible, otherwise through the reusable staging buffer.
+// Shared by the vertices, the coordinates and the indices, because the three
+// want the same thing.
+bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write) {
     if (array.map) {
         write(static_cast<char*>(array.map));
         return true;
@@ -305,6 +314,46 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     });
 }
 
+// The scene's indices, shifted into the shared vertex stream. A wrong shift
+// draws the wrong triangle from this batch's own vertices, which looks like a
+// modelling fault rather than an offset one, so it is checked at upload.
+bool Renderer::fillIndices(const GpuScene& scene, VkDeviceSize bytes) {
+    if (!reserveArray(index_, bytes)) return false;
+    const auto write = [&](char* cursor) {
+        std::uint32_t running = 0;
+        firstIndex_.assign(scene.batches.size(), 0);
+        indexCount_.assign(scene.batches.size(), 0);
+        for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
+            const GpuBatch& source = scene.batches[batch];
+            firstIndex_[batch] = running;
+            for (std::uint32_t value : source.indices) {
+                if (value >= source.vertices.size()) {
+                    std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
+                    return false;
+                }
+                const std::uint32_t global = value + firstVertex_[batch];
+                std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(std::uint32_t), &global,
+                            sizeof(std::uint32_t));
+                ++running;
+            }
+            indexCount_[batch] = static_cast<std::uint32_t>(running - firstIndex_[batch]);
+        }
+        return true;
+    };
+    // uploadArray takes a writer that cannot fail, so the check above is run
+    // once over the scene before anything is written.
+    for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
+        for (std::uint32_t value : scene.batches[batch].indices) {
+            if (value >= scene.batches[batch].vertices.size()) {
+                std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
+                return false;
+            }
+        }
+    }
+    if (!uploadArray(index_, bytes, write)) return false;
+    return true;
+}
+
 bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t total = 0, coordinates = 0;
     for (const GpuBatch& batch : scene.batches) {
@@ -342,6 +391,16 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
             return false;
         }
         coordinatesUsed += batch.vertices.size();
+    }
+    // Indices, if any batch is indexed. They are written after the vertex
+    // offsets above, because every index is shifted by one.
+    std::size_t indices = 0;
+    for (const GpuBatch& batch : scene.batches) indices += batch.indices.size();
+    if (indices > 0) {
+        if (!fillIndices(scene, static_cast<VkDeviceSize>(indices) * sizeof(std::uint32_t))) return false;
+    } else {
+        firstIndex_.assign(scene.batches.size(), 0);
+        indexCount_.assign(scene.batches.size(), 0);
     }
     if (positions != total || coordinatesUsed != coordinates) {
         std::fprintf(stderr, "[vk] upload counted %zu of %zu vertices, %zu of %zu coordinates\n", positions, total,
@@ -402,6 +461,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     for (const GpuBatch& batch : scene.batches) {
         signature = (signature ^ batch.revision) * 1099511628211ull;
         signature = (signature ^ batch.vertices.size()) * 1099511628211ull;
+        // The indices are geometry too: a batch that keeps its vertices and
+        // changes its triangles -- a bone whose skinning changed -- has to
+        // travel again, or the GPU keeps drawing the old faces.
+        signature = (signature ^ batch.indices.size()) * 1099511628211ull;
         totalVertices += batch.vertices.size();
     }
     if (!uploadedValid_ || signature != uploadedSignature_) {
@@ -520,6 +583,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (vertex_.buffer != VK_NULL_HANDLE) {
         bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &offset);
     }
+    // Bound once for the frame: an index names a vertex offset in the shared
+    // stream, so every batch's indices live in this one array.
+    if (index_.buffer != VK_NULL_HANDLE && !firstIndex_.empty()) {
+        bindIndexBuffer(command_, index_.buffer, 0, VK_INDEX_TYPE_UINT32);
+    }
     // The pipeline is chosen per batch below: a batch that samples nothing is
     // drawn with the layout that has no texture coordinate in it at all.
     VkPipeline boundPipeline = VK_NULL_HANDLE;
@@ -581,9 +649,19 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             push.colour[2] = static_cast<float>(toneValue(batch.material.color.b));
         }
         push.flags[3] = oneColour ? 1.0f : 0.0f;
+        // An indexed batch carries positions only: its normal belongs to the
+        // triangle, not to the vertex, so the fragment stage derives it.
+        const bool indexed = !batch.indices.empty();
+        push.extra[0] = indexed ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
-        drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);
+        if (indexed) {
+            const std::uint32_t count = index < indexCount_.size() ? indexCount_[index] : 0;
+            if (count == 0) continue;
+            drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
+        } else {
+            drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);
+        }
     }
     endRenderPass(command_);
 

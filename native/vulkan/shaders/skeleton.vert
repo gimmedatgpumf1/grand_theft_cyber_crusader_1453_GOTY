@@ -17,6 +17,9 @@ layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec4 outColour;
 layout(location = 1) out vec2 outTexCoord;
+// Only read by the fragment stage for an indexed batch, which has one normal
+// per triangle and therefore cannot be lit here.
+layout(location = 2) out vec3 outWorld;
 
 layout(set = 0, binding = 0) uniform Frame {
     mat4 projection;
@@ -27,6 +30,7 @@ layout(push_constant) uniform Batch {
     mat4 model;
     vec4 colour;
     vec4 flags;
+    vec4 extra;
 } batch;
 
 const vec3 KEY = normalize(vec3(-0.45, 0.78, -0.55));
@@ -38,6 +42,7 @@ const float AMBIENT = 0.38;
 void main() {
     vec4 world = batch.model * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
+    outWorld = world.xyz;
     // A batch with no texture is drawn with a pipeline that carries no texture
     // coordinate at all, so the attribute is not there to read. It is only ever
     // looked at by the fragment stage when flags.x says a texture is sampled.
@@ -48,6 +53,11 @@ void main() {
     // stage writes it out untouched, and the lighting below would be computed on
     // every vertex of the floor and the walls only to be thrown away.
     if (batch.flags.w > 0.5) return;
+
+    // extra.x is an indexed batch: its vertices are shared between faces and
+    // carry no normal, so the lighting is done per fragment from the triangle
+    // itself. Six times fewer vertices to fetch, no matrix work here at all.
+    if (batch.extra.x > 0.5) return;
 
     // The normal takes the rotation part of the model matrix, which is what
     // model * vec4(normal, 0) does. flags.z says the matrix is rigid -- a bone

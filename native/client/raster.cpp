@@ -447,6 +447,66 @@ void Rasterizer::worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, cons
     }
 }
 
+namespace {
+// The face normal a triangle implies, and the bounds check every emitter here
+// needs: a scanned mesh is data, and data can be wrong.
+bool usableFace(const std::array<int, 3>& face, std::size_t points) {
+    return face[0] >= 0 && face[1] >= 0 && face[2] >= 0 &&
+        static_cast<std::size_t>(face[0]) < points && static_cast<std::size_t>(face[1]) < points &&
+        static_cast<std::size_t>(face[2]) < points;
+}
+} // namespace
+
+void Rasterizer::mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+                      const Material& material) {
+    if (!gpu_) {
+        for (const std::array<int, 3>& face : faces) {
+            if (!usableFace(face, points.size())) continue;
+            const Vec3& a = points[static_cast<std::size_t>(face[0])];
+            const Vec3& b = points[static_cast<std::size_t>(face[1])];
+            const Vec3& c = points[static_cast<std::size_t>(face[2])];
+            worldTriangle(a, b, c, cross(b - a, c - a), material);
+        }
+        return;
+    }
+    GpuBatch& batch = scene_.batches[prepareBatch(material)];
+    // A batch is either indexed or unrolled, never both: drawing an indexed
+    // batch ignores vertices no index names, and drawing an unrolled one ignores
+    // the indices. A batch that already holds unrolled triangles keeps taking
+    // them, and this mesh is unrolled to match.
+    if (!batch.vertices.empty() && batch.indices.empty()) {
+        for (const std::array<int, 3>& face : faces) {
+            if (!usableFace(face, points.size())) continue;
+            const Vec3& a = points[static_cast<std::size_t>(face[0])];
+            const Vec3& b = points[static_cast<std::size_t>(face[1])];
+            const Vec3& c = points[static_cast<std::size_t>(face[2])];
+            worldTriangle(a, b, c, cross(b - a, c - a), material);
+        }
+        return;
+    }
+    const std::uint32_t base = static_cast<std::uint32_t>(batch.vertices.size());
+    batch.vertices.reserve(batch.vertices.size() + points.size());
+    for (const Vec3& point : points) {
+        GpuVertex vertex;
+        vertex.x = static_cast<float>(point.x);
+        vertex.y = static_cast<float>(point.y);
+        vertex.z = static_cast<float>(point.z);
+        // The normal of an indexed batch is derived per fragment from the
+        // triangle that carries it, which is the face normal this used to hold
+        // three copies of and now holds none of.
+        batch.vertices.push_back(vertex);
+    }
+    batch.indices.reserve(batch.indices.size() + faces.size() * 3);
+    for (const std::array<int, 3>& face : faces) {
+        if (!usableFace(face, points.size())) continue;
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[0]));
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[1]));
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[2]));
+    }
+    activeMaterial_ = &material;
+    activeObject_ = objectId_;
+}
+
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
         std::size_t index = activeBatch_;

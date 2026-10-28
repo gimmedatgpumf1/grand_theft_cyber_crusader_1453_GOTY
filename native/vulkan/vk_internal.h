@@ -68,8 +68,13 @@ struct PushConstants {
     float model[16];
     float colour[4];
     float flags[4];
+    // flags.x texture, .y constant lighting, .z rigid matrix, .w one colour.
+    // extra.x is the fifth: an indexed batch has one normal per triangle, not
+    // one per vertex, so the fragment stage derives it from the triangle it is
+    // rasterising and the vertex stage does no lighting at all.
+    float extra[4];
 };
-static_assert(sizeof(PushConstants) == 96, "push block must match the shader");
+static_assert(sizeof(PushConstants) == 112, "push block must match the shader");
 
 inline double srgbEncode(double value) {
     if (value <= 0.0) return 0.0;
@@ -317,6 +322,8 @@ private:
     bool uploadVertices(const GpuScene& scene);
     bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
     bool fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes);
+    bool fillIndices(const GpuScene& scene, VkDeviceSize bytes);
+    bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write);
     void destroyTargets();
     // -- swapchain ---------------------------------------------------------
     bool createSwapchain(int width, int height);
@@ -442,6 +449,8 @@ private:
     PFN_vkCmdBindDescriptorSets bindDescriptorSets = nullptr;
     PFN_vkCmdPushConstants pushConstants = nullptr;
     PFN_vkCmdDraw drawFn = nullptr;
+    PFN_vkCmdDrawIndexed drawIndexedFn = nullptr;
+    PFN_vkCmdBindIndexBuffer bindIndexBuffer = nullptr;
     PFN_vkCmdCopyImageToBuffer copyImageToBuffer = nullptr;
     PFN_vkCmdCopyBufferToImage copyBufferToImage = nullptr;
     PFN_vkCmdCopyBuffer copyBufferFn = nullptr;
@@ -513,6 +522,10 @@ private:
 
     DeviceArray vertex_;
     DeviceArray uv_;
+    // One index array for the whole scene. An index names a vertex of its own
+    // batch, so it is written out shifted by wherever that batch landed in the
+    // shared vertex stream.
+    DeviceArray index_;
     VkBuffer stagingBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
     void* stagingMap_ = nullptr;
@@ -528,6 +541,8 @@ private:
     TextureSlot transfer_;
     std::vector<std::uint32_t> firstVertex_;
     std::vector<std::uint32_t> firstUv_;
+    std::vector<std::uint32_t> firstIndex_;
+    std::vector<std::uint32_t> indexCount_;
     bool ready_ = false;
     int frames_ = 0;
 };

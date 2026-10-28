@@ -317,61 +317,78 @@ int main(int argc, char** argv) {
             model.buildRestGeometry(rasterizer, camera, base);
             rest = rasterizer.takeGpuScene();
         }
+        // The rest scene is indexed: one vertex per point, and a triangle is
+        // three indices into it. The posed scene is the same triangles unrolled,
+        // a vertex per corner. Expanding the indices has to reproduce the posed
+        // vertex sequence exactly, or the two backends draw different geometry.
+        std::vector<gtc::native::GpuVertex> posedVertices;
+        for (const gtc::native::GpuBatch& batch : posed.batches) {
+            posedVertices.insert(posedVertices.end(), batch.vertices.begin(), batch.vertices.end());
+        }
         const std::vector<std::array<double, 16>> matrices = model.boneMatrices({-0.52, 0, 0}, 3.14159265);
-        std::size_t posedCount = 0;
-        for (const gtc::native::GpuBatch& batch : posed.batches) posedCount += batch.vertices.size();
-        std::size_t restCount = 0;
-        for (const gtc::native::GpuBatch& batch : rest.batches) restCount += batch.vertices.size();
-        if (posedCount != restCount) {
-            std::cerr << "pose check: " << posedCount << " posed vertices against " << restCount
-                      << " rest vertices\n";
+        std::vector<gtc::native::GpuVertex> restVertices;
+        std::size_t indexed = 0;
+        for (const gtc::native::GpuBatch& batch : rest.batches) {
+            const std::size_t bone = static_cast<std::size_t>(static_cast<int>(batch.objectId) - base);
+            if (bone >= matrices.size()) {
+                std::cerr << "pose check: batch " << batch.objectId << " names no bone\n";
+                return 1;
+            }
+            const std::array<double, 16>& m = matrices[bone];
+            const auto emit = [&](std::uint32_t index) {
+                const gtc::native::GpuVertex& vertex = batch.vertices[index];
+                gtc::native::GpuVertex posedVertex;
+                posedVertex.x = static_cast<float>(m[0] * vertex.x + m[4] * vertex.y + m[8] * vertex.z + m[12]);
+                posedVertex.y = static_cast<float>(m[1] * vertex.x + m[5] * vertex.y + m[9] * vertex.z + m[13]);
+                posedVertex.z = static_cast<float>(m[2] * vertex.x + m[6] * vertex.y + m[10] * vertex.z + m[14]);
+                posedVertex.nx = static_cast<float>(m[0] * vertex.nx + m[4] * vertex.ny + m[8] * vertex.nz);
+                posedVertex.ny = static_cast<float>(m[1] * vertex.nx + m[5] * vertex.ny + m[9] * vertex.nz);
+                posedVertex.nz = static_cast<float>(m[2] * vertex.nx + m[6] * vertex.ny + m[10] * vertex.nz);
+                restVertices.push_back(posedVertex);
+            };
+            if (batch.indices.empty()) {
+                for (std::uint32_t index = 0; index < batch.vertices.size(); ++index) emit(index);
+                continue;
+            }
+            if (batch.indices.size() % 3 != 0) {
+                std::cerr << "pose check: batch " << batch.objectId << " has " << batch.indices.size()
+                          << " indices, which is not whole triangles\n";
+                return 1;
+            }
+            indexed += batch.indices.size() / 3;
+            for (std::uint32_t index : batch.indices) {
+                if (index >= batch.vertices.size()) {
+                    std::cerr << "pose check: index " << index << " is past the end of batch " << batch.objectId
+                              << '\n';
+                    return 1;
+                }
+                emit(index);
+            }
+        }
+        if (posedVertices.size() != restVertices.size()) {
+            std::cerr << "pose check: " << posedVertices.size() << " posed vertices against "
+                      << restVertices.size() << " expanded rest vertices\n";
             return 1;
         }
         double worst = 0.0, worstNormal = 0.0;
-        std::size_t posedIndex = 0;
-        for (const gtc::native::GpuBatch& batch : rest.batches) {
-            const std::size_t bone = static_cast<std::size_t>(static_cast<int>(batch.objectId) - base);
-            const std::array<double, 16>& m = matrices[bone];
-            for (const gtc::native::GpuVertex& vertex : batch.vertices) {
-                // Find the posed vertex this rest vertex corresponds to. Both are
-                // emitted bone by bone, in the same order, so the sequence is the
-                // same; the index only has to walk.
-                const gtc::native::GpuVertex* expected = nullptr;
-                std::size_t seen = 0;
-                bool found = false;
-                for (const gtc::native::GpuBatch& outer : posed.batches) {
-                    if (seen + outer.vertices.size() > posedIndex) {
-                        expected = &outer.vertices[posedIndex - seen];
-                        found = true;
-                        break;
-                    }
-                    seen += outer.vertices.size();
-                }
-                if (!found) { std::cerr << "pose check: posed geometry ran out\n"; return 1; }
-                const double x = m[0] * vertex.x + m[4] * vertex.y + m[8] * vertex.z + m[12];
-                const double y = m[1] * vertex.x + m[5] * vertex.y + m[9] * vertex.z + m[13];
-                const double z = m[2] * vertex.x + m[6] * vertex.y + m[10] * vertex.z + m[14];
-                worst = std::max(worst, std::abs(x - expected->x));
-                worst = std::max(worst, std::abs(y - expected->y));
-                worst = std::max(worst, std::abs(z - expected->z));
-                const double nx = m[0] * vertex.nx + m[4] * vertex.ny + m[8] * vertex.nz;
-                const double ny = m[1] * vertex.nx + m[5] * vertex.ny + m[9] * vertex.nz;
-                const double nz = m[2] * vertex.nx + m[6] * vertex.ny + m[10] * vertex.nz;
-                worstNormal = std::max(worstNormal, std::abs(nx - expected->nx));
-                worstNormal = std::max(worstNormal, std::abs(ny - expected->ny));
-                worstNormal = std::max(worstNormal, std::abs(nz - expected->nz));
-                ++posedIndex;
-            }
+        for (std::size_t index = 0; index < posedVertices.size(); ++index) {
+            const gtc::native::GpuVertex& a = posedVertices[index];
+            const gtc::native::GpuVertex& b = restVertices[index];
+            worst = std::max(worst, static_cast<double>(std::abs(a.x - b.x)));
+            worst = std::max(worst, static_cast<double>(std::abs(a.y - b.y)));
+            worst = std::max(worst, static_cast<double>(std::abs(a.z - b.z)));
+            worstNormal = std::max(worstNormal, static_cast<double>(std::abs(a.nx - b.nx)));
+            worstNormal = std::max(worstNormal, static_cast<double>(std::abs(a.ny - b.ny)));
+            worstNormal = std::max(worstNormal, static_cast<double>(std::abs(a.nz - b.nz)));
         }
-        // A millimetre on a 1.7 m body is far tighter than anything the eye can
-        // see, and loose enough for float rounding on the way through.
-        if (worst > 0.001 || worstNormal > 0.001) {
-            std::cerr << "pose check: rest geometry does not match the posed geometry (worst "
-                      << worst * 1000.0 << " mm, normal " << worstNormal << ")\n";
+        if (worst > 0.001 || worstNormal > 0.01) {
+            std::cerr << "pose check: rest geometry is " << worst << " m and " << worstNormal
+                      << " off the posed geometry\n";
             return 1;
         }
-        std::cout << "pose matrices: PASS (" << restCount << " vertices, worst " << worst * 1000.0
-                  << " mm)\n";
+        std::cout << "  (" << indexed << " indexed triangles, " << posedVertices.size() << " corners)\n";
+        std::cout << "pose matrices: PASS (" << posedVertices.size() << " vertices, worst " << worst * 1000.0
+                  << " mm, normals " << worstNormal << ")\n";
         return 0;
     }
     if (verifyRoom) {

@@ -688,6 +688,8 @@ bool Renderer::start() {
         !resolve(bindDescriptorSets, "vkCmdBindDescriptorSets") ||
         !resolve(pushConstants, "vkCmdPushConstants") ||
         !resolve(drawFn, "vkCmdDraw") ||
+        !resolve(drawIndexedFn, "vkCmdDrawIndexed") ||
+        !resolve(bindIndexBuffer, "vkCmdBindIndexBuffer") ||
         !resolve(copyImageToBuffer, "vkCmdCopyImageToBuffer") ||
         !resolve(copyBufferToImage, "vkCmdCopyBufferToImage") ||
         !resolve(copyBufferFn, "vkCmdCopyBuffer") ||

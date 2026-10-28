@@ -140,9 +140,16 @@ struct GpuVertex {
     float u = 0, v = 0;
 };
 
+// A scanned bone is an indexed mesh: 97,000 points and 195,000 triangles that
+// name them. Unrolled into three vertices a triangle it is six copies of every
+// point, six times the vertex traffic and six times the vertex shader work for
+// the same picture -- and the vertex stage is where a frame full of bones
+// spends its time.
+
 struct GpuBatch {
     Material material;
     std::vector<GpuVertex> vertices;
+    std::vector<std::uint32_t> indices;
     std::uint32_t objectId = 0;
     std::uint64_t revision = 0;
     float pivotX = 0, pivotZ = 0, yaw = 0;
@@ -206,6 +213,12 @@ public:
     // 195,000 of these per body and the packing was most of the cost.
     void worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
                        const Material& material);
+    // A whole indexed mesh at once. The GPU path keeps the indices; the software
+    // path unrolls them, because its rasterizer takes triangles and has no use
+    // for a vertex cache.
+    void mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+              const Material& material);
+    bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);
     GpuScene takeGpuScene() { return std::move(scene_); }

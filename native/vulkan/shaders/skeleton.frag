@@ -13,10 +13,17 @@
 
 layout(location = 0) in vec4 inColour;
 layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) in vec3 inWorld;
 
 layout(location = 0) out vec4 outColour;
 
 layout(set = 1, binding = 0) uniform sampler2D baseMap;
+
+// The eye point the two-sided flip needs, the same one the vertex stage reads.
+layout(set = 0, binding = 0) uniform Frame {
+    mat4 projection;
+    vec4 eye;
+} frame;
 
 // A lookup table for the sRGB transfer curve, one row each way, indexed by
 // channel value. pow() is one of the more expensive things a fragment shader can
@@ -29,7 +36,14 @@ layout(push_constant) uniform Batch {
     mat4 model;
     vec4 colour;
     vec4 flags;
+    vec4 extra;
 } batch;
+
+const vec3 KEY = normalize(vec3(-0.45, 0.78, -0.55));
+const vec3 FILL = normalize(vec3(0.65, 0.25, -0.35));
+const float KEY_STRENGTH = 0.78;
+const float FILL_STRENGTH = 0.24;
+const float AMBIENT = 0.38;
 
 const float kDecodeRow = 0.25;  // row 0 of two: sRGB -> linear
 
@@ -59,7 +73,26 @@ void main() {
     const float textured = clamp(batch.flags.x, 0.0, 1.0);
     vec3 base;
     float alpha;
-    if (textured > 0.0) {
+    if (batch.extra.x > 0.5) {
+        // An indexed batch: the vertices are shared between faces, so the normal
+        // is the one the triangle itself implies -- exactly the face normal the
+        // unrolled version carried three times over, recovered from the screen
+        // derivatives of the world position. The eye test turns it round for
+        // back faces, as everywhere else.
+        vec3 normal = cross(dFdx(inWorld), dFdy(inWorld));
+        const float length2 = dot(normal, normal);
+        normal = length2 > 1e-20 ? normal * inversesqrt(length2) : vec3(0.0, 0.0, 1.0);
+        if (dot(normal, inWorld - frame.eye.xyz) > 0.0) normal = -normal;
+        const float diffuse = AMBIENT + KEY_STRENGTH * max(0.0, dot(normal, KEY)) +
+                              FILL_STRENGTH * max(0.0, dot(normal, FILL));
+        base = batch.colour.rgb * mix(diffuse, 1.0, clamp(batch.flags.y, 0.0, 1.0));
+        alpha = batch.colour.a;
+        if (textured > 0.0) {
+            const vec4 texel = texture(baseMap, inTexCoord);
+            base *= toLinear(texel.rgb);
+            alpha *= texel.a;
+        }
+    } else if (textured > 0.0) {
         // An untextured batch keeps its own alpha; a textured one borrows the
         // material's, which is how the hair cut-out reads on both backends.
         const vec4 texel = texture(baseMap, inTexCoord);

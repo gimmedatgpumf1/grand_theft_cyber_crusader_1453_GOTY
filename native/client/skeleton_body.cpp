@@ -282,18 +282,9 @@ void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& came
     boneMaterial.specular = 0.12;
     for (std::size_t index = 0; index < bones_.size(); ++index) {
         const SkeletonBone& bone = bones_[index];
-        const std::size_t count = bone.points.size();
         rasterizer.setObject(static_cast<std::uint32_t>(firstObjectId + static_cast<int>(index)),
                              {0.0, 0.0}, 0.0F);
-        for (const auto& face : bone.triangles) {
-            if (face[0] < 0 || face[1] < 0 || face[2] < 0) continue;
-            if (static_cast<std::size_t>(face[0]) >= count || static_cast<std::size_t>(face[1]) >= count ||
-                static_cast<std::size_t>(face[2]) >= count) continue;
-            const Vec3& a = bone.points[static_cast<std::size_t>(face[0])];
-            const Vec3& b = bone.points[static_cast<std::size_t>(face[1])];
-            const Vec3& c = bone.points[static_cast<std::size_t>(face[2])];
-            rasterizer.worldTriangle(a, b, c, cross(b - a, c - a), boneMaterial);
-        }
+        rasterizer.mesh(bone.points, bone.triangles, boneMaterial);
     }
 }
 
