@@ -89,9 +89,12 @@ def segment(subject, dicom, labels_prefix, hu, min_voxels, slab=240, overlap=24)
             lo = voxels.min(0)
             hi = voxels.max(0)
             # A component that reaches the slab's first slice and overlaps a bone
-            # from the previous slab is that same bone: inherit its id.
+            # from the previous slab is that same bone: inherit its id. The two
+            # footprints have to be compared at the same slice of the patient,
+            # which is the first slice of this slab and the overlap-th from the
+            # end of the previous one.
             gid = None
-            if start > 0 and lo[0] <= overlap:
+            if start > 0 and lo[0] == 0:
                 footprint = set(map(tuple, np.argwhere(local[0] == index)[:, :2].tolist()))
                 best = (0.0, None)
                 for pid, previous in previous_footprint.items():
@@ -100,7 +103,7 @@ def segment(subject, dicom, labels_prefix, hu, min_voxels, slab=240, overlap=24)
                     shared = len(footprint & previous) / max(1, len(footprint))
                     if shared > best[0]:
                         best = (shared, pid)
-                if best[1] is not None and best[0] > 0.35:
+                if best[1] is not None and best[0] > 0.2:
                     gid = best[1]
             if gid is None:
                 gid = next_id
@@ -118,7 +121,10 @@ def segment(subject, dicom, labels_prefix, hu, min_voxels, slab=240, overlap=24)
         for index, gid in mapping.items():
             labels[local == index] = gid
 
-        tail = labels[-1]
+        # Footprints are taken at the slice the next slab will start on, so the
+        # two sides of a seam describe the same ring of bone.
+        seam = max(0, labels.shape[0] - overlap)
+        tail = labels[seam]
         previous_footprint = {}
         for gid in np.unique(tail):
             if gid == 0:
