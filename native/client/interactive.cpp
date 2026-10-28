@@ -123,10 +123,16 @@ public:
             updateHighlight();
             updateReticle();
             const auto renderStart = Clock::now();
-            double renderMilliseconds = 0.0;
-            double presentMilliseconds = 0.0;
+            // The two halves of the frame, kept in the loop's scope so the
+            // reporter outside it sees this iteration's numbers rather than the
+            // zeros it was initialised with.
+            renderMilliseconds = 0.0;
+            presentMilliseconds = 0.0;
             if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+                // The room is the one path with no overlay drawn over it on the
+                // CPU, so its frame can go straight to the window.
+                frame.wantPixels = false;
                 room_.render(frame, view_, seconds);
                 renderMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
                 view_.frameMilliseconds = view_.frameMilliseconds > 0
@@ -140,6 +146,9 @@ public:
                 presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
                 continue;
             }
+            // The overlay is drawn into this frame on the CPU a few lines down,
+            // so this one has to come back through host memory.
+            frame.wantPixels = true;
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 // A backend that cannot draw must not end the session by itself:
                 // the software rasterizer takes over for the rest of the run and

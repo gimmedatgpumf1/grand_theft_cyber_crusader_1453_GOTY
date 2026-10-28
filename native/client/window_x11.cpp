@@ -552,6 +552,8 @@ bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame&
 }
 
 bool NativeWindow::present(const NativeFrame& frame) {
+    // A presented frame never became host pixels: the device already showed it.
+    if (frame.presented) return true;
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
     // A backend may hand over window-order pixels; this path wants RGB, so the
     // picture is converted once here if that is all there is.

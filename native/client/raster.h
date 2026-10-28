@@ -57,6 +57,15 @@ struct NativeFrame {
     const unsigned char* direct = nullptr;
     // Fills rgb from bgra if a caller that needs RGB turns up. Cheap no-op
     // otherwise.
+    // Set by a backend that has already put the picture on screen itself --
+    // a swapchain hands the finished image to the compositor on the device. The
+    // window must then not blit anything: there are no host pixels to blit, and
+    // the whole point of the path is that none were ever made.
+    bool presented = false;
+    // Set by a caller that needs the pixels anyway, whatever the backend would
+    // rather do with them. A screenshot is the one thing a presented frame
+    // cannot serve.
+    bool wantPixels = false;
     void syncToRgb();
     double uiScale = 1.0;
     double uiOffsetX = 0.0;

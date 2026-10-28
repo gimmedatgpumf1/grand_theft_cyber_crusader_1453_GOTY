@@ -268,9 +268,12 @@ bool Renderer::createDevice() {
     info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     info.queueCreateInfoCount = 1;
     info.pQueueCreateInfos = &queue;
-    // No device extensions: no swapchain, no surface. Everything happens in an
-    // image this process owns.
-    info.enabledExtensionCount = 0;
+    // The swapchain extension is named only when the window's surface was
+    // accepted, which happens before this call: a device without it draws into
+    // an image this process owns, as it always has.
+    const char* extensions[1] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    info.enabledExtensionCount = surfaceUsable_ ? 1u : 0u;
+    info.ppEnabledExtensionNames = surfaceUsable_ ? extensions : nullptr;
     if (createDeviceFn(physical_, &info, nullptr, &device_) != VK_SUCCESS) {
         device_ = VK_NULL_HANDLE;
         return false;
@@ -670,7 +673,16 @@ bool Renderer::start() {
         return false;
     }
     trace("vk: choosing a device");
-    if (!chooseDevice() || !createDevice()) {
+    if (!chooseDevice()) {
+        trace("vk: no usable device");
+        stop();
+        return false;
+    }
+    // Before the device exists: the swapchain extension has to be named at
+    // device creation, and a surface the driver will not present to is better
+    // known now than after the first frame.
+    if (presentWanted_ || wsiHandle_ != nullptr) prepareSurface();
+    if (!createDevice()) {
         trace("vk: no usable device");
         stop();
         return false;
@@ -685,97 +697,16 @@ bool Renderer::start() {
     if (!createFrameResources()) { trace("vk: frame resources failed"); stop(); return false; }
     trace("vk: ready");
     ready_ = true;
-    // Asked last, so a driver that cannot make a surface for this window costs
-    // a log line rather than the device.
-    if (wsiHandle_ != nullptr) {
-        const SurfaceAnswer answer = probeSurface();
-        if (answer.available) {
-            std::printf("[vk] surface: %s, %u images, extent %ux%u\n",
-                        answer.formatMatches ? "format matches the renderer" : "FORMAT MISMATCH",
-                        answer.imageCount, answer.extent.width, answer.extent.height);
-            std::printf("[vk] surface: present modes fifo=%d mailbox=%d immediate=%d\n",
-                        answer.fifo ? 1 : 0, answer.mailbox ? 1 : 0, answer.immediate ? 1 : 0);
-        } else {
-            std::printf("[vk] surface: not usable (%s)\n", answer.reason);
-        }
+    if (surfaceUsable_) {
+        std::printf("[vk] surface: usable, frames go to the window without a readback\n");
+    } else if (wsiHandle_ != nullptr) {
+        std::printf("[vk] surface: unusable, frames come back through host memory\n");
     }
     return true;
 }
 
-// What a swapchain would need to know before it could exist. This draws nothing
-// and owns nothing beyond the surface it destroys before returning: the point is
-// to find out from the driver -- format compatibility above all -- whether the
-// swapchain is worth writing, instead of writing it against a guess.
-Renderer::SurfaceAnswer Renderer::probeSurface() {
-    SurfaceAnswer answer;
-    if (instance_ == VK_NULL_HANDLE || physical_ == VK_NULL_HANDLE || wsiHandle_ == nullptr) {
-        answer.reason = "no window handle";
-        return answer;
-    }
-    if (!resolve(destroySurface_, "vkDestroySurfaceKHR") ||
-        !resolve(surfaceSupport_, "vkGetPhysicalDeviceSurfaceSupportKHR") ||
-        !resolve(surfaceCaps_, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") ||
-        !resolve(surfaceFormats_, "vkGetPhysicalDeviceSurfaceFormatsKHR") ||
-        !resolve(surfaceModes_, "vkGetPhysicalDeviceSurfacePresentModesKHR")) {
-        answer.reason = "surface entry points missing";
-        return answer;
-    }
-    VkResult created = VK_ERROR_EXTENSION_NOT_PRESENT;
-#if defined(_WIN32)
-    const auto create = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
-        getInstanceProcAddr_(instance_, "vkCreateWin32SurfaceKHR"));
-    if (create == nullptr) { answer.reason = "vkCreateWin32SurfaceKHR missing"; return answer; }
-    VkWin32SurfaceCreateInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    info.hinstance = GetModuleHandle(nullptr);
-    info.hwnd = static_cast<HWND>(wsiHandle_);
-    created = create(instance_, &info, nullptr, &surface_);
-#else
-    answer.reason = "the surface probe is Windows-only for now";
-    return answer;
-#endif
-    if (created != VK_SUCCESS) { answer.reason = "surface creation failed"; return answer; }
-
-    VkBool32 supported = VK_FALSE;
-    if (surfaceSupport_(physical_, family_, surface_, &supported) != VK_SUCCESS || !supported) {
-        answer.reason = "queue family cannot present";
-        answer.available = true;  // the surface itself was fine
-        answer.formatMatches = false;
-        return answer;
-    }
-    VkSurfaceCapabilitiesKHR caps{};
-    if (surfaceCaps_(physical_, surface_, &caps) != VK_SUCCESS) {
-        answer.reason = "no surface capabilities";
-        return answer;
-    }
-    answer.available = true;
-    answer.imageCount = caps.minImageCount + 1;
-    answer.extent = caps.currentExtent;
-
-    std::uint32_t count = 0;
-    if (surfaceFormats_(physical_, surface_, &count, nullptr) == VK_SUCCESS && count > 0) {
-        std::vector<VkSurfaceFormatKHR> formats(count);
-        surfaceFormats_(physical_, surface_, &count, formats.data());
-        for (const VkSurfaceFormatKHR& candidate : formats) {
-            if (candidate.format == colourFormat_) { answer.format = candidate.format; answer.formatMatches = true; }
-            else if (answer.format == VK_FORMAT_UNDEFINED) answer.format = candidate.format;
-        }
-    }
-    count = 0;
-    if (surfaceModes_(physical_, surface_, &count, nullptr) == VK_SUCCESS && count > 0) {
-        std::vector<VkPresentModeKHR> modes(count);
-        surfaceModes_(physical_, surface_, &count, modes.data());
-        answer.fifo = answer.mailbox = answer.immediate = false;
-        for (VkPresentModeKHR mode : modes) {
-            if (mode == VK_PRESENT_MODE_FIFO_KHR) answer.fifo = true;
-            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) answer.mailbox = true;
-            if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) answer.immediate = true;
-        }
-    }
-    return answer;
-}
-
 void Renderer::stop() {
+    destroySwapchain();
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
         if (vertexBuffer_) destroyBuffer(device_, vertexBuffer_, nullptr);

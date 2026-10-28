@@ -216,20 +216,13 @@ public:
     // Deliberately minimal: this asks the driver what it can do and reports it.
     // Nothing here draws, so a driver that answers "no" costs a log line rather
     // than a broken frame.
-    struct SurfaceAnswer {
-        bool available = false;
-        bool formatMatches = false;
-        VkFormat format = VK_FORMAT_UNDEFINED;
-        std::uint32_t imageCount = 0;
-        VkExtent2D extent{0, 0};
-        bool immediate = false;
-        bool mailbox = false;
-        bool fifo = true;
-        const char* reason = "";
-    };
-
-    SurfaceAnswer probeSurface();
+    // Built once the window has handed over its handle, before the device is
+    // created -- the swapchain extension has to be named at device creation,
+    // which is earlier than the first frame.
+    bool prepareSurface();
     void setSurfaceTarget(void* handle, int kind) { wsiHandle_ = handle; wsiKind_ = kind; }
+    // True when this frame was handed to the compositor instead of to the host.
+    bool presenting() const { return presentWanted_ && swapReady_; }
 
 private:
     bool openLoader();
@@ -250,6 +243,14 @@ private:
     bool createTransferTable();
     bool uploadVertices(const GpuScene& scene);
     void destroyTargets();
+    // -- swapchain ---------------------------------------------------------
+    bool createSwapchain(int width, int height);
+    void destroySwapchain();
+    // Barrier onto the acquired image, blit, barrier to present. Recorded into
+    // the frame's command buffer; the picture never touches host memory.
+    void recordPresentBlit(int imageIndex);
+    bool acquirePresentImage(int slot, int& imageIndex);
+    bool presentImage(int imageIndex);
 
     bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
 
@@ -262,6 +263,38 @@ private:
         }
         return true;
     }
+
+    // -- surface and swapchain ---------------------------------------------
+    // Presenting into a swapchain image removes the entire GPU-to-host path:
+    // at 1568x929 the readback is 5.8 MB of PCIe traffic per frame, and the
+    // window then reads those bytes again to put them on screen. Opt in with
+    // GTC_VK_SWAPCHAIN=1 until it has earned being the default.
+    bool presentWanted_ = false;
+    bool surfaceUsable_ = false;
+    bool swapReady_ = false;
+    VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
+    VkFormat swapFormat_ = VK_FORMAT_B8G8R8A8_UNORM;
+    VkExtent2D swapExtent_{0, 0};
+    std::vector<VkImage> swapImages_;
+    std::vector<VkImageView> swapViews_;
+    // An acquire is announced on the frame slot that made it, a present on the
+    // image being handed over: an image that comes back from acquire has had its
+    // previous present complete, and a slot's acquire is consumed by that same
+    // slot's submission before it is used again.
+    std::vector<VkSemaphore> imageReady_;
+    std::vector<VkSemaphore> drawDone_;
+    // Whether this image has been presented at least once, which decides the
+    // layout it is in when it is drawn into again.
+    std::vector<char> swapImagePresented_;
+    // Which frame slot last drew into each image, so a reused image waits for
+    // the submission that wrote it instead of hoping it finished.
+    std::vector<int> swapImageSlot_;
+    int swapWidth_ = 0;
+    int swapHeight_ = 0;
+    // A present that fails three frames running is not a resize: it is a
+    // driver or a window that will not take this path. The readback takes over
+    // and the experiment ends rather than flickering for a whole session.
+    int presentFailures_ = 0;
 
     // -- surface probe -----------------------------------------------------
     void* wsiHandle_ = nullptr;
@@ -348,6 +381,15 @@ private:
     PFN_vkDestroyFence destroyFence = nullptr;
     PFN_vkWaitForFences waitForFences = nullptr;
     PFN_vkResetFences resetFences = nullptr;
+    PFN_vkCreateSemaphore createSemaphoreFn = nullptr;
+    PFN_vkDestroySemaphore destroySemaphore = nullptr;
+    PFN_vkCmdBlitImage blitImage = nullptr;
+    PFN_vkCmdCopyImage copyImage = nullptr;
+    PFN_vkCreateSwapchainKHR createSwapchainFn = nullptr;
+    PFN_vkDestroySwapchainKHR destroySwapchainFn = nullptr;
+    PFN_vkGetSwapchainImagesKHR getSwapchainImages = nullptr;
+    PFN_vkAcquireNextImageKHR acquireNextImage = nullptr;
+    PFN_vkQueuePresentKHR queuePresent = nullptr;
 
     // -- device ------------------------------------------------------------
     VkPhysicalDevice physical_ = VK_NULL_HANDLE;

@@ -332,6 +332,9 @@ bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame&
 
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
+    // A swapchain frame was handed to the compositor by the device itself. There
+    // are no host pixels, and there is nothing left to do here.
+    if (frame.presented) return true;
     // One blit, no repack: everything that reaches the screen on this backend
     // goes through here, whether the pixels came out of the Vulkan readback
     // already in window order or from the software path, which had to be

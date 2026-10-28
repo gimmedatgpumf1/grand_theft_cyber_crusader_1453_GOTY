@@ -50,7 +50,7 @@ mkdir -p build/vulkan-stub
 "${COMMAND[@]}" -std=c++17 -O2 -shared -fPIC -Inative/vendor/vulkan/include \
   tests/fake-vulkan/stub.cpp -o build/vulkan-stub/libvulkan.so.1
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
-  tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_targets.cpp \
+  tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
   native/client/diagnostics.cpp \
   -o build/bin/gtc-vulkan-plumbing
 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulkan-plumbing

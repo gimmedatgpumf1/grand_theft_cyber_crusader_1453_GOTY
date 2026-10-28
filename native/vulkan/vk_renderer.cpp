@@ -299,8 +299,19 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const bool profile = profiling();
     const double setupStart = profile ? milliseconds() : 0.0;
     if (traced) tracef("vk: frame %d begin %dx%d", frames_, scene.width, scene.height);
-    const int width = std::max(1, scene.width);
-    const int height = std::max(1, scene.height);
+    int width = std::max(1, scene.width);
+    int height = std::max(1, scene.height);
+    const int slot = static_cast<int>(frames_ % kFramesInFlight);
+    // A frame that is going to the window is rendered at the size of the
+    // swapchain image, so the handover is one to one. If any of this fails the
+    // frame simply takes the readback path it has always taken.
+    int presentTarget = -1;
+    if (presentWanted_ && surfaceUsable_ && !frame.wantPixels) {
+        if (createSwapchain(width, height) && acquirePresentImage(slot, presentTarget)) {
+            width = static_cast<int>(swapExtent_.width);
+            height = static_cast<int>(swapExtent_.height);
+        }
+    }
     if (width != target_.width || height != target_.height) {
         if (traced) tracef("vk: frame %d targets %dx%d", frames_, width, height);
         if (!createTargets(width, height)) { tracef("vk: frame %d targets failed", frames_); return false; }
@@ -369,7 +380,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (profile && frames_ < 5) {
         std::printf("    [vk] setup (targets, upload, textures): %.2f ms\n", recordedStart - setupStart);
     }
-    const int slot = static_cast<int>(frames_ % kFramesInFlight);
     command_ = commands_[slot];
     if (resetCommandBuffer(command_, 0) != VK_SUCCESS) { tracef("vk: frame %d reset failed", frames_); return false; }
     VkCommandBufferBeginInfo begin{};
@@ -485,7 +495,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
     region.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
-    if (!skipCopy()) {
+    if (presentTarget >= 0) {
+        // The picture is handed to the compositor from device memory: nothing
+        // is copied out, and the host never sees a pixel.
+        recordPresentBlit(presentTarget);
+    } else if (!skipCopy()) {
         copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback[slot], 1,
                           &region);
     }
@@ -503,6 +517,16 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &command_;
+    // The acquire's semaphore is waited on here, and the submission signals the
+    // present's: the two things a swapchain frame actually needs.
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    if (presentTarget >= 0) {
+        submit.waitSemaphoreCount = 1;
+        submit.pWaitSemaphores = &imageReady_[slot];
+        submit.pWaitDstStageMask = &waitStage;
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores = &drawDone_[presentTarget];
+    }
     resetFences(device_, 1, &fences_[slot]);
     fenceArmed_[slot] = true;
     if (traced) tracef("vk: frame %d submitting", frames_);
@@ -510,17 +534,33 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         tracef("vk: frame %d submit failed", frames_);
         return false;
     }
+    // Queued straight after the submission it waits on, so the present is not
+    // held up by the host collecting the frame before it.
+    if (presentTarget >= 0) {
+        if (presentImage(presentTarget)) {
+            presentFailures_ = 0;
+        } else if (++presentFailures_ >= 3) {
+            std::printf("[vk] swapchain: presenting failed three frames running, back to the readback\n");
+            presentWanted_ = false;
+            surfaceUsable_ = false;
+            presentFailures_ = 0;
+        }
+    }
 
     // Collect the frame that was submitted before this one. Waiting for *this*
     // frame would leave the device idle while the host copies the picture out;
     // waiting for the previous one lets the two overlap, which is the whole
     // point of keeping more than one in flight.
-    const int collect = pendingSlot_ >= 0 ? pendingSlot_ : slot;
-    if (waitForFences(device_, 1, &fences_[collect], VK_TRUE, 5000000000ull) != VK_SUCCESS) {
+    int collect = pendingSlot_ >= 0 ? pendingSlot_ : slot;
+    // On a presented frame there is nothing to collect and nothing to read, so
+    // the very first one does not wait for itself: that is host time spent
+    // watching the GPU it does not need to spend.
+    if (presentTarget >= 0 && pendingSlot_ < 0) collect = -1;
+    if (collect >= 0 && waitForFences(device_, 1, &fences_[collect], VK_TRUE, 5000000000ull) != VK_SUCCESS) {
         tracef("vk: frame %d wait failed", frames_);
         return false;
     }
-    fenceArmed_[collect] = false;
+    if (collect >= 0) fenceArmed_[collect] = false;
     pendingSlot_ = slot;
     const double gpuDone = profile ? milliseconds() : 0.0;
     if (profile && frames_ < 5) {
@@ -529,6 +569,18 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (traced) tracef("vk: frame %d presented", frames_);
     ++frames_;
 
+    if (presentTarget >= 0) {
+        // Handed over on the device: there is nothing in host memory to hand on,
+        // and the window must not blit it a second time.
+        frame.width = width;
+        frame.height = height;
+        frame.rgb.clear();
+        frame.bgra.clear();
+        frame.alpha.clear();
+        frame.direct = nullptr;
+        frame.presented = true;
+        return true;
+    }
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
     if (skipCopy()) return true;
     const double readbackStart = profiling() && frames_ < 6 ? milliseconds() : 0.0;
@@ -606,6 +658,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             }
             return;
         }
+        // A byte per channel per pixel, written straight out: this loop is over
+        // a million pixels on every frame the overlay is drawn, so its shape is
+        // the difference between a millisecond and a small fraction of one. The
+        // four-pixels-in-twelve-bytes-out version of this was slower.
         unsigned char* out = frame.rgb.data() + begin * 3;
         for (std::size_t index = begin; index < end; ++index, out += 3) {
             const std::uint32_t texel = texels[index];
