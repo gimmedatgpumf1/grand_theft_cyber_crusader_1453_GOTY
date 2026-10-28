@@ -429,9 +429,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
                     0, 0, nullptr, 1, &reuse, 0, nullptr);
 
     VkClearValue clears[2]{};
-    clears[0].color.float32[0] = static_cast<float>(displayValue(scene.background.r));
-    clears[0].color.float32[1] = static_cast<float>(displayValue(scene.background.g));
-    clears[0].color.float32[2] = static_cast<float>(displayValue(scene.background.b));
+    // The attachment is an sRGB format, so a clear value is a linear colour the
+    // device encodes on its way into memory: only the tone map belongs here.
+    clears[0].color.float32[0] = static_cast<float>(toneValue(scene.background.r));
+    clears[0].color.float32[1] = static_cast<float>(toneValue(scene.background.g));
+    clears[0].color.float32[2] = static_cast<float>(toneValue(scene.background.b));
     clears[0].color.float32[3] = 1.0f;
     clears[1].depthStencil.depth = 1.0f;
     clears[1].depthStencil.stencil = 0;
@@ -500,16 +502,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
                            unitLength(basis[8], basis[9], basis[10]);
         push.flags[2] = rigid ? 1.0f : 0.0f;
         // A batch that does not shade and samples no texture has one colour for
-        // every pixel it covers: tone map and encode it once here, and the
-        // fragment stage writes the answer instead of rebuilding it. The floor,
-        // the walls and the ceiling are drawn this way and they are most of the
-        // screen, so this is a few thousand million transfer lookups a second
-        // that no longer happen.
+        // every pixel it covers: tone map it once here, and the fragment stage
+        // writes the answer instead of rebuilding it. The floor, the walls and
+        // the ceiling are drawn this way and they are most of the screen.
         const bool oneColour = push.flags[1] > 0.5f && push.flags[0] < 0.5f;
         if (oneColour) {
-            push.colour[0] = static_cast<float>(displayValue(batch.material.color.r));
-            push.colour[1] = static_cast<float>(displayValue(batch.material.color.g));
-            push.colour[2] = static_cast<float>(displayValue(batch.material.color.b));
+            push.colour[0] = static_cast<float>(toneValue(batch.material.color.r));
+            push.colour[1] = static_cast<float>(toneValue(batch.material.color.g));
+            push.colour[2] = static_cast<float>(toneValue(batch.material.color.b));
         }
         push.flags[3] = oneColour ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

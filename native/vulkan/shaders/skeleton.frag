@@ -32,7 +32,6 @@ layout(push_constant) uniform Batch {
 } batch;
 
 const float kDecodeRow = 0.25;  // row 0 of two: sRGB -> linear
-const float kEncodeRow = 0.75;  // row 1 of two: linear -> sRGB
 
 vec3 transfer(vec3 value, float row) {
     return vec3(texture(transferLut, vec2(clamp(value.r, 0.0, 1.0), row)).r,
@@ -41,8 +40,6 @@ vec3 transfer(vec3 value, float row) {
 }
 
 vec3 toLinear(vec3 value) { return transfer(value, kDecodeRow); }
-
-vec3 toSrgb(vec3 value) { return transfer(value, kEncodeRow); }
 
 vec3 toneMap(vec3 value) {
     return clamp((value * (2.51 * value + 0.03)) /
@@ -76,5 +73,5 @@ void main() {
         base = inColour.rgb;
         alpha = inColour.a;
     }
-    outColour = vec4(toSrgb(toneMap(base)), alpha);
+    outColour = vec4(toneMap(base), alpha);
 }

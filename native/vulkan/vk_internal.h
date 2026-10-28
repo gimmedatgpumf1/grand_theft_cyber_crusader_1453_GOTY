@@ -51,13 +51,44 @@ inline double srgbEncode(double value) {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
 }
 
-// The same Reinhard fit and transfer the fragment shader applies, so a cleared
-// background and a drawn one are the same colour.
-inline double displayValue(double linear) {
+// The Reinhard fit the fragment shader applies. Everything the renderer hands
+// to a colour attachment is in this space now: the attachment itself is an sRGB
+// format, so the device applies the transfer curve when it writes a pixel -- for
+// free, in the same units the memory is stored in. Encoding here as well would
+// encode twice.
+inline double toneValue(double linear) {
     const double value = std::max(0.0, linear);
-    const double tone = std::clamp((value * (2.51 * value + 0.03)) /
-        (value * (2.43 * value + 0.59) + 0.14), 0.0, 1.0);
-    return srgbEncode(tone);
+    return std::clamp((value * (2.51 * value + 0.03)) / (value * (2.43 * value + 0.59) + 0.14),
+                      0.0, 1.0);
+}
+
+// The tone map and the transfer curve in that order, for the places that need a
+// finished byte on the host rather than a value the device will encode.
+inline double displayValue(double linear) { return srgbEncode(toneValue(linear)); }
+
+// Two formats that put the same bytes in the same order, differing only in
+// whether the transfer curve is applied on the way in. Copying one to the other
+// is a move; blitting one to the other is a conversion nobody asked for.
+inline bool sameChannelBytes(VkFormat left, VkFormat right) {
+    const auto family = [](VkFormat format) {
+        switch (format) {
+            case VK_FORMAT_B8G8R8A8_UNORM:
+            case VK_FORMAT_B8G8R8A8_SRGB: return 1;
+            case VK_FORMAT_R8G8B8A8_UNORM:
+            case VK_FORMAT_R8G8B8A8_SRGB: return 2;
+            default: return 0;
+        }
+    };
+    return family(left) != 0 && family(left) == family(right);
+}
+
+inline bool isBgraFormat(VkFormat format) {
+    return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
+inline bool isColourFormat(VkFormat format) {
+    return sameChannelBytes(format, VK_FORMAT_R8G8B8A8_UNORM) ||
+           sameChannelBytes(format, VK_FORMAT_B8G8R8A8_UNORM);
 }
 
 struct Matrix4 {
@@ -396,7 +427,7 @@ private:
     std::uint32_t family_ = 0;
     VkPhysicalDeviceMemoryProperties memory_{};
     bool memoryQueried_ = false;
-    VkFormat colourFormat_ = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat colourFormat_ = VK_FORMAT_B8G8R8A8_SRGB;
     VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
     bool bgra_ = false;
 

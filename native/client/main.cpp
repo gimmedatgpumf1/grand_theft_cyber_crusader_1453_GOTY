@@ -175,6 +175,48 @@ bool buildSkull(const std::string& root, const gtc::native::ViewState& view, Sku
 }
 
 
+// The same idea one size up: the whole body, every bone, the camera far enough
+// back to frame all of it. The skull stopped being interesting the moment its
+// cost was known; this is the geometry a room actually draws, four times over.
+bool buildBody(const std::string& root, const gtc::native::ViewState& view, SkullScene& out,
+               std::string& error) {
+    gtc::native::SkeletonModel model;
+    if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
+    model.poseIdle(0.75, 0.0);
+    out.camera.width = std::max(1, view.width);
+    out.camera.height = std::max(1, view.height);
+    out.camera.fovDegrees = 50;
+    // Two and a half metres back at eye height: the body fills the middle of
+    // the frame, the way it stands in the test room.
+    out.camera.position = {0.0, 1.0, -2.6};
+    out.camera.target = {0.0, 0.88, 0.0};
+    gtc::native::Rasterizer rasterizer(out.camera.width, out.camera.height, gtc::native::colorHex("#0d1210"),
+                                      out.camera.focal(), true, gtc::native::GpuScene{});
+    rasterizer.setCamera(out.camera);
+    model.draw(rasterizer, out.camera, {0, 0, 0}, 0.0);
+    out.scene = rasterizer.takeGpuScene();
+    out.scene.width = out.camera.width;
+    out.scene.height = out.camera.height;
+    out.scene.focal = out.camera.focal();
+    out.scene.viewMatrix = out.camera.viewMatrix();
+    out.scene.revision = 1;
+    for (gtc::native::GpuBatch& batch : out.scene.batches) batch.revision = 1;
+    out.ready = true;
+    return true;
+}
+
+// The same scene with every triangle collapsed to a single point. The vertex
+// stage still runs over every vertex and every draw is still submitted; the
+// rasteriser then has nothing to fill. What is left is the cost of moving the
+// geometry, which is the half of the frame the fragment shader hides.
+void collapseTriangles(gtc::native::GpuScene& scene) {
+    for (gtc::native::GpuBatch& batch : scene.batches) {
+        for (gtc::native::GpuVertex& vertex : batch.vertices) {
+            vertex.x = vertex.y = vertex.z = 0.0F;
+        }
+    }
+}
+
 // The measurement King asked for: one skull, drawn by each backend, plus the
 // CPU geometry cost that no backend can remove.
 int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, const std::string& renderer,
@@ -377,6 +419,55 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 }
                 reportLine("skull vulkan (no draws)", (nowMs() - emptyStart) / iterations);
             }
+            // The whole body: four times the skull's geometry, drawn the same
+            // way. Measured here rather than inferred, because per-triangle cost
+            // does not stay linear once the fragments start overlapping.
+            {
+                SkullScene body;
+                if (!buildBody(root, view, body, error)) {
+                    std::cerr << "Whole skeleton: " << error << '\n';
+                    return 1;
+                }
+                std::size_t bodyTriangles = 0, bodyVertices = 0;
+                for (const gtc::native::GpuBatch& batch : body.scene.batches) {
+                    bodyTriangles += batch.vertices.size() / 3;
+                    bodyVertices += batch.vertices.size();
+                }
+                std::cout << "whole skeleton: " << bodyTriangles << " triangles, " << bodyVertices
+                          << " vertices\n";
+                for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(body.scene, frame);
+                gtc::native::drainVulkan();
+                std::vector<double> samples;
+                samples.reserve(static_cast<std::size_t>(iterations));
+                double total = 0.0;
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    const double frameStart = nowMs();
+                    if (!gtc::native::renderVulkanScene(body.scene, frame)) {
+                        std::cerr << "vulkan whole skeleton draw failed\n";
+                        return 1;
+                    }
+                    const double spent = nowMs() - frameStart;
+                    samples.push_back(spent);
+                    total += spent;
+                }
+                reportLine("skeleton vulkan (full frame)", total / iterations);
+                reportSpread("  of which median", samples);
+                // Every vertex, no pixels: the vertex stage and the submission
+                // without the fragment work, so the two halves can be told apart
+                // instead of argued about.
+                gtc::native::GpuScene empty = body.scene;
+                collapseTriangles(empty);
+                for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(empty, frame);
+                gtc::native::drainVulkan();
+                const double vertexStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    if (!gtc::native::renderVulkanScene(empty, frame)) {
+                        std::cerr << "vulkan vertex-only frame failed\n";
+                        return 1;
+                    }
+                }
+                reportLine("skeleton vulkan (vertices only)", (nowMs() - vertexStart) / iterations);
+            }
             // The same draw with the picture left on the device: commands are
             // submitted and the device is waited for, but nothing is copied
             // back. This is the only figure that can be compared with a backend
@@ -402,6 +493,21 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 gtc::native::renderVulkanScene(skull.scene, frame);
             }
             reportLine("skull vulkan (submit only, tiled)", (nowMs() - tiledStart) / iterations);
+            // The whole skeleton with nothing copied back, which is the shape of
+            // a frame that goes to the window: submission and the device's own
+            // work, and no host traffic at all.
+            {
+                SkullScene body;
+                if (buildBody(root, view, body, error)) {
+                    for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(body.scene, frame);
+                    gtc::native::drainVulkan();
+                    const double bodySubmitStart = nowMs();
+                    for (int iteration = 0; iteration < iterations; ++iteration) {
+                        gtc::native::renderVulkanScene(body.scene, frame);
+                    }
+                    reportLine("skeleton vulkan (submit only)", (nowMs() - bodySubmitStart) / iterations);
+                }
+            }
             gtc::native::setLinearTarget(true);
             gtc::native::setFrameReadback(true);
             // Same frame, colour image kept in linear layout: the copy back is

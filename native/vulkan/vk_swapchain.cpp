@@ -159,25 +159,26 @@ bool Renderer::createSwapchain(int width, int height) {
     if (surfaceFormats_(physical_, surface_, &formatCount, nullptr) == VK_SUCCESS && formatCount > 0) {
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
         surfaceFormats_(physical_, surface_, &formatCount, formats.data());
-        bool exact = false;
-        for (const VkSurfaceFormatKHR& candidate : formats) {
-            if (candidate.format == colourFormat_ && candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                exact = true;
-                space = candidate.colorSpace;
-                break;
-            }
-        }
-        if (!exact) {
-            format = formats[0].format;
-            space = formats[0].colorSpace;
+        // The renderer's format first, then anything that puts the same bytes
+        // in the same order: a copy of identical bytes is a move, and the only
+        // thing a blit does that a copy does not is convert -- which is the one
+        // thing this handover must not do, because the pixels are already in the
+        // window's colour space.
+        const auto pick = [&](bool exact, bool sameBytes, bool bgra, bool anyColour) {
             for (const VkSurfaceFormatKHR& candidate : formats) {
-                if (candidate.format == VK_FORMAT_B8G8R8A8_UNORM || candidate.format == VK_FORMAT_R8G8B8A8_UNORM) {
-                    format = candidate.format;
-                    space = candidate.colorSpace;
-                    break;
-                }
+                const bool match = exact ? candidate.format == colourFormat_
+                    : sameBytes ? sameChannelBytes(candidate.format, colourFormat_)
+                    : bgra ? isBgraFormat(candidate.format)
+                    : anyColour ? isColourFormat(candidate.format) : true;
+                if (!match) continue;
+                format = candidate.format;
+                space = candidate.colorSpace;
+                return true;
             }
-        }
+            return false;
+        };
+        pick(true, false, false, false) || pick(false, true, false, false) || pick(false, false, true, false) ||
+            pick(false, false, false, true);
     }
     VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
     std::uint32_t modeCount = 0;
@@ -268,7 +269,7 @@ bool Renderer::createSwapchain(int width, int height) {
     std::printf("[vk] swapchain: %ux%u, %u images, %s, %s handover\n", extent.width, extent.height, count,
                 mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
                 : mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo",
-                format == colourFormat_ ? "copy" : "blit");
+                swapFormat_ == colourFormat_ || sameChannelBytes(swapFormat_, colourFormat_) ? "copy" : "blit");
     return true;
 }
 
@@ -356,7 +357,10 @@ void Renderer::recordPresentBlit(int imageIndex) {
     copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copy.dstSubresource.layerCount = 1;
     copy.extent = {swapExtent_.width, swapExtent_.height, 1};
-    if (swapFormat_ == colourFormat_) {
+    // Identical bytes, or the same channels with the transfer curve applied on
+    // one side only: both are a move between compatible formats, and a move does
+    // not touch a value. Anything else is a real conversion and is blitted.
+    if (swapFormat_ == colourFormat_ || sameChannelBytes(swapFormat_, colourFormat_)) {
         copyImage(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapImages_[imageIndex],
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
     } else {

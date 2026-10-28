@@ -218,20 +218,34 @@ bool Renderer::chooseDevice() {
     }
     if (physical_ == VK_NULL_HANDLE) return false;
 
-    // A colour format this device can render into and copy out of, preferring
-    // RGBA so the readback needs no channel swap.
-    const VkFormat candidates[] = {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
+    // A colour format this device can render into and copy out of. Two things
+    // are being chosen here, and both are worth the line they cost:
+    //
+    // * sRGB, so the transfer curve is applied by the device as it writes a
+    //   pixel. The fragment stage used to spend three dependent texture lookups
+    //   per pixel in a table of the same curve; the hardware does it for nothing
+    //   and in the format the memory is already in.
+    // * BGRA first, because that is the byte order the window takes. The
+    //   readback then needs no channel swap, and the swapchain handover is a
+    //   copy of identical bytes instead of a blit that converts them.
+    const VkFormat candidates[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
+                                   VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
+    const VkFormatFeatureFlags wanted = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    colourFormat_ = VK_FORMAT_UNDEFINED;
     for (VkFormat format : candidates) {
         VkFormatProperties properties{};
         getPhysicalDeviceFormatProperties(physical_, format, &properties);
-        const VkFormatFeatureFlags wanted = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
         if ((properties.optimalTilingFeatures & wanted) == wanted) {
             colourFormat_ = format;
-            bgra_ = format == VK_FORMAT_B8G8R8A8_UNORM;
             break;
         }
     }
-    if (colourFormat_ != VK_FORMAT_R8G8B8A8_UNORM && colourFormat_ != VK_FORMAT_B8G8R8A8_UNORM) return false;
+    if (!isColourFormat(colourFormat_)) return false;
+    bgra_ = isBgraFormat(colourFormat_);
+    tracef("vk: colour format %s, %s readback", colourFormat_ == VK_FORMAT_B8G8R8A8_SRGB ? "B8G8R8A8_SRGB"
+          : colourFormat_ == VK_FORMAT_R8G8B8A8_SRGB ? "R8G8B8A8_SRGB"
+          : colourFormat_ == VK_FORMAT_B8G8R8A8_UNORM ? "B8G8R8A8_UNORM" : "R8G8B8A8_UNORM",
+          bgra_ ? "no-swap" : "swap");
 
     // Depth is never stored and never leaves the pass, so D16 halves the depth
     // footprint at no cost but precision. A 32-bit depth is 5.8 MB per frame to
