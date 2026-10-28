@@ -6,6 +6,7 @@
 // machine without a Vulkan driver gets `false` from start() and the client
 // falls back to the CPU path instead of dying.
 
+#include "../client/diagnostics.h"
 #include "vk_internal.h"
 #include "shaders/spirv_shaders.h"
 
@@ -474,12 +475,16 @@ bool Renderer::createFrameResources() {
 
 bool Renderer::start() {
     if (ready_) return true;
+    trace("vk: opening the loader");
     if (!openLoader()) {
         std::fprintf(stderr, "[vk] no Vulkan loader on this machine\n");
+        trace("vk: no loader");
         return false;
     }
     if (!resolve(createInstanceFn, "vkCreateInstance")) return false;
+    trace("vk: creating the instance");
     if (!createInstance()) return false;
+    trace("vk: instance created");
     // Everything after the instance is resolved through the instance, which is
     // how a runtime that only ships a loader still hands over a full device.
     if (!resolve(destroyInstance, "vkDestroyInstance") ||
@@ -553,15 +558,20 @@ bool Renderer::start() {
         stop();
         return false;
     }
+    trace("vk: choosing a device");
     if (!chooseDevice() || !createDevice()) {
+        trace("vk: no usable device");
         stop();
         return false;
     }
-    if (!createLayouts() || !createRenderPass() || !createPipeline() ||
-        !createCommandPool() || !createSampler() || !createFrameResources()) {
-        stop();
-        return false;
-    }
+    trace("vk: device created");
+    if (!createLayouts()) { trace("vk: layouts failed"); stop(); return false; }
+    if (!createRenderPass()) { trace("vk: render pass failed"); stop(); return false; }
+    if (!createPipeline()) { trace("vk: pipeline failed"); stop(); return false; }
+    if (!createCommandPool()) { trace("vk: command pool failed"); stop(); return false; }
+    if (!createSampler()) { trace("vk: sampler failed"); stop(); return false; }
+    if (!createFrameResources()) { trace("vk: frame resources failed"); stop(); return false; }
+    trace("vk: ready");
     ready_ = true;
     return true;
 }

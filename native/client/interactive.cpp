@@ -4,6 +4,7 @@
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
 #include "client/view_controls.h"
+#include "client/diagnostics.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -121,8 +122,21 @@ public:
                 continue;
             }
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
-                std::cerr << error << '\n';
-                return 1;
+                // A backend that cannot draw must not end the session by itself:
+                // the software rasterizer takes over for the rest of the run and
+                // the reason is written to the log.
+                if (view_.gpu) {
+                    tracef("render: gpu frame failed (%s), falling back to software", error.c_str());
+                    std::cerr << "GPU frame failed, using the software rasterizer: " << error << '\n';
+                    view_.gpu = false;
+                    if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
+                        std::cerr << error << '\n';
+                        return 1;
+                    }
+                } else {
+                    std::cerr << error << '\n';
+                    return 1;
+                }
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;

@@ -115,6 +115,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     rasterizer.setObject(2, {0.0, 0.0}, 3.14159265F);
     female_.draw(rasterizer, camera, {0.52, 0, 0}, 3.14159265);
     rasterizer.setObject(0, {0.0, 0.0}, 0.0F);
+    // The frame is drawn before the scene is taken out of the rasterizer. Taking
+    // it first left the rasterizer holding nothing, so the GPU path drew an
+    // empty room and the skeletons only ever appeared on the CPU path.
+    frame = rasterizer.finish();
     if (view.gpu) {
         scene_ = rasterizer.takeGpuScene();
         scene_.revision = ++revision_;
@@ -123,7 +127,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         cachedWidth_ = camera.width;
         cachedHeight_ = camera.height;
     }
-    frame = rasterizer.finish();
     frame.logicalUi();
 }
 

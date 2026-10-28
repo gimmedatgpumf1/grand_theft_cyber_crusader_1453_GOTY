@@ -40,6 +40,7 @@ mkdir -p build/vulkan-stub
   tests/fake-vulkan/stub.cpp -o build/vulkan-stub/libvulkan.so.1
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp \
+  native/client/diagnostics.cpp \
   -o build/bin/gtc-vulkan-plumbing
 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulkan-plumbing
 if [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then

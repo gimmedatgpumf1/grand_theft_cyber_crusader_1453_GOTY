@@ -3,6 +3,7 @@
 // finished before this function returns, because the result is a NativeFrame
 // the rest of the client expects to own.
 
+#include "../client/diagnostics.h"
 #include "vk_internal.h"
 
 #include <algorithm>
@@ -429,10 +430,16 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
 
 bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (!ready_) return false;
+    // The first frames are written down step by step: if the process dies in a
+    // driver, the last line names the call that was in flight.
+    const bool traced = frames_ < 3;
+    if (traced) tracef("vk: frame %d begin %dx%d", frames_, scene.width, scene.height);
     const int width = std::max(1, scene.width);
     const int height = std::max(1, scene.height);
     if (width != target_.width || height != target_.height) {
-        if (!createTargets(width, height)) return false;
+        if (traced) tracef("vk: frame %d targets %dx%d", frames_, width, height);
+        if (!createTargets(width, height)) { tracef("vk: frame %d targets failed", frames_); return false; }
+        if (traced) tracef("vk: frame %d targets ready", frames_);
     }
     if (white_.set == VK_NULL_HANDLE) {
         // One white pixel stands in for "this material has no image", so the
@@ -441,7 +448,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         white.width = 1;
         white.height = 1;
         white.pixels = {255, 255, 255, 255};
-        if (!createTexture(white, white_)) return false;
+        if (!createTexture(white, white_)) { tracef("vk: frame %d white texture failed", frames_); return false; }
     }
 
     // Geometry only needs to travel when it actually changed: the world is
@@ -455,7 +462,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         totalVertices += batch.vertices.size();
     }
     if (!uploadedValid_ || signature != uploadedSignature_) {
-        if (!uploadVertices(scene)) return false;
+        if (traced) tracef("vk: frame %d upload %zu batches", frames_, scene.batches.size());
+        if (!uploadVertices(scene)) { tracef("vk: frame %d upload failed", frames_); return false; }
         uploadedSignature_ = signature;
         uploadedValid_ = true;
     } else if (totalVertices == 0) {
@@ -492,11 +500,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     frameMap_->eye[2] = static_cast<float>(-(view[8] * tx + view[9] * ty + view[10] * tz));
     frameMap_->eye[3] = 1.0f;
 
-    if (resetCommandBuffer(command_, 0) != VK_SUCCESS) return false;
+    if (resetCommandBuffer(command_, 0) != VK_SUCCESS) { tracef("vk: frame %d reset failed", frames_); return false; }
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) return false;
+    if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) { tracef("vk: frame %d begin failed", frames_); return false; }
 
     // The vertex and uniform buffers were written from the host this frame.
     // Host writes are made available to the device by the submission itself, so
@@ -600,14 +608,19 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
 
     // Nothing else to order here: the fence below is what makes the copy
     // visible to the host read, and HOST is not a stage a barrier may name.
-    if (endCommandBuffer(command_) != VK_SUCCESS) return false;
+    if (traced) tracef("vk: frame %d recorded", frames_);
+    if (endCommandBuffer(command_) != VK_SUCCESS) { tracef("vk: frame %d end failed", frames_); return false; }
     VkSubmitInfo submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &command_;
     resetFences(device_, 1, &fence_);
-    if (queueSubmit(queue_, 1, &submit, fence_) != VK_SUCCESS) return false;
-    if (waitForFences(device_, 1, &fence_, VK_TRUE, 5000000000ull) != VK_SUCCESS) return false;
+    if (traced) tracef("vk: frame %d submitting", frames_);
+    if (queueSubmit(queue_, 1, &submit, fence_) != VK_SUCCESS) { tracef("vk: frame %d submit failed", frames_); return false; }
+    const VkResult waited = waitForFences(device_, 1, &fence_, VK_TRUE, 5000000000ull);
+    if (waited != VK_SUCCESS) { tracef("vk: frame %d wait failed (%d)", frames_, static_cast<int>(waited)); return false; }
+    if (traced) tracef("vk: frame %d presented", frames_);
+    ++frames_;
 
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
     frame.width = width;
@@ -642,6 +655,47 @@ detail::Renderer& instance() {
 // renderer.
 bool closed = false;
 
+// One small frame through the whole path before the window commits to this
+// backend. A device that cannot finish a 32x24 frame cannot finish a 1568x929
+// one either, and finding that out here keeps the session alive on the backend
+// that does work.
+bool selfTest() {
+    detail::Renderer& renderer = instance();
+    GpuScene scene;
+    scene.width = 32;
+    scene.height = 24;
+    scene.focal = 30;
+    scene.revision = 1;
+    scene.background = {0.0, 0.0, 0.0};
+    GpuBatch batch;
+    batch.revision = 1;
+    const float vertices[9] = {-0.4f, -0.4f, -2.0f, 0.4f, -0.4f, -2.0f, 0.0f, 0.4f, -2.0f};
+    for (int index = 0; index < 3; ++index) {
+        GpuVertex vertex;
+        vertex.x = vertices[index * 3 + 0];
+        vertex.y = vertices[index * 3 + 1];
+        vertex.z = vertices[index * 3 + 2];
+        vertex.nz = -1.0f;
+        batch.vertices.push_back(vertex);
+    }
+    scene.batches.push_back(batch);
+    NativeFrame frame;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        if (!renderer.draw(scene, frame)) {
+            tracef("vk: self test frame %d failed", attempt);
+            return false;
+        }
+        const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
+        if (frame.width != 32 || frame.height != 24 || frame.rgb.size() < pixels * 3 ||
+            frame.alpha.size() < pixels) {
+            trace("vk: self test frame broke the frame contract");
+            return false;
+        }
+    }
+    trace("vk: self test passed");
+    return true;
+}
+
 } // namespace
 
 bool vulkanAvailable() {
@@ -651,6 +705,12 @@ bool vulkanAvailable() {
     if (!tried) {
         tried = true;
         available = instance().start();
+        if (available && !selfTest()) {
+            trace("vk: self test failed, staying on the other backend");
+            instance().stop();
+            available = false;
+        }
+        tracef("vk: available=%d", available ? 1 : 0);
     }
     return available;
 }

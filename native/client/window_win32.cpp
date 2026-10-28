@@ -1,5 +1,6 @@
 #include "client/window.h"
 #include "client/opengl_shared.h"
+#include "client/diagnostics.h"
 #include "vulkan/vk_renderer.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -232,7 +233,14 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     }
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
+    trace("window: created");
+    if (wantVulkan()) {
+        trace("window: trying vulkan");
+    } else {
+        trace("window: vulkan disabled by GTC_NO_VULKAN");
+    }
     if (wantVulkan() && vulkanAvailable()) {
+        trace("window: vulkan ready");
         impl_->vulkan = true;
         impl_->gpu = true;
         activeGpu = impl_;
@@ -240,11 +248,13 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         const std::string gpuTitle = title + " - Vulkan";
         SetWindowTextA(impl_->window, gpuTitle.c_str());
     } else if (impl_->initializeGpu()) {
+        trace("window: opengl ready");
         activeGpu = impl_;
         setGpuRenderer(&renderGpu);
         const std::string gpuTitle = title + " - " + impl_->renderer.name();
         SetWindowTextA(impl_->window, gpuTitle.c_str());
     }
+    trace("window: shown");
     ShowWindow(impl_->window, SW_SHOW);
     UpdateWindow(impl_->window);
     return true;

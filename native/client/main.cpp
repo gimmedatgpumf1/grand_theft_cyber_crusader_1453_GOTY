@@ -1,4 +1,5 @@
 #include "client/client.h"
+#include "client/diagnostics.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
@@ -24,6 +25,8 @@ bool acceptOnly(const gtc::native::GpuScene&, gtc::native::NativeFrame&) { retur
 } // namespace
 
 int main(int argc, char** argv) {
+    gtc::native::installCrashHandler(argc > 0 ? argv[0] : "gtc-native-client");
+    gtc::native::trace("main: start");
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
     int port = 1453, frames = 1, benchmark = 1;

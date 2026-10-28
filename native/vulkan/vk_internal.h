@@ -303,6 +303,7 @@ private:
     TextureSlot white_;
     std::vector<std::uint32_t> firstVertex_;
     bool ready_ = false;
+    int frames_ = 0;
 };
 
 } // namespace detail
