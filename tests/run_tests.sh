@@ -25,6 +25,11 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+# The Vulkan projection can be checked without a driver, so it is: the clip
+# matrix has to put every point on the pixel the CPU rasterizer would use.
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/vulkan_projection.cpp -o build/bin/gtc-vulkan-projection
+./build/bin/gtc-vulkan-projection
 if [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   # A machine without a Vulkan driver must say so and keep going; this asserts
   # the fallback rather than the frame rate, because the frame rate is not

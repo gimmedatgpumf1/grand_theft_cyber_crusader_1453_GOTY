@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -21,6 +23,22 @@ namespace {
 // The character creator used to live here and opened on C. It is gone: the
 // test room took the key, and the next creator will be built fresh rather than
 // grown back out of this switchboard.
+// A frame rate that only lives in the HUD is a frame rate nobody can quote.
+// With GTC_FPS=1 the loop also writes an average to stderr once a second, which
+// is the number to send back when asking whether the target was met.
+void reportFrameRate(const std::chrono::steady_clock::time_point& now) {
+    const char* setting = std::getenv("GTC_FPS");
+    if (!setting || !*setting || *setting == '0') return;
+    static auto window = now;
+    static int frames = 0;
+    ++frames;
+    const auto span = std::chrono::duration<double>(now - window).count();
+    if (span < 1.0) return;
+    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame)\n", frames / span, 1000.0 * span / frames);
+    window = now;
+    frames = 0;
+}
+
 enum class Overlay { None, Wheel, Cheats, Help };
 
 void circle(NativeFrame& frame, int cx, int cy, int radius, Color color) {
@@ -67,6 +85,7 @@ public:
             const float dt = std::min(0.05F, elapsed);
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
+            reportFrameRate(now);
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;
