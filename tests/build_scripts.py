@@ -81,6 +81,14 @@ def main():
     for source in sorted(sources - linux_sources - only_windows):
         failures.append(f'build.cmd has {source}, build.sh does not')
 
+    # MSVC treats a narrowing conversion inside a braced initialiser as an error
+    # (C2397); gcc only warns, so the Linux build legitimately succeeds on code
+    # the Windows build rejects. That divergence cost a round trip with the
+    # person who has to compile it, so the client and the backend are parsed
+    # here with the narrowing warning promoted, and a single instance fails.
+    narrowed = narrowing_failures(sorted(sources))
+    failures.extend(narrowed)
+
     if failures:
         for failure in failures:
             print('[build] ' + failure)
@@ -88,6 +96,35 @@ def main():
         return 1
     print(f'build scripts: PASS ({len(sources)} client sources, {len(objects)} linked objects, both platforms agree)')
     return 0
+
+
+def narrowing_failures(sources):
+    """Compile the client and backend with the narrowing warning promoted.
+
+    Only a syntax check: no objects, no link, so this stays a couple of seconds
+    and needs no headers that are not in the tree. Sources that need a platform
+    header this machine does not have (windows.h) are skipped and named, so a
+    skipped file is visible rather than silently passing.
+    """
+    import shutil
+    import subprocess
+    compiler = shutil.which('g++') or shutil.which('c++')
+    if compiler is None:
+        return []
+    problems = []
+    for source in sources:
+        if not (source.startswith('native/client/') or source.startswith('native/vulkan/')):
+            continue
+        if source.endswith('window_win32.cpp'):
+            continue  # needs windows.h, which is not on this machine
+        result = subprocess.run([compiler, '-std=c++17', '-fsyntax-only', '-Werror=narrowing',
+                                 '-Isrc', '-Inative', source],
+                                cwd=ROOT, capture_output=True, text=True)
+        if result.returncode != 0:
+            first = next((line for line in result.stderr.splitlines() if 'narrowing' in line
+                          or 'error' in line), 'unknown error')
+            problems.append(f'{source} would fail the Windows build: {first.strip()}')
+    return problems
 
 
 if __name__ == '__main__':

@@ -259,7 +259,7 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
         citizen.id = static_cast<std::uint32_t>(index + 1);
         citizen.name = "Citizen";
         citizen.ai = index != 0;
-        citizen.position = {static_cast<double>(index) * 0.9 - 1.5, static_cast<double>(index % 3)};
+        citizen.position = {static_cast<float>(index) * 0.9F - 1.5F, static_cast<float>(index % 3)};
         citizen.yaw = 3.14159265F;
         citizen.speed = 2.0F;
         gtc::Appearance appearance;
@@ -299,7 +299,7 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
     const double start = nowMs();
     for (int iteration = 0; iteration < iterations; ++iteration) {
         state.tick += 1;
-        for (gtc::Character& citizen : state.characters) citizen.position.x += 0.01;
+        for (gtc::Character& citizen : state.characters) citizen.position.x += 0.01F;
         if (!world3d.render(world, state, 1, view, frame, error)) {
             std::cerr << "World benchmark: " << error << '\n';
             return 1;
