@@ -30,22 +30,27 @@ namespace {
 // What the second is made of, not just how many frames fitted in it: a frame
 // rate alone cannot say whether the time went into drawing or into getting the
 // picture onto the screen, and those two want opposite fixes.
-void reportFrameRate(const std::chrono::steady_clock::time_point& now, double renderMs, double presentMs) {
+void reportFrameRate(const std::chrono::steady_clock::time_point& now, double renderMs, double presentMs,
+                     double logicMs) {
     const char* setting = std::getenv("GTC_FPS");
     if (!setting || !*setting || *setting == '0') return;
     static auto window = now;
     static int frames = 0;
-    static double renderTotal = 0.0, presentTotal = 0.0;
+    static double renderTotal = 0.0, presentTotal = 0.0, logicTotal = 0.0;
     ++frames;
     renderTotal += renderMs;
     presentTotal += presentMs;
+    logicTotal += logicMs;
     const auto span = std::chrono::duration<double>(now - window).count();
     if (span < 1.0) return;
-    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame: render %.2f, present %.2f)\n", frames / span,
-                 1000.0 * span / frames, renderTotal / frames, presentTotal / frames);
+    // Three numbers, because a frame rate alone cannot say where the millisecond
+    // went: drawing wants one fix, getting the picture onto the screen wants
+    // another, and the game's own work wants a third.
+    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame: draw %.2f, present %.2f, logic %.2f)\n", frames / span,
+                 1000.0 * span / frames, renderTotal / frames, presentTotal / frames, logicTotal / frames);
     window = now;
     frames = 0;
-    renderTotal = presentTotal = 0.0;
+    renderTotal = presentTotal = logicTotal = 0.0;
 }
 
 enum class Overlay { None, Wheel, Cheats, Help };
@@ -95,13 +100,15 @@ public:
         // The two halves of a frame, measured where the test room runs.
         double renderMilliseconds = 0.0;
         double presentMilliseconds = 0.0;
+        double logicMilliseconds = 0.0;
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
             const float elapsed = std::max(0.0001F, std::chrono::duration<float>(now - previous).count());
             const float dt = std::min(0.05F, elapsed);
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
-            reportFrameRate(now, renderMilliseconds, presentMilliseconds);
+            const auto loopStart = Clock::now();
+            reportFrameRate(now, renderMilliseconds, presentMilliseconds, logicMilliseconds);
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;
@@ -123,6 +130,9 @@ public:
             updateHighlight();
             updateReticle();
             const auto renderStart = Clock::now();
+            // Everything above this line is the game's own work: reading the
+            // server, the events, the state the frame is drawn from.
+            logicMilliseconds = std::chrono::duration<double, std::milli>(renderStart - loopStart).count();
             // The two halves of the frame, kept in the loop's scope so the
             // reporter outside it sees this iteration's numbers rather than the
             // zeros it was initialised with.
@@ -164,7 +174,9 @@ public:
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
+            const auto overlayStart = Clock::now();
             drawOverlay(frame);
+            renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             if (!window_.present(frame)) {
                 std::cerr << "Native window presentation failed\n";
                 return 1;

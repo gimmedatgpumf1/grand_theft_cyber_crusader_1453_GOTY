@@ -155,7 +155,7 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
                 if (!coverage) continue;
                 const std::size_t pixel = static_cast<std::size_t>(py) * frame.width + px;
                 if (bgraCanvas) {
-                    unsigned char* out = frame.bgra.data() + pixel * 4;
+                    unsigned char* out = frame.canvasBgra() + pixel * 4;
                     out[0] = static_cast<unsigned char>((blue * coverage + out[0] * (255 - coverage)) / 255);
                     out[1] = static_cast<unsigned char>((green * coverage + out[1] * (255 - coverage)) / 255);
                     out[2] = static_cast<unsigned char>((red * coverage + out[2] * (255 - coverage)) / 255);

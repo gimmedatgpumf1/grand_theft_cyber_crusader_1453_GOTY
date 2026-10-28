@@ -205,13 +205,11 @@ void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
 }
 
 void NativeFrame::makeOverlayWritable() {
-    if (direct == nullptr) return;
-    const std::size_t bytes = static_cast<std::size_t>(width) * height * 4U;
-    if (bgra.size() < bytes) bgra.resize(bytes);
-    // The mapping belongs to the backend and is only valid until the next frame;
-    // drawing over it means owning the bytes.
-    std::memcpy(bgra.data(), direct, bytes);
-    direct = nullptr;
+    // A frame that arrived as a mapping is drawn on where it lies. Copying it
+    // first cost 5.8 MB a frame at 1568x929 -- over the host, on the bus, one
+    // memcpy -- so the overlay could be written into a second buffer and then
+    // handed to the window anyway.
+    if (direct != nullptr) return;
 }
 
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
@@ -220,7 +218,7 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     if (canvasIsBgra()) makeOverlayWritable();
     else syncToRgb();
     const bool bgra = canvasIsBgra();
-    unsigned char* pixels = bgra ? this->bgra.data() : rgb.data();
+    unsigned char* pixels = bgra ? canvasBgra() : rgb.data();
     const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
@@ -245,7 +243,7 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     if (canvasIsBgra()) makeOverlayWritable();
     else syncToRgb();
     const bool bgra = canvasIsBgra();
-    unsigned char* pixels = bgra ? this->bgra.data() : rgb.data();
+    unsigned char* pixels = bgra ? canvasBgra() : rgb.data();
     const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);

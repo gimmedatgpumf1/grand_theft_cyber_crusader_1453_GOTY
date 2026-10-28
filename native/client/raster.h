@@ -58,7 +58,14 @@ struct NativeFrame {
         return bgra.size() >= static_cast<std::size_t>(width) * height * 4U;
     }
     // Takes the pixels off the backend's mapping so they can be drawn over.
+    // Drawing in place is safe: the mapping is the frame's until the backend is
+    // asked for another one, and the window has already blitted it by then.
     void makeOverlayWritable();
+    // Where a BGRA frame is written. Usually the backend's own mapping, which is
+    // 5.8 MB of copying at this size that nothing was reading.
+    unsigned char* canvasBgra() {
+        return direct != nullptr ? const_cast<unsigned char*>(direct) : bgra.data();
+    }
     // A backend whose readback already sits in host memory can point the frame
     // at those bytes instead of copying them out again. The pointer belongs to
     // the backend and is valid until the next frame is rendered, which is long
