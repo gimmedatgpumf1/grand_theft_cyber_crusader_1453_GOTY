@@ -48,9 +48,10 @@ fast-simplification.
 python3 01-segments.py --subject VHF --dicom VHF/DICOM --labels labF \
     --hu 1600 --min-voxels 60 --table labF.json
 
-# 2. one mesh per bone, named against the atlas, decimated per bone.
+# 2. one mesh per bone, cut at the joints, named, decimated per bone.
 python3 02-bones.py --table labF.json --atlas ../skeleton-male.obj \
-    --obj skeleton-female.obj --parts skeleton-female.parts.json --triangles 60000
+    --raw vol-full.npy --obj skeleton-female.obj \
+    --parts skeleton-female.parts.json --triangles 60000
 
 # 3. look at it, because the numbers cannot tell you whether it reads as a person.
 python3 render-obj.py --obj skeleton-female.obj --out front.png --view front
@@ -63,7 +64,32 @@ restraint frame are dense enough to weld the body into one component at 1250
 and 1400; 1600 leaves bone and discards both. Cortical bone is what survives,
 which is why the mesh is a clean shell rather than a solid.
 
+### Cutting a fused limb
+
+Thresholding gives one connected mass for a whole arm and one for a whole
+thigh-plus-shin, because cartilage is a millimetre thick and partial volume
+bridges it. Two facts about bone undo that:
+
+1. **Cortical bone reaches 2,000-3,000 HU; the bridge across a joint does not.**
+   At 2400 HU her left arm leaves exactly three dense islands -- humerus,
+   radius, ulna -- and her legs leave thigh and shin.
+2. **Two bones that share a joint are further apart along the bone than across
+   it.** Assigning each voxel to the dense island it is nearest *along the bone*
+   (a geodesic distance through the mask) puts the border in the middle of the
+   bridge, which is where the joint is.
+
+An intensity watershed was tried first and is wrong: the humerus seed is the
+brightest and floods down the fused forearm, swallowing it.
+
 ### Naming
+
+The appendicular skeleton is named by **height band and side**, measured on the
+subject (`anatomy.py`, knee 482 mm, ankle 157 mm, hip 898 mm up from her soles),
+because a folded arm has no usable relationship to an atlas pose -- naming her
+arm parts by atlas position handed the left humerus to the pelvis and the right
+one to nothing. The axial skeleton -- skull, spine, ribs, sternum, pelvis,
+scapulae, clavicles -- does not move between poses and is named against the
+atlas.
 
 The atlas (`../skeleton-male.obj`, 28 parts) is used **only to decide which part
 a voxel belongs to**. No shape, no proportion and no vertex comes from it. It is
@@ -80,28 +106,46 @@ Quadric edge collapse (`fast-simplification`), applied per bone with a floor of
 tetrahedron -- at 1,000 voxels there are not enough grid cells for a toe to keep
 a toe's shape.
 
-## What is still wrong
+## What works and what does not
 
-**Her arms.** The Visible Human Female was scanned supine with both arms flexed
-90 degrees at the elbow and her hands resting on her iliac crests. Two
-consequences, both visible in `evidence/female-arm-radiograph.png`:
+Working, measured on her:
 
-1. The hand is in physical contact with the pelvis, so at 1600 HU the arm and
-   the pelvis are one connected component. Thresholding cannot separate them
-   because there is no gap to find.
-2. The atlas has its arms straight down, so nearest-axis assignment cannot place
-   the elbow or the wrist correctly on a bent arm. `hand_l` and `hand_r` come
-   out missing and the humerus measures short.
+| | |
+| --- | --- |
+| components at 1600 HU | 401 |
+| bones in each foot | 29 (a foot has 26; the extras are a sesamoid and a split cuneiform) |
+| fused masses found and cut | 5 -- both arms, both thigh-plus-shin, one more |
+| landmarks measured | knee 482 mm, ankle 157 mm, hip 898 mm |
+| output | 27 parts, 462 bones, 62,046 vertices, 130,044 triangles |
+| stature | 1.713 m, soles at y = 0 |
+| `verify-obj.mjs` | 18 of 20 checks still fail |
 
-The fix is to separate the arm along its own medial path -- skeletonise the
-component, take the shoulder-to-hand geodesic, cut at the bend and at the wrist
--- and then to repose it to a rest stance. Until that lands, the shipped
-`skeleton-female.obj` stays as it is and the female does not pass
-`verify-obj.mjs`.
+The right humerus passes (18.06% of stature, band 17.6-19.6), the right scapula
+mirror is 2.2 mm and the rib mirror 4.4 mm -- so the pipeline is producing a
+correct skeleton in the places where the scan is clean.
 
-Everything else segments correctly: skull, mandible and teeth, the full spine,
-the rib cage and sternum, both scapulae and clavicles, the pelvis, and both
-legs from femur to phalanx.
+Failing, and why:
+
+- **Both arms.** Her arms are folded across her abdomen with the hands against
+  the ilia. The split finds the humerus and the forearm, but the forearm mass
+  includes the hand and the carpus, so `radius+ulna` measures 27.8% of stature
+  against a 14.2-16.2% band, and the left humerus picks up part of the forearm
+  (27.7%). The hand is not separated at all: `hand_l` is absent and `hand_r`
+  is the whole forearm. The next cut is the carpus, which needs the wrist
+  rather than another geodesic border.
+- **Femur.** The thigh mass is cut into two, but the upper piece still carries
+  the hip endplate, so `femur` reads 29.7-31.8% against 25.5-27.5%.
+- **Patella.** It sits at the knee, inside the fused mass, and the split does
+  not isolate a separate island for it.
+- **Foot length.** 12.6-12.9% against 14.0-16.2%. Her toes are curled in the
+  scan, so the bone-only foot really is shorter than a standing foot: this one
+  is probably the measurement, not the mesh, and the band needs a re-derivation
+  before it is treated as a fault.
+
+None of this is shipped as a skeleton yet. The shipped `skeleton-female.obj` is
+still the warped male, and the test room still labels her
+`FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`, which is true until the hand and
+the patella are cut.
 
 ## Files
 

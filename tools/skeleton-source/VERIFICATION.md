@@ -135,40 +135,44 @@ screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
 ## The Visible Human rebuild — measured, and not yet shipped
 
 `vhf/` segments both cadavers from their own CTs at native resolution. Nothing
-in this section is shipped as `skeleton-*.obj` yet, so nothing here is claimed
-about the game's current skeleton; these are the measurements of the pipeline's
-output, recorded so the next step starts from facts.
+here is shipped as `skeleton-*.obj` yet, so none of it is claimed about the
+game's current skeleton; these are measurements of the pipeline's output,
+recorded so the next step starts from facts.
 
 Female, Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane:
 
 | check | result |
 | --- | --- |
 | threshold | 1600 HU |
-| components ≥ 60 voxels | 437 |
-| components ≥ 1,000 voxels | 128 |
-| components ≥ 100,000 voxels | 6 |
+| components ≥ 60 voxels | 401 |
 | bones resolved in each foot | **29 left, 29 right** |
-| largest foot bones | 47,550 / 27,061 / 16,108 voxels (calcaneus, talus, then midfoot) |
-| mesh | 62,224 vertices, 128,815 triangles, 26 parts |
+| largest foot bones | 47,550 / 27,061 / 16,108 voxels |
+| fused masses cut at their joints | 5 (both arms, both thigh-plus-shin, one more) |
+| landmarks measured on her | knee 482 mm, ankle 157 mm, hip 898 mm above her soles |
+| output | 27 parts, 462 bones, 62,046 vertices, 130,044 triangles |
 | stature | 1.713 m, soles at y = 0.000 |
-| `verify-obj.mjs` | **20 failed** — see below |
 
-The foot count is the anatomical proof that native resolution works: a human
-foot has 26 bones, and 29 components means the tarsals, five metatarsals and all
-the phalanges came apart, with three extra fragments where a sesamoid or a
-cuneiform split. The previous downsampled pipeline produced 65 fused fragments
-for both feet together.
+The foot count is the anatomical proof that native resolution works: a foot has
+26 bones, and 29 components means the tarsals, the five metatarsals and all the
+phalanges came apart. The downsample-first pipeline produced 65 fused fragments
+between *both* feet.
 
-`verify-obj.mjs` fails on this mesh for two reasons, both real:
+What the verifier says about this mesh -- 18 of 20 checks fail, and the two
+kinds of failure are different:
 
-- **the arms** — her hands rest on her iliac crests, so at 1600 HU the arm and
-  the pelvis are a single component, and a straight-armed atlas cannot assign
-  the elbow or wrist on a 90-degree bent arm. `hand_l`/`hand_r` are missing and
-  the humerus measures 8.8–13.6% of stature against a 17.6–19.6% band.
-- **the femur** — nearest-axis assignment gives the femoral axis the hip
-  endplate, so the femur part measures 32.6–33.8% against a 25.5–27.5% band.
+- **right humerus 18.06%** (band 17.6-19.6), **right scapula mirror 2.2 mm**,
+  **rib mirror 4.4 mm**: correct. Where the scan is clean, the pipeline is
+  clean.
+- **arms**: the forearm mass still contains the carpus and the hand, so
+  `radius+ulna` reads 27.8% against a 14.2-16.2% band, the left humerus picks
+  up forearm (27.7%), `hand_l` is absent and `hand_r` is the whole forearm.
+- **femur** 29.7-31.8% against 25.5-27.5%: the upper thigh piece still carries
+  the hip endplate.
+- **patella**: no separate dense island inside the fused knee, so it is not
+  isolated.
+- **foot length** 12.6-12.9% against 14.0-16.2%: her toes are curled in the
+  scan, so the bone-only foot is genuinely shorter than a standing one. This is
+  the one item that is probably the band rather than the mesh.
 
-The legs below the knee, the whole trunk and the skull do pass: tibia+fibula
-22.87% and 22.61% (band 21.0–24.2%), rib mirror error 4.3 mm, scapula mirror
-error 6.1 mm. Replacing the shipped file before the arms are separated would
-trade one failing body for another, which is why it has not been done.
+Replacing the shipped file before the hand and the patella are cut would trade
+one failing body for another, which is why it has not been done.
