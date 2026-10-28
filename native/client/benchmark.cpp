@@ -14,7 +14,9 @@
 #include "vulkan/vk_renderer.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -50,7 +52,7 @@ double nowMs() {
 
 
 void reportLine(const char* label, double milliseconds) {
-    std::cout << "  " << std::left << std::setw(30) << label << std::right << std::fixed
+    std::cout << "  " << std::left << std::setw(38) << label << std::right << std::fixed
               << std::setprecision(2) << std::setw(8) << milliseconds << " ms/frame"
               << std::setprecision(1) << std::setw(9) << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0)
               << " fps\n";
@@ -62,6 +64,15 @@ struct SkullScene {
     gtc::native::GpuScene scene;
     gtc::native::Camera camera;
     bool ready = false;
+    // Both bodies are emitted once, in rest position, one batch per bone -- which
+    // is how the test room and the world renderer hold a character. A frame then
+    // places each bone with a matrix, so a body turning is its yaw changing and
+    // not its geometry being rebuilt. `rest` says which of the two kinds of scene
+    // this is; the skull is drawn posed and is turned about the origin instead.
+    gtc::native::SkeletonModel male;
+    gtc::native::SkeletonModel female;
+    bool rest = false;
+    std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches;
 };
 
 
@@ -74,11 +85,22 @@ void reportSpread(const char* label, std::vector<double> samples) {
     std::sort(samples.begin(), samples.end());
     const double median = samples[samples.size() / 2];
     const double worst = samples.back();
-    std::cout << "  " << std::left << std::setw(30) << label << std::right << std::fixed
+    std::cout << "  " << std::left << std::setw(38) << label << std::right << std::fixed
               << std::setprecision(2) << std::setw(8) << median << " ms median"
               << std::setprecision(2) << std::setw(10) << worst << " ms worst\n";
 }
 
+
+// Where the two bodies stand, and which way they face: the same placement the
+// test room uses, so the number here is the number the room pays.
+constexpr double kMaleX = -0.52;
+constexpr double kFemaleX = 0.52;
+constexpr double kFaceCamera = 3.141592653589793;
+// One scene holds both bodies, so each is given its own object id: that is what
+// keeps their batches apart when the same material is used for both, and it is
+// how a batch is later ascribed to the body it belongs to.
+constexpr std::uint32_t kMaleId = 9001;
+constexpr std::uint32_t kFemaleId = 8001;
 
 // Builds the one-skull scene the benchmark draws: a skull alone, the camera on
 // it, everything else absent so both backends see exactly the same triangles.
@@ -117,26 +139,38 @@ bool buildSkull(const std::string& root, const gtc::native::ViewState& view, Sku
 
 
 
-// The same idea one size up: the whole body, every bone, the camera far enough
-// back to frame all of it. The skull stopped being interesting the moment its
-// cost was known; this is the geometry a room actually draws, four times over.
+// Two whole bodies in one scene, every bone in both, framed the way the test room
+// frames them -- because that is the scene the frame rate has to survive, and one
+// body on its own was flattering it. They are emitted into a single scene and a
+// single rasterizer: male and female at once, not one after the other.
 bool buildBody(const std::string& root, const gtc::native::ViewState& view, SkullScene& out,
                std::string& error) {
-    gtc::native::SkeletonModel model;
-    if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
-    model.poseIdle(0.75, 0.0);
     out.camera.width = std::max(1, view.width);
     out.camera.height = std::max(1, view.height);
     out.camera.fovDegrees = 50;
-    // Two and a half metres back at eye height: the body fills the middle of
-    // the frame, the way it stands in the test room.
-    out.camera.position = {0.0, 1.0, -2.6};
-    out.camera.target = {0.0, 0.88, 0.0};
+    // Three and a half metres back at chest height, as the room stands: both
+    // bodies in shot, both head to foot.
+    out.camera.position = {0.0, 1.15, 3.5};
+    out.camera.target = {0.0, 0.95, 0.0};
+    if (!out.male.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
+    if (!out.female.load(root + "/tools/skeleton-source/skeleton-female.obj", error)) return false;
+    out.male.poseIdle(0.75, 0.0);
+    out.female.poseIdle(0.75, 1.7);
     gtc::native::Rasterizer rasterizer(out.camera.width, out.camera.height, gtc::native::colorHex("#0d1210"),
                                       out.camera.focal(), true, gtc::native::GpuScene{});
     rasterizer.setCamera(out.camera);
-    model.draw(rasterizer, out.camera, {0, 0, 0}, 0.0);
+    // Rest position, once: one batch per bone, numbered so the two bodies cannot
+    // collide. The world renderer and the test room hold a character this way.
+    out.male.buildRestGeometry(rasterizer, out.camera, static_cast<int>(kMaleId));
+    out.female.buildRestGeometry(rasterizer, out.camera, static_cast<int>(kFemaleId));
     out.scene = rasterizer.takeGpuScene();
+    out.boneBatches.clear();
+    for (std::size_t index = 0; index < out.scene.batches.size(); ++index) {
+        const std::uint32_t id = out.scene.batches[index].objectId;
+        if (id == 0) continue;
+        out.boneBatches.emplace_back(id, index);
+    }
+    out.rest = true;
     out.scene.width = out.camera.width;
     out.scene.height = out.camera.height;
     out.scene.focal = out.camera.focal();
@@ -147,6 +181,65 @@ bool buildBody(const std::string& root, const gtc::native::ViewState& view, Skul
     return true;
 }
 
+
+// Turning a batch about the vertical axis through a point: the body spins where
+// it stands instead of orbiting the middle of the scene.
+std::array<double, 16> turnAbout(double radians, double pivotX) {
+    const double cosine = std::cos(radians), sine = std::sin(radians);
+    return {cosine, 0, -sine, 0, 0, 1, 0, 0, sine, 0, cosine, 0, pivotX * (1.0 - cosine), 0, sine * pivotX, 1};
+}
+
+std::array<double, 16> multiply(const std::array<double, 16>& left, const std::array<double, 16>& right) {
+    std::array<double, 16> out{};
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            double sum = 0.0;
+            for (int k = 0; k < 4; ++k) sum += left[k * 4 + row] * right[column * 4 + k];
+            out[column * 4 + row] = sum;
+        }
+    }
+    return out;
+}
+
+// Always from the base matrices, never by turning the last frame's: a hundred
+// thousand frames of accumulated rounding is a slow drift of the body, and a
+// benchmark that slowly walks its scene out of frame is measuring itself.
+// One frame of the world's two characters: solve both chains, write one matrix
+// per bone. No vertex data is touched, which is the whole reason the room holds
+// rest geometry -- and it is what the game does per character per frame.
+void posePair(SkullScene& bodies, double turn) {
+    const std::vector<std::array<double, 16>> maleMatrices =
+        bodies.male.boneMatrices({kMaleX, 0.0, 0.0}, kFaceCamera + turn);
+    const std::vector<std::array<double, 16>> femaleMatrices =
+        bodies.female.boneMatrices({kFemaleX, 0.0, 0.0}, kFaceCamera - turn);
+    for (const std::pair<std::uint32_t, std::size_t>& entry : bodies.boneBatches) {
+        const std::vector<std::array<double, 16>>* matrices = nullptr;
+        std::size_t bone = 0;
+        if (entry.first >= kMaleId && entry.first - kMaleId < maleMatrices.size()) {
+            matrices = &maleMatrices;
+            bone = entry.first - kMaleId;
+        } else if (entry.first >= kFemaleId && entry.first - kFemaleId < femaleMatrices.size()) {
+            matrices = &femaleMatrices;
+            bone = entry.first - kFemaleId;
+        }
+        if (matrices == nullptr) continue;
+        bodies.scene.batches[entry.second].modelMatrix = (*matrices)[bone];
+    }
+}
+
+// The skull on its own, turning about the axis through the origin: it sits
+// there, so the origin is the only pivot it has.
+void turnScene(const GpuScene& base, GpuScene& turned, double radians) {
+    const std::array<double, 16> turn = turnAbout(radians, 0.0);
+    for (std::size_t index = 0; index < turned.batches.size() && index < base.batches.size(); ++index) {
+        turned.batches[index].modelMatrix = multiply(turn, base.batches[index].modelMatrix);
+    }
+}
+
+// A quarter of a second a frame's worth of rotation at three hundred frames a
+// second, so the measurement spans a full turn and every frame sees a side of
+// the body the one before it did not.
+constexpr double kTurnPerFrame = 6.283185307179586 / 240.0;
 
 // The same scene with every triangle collapsed to a single point. The vertex
 // stage still runs over every vertex and every draw is still submitted; the
@@ -222,50 +315,49 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
         reportLine("skull geometry (cpu)", (nowMs() - start) / iterations);
     }
 
-    // A whole body, the way the world builds one for every character it draws:
-    // this is the number that decides the frame time in the street, because it
-    // is paid per character per frame on top of the backend's own cost.
+    // Both bodies, the way the world builds one for every character it draws:
+    // this is the number that decides the frame time in the street, because it is
+    // paid per character per frame on top of the backend's own cost. One body
+    // would halve it and flatter everything downstream.
     {
-        gtc::native::SkeletonModel model;
-        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
-        model.poseIdle(0.75, 0.0);
-        std::size_t bodyTriangles = 0;
+        gtc::native::SkeletonModel male, female;
+        if (!male.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+        if (!female.load(root + "/tools/skeleton-source/skeleton-female.obj", error)) return 1;
+        male.poseIdle(0.75, 0.0);
+        female.poseIdle(0.75, 0.0);
+        std::size_t femaleTriangles = 0;
         const double start = nowMs();
         for (int iteration = 0; iteration < iterations; ++iteration) {
             gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
                                               gtc::native::colorHex("#0d1210"), skull.camera.focal(), true,
                                               gtc::native::GpuScene{});
             rasterizer.setCamera(skull.camera);
-            model.draw(rasterizer, skull.camera, {0, 0, 0}, 0.0);
+            male.draw(rasterizer, skull.camera, {kMaleX, 0, 0}, kFaceCamera);
+            female.draw(rasterizer, skull.camera, {kFemaleX, 0, 0}, kFaceCamera);
             gtc::native::GpuScene built = rasterizer.takeGpuScene();
-            bodyTriangles = 0;
-            for (const gtc::native::GpuBatch& batch : built.batches) bodyTriangles += batch.vertices.size() / 3;
+            femaleTriangles = 0;
+            for (const gtc::native::GpuBatch& batch : built.batches) femaleTriangles += batch.vertices.size() / 3;
         }
-        reportLine("whole skeleton geometry", (nowMs() - start) / iterations);
-        std::cout << "  (" << bodyTriangles << " triangles per body)\n";
+        reportLine("two skeletons geometry", (nowMs() - start) / iterations);
+        std::cout << "  (" << femaleTriangles << " triangles, both bodies)\n";
 
-        // The same body the way the room draws it: geometry emitted once, then a
-        // pose costs one matrix per bone. This, not the line above, is what the
+        // The same bodies the way the room draws them: geometry emitted once, then
+        // a pose costs one matrix per bone. This, not the line above, is what the
         // test room pays when the pose updates.
-        gtc::native::GpuScene rest;
-        std::vector<std::size_t> boneBatches;
-        {
-            gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
-                                              gtc::native::colorHex("#0d1210"), skull.camera.focal(), true);
-            rasterizer.setCamera(skull.camera);
-            model.buildRestGeometry(rasterizer, skull.camera, 9001);
-            rest = rasterizer.takeGpuScene();
-            for (std::size_t index = 0; index < rest.batches.size(); ++index) boneBatches.push_back(index);
-        }
+        std::vector<std::array<double, 16>> matrices;
         const double poseStart = nowMs();
         for (int iteration = 0; iteration < iterations; ++iteration) {
-            const std::vector<std::array<double, 16>> matrices =
-                model.boneMatrices({0.0, 0.0, 0.0}, 3.14159265);
-            for (std::size_t index = 0; index < boneBatches.size(); ++index) {
-                rest.batches[boneBatches[index]].modelMatrix = matrices[index % matrices.size()];
-            }
+            const std::vector<std::array<double, 16>> maleMatrices = male.boneMatrices({kMaleX, 0, 0}, kFaceCamera);
+            const std::vector<std::array<double, 16>> femaleMatrices =
+                female.boneMatrices({kFemaleX, 0, 0}, kFaceCamera);
+            matrices = maleMatrices;
+            matrices.insert(matrices.end(), femaleMatrices.begin(), femaleMatrices.end());
         }
-        reportLine("whole skeleton pose (matrices)", (nowMs() - poseStart) / iterations);
+        reportLine("two skeletons pose (matrices)", (nowMs() - poseStart) / iterations);
+        if (matrices.empty()) {
+            std::cerr << "pose produced no matrices\n";
+            return 1;
+        }
     }
 
     if (renderer == "cpu" || renderer == "all") {
@@ -327,17 +419,29 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 benchWindow.resize(skull.camera.width, skull.camera.height);
                 int windowWidth = 0, windowHeight = 0;
                 benchWindow.size(windowWidth, windowHeight);
-                const auto measureWindow = [&](const char* label, const gtc::native::GpuScene& scene,
-                                               const char* what) {
+                const auto measureWindow = [&](const char* label, SkullScene& subject, const char* what) {
+                    gtc::native::GpuScene turning = subject.scene;
+                    double angle = 0.0;
+                    const auto turn = [&](double radians) {
+                        if (subject.rest) {
+                            posePair(subject, radians);
+                        } else {
+                            turnScene(subject.scene, turning, radians);
+                        }
+                    };
                     for (int warmUp = 0; warmUp < 24; ++warmUp) {
-                        if (!benchWindow.renderScene(scene, frame)) return;
+                        angle += kTurnPerFrame;
+                        turn(angle);
+                        if (!benchWindow.renderScene(subject.rest ? subject.scene : turning, frame)) return;
                         benchWindow.present(frame);
                     }
                     std::vector<double> samples;
                     samples.reserve(static_cast<std::size_t>(iterations));
                     for (int iteration = 0; iteration < iterations; ++iteration) {
+                        angle += kTurnPerFrame;
+                        turn(angle);
                         const double start = nowMs();
-                        if (!benchWindow.renderScene(scene, frame)) return;
+                        if (!benchWindow.renderScene(subject.rest ? subject.scene : turning, frame)) return;
                         benchWindow.present(frame);
                         samples.push_back(nowMs() - start);
                     }
@@ -348,10 +452,10 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                     std::cout << "  " << what << " at " << windowWidth << 'x' << windowHeight << '\n';
                     reportLine(label, samples[samples.size() / 2]);
                 };
-                measureWindow("skull vulkan (window frame)", skull.scene, "skull");
+                measureWindow("skull vulkan (window frame)", skull, "skull");
                 SkullScene windowBody;
                 if (buildBody(root, view, windowBody, error)) {
-                    measureWindow("skeleton vulkan (window frame)", windowBody.scene, "whole skeleton");
+                    measureWindow("two skeletons vulkan (window frame)", windowBody, "two skeletons, both turning");
                 }
             }
             // An iGPU measured from cold idles at its lowest clock, and the
@@ -375,14 +479,24 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // that does not ask for them is presented to the window instead of
             // being copied back, and then there is nothing to measure here.
             frame.wantPixels = true;
-            gtc::native::renderVulkanScene(skull.scene, frame);
+            // The offscreen numbers turn as well: the same geometry from a new
+            // angle every frame, so nothing here is measuring a still image.
+            gtc::native::GpuScene turningSkull = skull.scene;
+            double skullAngle = 0.0;
+            for (int warmUp = 0; warmUp < 8; ++warmUp) {
+                skullAngle += kTurnPerFrame;
+                turnScene(skull.scene, turningSkull, skullAngle);
+                gtc::native::renderVulkanScene(turningSkull, frame);
+            }
             gtc::native::drainVulkan();
             std::vector<double> samples;
             samples.reserve(static_cast<std::size_t>(iterations));
             double total = 0.0;
             for (int iteration = 0; iteration < iterations; ++iteration) {
+                skullAngle += kTurnPerFrame;
+                turnScene(skull.scene, turningSkull, skullAngle);
                 const double frameStart = nowMs();
-                if (!gtc::native::renderVulkanScene(skull.scene, frame)) {
+                if (!gtc::native::renderVulkanScene(turningSkull, frame)) {
                     std::cerr << "vulkan skull draw failed\n";
                     return 1;
                 }
@@ -424,24 +538,31 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                     bodyTriangles += batch.vertices.size() / 3;
                     bodyVertices += batch.vertices.size();
                 }
-                std::cout << "whole skeleton: " << bodyTriangles << " triangles, " << bodyVertices
+                std::cout << "two skeletons: " << bodyTriangles << " triangles, " << bodyVertices
                           << " vertices\n";
-                for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(body.scene, frame);
+                double bodyAngle = 0.0;
+                for (int warmUp = 0; warmUp < 8; ++warmUp) {
+                    bodyAngle += kTurnPerFrame;
+                    posePair(body, bodyAngle);
+                    gtc::native::renderVulkanScene(body.scene, frame);
+                }
                 gtc::native::drainVulkan();
                 std::vector<double> samples;
                 samples.reserve(static_cast<std::size_t>(iterations));
                 double total = 0.0;
                 for (int iteration = 0; iteration < iterations; ++iteration) {
+                    bodyAngle += kTurnPerFrame;
+                    posePair(body, bodyAngle);
                     const double frameStart = nowMs();
                     if (!gtc::native::renderVulkanScene(body.scene, frame)) {
-                        std::cerr << "vulkan whole skeleton draw failed\n";
+                        std::cerr << "vulkan two skeleton draw failed\n";
                         return 1;
                     }
                     const double spent = nowMs() - frameStart;
                     samples.push_back(spent);
                     total += spent;
                 }
-                reportLine("skeleton vulkan (full frame)", total / iterations);
+                reportLine("two skeletons vulkan (full frame)", total / iterations);
                 reportSpread("  of which median", samples);
                 // Every vertex, no pixels: the vertex stage and the submission
                 // without the fragment work, so the two halves can be told apart
@@ -457,7 +578,7 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                         return 1;
                     }
                 }
-                reportLine("skeleton vulkan (vertices only)", (nowMs() - vertexStart) / iterations);
+                reportLine("two skeletons vulkan (vertices only)", (nowMs() - vertexStart) / iterations);
             }
             // The same draw with the picture left on the device: commands are
             // submitted and the device is waited for, but nothing is copied
@@ -490,13 +611,20 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             {
                 SkullScene body;
                 if (buildBody(root, view, body, error)) {
-                    for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(body.scene, frame);
+                    double bodyAngle = 0.0;
+                    for (int warmUp = 0; warmUp < 8; ++warmUp) {
+                        bodyAngle += kTurnPerFrame;
+                        posePair(body, bodyAngle);
+                        gtc::native::renderVulkanScene(body.scene, frame);
+                    }
                     gtc::native::drainVulkan();
                     const double bodySubmitStart = nowMs();
                     for (int iteration = 0; iteration < iterations; ++iteration) {
+                        bodyAngle += kTurnPerFrame;
+                        posePair(body, bodyAngle);
                         gtc::native::renderVulkanScene(body.scene, frame);
                     }
-                    reportLine("skeleton vulkan (submit only)", (nowMs() - bodySubmitStart) / iterations);
+                    reportLine("two skeletons vulkan (submit only)", (nowMs() - bodySubmitStart) / iterations);
                 }
             }
             gtc::native::setLinearTarget(true);
@@ -534,14 +662,16 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // The first block's exact configuration, measured again at the end.
             // If the two disagree, the frame time depends on when it is taken
             // and the block order -- not the renderer -- is what changed.
-            gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::renderVulkanScene(turningSkull, frame);
             gtc::native::drainVulkan();
             std::vector<double> repeat;
             repeat.reserve(static_cast<std::size_t>(iterations));
             double repeatTotal = 0.0;
             for (int iteration = 0; iteration < iterations; ++iteration) {
+                skullAngle += kTurnPerFrame;
+                turnScene(skull.scene, turningSkull, skullAngle);
                 const double frameStart = nowMs();
-                gtc::native::renderVulkanScene(skull.scene, frame);
+                gtc::native::renderVulkanScene(turningSkull, frame);
                 const double spent = nowMs() - frameStart;
                 repeat.push_back(spent);
                 repeatTotal += spent;
