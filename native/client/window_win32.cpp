@@ -1,5 +1,6 @@
 #include "client/window.h"
 #include "client/opengl_shared.h"
+#include "vulkan/vk_renderer.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace gtc::native {
 
@@ -16,6 +18,7 @@ struct NativeWindow::Impl {
     HDC gpuDevice = nullptr;
     HGLRC gpuContext = nullptr;
     bool gpu = false;
+    bool vulkan = false;
     bool open = false;
     bool captured = false;
     double lastX = kDefaultWindowWidth * 0.5;
@@ -182,6 +185,13 @@ namespace {
 
 NativeWindow::Impl* activeGpu = nullptr;
 
+// Vulkan is tried before WGL: it needs no device context and no GL context, and
+// it is the path meant to carry the frame. GTC_NO_VULKAN=1 turns it off.
+bool wantVulkan() {
+    const char* skip = std::getenv("GTC_NO_VULKAN");
+    return !(skip && *skip && *skip != '0');
+}
+
 bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     if (!activeGpu || !activeGpu->gpu) return false;
     if (!wglMakeCurrent(activeGpu->gpuDevice, activeGpu->gpuContext)) return false;
@@ -222,7 +232,14 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     }
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
-    if (impl_->initializeGpu()) {
+    if (wantVulkan() && vulkanAvailable()) {
+        impl_->vulkan = true;
+        impl_->gpu = true;
+        activeGpu = impl_;
+        setGpuRenderer(&renderVulkanScene);
+        const std::string gpuTitle = title + " - Vulkan";
+        SetWindowTextA(impl_->window, gpuTitle.c_str());
+    } else if (impl_->initializeGpu()) {
         activeGpu = impl_;
         setGpuRenderer(&renderGpu);
         const std::string gpuTitle = title + " - " + impl_->renderer.name();
@@ -238,6 +255,7 @@ void NativeWindow::close() {
         if (activeGpu == impl_) {
             setGpuRenderer(nullptr);
             activeGpu = nullptr;
+            if (impl_->vulkan) shutdownVulkan();
         }
         impl_->shutdownGpu();
         if (impl_->window) DestroyWindow(impl_->window);
@@ -267,7 +285,7 @@ bool NativeWindow::present(const NativeFrame& frame) {
     impl_->width = std::max(1, static_cast<int>(client.right - client.left));
     impl_->height = std::max(1, static_cast<int>(client.bottom - client.top));
     const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
         if (frame.width != impl_->width || frame.height != impl_->height) return true;
         if (!impl_->renderer.present(frame)) return false;
@@ -297,7 +315,7 @@ bool NativeWindow::present(const NativeFrame& frame) {
 
 bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
     if (!impl_ || !impl_->open) return false;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
         return impl_->renderer.capture(impl_->width, impl_->height, path);
     }

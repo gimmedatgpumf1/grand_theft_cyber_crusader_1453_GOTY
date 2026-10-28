@@ -9,7 +9,14 @@
 #include "vk_internal.h"
 #include "shaders/spirv_shaders.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 #include <cstdio>
 #include <cstring>
@@ -18,7 +25,38 @@ namespace gtc::native {
 namespace detail {
 namespace {
 
+// The loader is a different file with a different name on each platform, and
+// neither is linked: it is opened at run time so a machine without Vulkan can
+// still build and run this client.
+#if defined(_WIN32)
+constexpr const char* kLoaderName = "vulkan-1.dll";
+#else
 constexpr const char* kLoaderName = "libvulkan.so.1";
+#endif
+
+void* openLibrary(const char* name) {
+#if defined(_WIN32)
+    return reinterpret_cast<void*>(LoadLibraryA(name));
+#else
+    return dlopen(name, RTLD_NOW | RTLD_LOCAL);
+#endif
+}
+
+void* librarySymbol(void* library, const char* name) {
+#if defined(_WIN32)
+    return reinterpret_cast<void*>(GetProcAddress(reinterpret_cast<HMODULE>(library), name));
+#else
+    return dlsym(library, name);
+#endif
+}
+
+void closeLibrary(void* library) {
+#if defined(_WIN32)
+    FreeLibrary(reinterpret_cast<HMODULE>(library));
+#else
+    dlclose(library);
+#endif
+}
 
 // A generated module gets one last look before it reaches the driver: the magic
 // number, the word count of every instruction, and the declared bound. If the
@@ -39,12 +77,14 @@ bool moduleSane(const std::uint32_t* words, std::size_t count) {
 } // namespace
 
 bool Renderer::openLoader() {
-    library_ = dlopen(kLoaderName, RTLD_NOW | RTLD_LOCAL);
-    if (!library_) {
-        library_ = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
-    }
+    library_ = openLibrary(kLoaderName);
+#if !defined(_WIN32)
+    // Some distributions ship only the unversioned soname.
+    if (!library_) library_ = openLibrary("libvulkan.so");
+#endif
     if (!library_) return false;
-    getInstanceProcAddr_ = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(library_, "vkGetInstanceProcAddr"));
+    getInstanceProcAddr_ = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        librarySymbol(library_, "vkGetInstanceProcAddr"));
     return getInstanceProcAddr_ != nullptr;
 }
 
@@ -573,7 +613,7 @@ void Renderer::stop() {
     queue_ = VK_NULL_HANDLE;
     if (instance_ != VK_NULL_HANDLE && destroyInstance) destroyInstance(instance_, nullptr);
     instance_ = VK_NULL_HANDLE;
-    if (library_) dlclose(library_);
+    if (library_) closeLibrary(library_);
     library_ = nullptr;
     getInstanceProcAddr_ = nullptr;
     ready_ = false;
