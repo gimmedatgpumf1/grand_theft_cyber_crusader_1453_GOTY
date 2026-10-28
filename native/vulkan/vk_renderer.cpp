@@ -76,69 +76,6 @@ bool Renderer::submitNow(const std::function<void(VkCommandBuffer)>& body) {
     return waited == VK_SUCCESS;
 }
 
-bool Renderer::createRenderPass() {
-    // Two passes that differ in one byte's worth of behaviour: whether the
-    // colour attachment is cleared before drawing or left as it was. An empty
-    // frame costs 2.55 ms on this hardware and most of it is memory traffic, so
-    // a scene that covers every pixel -- the test room is a closed box -- does
-    // not have to pay to have 5.8 MB of background written first.
-    const auto buildPass = [this](VkAttachmentLoadOp colourLoad, VkRenderPass* out) {
-    VkAttachmentDescription attachments[2]{};
-    attachments[0].format = colourFormat_;
-    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[0].loadOp = colourLoad;
-    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    // Undefined contents on entry: the colour attachment is always drawn from a
-    // clear, so nothing needs to be preserved between frames, and the render
-    // pass leaves it ready to be copied out.
-    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    attachments[1].format = depthFormat_;
-    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colourReference{};
-    colourReference.attachment = 0;
-    colourReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    VkAttachmentReference depthReference{};
-    depthReference.attachment = 1;
-    depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colourReference;
-    subpass.pDepthStencilAttachment = &depthReference;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo info{};
-
-    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.attachmentCount = 2;
-    info.pAttachments = attachments;
-    info.subpassCount = 1;
-    info.pSubpasses = &subpass;
-    info.dependencyCount = 1;
-    info.pDependencies = &dependency;
-    return createRenderPassFn(device_, &info, nullptr, out) == VK_SUCCESS;
-    };
-    if (!buildPass(VK_ATTACHMENT_LOAD_OP_CLEAR, &renderPass_)) return false;
-    return buildPass(VK_ATTACHMENT_LOAD_OP_DONT_CARE, &renderPassCovered_);
-}
 
 void Renderer::destroyTargets() {
     if (target_.framebuffer) destroyFramebuffer(device_, target_.framebuffer, nullptr);
@@ -227,6 +164,9 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
         for (std::size_t index = 0; index < scene.batches.size(); ++index) {
             const GpuBatch& batch = scene.batches[index];
             const std::vector<GpuVertex>& vertices = batch.vertices;
+            // The overlay has arrays of its own: it is new geometry every frame,
+            // and the scene's stream is not.
+            if (batch.overlay) continue;
             // Only the batches that sample an image have a coordinate, so only
             // they take up room in the coordinate array -- and only they move the
             // offset on.
@@ -321,6 +261,7 @@ bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::fu
 bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t total = 0, coordinates = 0;
     for (const GpuBatch& batch : scene.batches) {
+        if (batch.overlay) continue;
         total += batch.vertices.size();
         if (texturedMaterial(batch.material)) coordinates += batch.vertices.size();
     }
@@ -347,6 +288,9 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t positions = 0, coordinatesUsed = 0;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
+        // The overlay is not in this stream at all: its offsets belong to the
+        // arrays it has to itself.
+        if (batch.overlay) continue;
         if (firstVertex_[index] != positions) {
             std::fprintf(stderr, "[vk] vertex offset %u is not where batch %zu starts\n", firstVertex_[index],
                          index);
@@ -433,6 +377,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     std::uint64_t signature = 1469598103934665603ull;
     std::size_t totalVertices = 0;
     for (const GpuBatch& batch : scene.batches) {
+        // The overlay is new every frame and has its own arrays, so it must not
+        // drag the room back over the bus with it.
+        if (batch.overlay) continue;
         signature = (signature ^ batch.revision) * 1099511628211ull;
         signature = (signature ^ batch.vertices.size()) * 1099511628211ull;
         // The indices are geometry too: a batch that keeps its vertices and
@@ -460,12 +407,15 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         for (std::size_t index = 0; index < scene.batches.size(); ++index) {
             firstVertex_[index] = running;
             firstUv_[index] = coordinates;
+            if (scene.batches[index].overlay) continue;
             running += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
             if (texturedMaterial(scene.batches[index].material)) {
                 coordinates += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
             }
         }
     }
+
+    if (!uploadOverlay(scene)) { tracef("vk: frame %d overlay upload failed", frames_); return false; }
 
     // Textures are uploaded before recording, because each upload submits its
     // own command buffer and commands cannot be nested.
@@ -475,8 +425,18 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         textureSets[index] = textureFor(scene.batches[index].material).set;
     }
 
+    bool overlay = false;
+    for (const GpuBatch& batch : scene.batches) {
+        if (batch.overlay) {
+            overlay = true;
+            break;
+        }
+    }
     const Matrix4 projection = projectionFor(scene);
     projection.columns(frameMap_->projection);
+    // The overlay's model matrix: the projection undone, so a quad laid out in
+    // screen pixels lands where it was asked to.
+    const std::array<double, 16> overlayModel = overlayModelFor(scene, projection);
     // The eye point is the inverse of the view matrix applied to the origin;
     // for a rigid view that is -(R transposed) * translation.
     const std::array<double, 16>& view = scene.viewMatrix;
@@ -573,19 +533,31 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // This frame's matrices, before anything is recorded: a run reads them by
     // slot, so the array has to be current by the time the draw is submitted.
     fillBones(scene);
+    bool uiBound = false;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
         const bool textured = texturedMaterial(batch.material);
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
-        if (textured) {
+        if (batch.overlay && !uiBound) {
+            // The overlay lives in two arrays of its own, bound once: every one
+            // of its batches starts at its own vertex, which the draw call's own
+            // vertex offset carries for both streams.
+            const VkDeviceSize base = 0;
+            bindVertexBuffers(command_, 0, 1, &uiVertex_.buffer, &base);
+            bindVertexBuffers(command_, 1, 1, &uiUv_.buffer, &base);
+            uiBound = true;
+        } else if (textured) {
             // The coordinates of this batch, and only this batch: a body that
             // samples nothing has eight bytes fewer per vertex to fetch.
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
-        const VkPipeline wanted = textured ? (covered ? pipelineUvCovered_ : pipelineUv_)
-                                           : (covered ? pipelineCovered_ : pipeline_);
+        const VkPipeline wanted = batch.overlay
+            ? (textured ? (covered ? pipelineUiUvCovered_ : pipelineUiUv_)
+                        : (covered ? pipelineUiCovered_ : pipelineUi_))
+            : (textured ? (covered ? pipelineUvCovered_ : pipelineUv_)
+                        : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
             bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
             boundPipeline = wanted;
@@ -596,13 +568,18 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             boundTexture = textureSet;
         }
         PushConstants push{};
-        for (int word = 0; word < 16; ++word) push.model[word] = static_cast<float>(batch.modelMatrix[word]);
+        const std::array<double, 16>& model = batch.overlay ? overlayModel : batch.modelMatrix;
+        for (int word = 0; word < 16; ++word) push.model[word] = static_cast<float>(model[word]);
         push.colour[0] = static_cast<float>(batch.material.color.r);
         push.colour[1] = static_cast<float>(batch.material.color.g);
         push.colour[2] = static_cast<float>(batch.material.color.b);
         push.colour[3] = static_cast<float>(batch.material.opacity);
         push.flags[0] = textured ? 1.0f : 0.0f;
         push.flags[1] = (batch.material.constantLighting || batch.material.unlit) ? 1.0f : 0.0f;
+        // The overlay carries its own colour and no geometry to light: the vertex
+        // stage must hand it through untouched, and its quads have no normal, so
+        // the shading path must not be reached at all.
+        if (batch.overlay) push.flags[1] = 1.0f;
         // A bone matrix is a rotation and a translation: the normal it produces
         // is already unit length, so the vertex stage does not have to pay for a
         // square root over every vertex in the skeleton. Checked here, once per
@@ -614,13 +591,16 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         };
         const bool rigid = unitLength(basis[0], basis[1], basis[2]) && unitLength(basis[4], basis[5], basis[6]) &&
                            unitLength(basis[8], basis[9], basis[10]);
-        push.flags[2] = rigid ? 1.0f : 0.0f;
+        push.flags[2] = (rigid || batch.overlay) ? 1.0f : 0.0f;
         // A batch that does not shade and samples no texture has one colour for
         // every pixel it covers: tone map it once here, and the fragment stage
         // writes the answer instead of rebuilding it. The floor, the walls and
         // the ceiling are drawn this way and they are most of the screen.
         const bool oneColour = push.flags[1] > 0.5f && push.flags[0] < 0.5f;
-        if (oneColour) {
+        // An overlay colour is already the window's colour: it was decoded from
+        // the bytes the CPU path would have written, so tone mapping it here
+        // would shade the HUD twice.
+        if (oneColour && !batch.overlay) {
             push.colour[0] = static_cast<float>(toneValue(batch.material.color.r));
             push.colour[1] = static_cast<float>(toneValue(batch.material.color.g));
             push.colour[2] = static_cast<float>(toneValue(batch.material.color.b));
@@ -648,6 +628,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             const std::uint32_t count = index < indexCount_.size() ? indexCount_[index] : 0;
             if (count == 0) continue;
             drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
+        } else if (batch.overlay) {
+            const std::uint32_t first = index < firstUi_.size() ? firstUi_[index] : 0;
+            drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, first, 0);
         } else {
             drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);
         }
@@ -750,6 +733,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         frame.alpha.clear();
         frame.direct = nullptr;
         frame.presented = true;
+        frame.uiDrawn = overlay;
         return true;
     }
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);

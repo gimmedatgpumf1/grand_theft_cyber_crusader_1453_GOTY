@@ -33,6 +33,19 @@ struct Texture {
 
 const Texture& loadTexture(const std::string& path);
 
+// One piece of the overlay: a rectangle of the screen, a rectangle of a texture
+// (a glyph in the atlas, or nothing at all), and a colour. The HUD is laid out
+// in these instead of in pixels when the frame is going to the screen from the
+// device, which is what keeps the picture on the device.
+struct UiQuad {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
+    // Display-space colour: the window's bytes, not linear light.
+    float r = 0, g = 0, b = 0;
+    float alpha = 1;
+    const Texture* texture = nullptr;
+};
+
 struct NativeFrame {
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
@@ -61,6 +74,20 @@ struct NativeFrame {
     // Drawing in place is safe: the mapping is the frame's until the backend is
     // asked for another one, and the window has already blitted it by then.
     void makeOverlayWritable();
+    // When set, the overlay is laid out as quads and drawn by the device with the
+    // rest of the frame: no pixels, no read-back, and the picture goes to the
+    // window the way the room's does. Cleared by whoever consumes the quads.
+    bool uiOnGpu = false;
+    // Set by the backend when it really did draw those quads on the device. A
+    // frame that came back through host memory instead has no overlay in it, and
+    // says so rather than pretending.
+    bool uiDrawn = false;
+    std::vector<UiQuad> uiQuads;
+    // One quad, in frame pixels and display-space bytes. The device encodes the
+    // colour on its way into an sRGB attachment exactly as the CPU path does, so
+    // the two agree pixel for pixel.
+    void pushUi(int x0, int y0, int x1, int y1, int red, int green, int blue, int alpha,
+                const Texture* texture = nullptr, float u0 = 0, float v0 = 0, float u1 = 0, float v1 = 0);
     // Where a BGRA frame is written. Usually the backend's own mapping, which is
     // 5.8 MB of copying at this size that nothing was reading.
     unsigned char* canvasBgra() {
@@ -163,6 +190,8 @@ struct GpuBatch {
     std::vector<GpuVertex> vertices;
     std::vector<std::uint32_t> indices;
     std::uint32_t objectId = 0;
+    // Drawn after the scene, with no depth test and with blending: the overlay.
+    bool overlay = false;
     std::uint64_t revision = 0;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -278,6 +307,9 @@ private:
 // Joins scenes that were built independently -- on separate threads -- into one,
 // in the order given, so the result is the same however the work was split.
 GpuScene mergeScenes(std::vector<GpuScene> scenes);
+// The frame's overlay quads as batches for the device: one per image, colour
+// and alpha, appended after the scene so they are drawn last and on top.
+void appendOverlay(GpuScene& scene, const NativeFrame& frame);
 
 void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 size,
              const Material& material);

@@ -53,6 +53,53 @@ bool Renderer::fillIndices(const GpuScene& scene, VkDeviceSize bytes) {
     return true;
 }
 
+// The overlay's vertices, in their own two arrays. A HUD is new geometry every
+// frame while the scene's stream is rebuilt only when the world changes: sharing
+// one array would mean sending the room over the bus for a speedometer.
+bool Renderer::uploadOverlay(const GpuScene& scene) {
+    std::size_t total = 0;
+    for (const GpuBatch& batch : scene.batches) {
+        if (batch.overlay) total += batch.vertices.size();
+    }
+    firstUi_.assign(scene.batches.size(), 0);
+    if (total == 0) return true;
+    const auto fill = [&](DeviceArray& array, bool uvs, VkDeviceSize bytes) {
+        if (!reserveArray(array, bytes)) return false;
+        const auto write = [&](char* cursor) {
+            std::uint32_t running = 0;
+            for (std::size_t index = 0; index < scene.batches.size(); ++index) {
+                const GpuBatch& batch = scene.batches[index];
+                if (!batch.overlay) continue;
+                // Only the positions pass numbers the batches: the coordinate
+                // array is read at the same vertex, with its own stride.
+                if (!uvs) firstUi_[index] = running;
+                for (const GpuVertex& vertex : batch.vertices) {
+                    if (uvs) {
+                        const UvVertex coordinate{vertex.u, vertex.v};
+                        std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(UvVertex), &coordinate,
+                                    sizeof(UvVertex));
+                    } else {
+                        PackedVertex packed;
+                        packed.x = vertex.x;
+                        packed.y = vertex.y;
+                        packed.z = vertex.z;
+                        packed.nx = 0.0f;
+                        packed.ny = 0.0f;
+                        packed.nz = 0.0f;
+                        std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(PackedVertex), &packed,
+                                    sizeof(PackedVertex));
+                    }
+                    ++running;
+                }
+            }
+            return true;
+        };
+        return uploadArray(array, bytes, write);
+    };
+    if (!fill(uiVertex_, false, static_cast<VkDeviceSize>(total) * sizeof(PackedVertex))) return false;
+    return fill(uiUv_, true, static_cast<VkDeviceSize>(total) * sizeof(UvVertex));
+}
+
 namespace {
 
 // Whether this batch can be folded into a run with its neighbours: it names
@@ -111,6 +158,25 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         runs.push_back(run);
         index = last + 1;
     }
+}
+
+// Where an overlay quad is placed: its vertices are the clip coordinates it
+// wants, so the matrix that gets it there is the projection's own inverse.
+std::array<double, 16> Renderer::overlayModelFor(const GpuScene& scene, const Matrix4& projection) const {
+    std::array<double, 16> identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    bool overlay = false;
+    for (const GpuBatch& batch : scene.batches) {
+        if (batch.overlay) {
+            overlay = true;
+            break;
+        }
+    }
+    if (!overlay) return identity;
+    float columns[16];
+    projection.inverse().columns(columns);
+    std::array<double, 16> model{};
+    for (int word = 0; word < 16; ++word) model[word] = static_cast<double>(columns[word]);
+    return model;
 }
 
 // This frame's matrices, at the slots their batches were given. A pose is fifty-

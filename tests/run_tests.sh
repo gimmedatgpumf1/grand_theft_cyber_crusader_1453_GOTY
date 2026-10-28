@@ -39,6 +39,13 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+# The HUD is drawn twice -- into pixels, and as quads for the device -- and the
+# two have to cover the same ink in the same places. No driver, no screenshots:
+# the quads are walked back to screen positions and back to texels.
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/ui_overlay_parity.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_overlay.cpp \
+  -o build/bin/gtc-ui-overlay-parity
+./build/bin/gtc-ui-overlay-parity
 # The Vulkan projection can be checked without a driver, so it is: the clip
 # matrix has to put every point on the pixel the CPU rasterizer would use.
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \

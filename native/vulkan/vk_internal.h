@@ -187,6 +187,55 @@ struct Matrix4 {
         return result;
     }
 
+    // The inverse, for the overlay: the HUD is laid out in screen pixels, and a
+    // quad that is already in clip space gets there by multiplying by this.
+    Matrix4 inverse() const {
+        Matrix4 result;
+        const double* m = &cell[0][0];
+        double inv[16];
+        inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] +
+                 m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+        inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] -
+                 m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+        inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] +
+                 m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+        inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] -
+                  m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+        inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] -
+                 m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+        inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] +
+                 m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+        inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] -
+                 m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+        inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] +
+                  m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+        inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] +
+                 m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+        inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] -
+                 m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+        inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] +
+                  m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+        inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] -
+                  m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+        inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] -
+                 m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+        inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] +
+                 m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+        inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] -
+                  m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+        inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] +
+                  m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+        const double determinant = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+        if (determinant == 0.0) return Matrix4::identity();
+        const double scale = 1.0 / determinant;
+        for (int row = 0; row < 4; ++row) {
+            for (int column = 0; column < 4; ++column) {
+                result.cell[row][column] = inv[column * 4 + row] * scale;
+            }
+        }
+        return result;
+    }
+
     void columns(float* out) const {
         for (int column = 0; column < 4; ++column) {
             for (int row = 0; row < 4; ++row) out[column * 4 + row] = static_cast<float>(cell[row][column]);
@@ -345,6 +394,9 @@ private:
     TextureSlot& textureFor(const Material& material);
     bool createTransferTable();
     bool uploadVertices(const GpuScene& scene);
+    // The overlay's vertices: new geometry every frame, in their own arrays so
+    // that the scene's stream is not re-uploaded for a speedometer.
+    bool uploadOverlay(const GpuScene& scene);
     bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
     bool fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes);
     bool fillIndices(const GpuScene& scene, VkDeviceSize bytes);
@@ -353,6 +405,9 @@ private:
     // slot in the bone array, and copies this frame's matrices into it. Nothing
     // here draws: the run list is what the draw loop walks.
     void findRuns(const GpuScene& scene);
+    // Identity when the frame carries no overlay, and the projection's inverse
+    // when it does: an overlay vertex is already in clip space.
+    std::array<double, 16> overlayModelFor(const GpuScene& scene, const Matrix4& projection) const;
     void fillBones(const GpuScene& scene);
     bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write);
     void destroyTargets();
@@ -546,6 +601,14 @@ private:
     // hardware to fetch one anyway is eight bytes of every vertex in the frame.
     VkPipeline pipelineUv_ = VK_NULL_HANDLE;
     VkPipeline pipelineUvCovered_ = VK_NULL_HANDLE;
+    // The overlay: same shaders, drawn after the scene, blended and without a
+    // depth test. Four of them for the same reason as the four above -- with and
+    // without a texture coordinate, into the pass that clears and into the one
+    // that does not.
+    VkPipeline pipelineUi_ = VK_NULL_HANDLE;
+    VkPipeline pipelineUiCovered_ = VK_NULL_HANDLE;
+    VkPipeline pipelineUiUv_ = VK_NULL_HANDLE;
+    VkPipeline pipelineUiUvCovered_ = VK_NULL_HANDLE;
 
     VkBuffer frameBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory frameMemory_ = VK_NULL_HANDLE;
@@ -557,6 +620,10 @@ private:
     // batch, so it is written out shifted by wherever that batch landed in the
     // shared vertex stream.
     DeviceArray index_;
+    // The overlay: its own two arrays, and where each of its batches starts.
+    DeviceArray uiVertex_;
+    DeviceArray uiUv_;
+    std::vector<std::uint32_t> firstUi_;
     VkBuffer stagingBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
     void* stagingMap_ = nullptr;

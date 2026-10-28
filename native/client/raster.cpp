@@ -215,6 +215,28 @@ void NativeFrame::makeOverlayWritable() {
 double rectangleMilliseconds = 0.0;
 long rectanglePixels = 0;
 
+void NativeFrame::pushUi(int x0, int y0, int x1, int y1, int red, int green, int blue, int alpha,
+                         const Texture* texture, float u0, float v0, float u1, float v1) {
+    if (x1 <= x0 || y1 <= y0) return;
+    UiQuad quad;
+    quad.x0 = static_cast<float>(x0);
+    quad.y0 = static_cast<float>(y0);
+    quad.x1 = static_cast<float>(x1);
+    quad.y1 = static_cast<float>(y1);
+    quad.u0 = u0;
+    quad.v0 = v0;
+    quad.u1 = u1;
+    quad.v1 = v1;
+    // Display space in, linear light for the device: the attachment is sRGB, so
+    // the hardware applies the curve the CPU path applies by hand.
+    quad.r = static_cast<float>(toLinear(red / 255.0));
+    quad.g = static_cast<float>(toLinear(green / 255.0));
+    quad.b = static_cast<float>(toLinear(blue / 255.0));
+    quad.alpha = static_cast<float>(alpha / 255.0);
+    quad.texture = texture;
+    uiQuads.push_back(quad);
+}
+
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const auto rectangleStart = std::chrono::steady_clock::now();
     // A frame that arrived in window order is drawn on where it lies: converting
@@ -234,6 +256,10 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
     const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
     if (firstColumn >= lastColumn) return;
+    if (uiOnGpu) {
+        pushUi(firstColumn, firstRow, lastColumn, lastRow, r, g, b, 255);
+        return;
+    }
     // The panels are most of the screen: six hundred thousand pixels a frame,
     // filled one at a time through a bounds check and a stride multiply. A row
     // of one colour is a move, so each row is written as words here.
@@ -285,6 +311,10 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
     const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
     const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
+    if (uiOnGpu) {
+        pushUi(firstColumn, firstRow, lastColumn, lastRow, r, g, b, alpha);
+        return;
+    }
     if (firstColumn < lastColumn && this->alpha.empty()) {
         // Two panels of translucent colour are nine hundred thousand blended
         // pixels a frame, a third of the street's host time. The colour and the
