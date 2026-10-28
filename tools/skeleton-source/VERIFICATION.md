@@ -97,34 +97,19 @@ copying of a deformed source is still a deformed body.
 ## A real female source has been found
 
 The Visible Human Female — the NLM cadaver dataset, a 59-year-old woman — has a
-full-body CT in a reachable, MIT-licensed mirror,
+full-body CT in a reachable mirror,
 https://github.com/COMODO-research/Comodo_VisibleHuman: 1,727 slices of
-670 x 673 at 0.7227 x 0.7227 x 1.0 mm. Her bones segment out of it cleanly.
+670 x 673 at 0.7227 x 0.7227 x 1.0 mm, CC BY 4.0. Her bones segment out of it,
+and so do his: the same repository holds the Visible Human Male at 1,873 slices
+of 552 x 520 at 0.9375 x 0.9375 x 1.0 mm.
 
-| measurement | value |
-| --- | --- |
-| bone threshold | 1600 HU (at 1250 the scanner table welds all bone into one blob) |
-| separated bone components | **238** |
-| both feet and ankles | **65 components** — calcaneus, talus, navicular, cuboid, three cuneiforms, five metatarsals, every toe phalanx |
-| her bone height | **1.718 m**, lowest calcaneus voxel to the top of the cranium |
-| best-fit atlas scale | **1.00** — she is not rescaled |
-| mesh at full resolution | 287,939 vertices, 581,438 triangles |
-| mesh at shipping resolution | 5,475 vertices, 13,582 triangles, 28 parts |
+Her first build downsampled the volume to 1.4 x 1.4 x 2.0 mm before
+thresholding. That build was rejected, correctly: the cartilage gap at a joint
+is one to two millimetres, so at 2.0 mm slice spacing the partial-volume average
+weld it shut. Her arm came out as one 20,675-voxel blob, her feet as 65 fused
+fragments between them, and 96.8 million voxels failed to reach any label.
 
-`vhf/segmentation-bones.png` shows the result with each bone in its own colour:
-skull, individual vertebrae, every rib, both scapulae and clavicles, both arms
-with fingers, the pelvis, both legs and both feet.
-
-**It is not shipped yet, because the arm joints cannot be cut correctly.** At
-1600 HU each arm is one connected blob of humerus + radius + ulna + hand —
-20,675 voxels, 396 mm long — bridged by the scan's partial volume. Splitting it
-along its own principal axis put both joint cuts within 6 mm of each other in the
-middle of the arm, and per-region ICP against the atlas diverged to 50–140 mm RMS
-because her arms do not lie in the atlas's pose. See `vhf/README.md`.
-
-Until that is solved, the shipped `skeleton-female.obj` remains the warped male
-mesh and the test room says so on screen:
-`FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+The rebuild does not downsample. See the next section.
 
 ## Why the atlas cannot fix her
 
@@ -140,6 +125,50 @@ the one that does.
 The male is a trustworthy anatomical reference and is ready for rigging at
 1.696 m.
 
-The female is not female anatomy yet and must not be rigged as if she were. The
-bones segmented from her own CT are waiting in `vhf/`; what is missing is a
-reliable way to cut the joints her scan fused.
+The female is not female anatomy yet and must not be rigged as if she were. Her
+own bones now segment at native resolution, and what is missing is a way to cut
+the joints her scan fused — her hands rest on her iliac crests, so the arm and
+the pelvis are one component. Until that is cut, the shipped
+`skeleton-female.obj` remains the warped male mesh and the test room says so on
+screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+
+## The Visible Human rebuild — measured, and not yet shipped
+
+`vhf/` segments both cadavers from their own CTs at native resolution. Nothing
+in this section is shipped as `skeleton-*.obj` yet, so nothing here is claimed
+about the game's current skeleton; these are the measurements of the pipeline's
+output, recorded so the next step starts from facts.
+
+Female, Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane:
+
+| check | result |
+| --- | --- |
+| threshold | 1600 HU |
+| components ≥ 60 voxels | 437 |
+| components ≥ 1,000 voxels | 128 |
+| components ≥ 100,000 voxels | 6 |
+| bones resolved in each foot | **29 left, 29 right** |
+| largest foot bones | 47,550 / 27,061 / 16,108 voxels (calcaneus, talus, then midfoot) |
+| mesh | 62,224 vertices, 128,815 triangles, 26 parts |
+| stature | 1.713 m, soles at y = 0.000 |
+| `verify-obj.mjs` | **20 failed** — see below |
+
+The foot count is the anatomical proof that native resolution works: a human
+foot has 26 bones, and 29 components means the tarsals, five metatarsals and all
+the phalanges came apart, with three extra fragments where a sesamoid or a
+cuneiform split. The previous downsampled pipeline produced 65 fused fragments
+for both feet together.
+
+`verify-obj.mjs` fails on this mesh for two reasons, both real:
+
+- **the arms** — her hands rest on her iliac crests, so at 1600 HU the arm and
+  the pelvis are a single component, and a straight-armed atlas cannot assign
+  the elbow or wrist on a 90-degree bent arm. `hand_l`/`hand_r` are missing and
+  the humerus measures 8.8–13.6% of stature against a 17.6–19.6% band.
+- **the femur** — nearest-axis assignment gives the femoral axis the hip
+  endplate, so the femur part measures 32.6–33.8% against a 25.5–27.5% band.
+
+The legs below the knee, the whole trunk and the skull do pass: tibia+fibula
+22.87% and 22.61% (band 21.0–24.2%), rib mirror error 4.3 mm, scapula mirror
+error 6.1 mm. Replacing the shipped file before the arms are separated would
+trade one failing body for another, which is why it has not been done.

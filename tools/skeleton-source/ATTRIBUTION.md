@@ -102,3 +102,31 @@ description). There is no female body in that lineage at all.
 
 `VERIFICATION.md` has the measurements and `verify-obj.mjs` reproduces them from
 the shipped file.
+
+## The replacement source: the Visible Human cadavers
+
+Both sexes are being replaced with skeletons segmented from real medical scans,
+because a warped male is not a female and an atlas of one anonymous male is not
+either body. The scans are the **NLM Visible Human Project** datasets, published
+by the U.S. National Library of Medicine, redistributed as DICOM by the COMODO
+research group (https://github.com/COMODO-research/Comodo_VisibleHuman) under
+the licence in their `LICENSE_Visible_Human_data`, **CC BY 4.0**.
+
+Credit line:
+
+> Cadaver CT data: Visible Human Project, U.S. National Library of Medicine.
+> DICOM redistribution: COMODO (Comodo_VisibleHuman), CC BY 4.0.
+> Segmented, simplified and re-oriented for this project; see `vhf/README.md`.
+
+Unlike Z-Anatomy's share-alike, CC BY 4.0 only asks for attribution, so the
+skeleton that comes out of this route carries no copyleft. That is a side
+effect, not the reason for the change: the reason is that these are two
+individuals, so her pelvis, her rib cage, her skull and her limb proportions are
+hers, and his are his.
+
+The atlas is still used here, but only to answer *which* bone a voxel belongs
+to. No vertex, no proportion and no surface in the result comes from it.
+
+`vhf/` holds the pipeline and its evidence. When it replaces
+`skeleton-female.obj` and `skeleton-male.obj`, the Z-Anatomy and
+open-anatomy-3d sections above become history rather than provenance.

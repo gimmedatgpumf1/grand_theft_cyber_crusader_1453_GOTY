@@ -1,83 +1,114 @@
-# The female body
+# Skeleton source: the Visible Human cadavers
 
-`tools/skeleton-source/skeleton-female.obj` is **not** a female skeleton. This
-directory is the attempt to replace it with a real one, and this file records
-exactly how far that got.
+The game's skeleton is not an artist's model and not a polygon library's
+anatomy. It is segmented from two real cadaver CT scans, one per sex, so the
+bones are the right size, the right shape and the right number, and the two
+bodies differ the way two people differ rather than the way one model and one
+warp differ.
 
-## Where a real female skeleton comes from
+| | female | male |
+|---|---|---|
+| dataset | Visible Human Female CT | Visible Human Male CT |
+| slices | 1,727 | 1,873 |
+| in-plane | 0.7227 mm | 0.9375 mm |
+| slice spacing | 1.0 mm | 1.0 mm |
+| matrix | 670 x 673 | 552 x 520 |
+| age at death | 59 | 39 |
+| stature, bone only | 1.713 m | measured by `verify-obj.mjs` |
 
-The Visible Human Female — the NLM's cadaver dataset, a 59-year-old woman — has a
-full-body CT in a reachable, MIT-licensed mirror:
-https://github.com/COMODO-research/Comodo_VisibleHuman (`VHF/DICOM`, 1,727 slices
-of 670 x 673 at 0.7227 x 0.7227 x 1.0 mm, `VHF_FullBody_CT0000.dcm` … `1726`).
+Both are published by the NLM Visible Human Project and redistributed as DICOM
+by the COMODO research group under CC BY 4.0. See `ATTRIBUTION.md`.
 
-That is the only complete female skeleton found so far. Everything else in the
-open anatomy world is one of three things:
+## Why the whole body is segmented at native resolution
 
-| source | what it actually contains |
-| --- | --- |
-| Z-Anatomy / BodyParts3D | one adult male. BodyParts3D's own description says "an adult human male". |
-| Human Reference Atlas v1.10 (united-female) | skin, organs, pelvis, legs and brain. No skull, no ribs, no shoulder girdle, no arms, no feet. |
-| open-anatomy-3d female | the male skeleton pushed through a thin-plate-spline warp. Not a scan. |
-| Andreassen et al. (2023), VHF STL set | the same woman, pelvis to ankle only — 28 bones, no skull, ribs or arms. |
+An earlier revision of this directory downsampled the volume to
+1.4 x 1.4 x 2.0 mm before thresholding, to make the arithmetic cheap. That was
+wrong, and it is worth writing down why so nobody does it again.
 
-## What the pipeline does
+The joint between two bones is a gap of one to two millimetres of cartilage. At
+2.0 mm slice spacing that gap is smaller than a voxel, so the partial-volume
+average bridges it and the bones merge. The arm became a single 20,675-voxel
+blob, and her feet collapsed from 26 bones each into 65 fused fragments for the
+whole body. Every downstream failure -- the arm that could not be split, the
+region fits that diverged by 140 mm, the parts that would not pass the
+verifier -- descended from that one averaging step.
 
-```bash
-# 1. DICOM -> a 1.446 x 1.446 x 2.0 mm volume (2.0 mm down the body's long axis)
-python3 01-volume.py /path/to/VHF/DICOM /tmp/vhf/vol2.npy
+At native resolution the gap is one to three voxels wide and it survives. Her
+feet now separate into **29 components each**, which is what a foot looks like
+when its tarsals, metatarsals and phalanges are distinct.
 
-# 2. threshold, separate, name, and mesh each bone
-python3 02-segment.py /tmp/vhf/vol2.npy /tmp/vhf/dense.obj
+## Pipeline
 
-# 3. simplify each bone on its own into the shipped low-poly asset
-python3 03-decimate.py /tmp/vhf/dense.obj /tmp/vhf/female.obj
+Three steps, no dependencies beyond numpy, scipy, scikit-image and
+fast-simplification.
+
+```sh
+# 1. threshold, fill, label -- in overlapping 240-slice slabs so the whole
+#    volume never has to be resident at once.
+python3 01-segments.py --subject VHF --dicom VHF/DICOM --labels labF \
+    --hu 1600 --min-voxels 60 --table labF.json
+
+# 2. one mesh per bone, named against the atlas, decimated per bone.
+python3 02-bones.py --table labF.json --atlas ../skeleton-male.obj \
+    --obj skeleton-female.obj --parts skeleton-female.parts.json --triangles 60000
+
+# 3. look at it, because the numbers cannot tell you whether it reads as a person.
+python3 render-obj.py --obj skeleton-female.obj --out front.png --view front
 ```
 
-Requirements: `numpy`, `scipy`, `scikit-image`, `pydicom`.
+### Threshold
 
-## What works, with numbers
+1600 HU. Bone is above 1300 HU, but the scanner table and the cadaver's
+restraint frame are dense enough to weld the body into one component at 1250
+and 1400; 1600 leaves bone and discards both. Cortical bone is what survives,
+which is why the mesh is a clean shell rather than a solid.
 
-* **Bone threshold 1600 HU.** Muscle and fat sit near 900–1100 in this scan and
-  bone well above 1300. At 1250 HU the scanner table welds every bone into a
-  single 943,161-voxel blob; at **1600 HU the skeleton separates into 238
-  connected components**, which is the right order for a human skeleton.
-* **The bones are individually separated where it matters.** Individual
-  vertebrae, every rib, the teeth, the mandible, and — the hard case — the foot:
-  at 1600 HU one foot alone resolves into 65 components, with the calcaneus,
-  talus, navicular, cuboid, the three cuneiforms, all five metatarsals and every
-  phalanx as its own piece.
-* **Her size is her size.** Her bone height, lowest calcaneus voxel to the top of
-  the cranium, is **1.718 m** across 859 slices at 2.0 mm. Fitting the atlas to
-  her bones puts the best scale at **1.00**; nothing is rescaled.
-* **The assembled mesh is 287,939 vertices / 581,438 triangles** at full
-  resolution, and 5,475 / 13,582 after per-bone clustering into the 28 rig parts.
-  `segmentation-bones.png` is that segmentation, each bone a different colour:
-  skull, individual vertebrae down the spine, all the ribs, both scapulae and
-  clavicles, both arms with their fingers, the pelvis, both legs and both feet.
+### Naming
 
-## What does not work yet, and why the file is not in the game
+The atlas (`../skeleton-male.obj`, 28 parts) is used **only to decide which part
+a voxel belongs to**. No shape, no proportion and no vertex comes from it. It is
+fitted on the two things a cadaver scan measures reliably -- the soles and the
+stature -- and then every voxel of every component is assigned to the nearest
+bone axis. That is what cuts a component that spans two bones: the boundary
+between two axes is the joint, so a femur-plus-tibia blob is divided at the
+knee without anyone having to find the knee.
 
-Naming the components is reliable — the skull, mandible, pelvis, both femora,
-both tibiae, both patellae, both clavicles and both feet all match the expected
-bone by centroid and by size, and the whole 28-part set gets an assignment.
+### Decimation
 
-**Cutting the fused joints is not solved.** Her arms are the problem case: at
-1600 HU each arm is a single connected blob of humerus + radius + ulna + hand
-(20,675 voxels, 396 mm long), because the joint cartilage is thin and the scan's
-partial volume bridges it. Splitting that blob along its own principal axis and
-cutting at the deepest cross-section minima put both cuts within 6 mm of each
-other in the middle of the arm — the arms are lying across the body and the
-cross-section profile has no clean neck. Registering the atlas per region to find
-the cut lines failed the other way: the region ICP diverged to 50–140 mm RMS
-because her arms are not in the atlas's pose and there is nothing but bone to
-constrain the rotation.
+Quadric edge collapse (`fast-simplification`), applied per bone with a floor of
+44 triangles. A grid cluster was tried first and turned every phalanx into a
+tetrahedron -- at 1,000 voxels there are not enough grid cells for a toe to keep
+a toe's shape.
 
-So the honest state is: the voxels are hers, the shapes are hers, the height is
-hers, the separation into individual bones is right for most of the body — and
-the arm chains need a joint-locating method that has not been found yet. Passing
-off an arm that is one bone as "all fingers and joints working" would be exactly
-the kind of claim that started this rewrite.
+## What is still wrong
 
-Until that is fixed, `skeleton-female.obj` stays the old warped-male mesh and the
-test room says so on screen.
+**Her arms.** The Visible Human Female was scanned supine with both arms flexed
+90 degrees at the elbow and her hands resting on her iliac crests. Two
+consequences, both visible in `evidence/female-arm-radiograph.png`:
+
+1. The hand is in physical contact with the pelvis, so at 1600 HU the arm and
+   the pelvis are one connected component. Thresholding cannot separate them
+   because there is no gap to find.
+2. The atlas has its arms straight down, so nearest-axis assignment cannot place
+   the elbow or the wrist correctly on a bent arm. `hand_l` and `hand_r` come
+   out missing and the humerus measures short.
+
+The fix is to separate the arm along its own medial path -- skeletonise the
+component, take the shoulder-to-hand geodesic, cut at the bend and at the wrist
+-- and then to repose it to a rest stance. Until that lands, the shipped
+`skeleton-female.obj` stays as it is and the female does not pass
+`verify-obj.mjs`.
+
+Everything else segments correctly: skull, mandible and teeth, the full spine,
+the rib cage and sternum, both scapulae and clavicles, the pelvis, and both
+legs from femur to phalanx.
+
+## Files
+
+- `01-segments.py` -- slab-wise threshold, hole fill, labelling, seam merge.
+- `02-bones.py` -- atlas naming, per-voxel bone assignment, marching cubes,
+  per-bone decimation, OBJ and parts JSON.
+- `render-obj.py` -- the orthographic renderer used for every image here. It has
+  no dependencies beyond numpy and Pillow, because it has to be usable to check
+  a claim rather than to make a picture.
+- `evidence/` -- the images referred to above.
