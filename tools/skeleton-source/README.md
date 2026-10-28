@@ -5,7 +5,7 @@ draw, plus the scripts that produce and check them.
 
 | file | parts | bones | vertices | triangles | height |
 | --- | --- | --- | --- | --- | --- |
-| `skeleton-male.obj` | 28 | 272 | 9,739 | 18,699 | 1.696 m |
+| `skeleton-male.obj` | 28 | 272 | 97,227 | 195,242 | 1.696 m |
 | `skeleton-female.obj` | 28 | 442 | 62,077 | 130,728 | 1.713 m |
 
 The male is a real anatomical model (Z-Anatomy, CC BY-SA 4.0, derived from

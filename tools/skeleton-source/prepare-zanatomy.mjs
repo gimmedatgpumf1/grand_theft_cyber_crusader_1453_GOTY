@@ -44,6 +44,12 @@ const NOT_ANATOMY = /^(Cross Section|Reference|Take a picture)/i;
 
 // Triangle budgets per shipped part, chosen so the two bodies stay inside the
 // software rasteriser's frame budget while the bones keep readable silhouettes.
+// The budgets are the shape of the body; DETAIL multiplies all of them at
+// once. The shipped male was built at DETAIL 1, which left a rib with 58
+// triangles and the whole body at 18,699 -- visibly faceted next to the
+// 130,000-triangle scanned female.
+const DETAIL = 3.4;
+
 const BUDGET = {
   skull: 2600, mandible: 220, teeth: 480,
   spine_cervical: 520, spine_thoracic: 1100, spine_lumbar: 620,
@@ -138,15 +144,18 @@ function shells(indices) {
   return [...groups.values()];
 }
 
-// A shell may never fall below 12 triangles: a bone that vanishes takes its
-// joint with it, and the rig needs the joint.
+// A shell may never fall below 40 triangles. At 12 a rib, a phalanx or a tooth
+// stops being a surface and becomes a faceted shard that reads as debris
+// floating next to the body, which is worse than spending the triangles.
+const FLOOR_TRIANGLES = 40;
+
 function simplifyShell(points, indices, target) {
   const current = indices.length / 3;
-  const wanted = Math.max(12, Math.min(current, target));
+  const wanted = Math.max(FLOOR_TRIANGLES, Math.min(current, target));
   if (current <= wanted) return indices;
   const [simplified] = MeshoptSimplifier.simplify(Uint32Array.from(indices), Float32Array.from(points), 3,
-    wanted * 3, 1e-2, []);
-  return simplified.length >= 12 ? Array.from(simplified) : indices;
+    wanted * 3, 1e-3, []);
+  return simplified.length >= FLOOR_TRIANGLES ? Array.from(simplified) : indices;
 }
 
 function decimate(points, indices, budget) {
@@ -156,8 +165,8 @@ function decimate(points, indices, budget) {
     const factor = budget / total();
     groups = groups.map(shell => {
       const current = shell.indices.length / 3;
-      if (current <= 12) return shell;
-      const target = Math.max(12, Math.floor(current * factor));
+      if (current <= FLOOR_TRIANGLES) return shell;
+      const target = Math.max(FLOOR_TRIANGLES, Math.floor(current * factor));
       return { group: shell.group, indices: simplifyShell(points, shell.group, target) };
     });
   }
@@ -247,7 +256,7 @@ for (const [part, list] of [...parts].sort((a, b) => a[0].localeCompare(b[0]))) 
   }
   const before = indices.length / 3;
   const welded = weld(points, Uint32Array.from(indices));
-  const decimated = decimate(welded.points, welded.indices, BUDGET[part] || 200);
+  const decimated = decimate(welded.points, welded.indices, (BUDGET[part] || 200) * DETAIL);
   const final = compact(welded.points, decimated);
   output.push({ name: part, ...final });
   partReport.push({ name: part, bones: list.length, sourceTriangles: before, triangles: final.indices.length / 3 });

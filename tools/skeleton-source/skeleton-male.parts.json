@@ -3,18 +3,18 @@
  "units": "metres, lowest bone on y = 0, facing +z",
  "sourceObjects": 272,
  "mirroredObjects": 99,
- "vertices": 9739,
- "triangles": 18699,
- "height": 1.6958133057684603,
+ "vertices": 97227,
+ "triangles": 195242,
+ "height": 1.6962511630802461,
  "bbox": {
   "min": [
-   -0.33373725761226225,
-   0.00024163887387053552,
-   -0.11260076274071164
+   -0.33462462174372554,
+   0,
+   -0.11280736754093557
   ],
   "max": [
-   0.33373725761226225,
-   1.696054944642331,
+   0.33462462174372554,
+   1.6962511630802461,
    0.13730799749576508
   ]
  },
@@ -23,169 +23,169 @@
    "name": "clavicle_l",
    "bones": 1,
    "sourceTriangles": 1550,
-   "triangles": 136
+   "triangles": 1070
   },
   {
    "name": "clavicle_r",
    "bones": 1,
    "sourceTriangles": 1550,
-   "triangles": 132
+   "triangles": 1056
   },
   {
    "name": "femur_l",
    "bones": 1,
    "sourceTriangles": 3794,
-   "triangles": 190
+   "triangles": 1840
   },
   {
    "name": "femur_r",
    "bones": 1,
    "sourceTriangles": 3794,
-   "triangles": 190
+   "triangles": 1826
   },
   {
    "name": "foot_l",
    "bones": 27,
    "sourceTriangles": 16586,
-   "triangles": 784
+   "triangles": 8248
   },
   {
    "name": "foot_r",
    "bones": 27,
    "sourceTriangles": 16586,
-   "triangles": 774
+   "triangles": 8230
   },
   {
    "name": "forearm_l",
    "bones": 2,
    "sourceTriangles": 1688,
-   "triangles": 178
+   "triangles": 1150
   },
   {
    "name": "forearm_r",
    "bones": 2,
    "sourceTriangles": 1688,
-   "triangles": 178
+   "triangles": 1146
   },
   {
    "name": "hand_l",
    "bones": 27,
    "sourceTriangles": 14014,
-   "triangles": 846
+   "triangles": 6680
   },
   {
    "name": "hand_r",
    "bones": 27,
    "sourceTriangles": 14014,
-   "triangles": 832
+   "triangles": 6690
   },
   {
    "name": "humerus_l",
    "bones": 1,
    "sourceTriangles": 4280,
-   "triangles": 140
+   "triangles": 1939
   },
   {
    "name": "humerus_r",
    "bones": 1,
    "sourceTriangles": 4280,
-   "triangles": 148
+   "triangles": 1923
   },
   {
    "name": "lower_leg_l",
    "bones": 2,
    "sourceTriangles": 2934,
-   "triangles": 208
+   "triangles": 1644
   },
   {
    "name": "lower_leg_r",
    "bones": 2,
    "sourceTriangles": 2934,
-   "triangles": 208
+   "triangles": 1634
   },
   {
    "name": "mandible",
    "bones": 1,
    "sourceTriangles": 18838,
-   "triangles": 628
+   "triangles": 6394
   },
   {
    "name": "patella_l",
    "bones": 1,
    "sourceTriangles": 276,
-   "triangles": 172
+   "triangles": 266
   },
   {
    "name": "patella_r",
    "bones": 1,
    "sourceTriangles": 276,
-   "triangles": 174
+   "triangles": 266
   },
   {
    "name": "pelvis",
    "bones": 4,
    "sourceTriangles": 20418,
-   "triangles": 992
+   "triangles": 9662
   },
   {
    "name": "ribs_l",
    "bones": 22,
    "sourceTriangles": 133334,
-   "triangles": 690
+   "triangles": 8158
   },
   {
    "name": "ribs_r",
    "bones": 22,
    "sourceTriangles": 133334,
-   "triangles": 694
+   "triangles": 8230
   },
   {
    "name": "scapula_l",
    "bones": 1,
    "sourceTriangles": 25326,
-   "triangles": 340
+   "triangles": 4142
   },
   {
    "name": "scapula_r",
    "bones": 1,
    "sourceTriangles": 25326,
-   "triangles": 340
+   "triangles": 4076
   },
   {
    "name": "skull",
    "bones": 35,
    "sourceTriangles": 113469,
-   "triangles": 3139
+   "triangles": 39866
   },
   {
    "name": "spine_cervical",
    "bones": 14,
    "sourceTriangles": 31238,
-   "triangles": 2004
+   "triangles": 16150
   },
   {
    "name": "spine_lumbar",
    "bones": 5,
    "sourceTriangles": 16846,
-   "triangles": 1182
+   "triangles": 11772
   },
   {
    "name": "spine_thoracic",
    "bones": 12,
    "sourceTriangles": 27527,
-   "triangles": 1088
+   "triangles": 12230
   },
   {
    "name": "sternum",
    "bones": 3,
    "sourceTriangles": 8041,
-   "triangles": 340
+   "triangles": 4264
   },
   {
    "name": "teeth",
    "bones": 28,
    "sourceTriangles": 46860,
-   "triangles": 1972
+   "triangles": 24690
   }
  ],
  "bones": [

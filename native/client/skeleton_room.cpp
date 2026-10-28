@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace gtc::native {
 namespace {
@@ -98,21 +97,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     female_.draw(rasterizer, camera, {0.52, 0, 0}, 3.14159265);
     frame = rasterizer.finish();
     frame.logicalUi();
-    // The heights are read back out of the loaded meshes, not typed in: if a
-    // later change alters the assets, this caption says so.
-    const auto centimetres = [](double metres) {
-        char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "%.1f CM", metres * 100.0);
-        return std::string(buffer);
-    };
-    drawText(frame, 24, 24, "TEST ROOM // SKELETON BENCH", colorHex("#d7ff54"));
-    drawText(frame, 24, 56, "MALE " + centimetres(male_.height()) + " // SCANNED ANATOMY",
-             colorHex("#b4c5ba"), 2);
-    // Both bodies are segmented from their own cadaver CT, so both captions say
-    // the same thing: this height is the height of a real person's bones.
-    drawText(frame, 24, 80, "FEMALE " + centimetres(female_.height()) + " // SCANNED ANATOMY",
-             colorHex("#e0a05a"), 2);
-    drawText(frame, 24, 108, "C RETURNS TO THE STREET", colorHex("#b4c5ba"), 2);
 }
 
 } // namespace gtc::native

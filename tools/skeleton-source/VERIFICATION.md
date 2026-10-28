@@ -34,7 +34,7 @@ parts, each bone simplified on its own.
 | bones in the shipped file | 272 (177 + 99 mirrored, 1 already had a right twin) |
 | height | source crown 170.55 cm, lowest bone 0.71 cm → **169.58 cm of bone** |
 | shipped height | 1.6958 m, lowest vertex at y = 0.0002 m |
-| mesh | 9,739 vertices, 18,699 triangles, 28 parts |
+| mesh | 97,227 vertices, 195,242 triangles, 28 parts |
 | femur | 26.87% / 26.77% of stature (band 25.5–27.5%) |
 | tibia + fibula | 22.29% / 22.27% (band 21.0–24.2%) |
 | humerus | 18.77% / 18.80% (band 17.6–19.6%) |
@@ -158,6 +158,17 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.
 | knee height | 27.0% of stature |
 | mirror error, long bones | 4.5 mm femur, 6.1 mm shin, 10.8 mm humerus, 9.8 mm forearm |
 | result | **PASSED** |
+### The male was rebuilt at higher detail
+
+His first build spent 18,699 triangles on the whole body, which left a rib with
+58 and a phalanx with 12. A rib at 58 triangles is a faceted shard, and next to
+the 130,000-triangle scanned female those shards read as debris floating beside
+the body. `prepare-zanatomy.mjs` now has a `DETAIL` multiplier and a
+40-triangle floor per bone shell; the male is 97,227 vertices and 195,242
+triangles and his ribs are solid surfaces. The measurements in the table above
+did not change -- nothing about his skeleton was altered, only how finely it is
+tessellated.
+
 
 ### What the two checks mean now
 
