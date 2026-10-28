@@ -5,6 +5,7 @@
 #include "client/skeleton_body.h"
 
 #include <cstdint>
+#include <utility>
 
 #include <string>
 
@@ -39,6 +40,11 @@ private:
     // Triangles in the cached scene. Printed by the room benchmark: if this
     // changes with the thread count, the split is losing or duplicating work.
     std::size_t sceneTriangles_ = 0;
+    // Rest geometry is emitted once; a pose then costs one matrix per bone. The
+    // pair is the batch index each bone owns, so a rebuild writes 56 matrices
+    // and uploads nothing.
+    bool restReady_ = false;
+    std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches_;
     bool sceneReady_ = false;
     double cachedPose_ = -1.0;
     int cachedWidth_ = 0;

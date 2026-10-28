@@ -111,46 +111,64 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     female_.poseIdle(seconds, 1.7);
 
     if (view.gpu) {
-        // A scanned skeleton is 195,000 triangles per body, and the pose only
-        // changes fifteen times a second while the frame does not. That makes
-        // the geometry build the single largest cost in the room, and it splits
-        // cleanly by bone: each bone is placed by its own chain and writes only
-        // its own triangles, so a slice needs nothing from its neighbours.
-        Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true,
-                        std::move(scene_));
-        room.setCamera(camera);
-        drawFloor(room, camera);
-        drawWalls(room, camera);
-
-        const std::size_t maleBones = male_.boneCount();
-        const std::size_t total = maleBones + female_.boneCount();
-        FramePool& pool = framePool();
-        const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, total));
-        std::vector<GpuScene> parts(chunks + 1);
-        parts[0] = room.takeGpuScene();
-        pool.rangesIndexed(chunks, total, [&](std::size_t begin, std::size_t end, std::size_t index) {
-            Rasterizer part(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
-            part.setCamera(camera);
-            if (begin < maleBones) {
-                part.setObject(1, {0.0, 0.0}, 3.14159265F);
-                male_.drawBones(part, camera, {-0.52, 0, 0}, 3.14159265, begin,
-                                std::min(end, maleBones));
+        // A bone is a rigid body. So the triangles are emitted once, in rest
+        // position, one batch per bone -- and a pose is then 56 matrices rather
+        // than 195,000 transformed vertices per body plus the same geometry
+        // travelling to the GPU again. The pose still updates at fifteen hertz;
+        // it just costs microseconds now instead of milliseconds.
+        if (!restReady_ || camera.width != cachedWidth_ || camera.height != cachedHeight_) {
+            const int maleBase = 9001;
+            const int femaleBase = 8001;
+            Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true,
+                            std::move(scene_));
+            room.setCamera(camera);
+            drawFloor(room, camera);
+            drawWalls(room, camera);
+            room.setObject(0, {0.0, 0.0}, 0.0F);
+            GpuScene parts = room.takeGpuScene();
+            male_.buildRestGeometry(room, camera, maleBase);
+            female_.buildRestGeometry(room, camera, femaleBase);
+            std::vector<GpuScene> halves;
+            halves.push_back(std::move(parts));
+            halves.push_back(room.takeGpuScene());
+            scene_ = mergeScenes(std::move(halves));
+            scene_.revision = ++revision_;
+            // Which batch belongs to which bone. Batches keep their identity
+            // until the scene is rebuilt, so this is looked up once.
+            boneBatches_.clear();
+            for (std::size_t index = 0; index < scene_.batches.size(); ++index) {
+                const std::uint32_t id = scene_.batches[index].objectId;
+                if (id == 0) continue;
+                boneBatches_.emplace_back(id, index);
             }
-            if (end > maleBones) {
-                part.setObject(2, {0.0, 0.0}, 3.14159265F);
-                female_.drawBones(part, camera, {0.52, 0, 0}, 3.14159265,
-                                  begin > maleBones ? begin - maleBones : 0, end - maleBones);
+            sceneTriangles_ = 0;
+            for (const GpuBatch& batch : scene_.batches) sceneTriangles_ += batch.vertices.size() / 3;
+            restReady_ = true;
+            sceneReady_ = true;
+            cachedWidth_ = camera.width;
+            cachedHeight_ = camera.height;
+        }
+        // The pose is the only thing that changes: write the bone matrices into
+        // the batches they belong to. No vertex data moves.
+        const std::vector<std::array<double, 16>> maleMatrices =
+            male_.boneMatrices({-0.52, 0, 0}, 3.14159265);
+        const std::vector<std::array<double, 16>> femaleMatrices =
+            female_.boneMatrices({0.52, 0, 0}, 3.14159265);
+        for (const std::pair<std::uint32_t, std::size_t>& entry : boneBatches_) {
+            const int id = static_cast<int>(entry.first);
+            const std::vector<std::array<double, 16>>* matrices = nullptr;
+            std::size_t boneIndex = 0;
+            if (id >= 9001 && static_cast<std::size_t>(id - 9001) < maleMatrices.size()) {
+                matrices = &maleMatrices;
+                boneIndex = static_cast<std::size_t>(id - 9001);
+            } else if (id >= 8001 && static_cast<std::size_t>(id - 8001) < femaleMatrices.size()) {
+                matrices = &femaleMatrices;
+                boneIndex = static_cast<std::size_t>(id - 8001);
             }
-            parts[index + 1] = part.takeGpuScene();
-        });
-        scene_ = mergeScenes(std::move(parts));
-        scene_.revision = ++revision_;
-        sceneReady_ = true;
+            if (matrices == nullptr) continue;
+            scene_.batches[entry.second].modelMatrix = (*matrices)[boneIndex];
+        }
         cachedPose_ = pose;
-        cachedWidth_ = camera.width;
-        cachedHeight_ = camera.height;
-        sceneTriangles_ = 0;
-        for (const GpuBatch& batch : scene_.batches) sceneTriangles_ += batch.vertices.size() / 3;
         frame.wantsBgra = true;
         frame.width = camera.width;
         frame.height = camera.height;
@@ -159,27 +177,19 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu,
-                    view.gpu ? std::move(scene_) : GpuScene{});
+    // Software path: the second half was built on its own rasterizer, so it is
+    // drawn straight into the same buffers. Two threads, one body each -- the
+    // software rasterizer needs posed vertices, so the rest-geometry trick does
+    // not apply to it.
+    Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     room.setCamera(camera);
     drawFloor(room, camera);
     drawWalls(room, camera);
-    room.setObject(1, {0.0, 0.0}, 3.14159265F);
-    room.setObject(0, {0.0, 0.0}, 0.0F);
-
-    Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu);
+    Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
-    second.setObject(1, {0.0, 0.0}, 3.14159265F);
-
-    std::thread worker([&] {
-        second.setObject(2, {0.0, 0.0}, 3.14159265F);
-        female_.draw(second, camera, {0.52, 0, 0}, 3.14159265);
-    });
+    std::thread worker([&] { female_.draw(second, camera, {0.52, 0, 0}, 3.14159265); });
     male_.draw(room, camera, {-0.52, 0, 0}, 3.14159265);
     worker.join();
-
-    // Software path: the second half was built on its own rasterizer, so it is
-    // drawn straight into the same buffers.
     second.drain(room);
     frame = room.finish();
     frame.logicalUi();

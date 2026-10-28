@@ -67,6 +67,12 @@ if [ -x "$ROOT/build/bin/gtc-native-client" ]; then
     --room-benchmark 4 --width 640 --height 480 --renderer vulkan \
     --output "$ROOT/build/native-smoke/vk-room.png"
 fi
+# The room animates bones as rest geometry moved by one matrix each, while the
+# software path transforms every vertex. If those two disagree the same scene
+# looks different depending on the backend, so they are compared directly.
+if [ -x "$ROOT/build/bin/gtc-native-client" ]; then
+  "$ROOT/build/bin/gtc-native-client" --verify-pose
+fi
 if [ -x "$ROOT/build/bin/gtc1453" ] && [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   "$ROOT/tests/native_smoke.sh" "$ROOT/build/native-smoke-tests"
 fi

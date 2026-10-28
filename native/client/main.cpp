@@ -217,7 +217,8 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
     // Every animated character in the world pays this, every frame it moves.
     {
         gtc::native::SkeletonModel model;
-        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+        std::string poseError;
+        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", poseError)) return 1;
         const int bone = model.bone("skull");
         model.poseIdle(0.75, 0.0);
         const double start = nowMs();
@@ -548,7 +549,7 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
     int port = 1453, frames = 1, benchmark = 1;
-    bool path = false, move = false, headless = false, verifyRoom = false;
+    bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
     int roomBenchmark = 0;
     int skullBenchmark = 0, worldBenchmark = 0, worldCharacters = 3;
     std::string rendererName = "cpu";
@@ -558,6 +559,7 @@ int main(int argc, char** argv) {
         const std::string argument = argv[i];
         if (argument == "--headless") headless = true;
         else if (argument == "--verify-room") verifyRoom = true;
+        else if (argument == "--verify-pose") verifyPose = true;
         else if (argument == "--renderer" && i + 1 < argc) rendererName = argv[++i];
         else if (argument == "--room-benchmark" && i + 1 < argc) roomBenchmark = static_cast<int>(number(argv[++i], 1));
         else if (argument == "--skull-benchmark" && i + 1 < argc) skullBenchmark = static_cast<int>(number(argv[++i], 1));
@@ -647,6 +649,90 @@ int main(int argc, char** argv) {
             if (!benchFrame.save(output)) std::cerr << "could not save " << output << '\n';
         }
         gtc::native::shutdownVulkan();
+        return 0;
+    }
+    if (verifyPose) {
+        // The room draws bones as rest geometry moved by one matrix each, while
+        // the software path transforms every vertex on the CPU. Those two have
+        // to agree, or the same scene looks different depending on the backend.
+        gtc::native::SkeletonModel model;
+        std::string poseError;
+        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", poseError)) return 1;
+        model.poseIdle(0.75, 0.0);
+        gtc::native::Camera camera;
+        camera.width = 1568;
+        camera.height = 929;
+        const gtc::native::GpuScene posed = [&] {
+            gtc::native::Rasterizer rasterizer(camera.width, camera.height, gtc::native::colorHex("#0d1210"),
+                                               camera.focal(), true);
+            rasterizer.setCamera(camera);
+            model.draw(rasterizer, camera, {-0.52, 0, 0}, 3.14159265);
+            return rasterizer.takeGpuScene();
+        }();
+        gtc::native::GpuScene rest;
+        const int base = 9001;
+        {
+            gtc::native::Rasterizer rasterizer(camera.width, camera.height, gtc::native::colorHex("#0d1210"),
+                                               camera.focal(), true);
+            rasterizer.setCamera(camera);
+            model.buildRestGeometry(rasterizer, camera, base);
+            rest = rasterizer.takeGpuScene();
+        }
+        const std::vector<std::array<double, 16>> matrices = model.boneMatrices({-0.52, 0, 0}, 3.14159265);
+        std::size_t posedCount = 0;
+        for (const gtc::native::GpuBatch& batch : posed.batches) posedCount += batch.vertices.size();
+        std::size_t restCount = 0;
+        for (const gtc::native::GpuBatch& batch : rest.batches) restCount += batch.vertices.size();
+        if (posedCount != restCount) {
+            std::cerr << "pose check: " << posedCount << " posed vertices against " << restCount
+                      << " rest vertices\n";
+            return 1;
+        }
+        double worst = 0.0, worstNormal = 0.0;
+        std::size_t posedIndex = 0;
+        for (const gtc::native::GpuBatch& batch : rest.batches) {
+            const std::size_t bone = static_cast<std::size_t>(static_cast<int>(batch.objectId) - base);
+            const std::array<double, 16>& m = matrices[bone];
+            for (const gtc::native::GpuVertex& vertex : batch.vertices) {
+                // Find the posed vertex this rest vertex corresponds to. Both are
+                // emitted bone by bone, in the same order, so the sequence is the
+                // same; the index only has to walk.
+                const gtc::native::GpuVertex* expected = nullptr;
+                std::size_t seen = 0;
+                bool found = false;
+                for (const gtc::native::GpuBatch& outer : posed.batches) {
+                    if (seen + outer.vertices.size() > posedIndex) {
+                        expected = &outer.vertices[posedIndex - seen];
+                        found = true;
+                        break;
+                    }
+                    seen += outer.vertices.size();
+                }
+                if (!found) { std::cerr << "pose check: posed geometry ran out\n"; return 1; }
+                const double x = m[0] * vertex.x + m[4] * vertex.y + m[8] * vertex.z + m[12];
+                const double y = m[1] * vertex.x + m[5] * vertex.y + m[9] * vertex.z + m[13];
+                const double z = m[2] * vertex.x + m[6] * vertex.y + m[10] * vertex.z + m[14];
+                worst = std::max(worst, std::abs(x - expected->x));
+                worst = std::max(worst, std::abs(y - expected->y));
+                worst = std::max(worst, std::abs(z - expected->z));
+                const double nx = m[0] * vertex.nx + m[4] * vertex.ny + m[8] * vertex.nz;
+                const double ny = m[1] * vertex.nx + m[5] * vertex.ny + m[9] * vertex.nz;
+                const double nz = m[2] * vertex.nx + m[6] * vertex.ny + m[10] * vertex.nz;
+                worstNormal = std::max(worstNormal, std::abs(nx - expected->nx));
+                worstNormal = std::max(worstNormal, std::abs(ny - expected->ny));
+                worstNormal = std::max(worstNormal, std::abs(nz - expected->nz));
+                ++posedIndex;
+            }
+        }
+        // A millimetre on a 1.7 m body is far tighter than anything the eye can
+        // see, and loose enough for float rounding on the way through.
+        if (worst > 0.001 || worstNormal > 0.001) {
+            std::cerr << "pose check: rest geometry does not match the posed geometry (worst "
+                      << worst * 1000.0 << " mm, normal " << worstNormal << ")\n";
+            return 1;
+        }
+        std::cout << "pose matrices: PASS (" << restCount << " vertices, worst " << worst * 1000.0
+                  << " mm)\n";
         return 0;
     }
     if (verifyRoom) {

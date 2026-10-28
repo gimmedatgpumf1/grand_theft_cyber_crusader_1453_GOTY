@@ -230,10 +230,11 @@ void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 orig
     drawBones(rasterizer, camera, origin, yaw, 0, bones_.size());
 }
 
-void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
-                              std::size_t begin, std::size_t end) const {
-    std::vector<Transform> pose(bones_.size());
-    std::vector<char> solved(bones_.size(), 0);
+// The chain solve, shared by everything that needs the pose: drawing posed
+// vertices, or handing the backend one matrix per bone.
+static std::vector<Transform> solvePose(const std::vector<SkeletonBone>& bones, Vec3 origin, double yaw) {
+    std::vector<Transform> pose(bones.size());
+    std::vector<char> solved(bones.size(), 0);
     Transform place;
     const double c = std::cos(yaw), s = std::sin(yaw);
     place.m[0] = c; place.m[2] = s; place.m[6] = -s; place.m[8] = c;
@@ -244,7 +245,7 @@ void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3
     // placed once its parent is.
     const std::function<Transform(std::size_t)> solve = [&](std::size_t index) -> Transform {
         if (solved[index]) return pose[index];
-        const SkeletonBone& bone = bones_[index];
+        const SkeletonBone& bone = bones[index];
         const Transform swing = rotation(bone.pitch, bone.yaw, bone.roll);
         Transform local;
         local.m[0] = swing.m[0]; local.m[1] = swing.m[1]; local.m[2] = swing.m[2];
@@ -255,7 +256,50 @@ void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3
         pose[index] = compose(bone.parent >= 0 ? solve(static_cast<std::size_t>(bone.parent)) : place, local);
         return pose[index];
     };
-    for (std::size_t index = 0; index < bones_.size(); ++index) solve(index);
+    for (std::size_t index = 0; index < bones.size(); ++index) solve(index);
+    return pose;
+}
+
+std::vector<std::array<double, 16>> SkeletonModel::boneMatrices(Vec3 origin, double yaw) const {
+    const std::vector<Transform> pose = solvePose(bones_, origin, yaw);
+    std::vector<std::array<double, 16>> matrices(pose.size());
+    for (std::size_t index = 0; index < pose.size(); ++index) {
+        const Transform& transform = pose[index];
+        // Column-major, which is what the shader and the push constant expect:
+        // element [column * 4 + row].
+        std::array<double, 16>& out = matrices[index];
+        out[0] = transform.m[0]; out[1] = transform.m[3]; out[2] = transform.m[6]; out[3] = 0;
+        out[4] = transform.m[1]; out[5] = transform.m[4]; out[6] = transform.m[7]; out[7] = 0;
+        out[8] = transform.m[2]; out[9] = transform.m[5]; out[10] = transform.m[8]; out[11] = 0;
+        out[12] = transform.t.x; out[13] = transform.t.y; out[14] = transform.t.z; out[15] = 1;
+    }
+    return matrices;
+}
+
+void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& camera, int firstObjectId) const {
+    Material boneMaterial;
+    boneMaterial.color = colorHex("#e3d9bf");
+    boneMaterial.specular = 0.12;
+    for (std::size_t index = 0; index < bones_.size(); ++index) {
+        const SkeletonBone& bone = bones_[index];
+        const std::size_t count = bone.points.size();
+        rasterizer.setObject(static_cast<std::uint32_t>(firstObjectId + static_cast<int>(index)),
+                             {0.0, 0.0}, 0.0F);
+        for (const auto& face : bone.triangles) {
+            if (face[0] < 0 || face[1] < 0 || face[2] < 0) continue;
+            if (static_cast<std::size_t>(face[0]) >= count || static_cast<std::size_t>(face[1]) >= count ||
+                static_cast<std::size_t>(face[2]) >= count) continue;
+            const Vec3& a = bone.points[static_cast<std::size_t>(face[0])];
+            const Vec3& b = bone.points[static_cast<std::size_t>(face[1])];
+            const Vec3& c = bone.points[static_cast<std::size_t>(face[2])];
+            rasterizer.worldTriangle(a, b, c, cross(b - a, c - a), boneMaterial);
+        }
+    }
+}
+
+void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
+                              std::size_t begin, std::size_t end) const {
+    const std::vector<Transform> pose = solvePose(bones_, origin, yaw);
     Material boneMaterial;
     boneMaterial.color = colorHex("#e3d9bf");
     boneMaterial.specular = 0.12;

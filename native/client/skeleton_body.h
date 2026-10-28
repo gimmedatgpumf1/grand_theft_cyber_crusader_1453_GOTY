@@ -51,6 +51,14 @@ public:
     // slice is independent: a bone is placed by its own chain and writes only
     // its own triangles.
     std::size_t boneCount() const { return bones_.size(); }
+    // Where each bone ends up for a given placement: a 4x4 column-major matrix,
+    // the form the backend takes as a batch transform. A bone is a rigid body,
+    // so this is all that has to change between poses -- the vertices stay put.
+    std::vector<std::array<double, 16>> boneMatrices(Vec3 origin, double yaw) const;
+    // The same triangles, once, in rest position: one batch per bone, numbered
+    // from firstObjectId. Paired with boneMatrices() a pose change costs 28
+    // matrices instead of 195,000 vertices.
+    void buildRestGeometry(Rasterizer& rasterizer, const Camera& camera, int firstObjectId) const;
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;
 
