@@ -228,14 +228,8 @@ bool Renderer::chooseDevice() {
     // * BGRA first, because that is the byte order the window takes. The
     //   readback then needs no channel swap, and the swapchain handover is a
     //   copy of identical bytes instead of a blit that converts them.
-    // An sRGB attachment and nothing else. The transfer curve the picture is
-    // displayed with is then applied by the hardware as the pixel is written --
-    // in the store path, where it costs nothing -- instead of by the fragment
-    // shader, which was spending a lookup and a fit on every pixel of every bone
-    // to produce a value the memory was going to be converted from anyway. BGRA
-    // first, because that is what the window and the readback both want, so the
-    // frame never has to be reordered on the way out.
-    const VkFormat candidates[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
+    const VkFormat candidates[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
+                                   VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
     const VkFormatFeatureFlags wanted = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     colourFormat_ = VK_FORMAT_UNDEFINED;
     for (VkFormat format : candidates) {
@@ -248,8 +242,9 @@ bool Renderer::chooseDevice() {
     }
     if (!isColourFormat(colourFormat_)) return false;
     bgra_ = isBgraFormat(colourFormat_);
-    tracef("vk: colour format %s, %s readback",
-          colourFormat_ == VK_FORMAT_B8G8R8A8_SRGB ? "B8G8R8A8_SRGB" : "R8G8B8A8_SRGB",
+    tracef("vk: colour format %s, %s readback", colourFormat_ == VK_FORMAT_B8G8R8A8_SRGB ? "B8G8R8A8_SRGB"
+          : colourFormat_ == VK_FORMAT_R8G8B8A8_SRGB ? "R8G8B8A8_SRGB"
+          : colourFormat_ == VK_FORMAT_B8G8R8A8_UNORM ? "B8G8R8A8_UNORM" : "R8G8B8A8_UNORM",
           bgra_ ? "no-swap" : "swap");
 
     // Depth is never stored and never leaves the pass, so D16 halves the depth
