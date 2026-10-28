@@ -41,15 +41,49 @@ because a 2.5 GB file must never land inside the repository.
 Direct URLs follow the form
 `https://zenodo.org/api/records/22833546/files/<name>/content`.
 
-## Order of work once the files are present
+## Layout, as confirmed by the authors' own script
 
-```sh
-python3 tools/skeleton-source/openskeleton/inspect-mat.py /tmp/openskeleton
+`Metadata.mat` arrives first because it is 77 kB and answers everything about
+who is in the set. Its checksum matches Zenodo exactly
+(`204bac57b635aed7e01447cb804f29c7`), and so does `EXAMPLE_GetData.m`
+(`9c034c1639304863c65d45c926546203`).
+
+```matlab
+case_selected = ['N', cases_nm{1}];
+b  = NM_combined.(case_selected).('Femur_R').Registered;   % N x 3 vertices
+Fb = Faces.(['F', 'Femur_R']);                             % M x 3 faces, shared
+disp(Metadata.(case_selected))                             % sex, height, weight, age
 ```
 
-Prints the struct layout, the field names and the structure list. Only after
-that is real can the subject choice and the part mapping be written, because
-every guess about a MATLAB struct's shape costs a rebuild.
+So the triangulation is stored once per bone and shared by all 102 subjects, and
+`Registered` is the corresponding shape. One subject therefore costs about 2 MB
+of vertices, not 2.5 GB.
+
+## The woman
+
+**N186416** — female, **170.2 cm**, 78.0 kg (BMI 26.9), 41 years old. Closest of
+all 51 women to the canonical 170 cm, by 2 mm. Chosen before anything was
+downloaded, and she is never scaled afterwards.
+
+| runner-up | height | why not |
+| --- | --- | --- |
+| N192037 | 168.0 cm | 2 cm short |
+| N102924 | 172.0 cm | 2 cm tall, lean (BMI 21.1) |
+| N197064 | 171.0 cm | BMI 34.9 |
+
+## Order of work once the files are present
+
+Only two files are needed from the 2.5 GB archive, and both are read in
+streaming fashion:
+
+```sh
+pip install h5py numpy
+python3 02-export-subject.py --dir /path/to/ZENODO --subject N186416 \
+    --out /tmp/openskeleton/N186416.npz
+```
+
+That writes one `.npz` (a few MB) plus a JSON manifest. Upload those two; the
+import step runs here, where it can be checked against the verifier.
 
 Then, in order:
 
