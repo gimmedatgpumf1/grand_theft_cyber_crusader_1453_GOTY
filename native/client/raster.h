@@ -140,6 +140,15 @@ struct RasterBuffer {
     std::vector<Color> pixels;
 };
 
+// One queued triangle: the geometry, and an index into the frame's material
+// table. Copying the whole Material per triangle made submission the most
+// expensive part of the software path, and almost every triangle shares a
+// material with the one before it.
+struct RasterTriangle {
+    std::array<RenderVertex, 3> vertices;
+    std::uint32_t material = 0;
+};
+
 class Rasterizer {
 public:
     Rasterizer(int width, int height, Color background, double focal, bool gpu = false, GpuScene recycled = {},
@@ -152,7 +161,9 @@ public:
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);
     GpuScene takeGpuScene() { return std::move(scene_); }
-    NativeFrame finish() const;
+    // Draws everything queued and hands back the frame. Non-const because the
+    // drawing happens here: triangle() only records what to draw.
+    NativeFrame finish();
 
 private:
     int width_;
@@ -164,6 +175,12 @@ private:
     float objectYaw_ = 0;
     std::size_t activeBatch_ = static_cast<std::size_t>(-1);
     GpuScene scene_;
+    // Triangles wait here until finish(), so the frame can be split into bands
+    // and drawn on every core instead of one.
+    void rasterize(const std::array<RenderVertex, 3>& vertices, const Material& material, int yBegin, int yEnd);
+    void flush();
+    std::vector<RasterTriangle> pending_;
+    std::vector<Material> materials_;
     std::vector<double> depth_;
     std::vector<Color> pixels_;
     RasterBuffer* reusable_ = nullptr;

@@ -244,20 +244,40 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
 
     if (renderer == "cpu" || renderer == "all") {
         // The software rasterizer: builds and draws in the same pass.
+        // The model is loaded once, outside the loop: loading an OBJ is not
+        // rasterization, and timing the two together hides what the rasterizer
+        // costs.
+        gtc::native::SkeletonModel model;
+        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+        const int bone = model.bone("skull");
+        gtc::native::NativeFrame frame;
+        {
+            gtc::native::Rasterizer warm(skull.camera.width, skull.camera.height, gtc::native::colorHex("#0d1210"),
+                                         skull.camera.focal(), false);
+            warm.setCamera(skull.camera);
+            model.poseIdle(0.75, 0.0);
+            model.draw(warm, skull.camera, {0, 0, 0}, 0.0, bone);
+            frame = warm.finish();
+            if (frame.rgb.empty()) { std::cerr << "cpu skull frame came back empty\n"; return 1; }
+        }
+        double submitMs = 0.0, finishMs = 0.0;
         const double start = nowMs();
         for (int iteration = 0; iteration < iterations; ++iteration) {
             gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
                                               gtc::native::colorHex("#0d1210"), skull.camera.focal(), false);
             rasterizer.setCamera(skull.camera);
-            gtc::native::SkeletonModel model;
-            if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
-            const int bone = model.bone("skull");
+            const double submitStart = nowMs();
             model.poseIdle(0.75, 0.0);
             model.draw(rasterizer, skull.camera, {0, 0, 0}, 0.0, bone);
-            gtc::native::NativeFrame frame = rasterizer.finish();
+            submitMs += nowMs() - submitStart;
+            const double finishStart = nowMs();
+            frame = rasterizer.finish();
+            finishMs += nowMs() - finishStart;
             if (frame.rgb.empty()) { std::cerr << "cpu skull frame came back empty\n"; return 1; }
         }
         reportLine("skull cpu raster", (nowMs() - start) / iterations);
+        reportLine("  of which submit", submitMs / iterations);
+        reportLine("  of which draw", finishMs / iterations);
     }
 
     // The GPU backends draw a prebuilt scene, which is what a cache hit looks

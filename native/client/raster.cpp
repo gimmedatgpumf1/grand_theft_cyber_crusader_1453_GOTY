@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iterator>
@@ -111,6 +112,11 @@ bool sameMaterial(const Material& a, const Material& b) {
 }
 
 GpuRenderer activeGpuRenderer = nullptr;
+
+// Reused across frames by whichever thread draws, so the software path stops
+// reallocating a few megabytes of queue storage every single frame.
+thread_local std::vector<RasterTriangle> pendingScratch;
+thread_local std::vector<Material> materialScratch;
 
 } // namespace
 
@@ -309,6 +315,8 @@ Rasterizer::Rasterizer(int width, int height, Color background, double focal, bo
     scene_.focal = focal;
     scene_.background = background;
     if (gpu_) return;
+    if (pendingScratch.capacity()) pending_.swap(pendingScratch);
+    if (materialScratch.capacity()) materials_.swap(materialScratch);
     if (reusable_) {
         depth_.swap(reusable_->depth);
         pixels_.swap(reusable_->pixels);
@@ -321,6 +329,15 @@ Rasterizer::Rasterizer(int width, int height, Color background, double focal, bo
 }
 
 Rasterizer::~Rasterizer() {
+    // Hand the queue's storage back for the next frame.
+    if (pending_.capacity() > pendingScratch.capacity()) {
+        pending_.clear();
+        pendingScratch.swap(pending_);
+    }
+    if (materials_.capacity() > materialScratch.capacity()) {
+        materials_.clear();
+        materialScratch.swap(materials_);
+    }
     if (!reusable_) return;
     reusable_->depth.swap(depth_);
     reusable_->pixels.swap(pixels_);
@@ -375,6 +392,22 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         }
         return;
     }
+    // Queued, not drawn: finish() splits the frame into horizontal bands and
+    // draws them on separate cores. Each band owns its rows, so no lock is
+    // needed and no pixel is written by two threads.
+    std::uint32_t index = static_cast<std::uint32_t>(materials_.size());
+    for (std::uint32_t candidate = 0; candidate < materials_.size(); ++candidate) {
+        if (sameMaterial(materials_[candidate], material)) {
+            index = candidate;
+            break;
+        }
+    }
+    if (index == materials_.size()) materials_.push_back(material);
+    pending_.push_back({input, index});
+}
+
+void Rasterizer::rasterize(const std::array<RenderVertex, 3>& input, const Material& material,
+                             int yBegin, int yEnd) {
     constexpr double near = 0.035;
     std::array<RenderVertex, 4> polygon;
     std::size_t polygonSize = 0;
@@ -408,9 +441,11 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const double inverseArea = 1.0 / area;
         const int minX = std::max(0, static_cast<int>(std::floor(std::min({p[0].x, p[1].x, p[2].x}))));
         const int maxX = std::min(width_ - 1, static_cast<int>(std::ceil(std::max({p[0].x, p[1].x, p[2].x}))));
-        const int minY = std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y}))));
-        const int maxY = std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y}))));
-        if (minX > maxX || minY > maxY) continue;
+        // The band this thread owns: a triangle that spans several bands is
+        // drawn once per band, each time only over that band's rows.
+        const int minY = std::max(yBegin, std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y})))));
+        const int maxY = std::min(yEnd - 1, std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y})))));
+        if (minX > maxX || minY > maxY || yBegin >= yEnd) continue;
         const Vec3 centroidView = (p[0].view + p[1].view + p[2].view) / 3.0;
         Vec3 tangent{1, 0, 0}, bitangent{0, 1, 0};
         if (material.kind == Material::Kind::Skin && material.normalYoung) {
@@ -529,7 +564,37 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
     }
 }
 
-NativeFrame Rasterizer::finish() const {
+void Rasterizer::flush() {
+    if (pending_.empty()) return;
+    // How many bands: one per worker, but never more bands than rows.
+    std::size_t bands = std::max<std::size_t>(1, std::min<std::size_t>(frameThreads(),
+        static_cast<std::size_t>(std::max(1, height_))));
+    if (bands == 1 || pending_.size() < 256) {
+        for (const RasterTriangle& triangle : pending_) {
+            rasterize(triangle.vertices, materials_[triangle.material], 0, height_);
+        }
+        pending_.clear();
+        materials_.clear();
+        return;
+    }
+    bands = std::min<std::size_t>(bands, static_cast<std::size_t>(height_));
+    const auto drawBand = [&](std::size_t index) {
+        const int begin = height_ * static_cast<int>(index) / static_cast<int>(bands);
+        const int end = height_ * static_cast<int>(index + 1) / static_cast<int>(bands);
+        for (const RasterTriangle& triangle : pending_) {
+            rasterize(triangle.vertices, materials_[triangle.material], begin, end);
+        }
+    };
+    std::vector<std::thread> workers;
+    workers.reserve(bands - 1);
+    for (std::size_t index = 1; index < bands; ++index) workers.emplace_back(drawBand, index);
+    drawBand(0);
+    for (std::thread& worker : workers) worker.join();
+    pending_.clear();
+    materials_.clear();
+}
+
+NativeFrame Rasterizer::finish() {
     NativeFrame frame;
     frame.width = width_;
     frame.height = height_;
@@ -538,6 +603,10 @@ NativeFrame Rasterizer::finish() const {
         frame.rgb.clear();
         return frame;
     }
+    const bool profileRaster = std::getenv("GTC_RASTER_PROFILE") != nullptr;
+    const auto rasterStart = std::chrono::steady_clock::now();
+    flush();
+    const auto rasterDone = std::chrono::steady_clock::now();
     frame.rgb.resize(pixels_.size() * 3);
     constexpr int size = 4096;
     constexpr double range = 4.0;
@@ -574,6 +643,13 @@ NativeFrame Rasterizer::finish() const {
         worker.join();
     } else {
         convert(0, pixels_.size());
+    }
+    if (profileRaster) {
+        const auto ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        std::printf("  [cpu] triangles %.2f ms, encode %.2f ms\n",
+                    ms(rasterStart, rasterDone), ms(rasterDone, std::chrono::steady_clock::now()));
     }
     return frame;
 }
