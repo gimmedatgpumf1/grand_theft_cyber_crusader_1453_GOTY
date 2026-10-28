@@ -1,9 +1,12 @@
 #include "client/window.h"
 #include "client/opengl_shared.h"
+#include "vulkan/vk_renderer.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 
 namespace gtc::native {
@@ -209,6 +212,7 @@ struct NativeWindow::Impl {
     OpenGlRenderer renderer;
     Atom wmDelete = 0;
     bool gpu = false;
+    bool vulkan = false;
     bool open = false;
     bool captured = false;
     double lastX = kDefaultWindowWidth * 0.5;
@@ -329,6 +333,14 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     return activeGpu->renderer.render(scene, frame);
 }
 
+// Vulkan first: it needs no window and no GL context, and it is the path that
+// carries the frame. `GTC_NO_VULKAN=1` keeps a driver with a bad day from
+// taking the client with it.
+bool wantVulkan() {
+    const char* skip = std::getenv("GTC_NO_VULKAN");
+    return !(skip && *skip && *skip != '0');
+}
+
 } // namespace
 
 NativeWindow::NativeWindow() = default;
@@ -399,6 +411,16 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     impl_->api.flush(impl_->display);
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
+    if (wantVulkan() && vulkanAvailable()) {
+        impl_->vulkan = true;
+        impl_->gpu = true;
+        activeGpu = impl_;
+        setGpuRenderer(&renderVulkanScene);
+        const std::string gpuTitle = title + " - Vulkan";
+        impl_->api.storeName(impl_->display, impl_->window, gpuTitle.c_str());
+        std::fprintf(stderr, "[native] drawing with Vulkan\n");
+        return true;
+    }
     if (impl_->context && impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) {
         impl_->gpu = impl_->renderer.load([this](const char* name) {
             return dlsym(impl_->glLibrary, name);
@@ -421,6 +443,7 @@ void NativeWindow::close() {
         if (activeGpu == impl_) {
             setGpuRenderer(nullptr);
             activeGpu = nullptr;
+            if (impl_->vulkan) shutdownVulkan();
         }
         impl_->shutdown();
         delete impl_;
@@ -504,7 +527,7 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
     if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) return false;
         if (!impl_->renderer.present(frame)) return false;
         impl_->glx.swapBuffers(impl_->display, impl_->window);
@@ -532,7 +555,7 @@ bool NativeWindow::present(const NativeFrame& frame) {
 
 bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
     if (!impl_ || !impl_->open) return false;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) return false;
         return impl_->renderer.capture(impl_->width, impl_->height, path);
     }

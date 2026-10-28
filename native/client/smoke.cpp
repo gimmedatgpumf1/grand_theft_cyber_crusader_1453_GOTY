@@ -1,4 +1,5 @@
 #include "client/smoke_body.h"
+#include "vulkan/vk_renderer.h"
 #include "client/smoke_streams.h"
 #include "client/blockbody.h"
 #include "client/renderer.h"
@@ -544,6 +545,13 @@ int main(int argc, char** argv) {
     int port = 1453;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
+        if (argument == "--vulkan-report") {
+            // A backend that cannot start has to say so and return, not take the
+            // process with it: this is the machine's answer to "can it draw".
+            std::cout << "vulkan: " << (gtc::native::vulkanAvailable() ? "available" : "unavailable") << '\n';
+            gtc::native::shutdownVulkan();
+            return 0;
+        }
         if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = integer(argv[++i], 1453);
         else if (argument == "--output" && i + 1 < argc) output = argv[++i];

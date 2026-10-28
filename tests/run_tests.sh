@@ -10,6 +10,9 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.ob
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
   --sex female --scanned
 echo '[test] both skeletons pass their anatomical checks.'
+# The shaders are generated, not compiled, so the tree is checked against the
+# generator: a stale .spv or header fails here rather than at pipeline creation.
+python3 native/vulkan/spirv.py --check
 mkdir -p build/bin .cache/ccache
 export CCACHE_DIR="$ROOT/.cache/ccache"
 export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
@@ -22,6 +25,12 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+if [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
+  # A machine without a Vulkan driver must say so and keep going; this asserts
+  # the fallback rather than the frame rate, because the frame rate is not
+  # something this machine can answer for.
+  "$ROOT/build/bin/gtc-native-smoke" --vulkan-report
+fi
 if [ -x "$ROOT/build/bin/gtc1453" ] && [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   "$ROOT/tests/native_smoke.sh" "$ROOT/build/native-smoke-tests"
 fi

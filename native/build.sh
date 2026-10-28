@@ -35,7 +35,8 @@ mkdir -p "$ROOT/build/obj/native-client"
 CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
 CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
   native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/skeleton_body.cpp native/client/skeleton_room.cpp native/client/world_renderer.cpp native/client/world_hud.cpp native/client/interactive.cpp
-  native/client/opengl_shared.cpp native/client/window_x11.cpp native/client/main.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp)
+  native/client/opengl_shared.cpp native/client/window_x11.cpp native/client/main.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp
+  native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp)
 CLIENT_OBJECTS=()
 for SOURCE in "${CLIENT_SOURCES[@]}"; do
   OBJECT="$ROOT/build/obj/native-client/$(basename "${SOURCE%.cpp}").o"
@@ -52,10 +53,10 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
   "$ROOT/build/obj/native-client/world_renderer.o" "$ROOT/build/obj/native-client/world_hud.o" "$ROOT/build/obj/native/human.o"
   "$ROOT/build/obj/native/hair.o" "$ROOT/build/obj/native/json.o"
   "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"
-  "$ROOT/build/obj/native-client/sha1.o")
+  "$ROOT/build/obj/native-client/sha1.o" "$ROOT/build/obj/native-client/vk_device.o" "$ROOT/build/obj/native-client/vk_renderer.o")
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/main.o" "$ROOT/build/obj/native-client/interactive.o" \
   "$ROOT/build/obj/native-client/window_x11.o" "$ROOT/build/obj/native-client/opengl_shared.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-client"
-"$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -o "$ROOT/build/bin/gtc-native-smoke"
+"$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-smoke"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
   cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
