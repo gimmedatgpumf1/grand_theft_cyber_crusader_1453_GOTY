@@ -394,8 +394,11 @@ std::size_t Rasterizer::prepareBatch(const Material& material) {
 void Rasterizer::worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
                                const Material& material) {
     if (!gpu_) {
-        triangle({cameraVertex(camera_, a, normal, a), cameraVertex(camera_, b, normal, b),
-                  cameraVertex(camera_, c, normal, c)}, material);
+        // The software path needs unit normals: its flat-shading test compares
+        // dot products with 1.0 to decide whether a triangle can be shaded once.
+        const Vec3 unit = normalized(normal);
+        triangle({cameraVertex(camera_, a, unit, a), cameraVertex(camera_, b, unit, b),
+                  cameraVertex(camera_, c, unit, c)}, material);
         return;
     }
     GpuBatch& batch = scene_.batches[prepareBatch(material)];

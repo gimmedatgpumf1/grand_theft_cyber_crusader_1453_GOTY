@@ -262,7 +262,10 @@ void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3
     end = std::min(end, bones_.size());
     for (std::size_t index = begin; index < end; ++index) {
         const SkeletonBone& bone = bones_[index];
-        std::vector<Vec3> world;
+        // Scratch, not a fresh allocation: this is 28 allocations per body per
+        // pose and they all have the same short lifetime.
+        thread_local std::vector<Vec3> world;
+        world.clear();
         world.reserve(bone.points.size());
         for (const Vec3& point : bone.points) world.push_back(pose[index].apply(point));
         for (const auto& face : bone.triangles) {
@@ -272,10 +275,11 @@ void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3
             const Vec3 a = world[static_cast<std::size_t>(face[0])];
             const Vec3 b = world[static_cast<std::size_t>(face[1])];
             const Vec3 c = world[static_cast<std::size_t>(face[2])];
-            const Vec3 normal = normalized(cross(b - a, c - a));
-            // The points are already where they belong when the backend draws in
-            // world space, which is the case for both GPU backends.
-            rasterizer.worldTriangle(a, b, c, normal, boneMaterial);
+            // Left unnormalised on purpose: the GPU shaders normalise what they
+            // are given, so the square root and three divides per triangle were
+            // being thrown away. The software path normalises in worldTriangle,
+            // where its own flat-shading test needs real unit normals.
+            rasterizer.worldTriangle(a, b, c, cross(b - a, c - a), boneMaterial);
         }
     }
 }

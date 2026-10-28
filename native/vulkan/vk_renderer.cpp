@@ -154,8 +154,13 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     if (total == 0) return true;
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(total) * sizeof(GpuVertex);
 
-    VkPhysicalDeviceMemoryProperties memory{};
-    getPhysicalDeviceMemoryProperties(physical_, &memory);
+    // Asked once: this is a driver query, and the answer cannot change while
+    // the device lives.
+    if (!memoryQueried_) {
+        getPhysicalDeviceMemoryProperties(physical_, &memory_);
+        memoryQueried_ = true;
+    }
+    const VkPhysicalDeviceMemoryProperties& memory = memory_;
     const auto pickType = [&](const VkMemoryRequirements& requirements, VkMemoryPropertyFlags wanted) {
         for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
             if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
@@ -539,9 +544,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     }
     // The coverage mask is part of the frame contract, not an extra: the caller
     // checks it before it shows anything, and every pixel this pass returns was
-    // drawn by it, so it is fully covered.
-    frame.alpha.resize(count);
-    std::memset(frame.alpha.data(), 255, count);
+    // drawn by it, so it is fully covered. A frame handed straight to the window
+    // has nobody to ask, so filling 1.45 MB of mask for it is wasted bandwidth.
+    if (!wantBgra) {
+        frame.alpha.resize(count);
+        std::memset(frame.alpha.data(), 255, count);
+    } else {
+        frame.alpha.clear();
+    }
     // One wide move out of the mapped range, then convert from ordinary
     // memory: a memcpy of 5.8 MB is a handful of vector loads per cache line,
     // where the byte-by-byte read that used to be here was one transaction per

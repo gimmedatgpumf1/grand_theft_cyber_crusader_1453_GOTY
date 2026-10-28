@@ -354,6 +354,8 @@ private:
     VkDevice device_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
     std::uint32_t family_ = 0;
+    VkPhysicalDeviceMemoryProperties memory_{};
+    bool memoryQueried_ = false;
     VkFormat colourFormat_ = VK_FORMAT_R8G8B8A8_UNORM;
     VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
     bool bgra_ = false;
