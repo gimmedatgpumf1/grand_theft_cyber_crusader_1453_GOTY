@@ -94,36 +94,52 @@ Her import was faithful — `verify.mjs` confirms 7,560 of 7,560 vertices are
 present verbatim with 0 moved, and the height is preserved to 2 mm. Faithful
 copying of a deformed source is still a deformed body.
 
-## Why Z-Anatomy cannot fix her
+## A real female source has been found
+
+The Visible Human Female — the NLM cadaver dataset, a 59-year-old woman — has a
+full-body CT in a reachable, MIT-licensed mirror,
+https://github.com/COMODO-research/Comodo_VisibleHuman: 1,727 slices of
+670 x 673 at 0.7227 x 0.7227 x 1.0 mm. Her bones segment out of it cleanly.
+
+| measurement | value |
+| --- | --- |
+| bone threshold | 1600 HU (at 1250 the scanner table welds all bone into one blob) |
+| separated bone components | **238** |
+| both feet and ankles | **65 components** — calcaneus, talus, navicular, cuboid, three cuneiforms, five metatarsals, every toe phalanx |
+| her bone height | **1.718 m**, lowest calcaneus voxel to the top of the cranium |
+| best-fit atlas scale | **1.00** — she is not rescaled |
+| mesh at full resolution | 287,939 vertices, 581,438 triangles |
+| mesh at shipping resolution | 5,475 vertices, 13,582 triangles, 28 parts |
+
+`vhf/segmentation-bones.png` shows the result with each bone in its own colour:
+skull, individual vertebrae, every rib, both scapulae and clavicles, both arms
+with fingers, the pelvis, both legs and both feet.
+
+**It is not shipped yet, because the arm joints cannot be cut correctly.** At
+1600 HU each arm is one connected blob of humerus + radius + ulna + hand —
+20,675 voxels, 396 mm long — bridged by the scan's partial volume. Splitting it
+along its own principal axis put both joint cuts within 6 mm of each other in the
+middle of the arm, and per-region ICP against the atlas diverged to 50–140 mm RMS
+because her arms do not lie in the atlas's pose. See `vhf/README.md`.
+
+Until that is solved, the shipped `skeleton-female.obj` remains the warped male
+mesh and the test room says so on screen:
+`FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+
+## Why the atlas cannot fix her
 
 Z-Anatomy's models **are** BodyParts3D (its readme says "models derived from
 'BodyParts3D'"). BodyParts3D's own database description says it is "a
 three-dimensional whole-body model for an adult human **male**". The lineage is
 male-only from top to bottom, so a different file from the same family cannot
-supply a female.
-
-What that leaves, checked and exhausted:
-
-| source | has a female skeleton? |
-| --- | --- |
-| Z-Anatomy / BodyParts3D | no — single adult male |
-| open-anatomy-3d female | no — TPS warp of the male |
-| Human Reference Atlas v1.10 (united-female) | no — skin, organs, pelvis and legs only; no skull, ribs or arms |
-| Visible Human Female | not published as per-bone surface meshes on a reachable host |
-
-The room caption says so on screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+supply a female — only a different dataset can, and the Visible Human Female is
+the one that does.
 
 ## Consequence
 
 The male is a trustworthy anatomical reference and is ready for rigging at
 1.696 m.
 
-The female is not female anatomy and must not be rigged as if she were. Options,
-in order of how much they can be trusted:
-
-1. **A female scan or segmented CT.** The only route that is both honest and
-   correct. Everything else in the rig would fall into place around it.
-2. **A real female pelvis plus a female-stature body proportioned from the male
-   data** — defensible only if every substituted part is labelled, because it is
-   a reconstruction, not a scan.
-3. Keep the male-only room until (1) or (2) is decided.
+The female is not female anatomy yet and must not be rigged as if she were. The
+bones segmented from her own CT are waiting in `vhf/`; what is missing is a
+reliable way to cut the joints her scan fused.
