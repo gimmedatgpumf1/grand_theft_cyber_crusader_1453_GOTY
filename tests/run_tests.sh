@@ -10,6 +10,9 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.ob
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
   --sex female --scanned
 echo '[test] both skeletons pass their anatomical checks.'
+# The Windows and Linux builds keep separate source lists by hand; this checks
+# they have not drifted and that the object lists are still well formed.
+python3 tests/build_scripts.py
 # The shaders are generated, not compiled, so the tree is checked against the
 # generator: a stale .spv or header fails here rather than at pipeline creation.
 python3 native/vulkan/spirv.py --check
