@@ -66,6 +66,10 @@ public:
     bool readBack(int width, int height, const GpuScene&, NativeFrame& frame);
     bool save(const NativeFrame& frame, const std::string& path);
     void captureMouse(bool capture);
+    // Sets the client area to a size. The benchmark uses it to measure at the
+    // size it reports, because a swapchain frame is rendered at the size of the
+    // window and nothing else.
+    void resize(int width, int height);
     void size(int& width, int& height) const;
     bool gpu() const;
     bool opened() const;

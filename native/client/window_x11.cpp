@@ -145,6 +145,7 @@ struct Api {
     int (*freeColormap)(Display*, Colormap) = nullptr;
     int (*selectInput)(Display*, Window, long) = nullptr;
     int (*mapWindow)(Display*, Window) = nullptr;
+    int (*resizeWindow)(Display*, Window, unsigned int, unsigned int) = nullptr;
     int (*storeName)(Display*, Window, const char*) = nullptr;
     GC (*createGC)(Display*, Drawable, unsigned long, void*) = nullptr;
     int (*freeGC)(Display*, GC) = nullptr;
@@ -240,6 +241,7 @@ struct NativeWindow::Impl {
         GTC_LOAD_X11(freeColormap, "XFreeColormap");
         GTC_LOAD_X11(selectInput, "XSelectInput");
         GTC_LOAD_X11(mapWindow, "XMapWindow");
+        GTC_LOAD_X11(resizeWindow, "XResizeWindow");
         GTC_LOAD_X11(storeName, "XStoreName");
         GTC_LOAD_X11(createGC, "XCreateGC");
         GTC_LOAD_X11(freeGC, "XFreeGC");
@@ -604,6 +606,15 @@ void NativeWindow::captureMouse(bool capture) {
         impl_->api.ungrabPointer(impl_->display, 0);
     }
     impl_->api.flush(impl_->display);
+}
+
+void NativeWindow::resize(int width, int height) {
+    if (!impl_ || !impl_->display || !impl_->window || !impl_->api.resizeWindow) return;
+    impl_->api.resizeWindow(impl_->display, impl_->window, static_cast<unsigned>(std::max(1, width)),
+                            static_cast<unsigned>(std::max(1, height)));
+    if (impl_->api.flush) impl_->api.flush(impl_->display);
+    impl_->width = std::max(1, width);
+    impl_->height = std::max(1, height);
 }
 
 void NativeWindow::size(int& width, int& height) const {

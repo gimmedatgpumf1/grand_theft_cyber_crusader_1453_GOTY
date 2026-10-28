@@ -420,6 +420,21 @@ void NativeWindow::captureMouse(bool capture) {
     }
 }
 
+void NativeWindow::resize(int width, int height) {
+    if (!impl_ || !impl_->window) return;
+    RECT rect{0, 0, std::max(1, width), std::max(1, height)};
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    SetWindowPos(impl_->window, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
+                 SWP_NOMOVE | SWP_NOZORDER);
+    // The client area follows from the window size, and WM_SIZE has already been
+    // through the message queue by the time this returns.
+    RECT client{};
+    if (GetClientRect(impl_->window, &client)) {
+        impl_->width = std::max(1, static_cast<int>(client.right));
+        impl_->height = std::max(1, static_cast<int>(client.bottom));
+    }
+}
+
 void NativeWindow::size(int& width, int& height) const {
     width = impl_ ? impl_->width : kDefaultWindowWidth;
     height = impl_ ? impl_->height : kDefaultWindowHeight;
