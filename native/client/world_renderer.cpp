@@ -623,7 +623,7 @@ bool WorldRenderer::load(const std::string& root, std::string& error) {
     // The authored block figure is the body of record. GTC_SCANBODY brings
     // back the imported scan, which the harness uses for the anatomical rig
     // checks that are written against its topology.
-    if (!std::getenv("GTC_SCANBODY")) {
+    if (!importedBody_ && !std::getenv("GTC_SCANBODY")) {
         male_ = blockBody(true);
         female_ = blockBody(false);
         male_.loadMorphSpecs(root);
@@ -727,15 +727,24 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     if (rebuild) {
         if (view.gpu) gpuScene_.batches.resize(gpuStaticBatchCount_);
         Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu,
-                              view.gpu ? std::move(gpuScene_) : GpuScene{});
+                              view.gpu ? std::move(gpuScene_) : GpuScene{}, &buffer_);
         rasterizer.setCamera(camera);
+        const bool subProfile = std::getenv("GTC_PROFILE2") != nullptr;
+        const auto t0 = std::chrono::steady_clock::now();
         drawFloor(rasterizer, camera, world);
+        const auto t1 = std::chrono::steady_clock::now();
         if (view.mode != ViewMode::God) {
             Material ceiling;
             ceiling.color = colorHex("#1b2720");
             drawBox(rasterizer, camera, {0, 3.41, 0}, {world.width, 0.04, world.depth}, ceiling);
         }
+        const auto t2 = std::chrono::steady_clock::now();
         drawDressing(rasterizer, camera, world, state, view);
+        const auto t3 = std::chrono::steady_clock::now();
+        if (subProfile) {
+            const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+            std::cerr << "  floor=" << ms(t0, t1) << " ceiling=" << ms(t1, t2) << " dressing=" << ms(t2, t3) << "\n";
+        }
         if (view.highlightToilet) {
             Material highlight;
             highlight.color = colorHex("#86b83e");

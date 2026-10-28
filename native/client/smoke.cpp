@@ -225,7 +225,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     standingState.characters[0].toiletAction = gtc::ToiletAction::None;
     standingState.characters[0].speed = 0;
     ViewState neutralStandingView = view;
-    neutralStandingView.yaw = bodyYaw;
+    neutralStandingView.yaw = static_cast<float>(bodyYaw);
     neutralStandingView.pitch = 0;
     const Camera neutralStanding = renderer.viewCamera(world, standingState, citizen.id, neutralStandingView);
     HumanRenderCache corneaCache;
@@ -334,7 +334,7 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
         }
     }
     ViewState standingView = view;
-    standingView.yaw = bodyYaw;
+    standingView.yaw = static_cast<float>(bodyYaw);
     standingView.pitch = -2.0F;
     if (!renderer.render(world, standingState, citizen.id, standingView, frame, error)) { cleanup(); return false; }
     const Camera standingCamera = renderer.viewCamera(world, standingState, citizen.id, standingView);
@@ -342,17 +342,17 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
     visibilityState.characters[0].toiletAction = gtc::ToiletAction::Piss;
     visibilityState.characters[0].pissing = true;
     const Camera visibilityCamera = renderer.viewCamera(world, visibilityState, citizen.id, standingView);
-    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, visibilityState.tick, error)) { cleanup(); return false; }
+    if (!bodyVisibility(eyeModel, visibilityState.characters[0], visibilityCamera, static_cast<std::uint64_t>(visibilityState.tick), error)) { cleanup(); return false; }
     ViewState tpsView = standingView;
     tpsView.mode = ViewMode::ThirdPerson;
     tpsView.pitch = -0.25F;
     const Camera tpsCamera = renderer.viewCamera(world, standingState, citizen.id, tpsView);
     gtc::Character tpsCitizen = standingState.characters[0];
-    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, standingState.tick, false, false, error)) {
+    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, static_cast<std::uint64_t>(standingState.tick), false, false, error)) {
         cleanup(); return false;
     }
     tpsCitizen.unzipped = true;
-    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, standingState.tick, true, false, error)) {
+    if (!genitalMode(eyeModel, tpsCitizen, tpsCamera, static_cast<std::uint64_t>(standingState.tick), true, false, error)) {
         cleanup(); return false;
     }
     int visiblePelvis = 0, visibleLegs = 0;
@@ -540,10 +540,6 @@ bool motionChecks(gtc::native::WorldRenderer& renderer, std::string& error) {
 }
 } // namespace
 int main(int argc, char** argv) {
-    // The harness drives the anatomical checks through the world renderer, so
-    // it asks for the imported scan explicitly; the game itself draws the
-    // authored block body.
-    setenv("GTC_SCANBODY", "1", 0);
     std::string host = "127.0.0.1", output = "build/native-smoke", root = ".";
     int port = 1453;
     for (int i = 1; i < argc; ++i) {
@@ -604,7 +600,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (iterations == 5) {
-            if (!beta.sendInput({}, false, false, 0, 0) || !beta.sendPath({3.0, 2.3})) return 1;
+            if (!beta.sendInput({}, false, false, 0, 0) || !beta.sendPath({3.0F, 2.3F})) return 1;
         }
         const gtc::Character* a = alpha.state().character(alpha.playerId());
         const gtc::Character* b = beta.state().character(beta.playerId());
@@ -663,6 +659,10 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(output, code);
     if (passed) {
         gtc::native::WorldRenderer renderer;
+        // The anatomical camera checks below are written against the imported
+        // scan's topology, so the harness opts into it; the game draws the
+        // authored block body.
+        renderer.loadImportedBody(true);
         if (!renderer.load(root, error)) {
             std::cerr << error << '\n';
             return 1;

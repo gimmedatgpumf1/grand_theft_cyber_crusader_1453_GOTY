@@ -124,9 +124,21 @@ using GpuRenderer = bool (*)(const GpuScene& scene, NativeFrame& frame);
 void setGpuRenderer(GpuRenderer renderer);
 bool renderGpuScene(const GpuScene& scene, NativeFrame& frame);
 
+// Frame buffers live outside the rasterizer so a running client can keep the
+// same few megabytes of memory between frames instead of faulting in a fresh
+// sixteen megabyte block every time it draws.
+struct RasterBuffer {
+    std::vector<double> depth;
+    std::vector<Color> pixels;
+};
+
 class Rasterizer {
 public:
-    Rasterizer(int width, int height, Color background, double focal, bool gpu = false, GpuScene recycled = {});
+    Rasterizer(int width, int height, Color background, double focal, bool gpu = false, GpuScene recycled = {},
+               RasterBuffer* reusable = nullptr);
+    ~Rasterizer();
+    Rasterizer(const Rasterizer&) = delete;
+    Rasterizer& operator=(const Rasterizer&) = delete;
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
     void setCamera(const Camera& camera);
@@ -146,6 +158,7 @@ private:
     GpuScene scene_;
     std::vector<double> depth_;
     std::vector<Color> pixels_;
+    RasterBuffer* reusable_ = nullptr;
 };
 
 void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 size,

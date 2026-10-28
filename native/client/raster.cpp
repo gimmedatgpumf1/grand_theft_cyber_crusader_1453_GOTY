@@ -254,17 +254,31 @@ RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 so
     return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
-Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu, GpuScene recycled)
-    : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)) {
+Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu, GpuScene recycled,
+                       RasterBuffer* reusable)
+    : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)),
+      reusable_(gpu ? nullptr : reusable) {
     for (GpuBatch& batch : scene_.batches) batch.vertices.clear();
     scene_.width = width;
     scene_.height = height;
     scene_.focal = focal;
     scene_.background = background;
-    if (!gpu_) {
-        depth_.resize(static_cast<std::size_t>(width) * height, 1e100);
-        pixels_.resize(static_cast<std::size_t>(width) * height, background);
+    if (gpu_) return;
+    if (reusable_) {
+        depth_.swap(reusable_->depth);
+        pixels_.swap(reusable_->pixels);
     }
+    const std::size_t count = static_cast<std::size_t>(width) * height;
+    depth_.resize(count);
+    pixels_.resize(count);
+    std::fill(depth_.begin(), depth_.end(), 1e100);
+    std::fill(pixels_.begin(), pixels_.end(), background);
+}
+
+Rasterizer::~Rasterizer() {
+    if (!reusable_) return;
+    reusable_->depth.swap(depth_);
+    reusable_->pixels.swap(pixels_);
 }
 
 void Rasterizer::setCamera(const Camera& camera) {
@@ -352,6 +366,7 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const int minY = std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y}))));
         const int maxY = std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y}))));
         if (minX > maxX || minY > maxY) continue;
+        const Vec3 centroidView = (p[0].view + p[1].view + p[2].view) / 3.0;
         Vec3 tangent{1, 0, 0}, bitangent{0, 1, 0};
         if (material.kind == Material::Kind::Skin && material.normalYoung) {
             const Vec3 e1 = p[1].view - p[0].view, e2 = p[2].view - p[0].view;
@@ -363,11 +378,17 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 bitangent = normalized((e2 * du1 - e1 * du2) / denominator);
             }
         }
+        // Any triangle whose three normals agree shades identically across its
+        // whole area, so the per-pixel normal interpolation, renormalisation and
+        // two dot products can be folded into one value here. Walls, floor and
+        // the box furniture are all of that kind, and they cover most pixels.
+        const bool flatShaded = std::abs(dot(p[0].normal, p[1].normal) - 1.0) < 1e-6 &&
+            std::abs(dot(p[0].normal, p[2].normal) - 1.0) < 1e-6;
         double constantDiffuse = 0.0;
-        const bool constantLighting = material.constantLighting && material.specular <= 0.0;
+        const bool constantLighting = (material.constantLighting || flatShaded) && material.specular <= 0.0;
         if (constantLighting) {
             Vec3 normal = p[0].normal;
-            if (dot(normal, p[0].view) > 0) normal = normal * -1.0;
+            if (dot(normal, centroidView) > 0) normal = normal * -1.0;
             constantDiffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
                               0.24 * std::max(0.0, dot(normal, fill));
         }
