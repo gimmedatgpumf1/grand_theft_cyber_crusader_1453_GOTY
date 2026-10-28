@@ -712,6 +712,11 @@ void setLinearTarget(bool enabled) {
     instance().discardTargets();
 }
 
+void setVulkanSurfaceTarget(void* windowHandle, int kind) {
+    detail::Renderer& renderer = instance();
+    renderer.setSurfaceTarget(windowHandle, kind);
+}
+
 void drainVulkan() {
     detail::Renderer& renderer = instance();
     renderer.drain();  // a no-op when the device was never created

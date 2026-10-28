@@ -26,6 +26,11 @@ void setLinearTarget(bool enabled);
 // default.
 void setReadbackMemory(int mode);
 
+// Tells the backend which window it may eventually present to, before the device
+// is created: surface extensions have to be requested at instance creation. With
+// no window attached, everything stays on the readback path.
+void setVulkanSurfaceTarget(void* windowHandle, int kind);
+
 // Waits for any submitted frame to finish, so the next measurement starts from
 // an idle device instead of inheriting the previous one's work. Only the
 // benchmark needs this: the client always runs frames back to back.

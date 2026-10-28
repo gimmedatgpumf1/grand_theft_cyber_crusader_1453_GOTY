@@ -240,6 +240,12 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     } else {
         trace("window: vulkan disabled by GTC_NO_VULKAN");
     }
+    // Offered before the device is created, because the surface extensions have
+    // to be requested at instance creation. Only when asked: this is the path
+    // toward presenting without a copy, and it is not the default yet.
+    if (wantVulkan() && std::getenv("GTC_VK_SWAPCHAIN")) {
+        setVulkanSurfaceTarget(impl_->window, 1);
+    }
     if (wantVulkan() && vulkanAvailable()) {
         trace("window: vulkan ready");
         impl_->vulkan = true;

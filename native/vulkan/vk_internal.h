@@ -212,10 +212,30 @@ public:
         destroyTargets();
     }
 
+    // -- window surface, for the swapchain --------------------------------
+    // Deliberately minimal: this asks the driver what it can do and reports it.
+    // Nothing here draws, so a driver that answers "no" costs a log line rather
+    // than a broken frame.
+    struct SurfaceAnswer {
+        bool available = false;
+        bool formatMatches = false;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        std::uint32_t imageCount = 0;
+        VkExtent2D extent{0, 0};
+        bool immediate = false;
+        bool mailbox = false;
+        bool fifo = true;
+        const char* reason = "";
+    };
+
+    SurfaceAnswer probeSurface();
+    void setSurfaceTarget(void* handle, int kind) { wsiHandle_ = handle; wsiKind_ = kind; }
+
 private:
     bool openLoader();
     bool submitNow(const std::function<void(VkCommandBuffer)>& body);
     bool createInstance();
+    bool instanceExtensionOffered(std::uint32_t& count, const char* wanted);
     bool chooseDevice();
     bool createDevice();
     bool createLayouts();
@@ -231,6 +251,8 @@ private:
     bool uploadVertices(const GpuScene& scene);
     void destroyTargets();
 
+    bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
+
     template <class Function>
     bool resolve(Function& slot, const char* name) {
         slot = reinterpret_cast<Function>(getInstanceProcAddr_(instance_, name));
@@ -240,6 +262,16 @@ private:
         }
         return true;
     }
+
+    // -- surface probe -----------------------------------------------------
+    void* wsiHandle_ = nullptr;
+    int wsiKind_ = 0;
+    VkSurfaceKHR surface_ = VK_NULL_HANDLE;
+    PFN_vkDestroySurfaceKHR destroySurface_ = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceSupportKHR surfaceSupport_ = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR surfaceCaps_ = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR surfaceFormats_ = nullptr;
+    PFN_vkGetPhysicalDeviceSurfacePresentModesKHR surfaceModes_ = nullptr;
 
     // -- loader ------------------------------------------------------------
     void* library_ = nullptr;

@@ -8,6 +8,22 @@
 
 #include "../client/diagnostics.h"
 #include "vk_internal.h"
+
+#if defined(_WIN32)
+#include <windows.h>
+// The vendored headers carry the platform-neutral surface types but not the
+// Win32 one, so it is spelled out here rather than pulling in a second copy of
+// the whole loader interface.
+typedef struct VkWin32SurfaceCreateInfoKHR {
+    VkStructureType sType;
+    const void* pNext;
+    VkFlags flags;
+    HINSTANCE hinstance;
+    HWND hwnd;
+} VkWin32SurfaceCreateInfoKHR;
+typedef VkResult(VKAPI_PTR* PFN_vkCreateWin32SurfaceKHR)(VkInstance, const VkWin32SurfaceCreateInfoKHR*,
+                                                        const VkAllocationCallbacks*, VkSurfaceKHR*);
+#endif
 #include "shaders/spirv_shaders.h"
 
 #if defined(_WIN32)
@@ -98,18 +114,82 @@ bool Renderer::createInstance() {
     application.engineVersion = 1;
     application.apiVersion = VK_API_VERSION_1_0;
 
+    // The surface extensions have to be asked for when the instance is created,
+    // before anything has been drawn, so the window hands its handle over first.
+    // Only names the loader actually offers are requested: asking for one this
+    // machine does not have would fail instance creation and cost the whole
+    // backend, when the only thing at stake is whether the picture can skip
+    // host memory.
+    const char* extensions[2] = {nullptr, nullptr};
+    std::uint32_t extensionCount = 0;
+    if (wsiHandle_ != nullptr && wsiKind_ != 0) {
+        extensions[extensionCount++] = "VK_KHR_surface";
+#if defined(_WIN32)
+        extensions[extensionCount++] = "VK_KHR_win32_surface";
+#else
+        extensions[extensionCount++] = "VK_KHR_xlib_surface";
+#endif
+        std::uint32_t offered = 0;
+        if (!instanceExtensionOffered(offered, nullptr)) {
+            extensions[1] = nullptr;
+            extensionCount = 0;
+            wsiHandle_ = nullptr;
+            wsiKind_ = 0;
+        }
+    }
     VkInstanceCreateInfo info{};
 
     info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     info.pApplicationInfo = &application;
-    info.enabledExtensionCount = 0;
-    info.ppEnabledExtensionNames = nullptr;
-    const VkResult result = createInstanceFn(&info, nullptr, &instance_);
+    info.enabledExtensionCount = extensionCount;
+    info.ppEnabledExtensionNames = extensionCount ? extensions : nullptr;
+    VkResult result = createInstanceFn(&info, nullptr, &instance_);
+    if (result != VK_SUCCESS && extensionCount > 0) {
+        // Give the surface up rather than the device.
+        std::fprintf(stderr, "[vk] instance rejected the surface extensions (%d), continuing without them\n",
+                     static_cast<int>(result));
+        wsiHandle_ = nullptr;
+        wsiKind_ = 0;
+        info.enabledExtensionCount = 0;
+        info.ppEnabledExtensionNames = nullptr;
+        result = createInstanceFn(&info, nullptr, &instance_);
+    }
     if (result != VK_SUCCESS) {
         std::fprintf(stderr, "[vk] vkCreateInstance failed (%d)\n", static_cast<int>(result));
         return false;
     }
     return true;
+}
+
+// Whether the loader offers the two surface extensions, asked before the
+// instance exists because that is when they have to be named.
+bool Renderer::instanceExtensionOffered(std::uint32_t& count, const char* wanted) {
+    const auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+        getInstanceProcAddr_(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+    if (enumerate == nullptr) return false;
+    std::uint32_t total = 0;
+    if (enumerate(nullptr, &total, nullptr) != VK_SUCCESS || total == 0) return false;
+    std::vector<VkExtensionProperties> properties(total);
+    if (enumerate(nullptr, &total, properties.data()) != VK_SUCCESS) return false;
+    count = total;
+    if (wanted == nullptr) {
+        // Callers pass null to mean "are the surface ones there": check both.
+        const auto has = [&](const char* name) {
+            for (const VkExtensionProperties& property : properties) {
+                if (std::strcmp(property.extensionName, name) == 0) return true;
+            }
+            return false;
+        };
+#if defined(_WIN32)
+        return has("VK_KHR_surface") && has("VK_KHR_win32_surface");
+#else
+        return has("VK_KHR_surface") && has("VK_KHR_xlib_surface");
+#endif
+    }
+    for (const VkExtensionProperties& property : properties) {
+        if (std::strcmp(property.extensionName, wanted) == 0) return true;
+    }
+    return false;
 }
 
 bool Renderer::chooseDevice() {
@@ -603,7 +683,94 @@ bool Renderer::start() {
     if (!createFrameResources()) { trace("vk: frame resources failed"); stop(); return false; }
     trace("vk: ready");
     ready_ = true;
+    // Asked last, so a driver that cannot make a surface for this window costs
+    // a log line rather than the device.
+    if (wsiHandle_ != nullptr) {
+        const SurfaceAnswer answer = probeSurface();
+        if (answer.available) {
+            std::printf("[vk] surface: %s, %u images, extent %ux%u\n",
+                        answer.formatMatches ? "format matches the renderer" : "FORMAT MISMATCH",
+                        answer.imageCount, answer.extent.width, answer.extent.height);
+            std::printf("[vk] surface: present modes fifo=%d mailbox=%d immediate=%d\n",
+                        answer.fifo ? 1 : 0, answer.mailbox ? 1 : 0, answer.immediate ? 1 : 0);
+        } else {
+            std::printf("[vk] surface: not usable (%s)\n", answer.reason);
+        }
+    }
     return true;
+}
+
+// What a swapchain would need to know before it could exist. This draws nothing
+// and owns nothing beyond the surface it destroys before returning: the point is
+// to find out from the driver -- format compatibility above all -- whether the
+// swapchain is worth writing, instead of writing it against a guess.
+Renderer::SurfaceAnswer Renderer::probeSurface() {
+    SurfaceAnswer answer;
+    if (instance_ == VK_NULL_HANDLE || physical_ == VK_NULL_HANDLE || wsiHandle_ == nullptr) {
+        answer.reason = "no window handle";
+        return answer;
+    }
+    if (!resolve(destroySurface_, "vkDestroySurfaceKHR") ||
+        !resolve(surfaceSupport_, "vkGetPhysicalDeviceSurfaceSupportKHR") ||
+        !resolve(surfaceCaps_, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") ||
+        !resolve(surfaceFormats_, "vkGetPhysicalDeviceSurfaceFormatsKHR") ||
+        !resolve(surfaceModes_, "vkGetPhysicalDeviceSurfacePresentModesKHR")) {
+        answer.reason = "surface entry points missing";
+        return answer;
+    }
+    VkResult created = VK_ERROR_EXTENSION_NOT_PRESENT;
+#if defined(_WIN32)
+    const auto create = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
+        getInstanceProcAddr_(instance_, "vkCreateWin32SurfaceKHR"));
+    if (create == nullptr) { answer.reason = "vkCreateWin32SurfaceKHR missing"; return answer; }
+    VkWin32SurfaceCreateInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    info.hinstance = GetModuleHandle(nullptr);
+    info.hwnd = static_cast<HWND>(wsiHandle_);
+    created = create(instance_, &info, nullptr, &surface_);
+#else
+    answer.reason = "the surface probe is Windows-only for now";
+    return answer;
+#endif
+    if (created != VK_SUCCESS) { answer.reason = "surface creation failed"; return answer; }
+
+    VkBool32 supported = VK_FALSE;
+    if (surfaceSupport_(physical_, family_, surface_, &supported) != VK_SUCCESS || !supported) {
+        answer.reason = "queue family cannot present";
+        answer.available = true;  // the surface itself was fine
+        answer.formatMatches = false;
+        return answer;
+    }
+    VkSurfaceCapabilitiesKHR caps{};
+    if (surfaceCaps_(physical_, surface_, &caps) != VK_SUCCESS) {
+        answer.reason = "no surface capabilities";
+        return answer;
+    }
+    answer.available = true;
+    answer.imageCount = caps.minImageCount + 1;
+    answer.extent = caps.currentExtent;
+
+    std::uint32_t count = 0;
+    if (surfaceFormats_(physical_, surface_, &count, nullptr) == VK_SUCCESS && count > 0) {
+        std::vector<VkSurfaceFormatKHR> formats(count);
+        surfaceFormats_(physical_, surface_, &count, formats.data());
+        for (const VkSurfaceFormatKHR& candidate : formats) {
+            if (candidate.format == colourFormat_) { answer.format = candidate.format; answer.formatMatches = true; }
+            else if (answer.format == VK_FORMAT_UNDEFINED) answer.format = candidate.format;
+        }
+    }
+    count = 0;
+    if (surfaceModes_(physical_, surface_, &count, nullptr) == VK_SUCCESS && count > 0) {
+        std::vector<VkPresentModeKHR> modes(count);
+        surfaceModes_(physical_, surface_, &count, modes.data());
+        answer.fifo = answer.mailbox = answer.immediate = false;
+        for (VkPresentModeKHR mode : modes) {
+            if (mode == VK_PRESENT_MODE_FIFO_KHR) answer.fifo = true;
+            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) answer.mailbox = true;
+            if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) answer.immediate = true;
+        }
+    }
+    return answer;
 }
 
 void Renderer::stop() {
@@ -671,6 +838,11 @@ void Renderer::stop() {
     fence_ = VK_NULL_HANDLE;
     device_ = VK_NULL_HANDLE;
     queue_ = VK_NULL_HANDLE;
+    // The surface is an instance child: it has to go before the instance does.
+    if (surface_ != VK_NULL_HANDLE && destroySurface_) {
+        destroySurface_(instance_, surface_, nullptr);
+        surface_ = VK_NULL_HANDLE;
+    }
     if (instance_ != VK_NULL_HANDLE && destroyInstance) destroyInstance(instance_, nullptr);
     instance_ = VK_NULL_HANDLE;
     if (library_) closeLibrary(library_);
