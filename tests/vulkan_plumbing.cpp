@@ -48,6 +48,13 @@ int main() {
         std::printf("first frame did not arrive\n");
         ++failures;
     }
+    // The frame contract includes the coverage mask. The world renderer refuses
+    // a GPU frame without one, so a missing mask ends the session rather than
+    // showing a wrong picture.
+    if (frame.alpha.size() != static_cast<std::size_t>(frame.width) * frame.height) {
+        std::printf("frame came back without a coverage mask\n");
+        ++failures;
+    }
     // The same geometry again: the vertex buffer must be reused, not re-sent.
     if (!gtc::native::renderVulkanScene(scene, frame)) {
         std::printf("second frame did not arrive\n");

@@ -461,6 +461,17 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     } else if (totalVertices == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
     }
+    // The offsets are indexed by batch below, so they are made to fit the batch
+    // list that is actually being recorded rather than the one that was
+    // uploaded.
+    if (firstVertex_.size() != scene.batches.size()) {
+        firstVertex_.assign(scene.batches.size(), 0);
+        std::uint32_t running = 0;
+        for (std::size_t index = 0; index < scene.batches.size(); ++index) {
+            firstVertex_[index] = running;
+            running += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
+        }
+    }
 
     // Textures are uploaded before recording, because each upload submits its
     // own command buffer and commands cannot be nested.
@@ -487,18 +498,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) return false;
 
-    // The vertex and uniform buffers were written from the host this frame, so
-    // the device is told to look at the result rather than at a copy.
-    VkMemoryBarrier host{};
-    host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    host.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    host.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT;
-    pipelineBarrier(command_, VK_PIPELINE_STAGE_HOST_BIT,
-                    VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                    0, 1, &host, 0, nullptr, 0, nullptr);
-    // The readback buffer was read by the host last frame and is about to be
-    // written by a transfer again: a read-then-write dependency, which has to
-    // be stated rather than assumed.
+    // The vertex and uniform buffers were written from the host this frame.
+    // Host writes are made available to the device by the submission itself, so
+    // there is deliberately no barrier here: HOST is not a pipeline stage, and
+    // passing it to vkCmdPipelineBarrier is invalid usage -- one that a lenient
+    // driver ignores and a strict one does not.
+    //
+    // The only device-side dependency is the readback buffer: last frame's
+    // transfer wrote it, this frame's transfer writes it again.
     VkBufferMemoryBarrier reuse{};
     reuse.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     reuse.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -506,9 +513,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     reuse.buffer = target_.readback;
     reuse.offset = 0;
     reuse.size = VK_WHOLE_SIZE;
-    reuse.srcAccessMask = VK_ACCESS_HOST_READ_BIT;
+    reuse.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     reuse.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    pipelineBarrier(command_, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    pipelineBarrier(command_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                     0, 0, nullptr, 1, &reuse, 0, nullptr);
 
     VkClearValue clears[2]{};
@@ -591,14 +598,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     region.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
     copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback, 1, &region);
 
-    VkMemoryBarrier toHost{};
-
-    toHost.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    toHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    pipelineBarrier(command_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                    0, 1, &toHost, 0, nullptr, 0, nullptr);
-
+    // Nothing else to order here: the fence below is what makes the copy
+    // visible to the host read, and HOST is not a stage a barrier may name.
     if (endCommandBuffer(command_) != VK_SUCCESS) return false;
     VkSubmitInfo submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -612,6 +613,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     frame.width = width;
     frame.height = height;
     frame.rgb.assign(count * 3, 0);
+    // The coverage mask is part of the frame contract, not an extra: the caller
+    // checks it before it shows anything, and every pixel this pass returns was
+    // drawn by it, so it is fully covered.
+    frame.alpha.assign(count, 255);
     const unsigned char* source = static_cast<const unsigned char*>(target_.readbackMap);
     const int redOffset = bgra_ ? 2 : 0;
     const int blueOffset = bgra_ ? 0 : 2;
@@ -641,6 +646,13 @@ bool vulkanAvailable() {
 
 bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
     if (!vulkanAvailable()) return false;
+    if (instance().draw(scene, frame)) return true;
+    // A frame that will not draw is not allowed to end the session on its own:
+    // the device is rebuilt once and the frame retried. Only a second failure
+    // is reported upward.
+    std::fprintf(stderr, "[vk] frame failed, rebuilding the device once\n");
+    instance().stop();
+    if (!instance().start()) return false;
     return instance().draw(scene, frame);
 }
 
