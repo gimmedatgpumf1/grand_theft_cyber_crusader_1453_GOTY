@@ -2,10 +2,17 @@
 #include "client/diagnostics.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
+#include "client/skeleton_body.h"
 #include "client/skeleton_room.h"
+#include "client/window.h"
+#include "client/opengl_shared.h"
 #include "vulkan/vk_renderer.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <iomanip>
+#include <filesystem>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -20,7 +27,294 @@ double number(const std::string& value, double fallback = 0) {
 // frame that stays on the CPU no matter which backend rasterizes: building the
 // vertex batches. Whatever is left in a timed frame with this in place is the
 // cost the GPU path can never remove.
-bool acceptOnly(const gtc::native::GpuScene&, gtc::native::NativeFrame&) { return true; }
+bool acceptOnly(const gtc::native::GpuScene& scene, gtc::native::NativeFrame& frame) {
+    // The frame contract still has to be honoured, or the world renderer treats
+    // this as a failed draw; only the pixels are skipped.
+    frame.width = std::max(1, scene.width);
+    frame.height = std::max(1, scene.height);
+    const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
+    frame.rgb.resize(pixels * 3);
+    frame.alpha.resize(pixels);
+    return true;
+}
+
+// One skull, every backend, the same scene and the same size each time. The
+// point is to separate the two halves of a frame: what the CPU spends building
+// vertex batches, and what the rasterizer spends turning them into pixels. A
+// backend can only ever own the second half.
+struct SkullScene {
+    gtc::native::GpuScene scene;
+    gtc::native::Camera camera;
+    bool ready = false;
+};
+
+double nowMs() {
+    using namespace std::chrono;
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+
+void reportLine(const char* label, double milliseconds) {
+    std::cout << "  " << std::left << std::setw(26) << label << std::right << std::fixed
+              << std::setprecision(2) << std::setw(8) << milliseconds << " ms/frame"
+              << std::setprecision(1) << std::setw(9) << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0)
+              << " fps\n";
+}
+
+// Builds the one-skull scene the benchmark draws: a skull alone, the camera on
+// it, everything else absent so both backends see exactly the same triangles.
+bool buildSkull(const std::string& root, const gtc::native::ViewState& view, SkullScene& out,
+                std::string& error) {
+    gtc::native::SkeletonModel model;
+    if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
+    const int skull = model.bone("skull");
+    if (skull < 0) {
+        error = "no skull bone in the skeleton";
+        return false;
+    }
+    model.poseIdle(0.75, 0.0);
+    out.camera.width = std::max(1, view.width);
+    out.camera.height = std::max(1, view.height);
+    out.camera.fovDegrees = 50;
+    // Eye height on the skull, a metre and a half away: the skull fills the
+    // frame, so the measurement is rasterization and not scene traversal.
+    out.camera.position = {0.0, 1.62, -1.35};
+    out.camera.target = {0.0, 1.60, 0.0};
+    gtc::native::Rasterizer rasterizer(out.camera.width, out.camera.height, gtc::native::colorHex("#0d1210"),
+                                      out.camera.focal(), true, gtc::native::GpuScene{});
+    rasterizer.setCamera(out.camera);
+    model.draw(rasterizer, out.camera, {0, 0, 0}, 0.0, skull);
+    out.scene = rasterizer.takeGpuScene();
+    out.scene.width = out.camera.width;
+    out.scene.height = out.camera.height;
+    out.scene.focal = out.camera.focal();
+    out.scene.viewMatrix = out.camera.viewMatrix();
+    out.scene.revision = 1;
+    for (gtc::native::GpuBatch& batch : out.scene.batches) batch.revision = 1;
+    out.ready = true;
+    return true;
+}
+
+
+// The measurement King asked for: one skull, drawn by each backend, plus the
+// CPU geometry cost that no backend can remove.
+int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, const std::string& renderer,
+                      int iterations) {
+    std::string error;
+    SkullScene skull;
+    if (!buildSkull(root, view, skull, error)) {
+        std::cerr << "Skull benchmark: " << error << '\n';
+        return 1;
+    }
+    std::size_t vertices = 0, triangles = 0;
+    for (const gtc::native::GpuBatch& batch : skull.scene.batches) {
+        vertices += batch.vertices.size();
+        triangles += batch.vertices.size() / 3;
+    }
+    std::cout << "single skull: " << triangles << " triangles, " << vertices << " vertices, "
+              << skull.camera.width << 'x' << skull.camera.height << '\n';
+
+    // Build cost: posing the bone and emitting its triangles into a batch.
+    // Every animated character in the world pays this, every frame it moves.
+    {
+        gtc::native::SkeletonModel model;
+        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+        const int bone = model.bone("skull");
+        model.poseIdle(0.75, 0.0);
+        const double start = nowMs();
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
+                                              gtc::native::colorHex("#0d1210"), skull.camera.focal(), true,
+                                              gtc::native::GpuScene{});
+            rasterizer.setCamera(skull.camera);
+            model.draw(rasterizer, skull.camera, {0, 0, 0}, 0.0, bone);
+            gtc::native::GpuScene built = rasterizer.takeGpuScene();
+            if (built.batches.empty()) { std::cerr << "skull build produced nothing\n"; return 1; }
+        }
+        reportLine("skull geometry (cpu)", (nowMs() - start) / iterations);
+    }
+
+    // A whole body, the way the world builds one for every character it draws:
+    // this is the number that decides the frame time in the street, because it
+    // is paid per character per frame on top of the backend's own cost.
+    {
+        gtc::native::SkeletonModel model;
+        if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+        model.poseIdle(0.75, 0.0);
+        std::size_t bodyTriangles = 0;
+        const double start = nowMs();
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
+                                              gtc::native::colorHex("#0d1210"), skull.camera.focal(), true,
+                                              gtc::native::GpuScene{});
+            rasterizer.setCamera(skull.camera);
+            model.draw(rasterizer, skull.camera, {0, 0, 0}, 0.0);
+            gtc::native::GpuScene built = rasterizer.takeGpuScene();
+            bodyTriangles = 0;
+            for (const gtc::native::GpuBatch& batch : built.batches) bodyTriangles += batch.vertices.size() / 3;
+        }
+        reportLine("whole skeleton geometry", (nowMs() - start) / iterations);
+        std::cout << "  (" << bodyTriangles << " triangles per body)\n";
+    }
+
+    if (renderer == "cpu" || renderer == "all") {
+        // The software rasterizer: builds and draws in the same pass.
+        const double start = nowMs();
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
+                                              gtc::native::colorHex("#0d1210"), skull.camera.focal(), false);
+            rasterizer.setCamera(skull.camera);
+            gtc::native::SkeletonModel model;
+            if (!model.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
+            const int bone = model.bone("skull");
+            model.poseIdle(0.75, 0.0);
+            model.draw(rasterizer, skull.camera, {0, 0, 0}, 0.0, bone);
+            gtc::native::NativeFrame frame = rasterizer.finish();
+            if (frame.rgb.empty()) { std::cerr << "cpu skull frame came back empty\n"; return 1; }
+        }
+        reportLine("skull cpu raster", (nowMs() - start) / iterations);
+    }
+
+    // The GPU backends draw a prebuilt scene, which is what a cache hit looks
+    // like: their number is the backend's own, with geometry held constant.
+    if (renderer == "vulkan" || renderer == "all") {
+        if (!gtc::native::vulkanAvailable()) {
+            std::cout << "  vulkan                    unavailable on this machine\n";
+        } else {
+            gtc::native::NativeFrame frame;
+            gtc::native::renderVulkanScene(skull.scene, frame);
+            const double start = nowMs();
+            for (int iteration = 0; iteration < iterations; ++iteration) {
+                if (!gtc::native::renderVulkanScene(skull.scene, frame)) {
+                    std::cerr << "vulkan skull draw failed\n";
+                    return 1;
+                }
+            }
+            reportLine("skull vulkan", (nowMs() - start) / iterations);
+        }
+    }
+
+    if (renderer == "opengl" || renderer == "all") {
+        // The OpenGL backend needs a real context, so it is measured through the
+        // window's own path -- the same call the game makes.
+        std::string windowError;
+        gtc::native::NativeWindow window;
+        const bool wasSet = std::getenv("GTC_NO_VULKAN") != nullptr;
+#ifdef _WIN32
+        _putenv_s("GTC_NO_VULKAN", "1");
+#else
+        setenv("GTC_NO_VULKAN", "1", 1);
+#endif
+        const bool opened = window.open("GTC skull benchmark", windowError);
+        if (!wasSet) {
+#ifdef _WIN32
+            _putenv_s("GTC_NO_VULKAN", "");
+#else
+            unsetenv("GTC_NO_VULKAN");
+#endif
+        }
+        if (!opened) {
+            std::cout << "  opengl                    unavailable: " << windowError << '\n';
+        } else {
+            gtc::native::NativeFrame frame;
+            window.renderScene(skull.scene, frame);
+            const double start = nowMs();
+            bool ok = true;
+            for (int iteration = 0; iteration < iterations && ok; ++iteration) {
+                ok = window.renderScene(skull.scene, frame);
+            }
+            if (!ok) {
+                std::cerr << "opengl skull draw failed\n";
+            } else {
+                reportLine("skull opengl", (nowMs() - start) / iterations);
+                // Presenting is part of the frame the user sees, and on this
+                // path it is a CPU blit, so it is measured on its own.
+                const double presentStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) window.present(frame);
+                reportLine("  of which present", (nowMs() - presentStart) / iterations);
+            }
+            window.close();
+        }
+    }
+
+    gtc::native::shutdownVulkan();
+    return 0;
+}
+
+// The street, not a test scene: the real world renderer, a real client state,
+// and characters that are always moving so every frame takes the slow path the
+// game actually takes.
+int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, const std::string& renderer,
+                      int iterations, int characters) {
+    std::string error;
+    gtc::native::WorldRenderer world3d;
+    if (!world3d.load(root, error)) {
+        std::cerr << "World benchmark: " << error << '\n';
+        return 1;
+    }
+    gtc::native::ClientWorld world;
+    gtc::native::ClientState state;
+    state.tick = 1;
+    for (int index = 0; index < std::max(1, characters); ++index) {
+        gtc::Character citizen;
+        citizen.id = static_cast<std::uint32_t>(index + 1);
+        citizen.name = "Citizen";
+        citizen.ai = index != 0;
+        citizen.position = {static_cast<double>(index) * 0.9 - 1.5, static_cast<double>(index % 3)};
+        citizen.yaw = 3.14159265F;
+        citizen.speed = 2.0F;
+        gtc::Appearance appearance;
+        appearance.male = index % 2 == 0;
+        appearance.skin = static_cast<std::uint32_t>(index % 4);
+        appearance.hair = static_cast<std::uint32_t>(index % 6);
+        appearance.shirt = 1;
+        appearance.pants = 1;
+        citizen.appearance = appearance;
+        state.characters.push_back(citizen);
+    }
+    view.width = std::max(1, view.width);
+    view.height = std::max(1, view.height);
+    view.gpu = renderer != "cpu";
+    std::cout << "street: " << state.characters.size() << " characters, " << view.width << 'x' << view.height
+              << ", renderer " << renderer << '\n';
+    if (renderer == "vulkan") {
+        if (!gtc::native::vulkanAvailable()) {
+            std::cout << "  vulkan                    unavailable on this machine\n";
+            return 1;
+        }
+        gtc::native::setGpuRenderer(&gtc::native::renderVulkanScene);
+    } else if (renderer == "scene") {
+        gtc::native::setGpuRenderer(&acceptOnly);
+    } else if (renderer != "cpu") {
+        std::cerr << "unknown renderer: " << renderer << '\n';
+        return 2;
+    }
+    gtc::native::NativeFrame frame;
+    // Warm up: compile, allocate, and take the first full rebuild.
+    if (!world3d.render(world, state, 1, view, frame, error)) {
+        std::cerr << "World benchmark: " << error << '\n';
+        return 1;
+    }
+    // Every frame advances the tick and moves a character, which is exactly the
+    // condition that makes the renderer rebuild: nothing here is a cache hit.
+    const double start = nowMs();
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        state.tick += 1;
+        for (gtc::Character& citizen : state.characters) citizen.position.x += 0.01;
+        if (!world3d.render(world, state, 1, view, frame, error)) {
+            std::cerr << "World benchmark: " << error << '\n';
+            return 1;
+        }
+    }
+    reportLine("street frame", (nowMs() - start) / iterations);
+    gtc::native::setGpuRenderer(nullptr);
+    if (renderer == "vulkan") {
+        std::string path = "build/native-client/world-vulkan.png";
+        std::filesystem::create_directories("build/native-client");
+        if (frame.save(path)) std::cout << "  saved " << path << '\n';
+    }
+    gtc::native::shutdownVulkan();
+    return 0;
+}
 
 } // namespace
 
@@ -32,6 +326,7 @@ int main(int argc, char** argv) {
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false;
     int roomBenchmark = 0;
+    int skullBenchmark = 0, worldBenchmark = 0, worldCharacters = 3;
     std::string rendererName = "cpu";
     gtc::Vec2 destination{}, movement{};
     gtc::native::ViewState view;
@@ -41,6 +336,9 @@ int main(int argc, char** argv) {
         else if (argument == "--verify-room") verifyRoom = true;
         else if (argument == "--renderer" && i + 1 < argc) rendererName = argv[++i];
         else if (argument == "--room-benchmark" && i + 1 < argc) roomBenchmark = static_cast<int>(number(argv[++i], 1));
+        else if (argument == "--skull-benchmark" && i + 1 < argc) skullBenchmark = static_cast<int>(number(argv[++i], 1));
+        else if (argument == "--world-benchmark" && i + 1 < argc) worldBenchmark = static_cast<int>(number(argv[++i], 1));
+        else if (argument == "--characters" && i + 1 < argc) worldCharacters = static_cast<int>(number(argv[++i], 3));
         else if (argument == "--review-ui" && i + 1 < argc) reviewUi = argv[++i];
         else if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = static_cast<int>(number(argv[++i], 1453));
@@ -70,6 +368,8 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    if (skullBenchmark > 0) return runSkullBenchmark(root, view, rendererName, skullBenchmark);
+    if (worldBenchmark > 0) return runWorldBenchmark(root, view, rendererName, worldBenchmark, worldCharacters);
     if (roomBenchmark > 0) {
         // This is the acceptance measurement for the room: the same scene, the
         // same size, timed end to end, with the backend named on the command

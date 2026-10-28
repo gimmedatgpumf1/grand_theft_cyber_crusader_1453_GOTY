@@ -221,7 +221,7 @@ void SkeletonModel::poseIdle(double seconds, double phase) {
     }
 }
 
-void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw) const {
+void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw, int onlyBone) const {
     std::vector<Transform> pose(bones_.size());
     std::vector<char> solved(bones_.size(), 0);
     Transform place;
@@ -250,6 +250,7 @@ void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 orig
     boneMaterial.color = colorHex("#e3d9bf");
     boneMaterial.specular = 0.12;
     for (std::size_t index = 0; index < bones_.size(); ++index) {
+        if (onlyBone >= 0 && static_cast<int>(index) != onlyBone) continue;
         const SkeletonBone& bone = bones_[index];
         std::vector<Vec3> world;
         world.reserve(bone.points.size());

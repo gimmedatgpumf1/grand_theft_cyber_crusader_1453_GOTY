@@ -71,6 +71,10 @@ public:
         }
         window_.size(view_.width, view_.height);
         view_.gpu = window_.gpu();
+        // Which backend is actually carrying the frame is the first thing worth
+        // knowing when a frame is slow; guessing it wastes an evening.
+        tracef("window: backend=%s size=%dx%d", window_.backend(), view_.width, view_.height);
+        std::cout << "backend: " << window_.backend() << " at " << view_.width << 'x' << view_.height << '\n';
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;

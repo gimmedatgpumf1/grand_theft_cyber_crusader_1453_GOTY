@@ -48,6 +48,12 @@ public:
     void close();
     bool poll(std::vector<WindowEvent>& events);
     bool present(const NativeFrame& frame);
+    // Draws one scene through whichever backend this window opened. This is the
+    // exact call the game's frame loop ends up making, so timing it measures
+    // the backend and nothing else -- no window creation, no scene building.
+    bool renderScene(const GpuScene& scene, NativeFrame& frame);
+    // Which backend opened, for reporting.
+    const char* backend() const;
     bool save(const NativeFrame& frame, const std::string& path);
     void captureMouse(bool capture);
     void size(int& width, int& height) const;

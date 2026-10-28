@@ -42,7 +42,10 @@ public:
     void poseIdle(double seconds, double phase);
 
     // Draws the posed skeleton with its feet at `origin`, turned by `yaw`.
-    void draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw) const;
+    // `onlyBone` restricts it to one bone, which is how the benchmarks render a
+    // single skull through each backend.
+    void draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
+              int onlyBone = -1) const;
 
 private:
     std::vector<SkeletonBone> bones_;

@@ -625,11 +625,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
     frame.width = width;
     frame.height = height;
-    frame.rgb.assign(count * 3, 0);
+    // Every pixel below is overwritten, so the buffers are only grown, never
+    // cleared: zero-filling 5.8 MB per frame is real time at 60 Hz.
+    frame.rgb.resize(count * 3);
     // The coverage mask is part of the frame contract, not an extra: the caller
     // checks it before it shows anything, and every pixel this pass returns was
     // drawn by it, so it is fully covered.
-    frame.alpha.assign(count, 255);
+    frame.alpha.resize(count);
+    std::memset(frame.alpha.data(), 255, count);
     const unsigned char* source = static_cast<const unsigned char*>(target_.readbackMap);
     const int redOffset = bgra_ ? 2 : 0;
     const int blueOffset = bgra_ ? 0 : 2;

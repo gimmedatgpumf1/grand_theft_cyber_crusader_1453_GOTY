@@ -527,6 +527,19 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
     return impl_->open;
 }
 
+bool NativeWindow::renderScene(const GpuScene& scene, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu) return false;
+    if (impl_->vulkan) return renderVulkanScene(scene, frame);
+    return impl_->renderer.render(scene, frame);
+}
+
+const char* NativeWindow::backend() const {
+    if (!impl_) return "none";
+    if (impl_->vulkan) return "vulkan";
+    if (impl_->gpu) return "opengl";
+    return "software";
+}
+
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
     if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.

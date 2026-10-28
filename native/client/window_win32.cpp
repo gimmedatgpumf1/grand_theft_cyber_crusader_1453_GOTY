@@ -28,6 +28,7 @@ struct NativeWindow::Impl {
     std::vector<unsigned char> bgra;
     OpenGlRenderer renderer;
     HMODULE openGl = nullptr;
+    HDC presentDevice = nullptr;
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
 
@@ -268,6 +269,8 @@ void NativeWindow::close() {
             if (impl_->vulkan) shutdownVulkan();
         }
         impl_->shutdownGpu();
+        if (impl_->presentDevice && impl_->window) ReleaseDC(impl_->window, impl_->presentDevice);
+        impl_->presentDevice = nullptr;
         if (impl_->window) DestroyWindow(impl_->window);
         delete impl_;
         impl_ = nullptr;
@@ -286,6 +289,20 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
     events.swap(impl_->events);
     impl_->events.clear();
     return impl_->open;
+}
+
+bool NativeWindow::renderScene(const GpuScene& scene, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu) return false;
+    if (impl_->vulkan) return renderVulkanScene(scene, frame);
+    if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
+    return impl_->renderer.render(scene, frame);
+}
+
+const char* NativeWindow::backend() const {
+    if (!impl_) return "none";
+    if (impl_->vulkan) return "vulkan";
+    if (impl_->gpu) return "opengl";
+    return "software";
 }
 
 bool NativeWindow::present(const NativeFrame& frame) {
@@ -315,11 +332,22 @@ bool NativeWindow::present(const NativeFrame& frame) {
     bitmap.bmiHeader.biPlanes = 1;
     bitmap.bmiHeader.biBitCount = 32;
     bitmap.bmiHeader.biCompression = BI_RGB;
-    const HDC device = GetDC(impl_->window);
-    SetStretchBltMode(device, HALFTONE);
-    const int result = StretchDIBits(device, 0, 0, impl_->width, impl_->height, 0, 0, frame.width, frame.height,
-                                     impl_->bgra.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
-    ReleaseDC(impl_->window, device);
+    // One device context for the life of the window: GetDC/ReleaseDC every frame
+    // is a round trip through the window manager for no reason.
+    if (!impl_->presentDevice) impl_->presentDevice = GetDC(impl_->window);
+    if (!impl_->presentDevice) return false;
+    int result = 0;
+    if (frame.width == impl_->width && frame.height == impl_->height) {
+        // The common case: the frame is already the size of the client area, so
+        // there is nothing to stretch and the cheapest blit wins. HALFTONE is
+        // only worth its cost when pixels actually have to be resampled.
+        result = SetDIBitsToDevice(impl_->presentDevice, 0, 0, frame.width, frame.height, 0, 0, 0, frame.height,
+                                   impl_->bgra.data(), &bitmap, DIB_RGB_COLORS);
+    } else {
+        SetStretchBltMode(impl_->presentDevice, HALFTONE);
+        result = StretchDIBits(impl_->presentDevice, 0, 0, impl_->width, impl_->height, 0, 0, frame.width,
+                               frame.height, impl_->bgra.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
+    }
     return result != 0;
 }
 
