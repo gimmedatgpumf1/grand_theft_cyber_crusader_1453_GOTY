@@ -94,6 +94,11 @@ struct NativeFrame {
     void blendRectangle(int x, int y, int w, int h, Color color, double opacity);
 };
 
+// Measured where they are spent, for GTC_HUD_PROFILE: the HUD is drawn on the
+// host every frame and it is the reason the picture comes back to the host.
+extern double rectangleMilliseconds;
+extern long rectanglePixels;
+
 struct Material {
     enum class Kind { Solid, Skin, Hair, Floor, Puddle, Cloth, Textured } kind = Kind::Solid;
     Color color{0.5, 0.5, 0.5};
@@ -278,6 +283,9 @@ void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 siz
              const Material& material);
 void drawEllipsoid(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 radii,
                    const Material& material, int segments = 16, int rings = 10);
+extern double textMilliseconds;
+extern long textPixels;
+
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale = 3);
 
 } // namespace gtc::native

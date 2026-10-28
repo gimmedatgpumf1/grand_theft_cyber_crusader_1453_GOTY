@@ -1,6 +1,7 @@
 #include "client/raster.h"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -129,7 +130,11 @@ unsigned char srgbChannel(double value) {
 
 } // namespace
 
+double textMilliseconds = 0.0;
+long textPixels = 0;
+
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
+    const auto textStart = std::chrono::steady_clock::now();
     scale = std::max(3, scale);
     // Glyphs go into whatever this frame is made of. A frame that came back from
     // the device in window order is written in window order, so the presenter has
@@ -144,41 +149,51 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
         double penX = frame.uiOffsetX + x * frame.uiScale;
         const double baseline = frame.uiOffsetY + y * frame.uiScale + ascent * fontScale;
         const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
+        // The canvas and the frame's size are read once, outside the glyph loop.
+        // Inside it they were a call and a member load per pixel -- and because
+        // the writes go through a pointer the compiler cannot prove does not
+        // alias the frame, it could not keep either of them in a register.
+        unsigned char* const canvas = bgraCanvas ? frame.canvasBgra() : frame.rgb.data();
+        unsigned char* const mask = frame.alpha.empty() ? nullptr : frame.alpha.data();
+        const int frameWidth = frame.width, frameHeight = frame.height;
         for (char character : text) {
             const Glyph& glyph = cachedGlyph(character, pixelHeight);
             const int left = static_cast<int>(std::lround(penX)) + glyph.xOffset;
             const int top = static_cast<int>(std::lround(baseline)) + glyph.yOffset;
             for (int row = 0; row < glyph.height; ++row) for (int column = 0; column < glyph.width; ++column) {
                 const int px = left + column, py = top + row;
-                if (px < 0 || py < 0 || px >= frame.width || py >= frame.height) continue;
+                if (px < 0 || py < 0 || px >= frameWidth || py >= frameHeight) continue;
                 const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
                 if (!coverage) continue;
-                const std::size_t pixel = static_cast<std::size_t>(py) * frame.width + px;
+                const std::size_t pixel = static_cast<std::size_t>(py) * frameWidth + px;
+                ++textPixels;
                 if (bgraCanvas) {
-                    unsigned char* out = frame.canvasBgra() + pixel * 4;
+                    unsigned char* out = canvas + pixel * 4;
                     out[0] = static_cast<unsigned char>((blue * coverage + out[0] * (255 - coverage)) / 255);
                     out[1] = static_cast<unsigned char>((green * coverage + out[1] * (255 - coverage)) / 255);
                     out[2] = static_cast<unsigned char>((red * coverage + out[2] * (255 - coverage)) / 255);
                     continue;
                 }
                 const std::size_t offset = pixel * 3;
-                if (frame.alpha.empty()) {
-                    frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);
-                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * coverage + frame.rgb[offset + 1] * (255 - coverage)) / 255);
-                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * coverage + frame.rgb[offset + 2] * (255 - coverage)) / 255);
+                if (mask == nullptr) {
+                    canvas[offset] = static_cast<unsigned char>((red * coverage + canvas[offset] * (255 - coverage)) / 255);
+                    canvas[offset + 1] = static_cast<unsigned char>((green * coverage + canvas[offset + 1] * (255 - coverage)) / 255);
+                    canvas[offset + 2] = static_cast<unsigned char>((blue * coverage + canvas[offset + 2] * (255 - coverage)) / 255);
                 } else {
                     const int sourceAlpha = static_cast<int>(coverage);
-                    const int oldAlpha = frame.alpha[pixel];
+                    const int oldAlpha = mask[pixel];
                     const int weight = sourceAlpha * 255 + oldAlpha * (255 - sourceAlpha);
                     if (!weight) continue;
-                    frame.rgb[offset] = static_cast<unsigned char>((red * sourceAlpha * 255 + frame.rgb[offset] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * sourceAlpha * 255 + frame.rgb[offset + 1] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * sourceAlpha * 255 + frame.rgb[offset + 2] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
+                    canvas[offset] = static_cast<unsigned char>((red * sourceAlpha * 255 + canvas[offset] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    canvas[offset + 1] = static_cast<unsigned char>((green * sourceAlpha * 255 + canvas[offset + 1] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    canvas[offset + 2] = static_cast<unsigned char>((blue * sourceAlpha * 255 + canvas[offset + 2] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    mask[pixel] = static_cast<unsigned char>((weight + 127) / 255);
                 }
             }
             penX += glyph.advance;
         }
+        textMilliseconds += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - textStart).count();
         return;
     }
     for (char character : text) {
@@ -190,6 +205,8 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
         }
         x += 6 * scale;
     }
+    textMilliseconds += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - textStart).count();
 }
 
 } // namespace gtc::native

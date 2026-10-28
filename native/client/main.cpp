@@ -7,6 +7,7 @@
 #include "client/skeleton_room.h"
 #include "client/threadpool.h"
 #include "client/window.h"
+#include "client/world_hud.h"
 #include "client/opengl_shared.h"
 #include "vulkan/vk_renderer.h"
 
@@ -161,6 +162,7 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
     // Every frame advances the tick and moves a character, which is exactly the
     // condition that makes the renderer rebuild: nothing here is a cache hit.
     const double start = nowMs();
+    double hudTotal = 0.0;
     for (int iteration = 0; iteration < iterations; ++iteration) {
         state.tick += 1;
         for (gtc::Character& citizen : state.characters) citizen.position.x += 0.01F;
@@ -168,8 +170,13 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
             std::cerr << "World benchmark: " << error << '\n';
             return 1;
         }
+        hudTotal += gtc::native::lastHudMilliseconds();
     }
     reportLine("street frame", (nowMs() - start) / iterations);
+    // The HUD is drawn on the host over the read-back picture. It is a slice of
+    // the street's frame and it is the slice that forces the picture back to the
+    // host at all, so it is measured on its own rather than inferred.
+    reportLine("  of which hud (cpu)", hudTotal / iterations);
     gtc::native::setGpuRenderer(nullptr);
     if (renderer == "vulkan") {
         std::string path = "build/native-client/world-vulkan.png";

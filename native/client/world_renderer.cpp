@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -852,10 +853,24 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                   << " humans=" << milliseconds(humanStart, finishStart)
                   << " finish=" << milliseconds(finishStart, end) << " ms\n";
     }
+    const auto hudStart = std::chrono::steady_clock::now();
     drawLabels(frame, camera, state, localId);
+    const auto labelsEnd = std::chrono::steady_clock::now();
     frame.logicalUi();
     drawHud(frame, world, state, localId, view);
+    const auto panelEnd = std::chrono::steady_clock::now();
     drawCrosshair(frame, view);
+    const auto crossEnd = std::chrono::steady_clock::now();
+    recordHudMilliseconds(std::chrono::duration<double, std::milli>(crossEnd - hudStart).count());
+    if (std::getenv("GTC_HUD_PROFILE")) {
+        const auto ms = [](auto from, auto to) {
+            return std::chrono::duration<double, std::milli>(to - from).count();
+        };
+        std::fprintf(stderr,
+                     "[hud] labels %.3f panels+text %.3f crosshair %.3f ms | rects %.3f ms %ld px, text %.3f ms %ld px\n",
+                     ms(hudStart, labelsEnd), ms(labelsEnd, panelEnd), ms(panelEnd, crossEnd),
+                     rectangleMilliseconds, rectanglePixels, textMilliseconds, textPixels);
+    }
     return true;
 }
 

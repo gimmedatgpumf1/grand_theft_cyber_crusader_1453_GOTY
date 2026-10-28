@@ -212,7 +212,11 @@ void NativeFrame::makeOverlayWritable() {
     if (direct != nullptr) return;
 }
 
+double rectangleMilliseconds = 0.0;
+long rectanglePixels = 0;
+
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
+    const auto rectangleStart = std::chrono::steady_clock::now();
     // A frame that arrived in window order is drawn on where it lies: converting
     // it to rgb and back is two passes over a million pixels for nothing.
     if (canvasIsBgra()) makeOverlayWritable();
@@ -227,16 +231,42 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
     const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
-    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
-        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
-            const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
-            unsigned char* out = pixels + pixel * stride;
-            out[0] = static_cast<unsigned char>(bgra ? b : r);
-            out[1] = static_cast<unsigned char>(g);
-            out[2] = static_cast<unsigned char>(bgra ? r : b);
-            if (!alpha.empty()) alpha[pixel] = 255;
+    const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
+    const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
+    if (firstColumn >= lastColumn) return;
+    // The panels are most of the screen: six hundred thousand pixels a frame,
+    // filled one at a time through a bounds check and a stride multiply. A row
+    // of one colour is a move, so each row is written as words here.
+    if (bgra) {
+        // Window order is blue, green, red, and the fourth byte says opaque:
+        // the pixel being written is a colour, not a hole.
+        const std::uint32_t word = (static_cast<std::uint32_t>(r) << 16) |
+                                   (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b) |
+                                   0xFF000000U;
+        for (int py = firstRow; py < lastRow; ++py) {
+            std::fill_n(reinterpret_cast<std::uint32_t*>(pixels) + static_cast<std::size_t>(py) * width +
+                            firstColumn,
+                        static_cast<std::size_t>(lastColumn - firstColumn), word);
+        }
+    } else {
+        for (int py = firstRow; py < lastRow; ++py) {
+            unsigned char* out = pixels + (static_cast<std::size_t>(py) * width + firstColumn) * 3U;
+            for (int px = firstColumn; px < lastColumn; ++px, out += 3) {
+                out[0] = static_cast<unsigned char>(r);
+                out[1] = static_cast<unsigned char>(g);
+                out[2] = static_cast<unsigned char>(b);
+            }
         }
     }
+    if (!alpha.empty()) {
+        for (int py = firstRow; py < lastRow; ++py) {
+            std::fill_n(alpha.begin() + static_cast<std::size_t>(py) * width + firstColumn,
+                        static_cast<std::size_t>(lastColumn - firstColumn), static_cast<unsigned char>(255));
+        }
+    }
+    rectanglePixels += static_cast<long>(lastRow - firstRow) * (lastColumn - firstColumn);
+    rectangleMilliseconds += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - rectangleStart).count();
 }
 
 void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
@@ -253,8 +283,31 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
     const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
-    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
-        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
+    const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
+    const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
+    if (firstColumn < lastColumn && this->alpha.empty()) {
+        // Two panels of translucent colour are nine hundred thousand blended
+        // pixels a frame, a third of the street's host time. The colour and the
+        // opacity are fixed for the call, so the blend is a byte-to-byte table
+        // that is built once: no multiply, no divide, one store a channel.
+        unsigned char red_[256], green_[256], blue_[256];
+        for (int value = 0; value < 256; ++value) {
+            red_[value] = static_cast<unsigned char>((r * alpha + value * (255 - alpha)) / 255);
+            green_[value] = static_cast<unsigned char>((g * alpha + value * (255 - alpha)) / 255);
+            blue_[value] = static_cast<unsigned char>((b * alpha + value * (255 - alpha)) / 255);
+        }
+        for (int py = firstRow; py < lastRow; ++py) {
+            unsigned char* out = pixels + (static_cast<std::size_t>(py) * width + firstColumn) * 4U;
+            for (int px = firstColumn; px < lastColumn; ++px, out += 4) {
+                out[0] = bgra ? blue_[out[0]] : red_[out[0]];
+                out[1] = green_[out[1]];
+                out[2] = bgra ? red_[out[2]] : blue_[out[2]];
+            }
+        }
+        return;
+    }
+    for (int py = firstRow; py < lastRow; ++py) {
+        for (int px = firstColumn; px < lastColumn; ++px) {
             const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
             unsigned char* out = pixels + pixel * stride;
             if (this->alpha.empty()) {

@@ -15,6 +15,12 @@ namespace gtc::native {
 // world_renderer.cpp so the 3D pass stays readable and neither file grows past
 // the size the naggers allow.
 
+// What the CPU-side HUD cost on the last frame, in milliseconds. The HUD is
+// drawn over the read-back picture, so its cost is part of the street's frame
+// and has to be visible next to the renderer's, not folded into it.
+double lastHudMilliseconds();
+void recordHudMilliseconds(double value);
+
 void drawLabels(NativeFrame& frame, const Camera& camera, const ClientState& state, std::uint32_t localId);
 void drawCrosshair(NativeFrame& frame, const ViewState& view);
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,

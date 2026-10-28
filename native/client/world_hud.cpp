@@ -107,6 +107,12 @@ void drawCrosshair(NativeFrame& frame, const ViewState& view) {
     frame.uiScale = scale; frame.uiOffsetX = offsetX; frame.uiOffsetY = offsetY;
 }
 
+double hudMilliseconds = 0.0;
+
+double lastHudMilliseconds() { return hudMilliseconds; }
+
+void recordHudMilliseconds(double value) { hudMilliseconds = value; }
+
 void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& state,
              std::uint32_t localId, const ViewState& view) {
     const Character* local = state.character(localId);
