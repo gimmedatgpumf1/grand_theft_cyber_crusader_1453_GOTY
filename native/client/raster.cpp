@@ -186,12 +186,14 @@ const Texture& loadTexture(const std::string& path) {
 }
 
 void NativeFrame::syncToRgb() {
-    if (!rgb.empty() || bgra.empty()) return;
+    if (!rgb.empty()) return;
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-    if (bgra.size() < count * 4) return;
+    const unsigned char* source = direct ? direct : bgra.data();
+    if (!source) return;
+    if (!direct && bgra.size() < count * 4) return;
     rgb.resize(count * 3);
     for (std::size_t index = 0; index < count; ++index) {
-        const unsigned char* in = bgra.data() + index * 4;
+        const unsigned char* in = source + index * 4;
         unsigned char* out = rgb.data() + index * 3;
         out[0] = in[2];
         out[1] = in[1];
@@ -350,6 +352,7 @@ Rasterizer::~Rasterizer() {
 }
 
 void Rasterizer::setCamera(const Camera& camera) {
+    camera_ = camera;
     if (gpu_) scene_.viewMatrix = camera.viewMatrix();
 }
 
@@ -359,11 +362,81 @@ void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw) {
     objectYaw_ = yaw;
 }
 
+// Shared by both triangle entry points: picks the batch this material belongs
+// to, creating it if this is the first triangle to use it.
+std::size_t Rasterizer::prepareBatch(const Material& material) {
+    std::size_t index = activeBatch_;
+    bool reuse = index < scene_.batches.size();
+    const bool sameObjectAndMaterial = reuse && activeMaterial_ == &material && activeObject_ == objectId_;
+    if (reuse && !sameObjectAndMaterial) {
+        const GpuBatch& candidate = scene_.batches[index];
+        reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+    }
+    if (!reuse) {
+        auto found = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
+            return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+        });
+        if (found == scene_.batches.end()) {
+            scene_.batches.push_back({});
+            GpuBatch& created = scene_.batches.back();
+            created.material = material;
+            created.objectId = objectId_;
+            created.pivotX = static_cast<float>(objectPivot_.x);
+            created.pivotZ = static_cast<float>(objectPivot_.y);
+            created.yaw = objectYaw_;
+            created.vertices.reserve(12288);
+            index = scene_.batches.size() - 1;
+        } else {
+            index = static_cast<std::size_t>(std::distance(scene_.batches.begin(), found));
+        }
+    }
+    activeBatch_ = index;
+    activeMaterial_ = &material;
+    activeObject_ = objectId_;
+    GpuBatch& batch = scene_.batches[index];
+    if (!sameObjectAndMaterial || batch.pivotX != static_cast<float>(objectPivot_.x) ||
+        batch.pivotZ != static_cast<float>(objectPivot_.y) || batch.yaw != objectYaw_) {
+        batch.pivotX = static_cast<float>(objectPivot_.x);
+        batch.pivotZ = static_cast<float>(objectPivot_.y);
+        batch.yaw = objectYaw_;
+    }
+    return index;
+}
+
+void Rasterizer::worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
+                               const Material& material) {
+    if (!gpu_) {
+        triangle({cameraVertex(camera_, a, normal, a), cameraVertex(camera_, b, normal, b),
+                  cameraVertex(camera_, c, normal, c)}, material);
+        return;
+    }
+    GpuBatch& batch = scene_.batches[prepareBatch(material)];
+    const std::size_t base = batch.vertices.size();
+    batch.vertices.resize(base + 3);
+    GpuVertex* out = batch.vertices.data() + base;
+    const Vec3* points[3] = {&a, &b, &c};
+    for (int corner = 0; corner < 3; ++corner, ++out) {
+        const Vec3& point = *points[corner];
+        out->x = static_cast<float>(point.x);
+        out->y = static_cast<float>(point.y);
+        out->z = static_cast<float>(point.z);
+        out->nx = static_cast<float>(normal.x);
+        out->ny = static_cast<float>(normal.y);
+        out->nz = static_cast<float>(normal.z);
+        out->u = 0.0F;
+        out->v = 0.0F;
+    }
+}
+
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
         std::size_t index = activeBatch_;
         bool reuse = index < scene_.batches.size();
-        if (reuse) {
+        // Fast path first: the same material object, on the same batch, is the
+        // overwhelmingly common case inside a body and needs no comparison.
+        const bool sameObjectAndMaterial = reuse && activeMaterial_ == &material &&
+            activeObject_ == objectId_;
+        if (reuse && !sameObjectAndMaterial) {
             const GpuBatch& candidate = scene_.batches[index];
             reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
         }
@@ -387,14 +460,29 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         }
         activeBatch_ = index;
         GpuBatch& batch = scene_.batches[index];
-        batch.pivotX = static_cast<float>(objectPivot_.x);
-        batch.pivotZ = static_cast<float>(objectPivot_.y);
-        batch.yaw = objectYaw_;
-        for (const RenderVertex& vertex : input) {
-            batch.vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
-                static_cast<float>(vertex.view.z), static_cast<float>(vertex.normal.x),
-                static_cast<float>(vertex.normal.y), static_cast<float>(vertex.normal.z),
-                static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y)});
+        if (!sameObjectAndMaterial || batch.pivotX != static_cast<float>(objectPivot_.x) ||
+            batch.pivotZ != static_cast<float>(objectPivot_.y) || batch.yaw != objectYaw_) {
+            batch.pivotX = static_cast<float>(objectPivot_.x);
+            batch.pivotZ = static_cast<float>(objectPivot_.y);
+            batch.yaw = objectYaw_;
+        }
+        activeMaterial_ = &material;
+        activeObject_ = objectId_;
+        // Three vertices appended in one go rather than three separate growth
+        // checks and iterator updates: this runs 195,000 times per body.
+        const std::size_t base = batch.vertices.size();
+        batch.vertices.resize(base + 3);
+        GpuVertex* out = batch.vertices.data() + base;
+        for (int corner = 0; corner < 3; ++corner, ++out) {
+            const RenderVertex& vertex = input[corner];
+            out->x = static_cast<float>(vertex.view.x);
+            out->y = static_cast<float>(vertex.view.y);
+            out->z = static_cast<float>(vertex.view.z);
+            out->nx = static_cast<float>(vertex.normal.x);
+            out->ny = static_cast<float>(vertex.normal.y);
+            out->nz = static_cast<float>(vertex.normal.z);
+            out->u = static_cast<float>(vertex.uv.x);
+            out->v = static_cast<float>(vertex.uv.y);
         }
         return;
     }

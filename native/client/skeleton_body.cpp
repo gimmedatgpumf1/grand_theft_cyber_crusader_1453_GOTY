@@ -263,8 +263,9 @@ void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 orig
             const Vec3 b = world[static_cast<std::size_t>(face[1])];
             const Vec3 c = world[static_cast<std::size_t>(face[2])];
             const Vec3 normal = normalized(cross(b - a, c - a));
-            rasterizer.triangle({cameraVertex(camera, a, normal, a), cameraVertex(camera, b, normal, b),
-                                 cameraVertex(camera, c, normal, c)}, boneMaterial);
+            // The points are already where they belong when the backend draws in
+            // world space, which is the case for both GPU backends.
+            rasterizer.worldTriangle(a, b, c, normal, boneMaterial);
         }
     }
 }

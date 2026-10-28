@@ -47,6 +47,12 @@ struct NativeFrame {
     std::vector<unsigned char> bgra;
     bool wantsBgra = false;
     bool hasBgra() const { return !bgra.empty(); }
+    // A backend whose readback already sits in host memory can point the frame
+    // at those bytes instead of copying them out again. The pointer belongs to
+    // the backend and is valid until the next frame is rendered, which is long
+    // enough for the window to put it on screen -- and it saves 5.8 MB of host
+    // copying per frame at this size.
+    const unsigned char* direct = nullptr;
     // Fills rgb from bgra if a caller that needs RGB turns up. Cheap no-op
     // otherwise.
     void syncToRgb();
@@ -170,6 +176,11 @@ public:
     Rasterizer& operator=(const Rasterizer&) = delete;
 
     void triangle(const std::array<RenderVertex, 3>& vertices, const Material& material);
+    // A triangle that is already in world space, for the GPU path: no view
+    // transform, no RenderVertex with its doubles. A scanned skeleton emits
+    // 195,000 of these per body and the packing was most of the cost.
+    void worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
+                       const Material& material);
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);
     GpuScene takeGpuScene() { return std::move(scene_); }
@@ -186,6 +197,16 @@ private:
     Vec2 objectPivot_{};
     float objectYaw_ = 0;
     std::size_t activeBatch_ = static_cast<std::size_t>(-1);
+    // The caller hands in the same Material object for long runs of triangles --
+    // a skeleton body draws all of its bones with one material. Recognising that
+    // by address, instead of comparing every field of the struct for each of
+    // 195,000 triangles, was most of the cost of building a scene.
+    const Material* activeMaterial_ = nullptr;
+    int activeObject_ = -1;
+    std::size_t prepareBatch(const Material& material);
+    // Kept so a triangle given in world space can still be projected when the
+    // caller asked for the software path.
+    Camera camera_{};
     GpuScene scene_;
     // Triangles wait here until finish(), so the frame can be split into bands
     // and drawn on every core instead of one.

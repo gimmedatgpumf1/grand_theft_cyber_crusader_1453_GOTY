@@ -369,6 +369,9 @@ bool NativeWindow::present(const NativeFrame& frame) {
     }
     // A frame that arrived in window order costs one blit and nothing else.
     const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
+    // Straight out of the backend's mapping: no copy between the readback and
+    // the screen.
+    if (frame.direct) return blit(frame.direct, frame.width, frame.height);
     if (frame.bgra.size() >= count * 4) return blit(frame.bgra.data(), frame.width, frame.height);
     if (frame.rgb.empty()) return false;
     // Reordered across cores: at 1568x929 this is 1.45 M pixels every frame, and

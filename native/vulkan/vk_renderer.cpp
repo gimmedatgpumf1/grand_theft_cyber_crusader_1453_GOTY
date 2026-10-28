@@ -540,9 +540,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // over it asks for rgb and gets it converted once, lazily.
     const bool wantBgra = frame.wantsBgra;
     if (wantBgra) {
-        frame.bgra.resize(count * 4);
+        if (target_.readbackCached && bgra_) frame.bgra.clear();
+        else frame.bgra.resize(count * 4);
         frame.rgb.clear();
     } else {
+        frame.direct = nullptr;
         // Every pixel below is overwritten, so the buffers are only grown, never
         // cleared: zero-filling 5.8 MB per frame is real time at 60 Hz.
         frame.rgb.resize(count * 3);
@@ -568,6 +570,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         std::memcpy(target_.staging[readSlot].data(), mapped, bytes);
         mapped = target_.staging[readSlot].data();
     }
+    // The mapped readback is already in host memory and already in window
+    // order, so the frame can point straight at it: no copy at all. Only a
+    // caller that must own the pixels -- a screenshot taken after the next
+    // frame has been drawn -- asks for rgb and pays for the conversion then.
+    frame.direct = (wantBgra && target_.readbackCached && bgra_) ? mapped : nullptr;
     // One 32-bit load per pixel and shifts, rather than four byte loads, and the
     // band is split across cores: 1.45 M pixels of channel shuffling is exactly
     // the sort of work that is embarrassingly parallel, and doing it on one
@@ -576,6 +583,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const int redShift = bgra_ ? 16 : 0;
     const int blueShift = bgra_ ? 0 : 16;
     const auto convert = [&](std::size_t begin, std::size_t end) {
+        if (wantBgra && frame.direct) return;  // nothing to do: the frame points at it
         if (wantBgra) {
             // The device already stores the bytes in the order the window wants
             // when its colour format is BGRA: nothing to do but move them.
