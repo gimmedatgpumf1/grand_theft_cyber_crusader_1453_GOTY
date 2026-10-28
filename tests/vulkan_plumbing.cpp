@@ -8,9 +8,12 @@
 // projection matrix's own bytes. That is the point. Rendering quality needs a
 // real device; plumbing failures are what this catches.
 
+#include "vulkan/vk_internal.h"
 #include "vulkan/vk_renderer.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <vector>
 
 namespace {
 
@@ -80,6 +83,48 @@ int main() {
     if (!gtc::native::renderVulkanScene(scene, frame)) {
         std::printf("textured frame did not arrive\n");
         ++failures;
+    }
+    // A skeleton is fifty-six rigid batches that share one material, and
+    // submitting them one at a time was 0.7 ms of a three millisecond frame.
+    // This is the decision that folds them into one draw, checked on the scene
+    // itself: a run of three, a batch of another colour left alone, an unrolled
+    // batch left alone, and a second run after them.
+    {
+        gtc::native::GpuScene planned;
+        planned.width = 64;
+        planned.height = 48;
+        for (int index = 0; index < 7; ++index) {
+            gtc::native::GpuBatch batch = makeBatch();
+            batch.objectId = static_cast<std::uint32_t>(100 + index);
+            batch.material.color = index == 3 ? gtc::native::Color{0.1, 0.9, 0.2}
+                                              : gtc::native::Color{0.8, 0.2, 0.1};
+            // Batch 4 is the unrolled shape: three vertices per triangle and no
+            // index, which has nothing to fold in.
+            if (index != 4) batch.indices = {0, 1, 2};
+            planned.batches.push_back(batch);
+        }
+        std::vector<gtc::native::detail::BatchRun> runs;
+        std::vector<float> slots;
+        gtc::native::detail::planRuns(planned, runs, slots);
+        const bool shape = runs.size() == 2 && runs[0].first == 0 && runs[0].last == 2 &&
+                           runs[1].first == 5 && runs[1].last == 6;
+        const std::vector<float> wanted = {0.0F, 1.0F, 2.0F, -1.0F, -1.0F, 3.0F, 4.0F};
+        if (!shape || slots != wanted) {
+            std::printf("run planning folded the wrong batches: %zu runs\n", runs.size());
+            ++failures;
+        }
+        // The slot is what the vertex stage reads out of the normal field, so a
+        // duplicate would put one bone's matrix on another bone's vertices.
+        std::vector<float> seen;
+        for (float slot : slots) {
+            if (slot < 0.0F) continue;
+            if (std::find(seen.begin(), seen.end(), slot) != seen.end()) {
+                std::printf("two batches share bone slot %g\n", static_cast<double>(slot));
+                ++failures;
+                break;
+            }
+            seen.push_back(slot);
+        }
     }
     gtc::native::shutdownVulkan();
     // After shutdown the backend must refuse rather than touch freed handles.

@@ -182,6 +182,41 @@ bool buildBody(const std::string& root, const gtc::native::ViewState& view, Skul
 }
 
 
+// One whole body, every bone in it, framed the way a character in the street is:
+// close enough to fill the frame and no closer. The skull is a fortieth of this
+// and the two bodies are twice it, so this is the measurement in between --
+// a single character, which is what the game draws.
+bool buildWholeBody(const std::string& root, const gtc::native::ViewState& view, SkullScene& out,
+                    std::string& error) {
+    out.camera.width = std::max(1, view.width);
+    out.camera.height = std::max(1, view.height);
+    out.camera.fovDegrees = 50;
+    out.camera.position = {0.0, 1.15, 2.2};
+    out.camera.target = {0.0, 0.95, 0.0};
+    if (!out.male.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
+    out.male.poseIdle(0.75, 0.0);
+    gtc::native::Rasterizer rasterizer(out.camera.width, out.camera.height, gtc::native::colorHex("#0d1210"),
+                                      out.camera.focal(), true, gtc::native::GpuScene{});
+    rasterizer.setCamera(out.camera);
+    out.male.buildRestGeometry(rasterizer, out.camera, static_cast<int>(kMaleId));
+    out.scene = rasterizer.takeGpuScene();
+    out.boneBatches.clear();
+    for (std::size_t index = 0; index < out.scene.batches.size(); ++index) {
+        const std::uint32_t id = out.scene.batches[index].objectId;
+        if (id == 0) continue;
+        out.boneBatches.emplace_back(id, index);
+    }
+    out.rest = true;
+    out.scene.width = out.camera.width;
+    out.scene.height = out.camera.height;
+    out.scene.focal = out.camera.focal();
+    out.scene.viewMatrix = out.camera.viewMatrix();
+    out.scene.revision = 1;
+    for (gtc::native::GpuBatch& batch : out.scene.batches) batch.revision = 1;
+    out.ready = true;
+    return true;
+}
+
 // Turning a batch about the vertical axis through a point: the body spins where
 // it stands instead of orbiting the middle of the scene.
 std::array<double, 16> turnAbout(double radians, double pivotX) {
@@ -523,6 +558,80 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                     }
                 }
                 reportLine("skull vulkan (no draws)", (nowMs() - emptyStart) / iterations);
+            }
+            // One whole skeleton, the same frame path, measured on its own. The
+            // skull is a single bone; a character is every bone in the body, and
+            // the difference between the two lines is what the other twenty-
+            // seven bones cost.
+            {
+                SkullScene skeleton;
+                if (!buildWholeBody(root, view, skeleton, error)) {
+                    std::cerr << "Whole skeleton: " << error << '\n';
+                    return 1;
+                }
+                std::size_t skeletonTriangles = 0, skeletonVertices = 0;
+                for (const gtc::native::GpuBatch& batch : skeleton.scene.batches) {
+                    skeletonTriangles +=
+                        batch.indices.empty() ? batch.vertices.size() / 3 : batch.indices.size() / 3;
+                    skeletonVertices += batch.vertices.size();
+                }
+                std::cout << "whole skeleton: " << skeletonTriangles << " triangles, " << skeletonVertices
+                          << " vertices, " << skeleton.scene.batches.size() << " batches\n";
+                double skeletonAngle = 0.0;
+                for (int warmUp = 0; warmUp < 8; ++warmUp) {
+                    skeletonAngle += kTurnPerFrame;
+                    posePair(skeleton, skeletonAngle);
+                    gtc::native::renderVulkanScene(skeleton.scene, frame);
+                }
+                gtc::native::drainVulkan();
+                std::vector<double> skeletonSamples;
+                skeletonSamples.reserve(static_cast<std::size_t>(iterations));
+                double skeletonTotal = 0.0;
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    skeletonAngle += kTurnPerFrame;
+                    posePair(skeleton, skeletonAngle);
+                    const double frameStart = nowMs();
+                    if (!gtc::native::renderVulkanScene(skeleton.scene, frame)) {
+                        std::cerr << "vulkan whole skeleton draw failed\n";
+                        return 1;
+                    }
+                    const double spent = nowMs() - frameStart;
+                    skeletonSamples.push_back(spent);
+                    skeletonTotal += spent;
+                }
+                reportLine("skeleton vulkan (full frame)", skeletonTotal / iterations);
+                reportSpread("  of which median", skeletonSamples);
+                // Nothing drawn: the clears, the copy back and the submission.
+                {
+                    gtc::native::GpuScene empty = skeleton.scene;
+                    empty.batches.clear();
+                    for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(empty, frame);
+                    gtc::native::drainVulkan();
+                    const double emptyStart = nowMs();
+                    for (int iteration = 0; iteration < iterations; ++iteration) {
+                        if (!gtc::native::renderVulkanScene(empty, frame)) {
+                            std::cerr << "vulkan empty skeleton frame failed\n";
+                            return 1;
+                        }
+                    }
+                    reportLine("skeleton vulkan (no draws)", (nowMs() - emptyStart) / iterations);
+                }
+                // Every vertex of the body, no pixels: the vertex stage and the
+                // submission, without the rasteriser.
+                {
+                    gtc::native::GpuScene collapsed = skeleton.scene;
+                    collapseTriangles(collapsed);
+                    for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(collapsed, frame);
+                    gtc::native::drainVulkan();
+                    const double vertexStart = nowMs();
+                    for (int iteration = 0; iteration < iterations; ++iteration) {
+                        if (!gtc::native::renderVulkanScene(collapsed, frame)) {
+                            std::cerr << "vulkan skeleton vertex-only frame failed\n";
+                            return 1;
+                        }
+                    }
+                    reportLine("skeleton vulkan (vertices only)", (nowMs() - vertexStart) / iterations);
+                }
             }
             // The whole body: four times the skull's geometry, drawn the same
             // way. Measured here rather than inferred, because per-triangle cost

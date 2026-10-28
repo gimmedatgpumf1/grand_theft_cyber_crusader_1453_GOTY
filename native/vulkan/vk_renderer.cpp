@@ -243,7 +243,11 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
                     packed.x = vertices[vertex].x;
                     packed.y = vertices[vertex].y;
                     packed.z = vertices[vertex].z;
-                    packed.nx = vertices[vertex].nx;
+                    // A batch that goes into a run trades its normal for the slot
+                    // its matrix sits at: an indexed batch has no vertex normal,
+                    // and the slot has to reach the vertex stage somehow.
+                    const float slot = index < slots_.size() ? slots_[index] : -1.0F;
+                    packed.nx = slot >= 0.0F ? slot : vertices[vertex].nx;
                     packed.ny = vertices[vertex].ny;
                     packed.nz = vertices[vertex].nz;
                     std::memcpy(cursor + static_cast<VkDeviceSize>(running + vertex) * sizeof(PackedVertex),
@@ -314,46 +318,6 @@ bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::fu
     });
 }
 
-// The scene's indices, shifted into the shared vertex stream. A wrong shift
-// draws the wrong triangle from this batch's own vertices, which looks like a
-// modelling fault rather than an offset one, so it is checked at upload.
-bool Renderer::fillIndices(const GpuScene& scene, VkDeviceSize bytes) {
-    if (!reserveArray(index_, bytes)) return false;
-    const auto write = [&](char* cursor) {
-        std::uint32_t running = 0;
-        firstIndex_.assign(scene.batches.size(), 0);
-        indexCount_.assign(scene.batches.size(), 0);
-        for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
-            const GpuBatch& source = scene.batches[batch];
-            firstIndex_[batch] = running;
-            for (std::uint32_t value : source.indices) {
-                if (value >= source.vertices.size()) {
-                    std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
-                    return false;
-                }
-                const std::uint32_t global = value + firstVertex_[batch];
-                std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(std::uint32_t), &global,
-                            sizeof(std::uint32_t));
-                ++running;
-            }
-            indexCount_[batch] = static_cast<std::uint32_t>(running - firstIndex_[batch]);
-        }
-        return true;
-    };
-    // uploadArray takes a writer that cannot fail, so the check above is run
-    // once over the scene before anything is written.
-    for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
-        for (std::uint32_t value : scene.batches[batch].indices) {
-            if (value >= scene.batches[batch].vertices.size()) {
-                std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
-                return false;
-            }
-        }
-    }
-    if (!uploadArray(index_, bytes, write)) return false;
-    return true;
-}
-
 bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t total = 0, coordinates = 0;
     for (const GpuBatch& batch : scene.batches) {
@@ -363,8 +327,13 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     if (total == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
         firstUv_.assign(scene.batches.size(), 0);
+        runs_.clear();
+        slots_.clear();
         return true;
     }
+    // Which batches share a draw, before the upload: a batch in a run writes its
+    // slot where its normal would have gone.
+    findRuns(scene);
     if (!fillArray(vertex_, scene, false, static_cast<VkDeviceSize>(total) * sizeof(PackedVertex))) return false;
     // A batch with no texture samples nothing, so it is never bound to this
     // array and never has a coordinate fetched for it.
@@ -401,6 +370,11 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     } else {
         firstIndex_.assign(scene.batches.size(), 0);
         indexCount_.assign(scene.batches.size(), 0);
+    }
+    // A run's indices are contiguous in the shared array, because they are
+    // written batch by batch in order.
+    for (BatchRun& run : runs_) {
+        run.indices = firstIndex_[run.last] + indexCount_[run.last] - firstIndex_[run.first];
     }
     if (positions != total || coordinatesUsed != coordinates) {
         std::fprintf(stderr, "[vk] upload counted %zu of %zu vertices, %zu of %zu coordinates\n", positions, total,
@@ -596,6 +570,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // texture set gets bound over and over. Binding it again changes nothing and
     // costs a validation-and-write per draw.
     VkDescriptorSet boundTexture = VK_NULL_HANDLE;
+    // This frame's matrices, before anything is recorded: a run reads them by
+    // slot, so the array has to be current by the time the draw is submitted.
+    fillBones(scene);
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
@@ -653,9 +630,21 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         // triangle, not to the vertex, so the fragment stage derives it.
         const bool indexed = !batch.indices.empty();
         push.extra[0] = indexed ? 1.0f : 0.0f;
+        // A run of rigid batches goes out as one call: the vertex stage reads
+        // each vertex's matrix out of the bone array, so fifty-six draws become
+        // one. Every batch in the run is pushed with the same colour, which is
+        // why the run was formed.
+        const auto run = index < slots_.size() && slots_[index] >= 0.0F
+                             ? std::find_if(runs_.begin(), runs_.end(),
+                                            [&](const BatchRun& candidate) { return candidate.first == index; })
+                             : runs_.end();
+        push.extra[1] = run != runs_.end() ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
-        if (indexed) {
+        if (run != runs_.end()) {
+            if (run->indices > 0) drawIndexedFn(command_, run->indices, 1, firstIndex_[index], 0, 0);
+            index = run->last;
+        } else if (indexed) {
             const std::uint32_t count = index < indexCount_.size() ? indexCount_[index] : 0;
             if (count == 0) continue;
             drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);

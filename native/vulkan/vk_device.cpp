@@ -311,11 +311,20 @@ bool Renderer::createLayouts() {
     lutBinding.descriptorCount = 1;
     lutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const VkDescriptorSetLayoutBinding frameBindings[2] = {frameBinding, lutBinding};
+    // Binding 2 is the bone array: one matrix per rigid batch, so a whole body
+    // is a single draw instead of one per bone. It lives in the frame block's
+    // buffer, past the end of it, and is only read by the vertex stage.
+    VkDescriptorSetLayoutBinding boneBinding{};
+    boneBinding.binding = 2;
+    boneBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    boneBinding.descriptorCount = 1;
+    boneBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    const VkDescriptorSetLayoutBinding frameBindings[3] = {frameBinding, lutBinding, boneBinding};
     VkDescriptorSetLayoutCreateInfo frameInfo{};
 
     frameInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    frameInfo.bindingCount = 2;
+    frameInfo.bindingCount = 3;
     frameInfo.pBindings = frameBindings;
     if (createDescriptorSetLayout(device_, &frameInfo, nullptr, &frameLayout_) != VK_SUCCESS) return false;
 
@@ -574,7 +583,9 @@ bool Renderer::createSampler() {
 bool Renderer::createFrameResources() {
     VkBufferCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = sizeof(FrameUniform);
+    // The frame block, then the bone matrices: one buffer, two bindings, both
+    // written from the host every frame.
+    info.size = kSlotOffset + kSlotBlock;
     info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (createBuffer(device_, &info, nullptr, &frameBuffer_) != VK_SUCCESS) return false;
@@ -602,18 +613,26 @@ bool Renderer::createFrameResources() {
     if (mapMemory(device_, frameMemory_, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void**>(&frameMap_)) != VK_SUCCESS) {
         return false;
     }
+    boneMap_ = reinterpret_cast<float*>(reinterpret_cast<char*>(frameMap_) + kSlotOffset);
     VkDescriptorBufferInfo buffer{};
     buffer.buffer = frameBuffer_;
     buffer.offset = 0;
     buffer.range = sizeof(FrameUniform);
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = frameSet_;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    write.pBufferInfo = &buffer;
-    updateDescriptorSets(device_, 1, &write, 0, nullptr);
+    VkDescriptorBufferInfo bones{};
+    bones.buffer = frameBuffer_;
+    bones.offset = kSlotOffset;
+    bones.range = kSlotBlock;
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = frameSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &buffer;
+    writes[1] = writes[0];
+    writes[1].dstBinding = 2;
+    writes[1].pBufferInfo = &bones;
+    updateDescriptorSets(device_, 2, writes, 0, nullptr);
     return true;
 }
 

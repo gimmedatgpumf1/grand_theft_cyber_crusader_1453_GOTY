@@ -76,6 +76,31 @@ struct PushConstants {
 };
 static_assert(sizeof(PushConstants) == 112, "push block must match the shader");
 
+// A run of batches drawn with one call: the first and last batch it covers, and
+// how many indices the whole run has. Indices are written batch by batch, so a
+// run's indices are one contiguous range.
+struct BatchRun {
+    std::size_t first = 0;
+    std::size_t last = 0;
+    std::uint32_t indices = 0;
+};
+
+// Which batches can share a draw -- a whole skeleton, one call -- and which slot
+// in the bone array each of them writes its matrix to. Pure geometry bookkeeping:
+// it looks at the scene and answers, so it can be checked without a device.
+void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<float>& slots);
+
+// One draw for a whole skeleton. A body is fifty-six rigid batches, all sharing
+// one material, and submitting them one at a time was 0.7 ms of a frame that
+// had 3 ms to spend. Their matrices ride in one array instead of one push block
+// per draw, and the slot a vertex belongs to travels in its normal field --
+// which an indexed batch leaves empty, because its normal belongs to the
+// triangle. This is the array's ceiling: past it the extras are drawn singly.
+constexpr std::size_t kBatchSlots = 128;
+constexpr VkDeviceSize kSlotBlock = kBatchSlots * 16 * sizeof(float);
+// The frame block is 80 bytes; uniform buffer offsets are aligned to 256.
+constexpr VkDeviceSize kSlotOffset = 256;
+
 inline double srgbEncode(double value) {
     if (value <= 0.0) return 0.0;
     if (value >= 1.0) return 1.0;
@@ -323,6 +348,12 @@ private:
     bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
     bool fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes);
     bool fillIndices(const GpuScene& scene, VkDeviceSize bytes);
+    // -- a skeleton in one draw -----------------------------------------------
+    // Finds the runs of rigid batches that can share a draw, gives each batch a
+    // slot in the bone array, and copies this frame's matrices into it. Nothing
+    // here draws: the run list is what the draw loop walks.
+    void findRuns(const GpuScene& scene);
+    void fillBones(const GpuScene& scene);
     bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write);
     void destroyTargets();
     // -- swapchain ---------------------------------------------------------
@@ -543,6 +574,10 @@ private:
     std::vector<std::uint32_t> firstUv_;
     std::vector<std::uint32_t> firstIndex_;
     std::vector<std::uint32_t> indexCount_;
+    std::vector<BatchRun> runs_;
+    // Per batch: its slot in the bone array, or -1 for a batch drawn on its own.
+    std::vector<float> slots_;
+    float* boneMap_ = nullptr;
     bool ready_ = false;
     int frames_ = 0;
 };

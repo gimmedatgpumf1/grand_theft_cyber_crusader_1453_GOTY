@@ -26,6 +26,13 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 eye;
 } frame;
 
+// One matrix per rigid batch, for a body drawn in a single call. The slot is
+// per vertex and travels in the normal field, which an indexed batch leaves
+// empty because its normal belongs to the triangle.
+layout(set = 0, binding = 2) uniform Bones {
+    mat4 bone[128];
+} bones;
+
 layout(push_constant) uniform Batch {
     mat4 model;
     vec4 colour;
@@ -40,7 +47,10 @@ const float FILL_STRENGTH = 0.24;
 const float AMBIENT = 0.38;
 
 void main() {
+    // extra.y is a run: the whole skeleton in one draw call, its matrices read
+    // out of the array above instead of one push block per bone.
     vec4 world = batch.model * vec4(inPosition, 1.0);
+    if (batch.extra.y > 0.5) world = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
     outWorld = world.xyz;
     // A batch with no texture is drawn with a pipeline that carries no texture
