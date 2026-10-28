@@ -26,6 +26,11 @@ struct ViewState {
     int height = kDefaultWindowHeight;
     double fps = 0.0;
     double frameMilliseconds = 0.0;
+    // Where the last second of frames went: drawing, presentation and the
+    // game's own work. A frame rate on its own cannot say which one to fix.
+    double drawMilliseconds = 0.0;
+    double presentMilliseconds = 0.0;
+    double logicMilliseconds = 0.0;
     bool gpu = false;
     bool highlightToilet = false;
     bool slowWalk = false;

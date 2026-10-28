@@ -154,6 +154,9 @@ public:
                     return 1;
                 }
                 presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
+                view_.drawMilliseconds = renderMilliseconds;
+                view_.presentMilliseconds = presentMilliseconds;
+                view_.logicMilliseconds = logicMilliseconds;
                 continue;
             }
             // The overlay is drawn into this frame on the CPU a few lines down,
@@ -177,10 +180,15 @@ public:
             const auto overlayStart = Clock::now();
             drawOverlay(frame);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
+            view_.drawMilliseconds = renderMilliseconds;
+            view_.logicMilliseconds = logicMilliseconds;
+            const auto presentStart = Clock::now();
             if (!window_.present(frame)) {
                 std::cerr << "Native window presentation failed\n";
                 return 1;
             }
+            presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
+            view_.presentMilliseconds = presentMilliseconds;
             if (screenshot_) {
                 std::filesystem::create_directories("build/native-client");
                 if (!window_.save(frame, "build/native-client/window.png")) {

@@ -122,7 +122,13 @@ void drawHud(NativeFrame& frame, const ClientWorld& world, const ClientState& st
     drawText(frame, 350, 34, "15X TIME", muted);
     drawText(frame, 476, 5, "NET // ONLINE", text);
     std::string performance = std::to_string(state.characters.size()) + " CIT / " + (view.gpu ? "GPU" : "CPU");
-    if (view.fps > 0) performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
+    if (view.fps > 0) {
+        performance += " " + std::to_string(static_cast<int>(view.fps + 0.5));
+        char breakdown[64];
+        std::snprintf(breakdown, sizeof(breakdown), " d%.1f p%.1f l%.1f", view.drawMilliseconds,
+                      view.presentMilliseconds, view.logicMilliseconds);
+        performance += breakdown;
+    }
     drawText(frame, 476, 34, performance, muted);
     if (local) {
         frame.uiOffsetX = 0.0;
