@@ -60,6 +60,12 @@ still finds the assets. `gtc-run.log` records which directory was used.
 The skull benchmark prints the geometry cost separately from the draw, because a
 backend can only own the second half.
 
+The Vulkan figures are reported twice on purpose: **full frame** is draw, wait
+for the device, and the picture copied back to host memory; **submit only** leaves
+the result on the device. A backend that never copies its frame back -- OpenGL
+present does not -- can only be compared against the second number. `setFrameReadback(false)`
+is what the benchmark uses, and `GTC_VK_NO_COPY=1` does the same for a whole run.
+
 Both benchmarks turn on `GTC_VK_PROFILE` themselves, so a Vulkan run prints the
 frame broken into stages -- setup, record, submit and wait for the device, and the
 readback -- for its first frames. When a backend is slow, that breakdown is the

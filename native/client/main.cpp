@@ -120,7 +120,7 @@ double nowMs() {
 }
 
 void reportLine(const char* label, double milliseconds) {
-    std::cout << "  " << std::left << std::setw(26) << label << std::right << std::fixed
+    std::cout << "  " << std::left << std::setw(30) << label << std::right << std::fixed
               << std::setprecision(2) << std::setw(8) << milliseconds << " ms/frame"
               << std::setprecision(1) << std::setw(9) << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0)
               << " fps\n";
@@ -256,7 +256,18 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                     return 1;
                 }
             }
-            reportLine("skull vulkan", (nowMs() - start) / iterations);
+            reportLine("skull vulkan (full frame)", (nowMs() - start) / iterations);
+            // The same draw with the picture left on the device: commands are
+            // submitted and the device is waited for, but nothing is copied
+            // back. This is the only figure that can be compared with a backend
+            // whose "frame time" is submission alone.
+            gtc::native::setFrameReadback(false);
+            const double submitStart = nowMs();
+            for (int iteration = 0; iteration < iterations; ++iteration) {
+                gtc::native::renderVulkanScene(skull.scene, frame);
+            }
+            reportLine("skull vulkan (submit only)", (nowMs() - submitStart) / iterations);
+            gtc::native::setFrameReadback(true);
         }
     }
 

@@ -17,6 +17,9 @@
 namespace gtc::native {
 namespace detail {
 
+// Whether a drawn frame is copied back to host memory; see vk_renderer.h.
+bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
+
 namespace {
 
 // Stage timing, off unless asked for: `GTC_VK_PROFILE=1`. The point is to name
@@ -26,6 +29,11 @@ bool profiling() {
     static const bool on = std::getenv("GTC_VK_PROFILE") != nullptr;
     return on;
 }
+
+// The frame can be drawn without being copied out, which separates "how long
+// does the GPU take to draw" from "how long does it take to hand the result
+// back". Only the benchmarks set this; a normal run always reads the frame.
+bool skipCopy() { return !readbackEnabled; }
 
 double milliseconds() {
     using namespace std::chrono;
@@ -406,6 +414,18 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     firstVertex_.assign(scene.batches.size(), 0);
     if (total == 0) return true;
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(total) * sizeof(GpuVertex);
+
+    VkPhysicalDeviceMemoryProperties memory{};
+    getPhysicalDeviceMemoryProperties(physical_, &memory);
+    const auto pickType = [&](const VkMemoryRequirements& requirements, VkMemoryPropertyFlags wanted) {
+        for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
+            if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
+            if ((memory.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
+            return index;
+        }
+        return memory.memoryTypeCount;
+    };
+
     if (bytes > vertexCapacity_) {
         if (vertexBuffer_) destroyBuffer(device_, vertexBuffer_, nullptr);
         if (vertexMemory_) freeMemory(device_, vertexMemory_, nullptr);
@@ -413,35 +433,96 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
         vertexMemory_ = VK_NULL_HANDLE;
         vertexMap_ = nullptr;
         vertexCapacity_ = 0;
+        vertexStaged_ = false;
+
         VkBufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         info.size = bytes;
-        info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        // Transfer destination so a device-local buffer can be filled from a
+        // staging buffer where there is no memory type that is both.
+        info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         if (createBuffer(device_, &info, nullptr, &vertexBuffer_) != VK_SUCCESS) return false;
         VkMemoryRequirements requirements{};
         getBufferMemoryRequirements(device_, vertexBuffer_, &requirements);
-        VkPhysicalDeviceMemoryProperties memory{};
-        getPhysicalDeviceMemoryProperties(physical_, &memory);
-        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        std::uint32_t type = memory.memoryTypeCount;
-        for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-            if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
-            if ((memory.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
-            type = index;
-            break;
+
+        // The geometry is read by the GPU every frame and written by the host
+        // only when it changes, so device-local memory is the right home for it.
+        // Host-visible memory that is *not* device local is often write-combined
+        // system memory, where the GPU's read of a few megabytes drags -- which
+        // is exactly what made a single skull cost milliseconds.
+        const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        std::uint32_t type = pickType(requirements, ideal);
+        if (type != memory.memoryTypeCount) {
+            VkMemoryAllocateInfo allocation{};
+            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocation.allocationSize = requirements.size;
+            allocation.memoryTypeIndex = type;
+            if (allocateMemory(device_, &allocation, nullptr, &vertexMemory_) != VK_SUCCESS) return false;
+            if (bindBufferMemory(device_, vertexBuffer_, vertexMemory_, 0) != VK_SUCCESS) return false;
+            if (mapMemory(device_, vertexMemory_, 0, VK_WHOLE_SIZE, 0, &vertexMap_) != VK_SUCCESS) return false;
+        } else {
+            // No such type: device-local buffer, filled through a staging buffer.
+            type = pickType(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (type == memory.memoryTypeCount) type = pickType(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+            if (type == memory.memoryTypeCount) return false;
+            VkMemoryAllocateInfo allocation{};
+            allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocation.allocationSize = requirements.size;
+            allocation.memoryTypeIndex = type;
+            if (allocateMemory(device_, &allocation, nullptr, &vertexMemory_) != VK_SUCCESS) return false;
+            if (bindBufferMemory(device_, vertexBuffer_, vertexMemory_, 0) != VK_SUCCESS) return false;
+            vertexStaged_ = true;
         }
+        vertexCapacity_ = bytes;
+    }
+
+    if (vertexMap_) {
+        char* cursor = static_cast<char*>(vertexMap_);
+        std::uint32_t running = 0;
+        for (std::size_t index = 0; index < scene.batches.size(); ++index) {
+            const std::vector<GpuVertex>& vertices = scene.batches[index].vertices;
+            firstVertex_[index] = running;
+            if (!vertices.empty()) {
+                std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(GpuVertex),
+                            vertices.data(), vertices.size() * sizeof(GpuVertex));
+            }
+            running += static_cast<std::uint32_t>(vertices.size());
+        }
+        uploadedVertices_ = total;
+        return true;
+    }
+
+    // Staged path: one host-visible buffer, reused, then copied on the device.
+    if (bytes > stagingCapacity_) {
+        if (stagingBuffer_) destroyBuffer(device_, stagingBuffer_, nullptr);
+        if (stagingMemory_) freeMemory(device_, stagingMemory_, nullptr);
+        stagingBuffer_ = VK_NULL_HANDLE;
+        stagingMemory_ = VK_NULL_HANDLE;
+        stagingMap_ = nullptr;
+        stagingCapacity_ = 0;
+        VkBufferCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        info.size = bytes;
+        info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (createBuffer(device_, &info, nullptr, &stagingBuffer_) != VK_SUCCESS) return false;
+        VkMemoryRequirements requirements{};
+        getBufferMemoryRequirements(device_, stagingBuffer_, &requirements);
+        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        const std::uint32_t type = pickType(requirements, wanted);
         if (type == memory.memoryTypeCount) return false;
         VkMemoryAllocateInfo allocation{};
         allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocation.allocationSize = requirements.size;
         allocation.memoryTypeIndex = type;
-        if (allocateMemory(device_, &allocation, nullptr, &vertexMemory_) != VK_SUCCESS) return false;
-        if (bindBufferMemory(device_, vertexBuffer_, vertexMemory_, 0) != VK_SUCCESS) return false;
-        if (mapMemory(device_, vertexMemory_, 0, VK_WHOLE_SIZE, 0, &vertexMap_) != VK_SUCCESS) return false;
-        vertexCapacity_ = bytes;
+        if (allocateMemory(device_, &allocation, nullptr, &stagingMemory_) != VK_SUCCESS) return false;
+        if (bindBufferMemory(device_, stagingBuffer_, stagingMemory_, 0) != VK_SUCCESS) return false;
+        if (mapMemory(device_, stagingMemory_, 0, VK_WHOLE_SIZE, 0, &stagingMap_) != VK_SUCCESS) return false;
+        stagingCapacity_ = bytes;
     }
-    char* cursor = static_cast<char*>(vertexMap_);
+    char* cursor = static_cast<char*>(stagingMap_);
     std::uint32_t running = 0;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const std::vector<GpuVertex>& vertices = scene.batches[index].vertices;
@@ -451,6 +532,16 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
                         vertices.data(), vertices.size() * sizeof(GpuVertex));
         }
         running += static_cast<std::uint32_t>(vertices.size());
+    }
+    const VkDeviceSize copyBytes = static_cast<VkDeviceSize>(total) * sizeof(GpuVertex);
+    if (!submitNow([&](VkCommandBuffer buffer) {
+            VkBufferCopy region{};
+            region.srcOffset = 0;
+            region.dstOffset = 0;
+            region.size = copyBytes;
+            copyBufferFn(buffer, stagingBuffer_, vertexBuffer_, 1, &region);
+        })) {
+        return false;
     }
     uploadedVertices_ = total;
     return true;
@@ -638,7 +729,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.layerCount = 1;
     region.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
-    copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback, 1, &region);
+    if (!skipCopy()) {
+        copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback, 1,
+                          &region);
+    }
 
     // Nothing else to order here: the fence below is what makes the copy
     // visible to the host read, and HOST is not a stage a barrier may name.
@@ -666,6 +760,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     ++frames_;
 
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    if (skipCopy()) return true;
     const double readbackStart = profiling() && frames_ < 6 ? milliseconds() : 0.0;
     frame.width = width;
     frame.height = height;
@@ -794,6 +889,8 @@ bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
     if (!instance().start()) return false;
     return instance().draw(scene, frame);
 }
+
+void setFrameReadback(bool enabled) { detail::readbackEnabled = enabled; }
 
 void shutdownVulkan() {
     closed = true;

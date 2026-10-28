@@ -546,6 +546,7 @@ bool Renderer::start() {
         !resolve(drawFn, "vkCmdDraw") ||
         !resolve(copyImageToBuffer, "vkCmdCopyImageToBuffer") ||
         !resolve(copyBufferToImage, "vkCmdCopyBufferToImage") ||
+        !resolve(copyBufferFn, "vkCmdCopyBuffer") ||
         !resolve(pipelineBarrier, "vkCmdPipelineBarrier") ||
         !resolve(setViewport, "vkCmdSetViewport") ||
         !resolve(setScissor, "vkCmdSetScissor") ||
@@ -580,6 +581,12 @@ void Renderer::stop() {
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
         if (vertexBuffer_) destroyBuffer(device_, vertexBuffer_, nullptr);
+        if (stagingBuffer_) destroyBuffer(device_, stagingBuffer_, nullptr);
+        if (stagingMemory_) freeMemory(device_, stagingMemory_, nullptr);
+        stagingBuffer_ = VK_NULL_HANDLE;
+        stagingMemory_ = VK_NULL_HANDLE;
+        stagingMap_ = nullptr;
+        stagingCapacity_ = 0;
         if (vertexMemory_) freeMemory(device_, vertexMemory_, nullptr);
         vertexBuffer_ = VK_NULL_HANDLE;
         vertexMemory_ = VK_NULL_HANDLE;

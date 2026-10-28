@@ -11,4 +11,9 @@ bool vulkanAvailable();
 bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame);
 void shutdownVulkan();
 
+// Whether a drawn frame is copied back to host memory. On by default, because
+// the client needs pixels it can blit and draw a HUD over. Turning it off makes
+// the number comparable with a backend that only submits and never waits.
+void setFrameReadback(bool enabled);
+
 } // namespace gtc::native

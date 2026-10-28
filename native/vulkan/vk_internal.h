@@ -158,6 +158,9 @@ struct Target {
     int height = 0;
 };
 
+// Defined in vk_renderer.cpp; declared here because the frame loop asks it.
+extern bool readbackEnabled;
+
 class Renderer {
 public:
     bool start();
@@ -257,6 +260,7 @@ private:
     PFN_vkCmdDraw drawFn = nullptr;
     PFN_vkCmdCopyImageToBuffer copyImageToBuffer = nullptr;
     PFN_vkCmdCopyBufferToImage copyBufferToImage = nullptr;
+    PFN_vkCmdCopyBuffer copyBufferFn = nullptr;
     PFN_vkCmdPipelineBarrier pipelineBarrier = nullptr;
     PFN_vkCmdSetViewport setViewport = nullptr;
     PFN_vkCmdSetScissor setScissor = nullptr;
@@ -298,6 +302,11 @@ private:
     VkDeviceMemory vertexMemory_ = VK_NULL_HANDLE;
     void* vertexMap_ = nullptr;
     VkDeviceSize vertexCapacity_ = 0;
+    bool vertexStaged_ = false;
+    VkBuffer stagingBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
+    void* stagingMap_ = nullptr;
+    VkDeviceSize stagingCapacity_ = 0;
     std::uint64_t uploadedRevision_ = 0;
     std::uint64_t uploadedSignature_ = 0;
     std::size_t uploadedVertices_ = 0;
