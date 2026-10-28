@@ -1,55 +1,60 @@
 # Skeleton source
 
-`skeleton.obj` is the anatomical reference body: a decimated human skeleton with
-skull, jaw, teeth, spine, ribs, sternum, scapulae, clavicles, pelvis, both arms
-(humerus, forearm, full hand and every finger) and both legs (femur, patella,
-tibia/fibula, foot and toes).
+`skeleton-male.obj` and `skeleton-female.obj` are the anatomical reference
+bodies: decimated human skeletons with every bone kept — skull, jaw, teeth,
+spine, ribs, sternum, scapulae, clavicles, pelvis, both arms (humerus, forearm,
+carpals and all five fingers) and both legs (femur, patella, tibia/fibula,
+tarsals, metatarsals and toes).
 
-## Where it comes from
+## Where they come from
 
-It is derived from the skeleton meshes of **open-anatomy-3d**
-(https://github.com/MervinR07/open-anatomy-3d, `anatomy-male.glb`), which in turn
-is built from **BodyParts3D 4.0**, © The Database Center for Life Science
-(DBCLS), published under **CC BY 4.0**.
+Both are derived from the skeleton meshes of **open-anatomy-3d**
+(https://github.com/MervinR07/open-anatomy-3d: `anatomy-male.glb` and
+`anatomy-female.glb`), which are built from **BodyParts3D 4.0**, © The Database
+Center for Life Science (DBCLS), published under **CC BY 4.0**.
 
 Credit line, as required by the licence:
 
 > Anatomy: BodyParts3D © The Database Center for Life Science (CC BY 4.0).
 > Modified by open-anatomy-3d (https://github.com/MervinR07/open-anatomy-3d),
-> CC BY 4.0. Further modified for this project: decimated, flattened into a
-> single OBJ, part node names preserved.
-
-Changes made here are described below; the licence requires that they are
-indicated, and they are.
+> CC BY 4.0. Further modified for this project: decimated, flattened into OBJ,
+> part node names preserved.
 
 ## What was changed
 
-The upstream body is ~136,000 triangles at full resolution and split across one
-glTF node per bone. For this project it was:
+The upstream bodies are ~136,000 triangles each (skeleton only) split across one
+glTF node per bone at full anatomical resolution. Here they were:
 
-1. read with the upstream node transforms baked into world space, so the mesh is
-   in metres with the feet at `y = 0` and the figure 1.71 m tall;
-2. welded on position (0.01 mm) so the decimator could collapse shared seams;
-3. decimated per bone to an explicit triangle budget — the skull keeps its
-   orbits, sinuses and jaw line, while the long bones are allowed to collapse to
-   a handful of quads;
-4. compacted to only the vertices that survive, and written as one OBJ with the
-   upstream part names kept as `o` groups, so the next stage can bind bones to
-   named parts instead of guessing from coordinates.
+1. read with the upstream node transforms baked into world space, so the meshes
+   are in metres, feet at `y = 0` (male 1.706 m, female 1.608 m);
+2. welded on position (0.01 mm) so the simplifier can close shared seams;
+3. split into connected shells and simplified per shell — a hand is 46 separate
+   bones and a jaw holds 32 teeth, so simplifying a whole part as one blob turns
+   every phalanx into a spike;
+4. trimmed in retry passes against an explicit per-bone triangle budget, with a
+   floor of 12 triangles per shell so no bone disappears;
+5. compacted to the vertices that survive and written as one OBJ per body, with
+   the upstream part names kept as `o` groups.
 
-Result: 2,862 triangles, 1,816 vertices. The per-part counts are in
-`skeleton.parts.json`.
+| body | vertices | triangles |
+| --- | --- | --- |
+| male | 8,544 | 16,252 |
+| female | 7,560 | 14,254 |
+
+The per-part counts are in `skeleton-male.parts.json` and
+`skeleton-female.parts.json`.
 
 ## Regenerating
 
-`prepare.mjs` is the exact script that produced the files. It needs Node with
-`@gltf-transform/core`, `@gltf-transform/extensions`, `meshoptimizer`, and a
-checkout of open-anatomy-3d at `OPEN_ANATOMY`:
+`prepare.mjs` is the exact script that produced these files. It needs Node with
+`@gltf-transform/core`, `@gltf-transform/extensions` and `meshoptimizer`, plus a
+checkout of open-anatomy-3d:
 
 ```bash
 npm i @gltf-transform/core @gltf-transform/extensions meshoptimizer
 OPEN_ANATOMY=/path/to/open-anatomy-3d node tools/skeleton-source/prepare.mjs
+SEXES=male OPEN_ANATOMY=... node tools/skeleton-source/prepare.mjs
 ```
 
 The output is stable: the decimator is deterministic for a given input, so a
-regenerated file should differ only in floating point noise.
+regenerated file differs only in floating point noise.

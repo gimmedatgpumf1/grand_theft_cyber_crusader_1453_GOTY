@@ -1,0 +1,156 @@
+{
+ "source": "open-anatomy-3d anatomy-female.glb (CC BY 4.0, BodyParts3D)",
+ "units": "metres, feet on y = 0, facing +z",
+ "vertices": 7560,
+ "triangles": 14254,
+ "bbox": {
+  "minX": -0.23776717749009452,
+  "minY": 0.007636725617905266,
+  "minZ": -0.11231349947825578,
+  "maxX": 0.23696210446275542,
+  "maxY": 1.615730340775576,
+  "maxZ": 0.1358143538236618
+ },
+ "parts": [
+  {
+   "name": "spine_cervical",
+   "label": "Cervical Spine (Neck)",
+   "tris": 1110
+  },
+  {
+   "name": "sternum",
+   "label": "Sternum",
+   "tris": 346
+  },
+  {
+   "name": "foot_l",
+   "label": "Foot (L)",
+   "tris": 668
+  },
+  {
+   "name": "hand_l",
+   "label": "Hand (L)",
+   "tris": 588
+  },
+  {
+   "name": "foot_r",
+   "label": "Foot (R)",
+   "tris": 648
+  },
+  {
+   "name": "hand_r",
+   "label": "Hand (R)",
+   "tris": 564
+  },
+  {
+   "name": "spine_thoracic",
+   "label": "Thoracic Spine",
+   "tris": 1008
+  },
+  {
+   "name": "skull",
+   "label": "Skull",
+   "tris": 3340
+  },
+  {
+   "name": "spine_lumbar",
+   "label": "Lumbar Spine (Lower Back)",
+   "tris": 652
+  },
+  {
+   "name": "teeth",
+   "label": "Teeth & Gums",
+   "tris": 1700
+  },
+  {
+   "name": "mandible",
+   "label": "Jaw (Mandible)",
+   "tris": 184
+  },
+  {
+   "name": "clavicle_l",
+   "label": "Collarbone (L)",
+   "tris": 100
+  },
+  {
+   "name": "ribs_l",
+   "label": "Ribs (L)",
+   "tris": 404
+  },
+  {
+   "name": "femur_l",
+   "label": "Thigh Bone (Femur) (L)",
+   "tris": 164
+  },
+  {
+   "name": "lower_leg_l",
+   "label": "Shin Bones (L)",
+   "tris": 116
+  },
+  {
+   "name": "pelvis",
+   "label": "Pelvis & Sacrum",
+   "tris": 752
+  },
+  {
+   "name": "humerus_l",
+   "label": "Upper Arm Bone (L)",
+   "tris": 112
+  },
+  {
+   "name": "patella_l",
+   "label": "Kneecap (L)",
+   "tris": 182
+  },
+  {
+   "name": "forearm_l",
+   "label": "Forearm Bones (L)",
+   "tris": 72
+  },
+  {
+   "name": "scapula_l",
+   "label": "Shoulder Blade (L)",
+   "tris": 130
+  },
+  {
+   "name": "clavicle_r",
+   "label": "Collarbone (R)",
+   "tris": 154
+  },
+  {
+   "name": "ribs_r",
+   "label": "Ribs (R)",
+   "tris": 382
+  },
+  {
+   "name": "femur_r",
+   "label": "Thigh Bone (Femur) (R)",
+   "tris": 162
+  },
+  {
+   "name": "lower_leg_r",
+   "label": "Shin Bones (R)",
+   "tris": 112
+  },
+  {
+   "name": "humerus_r",
+   "label": "Upper Arm Bone (R)",
+   "tris": 122
+  },
+  {
+   "name": "patella_r",
+   "label": "Kneecap (R)",
+   "tris": 198
+  },
+  {
+   "name": "forearm_r",
+   "label": "Forearm Bones (R)",
+   "tris": 76
+  },
+  {
+   "name": "scapula_r",
+   "label": "Shoulder Blade (R)",
+   "tris": 208
+  }
+ ]
+}
