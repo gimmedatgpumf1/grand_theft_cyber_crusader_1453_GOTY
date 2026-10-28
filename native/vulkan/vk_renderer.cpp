@@ -496,6 +496,20 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     pipelineBarrier(command_, VK_PIPELINE_STAGE_HOST_BIT,
                     VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
                     0, 1, &host, 0, nullptr, 0, nullptr);
+    // The readback buffer was read by the host last frame and is about to be
+    // written by a transfer again: a read-then-write dependency, which has to
+    // be stated rather than assumed.
+    VkBufferMemoryBarrier reuse{};
+    reuse.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    reuse.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    reuse.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    reuse.buffer = target_.readback;
+    reuse.offset = 0;
+    reuse.size = VK_WHOLE_SIZE;
+    reuse.srcAccessMask = VK_ACCESS_HOST_READ_BIT;
+    reuse.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    pipelineBarrier(command_, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    0, 0, nullptr, 1, &reuse, 0, nullptr);
 
     VkClearValue clears[2]{};
     clears[0].color.float32[0] = static_cast<float>(displayValue(scene.background.r));
