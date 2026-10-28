@@ -637,10 +637,21 @@ detail::Renderer& instance() {
     return renderer;
 }
 
+// Set once the owner has asked for shutdown. Nothing may start the device again
+// after that, which is what keeps a closed window from drawing into a dead
+// renderer.
+bool closed = false;
+
 } // namespace
 
 bool vulkanAvailable() {
-    static const bool available = instance().start();
+    if (closed) return false;
+    static bool tried = false;
+    static bool available = false;
+    if (!tried) {
+        tried = true;
+        available = instance().start();
+    }
     return available;
 }
 
@@ -657,6 +668,7 @@ bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
 }
 
 void shutdownVulkan() {
+    closed = true;
     instance().stop();
 }
 
