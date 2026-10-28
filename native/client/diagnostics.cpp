@@ -125,8 +125,9 @@ LONG WINAPI onFault(EXCEPTION_POINTERS* info) {
 }
 
 void install() {
+    // The filter is the whole job: it runs before Windows terminates the
+    // process, so the record reaches the log whichever instruction faulted.
     SetUnhandledExceptionFilter(&onFault);
-    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 }
 
 #else
