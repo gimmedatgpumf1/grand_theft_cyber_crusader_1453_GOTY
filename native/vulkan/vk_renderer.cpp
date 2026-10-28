@@ -20,6 +20,7 @@ namespace detail {
 
 // Whether a drawn frame is copied back to host memory; see vk_renderer.h.
 bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
+bool linearTarget = std::getenv("GTC_VK_LINEAR") != nullptr;
 
 namespace {
 
@@ -165,7 +166,8 @@ bool Renderer::createTargets(int width, int height) {
         }
         return memory.memoryTypeCount; // nothing matched
     };
-    const auto makeImage = [&](VkFormat format, VkImageUsageFlags usage, VkImage& image, VkDeviceMemory& allocation) {
+    const auto makeImage = [&](VkFormat format, VkImageUsageFlags usage, VkImage& image, VkDeviceMemory& allocation,
+                               bool allowLinear) {
         VkImageCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         info.imageType = VK_IMAGE_TYPE_2D;
@@ -175,6 +177,17 @@ bool Renderer::createTargets(int width, int height) {
         info.arrayLayers = 1;
         info.samples = VK_SAMPLE_COUNT_1_BIT;
         info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        if (allowLinear && linearTarget) {
+            // Only where the device says a linear image of this format can be a
+            // colour attachment; otherwise the tiled path stays.
+            VkFormatProperties properties{};
+            getPhysicalDeviceFormatProperties(physical_, format, &properties);
+            if ((properties.linearTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0) {
+                info.tiling = VK_IMAGE_TILING_LINEAR;
+            } else {
+                trace("vk: this device will not render into a linear image; staying tiled");
+            }
+        }
         info.usage = usage;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -192,8 +205,9 @@ bool Renderer::createTargets(int width, int height) {
     };
 
     const VkImageUsageFlags colourUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if (!makeImage(colourFormat_, colourUsage, target_.colour, target_.colourMemory)) return false;
-    if (!makeImage(depthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, target_.depth, target_.depthMemory)) {
+    if (!makeImage(colourFormat_, colourUsage, target_.colour, target_.colourMemory, true)) return false;
+    if (!makeImage(depthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, target_.depth, target_.depthMemory,
+                   false)) {
         return false;
     }
 
@@ -265,6 +279,10 @@ bool Renderer::createTargets(int width, int height) {
     if (bindBufferMemory(device_, target_.readback, target_.readbackMemory, 0) != VK_SUCCESS) return false;
     if (mapMemory(device_, target_.readbackMemory, 0, VK_WHOLE_SIZE, 0, &target_.readbackMap) != VK_SUCCESS) return false;
 
+    if (profiling()) {
+        std::printf("    [vk] colour image: %s\n",
+                    linearTarget ? "linear (linear tiling requested)" : "tiled");
+    }
     target_.staging.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
     target_.width = width;
     target_.height = height;
@@ -932,6 +950,13 @@ bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
 }
 
 void setFrameReadback(bool enabled) { detail::readbackEnabled = enabled; }
+
+void setLinearTarget(bool enabled) {
+    if (detail::linearTarget == enabled) return;
+    detail::linearTarget = enabled;
+    // The existing targets were built for the other layout.
+    instance().discardTargets();
+}
 
 void shutdownVulkan() {
     closed = true;

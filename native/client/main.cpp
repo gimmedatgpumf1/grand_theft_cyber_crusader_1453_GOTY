@@ -287,6 +287,17 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             }
             reportLine("skull vulkan (submit only)", (nowMs() - submitStart) / iterations);
             gtc::native::setFrameReadback(true);
+            // Same frame, colour image kept in linear layout: the copy back is
+            // then a memory copy instead of a walk over tiled memory. Costs the
+            // rasteriser its swizzle, so both parts are timed rather than assumed.
+            gtc::native::setLinearTarget(true);
+            gtc::native::renderVulkanScene(skull.scene, frame);
+            const double linearStart = nowMs();
+            for (int iteration = 0; iteration < iterations; ++iteration) {
+                gtc::native::renderVulkanScene(skull.scene, frame);
+            }
+            reportLine("skull vulkan (linear image)", (nowMs() - linearStart) / iterations);
+            gtc::native::setLinearTarget(false);
         }
     }
 

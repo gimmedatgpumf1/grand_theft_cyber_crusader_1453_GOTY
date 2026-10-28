@@ -16,4 +16,9 @@ void shutdownVulkan();
 // the number comparable with a backend that only submits and never waits.
 void setFrameReadback(bool enabled);
 
+// Keeps the colour image in linear layout so copying it back is a memory copy
+// rather than a walk over tiled memory. Only worth it when the frame is read
+// back; measured by the skull benchmark.
+void setLinearTarget(bool enabled);
+
 } // namespace gtc::native

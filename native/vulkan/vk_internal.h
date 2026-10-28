@@ -161,11 +161,21 @@ struct Target {
 // Defined in vk_renderer.cpp; declared here because the frame loop asks it.
 extern bool readbackEnabled;
 
+// When the frame has to be copied back to the host anyway, the colour image can
+// be kept in linear layout: a tiled image has to be walked by the copy engine,
+// while a linear one is copied as memory. Rendering into linear layout costs the
+// rasteriser its swizzle, so this is a trade that has to be measured rather than
+// assumed -- see the benchmark.
+extern bool linearTarget;
+
 class Renderer {
 public:
     bool start();
     bool draw(const GpuScene& scene, NativeFrame& frame);
     void stop();
+    // Throws away the offscreen targets so the next frame rebuilds them, which
+    // is how a change of layout takes effect.
+    void discardTargets() { destroyTargets(); }
 
 private:
     bool openLoader();
