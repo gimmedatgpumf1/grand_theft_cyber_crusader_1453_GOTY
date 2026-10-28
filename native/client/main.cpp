@@ -179,6 +179,25 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
     }
     std::cout << "single skull: " << triangles << " triangles, " << vertices << " vertices, "
               << skull.camera.width << 'x' << skull.camera.height << '\n';
+    std::cout << "threads for frame conversions: " << gtc::native::frameThreads() << '\n';
+
+    // What the window does with a finished frame: reorder it for the device
+    // context. Measured because it is per frame, every frame, at this size.
+    {
+        gtc::native::NativeFrame probe;
+        probe.width = skull.camera.width;
+        probe.height = skull.camera.height;
+        probe.rgb.assign(static_cast<std::size_t>(probe.width) * probe.height * 3, 96);
+        std::vector<unsigned char> bgra;
+        gtc::native::rgbToBgra(probe, bgra);
+        const double start = nowMs();
+        for (int iteration = 0; iteration < iterations; ++iteration) gtc::native::rgbToBgra(probe, bgra);
+        reportLine("present reorder (threaded)", (nowMs() - start) / iterations);
+        if (bgra.size() != static_cast<std::size_t>(probe.width) * probe.height * 4 || bgra[3] != 255) {
+            std::cerr << "rgbToBgra produced the wrong shape\n";
+            return 1;
+        }
+    }
 
     // Build cost: posing the bone and emitting its triangles into a batch.
     // Every animated character in the world pays this, every frame it moves.

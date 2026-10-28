@@ -122,6 +122,14 @@ struct GpuScene {
 
 using GpuRenderer = bool (*)(const GpuScene& scene, NativeFrame& frame);
 void setGpuRenderer(GpuRenderer renderer);
+
+// How many worker threads the client uses for whole-frame pixel work. Half the
+// machine unless GTC_THREADS says otherwise.
+std::size_t frameThreads();
+
+// Reorders an RGB frame into the BGRA bytes a Windows device context blits, and
+// splits the work across cores. `out` is resized to four bytes per pixel.
+void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out);
 bool renderGpuScene(const GpuScene& scene, NativeFrame& frame);
 
 // Frame buffers live outside the rasterizer so a running client can keep the

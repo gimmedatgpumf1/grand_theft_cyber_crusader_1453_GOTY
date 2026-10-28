@@ -318,13 +318,10 @@ bool NativeWindow::present(const NativeFrame& frame) {
         if (!impl_->renderer.present(frame)) return false;
         return SwapBuffers(impl_->gpuDevice) != 0;
     }
-    impl_->bgra.resize(count * 4);
-    for (std::size_t i = 0; i < count; ++i) {
-        impl_->bgra[i * 4] = frame.rgb[i * 3 + 2];
-        impl_->bgra[i * 4 + 1] = frame.rgb[i * 3 + 1];
-        impl_->bgra[i * 4 + 2] = frame.rgb[i * 3];
-        impl_->bgra[i * 4 + 3] = 255;
-    }
+    // Reordered across cores: at 1568x929 this is 1.45 M pixels every frame, and
+    // doing it on one thread was part of why a finished frame still took
+    // milliseconds to appear.
+    rgbToBgra(frame, impl_->bgra);
     BITMAPINFO bitmap{};
     bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bitmap.bmiHeader.biWidth = frame.width;

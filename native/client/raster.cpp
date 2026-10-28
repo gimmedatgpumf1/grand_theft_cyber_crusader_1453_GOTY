@@ -116,6 +116,51 @@ GpuRenderer activeGpuRenderer = nullptr;
 
 void setGpuRenderer(GpuRenderer renderer) { activeGpuRenderer = renderer; }
 
+std::size_t frameThreads() {
+    static const std::size_t count = [] {
+        if (const char* setting = std::getenv("GTC_THREADS")) {
+            const int value = std::atoi(setting);
+            if (value > 0) return static_cast<std::size_t>(value);
+        }
+        const unsigned hardware = std::thread::hardware_concurrency();
+        return static_cast<std::size_t>(hardware == 0 ? 2 : std::max(2u, hardware / 2));
+    }();
+    return count;
+}
+
+void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out) {
+    const std::size_t count = static_cast<std::size_t>(std::max(0, frame.width)) *
+        static_cast<std::size_t>(std::max(0, frame.height));
+    out.resize(count * 4);
+    if (count == 0 || frame.rgb.size() < count * 3) return;
+    const auto convert = [&](std::size_t begin, std::size_t end) {
+        const unsigned char* source = frame.rgb.data() + begin * 3;
+        unsigned char* target = out.data() + begin * 4;
+        for (std::size_t index = begin; index < end; ++index, source += 3, target += 4) {
+            target[0] = source[2];
+            target[1] = source[1];
+            target[2] = source[0];
+            target[3] = 255;
+        }
+    };
+    // Below about a quarter of a megapixel the split costs more than it saves.
+    const std::size_t workers = std::max<std::size_t>(1,
+        std::min<std::size_t>(frameThreads(), std::max<std::size_t>(1, count / 262144)));
+    if (workers <= 1) {
+        convert(0, count);
+        return;
+    }
+    std::vector<std::thread> pool;
+    pool.reserve(workers - 1);
+    for (std::size_t worker = 1; worker < workers; ++worker) {
+        const std::size_t begin = count * worker / workers;
+        const std::size_t end = count * (worker + 1) / workers;
+        pool.emplace_back([&convert, begin, end] { convert(begin, end); });
+    }
+    convert(0, count / workers);
+    for (std::thread& thread : pool) thread.join();
+}
+
 bool renderGpuScene(const GpuScene& scene, NativeFrame& frame) {
     return activeGpuRenderer && activeGpuRenderer(scene, frame);
 }
