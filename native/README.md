@@ -53,6 +53,10 @@ Three benchmarks, each answering a different question:
     # The test room.
     gtc-native-client --room-benchmark 60 --width 1568 --height 929 --renderer vulkan
 
+The asset root (`--root`) is only a hint: if the skeleton is not there, the client
+looks beside the executable and up from it, so a client started from `build/bin`
+still finds the assets. `gtc-run.log` records which directory was used.
+
 The skull benchmark prints the geometry cost separately from the draw, because a
 backend can only own the second half. `--renderer all` measures the software
 rasterizer, Vulkan and OpenGL in one run; OpenGL needs a real window, so it is

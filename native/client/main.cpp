@@ -13,6 +13,7 @@
 #include <cstring>
 #include <iomanip>
 #include <filesystem>
+#include <vector>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -47,6 +48,61 @@ struct SkullScene {
     gtc::native::Camera camera;
     bool ready = false;
 };
+
+
+// The asset root is discovered, not demanded. Someone who runs the client from
+// build/bin, or double-clicks it, has a working directory that is not the
+// repository, and being told "cannot open skeleton" for that is a needle in the
+// wrong haystack. The candidates are tried in order and the first one that
+// actually contains the skeleton is used; if none does, the original value is
+// kept so the error names the path that was asked for.
+std::string resolveRoot(std::string root) {
+    namespace fs = std::filesystem;
+    const std::string marker = "/tools/skeleton-source/skeleton-male.obj";
+    std::vector<std::string> candidates;
+    const auto add = [&](const std::string& value) {
+        if (value.empty()) return;
+        if (std::find(candidates.begin(), candidates.end(), value) == candidates.end()) candidates.push_back(value);
+    };
+    const auto withSlash = [](std::string value) {
+        while (value.size() > 1 && (value.back() == '/' || value.back() == '\\')) value.pop_back();
+        return value;
+    };
+    add(withSlash(root));
+    const std::string executable = gtc::native::executableDirectory();
+    if (!executable.empty()) {
+        std::error_code code;
+        // .../build/bin -> the repository is two levels up; also check one, in
+        // case the binary is somewhere else in the tree.
+        fs::path cursor(executable);
+        for (int level = 0; level < 4; ++level) {
+            add(cursor.string());
+            if (!cursor.has_parent_path() || cursor.parent_path() == cursor) break;
+            cursor = cursor.parent_path();
+        }
+    }
+    std::error_code code;
+    fs::path working = fs::current_path(code);
+    if (!code) {
+        for (int level = 0; level < 4; ++level) {
+            add(working.string());
+            if (!working.has_parent_path() || working.parent_path() == working) break;
+            working = working.parent_path();
+        }
+    }
+    for (const std::string& candidate : candidates) {
+        if (fs::exists(candidate + marker, code)) {
+            if (candidate != withSlash(root)) {
+                gtc::native::tracef("root: using %s (asked for %s)", candidate.c_str(), root.c_str());
+            }
+            return candidate;
+        }
+    }
+    std::string tried;
+    for (const std::string& candidate : candidates) tried += "\n  " + candidate + marker;
+    gtc::native::tracef("root: no skeleton under any candidate:%s", tried.c_str());
+    return root;
+}
 
 double nowMs() {
     using namespace std::chrono;
@@ -368,6 +424,7 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    root = resolveRoot(root);
     if (skullBenchmark > 0) return runSkullBenchmark(root, view, rendererName, skullBenchmark);
     if (worldBenchmark > 0) return runWorldBenchmark(root, view, rendererName, worldBenchmark, worldCharacters);
     if (roomBenchmark > 0) {

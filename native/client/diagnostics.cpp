@@ -182,4 +182,21 @@ void installCrashHandler(const char* program) {
 
 const char* logPath() { return logName; }
 
+std::string executableDirectory() {
+    char buffer[1024] = {0};
+#if defined(_WIN32)
+    const DWORD length = GetModuleFileNameA(nullptr, buffer, sizeof(buffer));
+    if (length == 0 || length >= sizeof(buffer)) return {};
+    char* slash = std::strrchr(buffer, '\\');
+#else
+    const ssize_t length = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+    if (length <= 0) return {};
+    buffer[length] = '\0';
+    char* slash = std::strrchr(buffer, '/');
+#endif
+    if (!slash) return {};
+    *slash = '\0';
+    return std::string(buffer);
+}
+
 } // namespace gtc::native
