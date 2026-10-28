@@ -6,8 +6,12 @@ cartilages, sternum, scapulae, clavicles, pelvis and sacrum, both arms (humerus,
 radius, ulna, all eight carpals, five metacarpals, every finger phalanx) and both
 legs (femur, patella, tibia, fibula, tarsals, metatarsals, every toe phalanx).
 
-`skeleton-female.obj` is segmented from the Visible Human Female CT and is
-verified by `verify-obj.mjs --sex female --scanned`.
+`skeleton-female.obj` comes from **OpenSkeleton** — the full-body CT bone
+segmentations published by Duquesne, Destryker, Segers and Audenaert (Ghent
+University) from the New Mexico Decedent Image Database — under **CC BY 4.0**,
+subject `N186416`. She is a different person from the male and a different body
+from the older Visible Human Female build kept in `vhf/`; she is verified by
+`verify-obj.mjs --sex female --scanned`.
 
 ## Where they come from
 

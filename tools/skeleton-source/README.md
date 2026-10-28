@@ -6,16 +6,17 @@ draw, plus the scripts that produce and check them.
 | file | parts | bones | vertices | triangles | height |
 | --- | --- | --- | --- | --- | --- |
 | `skeleton-male.obj` | 28 | 272 | 97,227 | 195,242 | 1.696 m |
-| `skeleton-female.obj` | 28 | 442 | 62,077 | 130,728 | 1.713 m |
+| `skeleton-female.obj` | 27 | 182 | 90,118 | 179,824 | 1.662 m |
 
 The male is a real anatomical model (Z-Anatomy, CC BY-SA 4.0, derived from
 BodyParts3D): every bone is present, including all eight carpals and every finger
 phalanx, the ossicles, the teeth, and every toe.
 
-The female is a **different body**: the Visible Human Female cadaver, segmented
-from her own CT at 0.7227 mm at the pipeline in `vhf/`. Her pelvis, her rib cage,
-her skull and her limb lengths are hers, not a man's. `vhf/README.md` has the
-measurements.
+The female is a **different body**: a 41-year-old woman from OpenSkeleton
+(NMDID post-mortem CT, Ghent University), 170.2 cm and 78.0 kg, assembled by
+`openskeleton/03-import.py` from her own 182 segmented bones. Her pelvis, her
+rib cage, her skull, her hands and her feet are hers; nothing is a warp of the
+male, and nothing is scaled. `openskeleton/README.md` has the measurements.
 
 ## Canonical height
 

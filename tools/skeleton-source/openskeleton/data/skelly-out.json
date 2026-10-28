@@ -1,0 +1,741 @@
+{
+ "subject": "N186416",
+ "structures": {
+  "C1": {
+   "vertices": 5373,
+   "triangles": 10754
+  },
+  "C2": {
+   "vertices": 5448,
+   "triangles": 10904
+  },
+  "C3": {
+   "vertices": 4655,
+   "triangles": 9318
+  },
+  "C4": {
+   "vertices": 4655,
+   "triangles": 9318
+  },
+  "C5": {
+   "vertices": 4655,
+   "triangles": 9318
+  },
+  "C6": {
+   "vertices": 4655,
+   "triangles": 9318
+  },
+  "C7": {
+   "vertices": 4655,
+   "triangles": 9318
+  },
+  "Cal_L": {
+   "vertices": 5774,
+   "triangles": 11544
+  },
+  "Cal_R": {
+   "vertices": 5774,
+   "triangles": 11544
+  },
+  "Clavicula_L": {
+   "vertices": 5195,
+   "triangles": 10386
+  },
+  "Clavicula_R": {
+   "vertices": 5195,
+   "triangles": 10386
+  },
+  "Cub_L": {
+   "vertices": 1310,
+   "triangles": 2616
+  },
+  "Cub_R": {
+   "vertices": 1310,
+   "triangles": 2616
+  },
+  "Femur_L": {
+   "vertices": 21097,
+   "triangles": 42188
+  },
+  "Femur_R": {
+   "vertices": 21097,
+   "triangles": 42188
+  },
+  "Fibula_L": {
+   "vertices": 17206,
+   "triangles": 34408
+  },
+  "Fibula_R": {
+   "vertices": 17206,
+   "triangles": 34408
+  },
+  "FootDistP1_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP1_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP2_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP2_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP3_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP3_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP4_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP4_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP5_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootDistP5_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "FootMeta1_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta1_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta2_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta2_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta3_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta3_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta4_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta4_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta5_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMeta5_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "FootMidP2_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP2_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP3_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP3_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP4_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP4_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP5_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootMidP5_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP1_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP1_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP2_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP2_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP3_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP3_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP4_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP4_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP5_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootProxP5_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "FootSesaLat_L": {
+   "vertices": 250,
+   "triangles": 496
+  },
+  "FootSesaLat_R": {
+   "vertices": 250,
+   "triangles": 496
+  },
+  "FootSesaMed_L": {
+   "vertices": 250,
+   "triangles": 496
+  },
+  "FootSesaMed_R": {
+   "vertices": 250,
+   "triangles": 496
+  },
+  "HandCapitatum_L": {
+   "vertices": 615,
+   "triangles": 1226
+  },
+  "HandCapitatum_R": {
+   "vertices": 615,
+   "triangles": 1226
+  },
+  "HandDistP1_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP1_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP2_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP2_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP3_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP3_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP4_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP4_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP5_L": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandDistP5_R": {
+   "vertices": 420,
+   "triangles": 836
+  },
+  "HandHamata_L": {
+   "vertices": 595,
+   "triangles": 1186
+  },
+  "HandHamata_R": {
+   "vertices": 595,
+   "triangles": 1186
+  },
+  "HandLuna_L": {
+   "vertices": 350,
+   "triangles": 696
+  },
+  "HandLuna_R": {
+   "vertices": 350,
+   "triangles": 696
+  },
+  "HandMeta1_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta1_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta2_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta2_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta3_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta3_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta4_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta4_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta5_L": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMeta5_R": {
+   "vertices": 1680,
+   "triangles": 3356
+  },
+  "HandMidP2_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP2_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP3_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP3_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP4_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP4_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP5_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandMidP5_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandPisiform_L": {
+   "vertices": 1090,
+   "triangles": 2176
+  },
+  "HandPisiform_R": {
+   "vertices": 1090,
+   "triangles": 2176
+  },
+  "HandProxP1_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP1_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP2_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP2_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP3_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP3_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP4_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP4_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP5_L": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandProxP5_R": {
+   "vertices": 885,
+   "triangles": 1766
+  },
+  "HandScaphoid_L": {
+   "vertices": 710,
+   "triangles": 1416
+  },
+  "HandScaphoid_R": {
+   "vertices": 710,
+   "triangles": 1416
+  },
+  "HandTrapezium_L": {
+   "vertices": 400,
+   "triangles": 796
+  },
+  "HandTrapezium_R": {
+   "vertices": 400,
+   "triangles": 796
+  },
+  "HandTrapezoideum_L": {
+   "vertices": 450,
+   "triangles": 896
+  },
+  "HandTrapezoideum_R": {
+   "vertices": 450,
+   "triangles": 896
+  },
+  "HandTriquetrum_L": {
+   "vertices": 310,
+   "triangles": 616
+  },
+  "HandTriquetrum_R": {
+   "vertices": 310,
+   "triangles": 616
+  },
+  "Head": {
+   "vertices": 96028,
+   "triangles": 192145
+  },
+  "Humerus_L": {
+   "vertices": 13138,
+   "triangles": 26272
+  },
+  "Humerus_R": {
+   "vertices": 13138,
+   "triangles": 26272
+  },
+  "InterCun_L": {
+   "vertices": 1095,
+   "triangles": 2186
+  },
+  "InterCun_R": {
+   "vertices": 1095,
+   "triangles": 2186
+  },
+  "Jaw": {
+   "vertices": 13846,
+   "triangles": 27688
+  },
+  "L1": {
+   "vertices": 6282,
+   "triangles": 12564
+  },
+  "L2": {
+   "vertices": 6282,
+   "triangles": 12564
+  },
+  "L3": {
+   "vertices": 6282,
+   "triangles": 12564
+  },
+  "L4": {
+   "vertices": 6282,
+   "triangles": 12564
+  },
+  "L5": {
+   "vertices": 6282,
+   "triangles": 12564
+  },
+  "LatCun_L": {
+   "vertices": 790,
+   "triangles": 1576
+  },
+  "LatCun_R": {
+   "vertices": 790,
+   "triangles": 1576
+  },
+  "MedCun_L": {
+   "vertices": 1060,
+   "triangles": 2116
+  },
+  "MedCun_R": {
+   "vertices": 1060,
+   "triangles": 2116
+  },
+  "Nav_L": {
+   "vertices": 1320,
+   "triangles": 2636
+  },
+  "Nav_R": {
+   "vertices": 1320,
+   "triangles": 2636
+  },
+  "Patella_L": {
+   "vertices": 3825,
+   "triangles": 7646
+  },
+  "Patella_R": {
+   "vertices": 3825,
+   "triangles": 7646
+  },
+  "Pelvis_L": {
+   "vertices": 25968,
+   "triangles": 51934
+  },
+  "Pelvis_R": {
+   "vertices": 25968,
+   "triangles": 51934
+  },
+  "Radius_L": {
+   "vertices": 8551,
+   "triangles": 17098
+  },
+  "Radius_R": {
+   "vertices": 8551,
+   "triangles": 17098
+  },
+  "Rib10_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib10_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib11_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib11_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib12_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib12_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib1_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib1_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib2_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib2_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib3_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib3_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib4_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib4_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib5_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib5_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib6_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib6_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib7_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib7_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib8_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib8_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib9_L": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Rib9_R": {
+   "vertices": 1872,
+   "triangles": 3740
+  },
+  "Sacrum": {
+   "vertices": 20999,
+   "triangles": 42061
+  },
+  "Scapula_L": {
+   "vertices": 20238,
+   "triangles": 40472
+  },
+  "Scapula_R": {
+   "vertices": 20238,
+   "triangles": 40472
+  },
+  "Sternum": {
+   "vertices": 9352,
+   "triangles": 18695
+  },
+  "T1": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T10": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T11": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T12": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T2": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T3": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T4": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T5": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T6": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T7": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T8": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "T9": {
+   "vertices": 5332,
+   "triangles": 10664
+  },
+  "Tal_L": {
+   "vertices": 4048,
+   "triangles": 8092
+  },
+  "Tal_R": {
+   "vertices": 4048,
+   "triangles": 8092
+  },
+  "Tibia_L": {
+   "vertices": 21991,
+   "triangles": 43978
+  },
+  "Tibia_R": {
+   "vertices": 21991,
+   "triangles": 43978
+  },
+  "Ulna_L": {
+   "vertices": 8570,
+   "triangles": 17136
+  },
+  "Ulna_R": {
+   "vertices": 8570,
+   "triangles": 17136
+  }
+ },
+ "skipped": [],
+ "extent": [
+  495.6090087890625,
+  397.71868896484375,
+  1741.8319091796875
+ ],
+ "units": "raw, as stored by the dataset",
+ "note": "Vertices are registered template shapes, one per bone. Nothing is scaled."
+}

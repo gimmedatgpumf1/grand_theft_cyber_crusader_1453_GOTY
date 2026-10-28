@@ -219,3 +219,61 @@ because the two bodies are different people rather than one model and one warp:
   what catches a body that has been stretched or squeezed even when every long
   bone happens to land inside its band.
 
+
+## The female, from OpenSkeleton — a different woman
+
+The shipped `skeleton-female.obj` is no longer the Visible Human Female cadaver.
+She is subject `N186416` of **OpenSkeleton** (Duquesne et al., Ghent University,
+CC BY 4.0): 170.2 cm, 78.0 kg, BMI 26.9, aged 41, from a post-mortem CT with
+thin slices. The dataset labels **182 bones individually** — every carpal, every
+metacarpal, every tarsal, every metatarsal and every phalanx — which is what
+lets a rig have working fingers and toes. Imported by `openskeleton/03-import.py`
+from her own `skelly-out.npz`; nothing is scaled and no bone is borrowed from the
+male.
+
+| | female |
+| --- | --- |
+| source | OpenSkeleton, subject `N186416`, CC BY 4.0 |
+| bones | 182 → 27 rig parts, 90,118 vertices, 179,824 triangles |
+| stature | 1.66209 m as built (metadata `cadaver_length` 1702 mm) |
+| hand | 27 bones each — 8 carpals, 5 metacarpals, 14 phalanges; the thumb has no middle phalanx, which is anatomy |
+| foot | 28 bones each — 7 tarsals, 5 metatarsals, 14 phalanges, 2 sesamoids |
+| verifier | **PASSED** (`--sex female --scanned`) |
+
+### What the verifier measures on her
+
+```
+femur (left)             25.20%       24.2-28      ok
+tibia+fibula (left)      22.39%       19-22.7      ok
+humerus (left)           19.07%     17.2-20.9      ok
+radius+ulna (left)       15.08%     13.7-17.3      ok
+hand (left)              10.62%      9.4-12.4      ok
+foot length (left)       12.41%     13.5-16.9      individual  (-18.2 mm)
+hip height               50.35%     49.5-55.5      ok
+knee height              26.06%       23-30.5      ok
+mirror error, every pair          0.1-0.4 mm  ok
+```
+
+The foot row is reported, not hidden: a defleshed foot is 15-20 mm shorter than
+the living foot the band is drawn from, because the heel pad and the toe pads are
+gone. Her own foot bones are individually right — calcaneus 73.1 mm, first
+metatarsal 63.0 mm, and heel-to-ball is 0.78 of the foot, which is the human
+ratio. Nothing was rescaled to make the row pass.
+
+### What the import has to fix, and why
+
+The dataset registers each bone into a mean template, so the bones arrive the
+right size but in the wrong arrangement. Four corrections are pose corrections,
+not shape edits:
+
+| correction | what it fixes |
+| --- | --- |
+| A-pose re-pose | her arms were folded across her abdomen |
+| digit straightening | fingers and toes curled; a curled chain measures 144 mm instead of 176 |
+| foot levelling | the ankle was pointed, and the foot rolled so the big toe stood 44 mm above the little one |
+| shoulder seating | shoulders were shrugged 43.7°, leaving her neckless beside the male |
+| right side mirrored | her own left side, mirrored, because registration put her two femurs 66 mm apart |
+
+Mirroring is exact to 0.1 mm, and the body is centred on the plane of its own
+left/right pairs rather than on the pelvis mean — the sacrum is a single midline
+bone, so averaging it in with the two hips shipped the body 6.35 mm off centre.
