@@ -11,6 +11,24 @@ tibia/fibula, tarsals, metatarsals and toes).
 | `skeleton-male.obj` | 28 | 8,544 | 16,252 | 1.706 m |
 | `skeleton-female.obj` | 28 | 7,560 | 14,254 | 1.608 m |
 
+## Canonical height
+
+Measured from the files, not assumed: bone-only height is **170.6 cm** (male)
+and **160.8 cm** (female), feet on `y = 0`. Those are the numbers the room
+caption prints, read out of the loaded meshes at render time.
+
+Both are the scans' own size and **nothing in this repo scales them**. Living
+stature is roughly 2-3 cm more than bone-only height, because articular
+cartilage, intervertebral discs and the soft tissue of scalp and heel pad are
+not bone: the male reads as a ~173 cm man, the female as a ~163 cm woman. That
+is consistent with the source data being adult scans at 1:1, and there is no
+evidence of any rescale upstream -- the pelvis fit in
+`pipeline/f_build.mjs` is a *similarity* transform (rotation + uniform scale +
+translation) that only seats the female pelvis on the male skeleton, and the
+male skeleton itself is untouched BodyParts3D geometry.
+
+A rig that needs a taller body gets a taller body, never a scaled one.
+
 Units are metres, feet on `y = 0`, facing +z. Each bone is its own `o` group
 with the upstream node name (`skull`, `femur_l`, `hand_r`, `ribs_l`, …), so the
 rigging stage binds by name instead of guessing from coordinates.
