@@ -411,7 +411,9 @@ void Rasterizer::worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, cons
         out->x = static_cast<float>(point.x);
         out->y = static_cast<float>(point.y);
         out->z = static_cast<float>(point.z);
-        out->setNormal(normal.x, normal.y, normal.z);
+        out->nx = static_cast<float>(normal.x);
+        out->ny = static_cast<float>(normal.y);
+        out->nz = static_cast<float>(normal.z);
         out->u = 0.0F;
         out->v = 0.0F;
     }
@@ -467,7 +469,9 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
             out->x = static_cast<float>(vertex.view.x);
             out->y = static_cast<float>(vertex.view.y);
             out->z = static_cast<float>(vertex.view.z);
-            out->setNormal(vertex.normal.x, vertex.normal.y, vertex.normal.z);
+            out->nx = static_cast<float>(vertex.normal.x);
+            out->ny = static_cast<float>(vertex.normal.y);
+            out->nz = static_cast<float>(vertex.normal.z);
             out->u = static_cast<float>(vertex.uv.x);
             out->v = static_cast<float>(vertex.uv.y);
         }

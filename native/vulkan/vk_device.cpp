@@ -386,9 +386,7 @@ bool Renderer::createPipeline() {
     attributes[0].offset = offsetof(GpuVertex, x);
     attributes[1].location = 1;
     attributes[1].binding = 0;
-    // Three signed bytes plus padding, which the hardware expands and normalises
-    // for free. R8G8B8A8 with a vec3 input is legal: the fourth is ignored.
-    attributes[1].format = VK_FORMAT_R8G8B8A8_SNORM;
+    attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributes[1].offset = offsetof(GpuVertex, nx);
     attributes[2].location = 2;
     attributes[2].binding = 0;

@@ -21,16 +21,11 @@ gtc::native::GpuBatch makeBatch() {
     batch.material.kind = gtc::native::Material::Kind::Solid;
     batch.material.color = {0.8, 0.2, 0.1};
     batch.material.opacity = 1.0;
-    // Normals are packed as signed bytes, so they go through setNormal rather
-    // than a literal: a float literal there is a narrowing conversion, which
-    // MSVC refuses outright.
-    gtc::native::GpuVertex a{};
-    a.x = 0.0f; a.y = 0.0f; a.z = 0.0f; a.setNormal(0.0, 1.0, 0.0); a.u = 0.0f; a.v = 0.0f;
-    gtc::native::GpuVertex b = a;
-    b.x = 0.2f; b.u = 1.0f;
-    gtc::native::GpuVertex c = a;
-    c.y = 0.2f; c.v = 1.0f;
-    batch.vertices = {a, b, c};
+    batch.vertices = {
+        {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
+        {0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f},
+        {0.0f, 0.2f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+    };
     return batch;
 }
 

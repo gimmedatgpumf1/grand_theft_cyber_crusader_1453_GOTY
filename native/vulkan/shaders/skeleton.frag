@@ -50,11 +50,22 @@ vec3 toneMap(vec3 value) {
 }
 
 void main() {
-    float textured = clamp(batch.flags.x, 0.0, 1.0);
-    vec4 texel = texture(baseMap, inTexCoord);
-    vec3 base = inColour.rgb * mix(vec3(1.0), toLinear(texel.rgb), textured);
-    // An untextured batch keeps its own alpha; a textured one borrows the
-    // material's, which is how the hair cut-out reads on both backends.
-    float alpha = inColour.a * mix(1.0, texel.a, textured);
+    const float textured = clamp(batch.flags.x, 0.0, 1.0);
+    vec3 base;
+    float alpha;
+    if (textured > 0.0) {
+        // An untextured batch keeps its own alpha; a textured one borrows the
+        // material's, which is how the hair cut-out reads on both backends.
+        const vec4 texel = texture(baseMap, inTexCoord);
+        base = inColour.rgb * toLinear(texel.rgb);
+        alpha = inColour.a * texel.a;
+    } else {
+        // A flat batch used to sample the material and then multiply the result
+        // by zero: four filtered fetches a pixel, on every floor tile, every
+        // wall and every bone, for nothing. The room and the whole skeleton are
+        // drawn this way, so this is the branch that matters.
+        base = inColour.rgb;
+        alpha = inColour.a;
+    }
     outColour = vec4(toSrgb(toneMap(base)), alpha);
 }

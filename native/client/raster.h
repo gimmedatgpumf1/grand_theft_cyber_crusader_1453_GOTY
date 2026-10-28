@@ -2,10 +2,8 @@
 
 #include "native.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cmath>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -124,42 +122,10 @@ struct RenderVertex {
 
 RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 source, Vec2 uv = {});
 
-// What the GPU actually reads. Positions stay 32-bit -- the street lays them out
-// in world metres and the camera goes out to a kilometre -- but a unit normal
-// does not need four bytes per component. At 1568x929 the test room fetches
-// 1.13 million of these every frame, so the eight bytes saved per vertex are
-// eight megabytes a frame that do not cross the memory bus.
 struct GpuVertex {
     float x = 0, y = 0, z = 0;
-    std::int8_t nx = 0, ny = 0, nz = 0, reserved = 0;
+    float nx = 0, ny = 0, nz = 0;
     float u = 0, v = 0;
-
-    void setNormal(double x, double y, double z) {
-        // Eight bits only carry a direction if the vector is unit length first:
-        // an unnormalised cross product is a few thousandths long, and packing it
-        // straight would round the whole normal to zero.
-        // Scaled by the largest component rather than the length. Dividing by
-        // the length would need a square root per vertex and buy nothing: both
-        // shaders normalise what they receive, and dividing by the largest
-        // component puts every value inside -1..1 while keeping the direction
-        // exact. A unit vector already passes through untouched.
-        const double scale = std::max({std::abs(x), std::abs(y), std::abs(z)});
-        // Dividing by the largest component puts one value at exactly 1 and the
-        // rest inside -1..1, so the 127 multiplier is the only clamp needed and
-        // three divisions become one reciprocal and three multiplies.
-        const double factor = scale > 1e-12 ? 127.0 / scale : 0.0;
-        const auto pack = [](double value) {
-            return static_cast<std::int8_t>(value >= 0.0 ? value + 0.5 : value - 0.5);
-        };
-        nx = pack(x * factor);
-        ny = pack(y * factor);
-        nz = pack(z * factor);
-        reserved = 0;
-    }
-    static constexpr double kNormalScale = 127.0;
-    Vec3 normalValue() const {
-        return {nx / 127.0, ny / 127.0, nz / 127.0};
-    }
 };
 
 struct GpuBatch {
