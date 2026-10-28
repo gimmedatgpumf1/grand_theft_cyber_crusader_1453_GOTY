@@ -131,6 +131,11 @@ unsigned char srgbChannel(double value) {
 
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
     scale = std::max(3, scale);
+    // Glyphs go into whatever this frame is made of. A frame that came back from
+    // the device in window order is written in window order, so the presenter has
+    // nothing left to convert.
+    if (frame.canvasIsBgra()) frame.makeOverlayWritable();
+    const bool bgraCanvas = frame.canvasIsBgra();
     if (font().ready) {
         const int pixelHeight = std::max(20, static_cast<int>(std::lround(9 * scale * frame.uiScale)));
         const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
@@ -149,6 +154,13 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
                 const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
                 if (!coverage) continue;
                 const std::size_t pixel = static_cast<std::size_t>(py) * frame.width + px;
+                if (bgraCanvas) {
+                    unsigned char* out = frame.bgra.data() + pixel * 4;
+                    out[0] = static_cast<unsigned char>((blue * coverage + out[0] * (255 - coverage)) / 255);
+                    out[1] = static_cast<unsigned char>((green * coverage + out[1] * (255 - coverage)) / 255);
+                    out[2] = static_cast<unsigned char>((red * coverage + out[2] * (255 - coverage)) / 255);
+                    continue;
+                }
                 const std::size_t offset = pixel * 3;
                 if (frame.alpha.empty()) {
                     frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);

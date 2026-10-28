@@ -39,6 +39,12 @@ void main() {
     vec4 world = batch.model * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
     outTexCoord = inTexCoord;
+    outColour = vec4(batch.colour.rgb, batch.colour.a);
+
+    // flags.w is a batch with a single colour: the host encoded it, the fragment
+    // stage writes it out untouched, and the lighting below would be computed on
+    // every vertex of the floor and the walls only to be thrown away.
+    if (batch.flags.w > 0.5) return;
 
     // The normal takes the rotation part of the model matrix, which is what
     // model * vec4(normal, 0) does. flags.z says the matrix is rigid -- a bone

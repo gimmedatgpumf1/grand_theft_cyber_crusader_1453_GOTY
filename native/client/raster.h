@@ -47,6 +47,14 @@ struct NativeFrame {
     std::vector<unsigned char> bgra;
     bool wantsBgra = false;
     bool hasBgra() const { return !bgra.empty(); }
+    // True when the pixels this frame owns are in window order at four bytes a
+    // pixel. Anything drawn over the frame writes there instead of into rgb,
+    // which is the difference between one conversion a frame and two.
+    bool canvasIsBgra() const {
+        return rgb.empty() && bgra.size() >= static_cast<std::size_t>(width) * height * 4U;
+    }
+    // Takes the pixels off the backend's mapping so they can be drawn over.
+    void makeOverlayWritable();
     // A backend whose readback already sits in host memory can point the frame
     // at those bytes instead of copying them out again. The pointer belongs to
     // the backend and is valid until the next frame is rendered, which is long

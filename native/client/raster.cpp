@@ -5,6 +5,7 @@
 #include <cmath>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -203,8 +204,23 @@ void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
     uiOffsetY = 0.0;
 }
 
+void NativeFrame::makeOverlayWritable() {
+    if (direct == nullptr) return;
+    if (bgra.size() < static_cast<std::size_t>(width) * height * 4U) return;
+    // The mapping belongs to the backend and is only valid until the next frame;
+    // drawing over it means owning the bytes.
+    std::memcpy(bgra.data(), direct, static_cast<std::size_t>(width) * height * 4U);
+    direct = nullptr;
+}
+
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
-    syncToRgb();
+    // A frame that arrived in window order is drawn on where it lies: converting
+    // it to rgb and back is two passes over a million pixels for nothing.
+    if (canvasIsBgra()) makeOverlayWritable();
+    else syncToRgb();
+    const bool bgra = canvasIsBgra();
+    unsigned char* pixels = bgra ? this->bgra.data() : rgb.data();
+    const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
@@ -215,17 +231,21 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
         for (int px = std::max(0, left); px < std::min(width, right); ++px) {
             const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
-            const std::size_t offset = pixel * 3;
-            rgb[offset] = static_cast<unsigned char>(r);
-            rgb[offset + 1] = static_cast<unsigned char>(g);
-            rgb[offset + 2] = static_cast<unsigned char>(b);
+            unsigned char* out = pixels + pixel * stride;
+            out[0] = static_cast<unsigned char>(bgra ? b : r);
+            out[1] = static_cast<unsigned char>(g);
+            out[2] = static_cast<unsigned char>(bgra ? r : b);
             if (!alpha.empty()) alpha[pixel] = 255;
         }
     }
 }
 
 void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
-    syncToRgb();
+    if (canvasIsBgra()) makeOverlayWritable();
+    else syncToRgb();
+    const bool bgra = canvasIsBgra();
+    unsigned char* pixels = bgra ? this->bgra.data() : rgb.data();
+    const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
@@ -237,18 +257,25 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
         for (int px = std::max(0, left); px < std::min(width, right); ++px) {
             const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
-            const std::size_t offset = pixel * 3;
+            unsigned char* out = pixels + pixel * stride;
             if (this->alpha.empty()) {
-                rgb[offset] = static_cast<unsigned char>((r * alpha + rgb[offset] * (255 - alpha)) / 255);
-                rgb[offset + 1] = static_cast<unsigned char>((g * alpha + rgb[offset + 1] * (255 - alpha)) / 255);
-                rgb[offset + 2] = static_cast<unsigned char>((b * alpha + rgb[offset + 2] * (255 - alpha)) / 255);
+                if (bgra) {
+                    out[0] = static_cast<unsigned char>((b * alpha + out[0] * (255 - alpha)) / 255);
+                    out[1] = static_cast<unsigned char>((g * alpha + out[1] * (255 - alpha)) / 255);
+                    out[2] = static_cast<unsigned char>((r * alpha + out[2] * (255 - alpha)) / 255);
+                } else {
+                    out[0] = static_cast<unsigned char>((r * alpha + out[0] * (255 - alpha)) / 255);
+                    out[1] = static_cast<unsigned char>((g * alpha + out[1] * (255 - alpha)) / 255);
+                    out[2] = static_cast<unsigned char>((b * alpha + out[2] * (255 - alpha)) / 255);
+                }
             } else {
                 const int oldAlpha = this->alpha[pixel];
                 const int weight = alpha * 255 + oldAlpha * (255 - alpha);
                 if (!weight) continue;
-                rgb[offset] = static_cast<unsigned char>((r * alpha * 255 + rgb[offset] * oldAlpha * (255 - alpha) + weight / 2) / weight);
-                rgb[offset + 1] = static_cast<unsigned char>((g * alpha * 255 + rgb[offset + 1] * oldAlpha * (255 - alpha) + weight / 2) / weight);
-                rgb[offset + 2] = static_cast<unsigned char>((b * alpha * 255 + rgb[offset + 2] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                const int red = bgra ? 2 : 0, blue = bgra ? 0 : 2;
+                out[red] = static_cast<unsigned char>((r * alpha * 255 + out[red] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                out[1] = static_cast<unsigned char>((g * alpha * 255 + out[1] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                out[blue] = static_cast<unsigned char>((b * alpha * 255 + out[blue] * oldAlpha * (255 - alpha) + weight / 2) / weight);
                 this->alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
             }
         }

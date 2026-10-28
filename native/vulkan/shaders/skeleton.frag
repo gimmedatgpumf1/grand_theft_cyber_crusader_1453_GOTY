@@ -50,6 +50,15 @@ vec3 toneMap(vec3 value) {
 }
 
 void main() {
+    // flags.w marks a batch with one colour for every pixel it covers -- no
+    // texture, no shading. The host has already tone mapped and encoded that
+    // colour, so the pixel is a store: the two lookups and the fit below would
+    // only rebuild a number that arrived with the draw call. The room's floor,
+    // walls and ceiling are drawn this way and they cover most of the screen.
+    if (batch.flags.w > 0.5) {
+        outColour = vec4(batch.colour.rgb, batch.colour.a);
+        return;
+    }
     const float textured = clamp(batch.flags.x, 0.0, 1.0);
     vec3 base;
     float alpha;

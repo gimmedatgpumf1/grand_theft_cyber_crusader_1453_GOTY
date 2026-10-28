@@ -499,6 +499,19 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         const bool rigid = unitLength(basis[0], basis[1], basis[2]) && unitLength(basis[4], basis[5], basis[6]) &&
                            unitLength(basis[8], basis[9], basis[10]);
         push.flags[2] = rigid ? 1.0f : 0.0f;
+        // A batch that does not shade and samples no texture has one colour for
+        // every pixel it covers: tone map and encode it once here, and the
+        // fragment stage writes the answer instead of rebuilding it. The floor,
+        // the walls and the ceiling are drawn this way and they are most of the
+        // screen, so this is a few thousand million transfer lookups a second
+        // that no longer happen.
+        const bool oneColour = push.flags[1] > 0.5f && push.flags[0] < 0.5f;
+        if (oneColour) {
+            push.colour[0] = static_cast<float>(displayValue(batch.material.color.r));
+            push.colour[1] = static_cast<float>(displayValue(batch.material.color.g));
+            push.colour[2] = static_cast<float>(displayValue(batch.material.color.b));
+        }
+        push.flags[3] = oneColour ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
         drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);
