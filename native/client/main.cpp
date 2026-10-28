@@ -300,6 +300,10 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             std::cout << "  vulkan                    unavailable on this machine\n";
         } else {
             gtc::native::NativeFrame frame;
+            // An iGPU measured from cold idles at its lowest clock, and the
+            // first block would then blame the renderer for the governor. Spin
+            // the device up on untimed frames before any of them are counted.
+            for (int warmUp = 0; warmUp < 30; ++warmUp) gtc::native::renderVulkanScene(skull.scene, frame);
             gtc::native::drainVulkan();
             gtc::native::renderVulkanScene(skull.scene, frame);
             gtc::native::drainVulkan();
@@ -331,6 +335,19 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 gtc::native::renderVulkanScene(skull.scene, frame);
             }
             reportLine("skull vulkan (submit only)", (nowMs() - submitStart) / iterations);
+            // The same submission with the colour image tiled. Rendering into
+            // linear memory costs the rasteriser its swizzle, so the GPU half of
+            // the frame is timed in both layouts rather than assumed equal.
+            gtc::native::setLinearTarget(false);
+            gtc::native::drainVulkan();
+            gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::drainVulkan();
+            const double tiledStart = nowMs();
+            for (int iteration = 0; iteration < iterations; ++iteration) {
+                gtc::native::renderVulkanScene(skull.scene, frame);
+            }
+            reportLine("skull vulkan (submit only, tiled)", (nowMs() - tiledStart) / iterations);
+            gtc::native::setLinearTarget(true);
             gtc::native::setFrameReadback(true);
             // Same frame, colour image kept in linear layout: the copy back is
             // then a memory copy instead of a walk over tiled memory. Costs the
@@ -362,6 +379,23 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             }
             gtc::native::setReadbackMemory(0);
             gtc::native::drainVulkan();
+            // The first block's exact configuration, measured again at the end.
+            // If the two disagree, the frame time depends on when it is taken
+            // and the block order -- not the renderer -- is what changed.
+            gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::drainVulkan();
+            std::vector<double> repeat;
+            repeat.reserve(static_cast<std::size_t>(iterations));
+            double repeatTotal = 0.0;
+            for (int iteration = 0; iteration < iterations; ++iteration) {
+                const double frameStart = nowMs();
+                gtc::native::renderVulkanScene(skull.scene, frame);
+                const double spent = nowMs() - frameStart;
+                repeat.push_back(spent);
+                repeatTotal += spent;
+            }
+            reportLine("skull vulkan (full frame, again)", repeatTotal / iterations);
+            reportSpread("  of which median", repeat);
         }
     }
 
