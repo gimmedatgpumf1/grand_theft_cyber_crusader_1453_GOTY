@@ -179,12 +179,22 @@ private:
     // and drawn on every core instead of one.
     void rasterize(const std::array<RenderVertex, 3>& vertices, const Material& material, int yBegin, int yEnd);
     void flush();
+public:
+    // Draws everything queued here into another rasterizer's frame. Used when a
+    // frame is built in halves on two threads and both halves have to land on
+    // the same pixels.
+    void drain(Rasterizer& target);
+private:
     std::vector<RasterTriangle> pending_;
     std::vector<Material> materials_;
     std::vector<double> depth_;
     std::vector<Color> pixels_;
     RasterBuffer* reusable_ = nullptr;
 };
+
+// Joins scenes that were built independently -- on separate threads -- into one,
+// in the order given, so the result is the same however the work was split.
+GpuScene mergeScenes(std::vector<GpuScene> scenes);
 
 void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 size,
              const Material& material);

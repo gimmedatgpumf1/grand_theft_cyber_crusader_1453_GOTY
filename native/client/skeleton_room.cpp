@@ -1,5 +1,7 @@
 #include "client/skeleton_room.h"
 
+#include <thread>
+
 #include <algorithm>
 #include <cmath>
 
@@ -103,30 +105,55 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    Rasterizer rasterizer(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu,
-                          view.gpu ? std::move(scene_) : GpuScene{});
-    rasterizer.setCamera(camera);
-    drawFloor(rasterizer, camera);
-    drawWalls(rasterizer, camera);
+    // Each body is built on its own rasterizer, on its own thread. A scanned
+    // skeleton is 195k triangles, so posing and emitting two of them in a row
+    // was the most expensive thing in the room -- and the two halves share
+    // nothing, which is the easiest kind of work to split.
     male_.poseIdle(seconds, 0.0);
     female_.poseIdle(seconds, 1.7);
-    rasterizer.setObject(1, {0.0, 0.0}, 3.14159265F);
-    male_.draw(rasterizer, camera, {-0.52, 0, 0}, 3.14159265);
-    rasterizer.setObject(2, {0.0, 0.0}, 3.14159265F);
-    female_.draw(rasterizer, camera, {0.52, 0, 0}, 3.14159265);
-    rasterizer.setObject(0, {0.0, 0.0}, 0.0F);
-    // The frame is drawn before the scene is taken out of the rasterizer. Taking
-    // it first left the rasterizer holding nothing, so the GPU path drew an
-    // empty room and the skeletons only ever appeared on the CPU path.
-    frame = rasterizer.finish();
+    Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu,
+                    view.gpu ? std::move(scene_) : GpuScene{});
+    room.setCamera(camera);
+    drawFloor(room, camera);
+    drawWalls(room, camera);
+    room.setObject(1, {0.0, 0.0}, 3.14159265F);
+    room.setObject(0, {0.0, 0.0}, 0.0F);
+
+    Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu);
+    second.setCamera(camera);
+    second.setObject(1, {0.0, 0.0}, 3.14159265F);
+
+    std::thread worker([&] {
+        second.setObject(2, {0.0, 0.0}, 3.14159265F);
+        female_.draw(second, camera, {0.52, 0, 0}, 3.14159265);
+    });
+    male_.draw(room, camera, {-0.52, 0, 0}, 3.14159265);
+    worker.join();
+
     if (view.gpu) {
-        scene_ = rasterizer.takeGpuScene();
+        // The GPU path merges the two halves and hands them to the backend;
+        // nothing is rasterized here, so finish() has no work to do.
+        std::vector<GpuScene> halves;
+        halves.push_back(room.takeGpuScene());
+        halves.push_back(second.takeGpuScene());
+        second.finish();
+        scene_ = mergeScenes(std::move(halves));
         scene_.revision = ++revision_;
         sceneReady_ = true;
         cachedPose_ = pose;
         cachedWidth_ = camera.width;
         cachedHeight_ = camera.height;
+        frame.width = camera.width;
+        frame.height = camera.height;
+        frame.rgb.clear();
+        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
+        frame.logicalUi();
+        return;
     }
+    // Software path: the second half was built on its own rasterizer, so it is
+    // drawn straight into the same buffers.
+    second.drain(room);
+    frame = room.finish();
     frame.logicalUi();
 }
 

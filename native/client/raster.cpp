@@ -564,6 +564,16 @@ void Rasterizer::rasterize(const std::array<RenderVertex, 3>& input, const Mater
     }
 }
 
+void Rasterizer::drain(Rasterizer& target) {
+    // Order matters for equal-depth ties, so the queued triangles are replayed
+    // in the order they were submitted.
+    for (const RasterTriangle& triangle : pending_) {
+        target.rasterize(triangle.vertices, materials_[triangle.material], 0, target.height_);
+    }
+    pending_.clear();
+    materials_.clear();
+}
+
 void Rasterizer::flush() {
     if (pending_.empty()) return;
     // How many bands: one per worker, but never more bands than rows.
@@ -652,6 +662,19 @@ NativeFrame Rasterizer::finish() {
                     ms(rasterStart, rasterDone), ms(rasterDone, std::chrono::steady_clock::now()));
     }
     return frame;
+}
+
+GpuScene mergeScenes(std::vector<GpuScene> scenes) {
+    GpuScene merged;
+    if (scenes.empty()) return merged;
+    merged = std::move(scenes.front());
+    for (std::size_t index = 1; index < scenes.size(); ++index) {
+        for (GpuBatch& batch : scenes[index].batches) {
+            if (batch.vertices.empty()) continue;
+            merged.batches.push_back(std::move(batch));
+        }
+    }
+    return merged;
 }
 
 void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 size,
