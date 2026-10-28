@@ -277,7 +277,8 @@ inline bool npcRangedAttackKeepsStreamAttached(const HumanModel& model, Characte
     HairLibrary hair;
     drawHuman(rasterizer, camera, model, hair, character, cache, root, tick, true);
     Character zipped = character;
-    zipped.unzipped = zipped.attackAnim = false;
+    zipped.unzipped = false;
+    zipped.attackAnim = false;
     return humanStreamAttached(character) && !humanStreamAttached(zipped) && cache.genitalTip >= 0 &&
         length(humanStreamOrigin(character, &cache, character.pitch) - cache.genitalExit) < 1e-6;
 }
