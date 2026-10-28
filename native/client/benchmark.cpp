@@ -601,6 +601,36 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 }
                 reportLine("skeleton vulkan (full frame)", skeletonTotal / iterations);
                 reportSpread("  of which median", skeletonSamples);
+                // The same frame with the picture left on the device. A frame in
+                // game goes to the window and never comes back, so this is the
+                // only line here that can be compared with the frame rate on
+                // screen: everything above it pays for a copy the game does not
+                // make.
+                {
+                    gtc::native::setFrameReadback(false);
+                    gtc::native::drainVulkan();
+                    gtc::native::renderVulkanScene(skeleton.scene, frame);
+                    gtc::native::drainVulkan();
+                    double noCopyTotal = 0.0;
+                    std::vector<double> noCopySamples;
+                    noCopySamples.reserve(static_cast<std::size_t>(iterations));
+                    for (int iteration = 0; iteration < iterations; ++iteration) {
+                        skeletonAngle += kTurnPerFrame;
+                        posePair(skeleton, skeletonAngle);
+                        const double frameStart = nowMs();
+                        if (!gtc::native::renderVulkanScene(skeleton.scene, frame)) {
+                            std::cerr << "vulkan whole skeleton no-copy frame failed\n";
+                            return 1;
+                        }
+                        const double spent = nowMs() - frameStart;
+                        noCopySamples.push_back(spent);
+                        noCopyTotal += spent;
+                    }
+                    reportLine("skeleton vulkan (no copy)", noCopyTotal / iterations);
+                    reportSpread("  of which median", noCopySamples);
+                    gtc::native::setFrameReadback(true);
+                    gtc::native::drainVulkan();
+                }
                 // Nothing drawn: the clears, the copy back and the submission.
                 {
                     gtc::native::GpuScene empty = skeleton.scene;
@@ -673,6 +703,33 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                 }
                 reportLine("two skeletons vulkan (full frame)", total / iterations);
                 reportSpread("  of which median", samples);
+                // Both bodies, picture left on the device: the pair as the game
+                // pays for it, copies excluded.
+                {
+                    gtc::native::setFrameReadback(false);
+                    gtc::native::drainVulkan();
+                    gtc::native::renderVulkanScene(body.scene, frame);
+                    gtc::native::drainVulkan();
+                    double noCopyTotal = 0.0;
+                    std::vector<double> noCopySamples;
+                    noCopySamples.reserve(static_cast<std::size_t>(iterations));
+                    for (int iteration = 0; iteration < iterations; ++iteration) {
+                        bodyAngle += kTurnPerFrame;
+                        posePair(body, bodyAngle);
+                        const double frameStart = nowMs();
+                        if (!gtc::native::renderVulkanScene(body.scene, frame)) {
+                            std::cerr << "vulkan two skeleton no-copy frame failed\n";
+                            return 1;
+                        }
+                        const double spent = nowMs() - frameStart;
+                        noCopySamples.push_back(spent);
+                        noCopyTotal += spent;
+                    }
+                    reportLine("two skeletons vulkan (no copy)", noCopyTotal / iterations);
+                    reportSpread("  of which median", noCopySamples);
+                    gtc::native::setFrameReadback(true);
+                    gtc::native::drainVulkan();
+                }
                 // Every vertex, no pixels: the vertex stage and the submission
                 // without the fragment work, so the two halves can be told apart
                 // instead of argued about.
