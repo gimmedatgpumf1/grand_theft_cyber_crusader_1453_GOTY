@@ -296,6 +296,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // The first frames are written down step by step: if the process dies in a
     // driver, the last line names the call that was in flight.
     const bool traced = frames_ < 3;
+    // Stated every frame: a caller reuses one frame object, and a frame that was
+    // presented is not a frame that still has its pixels to show.
+    frame.presented = false;
     const bool profile = profiling();
     const double setupStart = profile ? milliseconds() : 0.0;
     if (traced) tracef("vk: frame %d begin %dx%d", frames_, scene.width, scene.height);
@@ -723,14 +726,21 @@ bool selfTest() {
     }
     scene.batches.push_back(batch);
     NativeFrame frame;
+    // This frame is read, not shown: the check below is about the pixels. A
+    // presented frame never has any, and asking for one through the swapchain
+    // was how the whole backend failed its own test and fell back to OpenGL.
+    frame.wantPixels = true;
     for (int attempt = 0; attempt < 2; ++attempt) {
         if (!renderer.draw(scene, frame)) {
+            std::fprintf(stderr, "[vk] self test frame %d failed\n", attempt);
             tracef("vk: self test frame %d failed", attempt);
             return false;
         }
         const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
         if (frame.width != 32 || frame.height != 24 || frame.rgb.size() < pixels * 3 ||
             frame.alpha.size() < pixels) {
+            std::fprintf(stderr, "[vk] self test broke the frame contract (%dx%d, rgb %zu, alpha %zu)\n",
+                         frame.width, frame.height, frame.rgb.size(), frame.alpha.size());
             trace("vk: self test frame broke the frame contract");
             return false;
         }
@@ -749,6 +759,7 @@ bool vulkanAvailable() {
         tried = true;
         available = instance().start();
         if (available && !selfTest()) {
+            std::fprintf(stderr, "[vk] self test failed, staying on the other backend\n");
             trace("vk: self test failed, staying on the other backend");
             instance().stop();
             available = false;
