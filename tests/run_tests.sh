@@ -45,6 +45,13 @@ if [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   # something this machine can answer for.
   "$ROOT/build/bin/gtc-native-smoke" --vulkan-report
 fi
+# The room -- the thing the C key opens -- through the same stub, so its reuse
+# logic and the client's own options are exercised and not just the renderer's.
+if [ -x "$ROOT/build/bin/gtc-native-client" ]; then
+  LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" "$ROOT/build/bin/gtc-native-client" \
+    --room-benchmark 4 --width 640 --height 480 --renderer vulkan \
+    --output "$ROOT/build/native-smoke/vk-room.png"
+fi
 if [ -x "$ROOT/build/bin/gtc1453" ] && [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   "$ROOT/tests/native_smoke.sh" "$ROOT/build/native-smoke-tests"
 fi

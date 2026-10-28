@@ -418,6 +418,9 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         setGpuRenderer(&renderVulkanScene);
         const std::string gpuTitle = title + " - Vulkan";
         impl_->api.storeName(impl_->display, impl_->window, gpuTitle.c_str());
+        // The title and the map request still have to reach the server; the
+        // OpenGL path below would normally flush them.
+        impl_->api.flush(impl_->display);
         std::fprintf(stderr, "[native] drawing with Vulkan\n");
         return true;
     }

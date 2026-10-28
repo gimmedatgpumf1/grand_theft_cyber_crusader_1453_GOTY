@@ -11,7 +11,9 @@
 #include <cstring>
 #include <cstdio>
 
-static unsigned char g_memory[32u << 20];
+// One block stands in for every allocation, so it has to be big enough for the
+// largest thing the renderer maps -- the vertex buffer of a full skeleton room.
+static unsigned char g_memory[256u << 20];
 static long g_handle = 1;
 
 static VkResult ok() { return VK_SUCCESS; }
