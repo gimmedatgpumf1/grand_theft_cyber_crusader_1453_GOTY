@@ -41,9 +41,12 @@ void main() {
     outTexCoord = inTexCoord;
 
     // The normal takes the rotation part of the model matrix, which is what
-    // model * vec4(normal, 0) does; normalising afterwards keeps a sheared or
-    // scaled batch lit correctly.
-    vec3 normal = normalize(mat3(batch.model) * inNormal);
+    // model * vec4(normal, 0) does. flags.z says the matrix is rigid -- a bone
+    // is a rotation and a translation -- in which case the result is already
+    // unit length and the square root below is a million of them a frame spent
+    // to change nothing.
+    vec3 normal = mat3(batch.model) * inNormal;
+    if (batch.flags.z < 0.5) normal = normalize(normal);
 
     // Two-sided lighting: a normal that points away from the eye is turned
     // round, exactly as the CPU rasterizer and the OpenGL shader do, so a back

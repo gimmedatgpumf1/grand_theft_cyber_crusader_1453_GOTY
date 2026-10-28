@@ -475,6 +475,18 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
              batch.material.kind == Material::Kind::Textured);
         push.flags[0] = usable ? 1.0f : 0.0f;
         push.flags[1] = (batch.material.constantLighting || batch.material.unlit) ? 1.0f : 0.0f;
+        // A bone matrix is a rotation and a translation: the normal it produces
+        // is already unit length, so the vertex stage does not have to pay for a
+        // square root over every vertex in the skeleton. Checked here, once per
+        // batch, from the matrix that is being sent anyway.
+        const double* basis = batch.modelMatrix.data();
+        const auto unitLength = [](double x, double y, double z) {
+            const double squared = x * x + y * y + z * z;
+            return squared > 0.998 && squared < 1.002;
+        };
+        const bool rigid = unitLength(basis[0], basis[1], basis[2]) && unitLength(basis[4], basis[5], basis[6]) &&
+                           unitLength(basis[8], basis[9], basis[10]);
+        push.flags[2] = rigid ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
         drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);

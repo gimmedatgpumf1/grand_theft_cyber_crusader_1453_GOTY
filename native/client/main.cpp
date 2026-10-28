@@ -359,6 +359,24 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             }
             reportLine("skull vulkan (full frame)", total / iterations);
             reportSpread("  of which median", samples);
+            // The same frame with no triangles in it: the clears, the copies and
+            // the submission, and nothing drawn. Whatever this costs is paid
+            // before any geometry is looked at, and the difference from the line
+            // above is what the drawing itself costs.
+            {
+                gtc::native::GpuScene empty = skull.scene;
+                empty.batches.clear();
+                for (int warmUp = 0; warmUp < 8; ++warmUp) gtc::native::renderVulkanScene(empty, frame);
+                gtc::native::drainVulkan();
+                const double emptyStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    if (!gtc::native::renderVulkanScene(empty, frame)) {
+                        std::cerr << "vulkan empty frame failed\n";
+                        return 1;
+                    }
+                }
+                reportLine("skull vulkan (no draws)", (nowMs() - emptyStart) / iterations);
+            }
             // The same draw with the picture left on the device: commands are
             // submitted and the device is waited for, but nothing is copied
             // back. This is the only figure that can be compared with a backend
