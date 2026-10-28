@@ -834,7 +834,12 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         }
     }
     const std::size_t framePixels = static_cast<std::size_t>(frame.width) * frame.height;
-    if (view.gpu && (frame.rgb.size() != framePixels * 3 || frame.alpha.size() != framePixels)) {
+    // A frame that came back in window order is a finished frame: it has four
+    // bytes a pixel and no coverage mask, because nothing has to blend it. Only
+    // the rgb form has a mask to check.
+    const bool havePixels = frame.canvasIsBgra() ||
+        (frame.rgb.size() == framePixels * 3 && frame.alpha.size() == framePixels);
+    if (view.gpu && !havePixels) {
         error = "Native GPU scene rendering failed";
         return false;
     }

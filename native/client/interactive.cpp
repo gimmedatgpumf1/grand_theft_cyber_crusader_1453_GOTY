@@ -147,8 +147,13 @@ public:
                 continue;
             }
             // The overlay is drawn into this frame on the CPU a few lines down,
-            // so this one has to come back through host memory.
+            // so this one has to come back through host memory -- but in the
+            // order the window wants it. Asking for rgb meant a channel shuffle
+            // out of the device and a second one back into the window: two
+            // passes over every pixel of every frame, to arrive where the
+            // device's own bytes already were.
             frame.wantPixels = true;
+            frame.wantsBgra = true;
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 // A frame that will not draw is the end of the run. Falling back
                 // to the software rasterizer hid a broken backend behind a slow

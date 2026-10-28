@@ -51,7 +51,11 @@ struct NativeFrame {
     // pixel. Anything drawn over the frame writes there instead of into rgb,
     // which is the difference between one conversion a frame and two.
     bool canvasIsBgra() const {
-        return rgb.empty() && bgra.size() >= static_cast<std::size_t>(width) * height * 4U;
+        // `direct` counts: a backend that hands over its own mapping has the
+        // pixels in window order already, they just are not copied yet.
+        if (!rgb.empty()) return false;
+        if (direct != nullptr) return true;
+        return bgra.size() >= static_cast<std::size_t>(width) * height * 4U;
     }
     // Takes the pixels off the backend's mapping so they can be drawn over.
     void makeOverlayWritable();

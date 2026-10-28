@@ -149,6 +149,10 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
         return 2;
     }
     gtc::native::NativeFrame frame;
+    // The game's frame, not a different one: the street asks for the picture in
+    // the order the window takes it, so the benchmark measures the same path.
+    frame.wantPixels = true;
+    frame.wantsBgra = true;
     // Warm up: compile, allocate, and take the first full rebuild.
     if (!world3d.render(world, state, 1, view, frame, error)) {
         std::cerr << "World benchmark: " << error << '\n';

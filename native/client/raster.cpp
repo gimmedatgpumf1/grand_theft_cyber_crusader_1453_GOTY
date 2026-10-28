@@ -206,10 +206,11 @@ void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
 
 void NativeFrame::makeOverlayWritable() {
     if (direct == nullptr) return;
-    if (bgra.size() < static_cast<std::size_t>(width) * height * 4U) return;
+    const std::size_t bytes = static_cast<std::size_t>(width) * height * 4U;
+    if (bgra.size() < bytes) bgra.resize(bytes);
     // The mapping belongs to the backend and is only valid until the next frame;
     // drawing over it means owning the bytes.
-    std::memcpy(bgra.data(), direct, static_cast<std::size_t>(width) * height * 4U);
+    std::memcpy(bgra.data(), direct, bytes);
     direct = nullptr;
 }
 
