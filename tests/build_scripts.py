@@ -89,6 +89,13 @@ def main():
     narrowed = narrowing_failures(sorted(sources))
     failures.extend(narrowed)
 
+    # The Windows window backend is the one source this machine never compiles,
+    # so a mistake there is only found by the person who builds it. Its private
+    # window state is a nested type; a free function at file scope may not name
+    # it unqualified, and MSVC says so while nothing here ever notices.
+    failures.extend(nested_type_failures(['native/client/window_win32.cpp',
+                                          'native/client/window_x11.cpp']))
+
     if failures:
         for failure in failures:
             print('[build] ' + failure)
@@ -124,6 +131,27 @@ def narrowing_failures(sources):
             first = next((line for line in result.stderr.splitlines() if 'narrowing' in line
                           or 'error' in line), 'unknown error')
             problems.append(f'{source} would fail the Windows build: {first.strip()}')
+    return problems
+
+
+def nested_type_failures(paths):
+    """Flags file-scope functions that name the window's private nested type.
+
+    A definition at column zero that mentions Impl is not inside NativeWindow,
+    so the type is out of scope there: MSVC reports C2065. Matching it here is
+    cheap and catches the exact divergence before it costs a build round trip.
+    """
+    problems = []
+    for path in paths:
+        source = ROOT / path
+        if not source.exists():
+            continue
+        for number, line in enumerate(source.read_text(encoding='utf-8').splitlines(), 1):
+            if not line or line[0].isspace() or not re.search(r'\bImpl\b', line):
+                continue
+            if 'NativeWindow::Impl' in line or line.lstrip().startswith('//'):
+                continue
+            problems.append(f'{path}:{number} names Impl outside NativeWindow; write NativeWindow::Impl')
     return problems
 
 

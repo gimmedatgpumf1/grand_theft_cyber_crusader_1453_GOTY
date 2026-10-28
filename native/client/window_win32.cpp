@@ -324,39 +324,38 @@ bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame&
     return impl_->renderer.readBack(width, height, frame);
 }
 
-// One blit, no repack: everything that reaches the screen on this backend goes
-// through here, whether the pixels came from the Vulkan readback already in
-// window order or from the software rasterizer, which had to be reordered.
-static bool blitBgra(Impl& impl, int frameWidth, int frameHeight,
-                     const std::vector<unsigned char>& pixels) {
-    BITMAPINFO bitmap{};
-    bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap.bmiHeader.biWidth = frameWidth;
-    bitmap.bmiHeader.biHeight = -frameHeight;
-    bitmap.bmiHeader.biPlanes = 1;
-    bitmap.bmiHeader.biBitCount = 32;
-    bitmap.bmiHeader.biCompression = BI_RGB;
-    // One device context for the life of the window: GetDC/ReleaseDC every frame
-    // is a round trip through the window manager for no reason.
-    if (!impl.presentDevice) impl.presentDevice = GetDC(impl.window);
-    if (!impl.presentDevice) return false;
-    int result = 0;
-    if (frameWidth == impl.width && frameHeight == impl.height) {
-        // The common case: the frame is already the size of the client area, so
-        // there is nothing to stretch and the cheapest blit wins. HALFTONE is
-        // only worth its cost when pixels actually have to be resampled.
-        result = SetDIBitsToDevice(impl.presentDevice, 0, 0, frameWidth, frameHeight, 0, 0, 0, frameHeight,
-                                   pixels.data(), &bitmap, DIB_RGB_COLORS);
-    } else {
-        SetStretchBltMode(impl.presentDevice, HALFTONE);
-        result = StretchDIBits(impl.presentDevice, 0, 0, impl.width, impl.height, 0, 0, frameWidth,
-                               frameHeight, pixels.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
-    }
-    return result != 0;
-}
-
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
+    // One blit, no repack: everything that reaches the screen on this backend
+    // goes through here, whether the pixels came out of the Vulkan readback
+    // already in window order or from the software path, which had to be
+    // reordered first.
+    const auto blit = [this](const unsigned char* pixels, int frameWidth, int frameHeight) {
+        BITMAPINFO bitmap{};
+        bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bitmap.bmiHeader.biWidth = frameWidth;
+        bitmap.bmiHeader.biHeight = -frameHeight;
+        bitmap.bmiHeader.biPlanes = 1;
+        bitmap.bmiHeader.biBitCount = 32;
+        bitmap.bmiHeader.biCompression = BI_RGB;
+        // One device context for the life of the window: GetDC/ReleaseDC every
+        // frame is a round trip through the window manager for no reason.
+        if (!impl_->presentDevice) impl_->presentDevice = GetDC(impl_->window);
+        if (!impl_->presentDevice) return false;
+        int result = 0;
+        if (frameWidth == impl_->width && frameHeight == impl_->height) {
+            // The common case: the frame is already the size of the client
+            // area, so there is nothing to stretch and the cheapest blit wins.
+            // HALFTONE is only worth its cost when pixels are resampled.
+            result = SetDIBitsToDevice(impl_->presentDevice, 0, 0, frameWidth, frameHeight, 0, 0, 0,
+                                       frameHeight, pixels, &bitmap, DIB_RGB_COLORS);
+        } else {
+            SetStretchBltMode(impl_->presentDevice, HALFTONE);
+            result = StretchDIBits(impl_->presentDevice, 0, 0, impl_->width, impl_->height, 0, 0, frameWidth,
+                                   frameHeight, pixels, &bitmap, DIB_RGB_COLORS, SRCCOPY);
+        }
+        return result != 0;
+    };
     RECT client{};
     GetClientRect(impl_->window, &client);
     impl_->width = std::max(1, static_cast<int>(client.right - client.left));
@@ -370,13 +369,13 @@ bool NativeWindow::present(const NativeFrame& frame) {
     }
     // A frame that arrived in window order costs one blit and nothing else.
     const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
-    if (frame.bgra.size() >= count * 4) return blitBgra(*impl_, frame.width, frame.height, frame.bgra);
+    if (frame.bgra.size() >= count * 4) return blit(frame.bgra.data(), frame.width, frame.height);
     if (frame.rgb.empty()) return false;
     // Reordered across cores: at 1568x929 this is 1.45 M pixels every frame, and
     // doing it on one thread was part of why a finished frame still took
     // milliseconds to appear.
     rgbToBgra(frame, impl_->bgra);
-    return blitBgra(*impl_, frame.width, frame.height, impl_->bgra);
+    return blit(impl_->bgra.data(), frame.width, frame.height);
 }
 
 bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
