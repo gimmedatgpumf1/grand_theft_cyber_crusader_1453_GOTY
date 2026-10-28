@@ -1,156 +1,177 @@
 {
- "source": "open-anatomy-3d anatomy-female.glb (CC BY 4.0, BodyParts3D)",
- "units": "metres, feet on y = 0, facing +z",
- "vertices": 7560,
- "triangles": 14254,
- "bbox": {
-  "minX": -0.23776717749009452,
-  "minY": 0.007636725617905266,
-  "minZ": -0.11231349947825578,
-  "maxX": 0.23696210446275542,
-  "maxY": 1.615730340775576,
-  "maxZ": 0.1358143538236618
- },
+ "source": "Visible Human Female CT, NLM Visible Human Project (CC BY 4.0), segmented at native 0.7227 x 0.7227 x 1.0 mm",
+ "units": "metres, soles on y = 0, facing +z",
+ "stature": 1.713,
+ "bones": 442,
  "parts": [
   {
-   "name": "spine_cervical",
-   "label": "Cervical Spine (Neck)",
-   "tris": 1110
-  },
-  {
-   "name": "sternum",
-   "label": "Sternum",
-   "tris": 346
-  },
-  {
-   "name": "foot_l",
-   "label": "Foot (L)",
-   "tris": 668
-  },
-  {
-   "name": "hand_l",
-   "label": "Hand (L)",
-   "tris": 588
-  },
-  {
-   "name": "foot_r",
-   "label": "Foot (R)",
-   "tris": 648
-  },
-  {
-   "name": "hand_r",
-   "label": "Hand (R)",
-   "tris": 564
-  },
-  {
-   "name": "spine_thoracic",
-   "label": "Thoracic Spine",
-   "tris": 1008
-  },
-  {
    "name": "skull",
-   "label": "Skull",
-   "tris": 3340
-  },
-  {
-   "name": "spine_lumbar",
-   "label": "Lumbar Spine (Lower Back)",
-   "tris": 652
-  },
-  {
-   "name": "teeth",
-   "label": "Teeth & Gums",
-   "tris": 1700
+   "vertices": 7108,
+   "triangles": 14831,
+   "bones": 5
   },
   {
    "name": "mandible",
-   "label": "Jaw (Mandible)",
-   "tris": 184
+   "vertices": 2324,
+   "triangles": 4966,
+   "bones": 10
   },
   {
-   "name": "clavicle_l",
-   "label": "Collarbone (L)",
-   "tris": 100
+   "name": "teeth",
+   "vertices": 1088,
+   "triangles": 2124,
+   "bones": 11
+  },
+  {
+   "name": "spine_cervical",
+   "vertices": 2653,
+   "triangles": 5930,
+   "bones": 17
+  },
+  {
+   "name": "spine_thoracic",
+   "vertices": 3699,
+   "triangles": 7538,
+   "bones": 40
+  },
+  {
+   "name": "spine_lumbar",
+   "vertices": 3378,
+   "triangles": 6828,
+   "bones": 39
   },
   {
    "name": "ribs_l",
-   "label": "Ribs (L)",
-   "tris": 404
-  },
-  {
-   "name": "femur_l",
-   "label": "Thigh Bone (Femur) (L)",
-   "tris": 164
-  },
-  {
-   "name": "lower_leg_l",
-   "label": "Shin Bones (L)",
-   "tris": 116
-  },
-  {
-   "name": "pelvis",
-   "label": "Pelvis & Sacrum",
-   "tris": 752
-  },
-  {
-   "name": "humerus_l",
-   "label": "Upper Arm Bone (L)",
-   "tris": 112
-  },
-  {
-   "name": "patella_l",
-   "label": "Kneecap (L)",
-   "tris": 182
-  },
-  {
-   "name": "forearm_l",
-   "label": "Forearm Bones (L)",
-   "tris": 72
-  },
-  {
-   "name": "scapula_l",
-   "label": "Shoulder Blade (L)",
-   "tris": 130
-  },
-  {
-   "name": "clavicle_r",
-   "label": "Collarbone (R)",
-   "tris": 154
+   "vertices": 1244,
+   "triangles": 2526,
+   "bones": 23
   },
   {
    "name": "ribs_r",
-   "label": "Ribs (R)",
-   "tris": 382
+   "vertices": 703,
+   "triangles": 1412,
+   "bones": 13
   },
   {
-   "name": "femur_r",
-   "label": "Thigh Bone (Femur) (R)",
-   "tris": 162
+   "name": "sternum",
+   "vertices": 240,
+   "triangles": 389,
+   "bones": 9
   },
   {
-   "name": "lower_leg_r",
-   "label": "Shin Bones (R)",
-   "tris": 112
-  },
-  {
-   "name": "humerus_r",
-   "label": "Upper Arm Bone (R)",
-   "tris": 122
-  },
-  {
-   "name": "patella_r",
-   "label": "Kneecap (R)",
-   "tris": 198
-  },
-  {
-   "name": "forearm_r",
-   "label": "Forearm Bones (R)",
-   "tris": 76
+   "name": "scapula_l",
+   "vertices": 1581,
+   "triangles": 3473,
+   "bones": 16
   },
   {
    "name": "scapula_r",
-   "label": "Shoulder Blade (R)",
-   "tris": 208
+   "vertices": 1535,
+   "triangles": 3307,
+   "bones": 10
+  },
+  {
+   "name": "clavicle_l",
+   "vertices": 1807,
+   "triangles": 3871,
+   "bones": 22
+  },
+  {
+   "name": "clavicle_r",
+   "vertices": 1851,
+   "triangles": 3978,
+   "bones": 16
+  },
+  {
+   "name": "pelvis",
+   "vertices": 8019,
+   "triangles": 17452,
+   "bones": 22
+  },
+  {
+   "name": "humerus_l",
+   "vertices": 1575,
+   "triangles": 3311,
+   "bones": 6
+  },
+  {
+   "name": "humerus_r",
+   "vertices": 2135,
+   "triangles": 5085,
+   "bones": 2
+  },
+  {
+   "name": "forearm_l",
+   "vertices": 1437,
+   "triangles": 3113,
+   "bones": 2
+  },
+  {
+   "name": "forearm_r",
+   "vertices": 1427,
+   "triangles": 3153,
+   "bones": 2
+  },
+  {
+   "name": "hand_l",
+   "vertices": 1289,
+   "triangles": 2416,
+   "bones": 39
+  },
+  {
+   "name": "hand_r",
+   "vertices": 1284,
+   "triangles": 2404,
+   "bones": 39
+  },
+  {
+   "name": "femur_l",
+   "vertices": 3145,
+   "triangles": 6621,
+   "bones": 10
+  },
+  {
+   "name": "femur_r",
+   "vertices": 2932,
+   "triangles": 6206,
+   "bones": 5
+  },
+  {
+   "name": "patella_l",
+   "vertices": 589,
+   "triangles": 1166,
+   "bones": 15
+  },
+  {
+   "name": "patella_r",
+   "vertices": 631,
+   "triangles": 1278,
+   "bones": 12
+  },
+  {
+   "name": "lower_leg_l",
+   "vertices": 3024,
+   "triangles": 6231,
+   "bones": 3
+  },
+  {
+   "name": "lower_leg_r",
+   "vertices": 1978,
+   "triangles": 4058,
+   "bones": 2
+  },
+  {
+   "name": "foot_l",
+   "vertices": 1441,
+   "triangles": 3007,
+   "bones": 25
+  },
+  {
+   "name": "foot_r",
+   "vertices": 1960,
+   "triangles": 4054,
+   "bones": 27
   }
- ]
+ ],
+ "pipeline": "tools/skeleton-source/vhf"
 }

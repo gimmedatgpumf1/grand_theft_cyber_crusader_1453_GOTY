@@ -6,8 +6,8 @@ cartilages, sternum, scapulae, clavicles, pelvis and sacrum, both arms (humerus,
 radius, ulna, all eight carpals, five metacarpals, every finger phalanx) and both
 legs (femur, patella, tibia, fibula, tarsals, metatarsals, every toe phalanx).
 
-`skeleton-female.obj` is **not** a female skeleton. Read the last section before
-using it for anything.
+`skeleton-female.obj` is segmented from the Visible Human Female CT and is
+verified by `verify-obj.mjs --sex female --scanned`.
 
 ## Where they come from
 
@@ -27,8 +27,8 @@ Credit lines, as the licences require:
 > Further modified for this project: filtered to the skeletal system, mirrored
 > to a complete body, grouped into 28 rig parts, decimated, written as OBJ.
 
-The female is still the old `open-anatomy-3d` mesh and carries its own credit
-line, given in the section at the end.
+The female comes from the Visible Human Female dataset; its credit line is in
+the section at the end.
 
 This asset — the modified skeleton and any derivative of it — has to stay under
 CC BY-SA 4.0 when it is redistributed. That is a share-alike obligation inherited
@@ -87,7 +87,9 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.ob
 `prepare.mjs` (the older, open-anatomy-3d route) still regenerates the female
 file; `verify.mjs` reproduces the measurements of that body against its source.
 
-## The female is not female anatomy
+## The old female, kept for the record
+
+This is the body that was replaced, and why.
 
 `anatomy-female.glb` upstream does not contain a scanned female skeleton. It is
 built by taking the male skeleton and deforming it with a thin-plate-spline fit

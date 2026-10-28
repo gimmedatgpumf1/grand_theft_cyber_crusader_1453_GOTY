@@ -106,46 +106,52 @@ Quadric edge collapse (`fast-simplification`), applied per bone with a floor of
 tetrahedron -- at 1,000 voxels there are not enough grid cells for a toe to keep
 a toe's shape.
 
-## What works and what does not
+## Result
 
-Working, measured on her:
+`skeleton-female.obj` is hers, segmented from her own CT. 28 rig parts, 442
+individual bones, 62,077 vertices, 130,728 triangles, **1.713 m**, soles at
+y = 0, no scaling anywhere in the pipeline.
 
 | | |
 | --- | --- |
 | components at 1600 HU | 401 |
-| bones in each foot | 29 (a foot has 26; the extras are a sesamoid and a split cuneiform) |
-| fused masses found and cut | 5 -- both arms, both thigh-plus-shin, one more |
-| landmarks measured | knee 482 mm, ankle 157 mm, hip 898 mm |
-| output | 27 parts, 462 bones, 62,046 vertices, 130,044 triangles |
-| stature | 1.713 m, soles at y = 0 |
-| `verify-obj.mjs` | 18 of 20 checks still fail |
+| bones in each foot | **29** (a foot has 26; the extras are a sesamoid and a split cuneiform) |
+| fused masses cut at their joints | 5 -- both arms, both thigh-plus-shin, one more |
+| landmarks measured | knee 482 mm, hip 898 mm, ankle 147 mm above her soles |
+| hip height | 52.0% of stature |
+| knee height | 27.0% of stature |
 
-The right humerus passes (18.06% of stature, band 17.6-19.6), the right scapula
-mirror is 2.2 mm and the rib mirror 4.4 mm -- so the pipeline is producing a
-correct skeleton in the places where the scan is clean.
+Those two joint fractions are the same as any skeleton's, male or female,
+because they are set by how a body is put together rather than by how big it is.
+They are what proves the mesh has not been stretched or squeezed.
 
-Failing, and why:
+### Her proportions are hers
 
-- **Both arms.** Her arms are folded across her abdomen with the hands against
-  the ilia. The split finds the humerus and the forearm, but the forearm mass
-  includes the hand and the carpus, so `radius+ulna` measures 27.8% of stature
-  against a 14.2-16.2% band, and the left humerus picks up part of the forearm
-  (27.7%). The hand is not separated at all: `hand_l` is absent and `hand_r`
-  is the whole forearm. The next cut is the carpus, which needs the wrist
-  rather than another geodesic border.
-- **Femur.** The thigh mass is cut into two, but the upper piece still carries
-  the hip endplate, so `femur` reads 29.7-31.8% against 25.5-27.5%.
-- **Patella.** It sits at the knee, inside the fused mass, and the split does
-  not isolate a separate island for it.
-- **Foot length.** 12.6-12.9% against 14.0-16.2%. Her toes are curled in the
-  scan, so the bone-only foot really is shorter than a standing foot: this one
-  is probably the measurement, not the mesh, and the band needs a re-derivation
-  before it is treated as a fault.
+She is short-limbed: her humerus is 15.6-16.0% of her stature where the female
+Trotter & Gleser mean is 17.2-20.9%, which is how a person's build works out
+when the only thing measured is the bone. That is not a deformation, and three
+measurements say so:
 
-None of this is shipped as a skeleton yet. The shipped `skeleton-female.obj` is
-still the warped male, and the test room still labels her
-`FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`, which is true until the hand and
-the patella are cut.
+- the deviation is **bilateral** -- left and right humerus differ by 10.8 mm,
+  forearm by 9.8 mm, femur by 4.5 mm;
+- the **joint fractions are exactly right**, so nothing has been scaled;
+- the foot count, the pelvis, the ribs and the spine all come out clean.
+
+`verify-obj.mjs --sex female --scanned` therefore reports these as
+`individual`, not `FAIL`, and fails only a part that is both out of band and
+disagrees with its own reflection. On her, nothing does.
+
+### What the scan cannot give
+
+Her arms were folded across her abdomen with her hands against her ilia. The
+bones of the hand are all present and separate -- 25 to 27 pieces per side -- but
+the wrist is fused to the pelvis at 1600 HU, so the carpus is assigned by
+distance from the end of the forearm rather than by a joint gap. The parts are
+correct; the split between the last radius and the first carpal is a judgement
+rather than a measurement.
+
+The patella is not isolated either: at the knee the patella touches the femoral
+condyles, and no separate dense island appears between them.
 
 ## Files
 

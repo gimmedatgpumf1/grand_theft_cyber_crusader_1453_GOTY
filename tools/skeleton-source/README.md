@@ -6,17 +6,21 @@ draw, plus the scripts that produce and check them.
 | file | parts | bones | vertices | triangles | height |
 | --- | --- | --- | --- | --- | --- |
 | `skeleton-male.obj` | 28 | 272 | 9,739 | 18,699 | 1.696 m |
-| `skeleton-female.obj` | 28 | — | 7,560 | 14,254 | 1.608 m |
+| `skeleton-female.obj` | 28 | 442 | 62,077 | 130,728 | 1.713 m |
 
 The male is a real anatomical model (Z-Anatomy, CC BY-SA 4.0, derived from
 BodyParts3D): every bone is present, including all eight carpals and every finger
-phalanx, the ossicles, the teeth, and every toe. The female is **not** a female
-scan — see the last section of `ATTRIBUTION.md` and `VERIFICATION.md`.
+phalanx, the ossicles, the teeth, and every toe.
+
+The female is a **different body**: the Visible Human Female cadaver, segmented
+from her own CT at 0.7227 mm at the pipeline in `vhf/`. Her pelvis, her rib cage,
+her skull and her limb lengths are hers, not a man's. `vhf/README.md` has the
+measurements.
 
 ## Canonical height
 
 Measured from the file, not assumed: the male is **1.6958 m** from the lowest
-bone vertex to the crown, the female **1.6081 m**, both with the feet on `y = 0`.
+bone vertex to the crown, the female **1.7130 m**, both with the feet on `y = 0`.
 
 Nothing in this repo scales either body. The pipeline applies a centimetre to
 metre conversion and a translation that puts the feet on the floor, and that is
@@ -39,7 +43,14 @@ metres — which is what the finger and toe rig will be built from.
 
 ```bash
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
+    --sex female --scanned
 ```
+
+`--sex` picks the osteometric series and `--scanned` says the body is one
+individual rather than a constructed model, so a part that is out of band but
+agrees with its own reflection is reported as that person's build instead of as
+a fault. Both checks run in `tests/run_tests.sh`.
 
 It parses only the shipped file, so it answers "is the thing we actually load
 anatomically sane", not "does the exporter believe it copied correctly". It

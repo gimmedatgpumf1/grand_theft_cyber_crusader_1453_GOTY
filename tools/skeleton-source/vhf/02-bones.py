@@ -42,6 +42,13 @@ PART_ORDER = ['skull', 'mandible', 'teeth', 'spine_cervical', 'spine_thoracic', 
               'femur_l', 'femur_r', 'patella_l', 'patella_r', 'lower_leg_l', 'lower_leg_r',
               'foot_l', 'foot_r']
 
+# The atlas is a mirror-ambiguous reference: fitting it to a cadaver by shifted
+# centroids can flip left and right, and it has no idea where a folded arm's
+# elbow is. So it is only ever allowed to name the axial skeleton, whose parts
+# do not move between poses. Every limb name comes from anatomy.limb_part.
+AXIAL = [p for p in PART_ORDER if p.startswith(('skull', 'mandible', 'teeth', 'spine', 'ribs',
+                                                'sternum', 'scapula', 'clavicle', 'pelvis'))]
+
 
 def load_atlas(path):
     """Per-part vertices of an atlas skeleton, already in metres."""
@@ -165,6 +172,22 @@ def parallel_pair(regions):
     return best[1]
 
 
+
+def axial_name(point, centre_atlas):
+    """Nearest atlas part, restricted to the piece's own side.
+
+    The atlas is fitted to a cadaver with a single global shift, so on its own it
+    will happily call a left rib a right one. Anatomy does not mirror: a piece on
+    the left of the midline can only be a left part. The side constraint is what
+    makes the mirror check meaningful.
+    """
+    side = anatomy.side_of(point[2])
+    allowed = [k for k in centre_atlas
+               if not (k.endswith('_l') and side == 'r') and not (k.endswith('_r') and side == 'l')]
+    distances = np.linalg.norm(np.array([centre_atlas[k] for k in allowed]) - point, axis=1)
+    return allowed[int(np.argmin(distances))]
+
+
 def mesh_of(mask, lo, spacing):
     """Marching cubes on one mask, in its own bounding box, into game axes."""
     vertices, triangles, _, _ = measure.marching_cubes(mask.astype(np.float32), 0.5,
@@ -213,7 +236,7 @@ def main():
     shift[1] = np.average(body_pts[:, 1], weights=weights) - trunk[:, 1].mean()
     shift[2] = np.average(body_pts[:, 2], weights=weights) - trunk[:, 2].mean()
     atlas_verts = {k: v * scale + shift for k, v in atlas_mm.items()}
-    names = [p for p in PART_ORDER if p in atlas_verts]
+    names = [p for p in AXIAL if p in atlas_verts]
     seg_a, seg_b = [], []
     for name in names:
         v = atlas_verts[name]
@@ -244,44 +267,76 @@ def main():
         if row['voxels'] < args.fused_above or extent[0] < 250:
             continue
         volume, lo = read_component(table, gid, row)
-        dense_hu = np.array(raw[int(lo[0]):int(row['hi'][0]) + 1, lo[1]:row['hi'][1] + 1,
-                                lo[2]:row['hi'][2] + 1]).astype(np.float32)
-        split = dense_regions(volume, dense_hu, spacing, structure)
-        del dense_hu
-        is_arm = centre[0] > marks['hip'] + 150
-        if split is None:
-            part = anatomy.limb_part(centre, extent, row['voxels'], marks, forearm_tips)
-            add(part or 'pelvis', volume, lo, int(volume.sum()))
+        if centre[0] > marks['hip'] + 150:
+            # An arm. Three bones with two different axes, so they are separated
+            # by their own dense cores rather than by a height plane.
+            dense_hu = np.array(raw[int(lo[0]):int(row['hi'][0]) + 1, lo[1]:row['hi'][1] + 1,
+                                    lo[2]:row['hi'][2] + 1]).astype(np.float32)
+            split = dense_regions(volume, dense_hu, spacing, structure)
+            del dense_hu
+            if split is not None and len(split[0]) >= 2:
+                regions, _centres = split
+                sizes = [int(r.sum()) for r in regions]
+                humerus = int(np.argmax(sizes))
+                side = anatomy.side_of((np.argwhere(regions[humerus])[:, 2].mean()
+                                        + lo[2]) * spacing[2])
+                shoulder = np.argwhere(regions[humerus]).mean(0)
+                forearm = np.zeros(volume.shape, dtype=bool)
+                for k, mask in enumerate(regions):
+                    if k == humerus:
+                        continue
+                    forearm |= mask
+                add(f'humerus_{side}', regions[humerus], lo, sizes[humerus])
+                add(f'forearm_{side}', forearm, lo, int(forearm.sum()))
+                # The wrist is the far end of the forearm from the shoulder;
+                # her forearms cross her abdomen, so no fixed direction works.
+                points = np.argwhere(forearm)
+                tip = points[int(np.argmax(np.linalg.norm(points - shoulder, axis=1)))]
+                forearm_tips.append(((tip + lo) * spacing, side))
+                print(f'  mass {gid}: arm cut into humerus ({sizes[humerus]}v) + forearm '
+                      f'({int(forearm.sum())}v)', flush=True)
+            else:
+                part = anatomy.limb_part(centre, extent, row['voxels'], marks, forearm_tips)
+                add(part or 'pelvis', volume, lo, int(volume.sum()))
             del volume
             continue
-        regions, centres = split
-        print(f'  mass {gid}: {row["voxels"]}v cut into {len(regions)} at z{centre[0]:.0f}',
-              flush=True)
-        if is_arm and len(regions) >= 3:
-            big = sorted(range(len(regions)), key=lambda k: -int(regions[k].sum()))[:3]
-            pair = parallel_pair([regions[k] for k in big])
-            pair = {big[pair[0]], big[pair[1]]}
-            side = anatomy.side_of((sum(centres[k][2] for k in big) / 3 + lo[2]) * spacing[2])
-            for k in big:
-                part = f'humerus_{side}' if k not in pair else f'forearm_{side}'
-                mask = regions[k]
+        if centre[0] < marks['hip'] + 100:
+            # A leg. Thigh, shin and foot are stacked, so they are separated by
+            # the joint heights measured on this subject. Splitting a leg by
+            # dense cores finds the tibia and the fibula -- two bones that run
+            # side by side down the whole shin -- and cuts the leg lengthwise.
+            side = anatomy.side_of(centre[2])
+            points = np.argwhere(volume)
+            height = (points[:, 0] + lo[0]) * spacing[0]
+            for part, low, high in ((f'foot_{side}', -1.0, marks['ankle']),
+                                    (f'lower_leg_{side}', marks['ankle'], marks['knee']),
+                                    (f'femur_{side}', marks['knee'], 1e6)):
+                keep = (height >= low) & (height < high)
+                if keep.sum() < args.min_voxels:
+                    continue
+                mask = np.zeros(volume.shape, dtype=bool)
+                chosen = points[keep]
+                mask[chosen[:, 0], chosen[:, 1], chosen[:, 2]] = True
                 add(part, mask, lo, int(mask.sum()))
-                if part.startswith('forearm'):
-                    voxels = np.argwhere(mask)
-                    tip = (voxels[np.argmax(voxels[:, 0])] + lo) * spacing
-                    forearm_tips.append((tip, side))
-            del volume, regions
+            print(f'  mass {gid}: leg cut at knee {marks["knee"]:.0f} and ankle '
+                  f'{marks["ankle"]:.0f} mm', flush=True)
+            del volume
             continue
-        for k, mask in enumerate(regions):
-            piece_centre = (np.argwhere(mask).mean(0) + lo) * spacing
-            piece_extent = (np.argwhere(mask).max(0) - np.argwhere(mask).min(0) + 1) * spacing
+        # Anything else is trunk: name it against the atlas.
+        regions, _centres = dense_regions(volume, None, spacing, structure) or ([volume], None)
+        for mask in regions:
+            if mask.sum() < args.min_voxels:
+                continue
+            points = np.argwhere(mask)
+            piece_centre = (points.mean(0) + lo) * spacing
+            piece_extent = (points.max(0) - points.min(0) + 1) * spacing
             part = anatomy.limb_part(piece_centre, piece_extent, int(mask.sum()), marks,
                                      forearm_tips)
             if part is None:
-                part = names[int(np.argmin(np.linalg.norm(
-                    np.array([centre_atlas[n] for n in names]) - piece_centre, axis=1)))]
+                part = axial_name(piece_centre, centre_atlas)
             add(part, mask, lo, int(mask.sum()))
-        del volume, regions
+        print(f'  mass {gid}: trunk split into {len(regions)}', flush=True)
+        del volume
 
     # ------------------------------------------------- remaining bones, by naming
     for gid, row in order:
@@ -315,8 +370,7 @@ def main():
             part = anatomy.limb_part(piece_centre, piece_extent, len(voxels), marks,
                                      forearm_tips)
             if part is None:
-                part = names[int(np.argmin(np.linalg.norm(
-                    np.array([centre_atlas[n] for n in names]) - piece_centre, axis=1)))]
+                part = axial_name(piece_centre, centre_atlas)
             add(part, volume, lo, len(voxels))
         del volume
 
@@ -330,7 +384,12 @@ def main():
 
     low = np.array([min(p['points'][:, i].min() for p in pieces) for i in range(3)])
     high = np.array([max(p['points'][:, i].max() for p in pieces) for i in range(3)])
-    fall = np.array([-(low[0] + high[0]) / 2, -low[1], 0.0])
+    # Centre laterally on the spine, not on the bounding box: her arms are folded
+    # unevenly, so the box midpoint is not the midline of her body.
+    midline = [p['points'][:, 0].mean() for p in pieces
+               if p['part'].startswith(('spine', 'pelvis', 'skull', 'sternum'))]
+    centre_x = float(np.median(midline)) if midline else (low[0] + high[0]) / 2
+    fall = np.array([-centre_x, -low[1], 0.0])
     total_faces = sum(len(p['faces']) for p in pieces)
 
     lines = ['# Human skeleton segmented from a cadaver CT, one object per bone group.',

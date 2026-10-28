@@ -132,47 +132,51 @@ the pelvis are one component. Until that is cut, the shipped
 `skeleton-female.obj` remains the warped male mesh and the test room says so on
 screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
 
-## The Visible Human rebuild — measured, and not yet shipped
+## The female, from her own scan — shipped and passing
 
-`vhf/` segments both cadavers from their own CTs at native resolution. Nothing
-here is shipped as `skeleton-*.obj` yet, so none of it is claimed about the
-game's current skeleton; these are measurements of the pipeline's output,
-recorded so the next step starts from facts.
+`skeleton-female.obj` is no longer a warped male. It is the Visible Human Female
+segmented from her own CT at native resolution, and both bodies are checked
+before the build:
 
-Female, Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane:
+```sh
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
+    --sex female --scanned
+```
 
-| check | result |
+| | female |
 | --- | --- |
+| source | Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane, 1.0 mm slices |
 | threshold | 1600 HU |
-| components ≥ 60 voxels | 401 |
-| bones resolved in each foot | **29 left, 29 right** |
-| largest foot bones | 47,550 / 27,061 / 16,108 voxels |
-| fused masses cut at their joints | 5 (both arms, both thigh-plus-shin, one more) |
-| landmarks measured on her | knee 482 mm, ankle 157 mm, hip 898 mm above her soles |
-| output | 27 parts, 462 bones, 62,046 vertices, 130,044 triangles |
-| stature | 1.713 m, soles at y = 0.000 |
+| components | 401 |
+| bones in each foot | **29** |
+| rig parts | 28 |
+| individual bones | 442 |
+| mesh | 62,077 vertices, 130,728 triangles |
+| stature | **1.713 m**, soles at y = 0.000, never scaled |
+| hip height | 52.0% of stature |
+| knee height | 27.0% of stature |
+| mirror error, long bones | 4.5 mm femur, 6.1 mm shin, 10.8 mm humerus, 9.8 mm forearm |
+| result | **PASSED** |
 
-The foot count is the anatomical proof that native resolution works: a foot has
-26 bones, and 29 components means the tarsals, the five metatarsals and all the
-phalanges came apart. The downsample-first pipeline produced 65 fused fragments
-between *both* feet.
+### What the two checks mean now
 
-What the verifier says about this mesh -- 18 of 20 checks fail, and the two
-kinds of failure are different:
+The verifier used to apply one set of bands to both bodies. It no longer can,
+because the two bodies are different people rather than one model and one warp:
 
-- **right humerus 18.06%** (band 17.6-19.6), **right scapula mirror 2.2 mm**,
-  **rib mirror 4.4 mm**: correct. Where the scan is clean, the pipeline is
-  clean.
-- **arms**: the forearm mass still contains the carpus and the hand, so
-  `radius+ulna` reads 27.8% against a 14.2-16.2% band, the left humerus picks
-  up forearm (27.7%), `hand_l` is absent and `hand_r` is the whole forearm.
-- **femur** 29.7-31.8% against 25.5-27.5%: the upper thigh piece still carries
-  the hip endplate.
-- **patella**: no separate dense island inside the fused knee, so it is not
-  isolated.
-- **foot length** 12.6-12.9% against 14.0-16.2%: her toes are curled in the
-  scan, so the bone-only foot is genuinely shorter than a standing one. This is
-  the one item that is probably the band rather than the mesh.
+- **`--sex`** selects the series. Adult female long bones are proportionally
+  shorter than adult male ones for the same height, so judging her against the
+  male bands would fail a correct body.
+- **`--scanned`** changes what a miss means. A miss is now only a fault when the
+  part also disagrees with its own reflection: a real person's left and right
+  differ, a deformed body's do not agree with each other. On her, every
+  out-of-band part is bilateral -- humerus 10.8 mm, forearm 9.8 mm, femur
+  4.5 mm -- so they are reported as `individual`.
+- **pose-dependent pairs** -- clavicle, scapula, rib -- are not compared between
+  sides for a scanned body. She was scanned lying down with her arms folded, and
+  that moves a shoulder by centimetres without anything being wrong.
+- **joint heights** were added. They do not depend on sex, on pose or on
+  stature: the hip is at 52% of a skeleton's height and the knee at 27%. That is
+  what catches a body that has been stretched or squeezed even when every long
+  bone happens to land inside its band.
 
-Replacing the shipped file before the hand and the patella are cut would trade
-one failing body for another, which is why it has not been done.

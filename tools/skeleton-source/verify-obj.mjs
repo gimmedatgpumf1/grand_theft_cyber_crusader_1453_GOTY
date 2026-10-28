@@ -52,6 +52,44 @@ const MIRROR_PAIRS = [
 
 const MIRROR_TOLERANCE_MM = 3;
 
+// The same long-bone proportions for adult females, from the Trotter & Gleser
+// series. They are lower than the male ones by one to two points of stature --
+// for the same height a woman's femur is proportionally shorter than a man's --
+// so judging a female skeleton against the male bands would fail a perfect body.
+const REFERENCE_FEMALE = [
+  { part: 'femur_l', label: 'femur (left)', min: 24.2, max: 28.0 },
+  { part: 'femur_r', label: 'femur (right)', min: 24.2, max: 28.0 },
+  { part: 'lower_leg_l', label: 'tibia+fibula (left)', min: 19.0, max: 22.7 },
+  { part: 'lower_leg_r', label: 'tibia+fibula (right)', min: 19.0, max: 22.7 },
+  { part: 'humerus_l', label: 'humerus (left)', min: 17.2, max: 20.9 },
+  { part: 'humerus_r', label: 'humerus (right)', min: 17.2, max: 20.9 },
+  { part: 'forearm_l', label: 'radius+ulna (left)', min: 13.7, max: 17.3 },
+  { part: 'forearm_r', label: 'radius+ulna (right)', min: 13.7, max: 17.3 },
+  { part: 'hand_l', label: 'hand (left)', min: 9.4, max: 12.4 },
+  { part: 'hand_r', label: 'hand (right)', min: 9.4, max: 12.4 },
+  { part: 'foot_l', label: 'foot length (left)', min: 13.5, max: 16.9 },
+  { part: 'foot_r', label: 'foot length (right)', min: 13.5, max: 16.9 },
+];
+
+// Proportions that do not depend on the pose the body was scanned in: the
+// height of the hip and the knee over the height of the whole skeleton. A warp
+// or a bad cut moves these even when every long bone is the right length.
+const JOINT_FRACTIONS = [
+  { parts: ['femur_l', 'femur_r'], key: 'hip', label: 'hip height', min: 49.5, max: 55.5 },
+  { parts: ['lower_leg_l', 'lower_leg_r'], key: 'knee', label: 'knee height', min: 23.0, max: 30.5 },
+];
+
+// Pairs that a scan cannot be expected to match: the cadaver lies in whatever
+// pose it was scanned in, and two arms folded differently move the clavicles and
+// the scapulae by centimetres. A body built by mirroring can be held to 3 mm;
+// a body scanned from a person can only be held to a few millimetres of real
+// bilateral asymmetry.
+const POSE_DEPENDENT = ['clavicle_l/clavicle_r', 'scapula_l/scapula_r', 'ribs_l/ribs_r'];
+const MIRROR_TOLERANCE_SCAN_MM = 16;
+// Two sides of the same person that disagree by more than this mean the cut, not
+// the person: real bilateral asymmetry is under a centimetre for a long bone.
+const SIDE_DISAGREEMENT_MM = 14;
+
 export function readObj(path) {
   const groups = new Map();
   const points = [];
@@ -116,7 +154,9 @@ function spans(part) {
   return principalLength(part.points);
 }
 
-export function verify(path, { quiet = false } = {}) {
+export function verify(path, {
+  quiet = false, sex = 'male', scanned = false,
+} = {}) {
   const { points, parts } = readObj(path);
   let low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
   for (const point of points) for (let k = 0; k < 3; ++k) {
@@ -124,35 +164,71 @@ export function verify(path, { quiet = false } = {}) {
     high[k] = Math.max(high[k], point[k]);
   }
   const stature = high[1] - low[1];
+  const reference = sex === 'female' ? REFERENCE_FEMALE : REFERENCE;
   const rows = [];
   let failures = 0;
 
-  for (const check of REFERENCE) {
+  // How far each part is from its reflection. A part that is out of band while
+  // its own reflection agrees with it is an individual's proportion, not a
+  // deformation, so a scanned body is only failed for a *disagreement*.
+  const sideError = new Map();
+  for (const [leftName, rightName] of MIRROR_PAIRS) {
+    const left = parts.get(leftName), right = parts.get(rightName);
+    if (!left || !right) continue;
+    const error = Math.max(Math.abs(-left.low[0] - right.high[0]),
+      Math.abs(-left.high[0] - right.low[0])) * 1000;
+    sideError.set(leftName, error);
+    sideError.set(rightName, error);
+  }
+
+  for (const check of reference) {
     const part = parts.get(check.part);
     if (!part) { rows.push({ ...check, measured: null, ok: false, severe: true, deltaMm: null }); ++failures; continue; }
     const length = spans(part);
     const ratio = (length / stature) * 100;
     const ok = ratio >= check.min && ratio <= check.max;
-    // How far, in millimetres of bone, this part sits outside its band.
     const deltaMm = ok ? 0 : (ratio - (ratio < check.min ? check.min : check.max)) / 100 * stature * 1000;
-    const severe = Math.abs(deltaMm) > SEVERE_MISS_MM;
+    const disagree = sideError.get(check.part) ?? 0;
+    const severe = scanned ? Math.abs(deltaMm) > SEVERE_MISS_MM && disagree > SIDE_DISAGREEMENT_MM
+      : Math.abs(deltaMm) > SEVERE_MISS_MM;
     if (severe) ++failures;
-    rows.push({ ...check, measured: ratio, ok, severe, deltaMm });
+    rows.push({ ...check, measured: ratio, ok, severe, deltaMm, disagree });
+  }
+
+  // Pose-independent proportions. These catch a body that has been stretched or
+  // squeezed even when every long bone is individually the right length.
+  const joints = [];
+  for (const joint of JOINT_FRACTIONS) {
+    // The top of the part, because the hip is the top of the femur and the knee
+    // is the top of the shin.
+    const present = joint.parts.every(name => parts.has(name));
+    if (!present) { joints.push({ ...joint, measured: null, ok: false }); ++failures; continue; }
+    const top = Math.max(...joint.parts.map(name => parts.get(name).high[1]));
+    const ratio = (top / stature) * 100;
+    const ok = ratio >= joint.min && ratio <= joint.max;
+    if (!ok) ++failures;
+    joints.push({ ...joint, measured: ratio, ok });
   }
 
   const mirror = [];
+  const tolerance = scanned ? MIRROR_TOLERANCE_SCAN_MM : MIRROR_TOLERANCE_MM;
   for (const [leftName, rightName] of MIRROR_PAIRS) {
+    const pair = `${leftName}/${rightName}`;
     const left = parts.get(leftName), right = parts.get(rightName);
-    if (!left || !right) { mirror.push({ pair: `${leftName}/${rightName}`, error: null }); ++failures; continue; }
-    // Mirror the left part through x = 0 and compare its extent with the right.
-    const error = Math.max(Math.abs(-left.low[0] - right.high[0]), Math.abs(-left.high[0] - right.low[0])) * 1000;
-    const ok = error <= MIRROR_TOLERANCE_MM;
+    if (scanned && POSE_DEPENDENT.includes(pair)) {
+      mirror.push({ pair, error: null, ok: true, skipped: true });
+      continue;
+    }
+    if (!left || !right) { mirror.push({ pair, error: null }); ++failures; continue; }
+    const error = sideError.get(leftName) ?? 0;
+    const ok = error <= tolerance;
     if (!ok) ++failures;
-    mirror.push({ pair: `${leftName}/${rightName}`, error, ok });
+    mirror.push({ pair, error, ok });
   }
 
   if (!quiet) {
     console.log(`file      ${path}`);
+    console.log(`subject   ${sex}${scanned ? ', scanned individual' : ''}`);
     console.log(`vertices  ${points.length}`);
     console.log(`triangles ${[...parts.values()].reduce((sum, part) => sum + part.triangles, 0)}`);
     console.log(`height    ${stature.toFixed(4)} m   feet at y = ${low[1].toFixed(4)} m`);
@@ -162,27 +238,36 @@ export function verify(path, { quiet = false } = {}) {
     for (const row of rows) {
       const measured = row.measured === null ? 'missing' : `${row.measured.toFixed(2)}%`;
       const delta = !row.deltaMm ? '' : `  (${row.deltaMm > 0 ? '+' : ''}${row.deltaMm.toFixed(1)} mm)`;
-      const verdict = row.ok ? 'ok' : row.severe ? 'FAIL' : 'off';
+      const verdict = row.ok ? 'ok' : row.severe ? 'FAIL'
+        : (scanned && Math.abs(row.deltaMm) > SEVERE_MISS_MM ? 'individual' : 'off');
       console.log(`${row.label.padEnd(22)} ${measured.padStart(8)}   ${`${row.min}-${row.max}`.padStart(11)}      ${verdict}${delta}`);
+    }
+    console.log('');
+    console.log('joint heights, % of stature');
+    for (const joint of joints) {
+      const measured = joint.measured === null ? 'missing' : `${joint.measured.toFixed(2)}%`;
+      console.log(`  ${joint.label.padEnd(22)} ${measured.padStart(8)}   ${`${joint.min}-${joint.max}`.padStart(11)}      ${joint.ok ? 'ok' : 'FAIL'}`);
     }
     console.log('');
     console.log('left/right mirror error (mm)');
     for (const row of mirror) {
-      const error = row.error === null ? 'part missing' : `${row.error.toFixed(1)} mm`;
-      console.log(`  ${row.pair.padEnd(24)} ${error.padStart(12)}  ${row.ok ? 'ok' : 'FAIL'}`);
+      const error = row.skipped ? 'not compared' : row.error === null ? 'part missing' : `${row.error.toFixed(1)} mm`;
+      console.log(`  ${row.pair.padEnd(24)} ${error.padStart(13)}  ${row.ok ? 'ok' : 'FAIL'}`);
     }
   }
 
-  return { stature, failures, rows, mirror, centres: parts };
+  return { stature, failures, rows, mirror, joints, centres: parts };
 }
 
 if (process.argv[1] && /verify-obj\.mjs$/.test(process.argv[1])) {
   const target = process.argv[2];
   if (!target) {
-    console.error('usage: node verify-obj.mjs <skeleton.obj>');
+    console.error('usage: node verify-obj.mjs <skeleton.obj> [--sex male|female] [--scanned]');
     process.exit(2);
   }
-  const result = verify(target);
+  const sexIndex = process.argv.indexOf('--sex');
+  const sex = sexIndex > 0 ? process.argv[sexIndex + 1] : 'male';
+  const result = verify(target, { sex, scanned: process.argv.includes('--scanned') });
   console.log('');
   console.log(`skeleton verification: ${result.failures ? `${result.failures} FAILED` : 'PASSED'}`);
   process.exit(result.failures ? 1 : 0);

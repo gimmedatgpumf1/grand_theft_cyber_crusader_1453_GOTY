@@ -3,6 +3,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 bash tools/nagger.sh
+# The skeletons are checked against human osteometry before anything is built on
+# them. Both are scanned bodies, so each is judged against its own sex's series
+# and against the tolerance a real person allows for bilateral asymmetry.
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
+  --sex female --scanned
+echo '[test] both skeletons pass their anatomical checks.'
 mkdir -p build/bin .cache/ccache
 export CCACHE_DIR="$ROOT/.cache/ccache"
 export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
