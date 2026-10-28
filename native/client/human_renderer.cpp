@@ -1,5 +1,9 @@
 #include "client/human_renderer.h"
 
+#include "client/blockbody.h"
+#include "client/human_materials.h"
+#include "client/human_palette.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -204,67 +208,6 @@ Vec3 rotateWorld(Vec3 point, float yaw) {
     return {c * point.x + s * point.z, point.y, -s * point.x + c * point.z};
 }
 
-const Texture& agedSkinTexture(const std::string& root, const std::string& sex, int age, bool normal) {
-    const double old = std::clamp((age - 24) / 58.0, 0.0, 1.0);
-    const double blend = old * old * (3 - 2 * old) * (normal ? 1.0 : 0.94);
-    const std::string key = root + sex + std::to_string(age) + (normal ? "normal" : "detail");
-    static std::map<std::string, Texture> cache;
-    const auto found = cache.find(key);
-    if (found != cache.end()) return found->second;
-    const std::string base = root + "/web/assets/human/skin-" + sex;
-    const Texture& young = loadTexture(base + (normal ? "-young-normal.png" : "-young-detail.jpg"));
-    const Texture& aged = loadTexture(base + (normal ? "-old-normal.png" : "-old-detail.jpg"));
-    if (young.width != aged.width || young.height != aged.height || young.pixels.empty()) return young;
-    Texture result;
-    result.width = young.width;
-    result.height = young.height;
-    result.pixels.resize(young.pixels.size());
-    for (std::size_t i = 0; i < result.pixels.size(); ++i) {
-        result.pixels[i] = static_cast<unsigned char>(std::lround(young.pixels[i] * (1 - blend) + aged.pixels[i] * blend));
-    }
-    return cache.emplace(key, std::move(result)).first->second;
-}
-
-Material skinMaterial(const HumanModel& model, const Character& character, const std::string& root,
-                      const std::vector<double>& morphs) {
-    static const char* colors[] = {"#f0c8a8", "#d9a17d", "#b97c58", "#8a573e", "#714a38", "#e5b894"};
-    Material material;
-    material.kind = Material::Kind::Skin;
-    material.color = colorHex(colors[std::clamp(character.appearance.skin, 0, 5)]);
-    material.specular = 0.035;
-    const std::string sex = model.male ? "male" : "female";
-    const int ageIndex = model.specIndex("age");
-    const int age = ageIndex >= 0 && static_cast<std::size_t>(ageIndex) < morphs.size() ?
-        static_cast<int>(morphs[ageIndex]) : 25;
-    material.texture = &agedSkinTexture(root, sex, age, false);
-    material.normalYoung = &agedSkinTexture(root, sex, age, true);
-    material.age = age;
-    return material;
-}
-
-const Texture& fabricTexture() {
-    static const Texture texture = [] {
-        Texture result;
-        result.width = result.height = 128;
-        result.pixels.resize(128U * 128U * 4U, 255);
-        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
-            const bool vertical = x % 4 == 0, horizontal = y % 4 == 0;
-            const bool dark = (vertical && x % 8) || (horizontal && y % 8);
-            const unsigned char value = (vertical || horizontal) ? (dark ? 237 : 245) : 244;
-            const std::size_t offset = (static_cast<std::size_t>(y) * 128 + x) * 4;
-            result.pixels[offset] = result.pixels[offset + 1] = result.pixels[offset + 2] = value;
-        }
-        return result;
-    }();
-    return texture;
-}
-
-Color hairColor(int index) {
-    static const char* colors[] = {"#171a1c", "#3b281d", "#75604a", "#b5a075", "#5b6268",
-                                   "#69362c", "#e5d5aa", "#d2b477", "#a9adb0"};
-    return colorHex(colors[std::clamp(index, 0, 8)]);
-}
-
 struct LoftRing { double y, x, z; };
 
 void drawLoft(Rasterizer& rasterizer, const Camera& camera, const std::function<Vec3(Vec3)>& world,
@@ -361,6 +304,9 @@ void prepareHuman(const HumanModel& model, const Character& character, HumanRend
     std::vector<int> ids(model.vertices.size());
     for (std::size_t i = 0; i < ids.size(); ++i) ids[i] = static_cast<int>(i);
     cache.rest = model.shape(ids, morphs);
+    // The authored body carries no per-vertex target deltas, so its sliders are
+    // answered by a pair of proportions instead: stature and head size.
+    if (model.blockBody) shapeBlockBody(blockProportions(model, morphs), cache.rest);
     cache.normals.assign(cache.rest.size(), Vec3{});
     for (const Triangle& triangle : model.triangles) {
         const Vec3 normal = cross(cache.rest[triangle.v[1]] - cache.rest[triangle.v[0]],
@@ -747,7 +693,13 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
         transformed[index] = cameraVertex(camera, cache.posed[index], cache.posedNormals[index], rest[index]);
     }
     const Vec3 eyeRest = (joint(rest, model.eyeSource[0]) + joint(rest, model.eyeSource[1])) * 0.5;
-    const Material skin = skinMaterial(model, character, root, morphs);
+    // The authored body has no imported skin atlas: its surface is a flat local
+    // colour, so the texture and normal-map lookups are skipped entirely.
+    Material plainSkin;
+    plainSkin.kind = Material::Kind::Skin;
+    plainSkin.color = skinColor(character.appearance.skin);
+    plainSkin.specular = 0.035;
+    const Material skin = model.blockBody ? plainSkin : skinMaterial(model, character, root, morphs);
     static const char* shirts[] = {"#20262b", "#b3453c", "#56765f", "#c4b58d", "#334c6b", "#6b4c70", "#c7ccd1"};
     static const char* pants[] = {"#303b44", "#2d3338", "#4a453e", "#23384a"};
     Material shirt;
@@ -791,6 +743,27 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     }
     const bool showGenitals = character.appearance.male &&
         (character.unzipped || character.pissing || character.toiletAction == ToiletAction::Piss);
+    // The authored body is a finished figure: it carries its own clothes, its
+    // own block trousers and its own closed crotch, so none of the imported
+    // mesh's bolt-on garments apply. Drawing them over it is what buried it in a
+    // black skirt.
+    if (model.blockBody) {
+        if (showGenitals) {
+            for (const Triangle& triangle : model.genitalTriangles) {
+                std::array<RenderVertex, 3> vertices;
+                for (int corner = 0; corner < 3; ++corner) {
+                    const int index = triangle.v[corner];
+                    vertices[corner] = transformed[index];
+                }
+                rasterizer.triangle(vertices, skin);
+            }
+        }
+        const int boneHead = boneIndex(model, "head");
+        const Transform headTransform = boneHead >= 0 ? transforms[boneHead] : rootTransform;
+        drawBlockAccessories(rasterizer, camera,
+                             [&](Vec3 point) { return world(headTransform.point(point)); }, character);
+        return;
+    }
     if (showGenitals) {
         for (const Triangle& triangle : model.genitalTriangles) {
             std::array<RenderVertex, 3> vertices;
@@ -892,6 +865,7 @@ void drawHuman(Rasterizer& rasterizer, const Camera& camera, const HumanModel& m
     if (hideHead) return;
     const int headIndex = boneIndex(model, "head");
     const Transform head = headIndex >= 0 ? transforms[headIndex] : Transform{};
+
     Material scalp;
     scalp.color = hairColor(character.appearance.hairColor) * 0.65;
     if (character.appearance.hair > 0 || character.appearance.beard > 0) {

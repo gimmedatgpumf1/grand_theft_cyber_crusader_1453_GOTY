@@ -73,8 +73,16 @@ class HumanModel {
 public:
     bool load(const std::string& root, bool male, std::string& error);
     bool loadRuntime(const std::string& root, bool male, std::string& error);
+    // Slider definitions only, for bodies that bring their own geometry. The
+    // creator still needs the tabs, ranges and labels; it does not need the
+    // nineteen thousand target deltas that go with the imported mesh.
+    bool loadMorphSpecs(const std::string& root);
 
     bool male = true;
+    // True when the mesh came from the authored block body rather than the
+    // imported scan. The renderer uses it to skip texture maps and facial
+    // decals that only make sense on the imported topology.
+    bool blockBody = false;
     double scale = 0.108;
     double ground = 8.1676;
     double headCutoff = 0;

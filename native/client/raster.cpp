@@ -416,10 +416,13 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                         base = tile ? material.second : material.color;
                     }
                 } else if (material.kind == Material::Kind::Skin) {
-                    Color detail;
-                    if (material.texture) {
+                    // An authored surface may carry no atlas at all; in that
+                    // case the skin tone is the whole colour, not a white
+                    // detail map sampled out of an empty texture.
+                    Color detail{1, 1, 1};
+                    if (material.texture && !material.texture->pixels.empty()) {
                         detail = linear(sample(material.texture, uv.x, uv.y));
-                    } else {
+                    } else if (material.young && !material.young->pixels.empty()) {
                         detail = mix(linear(sample(material.young, uv.x, uv.y)),
                                      linear(sample(material.old, uv.x, uv.y)), ageBlend * 0.94);
                     }

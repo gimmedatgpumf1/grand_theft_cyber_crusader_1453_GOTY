@@ -254,7 +254,9 @@ void interpolateState(const ClientState& previous, const ClientState& target,
                       ClientState& output, double partialTick) {
     const double t = std::clamp(partialTick, 0.0, 1.0);
     const auto lerp = [t](double a, double b) { return a + (b - a) * t; };
-    const auto vec = [&](Vec2 a, Vec2 b) { return Vec2{static_cast<float>(lerp(a.x, b.x)), static_cast<float>(lerp(a.y, b.y))}; };
+    const auto vec = [&](gtc::Vec2 a, gtc::Vec2 b) {
+        return gtc::Vec2{static_cast<float>(lerp(a.x, b.x)), static_cast<float>(lerp(a.y, b.y))};
+    };
     const auto angle = [&](float a, float b) {
         const double delta = std::atan2(std::sin(b - a), std::cos(b - a));
         return static_cast<float>(a + delta * t);
@@ -432,9 +434,9 @@ bool NativeClient::sendJoin(const std::string& name) {
     return send("{\"type\":\"join\",\"name\":\"" + jsonEscape(name) + "\"}");
 }
 
-bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk,
+bool NativeClient::sendInput(gtc::Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk,
                              bool crouch, bool grab, bool jump, bool block,
-                             Vec2 aimTarget, float aimHeight, bool hasAimTarget) {
+                             gtc::Vec2 aimTarget, float aimHeight, bool hasAimTarget) {
     std::ostringstream out;
     out << "{\"type\":\"input\",\"x\":" << jsonNumber(move.x) << ",\"z\":" << jsonNumber(move.y)
         << ",\"sprint\":" << (sprint ? "true" : "false") << ",\"slow\":" << (slowWalk ? "true" : "false")
@@ -450,7 +452,7 @@ bool NativeClient::sendInput(Vec2 move, bool sprint, bool piss, float yaw, float
     return send(out.str());
 }
 
-bool NativeClient::sendPath(Vec2 destination, bool sprint, bool advanced) {
+bool NativeClient::sendPath(gtc::Vec2 destination, bool sprint, bool advanced) {
     return send("{\"type\":\"path\",\"x\":" + jsonNumber(destination.x) +
                 ",\"z\":" + jsonNumber(destination.y) + ",\"sprint\":" + (sprint ? "true" : "false") +
                 ",\"advanced\":" + (advanced ? "true" : "false") + "}");
@@ -461,7 +463,7 @@ bool NativeClient::sendAttack(std::uint32_t targetId, bool advanced) {
                 ",\"advanced\":" + (advanced ? "true" : "false") + "}");
 }
 
-bool NativeClient::sendAttackAt(Vec2 target, float height) {
+bool NativeClient::sendAttackAt(gtc::Vec2 target, float height) {
     return send("{\"type\":\"attackAt\",\"x\":" + jsonNumber(target.x) +
                 ",\"z\":" + jsonNumber(target.y) + ",\"y\":" + jsonNumber(height) + "}");
 }

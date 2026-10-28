@@ -37,7 +37,7 @@ cl.exe /nologo !OBJECTS! /Fe"%ROOT%\build\bin\gtc-native-fit.exe"
 if errorlevel 1 exit /b 1
 if not exist "%ROOT%\build\obj\native-client" mkdir "%ROOT%\build\obj\native-client"
 set "CLIENT_OBJECTS="
-for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.cpp native\client\human_renderer.cpp native\client\world_renderer.cpp native\client\interactive.cpp native\client\opengl_shared.cpp native\client\window_win32.cpp native\client\main.cpp native\client\smoke.cpp src\net\platform.cpp src\net\websocket.cpp src\net\sha1.cpp) do (
+for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.cpp native\client\human_renderer.cpp native\client\human_materials.cpp native\client\blockbody.cpp native\client\world_renderer.cpp native\client\world_hud.cpp native\client\interactive.cpp native\client\opengl_shared.cpp native\client\window_win32.cpp native\client\main.cpp native\client\smoke.cpp src\net\platform.cpp src\net\websocket.cpp src\net\sha1.cpp) do (
   set "OBJECT=%ROOT%\build\obj\native-client\%%~nS.obj"
   set "CLIENT_OBJECTS=!CLIENT_OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
@@ -47,7 +47,7 @@ for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.
   )
   if errorlevel 1 exit /b 1
 )
-set "CLIENT_COMMON=%ROOT%\build\obj\native-client\client.obj %ROOT%\build\obj\native-client\raster.obj %ROOT%\build\obj\native-client\hud.obj %ROOT%\build\obj\native-client\human_renderer.obj %ROOT%\build\obj\native-client\world_renderer.obj %ROOT%\build\obj\native\human.obj %ROOT%\build\obj\native\hair.obj %ROOT%\build\obj\native\json.obj %ROOT%\build\obj\native-client\platform.obj %ROOT%\build\obj\native-client\websocket.obj %ROOT%\build\obj\native-client\sha1.obj"
+set "CLIENT_COMMON=%ROOT%\build\obj\native-client\client.obj %ROOT%\build\obj\native-client\raster.obj %ROOT%\build\obj\native-client\hud.obj %ROOT%\build\obj\native-client\human_renderer.obj %ROOT%\build\obj\native-client\blockbody.obj %ROOT%\build\obj\native-client\human_materials.obj %ROOT%\build\obj\native-client\world_renderer.obj %ROOT%\build\obj\native-client\world_hud.obj %ROOT%\build\obj\native\human.obj %ROOT%\build\obj\native\hair.obj %ROOT%\build\obj\native\json.obj %ROOT%\build\obj\native-client\platform.obj %ROOT%\build\obj\native-client\websocket.obj %ROOT%\build\obj\native-client\sha1.obj"
 cl.exe /nologo "%ROOT%\build\obj\native-client\main.obj" "%ROOT%\build\obj\native-client\interactive.obj" "%ROOT%\build\obj\native-client\window_win32.obj" "%ROOT%\build\obj\native-client\opengl_shared.obj" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-native-client.exe" /link Ws2_32.lib User32.lib Gdi32.lib Opengl32.lib
 if errorlevel 1 exit /b 1
 cl.exe /nologo "%ROOT%\build\obj\native-client\smoke.obj" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-native-smoke.exe" /link Ws2_32.lib
