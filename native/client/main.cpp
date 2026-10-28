@@ -126,6 +126,19 @@ void reportLine(const char* label, double milliseconds) {
               << " fps\n";
 }
 
+// A mean hides the frames that actually hurt: one 7 ms frame and nineteen 3 ms
+// frames average to 3.2, which is a number nobody can act on. The median is what
+// the frame rate feels like; the worst frame is what a user sees as a hitch.
+void reportSpread(const char* label, std::vector<double> samples) {
+    if (samples.empty()) return;
+    std::sort(samples.begin(), samples.end());
+    const double median = samples[samples.size() / 2];
+    const double worst = samples.back();
+    std::cout << "  " << std::left << std::setw(30) << label << std::right << std::fixed
+              << std::setprecision(2) << std::setw(8) << median << " ms median"
+              << std::setprecision(2) << std::setw(10) << worst << " ms worst\n";
+}
+
 // Builds the one-skull scene the benchmark draws: a skull alone, the camera on
 // it, everything else absent so both backends see exactly the same triangles.
 bool buildSkull(const std::string& root, const gtc::native::ViewState& view, SkullScene& out,
@@ -290,14 +303,21 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             gtc::native::drainVulkan();
             gtc::native::renderVulkanScene(skull.scene, frame);
             gtc::native::drainVulkan();
-            const double start = nowMs();
+            std::vector<double> samples;
+            samples.reserve(static_cast<std::size_t>(iterations));
+            double total = 0.0;
             for (int iteration = 0; iteration < iterations; ++iteration) {
+                const double frameStart = nowMs();
                 if (!gtc::native::renderVulkanScene(skull.scene, frame)) {
                     std::cerr << "vulkan skull draw failed\n";
                     return 1;
                 }
+                const double spent = nowMs() - frameStart;
+                samples.push_back(spent);
+                total += spent;
             }
-            reportLine("skull vulkan (full frame)", (nowMs() - start) / iterations);
+            reportLine("skull vulkan (full frame)", total / iterations);
+            reportSpread("  of which median", samples);
             // The same draw with the picture left on the device: commands are
             // submitted and the device is waited for, but nothing is copied
             // back. This is the only figure that can be compared with a backend

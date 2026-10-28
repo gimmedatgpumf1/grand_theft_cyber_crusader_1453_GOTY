@@ -153,7 +153,14 @@ bool Renderer::chooseDevice() {
     }
     if (colourFormat_ != VK_FORMAT_R8G8B8A8_UNORM && colourFormat_ != VK_FORMAT_B8G8R8A8_UNORM) return false;
 
-    const VkFormat depths[] = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM};
+    // Depth is never stored and never leaves the pass, so D16 halves the depth
+    // footprint at no cost but precision. A 32-bit depth is 5.8 MB per frame to
+    // touch on an iGPU that shares its memory with the CPU, so the narrower
+    // format is worth having -- as an option, until somebody has looked at the
+    // joints of a skeleton up close and said it does not z-fight.
+    const bool narrowDepth = std::getenv("GTC_VK_DEPTH16") != nullptr;
+    const VkFormat depths[] = {narrowDepth ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT,
+                               narrowDepth ? VK_FORMAT_D32_SFLOAT : VK_FORMAT_D16_UNORM};
     for (VkFormat format : depths) {
         VkFormatProperties properties{};
         getPhysicalDeviceFormatProperties(physical_, format, &properties);
