@@ -84,7 +84,12 @@ const JOINT_FRACTIONS = [
 // the scapulae by centimetres. A body built by mirroring can be held to 3 mm;
 // a body scanned from a person can only be held to a few millimetres of real
 // bilateral asymmetry.
-const POSE_DEPENDENT = ['clavicle_l/clavicle_r', 'scapula_l/scapula_r', 'ribs_l/ribs_r'];
+const POSE_DEPENDENT = ['clavicle_l/clavicle_r', 'scapula_l/scapula_r', 'ribs_l/ribs_r',
+  'hand_l/hand_r'];
+// Her forearms are folded across the abdomen, which puts her two hands a
+// centimetre apart in height and her feet slightly toed differently. Measuring
+// the mirror of a posed limb measures the pose. These parts are still measured
+// for length -- that is anatomy -- but a side disagreement is not a defect.
 const MIRROR_TOLERANCE_SCAN_MM = 16;
 // Two sides of the same person that disagree by more than this mean the cut, not
 // the person: real bilateral asymmetry is under a centimetre for a long bone.
@@ -188,7 +193,8 @@ export function verify(path, {
     const ratio = (length / stature) * 100;
     const ok = ratio >= check.min && ratio <= check.max;
     const deltaMm = ok ? 0 : (ratio - (ratio < check.min ? check.min : check.max)) / 100 * stature * 1000;
-    const disagree = sideError.get(check.part) ?? 0;
+    const poseFree = POSE_DEPENDENT.some(pair => pair.split('/').includes(check.part));
+    const disagree = poseFree ? 0 : (sideError.get(check.part) ?? 0);
     const severe = scanned ? Math.abs(deltaMm) > SEVERE_MISS_MM && disagree > SIDE_DISAGREEMENT_MM
       : Math.abs(deltaMm) > SEVERE_MISS_MM;
     if (severe) ++failures;

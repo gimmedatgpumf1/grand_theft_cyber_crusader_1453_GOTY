@@ -13,50 +13,72 @@ which measures this subject rather than assuming an adult average.
 """
 import numpy as np
 
-SIDE_BY_X = 243.0        # midline column of the Visible Human Female, in mm
-
-
-def side_of(x_mm):
+def side_of(x_mm, midline):
     """Which side of the rig a piece belongs to.
 
     The shipped rig puts the left limb at positive x (`skeleton-male.obj` has
     `clavicle_l` at x +0.011..+0.154), and the scan's x axis maps straight onto
     the game's, so left is above the midline.
     """
-    return 'l' if x_mm > SIDE_BY_X else 'r'
+    return 'l' if x_mm > midline else 'r'
 
 
 def landmarks(components, spacing):
-    """Find the knee, hip, shoulder and ankle heights in this subject.
+    """Find the ankle, knee and hip heights in this subject.
 
-    The fused limb masses make the joints visible as the ends of long
-    components: the thigh mass ends where the shin mass starts, and that seam is
-    the knee.
+    A cadaver scan fuses the thigh to the shin and the shin to the foot, so the
+    joints are not gaps to be found; they are where the two fused masses overlap.
+    Each leg is therefore read as its two masses -- the long one above and the
+    long one below -- and the knee is placed halfway through the overlap, which
+    is the middle of the joint bridge. This has to be derived rather than
+    assumed, because the two cadavers are different heights and neither of them
+    is the population average.
     """
+    top = max((row['hi'][0] + 1) for row in components.values()) * spacing[0]
     masses = []
     for row in components.values():
         lo, hi = np.array(row['lo']), np.array(row['hi'])
         extent = (hi - lo + 1) * spacing
         centre = np.array(row['centroid']) * spacing
-        if row['voxels'] > 150000 and extent[0] > 250:
-            masses.append((centre, extent, row['voxels']))
-    tops = sorted(float(c[0] + e[0] / 2) for c, e, _ in masses)
-    knee = float(np.median([t for t in tops if 350 < t < 650]))
-    hip = float(np.median([t for t in tops if 850 < t < 1000]))
+        # A folded or hanging arm is also one long mass, so only the lower half
+        # of the body can hold a leg.
+        if row['voxels'] > 150000 and extent[0] > 250 and centre[0] < 0.5 * top:
+            masses.append({'low': float(lo[0] * spacing[0]),
+                           'high': float((hi[0] + 1) * spacing[0]),
+                           'x': float(centre[2]), 'voxels': row['voxels']})
+    if not masses:
+        return {'knee': 0.0, 'ankle': 0.0, 'hip': 0.0}
 
-    # The ankle is the joint just above the tarsals, so it is measured from the
-    # foot rather than from the shin. Taking it from where the shin component
-    # happens to end gave 157 mm -- a third of the tibia was being handed to the
-    # foot and the tibia then measured 38 mm short on both legs.
+    # The midline is the middle of the body's own lateral span, so a folded arm
+    # on one side cannot drag it.
+    middle = float((min(row['lo'][2] for row in components.values())
+                    + max(row['hi'][2] for row in components.values()) + 1) * spacing[2] / 2.0)
+    hips, knees = [], []
+    for side in (True, False):
+        leg = [m for m in masses if (m['x'] > middle) == side]
+        if len(leg) < 2:
+            continue
+        leg.sort(key=lambda m: -m['voxels'])
+        upper, lower = leg[0], leg[1]
+        if upper['high'] < lower['high']:
+            upper, lower = lower, upper
+        hips.append(upper['high'])
+        knees.append((upper['low'] + lower['high']) / 2.0)
+
+    # The ankle is the joint just above the tarsals, measured from the foot
+    # rather than from where the shin component happens to end.
     foot_top = 0.0
     for row in components.values():
         lo, hi = np.array(row['lo']), np.array(row['hi'])
         centre = np.array(row['centroid']) * spacing
         extent = (hi - lo + 1) * spacing
-        if centre[0] < 130.0 and max(extent) < 110.0:
+        if centre[0] < 0.15 * max(hips) and max(extent) < 160.0:
             foot_top = max(foot_top, float((hi[0] + 1) * spacing[0]))
-    ankle = foot_top + 5.0
-    return {'knee': knee, 'ankle': ankle, 'hip': hip}
+
+    return {'knee': float(np.median(knees)) if knees else 0.0,
+            'ankle': foot_top + 5.0,
+            'hip': float(np.median(hips)) if hips else 0.0,
+            'midline': middle}
 
 
 def limb_part(centre_mm, extent_mm, voxels, marks, forearm_tips):
@@ -65,8 +87,8 @@ def limb_part(centre_mm, extent_mm, voxels, marks, forearm_tips):
     `centre_mm` and `extent_mm` are in the scan frame: z up, x lateral, y depth.
     """
     z, y, x = float(centre_mm[0]), float(centre_mm[1]), float(centre_mm[2])
-    side = side_of(x)
-    lateral = abs(x - SIDE_BY_X)
+    side = side_of(x, marks['midline'])
+    lateral = abs(x - marks['midline'])
 
     # The hand: whatever sits just beyond the end of a forearm. Her hands rest
     # against her body, so this has to be driven by the arm rather than by

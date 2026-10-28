@@ -62,6 +62,82 @@ def load_atlas(path):
     return {k: np.array(v) for k, v in parts.items() if v}
 
 
+def ball(spacing, radius_mm):
+    """An ellipsoid in voxels that is a sphere in millimetres."""
+    radius = np.asarray(radius_mm, dtype=float) / spacing
+    grid = np.indices([int(2 * r) + 1 for r in radius]).astype(float)
+    grid -= radius.reshape(3, 1, 1, 1)
+    return ((grid / radius.reshape(3, 1, 1, 1)) ** 2).sum(0) <= 1.0
+
+
+def drop_flecks(points, faces, min_diagonal=0.012, rescue_triangles=400, thin_plates=False):
+    """Remove the crumbs a thresholded scan leaves around a bone.
+
+    A ragged cortical shell produces small islands a few millimetres across
+    sitting off the bone. On screen they read as debris floating around the body,
+    and that is a defect the eye finds instantly. Three tests, in order:
+
+    Size. The smallest bone in a body is the sesamoid, about four millimetres;
+    the smallest named bone here -- a distal phalanx -- is over twenty. Anything
+    under a 12 mm diagonal is crumb, whatever its triangle count, because a
+    densely meshed crumb still has thirty faces.
+
+    Flatness, and only where cartilage lives. Calcified costal cartilage survives
+    any density threshold and hangs in the intercostal spaces as flat ribbons
+    that look exactly like debris. A small bone is a barrel six to ten
+    millimetres through; a small ribbon is two millimetres thick. The test is
+    confined to the ribs because the patella is a cortex shell too, and dropping
+    one side's flakes and not the other's breaks the mirror.
+
+    Isolation is judged later, once every part is assembled, because a piece can
+    be alone inside its own group and still be sitting next to its neighbour in
+    the next group along.
+    """
+    if not len(faces):
+        return points, faces
+    parent = list(range(len(points)))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for tri in faces:
+        a = find(int(tri[0]))
+        parent[find(int(tri[1]))] = a
+        parent[find(int(tri[2]))] = a
+    roots = np.array([find(i) for i in range(len(points))])
+    tri_root = roots[faces[:, 0]]
+    root_list = np.unique(tri_root)
+    islands = {}
+    for root in root_list:
+        selected = tri_root == root
+        used = np.unique(faces[selected])
+        cloud = points[used]
+        span = float(np.linalg.norm(cloud.max(0) - cloud.min(0)))
+        flat = False
+        if len(cloud) >= 4:
+            axes = np.linalg.svd(cloud - cloud.mean(0), full_matrices=False)[2]
+            local = cloud @ axes.T
+            flat = thin_plates and span < 0.030 and \
+                float((local.max(0) - local.min(0)).min()) < 0.005
+        keep = (span >= min_diagonal and not flat) or int(selected.sum()) >= rescue_triangles
+        islands[int(root)] = {'keep': keep, 'cloud': cloud, 'span': span}
+    keep_roots = {r for r, v in islands.items() if v['keep']}
+    if not keep_roots:
+        # A whole part below every threshold is not crumb -- it is a small bone.
+        keep_roots = {max(islands, key=lambda r: len(islands[r]['cloud']))}
+    keep_tri = np.isin(tri_root, list(keep_roots))
+    if keep_tri.all():
+        return points, faces
+    faces = faces[keep_tri]
+    used = np.unique(faces)
+    remap = np.full(len(points), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    return points[used], remap[faces]
+
+
 def simplify_piece(points, faces, target):
     """Quadric edge collapse down to `target` triangles, shape left where it was.
 
@@ -78,7 +154,12 @@ def simplify_piece(points, faces, target):
     return out_points.astype(np.float64), out_faces
 
 
-def decimate_group(group, budget, floor=44):
+def thin_part(part):
+    """Where calcified costal cartilage turns up, so the flatness test applies."""
+    return part.startswith(('ribs', 'sternum'))
+
+
+def decimate_group(group, budget, floor=44, part=''):
     """Decimate each bone in a part towards its share of the part's budget."""
     total = sum(len(p['faces']) for p in group)
     out_points, out_faces, offset = [], [], 0
@@ -88,7 +169,100 @@ def decimate_group(group, budget, floor=44):
         out_points.append(points)
         out_faces.append(faces + offset)
         offset += len(points)
-    return np.concatenate(out_points), np.concatenate(out_faces)
+    points = np.concatenate(out_points)
+    faces = np.concatenate(out_faces)
+    return drop_flecks(points, faces, thin_plates=thin_part(part))
+
+
+def count_islands(faces):
+    """Number of connected pieces in a face list, which is the bone count."""
+    parent = {}
+
+    def find(a):
+        parent.setdefault(a, a)
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for tri in faces:
+        a = find(int(tri[0]))
+        for other in tri[1:]:
+            b = find(int(other))
+            if a != b:
+                parent[b] = a
+    return len({find(int(tri[0])) for tri in faces})
+
+
+def strip_orphans(built, span_limit=0.020, gap=0.012):
+    """Drop islands that hang in space, judged against the whole body at once.
+
+    Per-part cleaning cannot see across parts, and a rib tip that lands in the
+    hand group, or a sternal fragment, is only recognisable as debris when the
+    whole skeleton is in view. The size limit is deliberately low, two
+    centimetres, because the one bone that genuinely stands alone is the patella,
+    which floats in the quadriceps tendon a centimetre off the femur -- a wider
+    net would delete real anatomy to catch the same stray twice.
+    """
+    from scipy.spatial import cKDTree
+    points = np.concatenate([p for _, p, _ in built])
+    faces = np.concatenate([f + sum(len(b[1]) for b in built[:i])
+                            for i, (_, _, f) in enumerate(built)])
+    owner = np.concatenate([[i] * len(p) for i, (_, p, _) in enumerate(built)])
+    parent = list(range(len(points)))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for tri in faces:
+        a = find(int(tri[0]))
+        parent[find(int(tri[1]))] = a
+        parent[find(int(tri[2]))] = a
+    roots = np.array([find(i) for i in range(len(points))])
+    tri_root = roots[faces[:, 0]]
+    clouds = {int(r): points[np.unique(faces[tri_root == r])] for r in np.unique(tri_root)}
+    # The largest island of each part always survives. A thin plate such as the
+    # sternum can break into pieces smaller than the span limit, and deleting the
+    # whole bone would be a worse error than keeping a fragment.
+    island_part = {root: int(owner[np.flatnonzero(roots == root)[0]]) for root in clouds}
+    biggest = {}
+    for root, cloud in clouds.items():
+        span = float(np.linalg.norm(cloud.max(0) - cloud.min(0)))
+        part = island_part[root]
+        if part not in biggest or span > biggest[part][0]:
+            biggest[part] = (span, root)
+    protected = {root for _, root in biggest.values()}
+    drop = set()
+    # The sternum is a plate that ossifies in segments and sits between two
+    # cartilages with real gaps; its pieces are anatomy, not debris.
+    keep_solid = {b[0] for b in built if b[0] == 'sternum'}
+    for root, cloud in clouds.items():
+        if root in protected:
+            continue
+        if any(part == 'sternum' for part in keep_solid) and island_part[root] in {
+                i for i, b in enumerate(built) if b[0] in keep_solid}:
+            continue
+        if float(np.linalg.norm(cloud.max(0) - cloud.min(0))) >= span_limit:
+            continue
+        others = np.concatenate([c for r, c in clouds.items() if r != root])
+        if len(others) and cKDTree(others[::max(1, len(others) // 30000)]).query(cloud)[0].min() > gap:
+            drop.add(root)
+    if not drop:
+        return built
+    keep_tri = ~np.isin(tri_root, list(drop))
+    print(f'  removed {len(drop)} islands hanging in space', flush=True)
+    out, base, offset = [], 0, 0
+    for i, (part, p, _) in enumerate(built):
+        own = faces[(owner[faces[:, 0]] == i) & keep_tri] - base
+        used = np.unique(own) if len(own) else np.zeros(0, int)
+        remap = np.full(len(p), -1, np.int64)
+        remap[used] = np.arange(len(used))
+        out.append((part, p[used], remap[own.astype(int)] if len(own) else own))
+        base += len(p)
+    return out
 
 
 def read_component(table, gid, row):
@@ -173,7 +347,7 @@ def parallel_pair(regions):
 
 
 
-def axial_name(point, centre_atlas):
+def axial_name(point, centre_atlas, midline):
     """Nearest atlas part, restricted to the piece's own side.
 
     The atlas is fitted to a cadaver with a single global shift, so on its own it
@@ -181,19 +355,20 @@ def axial_name(point, centre_atlas):
     the left of the midline can only be a left part. The side constraint is what
     makes the mirror check meaningful.
     """
-    side = anatomy.side_of(point[2])
+    side = anatomy.side_of(point[2], midline)
     allowed = [k for k in centre_atlas
                if not (k.endswith('_l') and side == 'r') and not (k.endswith('_r') and side == 'l')]
     distances = np.linalg.norm(np.array([centre_atlas[k] for k in allowed]) - point, axis=1)
     return allowed[int(np.argmin(distances))]
 
 
-def mesh_of(mask, lo, spacing):
+def mesh_of(mask, lo, spacing, part=''):
     """Marching cubes on one mask, in its own bounding box, into game axes."""
     vertices, triangles, _, _ = measure.marching_cubes(mask.astype(np.float32), 0.5,
                                                        spacing=spacing)
     vertices = vertices + lo * spacing
-    return np.stack([vertices[:, 2], vertices[:, 0], -vertices[:, 1]], 1) / 1000.0, triangles
+    points = np.stack([vertices[:, 2], vertices[:, 0], -vertices[:, 1]], 1) / 1000.0
+    return drop_flecks(points, triangles, thin_plates=thin_part(part))
 
 
 def main():
@@ -256,7 +431,31 @@ def main():
     def add(part, mask, lo, count_voxels):
         if count_voxels < args.min_voxels or min(mask.shape) < 2:
             return
-        points, faces = mesh_of(mask, lo, spacing)
+        # A 1600 HU mask keeps two bones apart but keeps only the densest part of
+        # each one, which shreds thin plates: the pelvis, the scapulae and the
+        # sternum are two to four millimetres thick, and at 1600 their surface
+        # breaks into shards. So the piece is grown back to its real extent at
+        # 1200 HU -- above soft tissue, below cortical peak -- but only inside
+        # its own neighbourhood, so the separation decided at 1600 stands.
+        # Fingers and toes are small bones in a small space: a phalanx is six
+        # millimetres of cortex, so a tight regrowth leaves the digits as loose
+        # slats that read as debris. They get a wider reach and a lower floor.
+        close_part = part.startswith(('hand', 'foot')) or part == 'sternum'
+        reach, floor, radius = (4, 1000, 2.5) if close_part else (2, 1200, 1.5)
+        crop = np.asarray(raw[lo[0]:lo[0] + mask.shape[0], lo[1]:lo[1] + mask.shape[1],
+                             lo[2]:lo[2] + mask.shape[2]])
+        near = ndi.binary_dilation(mask, structure, iterations=reach)
+        mask = mask | (near & (crop > floor))
+        # A cortical shell is one to two millimetres thick, so a 1600 HU mask of
+        # it is full of pinholes and the marching-cubes surface comes out torn.
+        # Torn surfaces read as debris on screen. Closing with a 1.5 mm ball
+        # makes every bone watertight (zero boundary edges, measured) and adds
+        # about four per cent of volume, which is far cheaper than the holes.
+        mask = ndi.binary_fill_holes(ndi.binary_closing(
+            ndi.binary_opening(mask, structure, iterations=1), ball(spacing, radius)))
+        if int(mask.sum()) < args.min_voxels:
+            return
+        points, faces = mesh_of(mask, lo, spacing, part)
         pieces.append({'part': part, 'points': points, 'faces': faces, 'voxels': count_voxels})
 
     # ------------------------------------------- fused limb masses, cut at joints
@@ -279,7 +478,7 @@ def main():
                 sizes = [int(r.sum()) for r in regions]
                 humerus = int(np.argmax(sizes))
                 side = anatomy.side_of((np.argwhere(regions[humerus])[:, 2].mean()
-                                        + lo[2]) * spacing[2])
+                                        + lo[2]) * spacing[2], marks['midline'])
                 shoulder = np.argwhere(regions[humerus]).mean(0)
                 forearm = np.zeros(volume.shape, dtype=bool)
                 for k, mask in enumerate(regions):
@@ -305,7 +504,7 @@ def main():
             # the joint heights measured on this subject. Splitting a leg by
             # dense cores finds the tibia and the fibula -- two bones that run
             # side by side down the whole shin -- and cuts the leg lengthwise.
-            side = anatomy.side_of(centre[2])
+            side = anatomy.side_of(centre[2], marks['midline'])
             points = np.argwhere(volume)
             height = (points[:, 0] + lo[0]) * spacing[0]
             for part, low, high in ((f'foot_{side}', -1.0, marks['ankle']),
@@ -333,7 +532,7 @@ def main():
             part = anatomy.limb_part(piece_centre, piece_extent, int(mask.sum()), marks,
                                      forearm_tips)
             if part is None:
-                part = axial_name(piece_centre, centre_atlas)
+                part = axial_name(piece_centre, centre_atlas, marks['midline'])
             add(part, mask, lo, int(mask.sum()))
         print(f'  mass {gid}: trunk split into {len(regions)}', flush=True)
         del volume
@@ -370,7 +569,7 @@ def main():
             part = anatomy.limb_part(piece_centre, piece_extent, len(voxels), marks,
                                      forearm_tips)
             if part is None:
-                part = axial_name(piece_centre, centre_atlas)
+                part = axial_name(piece_centre, centre_atlas, marks['midline'])
             add(part, volume, lo, len(voxels))
         del volume
 
@@ -397,14 +596,18 @@ def main():
              '# Units: metres, soles on y = 0, facing +z.',
              '# See tools/skeleton-source/ATTRIBUTION.md.']
     report, running, verts_total, faces_total = [], 1, 0, 0
+    built = []
     for part in PART_ORDER:
         if part not in groups:
             continue
         group = groups[part]
         own = sum(len(p['faces']) for p in group)
         points_out, faces = decimate_group(group, max(160, int(round(
-            args.triangles * own / total_faces))))
-        points_out = points_out + fall
+            args.triangles * own / total_faces))), part=part)
+        built.append((part, points_out + fall, faces))
+    built = strip_orphans(built)
+    built = [b for b in built if len(b[2])]
+    for part, points_out, faces in built:
         lines.append(f'o {part}')
         for v in points_out:
             lines.append(f'v {v[0]:.5f} {v[1]:.5f} {v[2]:.5f}')
@@ -414,7 +617,7 @@ def main():
         verts_total += len(points_out)
         faces_total += len(faces)
         report.append({'name': part, 'vertices': int(len(points_out)),
-                       'triangles': int(len(faces)), 'bones': len(group),
+                       'triangles': int(len(faces)), 'bones': count_islands(faces),
                        'bbox': {'low': points_out.min(0).tolist(),
                                 'high': points_out.max(0).tolist()}})
 

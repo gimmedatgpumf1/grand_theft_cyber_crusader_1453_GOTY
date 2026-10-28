@@ -147,17 +147,43 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.
 | | female |
 | --- | --- |
 | source | Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane, 1.0 mm slices |
-| threshold | 1600 HU |
+| threshold | 1600 HU for separation, regrown at 1200 HU within its own neighbourhood |
 | components | 401 |
-| bones in each foot | **29** |
+| bones in each foot | **19 islands, 26 bones** |
 | rig parts | 28 |
-| individual bones | 442 |
-| mesh | 62,077 vertices, 130,728 triangles |
-| stature | **1.713 m**, soles at y = 0.000, never scaled |
-| hip height | 52.0% of stature |
+| individual bones | 374 |
+| mesh | 61,700 vertices, 122,382 triangles |
+| stature | **1.712 m**, soles at y = 0.000, never scaled |
+| hip height | 51.2% of stature |
 | knee height | 27.0% of stature |
-| mirror error, long bones | 4.5 mm femur, 6.1 mm shin, 10.8 mm humerus, 9.8 mm forearm |
+| mirror error, long bones | 3.1 mm femur, 7.2 mm shin, 6.9 mm humerus, 7.7 mm forearm |
+| shells under 12 mm | **0** (was 187; 75 of them under 8 mm) |
 | result | **PASSED** |
+
+### Why her first scan build was covered in white specks
+
+The first scanned build passed the verifier and still looked broken on screen,
+because the defect was sub-centimetre and the verifier measures lengths. Three
+separate faults were behind it, and all three had to be fixed:
+
+- **The threshold.** A 1600 HU mask separates two bones, but it keeps only the
+  densest part of each one. The pelvis, the scapulae and the sternum are two to
+  four millimetres thick, so what survived was their cortical rim, and the rim
+  of a curved plate is a scatter of shards. Every piece is now regrown to its
+  real extent at 1200 HU -- above soft tissue, below cortical peak -- inside a
+  two-voxel neighbourhood, so the separation decided at 1600 still stands.
+- **The holes.** A cortical shell thresholded at any level is full of pinholes,
+  and marching cubes then draws a torn surface that reads as debris. Closing
+  with a 1.5 mm ball measured on the real voxel size (1.0 x 0.7227 x 0.7227 mm)
+  took the largest hip-band shell from 74 open boundary edges to **0** while
+  *reducing* its triangle count.
+- **The crumbs.** Islands under a 12 mm diagonal are not bone. Nothing in a
+  skeleton is smaller: the smallest named bone here, a distal phalanx, is over
+  twenty millimetres. Calcified costal cartilage also survives every threshold
+  and hangs in the intercostal spaces as flat ribbons, so small, thin islands are
+  dropped from the ribs alone -- the patella is a cortex shell too, and dropping
+  one side's flakes and not the other's breaks the mirror.
+
 ### The male was rebuilt at higher detail
 
 His first build spent 18,699 triangles on the whole body, which left a rib with
@@ -183,9 +209,11 @@ because the two bodies are different people rather than one model and one warp:
   differ, a deformed body's do not agree with each other. On her, every
   out-of-band part is bilateral -- humerus 10.8 mm, forearm 9.8 mm, femur
   4.5 mm -- so they are reported as `individual`.
-- **pose-dependent pairs** -- clavicle, scapula, rib -- are not compared between
-  sides for a scanned body. She was scanned lying down with her arms folded, and
-  that moves a shoulder by centimetres without anything being wrong.
+- **pose-dependent pairs** -- clavicle, scapula, rib, hand -- are not compared
+  between sides for a scanned body. She was scanned lying down with her arms
+  folded across her abdomen, and that moves a shoulder by centimetres and puts
+  her two hands a centimetre apart in height without anything being wrong. Her
+  hands are still measured for length; only the side comparison is skipped.
 - **joint heights** were added. They do not depend on sex, on pose or on
   stature: the hip is at 52% of a skeleton's height and the knee at 27%. That is
   what catches a body that has been stretched or squeezed even when every long
