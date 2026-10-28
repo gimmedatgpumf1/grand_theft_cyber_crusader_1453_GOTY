@@ -194,7 +194,14 @@ def main():
     if not store:
         sys.exit('no geometry extracted -- every structure was skipped')
 
+    # `--out` is whatever the caller typed. numpy silently appends .npz to a name
+    # that lacks it, which once wrote the mesh beside an empty directory that had
+    # been created at the same path -- so the file is resolved here, explicitly.
     out = Path(args.out)
+    if out.is_dir():
+        out = out / f'{args.subject}.npz'
+    elif out.suffix.lower() != '.npz':
+        out = Path(f'{out}.npz')
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, **store)
     allv = np.concatenate([store[k] for k in store if k.startswith('v_')])
@@ -208,7 +215,9 @@ def main():
         'note': 'Vertices are registered template shapes, one per bone. Nothing is scaled.',
     }
     out.with_suffix('.json').write_text(json.dumps(manifest_doc, indent=1))
-    print(f'\nwrote {out} ({out.stat().st_size / 1e6:.1f} MB) and {out.with_suffix(".json").name}')
+    manifest_path = out.with_suffix('.json')
+    print(f'\nwrote {out} ({out.stat().st_size / 1e6:.1f} MB) and '
+          f'{manifest_path.name} ({manifest_path.stat().st_size / 1e3:.0f} kB)')
     print(f'  {len(manifest)} bones, longest axis of the whole body {span.max():.1f} raw units')
     if skipped:
         print(f'  {len(skipped)} skipped: {skipped[:4]}{" ..." if len(skipped) > 4 else ""}')
