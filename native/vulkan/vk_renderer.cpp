@@ -662,7 +662,7 @@ bool selfTest() {
         vertex.x = vertices[index * 3 + 0];
         vertex.y = vertices[index * 3 + 1];
         vertex.z = vertices[index * 3 + 2];
-        vertex.nz = -1.0f;
+        vertex.setNormal(0.0, 0.0, -1.0);
         batch.vertices.push_back(vertex);
     }
     scene.batches.push_back(batch);

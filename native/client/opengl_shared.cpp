@@ -36,6 +36,9 @@ constexpr gl::Enum frontAndBack = 0x0408;
 constexpr gl::Enum depthBufferBit = 0x00000100;
 constexpr gl::Enum colorBufferBit = 0x00004000;
 constexpr gl::Enum floatType = 0x1406;
+// GL_BYTE on a normal array is normalised by the fixed-function pipeline: the
+// same eight-bit packing the Vulkan pipeline declares as R8G8B8A8_SNORM.
+constexpr gl::Enum byteType = 0x1400;
 constexpr gl::Enum unsignedByte = 0x1401;
 constexpr gl::Enum shininess = 0x1601;
 constexpr gl::Enum ambientAndDiffuse = 0x1602;
@@ -533,14 +536,14 @@ bool OpenGlRenderer::render(const GpuScene& scene, NativeFrame& frame) {
                     bufferRevisions_[batchIndex] = batch.revision;
                 }
                 api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), nullptr);
-                api_.normalPointer(c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 3));
-                api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(sizeof(gl::Float) * 6));
+                api_.normalPointer(c::byteType, sizeof(GpuVertex), reinterpret_cast<const void*>(offsetof(GpuVertex, nx)));
+                api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), reinterpret_cast<const void*>(offsetof(GpuVertex, u)));
                 uploaded = true;
             }
         }
         if (!uploaded) {
             api_.vertexPointer(3, c::floatType, sizeof(GpuVertex), &vertices->x);
-            api_.normalPointer(c::floatType, sizeof(GpuVertex), &vertices->nx);
+            api_.normalPointer(c::byteType, sizeof(GpuVertex), &vertices->nx);
             api_.texCoordPointer(2, c::floatType, sizeof(GpuVertex), &vertices->u);
         }
         api_.drawArrays(c::triangles, 0, static_cast<gl::Sizei>(batch.vertices.size()));

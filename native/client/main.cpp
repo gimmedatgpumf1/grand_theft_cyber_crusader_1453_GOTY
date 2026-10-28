@@ -10,6 +10,7 @@
 #include "vulkan/vk_renderer.h"
 
 #include <algorithm>
+#include <numeric>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -330,15 +331,23 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // the device until frames stop getting faster rather than for a
             // fixed count: a fixed count was still 60% off at the end of the run.
             {
-                double previous = 0.0;
-                int used = 0;
+                // Stable means a whole window of frames, not one that happens not
+                // to beat the frame before it: single-frame comparisons break on
+                // noise after a handful of frames and measure a cold device.
+                std::vector<double> window;
+                window.reserve(1024);
                 for (int warmUp = 0; warmUp < 400; ++warmUp) {
                     const double frameStart = nowMs();
                     gtc::native::renderVulkanScene(skull.scene, frame);
-                    const double spent = nowMs() - frameStart;
-                    ++used;
-                    if (used > 8 && spent > previous * 0.97) break;
-                    previous = spent;
+                    window.push_back(nowMs() - frameStart);
+                    const std::size_t count = window.size();
+                    if (count < 24) continue;
+                    const auto first = window.begin() + static_cast<long>(count - 8);
+                    const auto last = window.begin() + static_cast<long>(count);
+                    const double recent = std::accumulate(first, last, 0.0) / 8.0;
+                    const double earlier = std::accumulate(window.begin() + static_cast<long>(count - 16),
+                                                           first, 0.0) / 8.0;
+                    if (recent < earlier * 1.03 && recent > earlier * 0.97) break;
                 }
                 gtc::native::drainVulkan();
             }
@@ -750,18 +759,40 @@ int main(int argc, char** argv) {
                 worst = std::max(worst, std::abs(x - expected->x));
                 worst = std::max(worst, std::abs(y - expected->y));
                 worst = std::max(worst, std::abs(z - expected->z));
+                // Normals are packed as signed bytes, so a comparison of two
+                // zeroes proves nothing: a collapsed normal has to fail here.
+                const double restLength = std::max({std::abs(static_cast<double>(vertex.nx)),
+                                                    std::abs(static_cast<double>(vertex.ny)),
+                                                    std::abs(static_cast<double>(vertex.nz))});
+                if (restLength < 100.0) {
+                    std::cerr << "pose check: a rest normal is degenerate (" << restLength
+                              << " of 127)\n";
+                    return 1;
+                }
                 const double nx = m[0] * vertex.nx + m[4] * vertex.ny + m[8] * vertex.nz;
                 const double ny = m[1] * vertex.nx + m[5] * vertex.ny + m[9] * vertex.nz;
                 const double nz = m[2] * vertex.nx + m[6] * vertex.ny + m[10] * vertex.nz;
-                worstNormal = std::max(worstNormal, std::abs(nx - expected->nx));
-                worstNormal = std::max(worstNormal, std::abs(ny - expected->ny));
-                worstNormal = std::max(worstNormal, std::abs(nz - expected->nz));
+                // The packed vectors are scaled, not unit, so what is compared
+                // is the direction: both sides are normalised first.
+                const double gotLength = std::sqrt(nx * nx + ny * ny + nz * nz);
+                const double wantLength = std::sqrt(static_cast<double>(expected->nx) * expected->nx +
+                                                    static_cast<double>(expected->ny) * expected->ny +
+                                                    static_cast<double>(expected->nz) * expected->nz);
+                if (gotLength < 1e-9 || wantLength < 1e-9) {
+                    std::cerr << "pose check: a normal collapsed to nothing\n";
+                    return 1;
+                }
+                worstNormal = std::max(worstNormal, std::abs(nx / gotLength - expected->nx / wantLength));
+                worstNormal = std::max(worstNormal, std::abs(ny / gotLength - expected->ny / wantLength));
+                worstNormal = std::max(worstNormal, std::abs(nz / gotLength - expected->nz / wantLength));
                 ++posedIndex;
             }
         }
         // A millimetre on a 1.7 m body is far tighter than anything the eye can
         // see, and loose enough for float rounding on the way through.
-        if (worst > 0.001 || worstNormal > 0.001) {
+        // Byte quantisation is worth about 1 part in 127, and the two paths
+        // round at different moments, so a couple of units is the honest bar.
+        if (worst > 0.001 || worstNormal > 0.02) {
             std::cerr << "pose check: rest geometry does not match the posed geometry (worst "
                       << worst * 1000.0 << " mm, normal " << worstNormal << ")\n";
             return 1;
