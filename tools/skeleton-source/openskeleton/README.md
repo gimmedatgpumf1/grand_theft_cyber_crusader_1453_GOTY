@@ -1,0 +1,81 @@
+# OpenSkeleton — the female body after the Visible Human
+
+The Visible Human Female is the only open *full* female skeleton that exists, and
+she is a 1995 cadaver: 1 mm CT slices, 88 kg, BMI 35.7. Her thin plates and her
+fingers are the parts that segment badly, which is what the debris work kept
+fighting. `../docs/selecting-the-female-source.md` records why no other open
+dataset can replace her.
+
+OpenSkeleton is the first dataset that can: **51 female cadavers**, thin-slice
+CT, **182 skeletal structures**, registered so that every subject carries the
+same structure list.
+
+| | |
+| --- | --- |
+| record | [10.5281/zenodo.22833546](https://doi.org/10.5281/zenodo.22833546) |
+| licence | **CC BY 4.0** |
+| subjects | 102 (51 female, 51 male), New Mexico Decedent Image Database |
+| structures | 182 per subject, complete skeleton |
+| creators | Duquesne K., BioCAT, Destryker T., Segers V., Audenaert E. — Ghent University |
+
+## Why nothing is committed from it yet
+
+The sandbox can only reach github.com, codeload, npm and PyPI. `zenodo.org`
+answers `000` on connect, so the archive cannot be fetched from here. The data
+must either be unblocked for `zenodo.org` (plus the storage host it redirects
+to) or placed in a directory by hand.
+
+## Files it ships
+
+Download into one directory — `/tmp/openskeleton` is the convention used below,
+because a 2.5 GB file must never land inside the repository.
+
+| file | size | md5 | needed |
+| --- | --- | --- | --- |
+| `NM_combined.mat` | 2.5 GB | `0769259cb6ca6e1cf94eac9d62f64514` | **yes** — LEXT + torso + upper limbs already in one frame |
+| `Faces.mat` | 7.3 MB | `2dd92c125004b59f7c0ae1e8fc5d4344` | **yes** — triangulation of every structure |
+| `Metadata.mat` | 76.9 kB | `204bac57b635aed7e01447cb804f29c7` | **yes** — sex, age, stature per subject |
+| `NM_LEXT.mat` + `NM_UEXT.mat` | 519 + 621 MB | see record | alternative to `NM_combined`, arms need re-registering |
+| `EXAMPLE_GetData.m` | 914 B | `9c034c1639304863c65d45c926546203` | useful — the authors' own access pattern |
+
+Direct URLs follow the form
+`https://zenodo.org/api/records/22833546/files/<name>/content`.
+
+## Order of work once the files are present
+
+```sh
+python3 tools/skeleton-source/openskeleton/inspect-mat.py /tmp/openskeleton
+```
+
+Prints the struct layout, the field names and the structure list. Only after
+that is real can the subject choice and the part mapping be written, because
+every guess about a MATLAB struct's shape costs a rebuild.
+
+Then, in order:
+
+1. **Pick the subject.** A female whose CT-measured stature is closest to
+   1.70 m. Her height is hers: it is never scaled to fit, exactly as with the
+   two bodies already shipped.
+2. **Join the frame.** `NM_combined` already carries the upper limbs in the
+   torso frame; verify that by checking shoulder-to-hip distances against the
+   metadata rather than trusting the field name.
+3. **Map 182 structures onto the 28 rig parts** (`PART_ORDER` in
+   `../02-bones.py`), keeping every named bone separate — 27 bones per hand and
+   26 per foot are acceptance criteria, so grouped structures are not good
+   enough.
+4. **Emit the OBJ contract**: metres, soles at y = 0, facing +z, `o <part>`
+   blocks, 1-based faces without `//`.
+5. **Verify before shipping**: `node tools/skeleton-source/verify-obj.mjs
+   <obj> --sex female --scanned`, then the shell census, then the test-room
+   render at 1568 x 929, zoomed on the hands, feet and sternum.
+
+## What it will and will not fix
+
+It fixes the things that made her look wrong: thin plates that a 1 mm 1995 CT
+cannot resolve, fingers modelled as loose slats, and a donor whose body habitus
+was unlike a game character.
+
+It does not change the pipeline's contract. The parts, the rig, the verifier and
+the test room stay exactly as they are; only the geometry behind them is
+replaced, and both bodies must still pass `tests/run_tests.sh` before anything
+is pushed.
