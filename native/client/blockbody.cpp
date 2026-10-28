@@ -388,6 +388,28 @@ void drawBlockAccessories(Rasterizer& rasterizer, const Camera& camera,
             headQuad(rasterizer, camera, headPoint, panel, eye);
         }
     }
+    // Nose and mouth. Two quads and a shading panel are enough to read as a
+    // face at arm's length, which is the range this body is meant to be seen
+    // from; the imported scan's per-pore detail never survived it anyway.
+    {
+        Material nose;
+        nose.color = skinColor(character.appearance.skin) * 0.88;
+        const double tip = face + 0.020;
+        const Vec3 bridge[4] = {{-0.012, 1.618, face}, {0.012, 1.618, face},
+                                {0.012, 1.672, face}, {-0.012, 1.672, face}};
+        headQuad(rasterizer, camera, headPoint, bridge, nose);
+        for (int side = 0; side < 2; ++side) {
+            const double x = side == 0 ? 0.012 : -0.012;
+            const Vec3 flank[4] = {{x, 1.672, face}, {x, 1.672, tip},
+                                   {x, 1.618, tip}, {x, 1.618, face}};
+            headQuad(rasterizer, camera, headPoint, flank, nose);
+        }
+        Material mouth;
+        mouth.color = colorHex("#6d3b34");
+        const Vec3 lips[4] = {{-0.030, 1.576, face}, {0.030, 1.576, face},
+                              {0.030, 1.588, face}, {-0.030, 1.588, face}};
+        headQuad(rasterizer, camera, headPoint, lips, mouth);
+    }
     if (character.appearance.beard > 0) {
         Material beard;
         beard.color = hairColor(character.appearance.hairColor) * 0.85;
