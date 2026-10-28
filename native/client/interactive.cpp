@@ -143,10 +143,6 @@ public:
                 // The room is the one path with no overlay drawn over it on the
                 // CPU, so its frame can go straight to the window.
                 frame.wantPixels = false;
-                // The room draws no overlay of its own: nothing may be laid out
-                // as quads that nobody is going to draw.
-                frame.uiOnGpu = false;
-                frame.uiDrawn = false;
                 room_.render(frame, view_, seconds);
                 renderMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
                 view_.frameMilliseconds = view_.frameMilliseconds > 0
@@ -169,21 +165,8 @@ public:
             // out of the device and a second one back into the window: two
             // passes over every pixel of every frame, to arrive where the
             // device's own bytes already were.
-            // The HUD is quads now, blended by the device into the same pass as
-            // the scene, so the picture is finished where it was drawn: no copy
-            // back to the host, no second pass over every pixel in the window.
-            // A screenshot asks for pixels, and only a screenshot does.
-            const bool overlayOnGpu = view_.gpu && !screenshot_ && std::string(window_.backend()) == "vulkan";
-            frame.wantPixels = !overlayOnGpu;
-            frame.wantsBgra = !overlayOnGpu;
-            frame.uiOnGpu = overlayOnGpu;
-            frame.uiDrawn = false;
-            frame.width = std::max(1, view_.width);
-            frame.height = std::max(1, view_.height);
-            if (overlayOnGpu) {
-                frame.logicalUi();
-                drawOverlay(frame);
-            }
+            frame.wantPixels = true;
+            frame.wantsBgra = true;
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 // A frame that will not draw is the end of the run. Falling back
                 // to the software rasterizer hid a broken backend behind a slow
@@ -194,11 +177,9 @@ public:
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
-            if (!overlayOnGpu) {
-                const auto overlayStart = Clock::now();
-                drawOverlay(frame);
-                renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
-            }
+            const auto overlayStart = Clock::now();
+            drawOverlay(frame);
+            renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;
             view_.logicMilliseconds = logicMilliseconds;
             const auto presentStart = Clock::now();

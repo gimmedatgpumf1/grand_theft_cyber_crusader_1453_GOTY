@@ -500,50 +500,29 @@ bool Renderer::createPipeline() {
         return false;
     }
 
-    // The overlay is drawn in the same pass, after the scene, with the same
-    // shaders: what it needs is blending and no depth test, and both are
-    // pipeline state rather than a second pass.
-    VkPipelineDepthStencilStateCreateInfo depthUi = depth;
-    depthUi.depthTestEnable = VK_FALSE;
-    depthUi.depthWriteEnable = VK_FALSE;
-    VkPipelineColorBlendAttachmentState blendUi = blend;
-    blendUi.blendEnable = VK_TRUE;
-    blendUi.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blendUi.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendUi.colorBlendOp = VK_BLEND_OP_ADD;
-    blendUi.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendUi.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendUi.alphaBlendOp = VK_BLEND_OP_ADD;
-    VkPipelineColorBlendStateCreateInfo blendingUi = blending;
-    blendingUi.pAttachments = &blendUi;
-
-    // Eight pipelines from one call: with and without a texture coordinate, into
-    // the pass that clears and into the pass that does not, for the scene and for
-    // the overlay. A pipeline is built against a render pass, so they have to
-    // exist as pairs.
-    VkGraphicsPipelineCreateInfo info[8]{};
-    for (int index = 0; index < 8; ++index) {
-        const bool overlay = index >= 4;
-        const int shape = index & 3;
+    // Four pipelines from one call: with and without a texture coordinate, into
+    // the pass that clears and into the pass that does not. A pipeline is built
+    // against a render pass, so they have to exist as pairs.
+    VkGraphicsPipelineCreateInfo info[4]{};
+    for (int index = 0; index < 4; ++index) {
         VkGraphicsPipelineCreateInfo& entry = info[index];
         entry.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         entry.stageCount = 2;
         entry.pStages = stages;
-        entry.pVertexInputState = &vertexInput[shape / 2];
+        entry.pVertexInputState = &vertexInput[index / 2];
         entry.pInputAssemblyState = &assembly;
         entry.pViewportState = &viewport;
         entry.pRasterizationState = &raster;
         entry.pMultisampleState = &multisample;
-        entry.pDepthStencilState = overlay ? &depthUi : &depth;
-        entry.pColorBlendState = overlay ? &blendingUi : &blending;
+        entry.pDepthStencilState = &depth;
+        entry.pColorBlendState = &blending;
         entry.pDynamicState = &dynamic;
         entry.layout = pipelineLayout_;
         entry.subpass = 0;
-        entry.renderPass = shape % 2 == 0 ? renderPass_ : renderPassCovered_;
+        entry.renderPass = index % 2 == 0 ? renderPass_ : renderPassCovered_;
     }
-    VkPipeline built[8] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                           VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 8, info, nullptr, built);
+    VkPipeline built[4] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 4, info, nullptr, built);
     destroyShaderModule(device_, vertexModule, nullptr);
     destroyShaderModule(device_, fragmentModule, nullptr);
     if (result != VK_SUCCESS) {
@@ -554,10 +533,6 @@ bool Renderer::createPipeline() {
     pipelineCovered_ = built[1];
     pipelineUv_ = built[2];
     pipelineUvCovered_ = built[3];
-    pipelineUi_ = built[4];
-    pipelineUiCovered_ = built[5];
-    pipelineUiUv_ = built[6];
-    pipelineUiUvCovered_ = built[7];
     return true;
 }
 

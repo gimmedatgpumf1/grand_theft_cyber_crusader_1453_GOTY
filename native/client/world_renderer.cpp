@@ -721,29 +721,6 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     const auto profileStart = std::chrono::steady_clock::now();
     Camera camera = viewCamera(world, state, localId, view);
     camera.worldSpaceGpu = view.gpu;
-    // The overlay is laid out, not drawn, and only then given to whichever side
-    // of the bus is going to show it: the device blends it in the same pass as
-    // the scene, the host writes it into the pixels it already has.
-    const auto drawOverlayHud = [&] {
-        const auto hudStart = std::chrono::steady_clock::now();
-        drawLabels(frame, camera, state, localId);
-        const auto labelsEnd = std::chrono::steady_clock::now();
-        frame.logicalUi();
-        drawHud(frame, world, state, localId, view);
-        const auto panelEnd = std::chrono::steady_clock::now();
-        drawCrosshair(frame, view);
-        const auto crossEnd = std::chrono::steady_clock::now();
-        recordHudMilliseconds(std::chrono::duration<double, std::milli>(crossEnd - hudStart).count());
-        if (std::getenv("GTC_HUD_PROFILE")) {
-            const auto ms = [](auto from, auto to) {
-                return std::chrono::duration<double, std::milli>(to - from).count();
-            };
-            std::fprintf(stderr,
-                         "[hud] labels %.3f panels+text %.3f crosshair %.3f ms | rects %.3f ms %ld px, text %.3f ms %ld px\n",
-                         ms(hudStart, labelsEnd), ms(labelsEnd, panelEnd), ms(panelEnd, crossEnd),
-                         rectangleMilliseconds, rectanglePixels, textMilliseconds, textPixels);
-        }
-    };
     const bool rebuild = !view.gpu || !gpuValid_ || !sameGeometry(gpuGeometryState_, state) || gpuLocalId_ != localId ||
         gpuMode_ != static_cast<int>(view.mode) || gpuHighlight_ != view.highlightToilet;
     auto humanStart = profileStart;
@@ -852,18 +829,6 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         gpuScene_.focal = camera.focal();
         gpuScene_.viewMatrix = camera.viewMatrix();
         updateObjectTransforms(gpuScene_, state);
-        // The overlay is quads from here on: laid out against this frame's size,
-        // appended to the scene, and drawn by the device after it. A frame that
-        // carries one is finished on the device, so it is not copied back.
-        gpuScene_.batches.resize(std::min(gpuScene_.batches.size(), gpuStaticBatchCount_ + gpuPuddleBatchCount_));
-        frame.width = gpuScene_.width;
-        frame.height = gpuScene_.height;
-        frame.uiQuads.clear();
-        frame.uiOnGpu = true;
-        frame.uiDrawn = false;
-        drawOverlayHud();
-        appendOverlay(gpuScene_, frame);
-        frame.uiQuads.clear();
         if (!renderGpuScene(gpuScene_, frame)) {
             error = "Native GPU scene rendering failed";
             return false;
@@ -875,9 +840,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     // the rgb form has a mask to check.
     const bool havePixels = frame.canvasIsBgra() ||
         (frame.rgb.size() == framePixels * 3 && frame.alpha.size() == framePixels);
-    // A presented frame has nothing in host memory by design: the picture went to
-    // the window from the device, overlay and all.
-    if (view.gpu && !havePixels && !frame.presented) {
+    if (view.gpu && !havePixels) {
         error = "Native GPU scene rendering failed";
         return false;
     }
@@ -890,7 +853,24 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
                   << " humans=" << milliseconds(humanStart, finishStart)
                   << " finish=" << milliseconds(finishStart, end) << " ms\n";
     }
-    if (!view.gpu) drawOverlayHud();
+    const auto hudStart = std::chrono::steady_clock::now();
+    drawLabels(frame, camera, state, localId);
+    const auto labelsEnd = std::chrono::steady_clock::now();
+    frame.logicalUi();
+    drawHud(frame, world, state, localId, view);
+    const auto panelEnd = std::chrono::steady_clock::now();
+    drawCrosshair(frame, view);
+    const auto crossEnd = std::chrono::steady_clock::now();
+    recordHudMilliseconds(std::chrono::duration<double, std::milli>(crossEnd - hudStart).count());
+    if (std::getenv("GTC_HUD_PROFILE")) {
+        const auto ms = [](auto from, auto to) {
+            return std::chrono::duration<double, std::milli>(to - from).count();
+        };
+        std::fprintf(stderr,
+                     "[hud] labels %.3f panels+text %.3f crosshair %.3f ms | rects %.3f ms %ld px, text %.3f ms %ld px\n",
+                     ms(hudStart, labelsEnd), ms(labelsEnd, panelEnd), ms(panelEnd, crossEnd),
+                     rectangleMilliseconds, rectanglePixels, textMilliseconds, textPixels);
+    }
     return true;
 }
 
