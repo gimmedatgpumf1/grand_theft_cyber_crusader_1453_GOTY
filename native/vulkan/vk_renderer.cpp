@@ -10,10 +10,29 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
+#include <cstdlib>
 #include <functional>
 
 namespace gtc::native {
 namespace detail {
+
+namespace {
+
+// Stage timing, off unless asked for: `GTC_VK_PROFILE=1`. The point is to name
+// the stage that costs, because "Vulkan is slow" says nothing about which of
+// four things is slow.
+bool profiling() {
+    static const bool on = std::getenv("GTC_VK_PROFILE") != nullptr;
+    return on;
+}
+
+double milliseconds() {
+    using namespace std::chrono;
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+
+} // namespace
 
 bool Renderer::submitNow(const std::function<void(VkCommandBuffer)>& body) {
     VkCommandBuffer buffer = VK_NULL_HANDLE;
@@ -196,8 +215,16 @@ bool Renderer::createTargets(int width, int height) {
     if (createBuffer(device_, &readback, nullptr, &target_.readback) != VK_SUCCESS) return false;
     VkMemoryRequirements requirements{};
     getBufferMemoryRequirements(device_, target_.readback, &requirements);
+    // Cached and coherent if the device offers it: the host reads this buffer
+    // every frame, and write-combined memory turns that read into a stream of
+    // uncached bus transactions.
+    const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    const std::uint32_t type = pick(requirements.memoryTypeBits, wanted);
+    std::uint32_t type = pick(requirements.memoryTypeBits, ideal);
+    target_.readbackCached = type != memory.memoryTypeCount;
+    if (!target_.readbackCached) type = pick(requirements.memoryTypeBits, wanted);
+    tracef("vk: readback memory %s", target_.readbackCached ? "host cached" : "host visible only");
     if (type == memory.memoryTypeCount) return false;
     VkMemoryAllocateInfo allocate{};
     allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -207,6 +234,7 @@ bool Renderer::createTargets(int width, int height) {
     if (bindBufferMemory(device_, target_.readback, target_.readbackMemory, 0) != VK_SUCCESS) return false;
     if (mapMemory(device_, target_.readbackMemory, 0, VK_WHOLE_SIZE, 0, &target_.readbackMap) != VK_SUCCESS) return false;
 
+    target_.staging.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
     target_.width = width;
     target_.height = height;
     return true;
@@ -433,6 +461,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // The first frames are written down step by step: if the process dies in a
     // driver, the last line names the call that was in flight.
     const bool traced = frames_ < 3;
+    const bool profile = profiling();
+    const double setupStart = profile ? milliseconds() : 0.0;
     if (traced) tracef("vk: frame %d begin %dx%d", frames_, scene.width, scene.height);
     const int width = std::max(1, scene.width);
     const int height = std::max(1, scene.height);
@@ -500,6 +530,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     frameMap_->eye[2] = static_cast<float>(-(view[8] * tx + view[9] * ty + view[10] * tz));
     frameMap_->eye[3] = 1.0f;
 
+    const double recordedStart = profile ? milliseconds() : 0.0;
+    if (profile && frames_ < 5) {
+        std::printf("    [vk] setup (targets, upload, textures): %.2f ms\n", recordedStart - setupStart);
+    }
     if (resetCommandBuffer(command_, 0) != VK_SUCCESS) { tracef("vk: frame %d reset failed", frames_); return false; }
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -608,6 +642,11 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
 
     // Nothing else to order here: the fence below is what makes the copy
     // visible to the host read, and HOST is not a stage a barrier may name.
+    const double submittedStart = profile ? milliseconds() : 0.0;
+    if (profile && frames_ < 5) {
+        std::printf("    [vk] record (barriers, pass, %zu draws): %.2f ms\n",
+                    scene.batches.size(), submittedStart - recordedStart);
+    }
     if (traced) tracef("vk: frame %d recorded", frames_);
     if (endCommandBuffer(command_) != VK_SUCCESS) { tracef("vk: frame %d end failed", frames_); return false; }
     VkSubmitInfo submit{};
@@ -619,10 +658,15 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (queueSubmit(queue_, 1, &submit, fence_) != VK_SUCCESS) { tracef("vk: frame %d submit failed", frames_); return false; }
     const VkResult waited = waitForFences(device_, 1, &fence_, VK_TRUE, 5000000000ull);
     if (waited != VK_SUCCESS) { tracef("vk: frame %d wait failed (%d)", frames_, static_cast<int>(waited)); return false; }
+    const double gpuDone = profile ? milliseconds() : 0.0;
+    if (profile && frames_ < 5) {
+        std::printf("    [vk] submit + wait for the device: %.2f ms\n", gpuDone - submittedStart);
+    }
     if (traced) tracef("vk: frame %d presented", frames_);
     ++frames_;
 
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    const double readbackStart = profiling() && frames_ < 6 ? milliseconds() : 0.0;
     frame.width = width;
     frame.height = height;
     // Every pixel below is overwritten, so the buffers are only grown, never
@@ -633,13 +677,28 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // drawn by it, so it is fully covered.
     frame.alpha.resize(count);
     std::memset(frame.alpha.data(), 255, count);
-    const unsigned char* source = static_cast<const unsigned char*>(target_.readbackMap);
-    const int redOffset = bgra_ ? 2 : 0;
-    const int blueOffset = bgra_ ? 0 : 2;
-    for (std::size_t index = 0; index < count; ++index) {
-        frame.rgb[index * 3 + 0] = source[index * 4 + redOffset];
-        frame.rgb[index * 3 + 1] = source[index * 4 + 1];
-        frame.rgb[index * 3 + 2] = source[index * 4 + blueOffset];
+    // One wide move out of the mapped range, then convert from ordinary
+    // memory: a memcpy of 5.8 MB is a handful of vector loads per cache line,
+    // where the byte-by-byte read that used to be here was one transaction per
+    // channel per pixel on a write-combined mapping.
+    const std::size_t bytes = count * 4;
+    if (target_.staging.size() < bytes) target_.staging.resize(bytes);
+    std::memcpy(target_.staging.data(), target_.readbackMap, bytes);
+    // One 32-bit load per pixel and shifts, rather than four byte loads: the
+    // texel is already a word, and asking the processor for it four times is
+    // how this loop spent its time.
+    const std::uint32_t* texels = reinterpret_cast<const std::uint32_t*>(target_.staging.data());
+    const int redShift = bgra_ ? 16 : 0;
+    const int blueShift = bgra_ ? 0 : 16;
+    unsigned char* out = frame.rgb.data();
+    for (std::size_t index = 0; index < count; ++index, out += 3) {
+        const std::uint32_t texel = texels[index];
+        out[0] = static_cast<unsigned char>((texel >> redShift) & 0xFFu);
+        out[1] = static_cast<unsigned char>((texel >> 8) & 0xFFu);
+        out[2] = static_cast<unsigned char>((texel >> blueShift) & 0xFFu);
+    }
+    if (readbackStart > 0.0) {
+        std::printf("    [vk] readback (copy out + convert): %.2f ms\n", milliseconds() - readbackStart);
     }
     return true;
 }
@@ -721,6 +780,12 @@ bool vulkanAvailable() {
 bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
     if (!vulkanAvailable()) return false;
     if (instance().draw(scene, frame)) return true;
+    // One rebuild per process. Retrying on every frame turned a single failure
+    // into a device teardown and a shader recompile per frame, which is slower
+    // than not drawing at all.
+    static bool rebuilt = false;
+    if (rebuilt) return false;
+    rebuilt = true;
     // A frame that will not draw is not allowed to end the session on its own:
     // the device is rebuilt once and the frame retried. Only a second failure
     // is reported upward.

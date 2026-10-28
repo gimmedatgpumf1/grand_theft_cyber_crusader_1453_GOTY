@@ -58,7 +58,13 @@ looks beside the executable and up from it, so a client started from `build/bin`
 still finds the assets. `gtc-run.log` records which directory was used.
 
 The skull benchmark prints the geometry cost separately from the draw, because a
-backend can only own the second half. `--renderer all` measures the software
+backend can only own the second half.
+
+Both benchmarks turn on `GTC_VK_PROFILE` themselves, so a Vulkan run prints the
+frame broken into stages -- setup, record, submit and wait for the device, and the
+readback -- for its first frames. When a backend is slow, that breakdown is the
+only thing that says which stage to fix; `GTC_VK_PROFILE=1` does the same for a
+normal run. `--renderer all` measures the software
 rasterizer, Vulkan and OpenGL in one run; OpenGL needs a real window, so it is
 measured through the window's own path. In the game itself, `GTC_FPS=1` reports
 the smoothed frame rate once a second and the first line on stdout names the

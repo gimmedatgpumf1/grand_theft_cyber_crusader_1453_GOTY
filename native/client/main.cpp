@@ -104,6 +104,16 @@ std::string resolveRoot(std::string root) {
     return root;
 }
 
+void requireProfiling() {
+    // The benchmark is the diagnostic; it should not need a second environment
+    // variable to say which stage it is timing.
+#ifdef _WIN32
+    if (std::getenv("GTC_VK_PROFILE") == nullptr) _putenv_s("GTC_VK_PROFILE", "1");
+#else
+    setenv("GTC_VK_PROFILE", "1", 1);
+#endif
+}
+
 double nowMs() {
     using namespace std::chrono;
     return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
@@ -155,6 +165,7 @@ bool buildSkull(const std::string& root, const gtc::native::ViewState& view, Sku
 // CPU geometry cost that no backend can remove.
 int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, const std::string& renderer,
                       int iterations) {
+    requireProfiling();
     std::string error;
     SkullScene skull;
     if (!buildSkull(root, view, skull, error)) {
@@ -301,6 +312,7 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
 // game actually takes.
 int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, const std::string& renderer,
                       int iterations, int characters) {
+    requireProfiling();
     std::string error;
     gtc::native::WorldRenderer world3d;
     if (!world3d.load(root, error)) {

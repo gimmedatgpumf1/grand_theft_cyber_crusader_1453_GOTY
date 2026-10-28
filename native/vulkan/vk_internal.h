@@ -149,6 +149,11 @@ struct Target {
     VkBuffer readback = VK_NULL_HANDLE;
     VkDeviceMemory readbackMemory = VK_NULL_HANDLE;
     void* readbackMap = nullptr;
+    // The mapped buffer can be write-combined memory, where a byte read costs a
+    // bus transaction. The frame is copied out of it in one wide move and
+    // converted from here instead.
+    std::vector<unsigned char> staging;
+    bool readbackCached = false;
     int width = 0;
     int height = 0;
 };
