@@ -51,8 +51,50 @@ def child(node, name, kind):
 
 
 def names_in(root, kind):
-    return [k for k in (root.keys() if kind == 'h5' else root.keys())
-            if not k.startswith('__') and not k.startswith('#')]
+    """Child names of an HDF5 group, a dict, or a scipy mat_struct alike."""
+    if kind == 'h5' or isinstance(root, dict):
+        keys = list(root.keys())
+    else:
+        keys = list(getattr(root, '_fieldnames', []))
+    return [k for k in keys if not k.startswith('__') and not k.startswith('#')]
+
+
+def index_named(root, kind, depth=4):
+    """Every named node reachable from the root, keyed by its own name.
+
+    A .mat file does not start at the struct. `load('NM_combined.mat')` creates a
+    variable called `NM_combined` whose fields are the subjects, so the subject
+    sits one level below the file root -- and `Faces.mat` wraps its datasets the
+    same way in a variable called `Faces`. Rather than assume how many wrappers
+    there are, walk down and index what is actually there.
+    """
+    found = {}
+
+    def walk(node, level):
+        if level > depth:
+            return
+        for name in names_in(node, kind):
+            try:
+                value = child(node, name, kind)
+            except (KeyError, AttributeError, ValueError):
+                continue
+            found.setdefault(name, value)
+            if hasattr(value, 'keys') or hasattr(value, '_fieldnames'):
+                walk(value, level + 1)
+
+    walk(root, 0)
+    return found
+
+
+def describe(root, kind, limit=12):
+    """What the file actually holds, for the error message when a lookup fails."""
+    lines = []
+    for name in names_in(root, kind)[:limit]:
+        node = child(root, name, kind)
+        inner = names_in(node, kind)
+        head = ', '.join(inner[:4])
+        lines.append(f'    {name}: {len(inner)} entries' + (f' ({head} ...)' if head else ''))
+    return '\n'.join(lines)
 
 
 def vertex_dataset(group, kind):
@@ -91,7 +133,9 @@ def main():
     parser.add_argument('--dir', required=True, help='directory holding the Zenodo .mat files')
     parser.add_argument('--subject', default='N186416',
                         help='subject key, as in Metadata.mat (default: the female closest to 170 cm)')
-    parser.add_argument('--out', required=True, help='output .npz path')
+    parser.add_argument('--out', help='output .npz path')
+    parser.add_argument('--probe', action='store_true',
+                        help='just describe the structure of the file and stop')
     args = parser.parse_args()
 
     source = Path(args.dir)
@@ -105,18 +149,22 @@ def main():
 
     print(f'opening {combined.name} ({combined.stat().st_size / 1e9:.2f} GB)')
     root, kind = open_source(combined)
-    if args.subject not in names_in(root, kind):
-        available = [n for n in names_in(root, kind) if n.startswith('N')]
+    if args.probe:
+        print(describe(root, kind))
+        return
+    subjects = index_named(root, kind)
+    if args.subject not in subjects:
+        heads = [n for n in subjects if n.startswith('N') and n[1:].isdigit()]
         sys.exit(f'no subject {args.subject} in {combined.name}\n'
-                 f'it holds {len(available)}: {available[:8]} ...')
+                 f'  {len(heads)} subject-like names: {heads[:8]} ...\n'
+                 f'  structure of the file:\n{describe(root, kind)}')
 
-    subject = child(root, args.subject, kind)
-    bones = [k for k in (subject.keys() if kind == 'h5' else subject._fieldnames)
-             if not k.startswith('#')]
+    subject = subjects[args.subject]
+    bones = names_in(subject, kind)
     print(f'{args.subject}: {len(bones)} structures')
 
     faces_root, faces_kind = open_source(faces_path)
-    faces_names = set(names_in(faces_root, faces_kind))
+    faces_names = index_named(faces_root, faces_kind)
 
     store, manifest, skipped = {}, {}, []
     for index, bone in enumerate(bones, 1):
@@ -126,8 +174,7 @@ def main():
         if face_key not in faces_names:
             skipped.append((bone, 'no triangulation'))
             continue
-        faces = as_triples(np.asarray(child(faces_root, face_key, faces_kind),
-                                      dtype=np.int32))
+        faces = as_triples(np.asarray(faces_names[face_key], dtype=np.int32))
         if verts is None or faces is None or len(verts) == 0 or len(faces) == 0:
             skipped.append((bone, 'empty'))
             continue
