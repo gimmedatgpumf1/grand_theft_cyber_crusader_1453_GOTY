@@ -287,7 +287,9 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             std::cout << "  vulkan                    unavailable on this machine\n";
         } else {
             gtc::native::NativeFrame frame;
+            gtc::native::drainVulkan();
             gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::drainVulkan();
             const double start = nowMs();
             for (int iteration = 0; iteration < iterations; ++iteration) {
                 if (!gtc::native::renderVulkanScene(skull.scene, frame)) {
@@ -301,6 +303,9 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // back. This is the only figure that can be compared with a backend
             // whose "frame time" is submission alone.
             gtc::native::setFrameReadback(false);
+            gtc::native::drainVulkan();
+            gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::drainVulkan();
             const double submitStart = nowMs();
             for (int iteration = 0; iteration < iterations; ++iteration) {
                 gtc::native::renderVulkanScene(skull.scene, frame);
@@ -311,7 +316,9 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // then a memory copy instead of a walk over tiled memory. Costs the
             // rasteriser its swizzle, so both parts are timed rather than assumed.
             gtc::native::setLinearTarget(true);
+            gtc::native::drainVulkan();
             gtc::native::renderVulkanScene(skull.scene, frame);
+            gtc::native::drainVulkan();
             const double linearStart = nowMs();
             for (int iteration = 0; iteration < iterations; ++iteration) {
                 gtc::native::renderVulkanScene(skull.scene, frame);
@@ -323,7 +330,9 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             // image is the expensive half, and where it lands decides its speed.
             for (int mode = 1; mode <= 2; ++mode) {
                 gtc::native::setReadbackMemory(mode);
+                gtc::native::drainVulkan();
                 gtc::native::renderVulkanScene(skull.scene, frame);
+                gtc::native::drainVulkan();
                 const double modeStart = nowMs();
                 for (int iteration = 0; iteration < iterations; ++iteration) {
                     gtc::native::renderVulkanScene(skull.scene, frame);
@@ -332,6 +341,7 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
                                      : "skull vulkan (wc read)", (nowMs() - modeStart) / iterations);
             }
             gtc::native::setReadbackMemory(0);
+            gtc::native::drainVulkan();
         }
     }
 

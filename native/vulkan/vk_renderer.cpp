@@ -686,6 +686,11 @@ void setLinearTarget(bool enabled) {
     instance().discardTargets();
 }
 
+void drainVulkan() {
+    detail::Renderer& renderer = instance();
+    renderer.drain();  // a no-op when the device was never created
+}
+
 void shutdownVulkan() {
     closed = true;
     instance().stop();

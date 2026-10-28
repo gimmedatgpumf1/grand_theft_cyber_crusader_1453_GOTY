@@ -193,7 +193,24 @@ public:
     void stop();
     // Throws away the offscreen targets so the next frame rebuilds them, which
     // is how a change of layout takes effect.
-    void discardTargets() { destroyTargets(); }
+    // Waits for anything submitted and forgets which slot is pending, leaving
+    // the targets in place: they are still valid, and rebuilding them is a
+    // millisecond of upload that has no business inside a timed measurement.
+    void drain() {
+        if (device_ != VK_NULL_HANDLE) deviceWaitIdle(device_);
+        pendingSlot_ = -1;
+        for (int slot = 0; slot < kFramesInFlight; ++slot) fenceArmed_[slot] = false;
+    }
+
+    // Targets cannot be freed while a submitted frame still refers to them.
+    // The stub schedules nothing, so only a real driver ever notices -- as a
+    // device lost or a frame of garbage.
+    void discardTargets() {
+        if (device_ != VK_NULL_HANDLE) deviceWaitIdle(device_);
+        pendingSlot_ = -1;
+        for (int slot = 0; slot < kFramesInFlight; ++slot) fenceArmed_[slot] = false;
+        destroyTargets();
+    }
 
 private:
     bool openLoader();

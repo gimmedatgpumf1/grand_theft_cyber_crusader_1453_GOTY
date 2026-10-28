@@ -26,4 +26,9 @@ void setLinearTarget(bool enabled);
 // default.
 void setReadbackMemory(int mode);
 
+// Waits for any submitted frame to finish, so the next measurement starts from
+// an idle device instead of inheriting the previous one's work. Only the
+// benchmark needs this: the client always runs frames back to back.
+void drainVulkan();
+
 } // namespace gtc::native
