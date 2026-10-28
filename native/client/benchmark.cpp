@@ -732,7 +732,10 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
         }
     }
 
-    gtc::native::shutdownVulkan();
+    // The device is left running: a run that measures several suites in one
+    // process measures them on the device it already warmed up, and shutting
+    // down here would make the next suite pay setup again. Whoever owns the
+    // process closes it.
     return 0;
 }
 
