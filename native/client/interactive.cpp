@@ -18,16 +18,10 @@
 namespace gtc::native {
 namespace {
 
-enum class Overlay { None, Wheel, Cheats, Creator, Help };
-
-struct CreatorEntry {
-    std::string label;
-    int minimum = 0;
-    int maximum = 100;
-    int Appearance::* integer = nullptr;
-    bool Appearance::* boolean = nullptr;
-    int morph = -1;
-};
+// The character creator used to live here and opened on C. It is gone: the
+// test room took the key, and the next creator will be built fresh rather than
+// grown back out of this switchboard.
+enum class Overlay { None, Wheel, Cheats, Help };
 
 void circle(NativeFrame& frame, int cx, int cy, int radius, Color color) {
     for (int y = -radius; y <= radius; ++y) {
@@ -50,7 +44,6 @@ public:
             std::cerr << error << '\n';
             return 1;
         }
-        buildCreator();
         std::string roomError;
         if (!room_.load(options_.root, roomError)) std::cerr << "Test room unavailable: " << roomError << '\n';
         if (!window_.open("GRAND THEFT CYBER CRUSADER 1453 - Native", error)) {
@@ -138,8 +131,6 @@ public:
             std::cerr << error << '\n';
             return 1;
         }
-        buildCreator();
-        if (const Character* citizen = local()) draft_ = citizen->appearance;
         view_.yaw = 3.14159265F;
         view_.pitch = -0.18F;
         NativeFrame base;
@@ -148,8 +139,8 @@ public:
             std::cerr << error << '\n';
             return 1;
         }
-        const std::pair<Overlay, const char*> captures[] = {{Overlay::Wheel, "wheel"},
-            {Overlay::Cheats, "cheats"}, {Overlay::Creator, "creator"}, {Overlay::Help, "help"}};
+        const std::pair<Overlay, const char*> captures[] = {
+            {Overlay::Wheel, "wheel"}, {Overlay::Cheats, "cheats"}, {Overlay::Help, "help"}};
         for (const auto& [overlay, name] : captures) {
             overlay_ = overlay;
             NativeFrame frame = base;
@@ -290,11 +281,6 @@ private:
         keys_.clear();
         window_.captureMouse(false);
         captured_ = false;
-        if (overlay == Overlay::Creator) {
-            if (const Character* citizen = local()) draft_ = citizen->appearance;
-            selected_ = 0;
-            scroll_ = 0;
-        }
     }
 
     void interact() {
@@ -501,10 +487,6 @@ private:
             if (!event.repeat) cheat(event.key);
             return;
         }
-        if (overlay_ == Overlay::Creator) {
-            if (!event.repeat || (event.key != kKeyEnter && event.key != 'c' && event.key != kKeyEscape)) creatorKey(event.key);
-            return;
-        }
         if (overlay_ == Overlay::Help) {
             if (event.key == 'h' || event.key == kKeyEscape) closeOverlay();
             return;
@@ -611,70 +593,6 @@ private:
         view_.godZ = std::clamp(view_.godZ, -7.0F, 7.0F);
     }
 
-    void buildCreator() {
-        auto integer = [&](const std::string& label, int min, int max, int Appearance::* field) {
-            creator_.push_back({label, min, max, field, nullptr, -1});
-        };
-        auto boolean = [&](const std::string& label, bool Appearance::* field) {
-            creator_.push_back({label, 0, 1, nullptr, field, -1});
-        };
-        boolean("MALE", &Appearance::male);
-        integer("SKIN", 0, 5, &Appearance::skin);
-        integer("HAIR", 0, 15, &Appearance::hair);
-        integer("HAIR COLOR", 0, 8, &Appearance::hairColor);
-        integer("SHIRT", 0, 6, &Appearance::shirt);
-        integer("PANTS", 0, 3, &Appearance::pants);
-        integer("BEARD", 0, 2, &Appearance::beard);
-        integer("EYE COLOR", 0, 5, &Appearance::eyeColor);
-        integer("MAKEUP", 0, 4, &Appearance::makeup);
-        integer("LIP COLOR", 0, 4, &Appearance::lipColor);
-        integer("TIE", 0, 5, &Appearance::tie);
-        boolean("COAT", &Appearance::coat);
-        boolean("GLASSES", &Appearance::sunglasses);
-        boolean("SUIT", &Appearance::suit);
-        boolean("DRESS", &Appearance::dress);
-        boolean("BERET", &Appearance::beret);
-        boolean("EARRINGS", &Appearance::earrings);
-        boolean("NECKLACE", &Appearance::necklace);
-        boolean("FUR", &Appearance::fur);
-        for (std::size_t i = 0; i < renderer_.morphSpecs(true).size(); ++i) {
-            const MorphSpec& spec = renderer_.morphSpecs(true)[i];
-            creator_.push_back({spec.key, spec.minimum, spec.maximum, nullptr, nullptr, static_cast<int>(i)});
-        }
-    }
-
-    int creatorValue(const CreatorEntry& entry) const {
-        if (entry.morph >= 0) return draft_.morphs[entry.morph];
-        if (entry.boolean) return draft_.*entry.boolean ? 1 : 0;
-        return draft_.*(entry.integer);
-    }
-
-    void creatorKey(int key) {
-        if (key == 'c' || key == kKeyEscape) {
-            closeOverlay();
-            return;
-        }
-        if (key == kKeyEnter) {
-            client_.sendCustomize(draft_);
-            return;
-        }
-        if (key == kKeyUp) selected_ = std::max(0, selected_ - 1);
-        if (key == kKeyDown) selected_ = std::min(static_cast<int>(creator_.size()) - 1, selected_ + 1);
-        if (key == kKeyPageUp) selected_ = std::max(0, selected_ - 10);
-        if (key == kKeyPageDown) selected_ = std::min(static_cast<int>(creator_.size()) - 1, selected_ + 10);
-        if (key == kKeyLeft || key == kKeyRight) {
-            CreatorEntry& entry = creator_[selected_];
-            const int direction = key == kKeyRight ? 1 : -1;
-            const int value = std::clamp(creatorValue(entry) + direction * (entry.morph >= 0 ? 5 : 1),
-                                         entry.minimum, entry.maximum);
-            if (entry.morph >= 0) draft_.morphs[entry.morph] = value;
-            else if (entry.boolean) draft_.*entry.boolean = value != 0;
-            else draft_.*(entry.integer) = value;
-        }
-        if (selected_ < scroll_) scroll_ = selected_;
-        if (selected_ >= scroll_ + 10) scroll_ = selected_ - 9;
-    }
-
     void drawOverlay(NativeFrame& frame) {
         if (overlay_ == Overlay::None) return;
         const Color panel = colorHex("#101713"), text = colorHex("#d7ff54"), muted = colorHex("#b4c5ba");
@@ -702,21 +620,9 @@ private:
             const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
                 "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
                 "RMB AIM RANGED / BLOCK MELEE", "MMB ORBIT TPS / RELEASE RESETS", "GOD RMB GO SHIFT RUN ALT CROUCH",
-                "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS",
+                "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C TEST ROOM F1 CHEATS",
                 "F12 PNG H CLOSES MANUAL"};
             for (int i = 0; i < 13; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
-        } else if (overlay_ == Overlay::Creator) {
-            frame.rectangle(0, 20, 640, 440, panel);
-            drawText(frame, 20, 28, "C CREATOR ENTER APPLY", text);
-            for (int row = 0; row < 10 && scroll_ + row < static_cast<int>(creator_.size()); ++row) {
-                const int index = scroll_ + row;
-                const int y = 80 + row * 32;
-                if (index == selected_) frame.rectangle(8, y - 4, 624, 28, colorHex("#29382e"));
-                drawText(frame, 15, y, creator_[index].label.substr(0, 24), index == selected_ ? text : muted);
-                drawText(frame, 550, y, std::to_string(creatorValue(creator_[index])), text);
-            }
-            drawText(frame, 24, 405, "ARROWS EDIT PGUP PGDN", muted);
-            drawText(frame, 24, 433, "ENTER SERVER CUSTOMIZE", muted);
         }
     }
 
@@ -747,10 +653,6 @@ private:
     bool slowWalk_ = false;
     bool screenshot_ = false;
     double mouseX_ = kDefaultWindowWidth * 0.5, mouseY_ = kDefaultWindowHeight * 0.5;
-    std::vector<CreatorEntry> creator_;
-    Appearance draft_;
-    int selected_ = 0;
-    int scroll_ = 0;
 };
 
 } // namespace

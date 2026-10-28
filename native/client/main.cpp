@@ -1,6 +1,7 @@
 #include "client/client.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
+#include "client/skeleton_room.h"
 
 #include <algorithm>
 #include <chrono>
@@ -19,12 +20,13 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
     int port = 1453, frames = 1, benchmark = 1;
-    bool path = false, move = false, headless = false;
+    bool path = false, move = false, headless = false, verifyRoom = false;
     gtc::Vec2 destination{}, movement{};
     gtc::native::ViewState view;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
         if (argument == "--headless") headless = true;
+        else if (argument == "--verify-room") verifyRoom = true;
         else if (argument == "--review-ui" && i + 1 < argc) reviewUi = argv[++i];
         else if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = static_cast<int>(number(argv[++i], 1453));
@@ -53,6 +55,35 @@ int main(int argc, char** argv) {
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
             return 2;
         }
+    }
+    if (verifyRoom) {
+        // The room is presented through the same path as the world, and that
+        // path needs a coverage mask as well as colour. This check exists
+        // because a missing mask does not warn -- it just ends the session.
+        gtc::native::SkeletonRoom room;
+        std::string roomError;
+        if (!room.load(root, roomError)) {
+            std::cerr << "Test room unavailable: " << roomError << '\n';
+            return 1;
+        }
+        for (const std::pair<int, int>& size : {std::pair<int, int>{640, 480}, std::pair<int, int>{1568, 929}}) {
+            gtc::native::ViewState roomView;
+            roomView.width = size.first;
+            roomView.height = size.second;
+            gtc::native::NativeFrame frame;
+            room.render(frame, roomView, 0.75);
+            const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
+            if (frame.width != size.first || frame.height != size.second || frame.rgb.size() < pixels * 3 ||
+                frame.alpha.size() < pixels) {
+                std::cerr << "Test room frame contract broken at " << size.first << 'x' << size.second
+                          << ": rgb " << frame.rgb.size() << " alpha " << frame.alpha.size() << '\n';
+                return 1;
+            }
+            if (!frame.save(output + ".room-" + std::to_string(size.first) + ".png")) return 1;
+        }
+        std::cout << "test room: PASS (male " << room.male().height() << " m, female " << room.female().height()
+                  << " m, " << room.male().bones().size() << " bones each)\n";
+        return 0;
     }
     if (mode == "fps") view.mode = gtc::native::ViewMode::FirstPerson;
     else if (mode == "god") view.mode = gtc::native::ViewMode::God;

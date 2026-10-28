@@ -22,6 +22,12 @@ void drawFloor(Rasterizer& rasterizer, const Camera& camera) {
     Material pale;
     pale.color = colorHex("#54614f");
     pale.constantLighting = true;
+    // A slab first. Without it the grout gap between tiles shows the empty void
+    // below the room, which reads as a crack running through the floor.
+    Material slab;
+    slab.color = colorHex("#1d2823");
+    slab.constantLighting = true;
+    drawBox(rasterizer, camera, {0, -0.06, 0}, {kRoomHalf * 2, 0.08, kRoomHalf * 2}, slab);
     // Tiles are drawn individually rather than as one textured plane: the room
     // is a test bench, so a tile is a unit of measurement you can count.
     const int tiles = static_cast<int>(kRoomHalf * 2 / kTile);
@@ -37,13 +43,20 @@ void drawFloor(Rasterizer& rasterizer, const Camera& camera) {
 void drawWalls(Rasterizer& rasterizer, const Camera& camera) {
     Material wall;
     wall.color = colorHex("#2f3a33");
+    wall.constantLighting = true;
     Material skirting;
     skirting.color = colorHex("#1b241f");
-    drawBox(rasterizer, camera, {0, kRoomHeight * 0.5, -kRoomHalf}, {kRoomHalf * 2, kRoomHeight, 0.1}, wall);
-    drawBox(rasterizer, camera, {0, kRoomHeight * 0.5, kRoomHalf}, {kRoomHalf * 2, kRoomHeight, 0.1}, wall);
-    drawBox(rasterizer, camera, {-kRoomHalf, kRoomHeight * 0.5, 0}, {0.1, kRoomHeight, kRoomHalf * 2}, wall);
-    drawBox(rasterizer, camera, {kRoomHalf, kRoomHeight * 0.5, 0}, {0.1, kRoomHeight, kRoomHalf * 2}, wall);
-    drawBox(rasterizer, camera, {0, kRoomHeight, 0}, {kRoomHalf * 2, 0.1, kRoomHalf * 2}, skirting);
+    skirting.constantLighting = true;
+    // Thickness 0.1 sits the inner face exactly on the room bound; the boxes
+    // that meet in a corner therefore share a plane, and two coplanar faces at
+    // identical depth z-fight into a seam. Each wall is pushed back by a
+    // millimetre so the meeting faces are not coincident.
+    const double inset = 0.001;
+    drawBox(rasterizer, camera, {0, kRoomHeight * 0.5, -kRoomHalf - inset}, {kRoomHalf * 2, kRoomHeight, 0.1}, wall);
+    drawBox(rasterizer, camera, {0, kRoomHeight * 0.5, kRoomHalf + inset}, {kRoomHalf * 2, kRoomHeight, 0.1}, wall);
+    drawBox(rasterizer, camera, {-kRoomHalf - inset, kRoomHeight * 0.5, 0}, {0.1, kRoomHeight, kRoomHalf * 2}, wall);
+    drawBox(rasterizer, camera, {kRoomHalf + inset, kRoomHeight * 0.5, 0}, {0.1, kRoomHeight, kRoomHalf * 2}, wall);
+    drawBox(rasterizer, camera, {0, kRoomHeight, 0}, {kRoomHalf * 2 + 0.2, 0.1, kRoomHalf * 2 + 0.2}, skirting);
     // One-metre ticks on the back wall, so the skeletons' heights can be read
     // off the picture instead of trusted.
     Material tick;

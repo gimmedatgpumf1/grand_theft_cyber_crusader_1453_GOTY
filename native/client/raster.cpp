@@ -510,6 +510,11 @@ NativeFrame Rasterizer::finish() const {
         if (value >= range) return static_cast<unsigned char>(255);
         return output[static_cast<int>(value * ((size - 1) / range) + 0.5)];
     };
+    // Every presented frame needs a coverage mask: the OpenGL presenter blends
+    // the software image over the scene with it, and an empty mask there is not
+    // a warning, it is a hard failure. The software path is fully opaque, so the
+    // mask is simply solid.
+    frame.alpha.assign(pixels_.size(), 255);
     const auto convert = [&](std::size_t begin, std::size_t end) {
         for (std::size_t i = begin; i < end; ++i) {
             frame.rgb[i * 3] = encode(pixels_[i].r);
