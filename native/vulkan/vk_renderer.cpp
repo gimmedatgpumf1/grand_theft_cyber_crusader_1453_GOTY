@@ -4,6 +4,7 @@
 // the rest of the client expects to own.
 
 #include "../client/diagnostics.h"
+#include "../client/threadpool.h"
 #include "vk_internal.h"
 
 #include <algorithm>
@@ -20,7 +21,9 @@ namespace detail {
 
 // Whether a drawn frame is copied back to host memory; see vk_renderer.h.
 bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
-bool linearTarget = std::getenv("GTC_VK_LINEAR") != nullptr;
+// Measured faster than tiled once frames are pipelined: the copy out of the
+// image is the bottleneck, and a linear image is copied as plain memory.
+bool linearTarget = std::getenv("GTC_VK_TILED") == nullptr;
 int readbackMode = 0;
 
 // Stage timing, off unless asked for: `GTC_VK_PROFILE=1`. The point is to name
@@ -542,13 +545,20 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // channel per pixel on a write-combined mapping.
     const std::size_t bytes = count * 4;
     const int readSlot = collect;
-    if (target_.staging[readSlot].size() < bytes) target_.staging[readSlot].resize(bytes);
-    std::memcpy(target_.staging[readSlot].data(), target_.readbackMap[readSlot], bytes);
+    // Cached host memory reads at full speed, so the frame is converted straight
+    // out of the mapping; anything else (write-combined, device-local) is copied
+    // out in one wide move first and converted from ordinary memory.
+    const unsigned char* mapped = static_cast<const unsigned char*>(target_.readbackMap[readSlot]);
+    if (!target_.readbackCached) {
+        if (target_.staging[readSlot].size() < bytes) target_.staging[readSlot].resize(bytes);
+        std::memcpy(target_.staging[readSlot].data(), mapped, bytes);
+        mapped = target_.staging[readSlot].data();
+    }
     // One 32-bit load per pixel and shifts, rather than four byte loads, and the
     // band is split across cores: 1.45 M pixels of channel shuffling is exactly
     // the sort of work that is embarrassingly parallel, and doing it on one
     // thread was leaving three cores idle every frame.
-    const std::uint32_t* texels = reinterpret_cast<const std::uint32_t*>(target_.staging[readSlot].data());
+    const std::uint32_t* texels = reinterpret_cast<const std::uint32_t*>(mapped);
     const int redShift = bgra_ ? 16 : 0;
     const int blueShift = bgra_ ? 0 : 16;
     const auto convert = [&](std::size_t begin, std::size_t end) {
@@ -560,21 +570,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             out[2] = static_cast<unsigned char>((texel >> blueShift) & 0xFFu);
         }
     };
-    const std::size_t workers = std::max<std::size_t>(1,
-        std::min<std::size_t>(conversionThreads(), std::max<std::size_t>(1, count / 65536)));
-    if (workers > 1) {
-        std::vector<std::thread> pool;
-        pool.reserve(workers - 1);
-        for (std::size_t worker = 1; worker < workers; ++worker) {
-            const std::size_t begin = count * worker / workers;
-            const std::size_t end = count * (worker + 1) / workers;
-            pool.emplace_back([&convert, begin, end] { convert(begin, end); });
-        }
-        convert(0, count / workers);
-        for (std::thread& thread : pool) thread.join();
-    } else {
-        convert(0, count);
-    }
+    static FramePool pool(conversionThreads());
+    const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
+    pool.ranges(chunks, count, convert);
     if (readbackStart > 0.0) {
         std::printf("    [vk] readback (copy out + convert): %.2f ms\n", milliseconds() - readbackStart);
     }

@@ -1,4 +1,5 @@
 #include "client/raster.h"
+#include "client/threadpool.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,21 +151,9 @@ void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out) {
         }
     };
     // Below about a quarter of a megapixel the split costs more than it saves.
-    const std::size_t workers = std::max<std::size_t>(1,
-        std::min<std::size_t>(frameThreads(), std::max<std::size_t>(1, count / 262144)));
-    if (workers <= 1) {
-        convert(0, count);
-        return;
-    }
-    std::vector<std::thread> pool;
-    pool.reserve(workers - 1);
-    for (std::size_t worker = 1; worker < workers; ++worker) {
-        const std::size_t begin = count * worker / workers;
-        const std::size_t end = count * (worker + 1) / workers;
-        pool.emplace_back([&convert, begin, end] { convert(begin, end); });
-    }
-    convert(0, count / workers);
-    for (std::thread& thread : pool) thread.join();
+    static FramePool pool(frameThreads());
+    const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
+    pool.ranges(chunks, count, convert);
 }
 
 bool renderGpuScene(const GpuScene& scene, NativeFrame& frame) {
@@ -587,19 +576,17 @@ void Rasterizer::flush() {
         materials_.clear();
         return;
     }
-    bands = std::min<std::size_t>(bands, static_cast<std::size_t>(height_));
-    const auto drawBand = [&](std::size_t index) {
-        const int begin = height_ * static_cast<int>(index) / static_cast<int>(bands);
-        const int end = height_ * static_cast<int>(index + 1) / static_cast<int>(bands);
-        for (const RasterTriangle& triangle : pending_) {
-            rasterize(triangle.vertices, materials_[triangle.material], begin, end);
+    const auto drawBand = [&](std::size_t beginIndex, std::size_t endIndex) {
+        for (std::size_t index = beginIndex; index < endIndex; ++index) {
+            const int begin = height_ * static_cast<int>(index) / static_cast<int>(bands);
+            const int end = height_ * static_cast<int>(index + 1) / static_cast<int>(bands);
+            for (const RasterTriangle& triangle : pending_) {
+                rasterize(triangle.vertices, materials_[triangle.material], begin, end);
+            }
         }
     };
-    std::vector<std::thread> workers;
-    workers.reserve(bands - 1);
-    for (std::size_t index = 1; index < bands; ++index) workers.emplace_back(drawBand, index);
-    drawBand(0);
-    for (std::thread& worker : workers) worker.join();
+    static FramePool pool(frameThreads());
+    pool.ranges(bands, bands, drawBand);
     pending_.clear();
     materials_.clear();
 }
