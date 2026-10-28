@@ -21,6 +21,7 @@ namespace detail {
 // Whether a drawn frame is copied back to host memory; see vk_renderer.h.
 bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
 bool linearTarget = std::getenv("GTC_VK_LINEAR") != nullptr;
+int readbackMode = 0;
 
 namespace {
 
@@ -256,19 +257,24 @@ bool Renderer::createTargets(int width, int height) {
     // Cached and coherent if the device offers it: the host reads this buffer
     // every frame, and write-combined memory turns that read into a stream of
     // uncached bus transactions.
-    const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    std::uint32_t type = pick(requirements.memoryTypeBits, ideal);
-    target_.readbackCached = type != memory.memoryTypeCount;
-    if (!target_.readbackCached) type = pick(requirements.memoryTypeBits, wanted);
+    const VkMemoryPropertyFlags coherent = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const VkMemoryPropertyFlags requested =
+        readbackMode == 1 ? coherent | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+      : readbackMode == 2 ? coherent
+      : coherent | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+    std::uint32_t type = pick(requirements.memoryTypeBits, requested);
+    target_.readbackCached = readbackMode == 0 && type != memory.memoryTypeCount;
+    if (type == memory.memoryTypeCount) type = pick(requirements.memoryTypeBits, coherent);
     tracef("vk: readback memory %s", target_.readbackCached ? "host cached" : "host visible only");
     if (profiling()) {
         // This single fact decides whether the GPU's copy out of the image is a
         // fast write into cacheable memory or a stream of uncached writes, so it
         // is printed rather than buried in the log.
-        std::printf("    [vk] readback buffer memory: %s\n",
-                    target_.readbackCached ? "host cached" : "host visible only (likely write-combined)");
+        const char* name = readbackMode == 0 ? "host cached"
+            : readbackMode == 1 ? "device local + host visible" : "host visible only";
+        std::printf("    [vk] readback buffer memory requested: %s%s\n", name,
+                    type == memory.memoryTypeCount ? " (unavailable)" : "");
     }
     if (type == memory.memoryTypeCount) return false;
     VkMemoryAllocateInfo allocate{};
@@ -950,6 +956,12 @@ bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
 }
 
 void setFrameReadback(bool enabled) { detail::readbackEnabled = enabled; }
+
+void setReadbackMemory(int mode) {
+    if (detail::readbackMode == mode) return;
+    detail::readbackMode = mode;
+    instance().discardTargets();
+}
 
 void setLinearTarget(bool enabled) {
     if (detail::linearTarget == enabled) return;

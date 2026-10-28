@@ -136,6 +136,7 @@ bool loadApi(Api& api, const std::function<void*(const char*)>& symbol) {
     GTC_LOAD_GL(blendFunc, "glBlendFunc");
     GTC_LOAD_GL(pixelStorei, "glPixelStorei");
     GTC_LOAD_GL(readPixels, "glReadPixels");
+    GTC_LOAD_GL(finish, "glFinish");
     GTC_LOAD_GL(getError, "glGetError");
     GTC_LOAD_GL(getString, "glGetString");
     GTC_LOAD_GL(color3f, "glColor3f");
@@ -641,6 +642,28 @@ bool OpenGlRenderer::present(const NativeFrame& frame) {
     api_.disable(c::texture2D);
     api_.depthMask(1);
     return checkError();
+}
+
+void OpenGlRenderer::awaitGpu() {
+    if (loaded_ && api_.finish) api_.finish();
+}
+
+bool OpenGlRenderer::readBack(int width, int height, NativeFrame& frame) {
+    if (!loaded_ || !api_.readPixels || width <= 0 || height <= 0) return false;
+    const std::size_t pixels = static_cast<std::size_t>(width) * height;
+    std::vector<unsigned char> raw(pixels * 4);
+    api_.readPixels(0, 0, width, height, 0x1907 /*GL_RGB*/, 0x1401 /*GL_UNSIGNED_BYTE*/, raw.data());
+    frame.width = width;
+    frame.height = height;
+    frame.rgb.resize(pixels * 3);
+    // glReadPixels hands back the bottom row first.
+    for (int row = 0; row < height; ++row) {
+        const unsigned char* source = raw.data() + static_cast<std::size_t>(height - 1 - row) * width * 3;
+        std::memcpy(frame.rgb.data() + static_cast<std::size_t>(row) * width * 3, source,
+                    static_cast<std::size_t>(width) * 3);
+    }
+    if (frame.alpha.size() != pixels) frame.alpha.assign(pixels, 255);
+    return true;
 }
 
 bool OpenGlRenderer::capture(int width, int height, const std::string& path) {

@@ -21,4 +21,9 @@ void setFrameReadback(bool enabled);
 // back; measured by the skull benchmark.
 void setLinearTarget(bool enabled);
 
+// Where the readback buffer lives: 0 host cached, 1 device local + host
+// visible, 2 host visible only. Measured by the skull benchmark; 0 is the
+// default.
+void setReadbackMemory(int mode);
+
 } // namespace gtc::native

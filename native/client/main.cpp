@@ -318,6 +318,20 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             }
             reportLine("skull vulkan (linear image)", (nowMs() - linearStart) / iterations);
             gtc::native::setLinearTarget(false);
+            // The same frame again, with the readback buffer in each of the
+            // memory types a driver might expose. The GPU's copy out of the
+            // image is the expensive half, and where it lands decides its speed.
+            for (int mode = 1; mode <= 2; ++mode) {
+                gtc::native::setReadbackMemory(mode);
+                gtc::native::renderVulkanScene(skull.scene, frame);
+                const double modeStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    gtc::native::renderVulkanScene(skull.scene, frame);
+                }
+                reportLine(mode == 1 ? "skull vulkan (device-local read)"
+                                     : "skull vulkan (wc read)", (nowMs() - modeStart) / iterations);
+            }
+            gtc::native::setReadbackMemory(0);
         }
     }
 
@@ -353,7 +367,23 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             if (!ok) {
                 std::cerr << "opengl skull draw failed\n";
             } else {
-                reportLine("skull opengl", (nowMs() - start) / iterations);
+                reportLine("skull opengl (submit only)", (nowMs() - start) / iterations);
+                // The same draw, but the device is waited for -- and then the
+                // picture is brought back to host memory. Those are the two
+                // things a Vulkan frame already pays and this number above does
+                // not, so the comparison is only fair here.
+                const double waitStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    window.renderScene(skull.scene, frame);
+                    window.awaitGpu();
+                }
+                reportLine("skull opengl (gpu done)", (nowMs() - waitStart) / iterations);
+                const double backStart = nowMs();
+                for (int iteration = 0; iteration < iterations; ++iteration) {
+                    window.renderScene(skull.scene, frame);
+                    if (!window.readBack(skull.camera.width, skull.camera.height, skull.scene, frame)) break;
+                }
+                reportLine("skull opengl (frame back)", (nowMs() - backStart) / iterations);
                 // Presenting is part of the frame the user sees, and on this
                 // path it is a CPU blit, so it is measured on its own.
                 const double presentStart = nowMs();

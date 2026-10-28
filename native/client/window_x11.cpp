@@ -540,6 +540,17 @@ const char* NativeWindow::backend() const {
     return "software";
 }
 
+
+void NativeWindow::awaitGpu() {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return;
+    impl_->renderer.awaitGpu();
+}
+
+bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return false;
+    return impl_->renderer.readBack(width, height, frame);
+}
+
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
     if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.

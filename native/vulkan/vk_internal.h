@@ -168,6 +168,13 @@ extern bool readbackEnabled;
 // assumed -- see the benchmark.
 extern bool linearTarget;
 
+// Which memory the readback buffer asks for. The GPU's copy out of the image is
+// the expensive half of a readback, and where it lands decides its speed:
+//   0 host cached (fast for the CPU read, may be slow for the device write)
+//   1 device local + host visible (fastest for the device, plain RAM for us)
+//   2 host visible only (write-combined: fastest for the device, worst for us)
+extern int readbackMode;
+
 class Renderer {
 public:
     bool start();

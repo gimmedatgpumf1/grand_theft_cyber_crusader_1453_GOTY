@@ -305,6 +305,25 @@ const char* NativeWindow::backend() const {
     return "software";
 }
 
+
+void NativeWindow::awaitGpu() {
+    if (!impl_) return;
+    if (impl_->vulkan) {
+        // The Vulkan path already waits for its fence inside the frame.
+        return;
+    }
+    if (impl_->gpu) {
+        if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return;
+        impl_->renderer.awaitGpu();
+    }
+}
+
+bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return false;
+    if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
+    return impl_->renderer.readBack(width, height, frame);
+}
+
 bool NativeWindow::present(const NativeFrame& frame) {
     if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
     RECT client{};

@@ -54,6 +54,11 @@ public:
     bool renderScene(const GpuScene& scene, NativeFrame& frame);
     // Which backend opened, for reporting.
     const char* backend() const;
+    // Waits for the device to finish, and brings the finished frame back to
+    // host memory. Both exist for measurement: they are what a Vulkan frame
+    // already pays and an OpenGL submit does not.
+    void awaitGpu();
+    bool readBack(int width, int height, const GpuScene&, NativeFrame& frame);
     bool save(const NativeFrame& frame, const std::string& path);
     void captureMouse(bool capture);
     void size(int& width, int& height) const;
