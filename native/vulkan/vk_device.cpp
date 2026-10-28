@@ -468,29 +468,37 @@ bool Renderer::createPipeline() {
         return false;
     }
 
-    VkGraphicsPipelineCreateInfo info{};
-
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.stageCount = 2;
-    info.pStages = stages;
-    info.pVertexInputState = &vertexInput;
-    info.pInputAssemblyState = &assembly;
-    info.pViewportState = &viewport;
-    info.pRasterizationState = &raster;
-    info.pMultisampleState = &multisample;
-    info.pDepthStencilState = &depth;
-    info.pColorBlendState = &blending;
-    info.pDynamicState = &dynamic;
-    info.layout = pipelineLayout_;
-    info.renderPass = renderPass_;
-    info.subpass = 0;
-    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline_);
+    VkGraphicsPipelineCreateInfo info[2]{};
+    for (VkGraphicsPipelineCreateInfo& entry : info) {
+        entry.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        entry.stageCount = 2;
+        entry.pStages = stages;
+        entry.pVertexInputState = &vertexInput;
+        entry.pInputAssemblyState = &assembly;
+        entry.pViewportState = &viewport;
+        entry.pRasterizationState = &raster;
+        entry.pMultisampleState = &multisample;
+        entry.pDepthStencilState = &depth;
+        entry.pColorBlendState = &blending;
+        entry.pDynamicState = &dynamic;
+        entry.layout = pipelineLayout_;
+        entry.subpass = 0;
+    }
+    // Two pipelines from one call: the pass that clears and the pass that does
+    // not. A pipeline is built against a render pass, so the pair has to exist
+    // as a pair.
+    info[0].renderPass = renderPass_;
+    info[1].renderPass = renderPassCovered_;
+    VkPipeline built[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 2, info, nullptr, built);
     destroyShaderModule(device_, vertexModule, nullptr);
     destroyShaderModule(device_, fragmentModule, nullptr);
     if (result != VK_SUCCESS) {
         std::fprintf(stderr, "[vk] pipeline creation failed (%d)\n", static_cast<int>(result));
         return false;
     }
+    pipeline_ = built[0];
+    pipelineCovered_ = built[1];
     return true;
 }
 
@@ -732,8 +740,10 @@ void Renderer::stop() {
         frameMemory_ = VK_NULL_HANDLE;
         frameMap_ = nullptr;
         if (pipeline_) destroyPipeline(device_, pipeline_, nullptr);
+        if (pipelineCovered_) destroyPipeline(device_, pipelineCovered_, nullptr);
         if (pipelineLayout_) destroyPipelineLayout(device_, pipelineLayout_, nullptr);
         if (renderPass_) destroyRenderPass(device_, renderPass_, nullptr);
+        if (renderPassCovered_) destroyRenderPass(device_, renderPassCovered_, nullptr);
         // The pool owns every set it handed out, so destroying the pool is
         // enough; the layouts are separate objects and have to go as well.
         if (descriptorPool_) destroyDescriptorPool(device_, descriptorPool_, nullptr);
@@ -758,8 +768,10 @@ void Renderer::stop() {
     frameLayout_ = VK_NULL_HANDLE;
     textureLayout_ = VK_NULL_HANDLE;
     pipeline_ = VK_NULL_HANDLE;
+    pipelineCovered_ = VK_NULL_HANDLE;
     pipelineLayout_ = VK_NULL_HANDLE;
     renderPass_ = VK_NULL_HANDLE;
+    renderPassCovered_ = VK_NULL_HANDLE;
     commandPool_ = VK_NULL_HANDLE;
     command_ = VK_NULL_HANDLE;
     fence_ = VK_NULL_HANDLE;

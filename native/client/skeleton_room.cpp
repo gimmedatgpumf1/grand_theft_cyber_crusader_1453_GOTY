@@ -139,6 +139,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             halves.push_back(room.takeGpuScene());
             scene_ = mergeScenes(std::move(halves));
             scene_.revision = ++revision_;
+            // A closed box seen from inside: every pixel is drawn over, so the
+            // colour attachment is never cleared before it is drawn on.
+            scene_.covered = true;
             // Which batch belongs to which bone. Batches keep their identity
             // until the scene is rebuilt, so this is looked up once.
             boneBatches_.clear();

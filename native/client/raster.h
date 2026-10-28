@@ -143,6 +143,10 @@ struct GpuScene {
     double focal = 640;
     std::uint64_t revision = 0;
     Color background;
+    // True when the scene covers every pixel of the frame -- an interior with no
+    // view of the outside. The colour attachment then does not have to be
+    // cleared, which at 1568x929 is 5.8 MB of traffic a frame nobody sees.
+    bool covered = false;
     std::array<double, 16> viewMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     std::vector<GpuBatch> batches;
 };

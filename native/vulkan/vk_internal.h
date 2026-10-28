@@ -421,8 +421,11 @@ private:
     VkSampler sampler_ = VK_NULL_HANDLE;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
+    // The same pass without the colour clear, for scenes that cover the frame.
+    VkRenderPass renderPassCovered_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
+    VkPipeline pipelineCovered_ = VK_NULL_HANDLE;
 
     VkBuffer frameBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory frameMemory_ = VK_NULL_HANDLE;

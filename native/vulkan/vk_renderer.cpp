@@ -77,10 +77,16 @@ bool Renderer::submitNow(const std::function<void(VkCommandBuffer)>& body) {
 }
 
 bool Renderer::createRenderPass() {
+    // Two passes that differ in one byte's worth of behaviour: whether the
+    // colour attachment is cleared before drawing or left as it was. An empty
+    // frame costs 2.55 ms on this hardware and most of it is memory traffic, so
+    // a scene that covers every pixel -- the test room is a closed box -- does
+    // not have to pay to have 5.8 MB of background written first.
+    const auto buildPass = [this](VkAttachmentLoadOp colourLoad, VkRenderPass* out) {
     VkAttachmentDescription attachments[2]{};
     attachments[0].format = colourFormat_;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].loadOp = colourLoad;
     attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -128,8 +134,10 @@ bool Renderer::createRenderPass() {
     info.pSubpasses = &subpass;
     info.dependencyCount = 1;
     info.pDependencies = &dependency;
-    if (createRenderPassFn(device_, &info, nullptr, &renderPass_) != VK_SUCCESS) return false;
-    return true;
+    return createRenderPassFn(device_, &info, nullptr, out) == VK_SUCCESS;
+    };
+    if (!buildPass(VK_ATTACHMENT_LOAD_OP_CLEAR, &renderPass_)) return false;
+    return buildPass(VK_ATTACHMENT_LOAD_OP_DONT_CARE, &renderPassCovered_);
 }
 
 void Renderer::destroyTargets() {
@@ -304,6 +312,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (traced) tracef("vk: frame %d begin %dx%d", frames_, scene.width, scene.height);
     int width = std::max(1, scene.width);
     int height = std::max(1, scene.height);
+    // Every pixel is about to be covered by the scene, so the frame is not
+    // cleared first.
+    const bool covered = scene.covered && renderPassCovered_ != VK_NULL_HANDLE &&
+        pipelineCovered_ != VK_NULL_HANDLE;
     const int slot = static_cast<int>(frames_ % kFramesInFlight);
     // A frame that is going to the window is rendered at the size of the
     // swapchain image, so the handover is one to one. If any of this fails the
@@ -427,7 +439,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     VkRenderPassBeginInfo pass{};
 
     pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    pass.renderPass = renderPass_;
+    pass.renderPass = covered ? renderPassCovered_ : renderPass_;
     pass.framebuffer = target_.framebuffer;
     pass.renderArea.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
     pass.clearValueCount = 2;
@@ -443,7 +455,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     scissor.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
     setScissor(command_, 0, 1, &scissor);
 
-    bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+    bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, covered ? pipelineCovered_ : pipeline_);
     bindDescriptorSets(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &frameSet_, 0, nullptr);
     const VkDeviceSize offset = 0;
     if (vertexBuffer_ != VK_NULL_HANDLE) {
