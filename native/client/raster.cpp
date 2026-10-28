@@ -185,7 +185,22 @@ const Texture& loadTexture(const std::string& path) {
     return cache.emplace(path, std::move(texture)).first->second;
 }
 
+void NativeFrame::syncToRgb() {
+    if (!rgb.empty() || bgra.empty()) return;
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    if (bgra.size() < count * 4) return;
+    rgb.resize(count * 3);
+    for (std::size_t index = 0; index < count; ++index) {
+        const unsigned char* in = bgra.data() + index * 4;
+        unsigned char* out = rgb.data() + index * 3;
+        out[0] = in[2];
+        out[1] = in[1];
+        out[2] = in[0];
+    }
+}
+
 bool NativeFrame::save(const std::string& path) const {
+    const_cast<NativeFrame*>(this)->syncToRgb();
     std::error_code error;
     const std::filesystem::path destination(path);
     if (destination.has_parent_path()) std::filesystem::create_directories(destination.parent_path(), error);
@@ -199,6 +214,7 @@ void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
 }
 
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
+    syncToRgb();
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
@@ -219,6 +235,7 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
 }
 
 void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
+    syncToRgb();
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);

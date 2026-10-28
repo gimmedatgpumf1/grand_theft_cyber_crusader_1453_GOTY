@@ -100,6 +100,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     if (reuse) {
         frame.width = camera.width;
         frame.height = camera.height;
+        frame.wantsBgra = true;
         frame.rgb.clear();
         if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
         frame.logicalUi();
@@ -131,6 +132,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     worker.join();
 
     if (view.gpu) {
+        // Nothing is drawn over a room frame, so the backend can hand it back in
+        // the byte order the window wants and save two full passes over it.
+        frame.wantsBgra = true;
         // The GPU path merges the two halves and hands them to the backend;
         // nothing is rasterized here, so finish() has no work to do.
         std::vector<GpuScene> halves;

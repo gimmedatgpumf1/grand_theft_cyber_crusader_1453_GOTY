@@ -552,7 +552,11 @@ bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame&
 }
 
 bool NativeWindow::present(const NativeFrame& frame) {
-    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
+    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
+    // A backend may hand over window-order pixels; this path wants RGB, so the
+    // picture is converted once here if that is all there is.
+    if (frame.rgb.empty()) const_cast<NativeFrame&>(frame).syncToRgb();
+    if (frame.rgb.empty()) return false;
     if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.
     if (impl_->gpu && !impl_->vulkan) {
         if (!impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) return false;

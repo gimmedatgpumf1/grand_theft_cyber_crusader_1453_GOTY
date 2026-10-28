@@ -38,6 +38,18 @@ struct NativeFrame {
     int height = kDefaultWindowHeight;
     std::vector<unsigned char> rgb;
     std::vector<unsigned char> alpha;
+    // A backend may hand back the picture already in the byte order the window
+    // wants (BGRA, bottom-up rows) instead of RGB. The Vulkan readback then
+    // becomes one move per pixel instead of a repack followed by a second
+    // repack in the presenter -- two full passes over 1.45 M pixels that
+    // cancelled each other out. Anything that draws over the frame asks for rgb
+    // and gets it converted back first.
+    std::vector<unsigned char> bgra;
+    bool wantsBgra = false;
+    bool hasBgra() const { return !bgra.empty(); }
+    // Fills rgb from bgra if a caller that needs RGB turns up. Cheap no-op
+    // otherwise.
+    void syncToRgb();
     double uiScale = 1.0;
     double uiOffsetX = 0.0;
     double uiOffsetY = 0.0;

@@ -21,9 +21,12 @@ namespace detail {
 
 // Whether a drawn frame is copied back to host memory; see vk_renderer.h.
 bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
-// Measured faster than tiled once frames are pipelined: the copy out of the
-// image is the bottleneck, and a linear image is copied as plain memory.
-bool linearTarget = std::getenv("GTC_VK_TILED") == nullptr;
+// Tiled by default, and it is not close: rendering into linear memory costs the
+// rasteriser its swizzle, so the GPU half of a frame measured 2.07 ms against
+// 0.47 ms tiled. The copy out of a linear image is cheaper, but only by 0.4 ms,
+// which is a bad trade for 1.6 ms of extra rendering. GTC_VK_LINEAR=1 asks for
+// the other layout anyway.
+bool linearTarget = std::getenv("GTC_VK_LINEAR") != nullptr;
 int readbackMode = 0;
 
 // Stage timing, off unless asked for: `GTC_VK_PROFILE=1`. The point is to name
@@ -531,9 +534,20 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const double readbackStart = profiling() && frames_ < 6 ? milliseconds() : 0.0;
     frame.width = width;
     frame.height = height;
-    // Every pixel below is overwritten, so the buffers are only grown, never
-    // cleared: zero-filling 5.8 MB per frame is real time at 60 Hz.
-    frame.rgb.resize(count * 3);
+    // When the caller has said it wants the picture in window order, the frame
+    // is handed over as BGRA and rgb stays empty: the presenter can then put it
+    // on screen without touching a pixel, and a caller that does want to draw
+    // over it asks for rgb and gets it converted once, lazily.
+    const bool wantBgra = frame.wantsBgra;
+    if (wantBgra) {
+        frame.bgra.resize(count * 4);
+        frame.rgb.clear();
+    } else {
+        // Every pixel below is overwritten, so the buffers are only grown, never
+        // cleared: zero-filling 5.8 MB per frame is real time at 60 Hz.
+        frame.rgb.resize(count * 3);
+        frame.bgra.clear();
+    }
     // The coverage mask is part of the frame contract, not an extra: the caller
     // checks it before it shows anything, and every pixel this pass returns was
     // drawn by it, so it is fully covered.
@@ -562,6 +576,23 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const int redShift = bgra_ ? 16 : 0;
     const int blueShift = bgra_ ? 0 : 16;
     const auto convert = [&](std::size_t begin, std::size_t end) {
+        if (wantBgra) {
+            // The device already stores the bytes in the order the window wants
+            // when its colour format is BGRA: nothing to do but move them.
+            unsigned char* out = frame.bgra.data() + begin * 4;
+            if (bgra_) {
+                std::memcpy(out, texels + begin, (end - begin) * 4);
+                return;
+            }
+            for (std::size_t index = begin; index < end; ++index, out += 4) {
+                const std::uint32_t texel = texels[index];
+                out[0] = static_cast<unsigned char>((texel >> 16) & 0xFFu);
+                out[1] = static_cast<unsigned char>((texel >> 8) & 0xFFu);
+                out[2] = static_cast<unsigned char>(texel & 0xFFu);
+                out[3] = 255;
+            }
+            return;
+        }
         unsigned char* out = frame.rgb.data() + begin * 3;
         for (std::size_t index = begin; index < end; ++index, out += 3) {
             const std::uint32_t texel = texels[index];
