@@ -210,6 +210,7 @@ private:
     bool createTargets(int width, int height);
     bool createTexture(const Texture& texture, TextureSlot& slot);
     TextureSlot& textureFor(const Material& material);
+    bool createTransferTable();
     bool uploadVertices(const GpuScene& scene);
     void destroyTargets();
 
@@ -353,6 +354,7 @@ private:
     Target target_;
     std::map<const Texture*, TextureSlot> textures_;
     TextureSlot white_;
+    TextureSlot transfer_;
     std::vector<std::uint32_t> firstVertex_;
     bool ready_ = false;
     int frames_ = 0;

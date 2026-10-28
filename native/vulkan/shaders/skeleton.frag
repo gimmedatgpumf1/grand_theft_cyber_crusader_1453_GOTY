@@ -18,21 +18,31 @@ layout(location = 0) out vec4 outColour;
 
 layout(set = 1, binding = 0) uniform sampler2D baseMap;
 
+// A lookup table for the sRGB transfer curve, one row each way, indexed by
+// channel value. pow() is one of the more expensive things a fragment shader can
+// do and there were nine of them here per pixel -- six thousand million a frame
+// at this size. The curve is fixed, so it is measured once on the host, and the
+// shader does three filtered lookups instead.
+layout(set = 0, binding = 1) uniform sampler2D transferLut;
+
 layout(push_constant) uniform Batch {
     mat4 model;
     vec4 colour;
     vec4 flags;
 } batch;
 
-vec3 toLinear(vec3 value) {
-    vec3 usePower = step(vec3(0.04045), value);
-    return mix(value / 12.92, pow((value + 0.055) / 1.055, vec3(2.4)), usePower);
+const float kDecodeRow = 0.25;  // row 0 of two: sRGB -> linear
+const float kEncodeRow = 0.75;  // row 1 of two: linear -> sRGB
+
+vec3 transfer(vec3 value, float row) {
+    return vec3(texture(transferLut, vec2(clamp(value.r, 0.0, 1.0), row)).r,
+                texture(transferLut, vec2(clamp(value.g, 0.0, 1.0), row)).r,
+                texture(transferLut, vec2(clamp(value.b, 0.0, 1.0), row)).r);
 }
 
-vec3 toSrgb(vec3 value) {
-    vec3 usePower = step(vec3(0.0031308), value);
-    return mix(value * 12.92, 1.055 * pow(value, vec3(1.0 / 2.4)) - 0.055, usePower);
-}
+vec3 toLinear(vec3 value) { return transfer(value, kDecodeRow); }
+
+vec3 toSrgb(vec3 value) { return transfer(value, kEncodeRow); }
 
 vec3 toneMap(vec3 value) {
     return clamp((value * (2.51 * value + 0.03)) /

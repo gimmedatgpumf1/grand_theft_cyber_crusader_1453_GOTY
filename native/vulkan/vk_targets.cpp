@@ -156,6 +156,53 @@ bool Renderer::createTargets(int width, int height) {
     return true;
 }
 
+// The sRGB transfer curve as a texture: row 0 decodes, row 1 encodes. Built
+// here rather than evaluated in the shader, where pow() per channel per pixel
+// was the most expensive thing in the fragment stage.
+bool Renderer::createTransferTable() {
+    constexpr int width = 1024;
+    Texture table;
+    table.width = width;
+    table.height = 2;
+    table.pixels.resize(static_cast<std::size_t>(width) * 2 * 4);
+    const auto encode = [](double value) {
+        if (value <= 0.0) return 0.0;
+        if (value >= 1.0) return 1.0;
+        return value <= 0.0031308 ? value * 12.92 : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
+    };
+    const auto decode = [](double value) {
+        if (value <= 0.0) return 0.0;
+        if (value >= 1.0) return 1.0;
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    for (int row = 0; row < 2; ++row) {
+        for (int index = 0; index < width; ++index) {
+            const double x = index / static_cast<double>(width - 1);
+            const double value = row == 0 ? decode(x) : encode(x);
+            const auto byte = static_cast<unsigned char>(std::lround(std::clamp(value, 0.0, 1.0) * 255.0));
+            const std::size_t offset = (static_cast<std::size_t>(row) * width + index) * 4;
+            table.pixels[offset + 0] = byte;
+            table.pixels[offset + 1] = byte;
+            table.pixels[offset + 2] = byte;
+            table.pixels[offset + 3] = 255;
+        }
+    }
+    if (!createTexture(table, transfer_)) return false;
+    VkDescriptorImageInfo image{};
+    image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    image.imageView = transfer_.view;
+    image.sampler = sampler_;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = frameSet_;
+    write.dstBinding = 1;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    updateDescriptorSets(device_, 1, &write, 0, nullptr);
+    return true;
+}
+
 bool Renderer::createTexture(const Texture& texture, TextureSlot& slot) {
     const int width = texture.width;
     const int height = texture.height;

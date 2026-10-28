@@ -199,11 +199,20 @@ bool Renderer::createLayouts() {
     frameBinding.descriptorCount = 1;
     frameBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    // Binding 1 is the sRGB transfer table: fixed for the life of the renderer,
+    // in the frame set so every material set does not have to carry a copy.
+    VkDescriptorSetLayoutBinding lutBinding{};
+    lutBinding.binding = 1;
+    lutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    lutBinding.descriptorCount = 1;
+    lutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const VkDescriptorSetLayoutBinding frameBindings[2] = {frameBinding, lutBinding};
     VkDescriptorSetLayoutCreateInfo frameInfo{};
 
     frameInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    frameInfo.bindingCount = 1;
-    frameInfo.pBindings = &frameBinding;
+    frameInfo.bindingCount = 2;
+    frameInfo.pBindings = frameBindings;
     if (createDescriptorSetLayout(device_, &frameInfo, nullptr, &frameLayout_) != VK_SUCCESS) return false;
 
     VkDescriptorSetLayoutBinding textureBinding{};
@@ -223,7 +232,7 @@ bool Renderer::createLayouts() {
     sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     sizes[0].descriptorCount = 16;
     sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    sizes[1].descriptorCount = 256;
+    sizes[1].descriptorCount = 257;
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.maxSets = 272;
@@ -583,6 +592,7 @@ bool Renderer::start() {
     if (!createPipeline()) { trace("vk: pipeline failed"); stop(); return false; }
     if (!createCommandPool()) { trace("vk: command pool failed"); stop(); return false; }
     if (!createSampler()) { trace("vk: sampler failed"); stop(); return false; }
+    if (!createTransferTable()) { trace("vk: transfer table failed"); stop(); return false; }
     if (!createFrameResources()) { trace("vk: frame resources failed"); stop(); return false; }
     trace("vk: ready");
     ready_ = true;
@@ -610,6 +620,10 @@ void Renderer::stop() {
             if (entry.second.memory) freeMemory(device_, entry.second.memory, nullptr);
         }
         textures_.clear();
+        if (transfer_.view) destroyImageView(device_, transfer_.view, nullptr);
+        if (transfer_.image) destroyImage(device_, transfer_.image, nullptr);
+        if (transfer_.memory) freeMemory(device_, transfer_.memory, nullptr);
+        transfer_ = TextureSlot{};
         destroyTargets();
         if (frameBuffer_) destroyBuffer(device_, frameBuffer_, nullptr);
         if (frameMemory_) freeMemory(device_, frameMemory_, nullptr);
