@@ -405,11 +405,23 @@ bool Renderer::createCommandPool() {
     allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocation.commandPool = commandPool_;
     allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocation.commandBufferCount = 1;
-    if (allocateCommandBuffers(device_, &allocation, &command_) != VK_SUCCESS) return false;
+    allocation.commandBufferCount = kFramesInFlight + 1;
+    VkCommandBuffer all[kFramesInFlight + 1] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+    if (allocateCommandBuffers(device_, &allocation, all) != VK_SUCCESS) return false;
+    for (int slot = 0; slot < kFramesInFlight; ++slot) commands_[slot] = all[slot];
+    uploadCommand_ = all[kFramesInFlight];
+    command_ = commands_[0];
+    // One fence per cell of the pipeline. They start signalled and are reset
+    // only once the work that used them has been collected.
     VkFenceCreateInfo fence{};
     fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    return createFence(device_, &fence, nullptr, &fence_) == VK_SUCCESS;
+    fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (int slot = 0; slot < kFramesInFlight; ++slot) {
+        if (createFence(device_, &fence, nullptr, &fences_[slot]) != VK_SUCCESS) return false;
+    }
+    if (createFence(device_, &fence, nullptr, &uploadFence_) != VK_SUCCESS) return false;
+    fence_ = fences_[0];
+    return true;
 }
 
 bool Renderer::createSampler() {
@@ -614,7 +626,17 @@ void Renderer::stop() {
         if (textureLayout_) destroyDescriptorSetLayout(device_, textureLayout_, nullptr);
         if (sampler_) destroySampler(device_, sampler_, nullptr);
         if (commandPool_) destroyCommandPool(device_, commandPool_, nullptr);
-        if (fence_) destroyFence(device_, fence_, nullptr);
+        if (uploadFence_) destroyFence(device_, uploadFence_, nullptr);
+        uploadFence_ = VK_NULL_HANDLE;
+        uploadCommand_ = VK_NULL_HANDLE;
+        for (int slot = 0; slot < kFramesInFlight; ++slot) {
+            if (fences_[slot]) destroyFence(device_, fences_[slot], nullptr);
+            fences_[slot] = VK_NULL_HANDLE;
+            fenceArmed_[slot] = false;
+            commands_[slot] = VK_NULL_HANDLE;
+        }
+        fence_ = VK_NULL_HANDLE;
+        pendingSlot_ = -1;
         if (device_ != VK_NULL_HANDLE) destroyDevice(device_, nullptr);
     }
     descriptorPool_ = VK_NULL_HANDLE;

@@ -23,8 +23,6 @@ bool readbackEnabled = std::getenv("GTC_VK_NO_COPY") == nullptr;
 bool linearTarget = std::getenv("GTC_VK_LINEAR") != nullptr;
 int readbackMode = 0;
 
-namespace {
-
 // Stage timing, off unless asked for: `GTC_VK_PROFILE=1`. The point is to name
 // the stage that costs, because "Vulkan is slow" says nothing about which of
 // four things is slow.
@@ -32,6 +30,8 @@ bool profiling() {
     static const bool on = std::getenv("GTC_VK_PROFILE") != nullptr;
     return on;
 }
+
+namespace {
 
 // The frame can be drawn without being copied out, which separates "how long
 // does the GPU take to draw" from "how long does it take to hand the result
@@ -61,13 +61,10 @@ double milliseconds() {
 } // namespace
 
 bool Renderer::submitNow(const std::function<void(VkCommandBuffer)>& body) {
-    VkCommandBuffer buffer = VK_NULL_HANDLE;
-    VkCommandBufferAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocation.commandPool = commandPool_;
-    allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocation.commandBufferCount = 1;
-    if (allocateCommandBuffers(device_, &allocation, &buffer) != VK_SUCCESS) return false;
+    // Its own buffer and fence: sharing the frame's would reset a fence the
+    // pending frame is still using, and silently corrupt the pipeline.
+    if (uploadCommand_ == VK_NULL_HANDLE || uploadFence_ == VK_NULL_HANDLE) return false;
+    VkCommandBuffer buffer = uploadCommand_;
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -78,11 +75,9 @@ bool Renderer::submitNow(const std::function<void(VkCommandBuffer)>& body) {
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &buffer;
-    resetFences(device_, 1, &fence_);
-    if (queueSubmit(queue_, 1, &submit, fence_) != VK_SUCCESS) return false;
-    const VkResult waited = waitForFences(device_, 1, &fence_, VK_TRUE, 5000000000ull);
-    // The command buffer came from a pool with reset support, so it can go back
-    // to the pool rather than being freed one allocation at a time.
+    resetFences(device_, 1, &uploadFence_);
+    if (queueSubmit(queue_, 1, &submit, uploadFence_) != VK_SUCCESS) return false;
+    const VkResult waited = waitForFences(device_, 1, &uploadFence_, VK_TRUE, 5000000000ull);
     resetCommandBuffer(buffer, 0);
     return waited == VK_SUCCESS;
 }
@@ -149,310 +144,13 @@ void Renderer::destroyTargets() {
     if (target_.depthView) destroyImageView(device_, target_.depthView, nullptr);
     if (target_.colour) destroyImage(device_, target_.colour, nullptr);
     if (target_.depth) destroyImage(device_, target_.depth, nullptr);
-    if (target_.readback) destroyBuffer(device_, target_.readback, nullptr);
-    if (target_.readbackMemory) freeMemory(device_, target_.readbackMemory, nullptr);
+    for (int slot = 0; slot < kFramesInFlight; ++slot) {
+        if (target_.readback[slot]) destroyBuffer(device_, target_.readback[slot], nullptr);
+        if (target_.readbackMemory[slot]) freeMemory(device_, target_.readbackMemory[slot], nullptr);
+    }
     if (target_.colourMemory) freeMemory(device_, target_.colourMemory, nullptr);
     if (target_.depthMemory) freeMemory(device_, target_.depthMemory, nullptr);
     target_ = Target{};
-}
-
-bool Renderer::createTargets(int width, int height) {
-    destroyTargets();
-    VkPhysicalDeviceMemoryProperties memory{};
-    getPhysicalDeviceMemoryProperties(physical_, &memory);
-    const auto pick = [&](std::uint32_t bits, VkMemoryPropertyFlags wanted) {
-        for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-            if ((bits & (1u << index)) == 0) continue;
-            if ((memory.memoryTypes[index].propertyFlags & wanted) == wanted) return index;
-        }
-        return memory.memoryTypeCount; // nothing matched
-    };
-    const auto makeImage = [&](VkFormat format, VkImageUsageFlags usage, VkImage& image, VkDeviceMemory& allocation,
-                               bool allowLinear) {
-        VkImageCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        info.imageType = VK_IMAGE_TYPE_2D;
-        info.format = format;
-        info.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
-        info.mipLevels = 1;
-        info.arrayLayers = 1;
-        info.samples = VK_SAMPLE_COUNT_1_BIT;
-        info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        if (allowLinear && linearTarget) {
-            // Only where the device says a linear image of this format can be a
-            // colour attachment; otherwise the tiled path stays.
-            VkFormatProperties properties{};
-            getPhysicalDeviceFormatProperties(physical_, format, &properties);
-            if ((properties.linearTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0) {
-                info.tiling = VK_IMAGE_TILING_LINEAR;
-            } else {
-                trace("vk: this device will not render into a linear image; staying tiled");
-            }
-        }
-        info.usage = usage;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (createImage(device_, &info, nullptr, &image) != VK_SUCCESS) return false;
-        VkMemoryRequirements requirements{};
-        getImageMemoryRequirements(device_, image, &requirements);
-        const std::uint32_t type = pick(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (type == memory.memoryTypeCount) return false;
-        VkMemoryAllocateInfo allocate{};
-        allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocate.allocationSize = requirements.size;
-        allocate.memoryTypeIndex = type;
-        if (this->allocateMemory(device_, &allocate, nullptr, &allocation) != VK_SUCCESS) return false;
-        return bindImageMemory(device_, image, allocation, 0) == VK_SUCCESS;
-    };
-
-    const VkImageUsageFlags colourUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if (!makeImage(colourFormat_, colourUsage, target_.colour, target_.colourMemory, true)) return false;
-    if (!makeImage(depthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, target_.depth, target_.depthMemory,
-                   false)) {
-        return false;
-    }
-
-    VkImageViewCreateInfo colourView{};
-
-    colourView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    colourView.image = target_.colour;
-    colourView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    colourView.format = colourFormat_;
-    colourView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    colourView.subresourceRange.levelCount = 1;
-    colourView.subresourceRange.layerCount = 1;
-    if (createImageView(device_, &colourView, nullptr, &target_.colourView) != VK_SUCCESS) return false;
-
-    VkImageViewCreateInfo depthView{};
-
-    depthView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    depthView.image = target_.depth;
-    depthView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    depthView.format = depthFormat_;
-    depthView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depthView.subresourceRange.levelCount = 1;
-    depthView.subresourceRange.layerCount = 1;
-    if (createImageView(device_, &depthView, nullptr, &target_.depthView) != VK_SUCCESS) return false;
-
-    const VkImageView views[2] = {target_.colourView, target_.depthView};
-    VkFramebufferCreateInfo framebuffer{};
-    framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebuffer.renderPass = renderPass_;
-    framebuffer.attachmentCount = 2;
-    framebuffer.pAttachments = views;
-    framebuffer.width = static_cast<std::uint32_t>(width);
-    framebuffer.height = static_cast<std::uint32_t>(height);
-    framebuffer.layers = 1;
-    if (createFramebuffer(device_, &framebuffer, nullptr, &target_.framebuffer) != VK_SUCCESS) return false;
-
-    VkBufferCreateInfo readback{};
-
-    readback.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    readback.size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u;
-    readback.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    readback.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (createBuffer(device_, &readback, nullptr, &target_.readback) != VK_SUCCESS) return false;
-    VkMemoryRequirements requirements{};
-    getBufferMemoryRequirements(device_, target_.readback, &requirements);
-    // Cached and coherent if the device offers it: the host reads this buffer
-    // every frame, and write-combined memory turns that read into a stream of
-    // uncached bus transactions.
-    const VkMemoryPropertyFlags coherent = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    const VkMemoryPropertyFlags requested =
-        readbackMode == 1 ? coherent | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-      : readbackMode == 2 ? coherent
-      : coherent | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    std::uint32_t type = pick(requirements.memoryTypeBits, requested);
-    target_.readbackCached = readbackMode == 0 && type != memory.memoryTypeCount;
-    if (type == memory.memoryTypeCount) type = pick(requirements.memoryTypeBits, coherent);
-    tracef("vk: readback memory %s", target_.readbackCached ? "host cached" : "host visible only");
-    if (profiling()) {
-        // This single fact decides whether the GPU's copy out of the image is a
-        // fast write into cacheable memory or a stream of uncached writes, so it
-        // is printed rather than buried in the log.
-        const char* name = readbackMode == 0 ? "host cached"
-            : readbackMode == 1 ? "device local + host visible" : "host visible only";
-        std::printf("    [vk] readback buffer memory requested: %s%s\n", name,
-                    type == memory.memoryTypeCount ? " (unavailable)" : "");
-    }
-    if (type == memory.memoryTypeCount) return false;
-    VkMemoryAllocateInfo allocate{};
-    allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocate.allocationSize = requirements.size;
-    allocate.memoryTypeIndex = type;
-    if (this->allocateMemory(device_, &allocate, nullptr, &target_.readbackMemory) != VK_SUCCESS) return false;
-    if (bindBufferMemory(device_, target_.readback, target_.readbackMemory, 0) != VK_SUCCESS) return false;
-    if (mapMemory(device_, target_.readbackMemory, 0, VK_WHOLE_SIZE, 0, &target_.readbackMap) != VK_SUCCESS) return false;
-
-    if (profiling()) {
-        std::printf("    [vk] colour image: %s\n",
-                    linearTarget ? "linear (linear tiling requested)" : "tiled");
-    }
-    target_.staging.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
-    target_.width = width;
-    target_.height = height;
-    return true;
-}
-
-bool Renderer::createTexture(const Texture& texture, TextureSlot& slot) {
-    const int width = texture.width;
-    const int height = texture.height;
-    if (width <= 0 || height <= 0 || texture.pixels.empty()) return false;
-    VkImageCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.imageType = VK_IMAGE_TYPE_2D;
-    info.format = VK_FORMAT_R8G8B8A8_UNORM;
-    info.extent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
-    info.mipLevels = 1;
-    info.arrayLayers = 1;
-    info.samples = VK_SAMPLE_COUNT_1_BIT;
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    if (createImage(device_, &info, nullptr, &slot.image) != VK_SUCCESS) return false;
-
-    VkPhysicalDeviceMemoryProperties memory{};
-    getPhysicalDeviceMemoryProperties(physical_, &memory);
-    VkMemoryRequirements imageRequirements{};
-    getImageMemoryRequirements(device_, slot.image, &imageRequirements);
-    std::uint32_t type = memory.memoryTypeCount;
-    for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-        if ((imageRequirements.memoryTypeBits & (1u << index)) == 0) continue;
-        if ((memory.memoryTypes[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0) continue;
-        type = index;
-        break;
-    }
-    if (type == memory.memoryTypeCount) return false;
-    VkMemoryAllocateInfo imageAllocation{};
-    imageAllocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    imageAllocation.allocationSize = imageRequirements.size;
-    imageAllocation.memoryTypeIndex = type;
-    if (allocateMemory(device_, &imageAllocation, nullptr, &slot.memory) != VK_SUCCESS) return false;
-    if (bindImageMemory(device_, slot.image, slot.memory, 0) != VK_SUCCESS) return false;
-
-    // The pixels go through a host-visible staging buffer, because the image is
-    // device-local and cannot be written from here directly.
-    const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u;
-    VkBuffer staging = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-    void* stagingMap = nullptr;
-    VkBufferCreateInfo stagingInfo{};
-    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    stagingInfo.size = bytes;
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (createBuffer(device_, &stagingInfo, nullptr, &staging) != VK_SUCCESS) return false;
-    VkMemoryRequirements stagingRequirements{};
-    getBufferMemoryRequirements(device_, staging, &stagingRequirements);
-    const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    std::uint32_t stagingType = memory.memoryTypeCount;
-    for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-        if ((stagingRequirements.memoryTypeBits & (1u << index)) == 0) continue;
-        if ((memory.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
-        stagingType = index;
-        break;
-    }
-    if (stagingType == memory.memoryTypeCount) return false;
-    VkMemoryAllocateInfo stagingAllocation{};
-    stagingAllocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    stagingAllocation.allocationSize = stagingRequirements.size;
-    stagingAllocation.memoryTypeIndex = stagingType;
-    if (allocateMemory(device_, &stagingAllocation, nullptr, &stagingMemory) != VK_SUCCESS) return false;
-    if (bindBufferMemory(device_, staging, stagingMemory, 0) != VK_SUCCESS) return false;
-    if (mapMemory(device_, stagingMemory, 0, VK_WHOLE_SIZE, 0, &stagingMap) != VK_SUCCESS) return false;
-    std::memcpy(stagingMap, texture.pixels.data(), static_cast<std::size_t>(bytes));
-    unmapMemory(device_, stagingMemory);
-
-    const bool copied = submitNow([&](VkCommandBuffer buffer) {
-        VkImageMemoryBarrier toTransfer{};
-        toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toTransfer.image = slot.image;
-        toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toTransfer.subresourceRange.levelCount = 1;
-        toTransfer.subresourceRange.layerCount = 1;
-        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        pipelineBarrier(buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                        0, nullptr, 0, nullptr, 1, &toTransfer);
-        VkBufferImageCopy copy{};
-        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copy.imageSubresource.layerCount = 1;
-        copy.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
-        copyBufferToImage(buffer, staging, slot.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-        VkImageMemoryBarrier toShader{};
-        toShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShader.image = slot.image;
-        toShader.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toShader.subresourceRange.levelCount = 1;
-        toShader.subresourceRange.layerCount = 1;
-        toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        toShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        pipelineBarrier(buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-                        0, nullptr, 0, nullptr, 1, &toShader);
-    });
-    destroyBuffer(device_, staging, nullptr);
-    freeMemory(device_, stagingMemory, nullptr);
-    if (!copied) return false;
-
-    VkImageViewCreateInfo view{};
-
-    view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view.image = slot.image;
-    view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view.format = VK_FORMAT_R8G8B8A8_UNORM;
-    view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view.subresourceRange.levelCount = 1;
-    view.subresourceRange.layerCount = 1;
-    if (createImageView(device_, &view, nullptr, &slot.view) != VK_SUCCESS) return false;
-
-    VkDescriptorSetAllocateInfo allocation{};
-
-    allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocation.descriptorPool = descriptorPool_;
-    allocation.descriptorSetCount = 1;
-    allocation.pSetLayouts = &textureLayout_;
-    if (allocateDescriptorSets(device_, &allocation, &slot.set) != VK_SUCCESS) return false;
-
-    VkDescriptorImageInfo image{};
-    image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    image.imageView = slot.view;
-    image.sampler = sampler_;
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = slot.set;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &image;
-    updateDescriptorSets(device_, 1, &write, 0, nullptr);
-    return true;
-}
-
-TextureSlot& Renderer::textureFor(const Material& material) {
-    const bool usable = material.texture && !material.texture->pixels.empty() &&
-        (material.kind == Material::Kind::Skin || material.kind == Material::Kind::Hair ||
-         material.kind == Material::Kind::Cloth || material.kind == Material::Kind::Floor ||
-         material.kind == Material::Kind::Textured);
-    if (!usable) return white_;
-    auto found = textures_.find(material.texture);
-    if (found != textures_.end()) return found->second;
-    TextureSlot slot;
-    if (!createTexture(*material.texture, slot)) {
-        // A texture that will not upload is not a reason to stop drawing: the
-        // batch keeps its flat colour, which is what the CPU path does when a
-        // material has no image.
-        return white_;
-    }
-    return textures_.emplace(material.texture, slot).first->second;
 }
 
 bool Renderer::uploadVertices(const GpuScene& scene) {
@@ -672,6 +370,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (profile && frames_ < 5) {
         std::printf("    [vk] setup (targets, upload, textures): %.2f ms\n", recordedStart - setupStart);
     }
+    const int slot = static_cast<int>(frames_ % kFramesInFlight);
+    command_ = commands_[slot];
     if (resetCommandBuffer(command_, 0) != VK_SUCCESS) { tracef("vk: frame %d reset failed", frames_); return false; }
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -690,7 +390,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     reuse.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     reuse.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     reuse.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    reuse.buffer = target_.readback;
+    // This slot's buffer was written by an earlier transfer and read by the
+    // host since; the write-after-write is stated for the same buffer.
+    reuse.buffer = target_.readback[slot];
     reuse.offset = 0;
     reuse.size = VK_WHOLE_SIZE;
     reuse.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -777,7 +479,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     region.imageSubresource.layerCount = 1;
     region.imageExtent = {static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1};
     if (!skipCopy()) {
-        copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback, 1,
+        copyImageToBuffer(command_, target_.colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_.readback[slot], 1,
                           &region);
     }
 
@@ -794,11 +496,26 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &command_;
-    resetFences(device_, 1, &fence_);
+    resetFences(device_, 1, &fences_[slot]);
+    fenceArmed_[slot] = true;
     if (traced) tracef("vk: frame %d submitting", frames_);
-    if (queueSubmit(queue_, 1, &submit, fence_) != VK_SUCCESS) { tracef("vk: frame %d submit failed", frames_); return false; }
-    const VkResult waited = waitForFences(device_, 1, &fence_, VK_TRUE, 5000000000ull);
-    if (waited != VK_SUCCESS) { tracef("vk: frame %d wait failed (%d)", frames_, static_cast<int>(waited)); return false; }
+    if (queueSubmit(queue_, 1, &submit, fences_[slot]) != VK_SUCCESS) {
+        tracef("vk: frame %d submit failed", frames_);
+        return false;
+    }
+    const double submitted = profile ? milliseconds() : 0.0;
+
+    // Collect the frame that was submitted before this one. Waiting for *this*
+    // frame would leave the device idle while the host copies the picture out;
+    // waiting for the previous one lets the two overlap, which is the whole
+    // point of keeping more than one in flight.
+    const int collect = pendingSlot_ >= 0 ? pendingSlot_ : slot;
+    if (waitForFences(device_, 1, &fences_[collect], VK_TRUE, 5000000000ull) != VK_SUCCESS) {
+        tracef("vk: frame %d wait failed", frames_);
+        return false;
+    }
+    fenceArmed_[collect] = false;
+    pendingSlot_ = slot;
     const double gpuDone = profile ? milliseconds() : 0.0;
     if (profile && frames_ < 5) {
         std::printf("    [vk] submit + wait for the device: %.2f ms\n", gpuDone - submittedStart);
@@ -824,13 +541,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // where the byte-by-byte read that used to be here was one transaction per
     // channel per pixel on a write-combined mapping.
     const std::size_t bytes = count * 4;
-    if (target_.staging.size() < bytes) target_.staging.resize(bytes);
-    std::memcpy(target_.staging.data(), target_.readbackMap, bytes);
+    const int readSlot = collect;
+    if (target_.staging[readSlot].size() < bytes) target_.staging[readSlot].resize(bytes);
+    std::memcpy(target_.staging[readSlot].data(), target_.readbackMap[readSlot], bytes);
     // One 32-bit load per pixel and shifts, rather than four byte loads, and the
     // band is split across cores: 1.45 M pixels of channel shuffling is exactly
     // the sort of work that is embarrassingly parallel, and doing it on one
     // thread was leaving three cores idle every frame.
-    const std::uint32_t* texels = reinterpret_cast<const std::uint32_t*>(target_.staging.data());
+    const std::uint32_t* texels = reinterpret_cast<const std::uint32_t*>(target_.staging[readSlot].data());
     const int redShift = bgra_ ? 16 : 0;
     const int blueShift = bgra_ ? 0 : 16;
     const auto convert = [&](std::size_t begin, std::size_t end) {

@@ -138,6 +138,12 @@ struct TextureSlot {
     VkDescriptorSet set = VK_NULL_HANDLE;
 };
 
+// How many frames the device may have in flight. One means "submit, then block
+// until it is done", which is what this used to do: the GPU sat idle while the
+// host copied a frame out, and the host sat idle while the GPU drew. Two lets
+// each side work on a different frame at the same time.
+constexpr int kFramesInFlight = 2;
+
 struct Target {
     VkImage colour = VK_NULL_HANDLE;
     VkDeviceMemory colourMemory = VK_NULL_HANDLE;
@@ -146,13 +152,15 @@ struct Target {
     VkDeviceMemory depthMemory = VK_NULL_HANDLE;
     VkImageView depthView = VK_NULL_HANDLE;
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
-    VkBuffer readback = VK_NULL_HANDLE;
-    VkDeviceMemory readbackMemory = VK_NULL_HANDLE;
-    void* readbackMap = nullptr;
+    // One readback buffer per frame in flight: the device writes frame N while
+    // the host reads frame N-1, so they must not share memory.
+    VkBuffer readback[kFramesInFlight] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory readbackMemory[kFramesInFlight] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    void* readbackMap[kFramesInFlight] = {nullptr, nullptr};
     // The mapped buffer can be write-combined memory, where a byte read costs a
     // bus transaction. The frame is copied out of it in one wide move and
     // converted from here instead.
-    std::vector<unsigned char> staging;
+    std::vector<unsigned char> staging[kFramesInFlight];
     bool readbackCached = false;
     int width = 0;
     int height = 0;
@@ -160,6 +168,9 @@ struct Target {
 
 // Defined in vk_renderer.cpp; declared here because the frame loop asks it.
 extern bool readbackEnabled;
+
+// Stage timing, off unless asked for: `GTC_VK_PROFILE=1`.
+bool profiling();
 
 // When the frame has to be copied back to the host anyway, the colour image can
 // be kept in linear layout: a tiled image has to be walked by the copy engine,
@@ -300,6 +311,16 @@ private:
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     VkCommandBuffer command_ = VK_NULL_HANDLE;
     VkFence fence_ = VK_NULL_HANDLE;
+    // The pipelined set: one command buffer and one fence per frame in flight.
+    VkCommandBuffer commands_[kFramesInFlight] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkFence fences_[kFramesInFlight] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    // Uploads (textures, vertex staging) run on their own buffer and fence.
+    VkCommandBuffer uploadCommand_ = VK_NULL_HANDLE;
+    VkFence uploadFence_ = VK_NULL_HANDLE;
+    bool fenceArmed_[kFramesInFlight] = {false, false};
+    // Which slot holds a submitted frame nobody has collected yet.
+    int pendingSlot_ = -1;
+    std::uint64_t pendingFrame_ = 0;
 
     VkDescriptorSetLayout frameLayout_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout textureLayout_ = VK_NULL_HANDLE;

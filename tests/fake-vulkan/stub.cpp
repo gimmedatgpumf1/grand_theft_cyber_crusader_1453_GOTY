@@ -89,8 +89,13 @@ static VkResult stubMap(VkDevice, VkDeviceMemory, VkDeviceSize, VkDeviceSize, Vk
     return VK_SUCCESS;
 }
 static void stubGetQueue(VkDevice, std::uint32_t, std::uint32_t, VkQueue* queue) { std::memcpy(queue, &g_handle, sizeof(void*)); }
-static VkResult stubAllocateCommandBuffers(VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer* buffers) {
-    std::memcpy(&buffers[0], &g_handle, sizeof(void*));
+static VkResult stubAllocateCommandBuffers(VkDevice, const VkCommandBufferAllocateInfo* info,
+                                          VkCommandBuffer* buffers) {
+    // Every buffer asked for gets a handle: the backend keeps more than one in
+    // flight, and a stub that only answers for one hides bugs in real code.
+    for (std::uint32_t index = 0; index < info->commandBufferCount; ++index) {
+        std::memcpy(&buffers[index], &g_handle, sizeof(void*));
+    }
     return VK_SUCCESS;
 }
 static VkResult stubAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateInfo* info, VkDescriptorSet* sets) {
