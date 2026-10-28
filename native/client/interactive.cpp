@@ -150,21 +150,12 @@ public:
             // so this one has to come back through host memory.
             frame.wantPixels = true;
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
-                // A backend that cannot draw must not end the session by itself:
-                // the software rasterizer takes over for the rest of the run and
-                // the reason is written to the log.
-                if (view_.gpu) {
-                    tracef("render: gpu frame failed (%s), falling back to software", error.c_str());
-                    std::cerr << "GPU frame failed, using the software rasterizer: " << error << '\n';
-                    view_.gpu = false;
-                    if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
-                        std::cerr << error << '\n';
-                        return 1;
-                    }
-                } else {
-                    std::cerr << error << '\n';
-                    return 1;
-                }
+                // A frame that will not draw is the end of the run. Falling back
+                // to the software rasterizer hid a broken backend behind a slow
+                // one; the failure is the thing worth seeing.
+                std::fflush(stdout);
+                std::cerr << "frame failed: " << error << '\n';
+                std::abort();
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;

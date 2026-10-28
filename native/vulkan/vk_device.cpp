@@ -695,11 +695,7 @@ bool Renderer::start() {
     if (!createFrameResources()) { trace("vk: frame resources failed"); stop(); return false; }
     trace("vk: ready");
     ready_ = true;
-    if (surfaceUsable_) {
-        std::printf("[vk] surface: usable, frames go to the window without a readback\n");
-    } else if (wsiHandle_ != nullptr) {
-        std::printf("[vk] surface: unusable, frames come back through host memory\n");
-    }
+    if (surfaceUsable_) std::printf("[vk] surface: usable, frames go to the window without a readback\n");
     return true;
 }
 

@@ -241,11 +241,17 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
         trace("window: vulkan disabled by GTC_NO_VULKAN");
     }
     // Offered before the device is created, because the surface extensions have
-    // to be requested at instance creation. This is not optional any more: the
-    // frame goes to the window from the device, or the backend says why it could
-    // not and falls back to the readback.
+    // to be requested at instance creation.
     if (wantVulkan()) setVulkanSurfaceTarget(impl_->window, 1);
-    if (wantVulkan() && vulkanAvailable()) {
+    if (wantVulkan()) {
+        // Vulkan or nothing. A quiet slide onto the other backend is how a
+        // backend sits broken for weeks without anybody noticing.
+        if (!vulkanAvailable()) {
+            std::fflush(stdout);
+            std::fprintf(stderr, "window: Vulkan will not start on this machine; there is no other GPU backend\n");
+            std::fflush(stderr);
+            std::abort();
+        }
         trace("window: vulkan ready");
         impl_->vulkan = true;
         impl_->gpu = true;

@@ -8,9 +8,9 @@
 // whose GPU finished drawing it milliseconds earlier. Here the frame is blitted,
 // on the device, straight into the image the compositor is about to show.
 //
-// Every step can fail, and every failure falls back to the readback path with
-// one line of log: a window this driver will not present to costs a sentence,
-// not a session.
+// Every step is checked and every failure is fatal and named. A window this
+// backend cannot present to is a broken window, and a broken window that keeps
+// running is one nobody looks at.
 
 #include "../client/diagnostics.h"
 #include "vk_internal.h"
@@ -35,11 +35,22 @@ typedef VkResult(VKAPI_PTR* PFN_vkCreateWin32SurfaceKHR)(VkInstance, const VkWin
 #endif
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace gtc::native {
 namespace detail {
 namespace {
+
+// There is no quiet way out of here. A window this backend cannot present to is
+// a broken window, not a slower one: say what broke and die, so the thing that
+// broke is the only thing on the screen.
+[[noreturn]] void fatalSwapchain(const char* reason) {
+    std::fflush(stdout);
+    std::fprintf(stderr, "[vk] swapchain: %s\n", reason);
+    std::fflush(stderr);
+    std::abort();
+}
 
 // VK_KHR_swapchain has to be named when the device is created, before any of
 // this file's frame-time work can happen.
@@ -69,20 +80,17 @@ bool Renderer::prepareSurface() {
         !resolve(surfaceCaps_, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") ||
         !resolve(surfaceFormats_, "vkGetPhysicalDeviceSurfaceFormatsKHR") ||
         !resolve(surfaceModes_, "vkGetPhysicalDeviceSurfacePresentModesKHR")) {
-        std::printf("[vk] surface: entry points missing, presenting through the readback\n");
-        return false;
+        fatalSwapchain("the surface entry points are missing from this driver");
     }
     if (!swapchainExtensionOffered(getInstanceProcAddr_, instance_, physical_)) {
-        std::printf("[vk] surface: VK_KHR_swapchain is not offered, presenting through the readback\n");
-        return false;
+        fatalSwapchain("VK_KHR_swapchain is not offered by this device");
     }
     VkResult created = VK_ERROR_EXTENSION_NOT_PRESENT;
 #if defined(_WIN32)
     const auto create = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
         getInstanceProcAddr_(instance_, "vkCreateWin32SurfaceKHR"));
     if (create == nullptr) {
-        std::printf("[vk] surface: vkCreateWin32SurfaceKHR missing, presenting through the readback\n");
-        return false;
+        fatalSwapchain("vkCreateWin32SurfaceKHR is missing");
     }
     VkWin32SurfaceCreateInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -91,20 +99,16 @@ bool Renderer::prepareSurface() {
     created = create(instance_, &info, nullptr, &surface_);
 #else
     (void)created;
-    std::printf("[vk] surface: swapchain presentation is Windows-only for now\n");
+    // Not a window backend: nothing here is expected to present.
     return false;
 #endif
     if (created != VK_SUCCESS || surface_ == VK_NULL_HANDLE) {
-        std::printf("[vk] surface: creation failed (%d), presenting through the readback\n",
-                    static_cast<int>(created));
-        surface_ = VK_NULL_HANDLE;
-        return false;
+        std::fprintf(stderr, "[vk] surface: vkCreateWin32SurfaceKHR failed (%d)\n", static_cast<int>(created));
+        fatalSwapchain("the window would not give up a surface");
     }
     VkBool32 supported = VK_FALSE;
     if (surfaceSupport_(physical_, family_, surface_, &supported) != VK_SUCCESS || !supported) {
-        std::printf("[vk] surface: queue family %u cannot present, presenting through the readback\n",
-                    static_cast<unsigned>(family_));
-        return false;
+        fatalSwapchain("this queue family cannot present to this window");
     }
     surfaceUsable_ = true;
     presentWanted_ = true;
@@ -125,15 +129,11 @@ bool Renderer::createSwapchain(int width, int height) {
         !resolve(createSemaphoreFn, "vkCreateSemaphore") ||
         !resolve(destroySemaphore, "vkDestroySemaphore") ||
         !resolve(blitImage, "vkCmdBlitImage") || !resolve(copyImage, "vkCmdCopyImage")) {
-        std::printf("[vk] swapchain: entry points missing, presenting through the readback\n");
-        surfaceUsable_ = false;
-        return false;
+        fatalSwapchain("the swapchain entry points are missing from this driver");
     }
     VkSurfaceCapabilitiesKHR caps{};
     if (surfaceCaps_(physical_, surface_, &caps) != VK_SUCCESS) {
-        surfaceUsable_ = false;
-        std::printf("[vk] swapchain: no surface capabilities, presenting through the readback\n");
-        return false;
+        fatalSwapchain("the surface has no capabilities");
     }
     VkExtent2D extent{};
     if (caps.currentExtent.width != 0xFFFFFFFFu) {
@@ -146,9 +146,7 @@ bool Renderer::createSwapchain(int width, int height) {
     }
     if (extent.width == 0 || extent.height == 0) return false;
     if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) {
-        surfaceUsable_ = false;
-        std::printf("[vk] swapchain: this surface cannot take a transfer, presenting through the readback\n");
-        return false;
+        fatalSwapchain("this surface cannot take a transfer");
     }
     if (swapReady_ && extent.width == swapExtent_.width && extent.height == swapExtent_.height) return true;
     destroySwapchain();
@@ -218,21 +216,15 @@ bool Renderer::createSwapchain(int width, int height) {
     info.oldSwapchain = VK_NULL_HANDLE;
     if (createSwapchainFn(device_, &info, nullptr, &swapchain_) != VK_SUCCESS) {
         swapchain_ = VK_NULL_HANDLE;
-        surfaceUsable_ = false;
-        std::printf("[vk] swapchain: creation failed, presenting through the readback\n");
-        return false;
+        fatalSwapchain("vkCreateSwapchainKHR failed");
     }
     std::uint32_t count = 0;
     if (getSwapchainImages(device_, swapchain_, &count, nullptr) != VK_SUCCESS || count == 0) {
-        destroySwapchain();
-        surfaceUsable_ = false;
-        return false;
+        fatalSwapchain("vkGetSwapchainImagesKHR returned nothing");
     }
     swapImages_.resize(count, VK_NULL_HANDLE);
     if (getSwapchainImages(device_, swapchain_, &count, swapImages_.data()) != VK_SUCCESS) {
-        destroySwapchain();
-        surfaceUsable_ = false;
-        return false;
+        fatalSwapchain("vkGetSwapchainImagesKHR failed");
     }
     swapImages_.resize(count);
     swapViews_.assign(count, VK_NULL_HANDLE);
@@ -244,9 +236,7 @@ bool Renderer::createSwapchain(int width, int height) {
         VkSemaphoreCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         if (createSemaphoreFn(device_, &info, nullptr, &semaphore) != VK_SUCCESS) {
-            destroySwapchain();
-            surfaceUsable_ = false;
-            return false;
+            fatalSwapchain("vkCreateSemaphore failed");
         }
     }
     for (std::uint32_t index = 0; index < count; ++index) {
@@ -259,18 +249,28 @@ bool Renderer::createSwapchain(int width, int height) {
         view.subresourceRange.levelCount = 1;
         view.subresourceRange.layerCount = 1;
         if (createImageView(device_, &view, nullptr, &swapViews_[index]) != VK_SUCCESS) {
-            destroySwapchain();
-            surfaceUsable_ = false;
-            return false;
+            fatalSwapchain("vkCreateImageView failed for a swapchain image");
         }
         VkSemaphoreCreateInfo semaphore{};
         semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         if (createSemaphoreFn(device_, &semaphore, nullptr, &drawDone_[index]) != VK_SUCCESS) {
-            destroySwapchain();
-            surfaceUsable_ = false;
-            return false;
+            fatalSwapchain("vkCreateSemaphore failed for a swapchain image");
         }
     }
+    // One command buffer per image for the recorded frame, allocated with the
+    // swapchain that owns the images.
+    VkCommandBufferAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocation.commandPool = commandPool_;
+    allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocation.commandBufferCount = count;
+    presentCommands_.assign(count, VK_NULL_HANDLE);
+    if (allocateCommandBuffers(device_, &allocation, presentCommands_.data()) != VK_SUCCESS) {
+        presentCommands_.clear();
+        fatalSwapchain("could not allocate a command buffer per swapchain image");
+    }
+    presentKey_.assign(count, 0);
+    presentRecorded_.assign(count, 0);
     swapFormat_ = format;
     swapExtent_ = extent;
     swapWidth_ = static_cast<int>(extent.width);
@@ -308,6 +308,9 @@ void Renderer::destroySwapchain() {
     drawDone_.clear();
     swapImageSlot_.clear();
     swapImagePresented_.clear();
+    presentCommands_.clear();
+    presentKey_.clear();
+    presentRecorded_.clear();
     swapReady_ = false;
     swapWidth_ = swapHeight_ = 0;
 }
@@ -319,18 +322,16 @@ bool Renderer::acquirePresentImage(int slot, int& imageIndex) {
     imageIndex = -1;
     if (!swapReady_ || acquireNextImage == nullptr) return false;
     std::uint32_t index = 0;
-    // A short wait: an image that is not ready this frame -- a minimised window,
-    // a driver that is behind -- costs this frame the readback path, not a
-    // session that looks hung for five seconds.
-    const VkResult result = acquireNextImage(device_, swapchain_, 100000000ull, imageReady_[slot], VK_NULL_HANDLE, &index);
-    if (result == VK_TIMEOUT || result == VK_NOT_READY) return false;
+    // No timeout: an image is either coming or the window is gone.
+    const VkResult result = acquireNextImage(device_, swapchain_, UINT64_MAX, imageReady_[slot], VK_NULL_HANDLE, &index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        // A resize. Not a failure: the next frame makes a swapchain that fits.
         swapReady_ = false;
         return false;
     }
     if (result != VK_SUCCESS) {
-        swapReady_ = false;
-        return false;
+        std::fprintf(stderr, "[vk] swapchain: vkAcquireNextImageKHR failed (%d)\n", static_cast<int>(result));
+        fatalSwapchain("the swapchain would not give up an image");
     }
     if (index >= swapImageSlot_.size()) return false;
     const int owner = swapImageSlot_[index];
@@ -422,7 +423,11 @@ bool Renderer::presentImage(int imageIndex) {
         swapWidth_ = swapHeight_ = 0;
         return false;
     }
-    return result == VK_SUCCESS;
+    if (result != VK_SUCCESS) {
+        std::fprintf(stderr, "[vk] swapchain: vkQueuePresentKHR failed (%d)\n", static_cast<int>(result));
+        fatalSwapchain("presenting failed");
+    }
+    return true;
 }
 
 } // namespace detail
