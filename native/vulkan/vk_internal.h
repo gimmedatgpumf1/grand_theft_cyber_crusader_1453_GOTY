@@ -267,8 +267,8 @@ private:
     // -- surface and swapchain ---------------------------------------------
     // Presenting into a swapchain image removes the entire GPU-to-host path:
     // at 1568x929 the readback is 5.8 MB of PCIe traffic per frame, and the
-    // window then reads those bytes again to put them on screen. Opt in with
-    // GTC_VK_SWAPCHAIN=1 until it has earned being the default.
+    // window then reads those bytes again to put them on screen. A driver that
+    // will not do it costs one line of log and the readback.
     bool presentWanted_ = false;
     bool surfaceUsable_ = false;
     bool swapReady_ = false;

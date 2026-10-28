@@ -8,8 +8,9 @@
 // whose GPU finished drawing it milliseconds earlier. Here the frame is blitted,
 // on the device, straight into the image the compositor is about to show.
 //
-// Opt in with GTC_VK_SWAPCHAIN=1 while it earns its place. Every step can fail
-// and every failure falls back to the readback path with one line of log.
+// Every step can fail, and every failure falls back to the readback path with
+// one line of log: a window this driver will not present to costs a sentence,
+// not a session.
 
 #include "../client/diagnostics.h"
 #include "vk_internal.h"
@@ -318,7 +319,11 @@ bool Renderer::acquirePresentImage(int slot, int& imageIndex) {
     imageIndex = -1;
     if (!swapReady_ || acquireNextImage == nullptr) return false;
     std::uint32_t index = 0;
-    const VkResult result = acquireNextImage(device_, swapchain_, 5000000000ull, imageReady_[slot], VK_NULL_HANDLE, &index);
+    // A short wait: an image that is not ready this frame -- a minimised window,
+    // a driver that is behind -- costs this frame the readback path, not a
+    // session that looks hung for five seconds.
+    const VkResult result = acquireNextImage(device_, swapchain_, 100000000ull, imageReady_[slot], VK_NULL_HANDLE, &index);
+    if (result == VK_TIMEOUT || result == VK_NOT_READY) return false;
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         swapReady_ = false;
         return false;
