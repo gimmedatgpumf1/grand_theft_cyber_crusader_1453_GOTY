@@ -123,18 +123,6 @@ thread_local std::vector<Material> materialScratch;
 
 void setGpuRenderer(GpuRenderer renderer) { activeGpuRenderer = renderer; }
 
-std::size_t frameThreads() {
-    static const std::size_t count = [] {
-        if (const char* setting = std::getenv("GTC_THREADS")) {
-            const int value = std::atoi(setting);
-            if (value > 0) return static_cast<std::size_t>(value);
-        }
-        const unsigned hardware = std::thread::hardware_concurrency();
-        return static_cast<std::size_t>(hardware == 0 ? 2 : std::max(2u, hardware / 2));
-    }();
-    return count;
-}
-
 void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out) {
     const std::size_t count = static_cast<std::size_t>(std::max(0, frame.width)) *
         static_cast<std::size_t>(std::max(0, frame.height));
@@ -151,7 +139,7 @@ void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out) {
         }
     };
     // Below about a quarter of a megapixel the split costs more than it saves.
-    static FramePool pool(frameThreads());
+    FramePool& pool = framePool();
     const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
     pool.ranges(chunks, count, convert);
 }
@@ -690,7 +678,7 @@ void Rasterizer::flush() {
             }
         }
     };
-    static FramePool pool(frameThreads());
+    FramePool& pool = framePool();
     pool.ranges(bands, bands, drawBand);
     pending_.clear();
     materials_.clear();

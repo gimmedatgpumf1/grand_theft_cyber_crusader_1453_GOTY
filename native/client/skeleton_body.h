@@ -47,6 +47,13 @@ public:
     void draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
               int onlyBone = -1) const;
 
+    // A slice of the bones, so one body can be emitted by several threads. Each
+    // slice is independent: a bone is placed by its own chain and writes only
+    // its own triangles.
+    std::size_t boneCount() const { return bones_.size(); }
+    void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
+                   std::size_t begin, std::size_t end) const;
+
 private:
     std::vector<SkeletonBone> bones_;
     std::string name_;

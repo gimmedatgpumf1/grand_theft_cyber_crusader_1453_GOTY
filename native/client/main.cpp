@@ -4,6 +4,7 @@
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
 #include "client/skeleton_room.h"
+#include "client/threadpool.h"
 #include "client/window.h"
 #include "client/opengl_shared.h"
 #include "vulkan/vk_renderer.h"
@@ -639,7 +640,8 @@ int main(int argc, char** argv) {
             std::chrono::steady_clock::now() - start).count() / roomBenchmark;
         std::cout << "room render [" << rendererName << "]: " << milliseconds << " ms/frame at "
                   << roomView.width << 'x' << roomView.height
-                  << " (" << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0) << " fps)\n";
+                  << " (" << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0) << " fps, "
+                  << room.triangles() << " triangles)\n";
         gtc::native::setGpuRenderer(nullptr);
         if (rendererName == "vulkan") {
             if (!benchFrame.save(output)) std::cerr << "could not save " << output << '\n';

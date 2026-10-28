@@ -47,18 +47,6 @@ bool skipCopy() { return !readbackEnabled; }
 // Half the machine, honouring GTC_THREADS if it is set. The frame loop is not
 // the only thing running, and a client that takes every core to shuffle bytes
 // makes the rest of the process slower than it makes this part faster.
-std::size_t conversionThreads() {
-    static const std::size_t count = [] {
-        if (const char* setting = std::getenv("GTC_THREADS")) {
-            const int value = std::atoi(setting);
-            if (value > 0) return static_cast<std::size_t>(value);
-        }
-        const unsigned hardware = std::thread::hardware_concurrency();
-        return static_cast<std::size_t>(hardware == 0 ? 2 : std::max(2u, hardware / 2));
-    }();
-    return count;
-}
-
 double milliseconds() {
     using namespace std::chrono;
     return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
@@ -509,7 +497,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         tracef("vk: frame %d submit failed", frames_);
         return false;
     }
-    const double submitted = profile ? milliseconds() : 0.0;
 
     // Collect the frame that was submitted before this one. Waiting for *this*
     // frame would leave the device idle while the host copies the picture out;
@@ -609,7 +596,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             out[2] = static_cast<unsigned char>((texel >> blueShift) & 0xFFu);
         }
     };
-    static FramePool pool(conversionThreads());
+    FramePool& pool = framePool();
     const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
     pool.ranges(chunks, count, convert);
     if (readbackStart > 0.0) {

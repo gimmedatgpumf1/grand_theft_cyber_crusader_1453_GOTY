@@ -1,4 +1,5 @@
 #include "client/skeleton_room.h"
+#include "client/threadpool.h"
 
 #include <thread>
 
@@ -106,12 +107,58 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    // Each body is built on its own rasterizer, on its own thread. A scanned
-    // skeleton is 195k triangles, so posing and emitting two of them in a row
-    // was the most expensive thing in the room -- and the two halves share
-    // nothing, which is the easiest kind of work to split.
     male_.poseIdle(seconds, 0.0);
     female_.poseIdle(seconds, 1.7);
+
+    if (view.gpu) {
+        // A scanned skeleton is 195,000 triangles per body, and the pose only
+        // changes fifteen times a second while the frame does not. That makes
+        // the geometry build the single largest cost in the room, and it splits
+        // cleanly by bone: each bone is placed by its own chain and writes only
+        // its own triangles, so a slice needs nothing from its neighbours.
+        Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true,
+                        std::move(scene_));
+        room.setCamera(camera);
+        drawFloor(room, camera);
+        drawWalls(room, camera);
+
+        const std::size_t maleBones = male_.boneCount();
+        const std::size_t total = maleBones + female_.boneCount();
+        FramePool& pool = framePool();
+        const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, total));
+        std::vector<GpuScene> parts(chunks + 1);
+        parts[0] = room.takeGpuScene();
+        pool.rangesIndexed(chunks, total, [&](std::size_t begin, std::size_t end, std::size_t index) {
+            Rasterizer part(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
+            part.setCamera(camera);
+            if (begin < maleBones) {
+                part.setObject(1, {0.0, 0.0}, 3.14159265F);
+                male_.drawBones(part, camera, {-0.52, 0, 0}, 3.14159265, begin,
+                                std::min(end, maleBones));
+            }
+            if (end > maleBones) {
+                part.setObject(2, {0.0, 0.0}, 3.14159265F);
+                female_.drawBones(part, camera, {0.52, 0, 0}, 3.14159265,
+                                  begin > maleBones ? begin - maleBones : 0, end - maleBones);
+            }
+            parts[index + 1] = part.takeGpuScene();
+        });
+        scene_ = mergeScenes(std::move(parts));
+        scene_.revision = ++revision_;
+        sceneReady_ = true;
+        cachedPose_ = pose;
+        cachedWidth_ = camera.width;
+        cachedHeight_ = camera.height;
+        sceneTriangles_ = 0;
+        for (const GpuBatch& batch : scene_.batches) sceneTriangles_ += batch.vertices.size() / 3;
+        frame.wantsBgra = true;
+        frame.width = camera.width;
+        frame.height = camera.height;
+        frame.rgb.clear();
+        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
+        frame.logicalUi();
+        return;
+    }
     Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu,
                     view.gpu ? std::move(scene_) : GpuScene{});
     room.setCamera(camera);
@@ -131,29 +178,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.52, 0, 0}, 3.14159265);
     worker.join();
 
-    if (view.gpu) {
-        // Nothing is drawn over a room frame, so the backend can hand it back in
-        // the byte order the window wants and save two full passes over it.
-        frame.wantsBgra = true;
-        // The GPU path merges the two halves and hands them to the backend;
-        // nothing is rasterized here, so finish() has no work to do.
-        std::vector<GpuScene> halves;
-        halves.push_back(room.takeGpuScene());
-        halves.push_back(second.takeGpuScene());
-        second.finish();
-        scene_ = mergeScenes(std::move(halves));
-        scene_.revision = ++revision_;
-        sceneReady_ = true;
-        cachedPose_ = pose;
-        cachedWidth_ = camera.width;
-        cachedHeight_ = camera.height;
-        frame.width = camera.width;
-        frame.height = camera.height;
-        frame.rgb.clear();
-        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
-        frame.logicalUi();
-        return;
-    }
     // Software path: the second half was built on its own rasterizer, so it is
     // drawn straight into the same buffers.
     second.drain(room);

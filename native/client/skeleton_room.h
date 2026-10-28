@@ -21,6 +21,7 @@ class SkeletonRoom {
 public:
     bool load(const std::string& root, std::string& error);
     bool ready() const { return male_.loaded() && female_.loaded(); }
+    std::size_t triangles() const { return sceneTriangles_; }
     const SkeletonModel& male() const { return male_; }
     const SkeletonModel& female() const { return female_; }
 
@@ -35,6 +36,9 @@ private:
     // every frame is the cost this path exists to remove.
     GpuScene scene_;
     std::uint64_t revision_ = 0;
+    // Triangles in the cached scene. Printed by the room benchmark: if this
+    // changes with the thread count, the split is losing or duplicating work.
+    std::size_t sceneTriangles_ = 0;
     bool sceneReady_ = false;
     double cachedPose_ = -1.0;
     int cachedWidth_ = 0;
