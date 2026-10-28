@@ -34,7 +34,7 @@ done
 mkdir -p "$ROOT/build/obj/native-client"
 CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
 CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
-  native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/world_renderer.cpp native/client/world_hud.cpp native/client/interactive.cpp
+  native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/skeleton_body.cpp native/client/skeleton_room.cpp native/client/world_renderer.cpp native/client/world_hud.cpp native/client/interactive.cpp
   native/client/opengl_shared.cpp native/client/window_x11.cpp native/client/main.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp)
 CLIENT_OBJECTS=()
 for SOURCE in "${CLIENT_SOURCES[@]}"; do
@@ -48,7 +48,7 @@ for SOURCE in "${CLIENT_SOURCES[@]}"; do
 done
 CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-client/raster.o"
   "$ROOT/build/obj/native-client/hud.o" "$ROOT/build/obj/native-client/human_renderer.o"
-  "$ROOT/build/obj/native-client/blockbody.o" "$ROOT/build/obj/native-client/human_materials.o"
+  "$ROOT/build/obj/native-client/blockbody.o" "$ROOT/build/obj/native-client/skeleton_body.o" "$ROOT/build/obj/native-client/skeleton_room.o" "$ROOT/build/obj/native-client/human_materials.o"
   "$ROOT/build/obj/native-client/world_renderer.o" "$ROOT/build/obj/native-client/world_hud.o" "$ROOT/build/obj/native/human.o"
   "$ROOT/build/obj/native/hair.o" "$ROOT/build/obj/native/json.o"
   "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"

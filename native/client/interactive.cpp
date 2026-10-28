@@ -2,6 +2,7 @@
 
 #include "client/client.h"
 #include "client/renderer.h"
+#include "client/skeleton_room.h"
 #include "client/view_controls.h"
 #include "client/window.h"
 #include "core/projectile.h"
@@ -50,6 +51,8 @@ public:
             return 1;
         }
         buildCreator();
+        std::string roomError;
+        if (!room_.load(options_.root, roomError)) std::cerr << "Test room unavailable: " << roomError << '\n';
         if (!window_.open("GRAND THEFT CYBER CRUSADER 1453 - Native", error)) {
             std::cerr << error << '\n';
             return 1;
@@ -92,6 +95,19 @@ public:
             updateHighlight();
             updateReticle();
             const auto renderStart = Clock::now();
+            if (testRoom_ && room_.ready()) {
+                const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+                room_.render(frame, view_, seconds);
+                view_.frameMilliseconds = view_.frameMilliseconds > 0
+                    ? view_.frameMilliseconds * 0.9 +
+                          std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count() * 0.1
+                    : std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
+                if (!window_.present(frame)) {
+                    std::cerr << "Native window presentation failed\n";
+                    return 1;
+                }
+                continue;
+            }
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 std::cerr << error << '\n';
                 return 1;
@@ -139,6 +155,18 @@ public:
             NativeFrame frame = base;
             drawOverlay(frame);
             if (!frame.save(output + "/" + name + ".png")) return 1;
+        }
+        // The test room is a capture of its own, because it is a different
+        // renderer path and a swallowed room would otherwise go unnoticed.
+        std::string roomError;
+        if (room_.load(options_.root, roomError)) {
+            ViewState roomView = view_;
+            roomView.yaw = 0.16F;
+            NativeFrame roomFrame;
+            room_.render(roomFrame, roomView, 1.5);
+            if (!roomFrame.save(output + "/room.png")) return 1;
+        } else {
+            std::cerr << "Test room unavailable: " << roomError << '\n';
         }
         std::cout << "native UI review: " << output << " (640x480 landscape)\n";
         return 0;
@@ -494,7 +522,7 @@ private:
         else if (event.key == 't') { if (!event.repeat) client_.sendToggleZip(); }
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
-        else if (event.key == 'c') openOverlay(Overlay::Creator);
+        else if (event.key == 'c') { if (!event.repeat) testRoom_ = !testRoom_; }
         else if (event.key == 'h') openOverlay(Overlay::Help);
         else {
             keys_.insert(event.key);
@@ -692,6 +720,8 @@ private:
         }
     }
 
+    SkeletonRoom room_;
+    bool testRoom_ = false;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
     std::uint64_t presentationVersion_ = 0;
     std::chrono::steady_clock::time_point snapshotAt_{};
