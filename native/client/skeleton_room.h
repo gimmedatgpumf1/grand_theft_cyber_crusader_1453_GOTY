@@ -45,6 +45,8 @@ private:
     // and uploads nothing.
     bool restReady_ = false;
     std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches_;
+    std::vector<std::array<double, 16>> cachedMaleMatrices_;
+    std::vector<std::array<double, 16>> cachedFemaleMatrices_;
     bool sceneReady_ = false;
     double cachedPose_ = -1.0;
     int cachedWidth_ = 0;

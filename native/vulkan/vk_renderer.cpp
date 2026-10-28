@@ -433,11 +433,19 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         bindVertexBuffers(command_, 0, 1, &vertexBuffer_, &offset);
     }
 
+    // A room's bones are 56 batches that mostly share one material, so the same
+    // texture set gets bound over and over. Binding it again changes nothing and
+    // costs a validation-and-write per draw.
+    VkDescriptorSet boundTexture = VK_NULL_HANDLE;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
-        bindDescriptorSets(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 1, 1, &textureSet, 0, nullptr);
+        if (textureSet != boundTexture) {
+            bindDescriptorSets(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 1, 1, &textureSet, 0,
+                               nullptr);
+            boundTexture = textureSet;
+        }
         PushConstants push{};
         for (int word = 0; word < 16; ++word) push.model[word] = static_cast<float>(batch.modelMatrix[word]);
         push.colour[0] = static_cast<float>(batch.material.color.r);
@@ -606,9 +614,14 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             out[2] = static_cast<unsigned char>((texel >> blueShift) & 0xFFu);
         }
     };
-    FramePool& pool = framePool();
-    const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
-    pool.ranges(chunks, count, convert);
+    // Nothing to convert when the frame was handed over pointing straight at the
+    // mapping. Waking the pool to do nothing would cost more than the work it
+    // skips, and this is the path the test room takes every frame.
+    if (!(wantBgra && frame.direct)) {
+        FramePool& pool = framePool();
+        const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
+        pool.ranges(chunks, count, convert);
+    }
     if (readbackStart > 0.0) {
         std::printf("    [vk] readback (copy out + convert): %.2f ms\n", milliseconds() - readbackStart);
     }

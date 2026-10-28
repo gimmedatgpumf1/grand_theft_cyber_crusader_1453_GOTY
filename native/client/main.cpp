@@ -255,6 +255,29 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
         }
         reportLine("whole skeleton geometry", (nowMs() - start) / iterations);
         std::cout << "  (" << bodyTriangles << " triangles per body)\n";
+
+        // The same body the way the room draws it: geometry emitted once, then a
+        // pose costs one matrix per bone. This, not the line above, is what the
+        // test room pays when the pose updates.
+        gtc::native::GpuScene rest;
+        std::vector<std::size_t> boneBatches;
+        {
+            gtc::native::Rasterizer rasterizer(skull.camera.width, skull.camera.height,
+                                              gtc::native::colorHex("#0d1210"), skull.camera.focal(), true);
+            rasterizer.setCamera(skull.camera);
+            model.buildRestGeometry(rasterizer, skull.camera, 9001);
+            rest = rasterizer.takeGpuScene();
+            for (std::size_t index = 0; index < rest.batches.size(); ++index) boneBatches.push_back(index);
+        }
+        const double poseStart = nowMs();
+        for (int iteration = 0; iteration < iterations; ++iteration) {
+            const std::vector<std::array<double, 16>> matrices =
+                model.boneMatrices({0.0, 0.0, 0.0}, 3.14159265);
+            for (std::size_t index = 0; index < boneBatches.size(); ++index) {
+                rest.batches[boneBatches[index]].modelMatrix = matrices[index % matrices.size()];
+            }
+        }
+        reportLine("whole skeleton pose (matrices)", (nowMs() - poseStart) / iterations);
     }
 
     if (renderer == "cpu" || renderer == "all") {
@@ -304,9 +327,21 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
             gtc::native::NativeFrame frame;
             // An iGPU measured from cold idles at its lowest clock, and the
             // first block would then blame the renderer for the governor. Spin
-            // the device up on untimed frames before any of them are counted.
-            for (int warmUp = 0; warmUp < 30; ++warmUp) gtc::native::renderVulkanScene(skull.scene, frame);
-            gtc::native::drainVulkan();
+            // the device until frames stop getting faster rather than for a
+            // fixed count: a fixed count was still 60% off at the end of the run.
+            {
+                double previous = 0.0;
+                int used = 0;
+                for (int warmUp = 0; warmUp < 400; ++warmUp) {
+                    const double frameStart = nowMs();
+                    gtc::native::renderVulkanScene(skull.scene, frame);
+                    const double spent = nowMs() - frameStart;
+                    ++used;
+                    if (used > 8 && spent > previous * 0.97) break;
+                    previous = spent;
+                }
+                gtc::native::drainVulkan();
+            }
             gtc::native::renderVulkanScene(skull.scene, frame);
             gtc::native::drainVulkan();
             std::vector<double> samples;

@@ -27,17 +27,25 @@ namespace {
 // A frame rate that only lives in the HUD is a frame rate nobody can quote.
 // With GTC_FPS=1 the loop also writes an average to stderr once a second, which
 // is the number to send back when asking whether the target was met.
-void reportFrameRate(const std::chrono::steady_clock::time_point& now) {
+// What the second is made of, not just how many frames fitted in it: a frame
+// rate alone cannot say whether the time went into drawing or into getting the
+// picture onto the screen, and those two want opposite fixes.
+void reportFrameRate(const std::chrono::steady_clock::time_point& now, double renderMs, double presentMs) {
     const char* setting = std::getenv("GTC_FPS");
     if (!setting || !*setting || *setting == '0') return;
     static auto window = now;
     static int frames = 0;
+    static double renderTotal = 0.0, presentTotal = 0.0;
     ++frames;
+    renderTotal += renderMs;
+    presentTotal += presentMs;
     const auto span = std::chrono::duration<double>(now - window).count();
     if (span < 1.0) return;
-    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame)\n", frames / span, 1000.0 * span / frames);
+    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame: render %.2f, present %.2f)\n", frames / span,
+                 1000.0 * span / frames, renderTotal / frames, presentTotal / frames);
     window = now;
     frames = 0;
+    renderTotal = presentTotal = 0.0;
 }
 
 enum class Overlay { None, Wheel, Cheats, Help };
@@ -84,13 +92,16 @@ public:
         auto inputTime = previous;
         NativeFrame frame;
         bool running = true;
+        // The two halves of a frame, measured where the test room runs.
+        double renderMilliseconds = 0.0;
+        double presentMilliseconds = 0.0;
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
             const float elapsed = std::max(0.0001F, std::chrono::duration<float>(now - previous).count());
             const float dt = std::min(0.05F, elapsed);
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
-            reportFrameRate(now);
+            reportFrameRate(now, renderMilliseconds, presentMilliseconds);
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;
@@ -112,17 +123,21 @@ public:
             updateHighlight();
             updateReticle();
             const auto renderStart = Clock::now();
+            double renderMilliseconds = 0.0;
+            double presentMilliseconds = 0.0;
             if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
                 room_.render(frame, view_, seconds);
+                renderMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
                 view_.frameMilliseconds = view_.frameMilliseconds > 0
-                    ? view_.frameMilliseconds * 0.9 +
-                          std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count() * 0.1
-                    : std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
+                    ? view_.frameMilliseconds * 0.9 + renderMilliseconds * 0.1
+                    : renderMilliseconds;
+                const auto presentStart = Clock::now();
                 if (!window_.present(frame)) {
                     std::cerr << "Native window presentation failed\n";
                     return 1;
                 }
+                presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
                 continue;
             }
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {

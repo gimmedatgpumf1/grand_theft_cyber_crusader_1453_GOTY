@@ -107,8 +107,14 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    male_.poseIdle(seconds, 0.0);
-    female_.poseIdle(seconds, 1.7);
+    // Posing is trigonometry over 56 bones: worth doing when the pose actually
+    // changes, and worth skipping on the nineteen frames out of twenty where
+    // only the camera moved.
+    const bool poseChanged = pose != cachedPose_;
+    if (poseChanged) {
+        male_.poseIdle(seconds, 0.0);
+        female_.poseIdle(seconds, 1.7);
+    }
 
     if (view.gpu) {
         // A bone is a rigid body. So the triangles are emitted once, in rest
@@ -149,12 +155,18 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             cachedHeight_ = camera.height;
         }
         // The pose is the only thing that changes: write the bone matrices into
-        // the batches they belong to. No vertex data moves.
-        const std::vector<std::array<double, 16>> maleMatrices =
-            male_.boneMatrices({-0.52, 0, 0}, 3.14159265);
-        const std::vector<std::array<double, 16>> femaleMatrices =
-            female_.boneMatrices({0.52, 0, 0}, 3.14159265);
+        // the batches they belong to. No vertex data moves. Between pose updates
+        // -- which is nineteen frames in twenty at 300 fps -- the matrices are
+        // the same, so the chain is not solved again.
+        const bool poseMoved = poseChanged;
+        if (poseMoved) {
+            cachedMaleMatrices_ = male_.boneMatrices({-0.52, 0, 0}, 3.14159265);
+            cachedFemaleMatrices_ = female_.boneMatrices({0.52, 0, 0}, 3.14159265);
+        }
+        const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
+        const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
         for (const std::pair<std::uint32_t, std::size_t>& entry : boneBatches_) {
+            if (!poseMoved) break;
             const int id = static_cast<int>(entry.first);
             const std::vector<std::array<double, 16>>* matrices = nullptr;
             std::size_t boneIndex = 0;
