@@ -15,7 +15,18 @@ echo '[test] both skeletons pass their anatomical checks.'
 python3 tests/build_scripts.py
 # The shaders are generated, not compiled, so the tree is checked against the
 # generator: a stale .spv or header fails here rather than at pipeline creation.
-python3 native/vulkan/spirv.py --check
+python3 native/vulkan/make_shader_header.py --check
+# The Khronos validator is the authority on whether a driver may be handed a
+# module at all. It is not required to build, so it is used when it is present:
+# on the machine that compiles the shaders.
+if command -v spirv-val >/dev/null 2>&1; then
+  for module in native/vulkan/shaders/*.spv; do
+    spirv-val --target-env vulkan1.0 "$module" || { echo "spirv-val rejected $module"; exit 1; }
+  done
+  echo "spirv-val: PASS (both modules)"
+else
+  echo "spirv-val: skipped (validator not installed)"
+fi
 mkdir -p build/bin .cache/ccache
 export CCACHE_DIR="$ROOT/.cache/ccache"
 export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
