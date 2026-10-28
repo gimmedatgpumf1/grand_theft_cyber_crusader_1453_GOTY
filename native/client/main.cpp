@@ -2,6 +2,7 @@
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
+#include "vulkan/vk_renderer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -14,6 +15,12 @@ double number(const std::string& value, double fallback = 0) {
     try { return std::stod(value); } catch (...) { return fallback; }
 }
 
+// Accepts a scene and draws nothing. Registering it measures the half of the
+// frame that stays on the CPU no matter which backend rasterizes: building the
+// vertex batches. Whatever is left in a timed frame with this in place is the
+// cost the GPU path can never remove.
+bool acceptOnly(const gtc::native::GpuScene&, gtc::native::NativeFrame&) { return true; }
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -21,12 +28,16 @@ int main(int argc, char** argv) {
     std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false;
+    int roomBenchmark = 0;
+    std::string rendererName = "cpu";
     gtc::Vec2 destination{}, movement{};
     gtc::native::ViewState view;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
         if (argument == "--headless") headless = true;
         else if (argument == "--verify-room") verifyRoom = true;
+        else if (argument == "--renderer" && i + 1 < argc) rendererName = argv[++i];
+        else if (argument == "--room-benchmark" && i + 1 < argc) roomBenchmark = static_cast<int>(number(argv[++i], 1));
         else if (argument == "--review-ui" && i + 1 < argc) reviewUi = argv[++i];
         else if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = static_cast<int>(number(argv[++i], 1453));
@@ -55,6 +66,59 @@ int main(int argc, char** argv) {
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
             return 2;
         }
+    }
+    if (roomBenchmark > 0) {
+        // This is the acceptance measurement for the room: the same scene, the
+        // same size, timed end to end, with the backend named on the command
+        // line. `scene` draws nothing and reports what the CPU still spends;
+        // `vulkan` is the real thing and is refused outright when the machine
+        // cannot start it, rather than quietly measuring the CPU fallback.
+        gtc::native::SkeletonRoom room;
+        std::string roomError;
+        if (!room.load(root, roomError)) {
+            std::cerr << "Test room unavailable: " << roomError << '\n';
+            return 1;
+        }
+        gtc::native::ViewState roomView;
+        roomView.width = view.width;
+        roomView.height = view.height;
+        roomView.yaw = view.yaw;
+        roomView.pitch = view.pitch;
+        if (rendererName == "vulkan") {
+            if (!gtc::native::vulkanAvailable()) {
+                std::cerr << "vulkan: unavailable on this machine\n";
+                return 1;
+            }
+            gtc::native::setGpuRenderer(&gtc::native::renderVulkanScene);
+            roomView.gpu = true;
+        } else if (rendererName == "scene") {
+            gtc::native::setGpuRenderer(&acceptOnly);
+            roomView.gpu = true;
+        } else if (rendererName != "cpu") {
+            std::cerr << "unknown renderer: " << rendererName << '\n';
+            return 2;
+        }
+        gtc::native::NativeFrame benchFrame;
+        // One warm-up frame, so the first frame's target and buffer allocation
+        // does not land in the measurement.
+        room.render(benchFrame, roomView, 0.75);
+        const auto start = std::chrono::steady_clock::now();
+        for (int iteration = 0; iteration < roomBenchmark; ++iteration) {
+            // Time advances like it does in the loop, so the pose rebuilds land
+            // in the measurement the way they will in use.
+            room.render(benchFrame, roomView, 0.75 + iteration * 0.0166);
+        }
+        const double milliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count() / roomBenchmark;
+        std::cout << "room render [" << rendererName << "]: " << milliseconds << " ms/frame at "
+                  << roomView.width << 'x' << roomView.height
+                  << " (" << (milliseconds > 0 ? 1000.0 / milliseconds : 0.0) << " fps)\n";
+        gtc::native::setGpuRenderer(nullptr);
+        if (rendererName == "vulkan") {
+            if (!benchFrame.save(output)) std::cerr << "could not save " << output << '\n';
+        }
+        gtc::native::shutdownVulkan();
+        return 0;
     }
     if (verifyRoom) {
         // The room is presented through the same path as the world, and that

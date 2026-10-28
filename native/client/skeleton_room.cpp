@@ -88,13 +88,41 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     const double height = 1.15;
     camera.target = {0, 0.95, 0};
     camera.position = {std::sin(view.yaw) * distance, height, std::cos(view.yaw) * distance};
-    Rasterizer rasterizer(camera.width, camera.height, colorHex("#0d1210"), camera.focal());
+    camera.worldSpaceGpu = view.gpu;
+    // The idle pose is worth rebuilding the batches for four times a second,
+    // not sixty: the pose runs at the simulation's 15 Hz, the camera does not,
+    // and the camera is the only thing that changes between those rebuilds.
+    const double pose = std::floor(std::max(0.0, seconds) * 15.0) / 15.0;
+    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_ &&
+        camera.width == cachedWidth_ && camera.height == cachedHeight_;
+    if (reuse) {
+        frame.width = camera.width;
+        frame.height = camera.height;
+        frame.rgb.clear();
+        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
+        frame.logicalUi();
+        return;
+    }
+    Rasterizer rasterizer(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), view.gpu,
+                          view.gpu ? std::move(scene_) : GpuScene{});
+    rasterizer.setCamera(camera);
     drawFloor(rasterizer, camera);
     drawWalls(rasterizer, camera);
     male_.poseIdle(seconds, 0.0);
     female_.poseIdle(seconds, 1.7);
+    rasterizer.setObject(1, {0.0, 0.0}, 3.14159265F);
     male_.draw(rasterizer, camera, {-0.52, 0, 0}, 3.14159265);
+    rasterizer.setObject(2, {0.0, 0.0}, 3.14159265F);
     female_.draw(rasterizer, camera, {0.52, 0, 0}, 3.14159265);
+    rasterizer.setObject(0, {0.0, 0.0}, 0.0F);
+    if (view.gpu) {
+        scene_ = rasterizer.takeGpuScene();
+        scene_.revision = ++revision_;
+        sceneReady_ = true;
+        cachedPose_ = pose;
+        cachedWidth_ = camera.width;
+        cachedHeight_ = camera.height;
+    }
     frame = rasterizer.finish();
     frame.logicalUi();
 }
