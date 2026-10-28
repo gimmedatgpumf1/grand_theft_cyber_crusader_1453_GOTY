@@ -257,20 +257,6 @@ bool Renderer::createSwapchain(int width, int height) {
             fatalSwapchain("vkCreateSemaphore failed for a swapchain image");
         }
     }
-    // One command buffer per image for the recorded frame, allocated with the
-    // swapchain that owns the images.
-    VkCommandBufferAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocation.commandPool = commandPool_;
-    allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocation.commandBufferCount = count;
-    presentCommands_.assign(count, VK_NULL_HANDLE);
-    if (allocateCommandBuffers(device_, &allocation, presentCommands_.data()) != VK_SUCCESS) {
-        presentCommands_.clear();
-        fatalSwapchain("could not allocate a command buffer per swapchain image");
-    }
-    presentKey_.assign(count, 0);
-    presentRecorded_.assign(count, 0);
     swapFormat_ = format;
     swapExtent_ = extent;
     swapWidth_ = static_cast<int>(extent.width);
@@ -308,9 +294,6 @@ void Renderer::destroySwapchain() {
     drawDone_.clear();
     swapImageSlot_.clear();
     swapImagePresented_.clear();
-    presentCommands_.clear();
-    presentKey_.clear();
-    presentRecorded_.clear();
     swapReady_ = false;
     swapWidth_ = swapHeight_ = 0;
 }

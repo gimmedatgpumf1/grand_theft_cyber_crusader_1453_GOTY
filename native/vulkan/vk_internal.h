@@ -254,7 +254,6 @@ private:
 
     bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
 
-    static constexpr std::uint64_t recordedKeySeed() { return 1469598103934665603ull; }
 
     template <class Function>
     bool resolve(Function& slot, const char* name) {
@@ -411,16 +410,6 @@ private:
     VkCommandBuffer uploadCommand_ = VK_NULL_HANDLE;
     VkFence uploadFence_ = VK_NULL_HANDLE;
     bool fenceArmed_[kFramesInFlight] = {false, false};
-    // A recorded frame, and what it was recorded from. Unchanged commands are
-    // not recorded twice: at three hundred frames a second the scene sits still
-    // long enough for that to matter.
-    bool recordedValid_[kFramesInFlight] = {false, false};
-    std::uint64_t recordedKey_[kFramesInFlight] = {0, 0};
-    // The presented path draws into whichever image came back from acquire, so
-    // it keeps one recorded frame per image.
-    std::vector<VkCommandBuffer> presentCommands_;
-    std::vector<std::uint64_t> presentKey_;
-    std::vector<char> presentRecorded_;
     // Which slot holds a submitted frame nobody has collected yet.
     int pendingSlot_ = -1;
     std::uint64_t pendingFrame_ = 0;

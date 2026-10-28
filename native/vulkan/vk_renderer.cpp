@@ -345,9 +345,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         if (!uploadVertices(scene)) { tracef("vk: frame %d upload failed", frames_); return false; }
         uploadedSignature_ = signature;
         uploadedValid_ = true;
-        // The buffers a recorded frame binds now hold different geometry.
-        for (int index = 0; index < kFramesInFlight; ++index) recordedValid_[index] = false;
-        std::fill(presentRecorded_.begin(), presentRecorded_.end(), 0);
     } else if (totalVertices == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
     }
@@ -386,52 +383,15 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (profile && frames_ < 5) {
         std::printf("    [vk] setup (targets, upload, textures): %.2f ms\n", recordedStart - setupStart);
     }
-    // Everything about the commands below, hashed: the size, the framebuffer
-    // they draw into, and -- per batch -- the geometry revision, the material
-    // and the matrix. If the hash is the one already recorded in this buffer,
-    // the driver is about to be handed exactly the commands it already has, and
-    // recording them again is host time spent to say nothing new. Standing
-    // still in the room at three hundred frames a second, that is every frame.
-    std::uint64_t recordKey = recordedKeySeed();
-    const auto mix = [&recordKey](std::uint64_t value) { recordKey = (recordKey ^ value) * 1099511628211ull; };
-    mix(static_cast<std::uint64_t>(width));
-    mix(static_cast<std::uint64_t>(height));
-    mix(reinterpret_cast<std::uint64_t>(target_.framebuffer));
-    mix(static_cast<std::uint64_t>(presentTarget + 1));
-    for (const GpuBatch& batch : scene.batches) {
-        mix(batch.revision);
-        mix(static_cast<std::uint64_t>(batch.vertices.size()));
-        mix(reinterpret_cast<std::uint64_t>(batch.material.texture));
-        mix(static_cast<std::uint64_t>(batch.material.constantLighting ? 1 : 0));
-        mix(static_cast<std::uint64_t>(batch.material.opacity * 1000.0));
-        for (double channel : {batch.material.color.r, batch.material.color.g, batch.material.color.b}) {
-            std::uint64_t bits = 0;
-            std::memcpy(&bits, &channel, sizeof bits);
-            mix(bits);
-        }
-        for (double value : batch.modelMatrix) {
-            std::uint64_t bits = 0;
-            std::memcpy(&bits, &value, sizeof bits);
-            mix(bits);
-        }
-    }
-    // A presented frame draws into whichever swapchain image came back, so it
-    // needs a command buffer per image; a readback frame owns one per slot.
-    bool recorded = false;
-    if (presentTarget >= 0) {
-        if (static_cast<std::size_t>(presentTarget) < presentCommands_.size()) {
-            command_ = presentCommands_[static_cast<std::size_t>(presentTarget)];
-            recorded = presentRecorded_[static_cast<std::size_t>(presentTarget)] &&
-                       presentKey_[static_cast<std::size_t>(presentTarget)] == recordKey;
-        }
-    } else {
-        command_ = commands_[slot];
-        recorded = recordedValid_[slot] && recordedKey_[slot] == recordKey;
-    }
-    if (!recorded) {
+    command_ = commands_[slot];
     if (resetCommandBuffer(command_, 0) != VK_SUCCESS) { tracef("vk: frame %d reset failed", frames_); return false; }
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    // One-time: recorded for this submission and thrown away after it. Reusing
+    // a recorded buffer instead was tried and removed -- the driver's submission
+    // cost with this flag went from 0.74 ms to 3.14 ms without it, three times
+    // more than recording the commands was ever worth.
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) { tracef("vk: frame %d begin failed", frames_); return false; }
 
     // The vertex and uniform buffers were written from the host this frame.
@@ -555,20 +515,10 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // visible to the host read, and HOST is not a stage a barrier may name.
     if (traced) tracef("vk: frame %d recorded", frames_);
     if (endCommandBuffer(command_) != VK_SUCCESS) { tracef("vk: frame %d end failed", frames_); return false; }
-    if (presentTarget >= 0) {
-        if (static_cast<std::size_t>(presentTarget) < presentCommands_.size()) {
-            presentRecorded_[static_cast<std::size_t>(presentTarget)] = 1;
-            presentKey_[static_cast<std::size_t>(presentTarget)] = recordKey;
-        }
-    } else {
-        recordedValid_[slot] = true;
-        recordedKey_[slot] = recordKey;
-    }
-    }
     const double submittedStart = profile ? milliseconds() : 0.0;
     if (profile && frames_ < 5) {
-        std::printf("    [vk] record (barriers, pass, %zu draws): %.2f ms%s\n",
-                    scene.batches.size(), submittedStart - recordedStart, recorded ? " (reused)" : "");
+        std::printf("    [vk] record (barriers, pass, %zu draws): %.2f ms\n",
+                    scene.batches.size(), submittedStart - recordedStart);
     }
     VkSubmitInfo submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
