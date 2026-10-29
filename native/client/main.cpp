@@ -493,10 +493,10 @@ int main(int argc, char** argv) {
     // reticle, the need panel when it is open, and the frame rate.
     gtc::native::drawCrosshair(frame, view);
     if (overlay == "toilet") {
-        // Drawn with the pointer at the first option, so the capture shows what a
-        // lit option looks like and not only the resting state.
-        const auto wheel = gtc::native::layoutInteractionWheel(frame.width, frame.height, "STANDING");
-        gtc::native::drawInteractionWheel(frame, wheel, "STANDING", wheel.optionCentreX[0], wheel.optionCentreY[0]);
+        // Drawn with the pointer on the first sector, so the capture shows what a
+        // lit sector looks like and not only the resting state.
+        const auto wheel = gtc::native::layoutInteractionWheel(frame.width, frame.height);
+        gtc::native::drawInteractionWheel(frame, wheel, wheel.labelX[0], wheel.labelY[0]);
     }
     else if (overlay == "manual") gtc::native::drawManual(frame);
     if (cheats) {

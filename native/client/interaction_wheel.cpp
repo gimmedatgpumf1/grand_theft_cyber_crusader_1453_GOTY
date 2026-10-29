@@ -4,152 +4,148 @@
 
 #include <algorithm>
 #include <cmath>
-#include <string>
 
 namespace gtc::native {
 namespace {
 
-constexpr const char* kKeys[kWheelOptionCount] = {"1", "2", "3"};
 constexpr const char* kLabels[kWheelOptionCount] = {"SIT", "SHIT", "PISS"};
-// Every option's text, so the discs are sized by the longest of them rather than
-// by whichever one happened to be measured.
-constexpr const char* kTexts[kWheelOptionCount] = {"1 SIT", "2 SHIT", "3 PISS"};
-
-// Up, lower right, lower left. Evenly spaced, so the middle is equally far from
-// all three.
+// Sector middles: up, lower right, lower left. Each sector is 120 degrees wide,
+// so together they are the whole circle with nothing left over.
 constexpr double kAngles[kWheelOptionCount] = {-90.0, 30.0, 150.0};
+constexpr double kSectorSpan = 120.0;
 
-int widestText(int textHeight) {
-    int width = 0;
-    for (const char* text : kTexts) width = std::max(width, textWidthPixels(text, textHeight));
-    return width;
+double degreesOf(int dx, int dy) {
+    double angle = std::atan2(static_cast<double>(dy), static_cast<double>(dx)) * 180.0 / 3.141592653589793;
+    if (angle < 0.0) angle += 360.0;
+    return angle;
 }
+
+int sectorOf(double angle) {
+    // The signed difference to each sector's middle, wrapped into -180..180 so a
+    // sector that straddles zero degrees is not split in half.
+    for (int index = 0; index < kWheelOptionCount; ++index) {
+        const double delta = std::fmod(angle - kAngles[index] + 540.0, 360.0) - 180.0;
+        if (std::abs(delta) <= kSectorSpan / 2.0) return index;
+    }
+    return 0;
+}
+
+// A run with nothing in it. Not -1: the cancel is -1 and it is a real answer.
+constexpr int kNoSector = -99;
 
 }  // namespace
 
-InteractionWheelLayout layoutInteractionWheel(int frameWidth, int frameHeight, const char* subtitle) {
+InteractionWheelLayout layoutInteractionWheel(int frameWidth, int frameHeight) {
     InteractionWheelLayout layout;
-    layout.textHeight = interfaceTextHeight(frameHeight, 13.0);
-    layout.titleHeight = interfaceTextHeight(frameHeight, 17.0);
-
-    // A disc has to hold its own label with room to breathe; the floor is a tenth
-    // of the smaller side so the wheel still reads on a small window.
-    const int labelWidth = widestText(layout.textHeight);
+    layout.textHeight = interfaceTextHeight(frameHeight, 15.0);
     const int smaller = std::min(frameWidth, frameHeight);
-    layout.optionRadius = std::max(labelWidth / 2 + layout.textHeight, smaller / 10);
-    layout.ringRadius = layout.optionRadius * 7 / 4;
-    layout.cancelRadius = std::max(layout.textHeight, layout.optionRadius / 2);
-    layout.stroke = std::max(2, layout.textHeight / 8);
-
-    const int reach = layout.ringRadius + layout.optionRadius;
-    const int pad = std::max(10, layout.textHeight);
-    const int gap = lineGap(layout.textHeight);
-    int width = reach * 2 + pad * 2;
-    width = std::max(width, textWidthPixels("CLICK THE MIDDLE TO CANCEL", layout.textHeight) + pad * 2);
-    layout.panelWidth = width + (width % 2);
-    const int wheelHeight = reach * 2;
-    layout.panelHeight = pad + layout.titleHeight + gap / 2 + layout.textHeight + gap + wheelHeight + gap +
-        layout.textHeight + pad;
-    layout.panelLeft = (frameWidth - layout.panelWidth) / 2;
-    layout.panelTop = (frameHeight - layout.panelHeight) / 2;
-    (void)subtitle;
-
-    layout.titleTop = layout.panelTop + pad;
-    layout.subtitleTop = layout.titleTop + layout.titleHeight + gap / 2;
-    // The wheel is centred in the frame, not in the panel: the panel has a title
-    // above it and a footer below, and the circle is what the pointer aims at.
+    // A third of the smaller side: big enough to aim at, small enough that the
+    // world is still visible around it.
+    layout.radius = std::max(layout.textHeight * 4, smaller * 27 / 100);
+    layout.cancelRadius = std::max(layout.textHeight, layout.radius / 5);
+    layout.stroke = std::max(2, layout.textHeight / 6);
     layout.centreX = frameWidth / 2;
-    layout.centreY = layout.subtitleTop + layout.textHeight + gap + wheelHeight / 2;
-    layout.footerTop = layout.centreY + wheelHeight / 2 + gap;
-
+    layout.centreY = frameHeight / 2;
+    const int labelRadius = layout.radius * 3 / 5;
     for (int index = 0; index < kWheelOptionCount; ++index) {
         const double radians = kAngles[index] * 3.141592653589793 / 180.0;
-        layout.optionCentreX[index] =
-            layout.centreX + static_cast<int>(std::lround(std::cos(radians) * layout.ringRadius));
-        layout.optionCentreY[index] =
-            layout.centreY + static_cast<int>(std::lround(std::sin(radians) * layout.ringRadius));
+        layout.labelX[index] = layout.centreX + static_cast<int>(std::lround(std::cos(radians) * labelRadius));
+        layout.labelY[index] = layout.centreY + static_cast<int>(std::lround(std::sin(radians) * labelRadius));
     }
     return layout;
 }
 
 int interactionWheelHit(const InteractionWheelLayout& layout, int x, int y) {
     const long dx = x - layout.centreX, dy = y - layout.centreY;
-    // The cancel is tested first and by nearest: a click between the centre and an
-    // option belongs to whichever of the two it is actually closer to, which keeps
-    // the middle of the wheel a cancel button instead of a dead zone.
-    for (int index = 0; index < kWheelOptionCount; ++index) {
-        const long ox = x - layout.optionCentreX[index], oy = y - layout.optionCentreY[index];
-        if (ox * ox + oy * oy <= static_cast<long>(layout.optionRadius) * layout.optionRadius) {
-            return index;
-        }
-    }
-    if (dx * dx + dy * dy <= static_cast<long>(layout.cancelRadius) * layout.cancelRadius) return kWheelCancel;
-    return kWheelOutside;
+    const long distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared > static_cast<long>(layout.radius) * layout.radius) return kWheelOutside;
+    // The middle is the cancel: the three sectors meet there, so it is the one
+    // place in the disc that belongs to none of them.
+    if (distanceSquared <= static_cast<long>(layout.cancelRadius) * layout.cancelRadius) return kWheelCancel;
+    return sectorOf(degreesOf(static_cast<int>(dx), static_cast<int>(dy)));
 }
 
-void drawInteractionWheel(NativeFrame& frame, const InteractionWheelLayout& layout, const char* subtitle,
-                          int pointerX, int pointerY) {
-    if (layout.panelWidth <= 0 || layout.panelHeight <= 0) return;
-    fillPanel(frame, layout.panelLeft, layout.panelTop, layout.panelWidth, layout.panelHeight, kMenuPanelOpacity);
-
+void drawInteractionWheel(NativeFrame& frame, const InteractionWheelLayout& layout, int pointerX, int pointerY) {
+    if (layout.radius <= 0) return;
     const double scale = frame.uiScale, offsetX = frame.uiOffsetX, offsetY = frame.uiOffsetY;
     frame.uiScale = 1.0;
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
 
-    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour), accent = colorHex("#d7ff54");
-    const Color cancel = colorHex("#ff7a5e");
-    const auto centredAt = [&](const std::string& text, int left, int width, int top, int height, Color colour) {
-        drawTextPixels(frame, left + (width - textWidthPixels(text, height)) / 2, top, text, colour, height);
-    };
-    centredAt("TOILET", layout.panelLeft, layout.panelWidth, layout.titleTop, layout.titleHeight, ink);
-    if (subtitle != nullptr) {
-        centredAt(subtitle, layout.panelLeft, layout.panelWidth, layout.subtitleTop, layout.textHeight, muted);
-    }
-
-    // A dark disc under the ring: three outlined circles over a chequerboard floor
-    // is a diagram, not a control. This is the one place the interface darkens the
-    // whole circle rather than a strip of it, because the pointer has to find three
-    // targets in the middle of the screen.
-    fillDisc(frame, layout.centreX, layout.centreY, layout.ringRadius + layout.optionRadius,
-             colorHex(kPanelColour), 0.55);
-
     const int hovered = pointerX < 0 || pointerY < 0 ? kWheelOutside
                                                      : interactionWheelHit(layout, pointerX, pointerY);
 
-    for (int index = 0; index < kWheelOptionCount; ++index) {
-        const int cx = layout.optionCentreX[index], cy = layout.optionCentreY[index];
-        const bool lit = hovered == index;
-        if (lit) {
-            // Lit means filled, ringed and bright: colour alone is not enough to
-            // tell which of three identical discs the pointer is on.
-            fillDisc(frame, cx, cy, layout.optionRadius, accent, 0.26);
-            ringDisc(frame, cx, cy, layout.optionRadius, layout.stroke * 2, accent, 0.9);
+    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour);
+    const Color accent = colorHex("#d7ff54"), cancel = colorHex("#ff7a5e");
+    const Color shell = colorHex(kPanelColour);
+
+    // The disc, filled a row at a time: one fill per run of the same sector, so
+    // the whole circle costs a few hundred fills and its edges are exactly radial.
+    const int radius = layout.radius;
+    const auto paint = [&](int sector, int left, int y, int width) {
+        if (width <= 0) return;
+        if (sector == kWheelCancel) {
+            frame.blendRectangle(left, y, width, 1, shell, 0.38);   // the cancel's own well
+        } else if (sector == hovered) {
+            frame.blendRectangle(left, y, width, 1, accent, 0.22);
         } else {
-            ringDisc(frame, cx, cy, layout.optionRadius, layout.stroke, muted, 0.55);
+            // Faint enough that the room is still visible through the disc: this
+            // sits in the middle of the screen, not in a corner.
+            frame.blendRectangle(left, y, width, 1, shell, 0.26);
         }
-        const std::string label = std::string(kKeys[index]) + " " + kLabels[index];
-        const int textHeight = layout.textHeight;
-        centredAt(label, cx - layout.optionRadius, layout.optionRadius * 2,
-                  cy - textHeightPixels(textHeight) / 2, textHeight, lit ? ink : muted);
+    };
+    for (int dy = -radius; dy <= radius; ++dy) {
+        const int half = static_cast<int>(std::sqrt(static_cast<double>(radius) * radius - dy * dy));
+        int runStart = -half;
+        int runSector = kNoSector;
+        for (int dx = -half; dx <= half; ++dx) {
+            const long distanceSquared = static_cast<long>(dx) * dx + static_cast<long>(dy) * dy;
+            const int sector = distanceSquared <= static_cast<long>(layout.cancelRadius) * layout.cancelRadius
+                ? kWheelCancel
+                : sectorOf(degreesOf(dx, dy));
+            if (sector == runSector) continue;
+            if (runSector != kNoSector) paint(runSector, layout.centreX + runStart, layout.centreY + dy, dx - runStart);
+            runStart = dx;
+            runSector = sector;
+        }
+        paint(runSector, layout.centreX + runStart, layout.centreY + dy, half + 1 - runStart);
     }
 
-    // The middle: a ring, a cross, and a warning colour when it is hovered. This
-    // is the control that leaves the wheel.
+    // The rim, and the three cuts: the lines are what make it read as divided.
+    ringDisc(frame, layout.centreX, layout.centreY, radius, std::max(1, layout.stroke / 2),
+             hovered >= 0 ? accent : muted, hovered >= 0 ? 0.8 : 0.5);
+    for (int index = 0; index < kWheelOptionCount; ++index) {
+        const double radians = (kAngles[index] + kSectorSpan / 2.0) * 3.141592653589793 / 180.0;
+        for (int step = layout.cancelRadius; step <= radius; ++step) {
+            const int x = layout.centreX + static_cast<int>(std::lround(std::cos(radians) * step));
+            const int y = layout.centreY + static_cast<int>(std::lround(std::sin(radians) * step));
+            const int cut = std::max(1, layout.stroke / 2);
+            frame.rectangle(x - cut / 2, y - cut / 2, cut, cut, muted);
+        }
+    }
+
+    // The names, out along their own sectors. The one under the pointer is in the
+    // reading colour; that and the lit sector are the whole of the feedback.
+    for (int index = 0; index < kWheelOptionCount; ++index) {
+        const int width = textWidthPixels(kLabels[index], layout.textHeight);
+        const int left = layout.labelX[index] - width / 2;
+        const int top = layout.labelY[index] - textHeightPixels(layout.textHeight) / 2;
+        drawTextPixels(frame, left, top, kLabels[index], index == hovered ? ink : muted, layout.textHeight);
+    }
+
+    // The middle: the cancel. Warm when the pointer is on it, because a cross is
+    // not obviously a button.
     const bool cancelLit = hovered == kWheelCancel;
-    if (cancelLit) fillDisc(frame, layout.centreX, layout.centreY, layout.cancelRadius, cancel, 0.42);
-    ringDisc(frame, layout.centreX, layout.centreY, layout.cancelRadius, layout.stroke, cancelLit ? cancel : muted,
-             cancelLit ? 0.95 : 0.6);
-    const int cross = layout.cancelRadius * 2 / 3;
-    const int thickness = std::max(2, layout.stroke);
-    for (int step = -cross; step <= cross; ++step) {
+    if (cancelLit) fillDisc(frame, layout.centreX, layout.centreY, layout.cancelRadius, cancel, 0.5);
+    ringDisc(frame, layout.centreX, layout.centreY, layout.cancelRadius, layout.stroke,
+             cancelLit ? cancel : muted, cancelLit ? 1.0 : 0.75);
+    const int reach = layout.cancelRadius * 3 / 5;
+    for (int step = -reach; step <= reach; step += std::max(1, layout.stroke / 2)) {
+        const int thickness = std::max(2, layout.stroke / 2);
         frame.rectangle(layout.centreX + step, layout.centreY + step, thickness, thickness,
                         cancelLit ? ink : muted);
         frame.rectangle(layout.centreX - step, layout.centreY + step, thickness, thickness,
                         cancelLit ? ink : muted);
     }
-
-    centredAt("CLICK THE MIDDLE TO CANCEL", layout.panelLeft, layout.panelWidth, layout.footerTop,
-              layout.textHeight, muted);
 
     frame.uiScale = scale;
     frame.uiOffsetX = offsetX;

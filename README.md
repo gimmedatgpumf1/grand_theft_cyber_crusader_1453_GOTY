@@ -41,11 +41,11 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - E never auto-walks the player. Move closer yourself; explicit godview RMB paths use ordinary A*.
   Double-RMB instead permits server-controlled jumping, climbing, crouching, and crawling en route.
   Autonomous AI can path to the toilet before using it.
-- The throne is multi-use: E opens an interaction circle with **Sit**, **Shit** and **Piss** on a ring
-  around a cancel button. Move the pointer and the option under it lights up; click it, or press
-  **1/2/3**. Clicking the middle cancels and closes the circle. The wheel is drawn from the same
-  layout that answers the click, so an option cannot be one place on the screen and another place
-  under the mouse.
+- The throne is multi-use: E opens an interaction circle -- one disc divided into three equal
+  sectors, **SIT**, **SHIT** and **PISS**, with a cancel button where they meet. Move the pointer and
+  the sector under it lights up; click it, or press **1/2/3**. Clicking the middle cancels and closes
+  it, and clicking outside the disc does nothing. The disc and the click answer to the same geometry,
+  so a sector cannot be one place on the screen and another place under the mouse.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
 - **C** opens the native character creator: generic styles and all 107 universal anatomical

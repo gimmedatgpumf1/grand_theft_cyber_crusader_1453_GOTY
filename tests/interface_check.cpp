@@ -497,96 +497,98 @@ void examineOverlayPanels(int width, int height, bool windowOrder) {
 void examineInteractionWheel(int width, int height, bool windowOrder) {
     const std::string where = "wheel " + std::to_string(width) + "x" + std::to_string(height) +
         (windowOrder ? " window-order" : " rgb");
-    const auto layout = gtc::native::layoutInteractionWheel(width, height, "STANDING");
+    const auto layout = gtc::native::layoutInteractionWheel(width, height);
 
-    check(layout.panelWidth > 0 && layout.panelHeight > 0, where + ": the panel has a size");
-    check(layout.panelLeft >= 0 && layout.panelTop >= 0 && layout.panelLeft + layout.panelWidth <= width &&
-              layout.panelTop + layout.panelHeight <= height,
-          where + ": the panel fits inside the frame");
-    check(std::abs(layout.centreX - width / 2) <= 1, where + ": the circle is centred");
-    // The cancel button has to be smaller than the gap between two options, or a
-    // click near the middle is ambiguous.
-    check(layout.cancelRadius > 0 && layout.cancelRadius < layout.ringRadius - layout.optionRadius,
-          where + ": the cancel sits clear of the options");
-    for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
-        const long dx = layout.optionCentreX[index] - layout.centreX;
-        const long dy = layout.optionCentreY[index] - layout.centreY;
-        const long distance = static_cast<long>(std::lround(std::sqrt(static_cast<double>(dx * dx + dy * dy))));
-        check(std::abs(distance - layout.ringRadius) <= 1,
-              where + ": option " + std::to_string(index) + " is on the ring");
-        check(gtc::native::interactionWheelHit(layout, layout.optionCentreX[index], layout.optionCentreY[index]) == index,
-              where + ": the middle of option " + std::to_string(index) + " is that option");
-    }
-    check(gtc::native::interactionWheelHit(layout, layout.centreX, layout.centreY) == gtc::native::kWheelCancel,
-          where + ": the middle of the circle cancels");
-    check(gtc::native::interactionWheelHit(layout, 1, 1) == gtc::native::kWheelOutside,
-          where + ": the corner of the frame is outside");
-    check(gtc::native::interactionWheelHit(layout, layout.panelLeft + 1, layout.panelTop + 1) ==
-              gtc::native::kWheelOutside,
-          where + ": the panel around the circle is outside, so a stray click does nothing");
+    // One disc, centred, inside the frame.
+    check(layout.radius > 0, where + ": the disc has a radius");
+    check(std::abs(layout.centreX - width / 2) <= 1 && std::abs(layout.centreY - height / 2) <= 1,
+          where + ": the disc is centred");
+    check(layout.centreX - layout.radius >= 0 && layout.centreY - layout.radius >= 0 &&
+              layout.centreX + layout.radius < width && layout.centreY + layout.radius < height,
+          where + ": the disc fits inside the frame");
+    check(layout.cancelRadius > 0 && layout.cancelRadius < layout.radius / 2,
+          where + ": the cancel is a button, not the whole disc");
 
-    // Every option is reachable, only the nearest one wins at a time, and nothing
-    // in the frame answers to two of them.
+    // Everything inside the disc is one of the three sectors or the cancel, and
+    // the three sectors are the same size: a divided circle, not three targets.
     int counts[gtc::native::kWheelOptionCount] = {0, 0, 0};
-    long cancels = 0;
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const int hit = gtc::native::interactionWheelHit(layout, x, y);
+    long cancels = 0, inside = 0, outsideDrawn = 0;
+    for (int dy = -layout.radius; dy <= layout.radius; ++dy) {
+        for (int dx = -layout.radius; dx <= layout.radius; ++dx) {
+            const int hit = gtc::native::interactionWheelHit(layout, layout.centreX + dx, layout.centreY + dy);
+            const bool inDisc = dx * dx + dy * dy <= layout.radius * layout.radius;
+            if (inDisc) ++inside;
+            if (hit == gtc::native::kWheelOutside && inDisc) ++outsideDrawn;
             if (hit == gtc::native::kWheelCancel) ++cancels;
             if (hit >= 0) ++counts[hit];
         }
     }
-    for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
-        check(counts[index] > 400, where + ": option " + std::to_string(index) + " is a real target (" +
-                                        std::to_string(counts[index]) + " pixels)");
-    }
-    check(cancels > 100, where + ": the cancel is a real target (" + std::to_string(cancels) + " pixels)");
+    check(outsideDrawn == 0, where + ": every pixel of the disc belongs to a sector (" +
+                                 std::to_string(outsideDrawn) + " belong to none)");
+    const int largest = std::max({counts[0], counts[1], counts[2]});
+    const int smallest = std::min({counts[0], counts[1], counts[2]});
+    check(counts[0] > 0 && counts[1] > 0 && counts[2] > 0, where + ": all three sectors exist");
+    check(smallest * 100 >= largest * 90, where + ": the three sectors are equal thirds (" +
+                                               std::to_string(smallest) + " to " + std::to_string(largest) + ")");
+    check(cancels > 40, where + ": the middle cancels (" + std::to_string(cancels) + " pixels)");
+    check(gtc::native::interactionWheelHit(layout, 0, 0) == gtc::native::kWheelOutside,
+          where + ": the corner of the frame is outside");
+    check(gtc::native::interactionWheelHit(layout, layout.centreX, layout.centreY) == gtc::native::kWheelCancel,
+          where + ": the dead centre cancels");
+    // Up is the first sector, and the other two are where the layout says.
+    check(gtc::native::interactionWheelHit(layout, layout.centreX, layout.centreY - layout.radius * 3 / 4) == 0,
+          where + ": straight up is the first option");
 
-    // Resting, and one option lit: only the hovered option's disc changes, and the
-    // cancel's cross does not.
+    // Nothing outside the disc is touched: no panel, no box, no heading.
     Picture resting(width, height, windowOrder);
-    gtc::native::drawInteractionWheel(resting.frame, layout, "STANDING", -1, -1);
+    gtc::native::drawInteractionWheel(resting.frame, layout, -1, -1);
+    int touchedOutside = 0;
+    for (int y = 0; y < height; y += 2) {
+        for (int x = 0; x < width; x += 2) {
+            const long dx = x - layout.centreX, dy = y - layout.centreY;
+            if (dx * dx + dy * dy <= static_cast<long>(layout.radius + layout.stroke + 2) *
+                    (layout.radius + layout.stroke + 2)) continue;
+            if (!resting.untouched(x, y)) ++touchedOutside;
+        }
+    }
+    check(touchedOutside == 0, where + ": nothing is drawn outside the disc (" + std::to_string(touchedOutside) +
+                                   " pixels)");
+
+    // Hovering a sector lights that sector and only that sector, and the name in
+    // it switches to the reading colour.
     for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
         Picture hovered(width, height, windowOrder);
-        gtc::native::drawInteractionWheel(hovered.frame, layout, "STANDING", layout.optionCentreX[index],
-                                          layout.optionCentreY[index]);
-        // Inside the lit option, on the ring, is brighter than the same point at
-        // rest.
-        long lit = 0, rest = 0;
-        for (int dy = -layout.optionRadius; dy <= layout.optionRadius; dy += 3) {
-            for (int dx = -layout.optionRadius; dx <= layout.optionRadius; dx += 3) {
-                const auto a = hovered.at(layout.optionCentreX[index] + dx, layout.optionCentreY[index] + dy);
-                const auto b = resting.at(layout.optionCentreX[index] + dx, layout.optionCentreY[index] + dy);
-                if (a[0] < 0 || b[0] < 0) continue;
-                lit += a[0] + a[1] + a[2];
-                rest += b[0] + b[1] + b[2];
+        gtc::native::drawInteractionWheel(hovered.frame, layout, layout.labelX[index], layout.labelY[index]);
+        for (int other = 0; other < gtc::native::kWheelOptionCount; ++other) {
+            // A point halfway out along the other sector's middle: past its label,
+            // well inside its own wedge.
+            const int probeX = layout.centreX + (layout.labelX[other] - layout.centreX) * 3 / 2;
+            const int probeY = layout.centreY + (layout.labelY[other] - layout.centreY) * 3 / 2;
+            const auto a = hovered.at(probeX, probeY);
+            const auto b = resting.at(probeX, probeY);
+            if (other == index) {
+                check(a != b, where + ": the sector under the pointer is lit");
+            } else {
+                check(a == b, where + ": sector " + std::to_string(other) + " stays dark while " +
+                                   std::to_string(index) + " is hovered");
             }
         }
-        check(lit > rest + 2000, where + ": option " + std::to_string(index) + " lights up under the pointer");
-        for (int other = 0; other < gtc::native::kWheelOptionCount; ++other) {
-            if (other == index) continue;
-            const auto a = hovered.at(layout.optionCentreX[other], layout.optionCentreY[other]);
-            const auto b = resting.at(layout.optionCentreX[other], layout.optionCentreY[other]);
-            check(a[0] == b[0] && a[1] == b[1] && a[2] == b[2],
-                  where + ": option " + std::to_string(other) + " stays dark while " + std::to_string(index) +
-                      " is hovered");
-        }
     }
 
-    // The middle, under the pointer, is the cancel: it has to look different from
-    // the middle at rest, or nobody would know it was a button.
+    // The middle, under the pointer, and gone again when it is not.
     Picture centreLit(width, height, windowOrder);
-    gtc::native::drawInteractionWheel(centreLit.frame, layout, "STANDING", layout.centreX, layout.centreY);
-    const auto atRest = resting.at(layout.centreX + layout.cancelRadius / 2, layout.centreY);
-    const auto atLit = centreLit.at(layout.centreX + layout.cancelRadius / 2, layout.centreY);
-    check(atLit != atRest, where + ": the cancel lights up under the pointer");
+    gtc::native::drawInteractionWheel(centreLit.frame, layout, layout.centreX, layout.centreY);
+    check(centreLit.at(layout.centreX, layout.centreY) != resting.at(layout.centreX, layout.centreY),
+          where + ": the cancel lights up under the pointer");
 
     if (!windowOrder) {
-        zoom(resting, layout.panelLeft, layout.panelTop, layout.panelWidth, layout.panelHeight, 2,
+        zoom(resting, layout.centreX - layout.radius - 4, layout.centreY - layout.radius - 4,
+             layout.radius * 2 + 8, layout.radius * 2 + 8, 2,
              "build/native-client/interface-wheel-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
     }
-    std::printf("  %-26s circle %d px ring, %d px options, cancel %d px, %ld cancel pixels\n", where.c_str(),
-                layout.ringRadius, layout.optionRadius, layout.cancelRadius, cancels);
+    std::printf("  %-26s disc r=%d cancel r=%d, thirds %d/%d/%d\n", where.c_str(), layout.radius,
+                layout.cancelRadius, counts[0], counts[1], counts[2]);
+    (void)inside;
 }
 
 

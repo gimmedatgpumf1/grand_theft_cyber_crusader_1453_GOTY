@@ -335,13 +335,11 @@ private:
             case Overlay::None:
                 return;
             case Overlay::Wheel: {
-                const Character* citizen = local();
-                const char* subtitle = citizen == nullptr ? "" : citizen->appearance.male ? "STANDING" : "SEATED";
-                const InteractionWheelLayout layout = layoutInteractionWheel(frame.width, frame.height, subtitle);
-                // The pointer is the mouse: while the wheel is open the mouse is
-                // not captured, so these are real window pixels and the option
-                // under them is the option a click would take.
-                drawInteractionWheel(frame, layout, subtitle, static_cast<int>(std::lround(mouseX_)),
+                // The pointer is the mouse: while the circle is open the mouse is
+                // not captured, so these are real window pixels and the sector
+                // under them is the sector a click would take.
+                const InteractionWheelLayout layout = layoutInteractionWheel(frame.width, frame.height);
+                drawInteractionWheel(frame, layout, static_cast<int>(std::lround(mouseX_)),
                                      static_cast<int>(std::lround(mouseY_)));
                 return;
             }
@@ -498,8 +496,7 @@ private:
                 // an option takes it, a hit in the middle cancels, and a click on
                 // the panel around them does nothing, so a stray click cannot
                 // choose something by accident.
-                const InteractionWheelLayout layout = layoutInteractionWheel(
-                    view_.width, view_.height, local() != nullptr && local()->appearance.male ? "STANDING" : "SEATED");
+                const InteractionWheelLayout layout = layoutInteractionWheel(view_.width, view_.height);
                 const int hit = interactionWheelHit(layout, static_cast<int>(std::lround(event.x)),
                                                     static_cast<int>(std::lround(event.y)));
                 if (event.button != 1) return;
