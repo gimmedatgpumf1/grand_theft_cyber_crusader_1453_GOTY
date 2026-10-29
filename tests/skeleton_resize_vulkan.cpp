@@ -119,7 +119,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                 shapes.push_back(shape);
             }
         }
-        if (shapes.size() != 20) return false;
+        if (shapes.size() != 9) return false;
         for (const Shape& shape : shapes) {
             for (bool onlyCaps : {false, true}) {
                 if (onlyCaps && shape.foot) continue;
@@ -143,6 +143,32 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                     int difference = 0;
                     for (int c = 0; c < 3; ++c) difference += std::abs(int(original[at+c]) - int(other[at+c]));
                     if (difference > 24) ++changed;
+                }
+                // The source pose has crossed arms. A continuous rib cage can
+                // legitimately occlude a hand from the default view, so also
+                // check the same intact scene from behind when needed.
+                if (changed == 0) {
+                    Camera camera;
+                    camera.width = scene.width; camera.height = scene.height;
+                    camera.fovDegrees = 50; camera.position = {0,1.15,-3.5}; camera.target = {0,0.95,0};
+                    camera.worldSpaceGpu = true;
+                    GpuScene alternate = scene;
+                    alternate.viewMatrix = camera.viewMatrix();
+                    alternate.revision += 70000 + sequence++;
+                    NativeFrame rear; rear.width = scene.width; rear.height = scene.height;
+                    rear.wantPixels = true; rear.wantsBgra = true;
+                    if (!renderVulkanScene(alternate, rear)) return false;
+                    const unsigned char* r = rear.direct ? rear.direct : rear.bgra.data();
+                    std::vector<unsigned char> rearPixels(r, r+bytes);
+                    without.viewMatrix = alternate.viewMatrix;
+                    without.revision += 70000 + sequence++;
+                    if (!renderVulkanScene(without, plain)) return false;
+                    other = plain.direct ? plain.direct : plain.bgra.data();
+                    for (std::size_t at = 0; at < bytes; at += 4) {
+                        int difference = 0;
+                        for (int c = 0; c < 3; ++c) difference += std::abs(int(rearPixels[at+c])-int(other[at+c]));
+                        if (difference > 24) ++changed;
+                    }
                 }
                 std::printf("Vulkan %s %u %s: %d visible pixels\n", onlyCaps ? "filled faces" : "solid",
                             id, shape.name.c_str(), changed);

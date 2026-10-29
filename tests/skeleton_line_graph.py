@@ -123,8 +123,7 @@ for sex in ('male', 'female'):
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
         expected_groups[f'Forearm_{side}'] = {f'Radius_{side}', f'Ulna_{side}'}
         expected_groups[f'Shin_{side}'] = {f'Tibia_{side}', f'Fibula_{side}'}
-        for rib in range(1, 13, 2):
-            expected_groups[f'RibBand{rib:02d}_{rib+1:02d}_{side}'] = {f'Rib{rib}_{side}', f'Rib{rib+1}_{side}'}
+    expected_groups['RibCage'] = {f'Rib{rib}_{side}' for side in ('L','R') for rib in range(1,13)}
     assert groups == expected_groups and set(solids) == set(groups)
     assert foot_volumes == {'FootBase_L', 'FootBase_R'}
     # The solid footprint replaces the outline tubes rather than covering them.
@@ -155,7 +154,7 @@ for sex in ('male', 'female'):
         if group in foot_volumes: continue
         assert set(anchors[group]) == groups[group]
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
-        if group.startswith(('Forearm_', 'Shin_', 'RibBand')):
+        if group.startswith(('Forearm_', 'Shin_', 'RibCage')):
             # Both bones contribute to one filled, connected surface.
             assert any(any(i in anchors[group][name] for i in face) and
                        any(i in anchors[group][other] for i in face)
@@ -181,7 +180,7 @@ for sex in ('male', 'female'):
     assert len(members) == sum(map(len, groups.values())) == 82
     assert set(members) <= expected and len(expected) == 182
     visible = (expected - set(members)) | set(groups)
-    assert len(visible) == 120
+    assert len(visible) == 109
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
     # Dot placement is the centre of the corresponding supplied vertebra, not
@@ -208,7 +207,7 @@ for sex in ('male', 'female'):
         outline_center = tuple(sum(point[i] for point in vertices) / len(vertices) for i in range(3))
         assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
-        assert 0.05 < span < (0.5 if group.startswith(('Forearm_', 'Shin_')) else 0.3), group
+        assert 0.05 < span < (0.5 if group.startswith(('Forearm_', 'Shin_', 'RibCage')) else 0.3), group
     # Hands use source-derived anchors; feet have source-derived heel, toe
     # and distal-shin dimensions.
     for group, part_names in groups.items():
@@ -327,7 +326,7 @@ for sex in ('male', 'female'):
                     for i in range(3):
                         assert not intersects(points[edge[i]],points[edge[(i+1)%3]],a,b,c), (group,'self intersection')
             continue
-        if group.startswith('RibBand'):
+        if group == 'RibCage':
             # Independent reconstruction of each rib's angular samples; each
             # curved strip uses the actual registered ribs, not a flat slab.
             def quantile(values, fraction):
@@ -353,10 +352,28 @@ for sex in ('male', 'female'):
                 assert len(indices) == 8
                 assert all(math.dist(points[index], expected) < 0.00001
                            for index,expected in zip(indices,expected_points))
-            first, second = sorted(part_names, key=lambda x:int(x.split('_')[0][3:]))
-            for a,b in zip(anchors[group][first],anchors[group][second]):
-                assert 0.005 < math.dist(points[a],points[b]) < 0.15
-            assert len(solids[group][2]) == 14
+            assert len(solids[group][2]) == 330 and len(points) == 192
+            faces = solids[group][2]
+            # Every successive pair is joined at every segment, and left and
+            # right halves share a full posterior seam. One mesh is not merely
+            # separate pieces assigned the same name.
+            for side in ('L','R'):
+                for rib in range(1,12):
+                    a = anchors[group][f'Rib{rib}_{side}']
+                    b = anchors[group][f'Rib{rib+1}_{side}']
+                    for i in range(7):
+                        cell = {a[i],a[i+1],b[i],b[i+1]}
+                        assert sum(set(face) <= cell for face in faces) == 2
+            for rib in range(1,12):
+                cell = {anchors[group][f'Rib{rib}_L'][0], anchors[group][f'Rib{rib+1}_L'][0],
+                        anchors[group][f'Rib{rib}_R'][-1], anchors[group][f'Rib{rib+1}_R'][-1]}
+                assert sum(set(face) <= cell for face in faces) == 2
+            oriented = defaultdict(int)
+            for face in faces:
+                for a,b in zip(face,face[1:]+face[:1]): oriented[(a,b)] += 1
+            assert all(count == 1 for count in oriented.values())
+            assert all(oriented[(b,a)] == 1 for (a,b),count in list(oriented.items()) if tuple(sorted((a,b))) not in
+                       {tuple(sorted(edge)) for edge in solids[group][3]})
             continue
         if group.startswith(('Forearm_', 'Shin_')):
             def sub(a,b): return tuple(x-y for x,y in zip(a,b))
@@ -425,13 +442,13 @@ for sex in ('male', 'female'):
     topology = set()
     for kind, a, b, _ in edges:
         key = (kind, *sorted((a,b)))
-        assert key not in topology
+        if key in topology: assert 'RibCage' in (a,b), key
         topology.add(key); graph[a].add(b); graph[b].add(a)
     found = {'Head'}; queue = deque(found)
     while queue:
         for other in graph[queue.popleft()] - found:
             found.add(other); queue.append(other)
-    assert found == visible and len(topology) == 141
+    assert found == visible and len(edges) == 145
     collapsed = set()
     expected_anchors = defaultdict(set)
     for original_a, original_b, kind in anatomy:
@@ -450,11 +467,20 @@ for sex in ('male', 'female'):
                            for i in expected_anchors[(key, group)]), (group, key)
     for side in ('L','R'):
         for i in range(1, 13):
-            band_start = i if i % 2 else i-1
-            band = f'RibBand{band_start:02d}_{band_start+1:02d}_{side}'
-            assert f'T{i}' in graph[band]
-            if i <= 7: assert ('C', *sorted(('Sternum',band))) in topology
-            if i >= 11: assert 'Sternum' not in graph[band]
+            assert f'T{i}' in graph['RibCage']
+            # Every anatomical rib has its own link to the appropriate T dot,
+            # despite both sides sharing the same mesh and graph label.
+            rib_anchors = anchors['RibCage'][f'Rib{i}_{side}']
+            matching = [ends for kind,a,b,ends in edges if kind == 'J' and
+                        {a,b} == {f'T{i}', 'RibCage'}]
+            assert len(matching) == 2
+            assert any(any(math.dist((ends[:3] if a == 'RibCage' else ends[3:]),
+                                     solids['RibCage'][1][j]) < 0.00001 for j in rib_anchors)
+                       for kind,a,b,ends in edges if kind == 'J' and {a,b} == {f'T{i}', 'RibCage'})
+            if i <= 7:
+                assert any(any(math.dist((ends[:3] if a == 'RibCage' else ends[3:]),
+                                         solids['RibCage'][1][j]) < 0.00001 for j in rib_anchors)
+                           for kind,a,b,ends in edges if kind == 'C' and {a,b} == {'Sternum', 'RibCage'})
         assert f'HandTrapezium_{side}' in graph[f'HandPalm_{side}']
         assert f'HandMeta1_{side}' in graph[f'HandTrapezium_{side}']
         for digit in range(1, 6):
@@ -466,4 +492,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, 12 rib bands, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(edges)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, one connected rib cage, {len(dots)} vertebra dots)')

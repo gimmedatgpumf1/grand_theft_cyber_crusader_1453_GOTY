@@ -85,8 +85,7 @@ def unified_groups():
         groups[f'FootBase_{side}'] = tuple(f'{name}_{side}' for name in foot)
         groups[f'Forearm_{side}'] = (f'Radius_{side}', f'Ulna_{side}')
         groups[f'Shin_{side}'] = (f'Tibia_{side}', f'Fibula_{side}')
-        for rib in range(1, 13, 2):
-            groups[f'RibBand{rib:02d}_{rib+1:02d}_{side}'] = (f'Rib{rib}_{side}', f'Rib{rib+1}_{side}')
+    groups['RibCage'] = tuple(f'Rib{rib}_{side}' for side in ('L', 'R') for rib in range(1, 13))
     return groups
 
 
@@ -157,24 +156,40 @@ def paired_bone_surface(bones, members):
     return points, faces, boundary, owners
 
 
-def rib_band(bones, members):
-    """One filled strip between two consecutive source-derived rib curves.
+def rib_cage(bones, members):
+    """One connected surface through all 24 source-derived rib curves.
 
-    The angular order used by line_for is consistent within each side. Keep
-    the 3D samples, joining corresponding positions rather than flattening the
-    curved cage into one broad rectangle or selecting neighbours by distance.
+    Adjacent ribs on each side are joined along corresponding angular samples.
+    A posterior seam joins both sides; the front remains open around the sternum.
+    These are visual surfaces, not new anatomical articulations.
     """
-    curves = [line_for(name, bones[name], bones) for name in members]
-    assert len(curves[0]) == len(curves[1]) == 8
-    points = np.array(curves[0] + curves[1])
-    n = len(curves[0])
+    points, owners = [], {}
+    for name in members:
+        curve = line_for(name, bones[name], bones)
+        assert len(curve) == 8
+        owners[name] = list(range(len(points), len(points)+8))
+        points.extend(curve)
     faces = []
-    for i in range(n-1):
-        faces += [(i, i+1, n+i+1), (i, n+i+1, n+i)]
-    boundary = ([(i, i+1) for i in range(n-1)] + [(n-1, 2*n-1)] +
-                [(i, i-1) for i in range(2*n-1, n, -1)] + [(n, 0)])
-    owners = {members[0]: list(range(n)), members[1]: list(range(n, 2*n))}
-    return points, faces, boundary, owners
+    for side in ('L', 'R'):
+        for rib in range(1, 12):
+            a, b = owners[f'Rib{rib}_{side}'], owners[f'Rib{rib+1}_{side}']
+            for i in range(7):
+                faces.extend(((a[i],a[i+1],b[i+1]), (a[i],b[i+1],b[i])))
+    # L curves start posteriorly; R curves end posteriorly. Join them behind
+    # the vertebrae, preserving consistent winding across the joined strip.
+    for rib in range(1, 12):
+        a, b = owners[f'Rib{rib}_L'][0], owners[f'Rib{rib+1}_L'][0]
+        c, d = owners[f'Rib{rib}_R'][-1], owners[f'Rib{rib+1}_R'][-1]
+        faces.extend(((a,b,d), (a,d,c)))
+    edges = {}
+    for face in faces:
+        for a,b in zip(face, face[1:]+face[:1]):
+            key = tuple(sorted((a,b)))
+            if key not in edges: edges[key] = [0, (a,b)]
+            edges[key][0] += 1
+    assert all(count <= 2 for count, _ in edges.values())
+    boundary = [edge for count, edge in edges.values() if count == 1]
+    return np.array(points), faces, boundary, owners
 
 
 # Closed 10-point foot: toe bottom 0/1, toe top 2/3, heel bottom
@@ -385,8 +400,8 @@ def build(sex):
             boxes[group] = foot_volume(bones, members, group[-1])
         elif group.startswith(('Forearm_', 'Shin_')):
             solids[group] = paired_bone_surface(bones, members)
-        elif group.startswith('RibBand'):
-            solids[group] = rib_band(bones, members)
+        elif group == 'RibCage':
+            solids[group] = rib_cage(bones, members)
         else:
             solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
@@ -396,6 +411,10 @@ def build(sex):
         a, b = member_to_group.get(original_a, original_a), member_to_group.get(original_b, original_b)
         if a == b: continue
         key = (kind, *sorted((a, b)))
+        # Keep individual spinal and inferred cartilage connections to each
+        # rib even though their endpoints now share one visual surface.
+        if 'RibCage' in (a, b):
+            key += (original_a, original_b)
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',

@@ -103,7 +103,7 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
         for (auto edge : edges) if (edge.second != 2) return false;
         vertexOffset += vertexCount; indexOffset += indexCount; ++solids;
     }
-    return solids == 20 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
+    return solids == 9 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
 }
 static std::size_t maleLineIndices, femaleLineIndices, maleSolidIndices, femaleSolidIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {

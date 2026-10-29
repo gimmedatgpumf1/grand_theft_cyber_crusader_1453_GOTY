@@ -51,10 +51,11 @@ triangulated surface anchored to the individual source bones. On each side,
 the radius and ulna share one thin filled forearm plane, and the tibia and
 fibula share one thin filled shin plane. Each plane's outline is fitted to the
 projected contours of both source bones; this deliberately flattens their 3D
-depth rather than presenting a full anatomical surface. Consecutive ribs are
-paired into thin filled bands, following the source-derived curves on each side
-of the cage rather than flattening the whole cage. The bands are visual
-simplifications, not additional anatomical joints.
+depth rather than presenting a full anatomical surface. All 24 ribs form one
+continuous thin filled rib-cage surface: successive source-derived curves are
+joined on each side, with a rear seam connecting the sides. The front stays open
+around the sternum. The surface is a visual simplification, not additional
+anatomical joints.
 
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the
@@ -69,15 +70,15 @@ surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
-external links are retained, leaving 120 displayed shapes and 141 visible links.
+external links are retained, leaving 109 displayed shapes and 145 visible links.
 The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
 [upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)
 and [lower limb](https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb)
 descriptions. The underlying graph connects ribs 1–7 via inferred cartilage
 to the sternum, ribs 8–10 via the preceding rib, and leaves ribs 11–12 without
-an anterior joint. Links internal to a visual band are hidden; repeated external
-links collapse to one displayed connection.
+an anterior joint. Links internal to the rib-cage surface are hidden; each
+rib's spinal connection and inferred sternum connections remain visible.
 
 The source supplies surfaces, not joint landmarks. Line shapes and link endpoints
 are estimates from each surface; the anatomical table chooses the pairs, never
