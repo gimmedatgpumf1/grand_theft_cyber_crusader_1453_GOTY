@@ -152,8 +152,8 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
-        // Thin filled surfaces follow the projected source bones. Caps and
-        // boundary walls make them visible from both faces and from the side.
+        // Thin filled surfaces span source-bone anchors in their original 3-D
+        // positions. Caps and boundary walls keep both sides visible.
         std::vector<Vec3> points;
         std::vector<std::array<int, 3>> faces;
         for (const auto& solid : solids_) {

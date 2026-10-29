@@ -22,8 +22,7 @@ exec(compile(module, 'anatomy schema', 'exec'), namespace)
 anatomy = namespace['anatomy']()
 assert len(anatomy) == 209
 def point_in_solid(point, solid, tolerance=0.0005):
-    # Barycentric point-in-triangle in 3D; allow for 0.25-mm silhouette
-    # simplification and six-decimal storage, not a change to the link graph.
+    # Barycentric point-in-triangle in 3D with six-decimal storage tolerance.
     _, points, faces, boundary = solid
     def sub(a,b): return tuple(x-y for x,y in zip(a,b))
     def dot(a,b): return sum(x*y for x,y in zip(a,b))
@@ -51,8 +50,14 @@ reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges, dots, groups, solids = defaultdict(list), [], {}, {}, {}
+    segments, edges, dots, groups, solids, anchors = defaultdict(list), [], {}, {}, {}, defaultdict(dict)
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
+        if row.startswith('# Anchor '):
+            parts = row.split()
+            group, name = parts[2:4]
+            assert name not in anchors[group]
+            anchors[group][name] = list(map(int, parts[4:]))
+            continue
         if row.startswith('# Group '):
             parts = row.split()
             assert parts[2] not in groups
@@ -70,7 +75,7 @@ for sex in ('male', 'female'):
         elif kind == 'M':
             name, thickness = fields[1], float(fields[2])
             count, faces, edges_count = map(int, fields[3:6])
-            assert name not in solids and 0 < thickness <= 0.003
+            assert name not in solids and 0 < thickness <= 0.001
             assert 3 <= count <= 4096 and len(fields) == 6 + 3*count + 3*faces + 2*edges_count
             end = 6 + 3*count
             values = tuple(map(float, fields[6:end]))
@@ -109,7 +114,7 @@ for sex in ('male', 'female'):
     assert not (set(solids) & set(segments))
     for group, (_, points, faces, boundary) in solids.items():
         segments[group] = [(points[a], points[b]) for a,b in boundary]
-        # Filled planar triangle mesh: one use for each boundary edge, two for
+        # Filled triangle mesh: one use for each boundary edge, two for
         # each internal edge; only one connected component, including holes.
         counts = defaultdict(int); graph_points = defaultdict(set)
         for face in faces:
@@ -125,6 +130,24 @@ for sex in ('male', 'female'):
             for point in graph_points[queue.popleft()] - found_points:
                 found_points.add(point); queue.append(point)
         assert found_points == set(range(len(points))), group
+        assert set(anchors[group]) == groups[group]
+        assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
+        # The surface must fill between neighbouring metacarpal/metatarsal
+        # axes, not just join individual bone silhouettes with thin slivers.
+        prefix = 'Hand' if group.startswith('Hand') else 'Foot'
+        side = group[-1]
+        start = 2 if prefix == 'Hand' else 1
+        for digit in range(start, 5):
+            a = set(anchors[group][f'{prefix}Meta{digit}_{side}'])
+            b = set(anchors[group][f'{prefix}Meta{digit+1}_{side}'])
+            between = [face for face in faces if a.intersection(face) and b.intersection(face)]
+            assert between, (group, digit)
+            def area(face):
+                x,y,z = (points[i] for i in face)
+                u, v = [y[i]-x[i] for i in range(3)], [z[i]-x[i] for i in range(3)]
+                cross = (u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0])
+                return math.sqrt(sum(n*n for n in cross)) / 2
+            assert max(map(area, between)) > 0.00005, (group, digit)
     members = {member: group for group, parts in groups.items() for member in parts}
     assert len(members) == sum(map(len, groups.values())) == 50
     assert set(members) <= expected and len(expected) == 182
@@ -154,26 +177,28 @@ for sex in ('male', 'female'):
         source_center = tuple(sum(totals[name][i] for name in part_names) / counts for i in range(3))
         vertices = solids[group][1]
         outline_center = tuple(sum(point[i] for point in vertices) / len(vertices) for i in range(3))
-        assert math.dist(source_center, outline_center) < 0.03, group
+        assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
         assert 0.05 < span < 0.3, group
-    # Project samples of every included source bone onto its displayed plane;
-    # the filled surface must cover the real meshes, not a generic palm/foot.
+    # Each member owns real 3-D anchors derived from its source vertices.
+    # Long bones have two extent anchors plus the centroid; the rest use their
+    # centroid. The shared triangles preserve their original 3-D positions.
     for group, part_names in groups.items():
-        solid = solids[group]
-        points, faces = solid[1], solid[2]
-        def sub(a,b): return tuple(x-y for x,y in zip(a,b))
-        def cross(a,b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
-        vectors = [cross(sub(points[b],points[a]), sub(points[c],points[a])) for a,b,c in faces]
-        normal = max(vectors, key=lambda v: sum(x*x for x in v))
-        norm = math.sqrt(sum(x*x for x in normal)); normal = tuple(x/norm for x in normal)
+        points = solids[group][1]
         for name in part_names:
-            samples = member_vertices[name]
-            for index in range(0, len(samples), max(1, len(samples)//8)):
-                p = samples[index]
-                depth = sum((p[i]-points[0][i])*normal[i] for i in range(3))
-                projection = tuple(p[i]-depth*normal[i] for i in range(3))
-                assert point_in_solid(projection, solid, 0.001), (group, name, projection)
+            indices = anchors[group][name]
+            source_points = member_vertices[name]
+            mean = tuple(sum(v[i] for v in source_points) / len(source_points) for i in range(3))
+            if name.startswith(('HandMeta', 'FootMeta')):
+                assert len(indices) == 3 and math.dist(points[indices[1]], mean) < 0.00001
+                lo, hi = points[indices[0]], points[indices[2]]
+                assert 0.01 < math.dist(lo, hi) < 0.15
+                for point in (lo, hi):
+                    for axis in range(3):
+                        values = [v[axis] for v in source_points]
+                        assert min(values) - 0.005 <= point[axis] <= max(values) + 0.005
+            else:
+                assert len(indices) == 1 and math.dist(points[indices[0]], mean) < 0.00001
     assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))
     assert len(segments['Head']) >= 24
     for name, bone_segments in segments.items():
@@ -208,10 +233,21 @@ for sex in ('male', 'female'):
             found.add(other); queue.append(other)
     assert found == visible and len(topology) == 159
     collapsed = set()
-    for a, b, kind in anatomy:
-        a, b = members.get(a, a), members.get(b, b)
-        if a != b: collapsed.add(('C' if kind == 'cartilage' else 'J', *sorted((a,b))))
+    expected_anchors = defaultdict(set)
+    for original_a, original_b, kind in anatomy:
+        a, b = members.get(original_a, original_a), members.get(original_b, original_b)
+        if a != b:
+            key = ('C' if kind == 'cartilage' else 'J', *sorted((a,b)))
+            collapsed.add(key)
+            if a in solids: expected_anchors[(key, a)].update(anchors[a][original_a])
+            if b in solids: expected_anchors[(key, b)].update(anchors[b][original_b])
     assert topology == collapsed
+    for kind, a, b, ends in edges:
+        key = (kind, *sorted((a,b)))
+        for group, point in ((a, ends[:3]), (b, ends[3:])):
+            if group in solids:
+                assert any(math.dist(point, solids[group][1][i]) < 0.00001
+                           for i in expected_anchors[(key, group)]), (group, key)
     for side in ('L','R'):
         for i in range(1, 13):
             assert f'T{i}' in graph[f'Rib{i}_{side}']
