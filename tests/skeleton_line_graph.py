@@ -6,6 +6,7 @@ Endpoint positions are approximations because the dataset has no joint landmarks
 from collections import defaultdict, deque
 import ast
 import json
+from itertools import combinations
 import math
 from pathlib import Path
 
@@ -50,7 +51,7 @@ reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges, dots, groups, solids, anchors, hexahedra = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set()
+    segments, edges, dots, groups, solids, anchors, foot_volumes = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set()
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
         if row.startswith('# Anchor '):
             parts = row.split()
@@ -72,16 +73,17 @@ for sex in ('male', 'female'):
             point = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, point))
             dots[fields[1]] = point
-        elif kind == 'H':
+        elif kind == 'F':
             name = fields[1]
-            assert name not in solids and name.startswith('FootBase_') and len(fields) == 26
+            assert name not in solids and name.startswith('FootBase_') and len(fields) == 32
             values = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, values))
             points = [values[i:i+3] for i in range(0, len(values), 3)]
-            quads = ((0,1,3,2), (4,6,7,5), (0,4,5,1), (2,3,7,6), (0,2,6,4), (1,5,7,3))
-            faces = [(q[0],q[1],q[2]) for q in quads] + [(q[0],q[2],q[3]) for q in quads]
+            faces = [(4,5,1),(4,1,0), (0,1,3),(0,3,2), (4,6,7),(4,7,5),
+                     (6,8,9),(6,9,7), (8,2,3),(8,3,9),
+                     (4,0,2),(4,2,8),(4,8,6), (5,7,9),(5,9,3),(5,3,1)]
             solids[name] = (0, points, faces, [])
-            hexahedra.add(name)
+            foot_volumes.add(name)
         elif kind == 'M':
             name, thickness = fields[1], float(fields[2])
             count, faces, edges_count = map(int, fields[3:6])
@@ -120,12 +122,13 @@ for sex in ('male', 'female'):
         expected_groups[f'HandPalm_{side}'] = {f'{n}_{side}' for n in hand}
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
     assert groups == expected_groups and set(solids) == set(groups)
-    assert hexahedra == {'FootBase_L', 'FootBase_R'}
+    assert foot_volumes == {'FootBase_L', 'FootBase_R'}
     # The solid footprint replaces the outline tubes rather than covering them.
     assert not (set(solids) & set(segments))
     for group, (_, points, faces, boundary) in solids.items():
-        if group in hexahedra:
-            segments[group] = [(points[i], points[i ^ bit]) for i in range(8) for bit in (1,2,4) if i < (i ^ bit)]
+        if group in foot_volumes:
+            edge_set = {tuple(sorted((a,b))) for f in faces for a,b in zip(f, f[1:]+f[:1])}
+            segments[group] = [(points[a], points[b]) for a,b in edge_set]
         else:
             segments[group] = [(points[a], points[b]) for a,b in boundary]
         # Filled triangle mesh: one use for each boundary edge, two for
@@ -139,13 +142,13 @@ for sex in ('male', 'female'):
         actual_boundary = {edge for edge, count in counts.items() if count == 1}
         assert actual_boundary == {tuple(sorted(edge)) for edge in boundary}
         assert all(count in (1,2) for count in counts.values())
-        if group in hexahedra: assert len(faces) == 12 and all(count == 2 for count in counts.values())
+        if group in foot_volumes: assert len(faces) == 16 and all(count == 2 for count in counts.values())
         found_points = {faces[0][0]}; queue = deque(found_points)
         while queue:
             for point in graph_points[queue.popleft()] - found_points:
                 found_points.add(point); queue.append(point)
         assert found_points == set(range(len(points))), group
-        if group in hexahedra: continue
+        if group in foot_volumes: continue
         assert set(anchors[group]) == groups[group]
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
         # The surface must fill between neighbouring metacarpal/metatarsal
@@ -200,7 +203,7 @@ for sex in ('male', 'female'):
     # and distal-shin dimensions.
     for group, part_names in groups.items():
         points = solids[group][1]
-        if group in hexahedra:
+        if group in foot_volumes:
             # Check actual heel, distal shin and metatarsal landmarks rather
             # than a generic prism or a centrally inset top.
             side = group[-1]
@@ -227,67 +230,92 @@ for sex in ('male', 'female'):
             def project(p): return tuple(dot(p,axis) for axis in basis)
             calc = [project(p) for p in member_vertices[f'Cal_{side}']]
             x0, z0 = min(p[0] for p in calc), min(p[2] for p in calc)
-            assert abs(local[0][0]-x0) < 0.00001 and abs(local[2][0]-x0) < 0.00001
+            assert abs(local[4][0]-x0) < 0.00001 and abs(local[5][0]-x0) < 0.00001
             rear_cutoff = quantile([p[0] for p in calc], 0.10)
             rear = [p for p in calc if p[0] <= rear_cutoff]
-            assert abs(local[0][1]-min(p[1] for p in rear)) < 0.00001
-            assert abs(local[2][1]-max(p[1] for p in rear)) < 0.00001
-            assert local[2][1]-local[0][1] < 0.75*(max(p[1] for p in calc)-min(p[1] for p in calc))
-            assert abs(local[0][2]-z0) < 0.00001 and abs(local[2][2]-z0) < 0.00001
+            assert abs(local[4][1]-min(p[1] for p in rear)) < 0.00001
+            assert abs(local[5][1]-max(p[1] for p in rear)) < 0.00001
+            assert local[5][1]-local[4][1] < 0.75*(max(p[1] for p in calc)-min(p[1] for p in calc))
+            assert abs(local[4][2]-z0) < 0.00001 and abs(local[5][2]-z0) < 0.00001
             distal_ankles, proximal_ankles = [], []
             for name in ('Tibia','Fibula'):
                 vertices = member_vertices[f'{name}_{side}']
-                low = quantile([p[1] for p in vertices], 0.08)
+                low = quantile([p[1] for p in vertices], 0.04)
                 high = quantile([p[1] for p in vertices], 0.90)
                 distal_ankles.append([p for p in vertices if p[1] <= low])
                 proximal_ankles.append([p for p in vertices if p[1] >= high])
             origin = centroid([centroid(bone) for bone in distal_ankles])
             leg = unit(sub(centroid([centroid(bone) for bone in proximal_ankles]), origin))
-            top = [points[i] for i in (1,3,7,5)]
+            along = unit(tuple(forward[i]-dot(forward,leg)*leg[i] for i in range(3)))
+            top = [points[i] for i in (6,7,9,8)]
             normal = unit(cross(sub(top[1],top[0]), sub(top[2],top[0])))
             assert abs(dot(normal,leg)) > 0.9999
             assert abs(dot(normal,sub(origin,top[0]))) < 0.00001
-            area = (math.sqrt(dot(cross(sub(top[1],top[0]),sub(top[2],top[0])),
-                                  cross(sub(top[1],top[0]),sub(top[2],top[0])))) +
-                    math.sqrt(dot(cross(sub(top[2],top[0]),sub(top[3],top[0])),
-                                  cross(sub(top[2],top[0]),sub(top[3],top[0]))))) / 2
-            assert 0.0004 < area < 0.02, (group, 'ankle face area', area)
+            ankle_vertices = [p for bone in distal_ankles for p in bone]
+            # The top has exactly the ankle's front-to-back extent: no padding
+            # stretches it toward the toes.
+            assert abs(min(dot(sub(p,origin),along) for p in top) -
+                       min(dot(sub(p,origin),along) for p in ankle_vertices)) < 0.00001
+            assert abs(max(dot(sub(p,origin),along) for p in top) -
+                       max(dot(sub(p,origin),along) for p in ankle_vertices)) < 0.00001
+            assert 0.02 < math.dist(top[0],top[3]) < 0.06
             middle = centroid(top)
-            for bone in distal_ankles:
-                # Project each real distal-bone vertex onto the top plane;
-                # both bones must fit inside the filled quadrilateral.
-                for p in bone:
-                    for i in range(4):
-                        edge = sub(top[(i+1)%4], top[i])
-                        ref = dot(normal, cross(edge, sub(middle,top[i])))
-                        value = dot(normal, cross(edge, sub(p,top[i])))
-                        edge_length = math.sqrt(dot(edge,edge))
-                        assert value*(1 if ref > 0 else -1) >= -0.00001*edge_length, (group, 'ankle coverage')
+            for p in ankle_vertices:
+                for i in range(4):
+                    edge = sub(top[(i+1)%4], top[i])
+                    ref = dot(normal, cross(edge, sub(middle,top[i])))
+                    value = dot(normal, cross(edge, sub(p,top[i])))
+                    edge_length = math.sqrt(dot(edge,edge))
+                    assert value*(1 if ref > 0 else -1) >= -0.00001*edge_length, (group, 'ankle coverage')
             distal_toes = []
             for digit in (1,5):
                 vertices = [project(p) for p in member_vertices[f'FootMeta{digit}_{side}']]
-                cutoff = quantile([p[0] for p in vertices], 0.90)
+                cutoff = quantile([p[0] for p in vertices], 0.70)
                 subset = [p for p in vertices if p[0] >= cutoff]
                 distal_toes.append((centroid(subset), subset))
             distal_toes.sort(key=lambda item: item[0][1])
-            for index, (_, subset) in zip((4,6), distal_toes):
-                assert abs(local[index][0]-max(p[0] for p in subset)) < 0.00001
             toe_vertices = distal_toes[0][1] + distal_toes[1][1]
-            assert abs(local[4][1]-min(p[1] for p in toe_vertices)) < 0.00001
-            assert abs(local[6][1]-max(p[1] for p in toe_vertices)) < 0.00001
-            assert local[6][1]-local[4][1] > local[2][1]-local[0][1]
-            assert 0.1 < (local[4][0]+local[6][0])/2-x0 < 0.25
-            centre = tuple(sum(p[i] for p in points)/8 for i in range(3))
-            quads = ((0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3))
-            for a,b,c,d in quads:
-                normal = unit(cross(sub(points[b],points[a]), sub(points[c],points[a])))
-                assert abs(dot(normal,sub(points[d],points[a]))) < 0.00001
-                if dot(normal,sub(centre,points[a])) > 0: normal = tuple(-x for x in normal)
-                assert all(dot(normal,sub(p,points[a])) < 0.00001 for p in points), group
-            # A real top has both width and depth; the front spans the two
-            # independently positioned outer toe bones.
-            assert math.dist(top[0],top[1]) > 0.02
-            assert math.dist(top[1],top[2]) > 0.02
+            for index, (landmark, _) in zip((0,1), distal_toes):
+                assert abs(local[index][0]-landmark[0]) < 0.00001
+                assert abs(local[index+2][0]-landmark[0]) < 0.00001
+                assert abs(local[index+2][1]-local[index][1]) < 0.00001
+                assert local[index+2][2] > local[index][2] + 0.008
+            assert abs(local[0][1]-min(p[1] for p in toe_vertices)) < 0.00001
+            assert abs(local[1][1]-max(p[1] for p in toe_vertices)) < 0.00001
+            assert local[1][1]-local[0][1] > local[5][1]-local[4][1]
+            assert 0.1 < (local[0][0]+local[1][0])/2-x0 < 0.25
+            # Front face covers every projected distal vertex of both outer
+            # metatarsals, including its real vertical thickness.
+            for p in toe_vertices:
+                t = (p[1]-local[0][1]) / (local[1][1]-local[0][1])
+                low = local[0][2] + t*(local[1][2]-local[0][2])
+                high = local[2][2] + t*(local[3][2]-local[2][2])
+                assert low-0.00001 <= p[2] <= high+0.00001, (group, 'toe coverage')
+            assert abs(dot(normal,sub(top[3],top[0]))) < 0.00001
+            triangles = solids[group][2]
+            oriented = defaultdict(int)
+            volume = 0
+            for face in triangles:
+                a,b,c = (points[i] for i in face)
+                v = cross(sub(b,a),sub(c,a))
+                assert dot(v,v) > 1e-12, (group, 'degenerate face')
+                volume += dot(a,cross(b,c))/6
+                for i,j in zip(face,face[1:]+face[:1]): oriented[(i,j)] += 1
+            assert volume > 0.00001
+            assert all(count == 1 and oriented[(b,a)] == 1 for (a,b),count in list(oriented.items()))
+            def intersects(p,q,a,b,c):
+                direction, u, v = sub(q,p), sub(b,a), sub(c,a)
+                h = cross(direction,v); det = dot(u,h)
+                if abs(det) < 1e-12: return False
+                f = 1/det; delta = sub(p,a); x = f*dot(delta,h)
+                r = cross(delta,u); y = f*dot(direction,r); t = f*dot(v,r)
+                return 1e-7 < x < 1-1e-7 and 1e-7 < y and x+y < 1-1e-7 and 1e-7 < t < 1-1e-7
+            for first,second in combinations(triangles,2):
+                if set(first) & set(second): continue
+                for edge,face in ((first,second),(second,first)):
+                    a,b,c = (points[i] for i in face)
+                    for i in range(3):
+                        assert not intersects(points[edge[i]],points[edge[(i+1)%3]],a,b,c), (group,'self intersection')
             continue
         for name in part_names:
             indices = anchors[group][name]
@@ -343,13 +371,13 @@ for sex in ('male', 'female'):
         if a != b:
             key = ('C' if kind == 'cartilage' else 'J', *sorted((a,b)))
             collapsed.add(key)
-            if a in solids and a not in hexahedra: expected_anchors[(key, a)].update(anchors[a][original_a])
-            if b in solids and b not in hexahedra: expected_anchors[(key, b)].update(anchors[b][original_b])
+            if a in solids and a not in foot_volumes: expected_anchors[(key, a)].update(anchors[a][original_a])
+            if b in solids and b not in foot_volumes: expected_anchors[(key, b)].update(anchors[b][original_b])
     assert topology == collapsed
     for kind, a, b, ends in edges:
         key = (kind, *sorted((a,b)))
         for group, point in ((a, ends[:3]), (b, ends[3:])):
-            if group in solids and group not in hexahedra:
+            if group in solids and group not in foot_volumes:
                 assert any(math.dist(point, solids[group][1][i]) < 0.00001
                            for i in expected_anchors[(key, group)]), (group, key)
     for side in ('L','R'):
@@ -368,4 +396,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(hexahedra)} foot hexahedra, {len(solids)-len(hexahedra)} palm surfaces, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, {len(solids)-len(foot_volumes)} palm surfaces, {len(dots)} vertebra dots)')

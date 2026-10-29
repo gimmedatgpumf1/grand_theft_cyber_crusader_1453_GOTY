@@ -99,16 +99,16 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     for (std::uint32_t id : {8001u, 9001u}) {
         const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         std::ifstream input(path);
-        struct Shape { std::string name; std::size_t offset, caps, indices; bool hexahedron; };
+        struct Shape { std::string name; std::size_t offset, caps, indices; bool foot; };
         std::vector<Shape> shapes;
         std::size_t totalIndices = 0, totalVertices = 0;
         std::string row;
-        while (std::getline(input, row)) if (row.rfind("M ", 0) == 0 || row.rfind("H ", 0) == 0) {
+        while (std::getline(input, row)) if (row.rfind("M ", 0) == 0 || row.rfind("F ", 0) == 0) {
             std::istringstream fields(row);
             char kind; std::string name; fields >> kind >> name;
-            if (kind == 'H') {
-                shapes.push_back({name, totalIndices, 0, 36, true});
-                totalIndices += 36; totalVertices += 8;
+            if (kind == 'F') {
+                shapes.push_back({name, totalIndices, 0, 48, true});
+                totalIndices += 48; totalVertices += 10;
             } else {
                 double thickness; int vertices, faces, edges;
                 fields >> thickness >> vertices >> faces >> edges;
@@ -122,7 +122,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
         if (shapes.size() != 4) return false;
         for (const Shape& shape : shapes) {
             for (bool onlyCaps : {false, true}) {
-                if (onlyCaps && shape.hexahedron) continue;
+                if (onlyCaps && shape.foot) continue;
                 GpuScene without = scene;
                 without.revision += 40000 + sequence++;
                 bool removed = false;
@@ -155,7 +155,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
 }
 
 // Compare the real device image with the triangles incident to the heel-end
-// corners of each box removed; the geometry test separately checks dimensions.
+// corners of each foot removed; the geometry test separately checks dimensions.
 static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
     const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
@@ -171,12 +171,12 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
             bool found = false;
             std::string row;
             while (std::getline(input, row)) {
-                if (row.rfind("H ", 0) != 0 && row.rfind("M ", 0) != 0) continue;
+                if (row.rfind("F ", 0) != 0 && row.rfind("M ", 0) != 0) continue;
                 std::istringstream fields(row);
                 char kind; std::string name; fields >> kind >> name;
-                if (kind == 'H') {
+                if (kind == 'F') {
                     if (name == group) { vertexOffset = totalVertices; indexOffset = totalIndices; found = true; }
-                    totalVertices += 8; totalIndices += 36;
+                    totalVertices += 10; totalIndices += 48;
                 } else {
                     double thickness; std::size_t n, f, e; fields >> thickness >> n >> f >> e;
                     if (!fields) return false;
@@ -192,10 +192,10 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
                 std::vector<std::uint32_t> kept;
                 for (std::size_t i = 0; i < batch.indices.size(); i += 3) {
                     bool isHeel = false;
-                    if (i >= indexOffset && i < indexOffset + 36) {
+                    if (i >= indexOffset && i < indexOffset + 48) {
                         for (int corner = 0; corner < 3; ++corner) {
                             auto index = batch.indices[i+corner];
-                            if (index >= vertexOffset && index < vertexOffset+4) isHeel = true;
+                            if (index >= vertexOffset+4 && index < vertexOffset+6) isHeel = true;
                         }
                     }
                     if (isHeel) removed = true;

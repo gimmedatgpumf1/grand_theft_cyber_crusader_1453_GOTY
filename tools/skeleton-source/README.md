@@ -49,17 +49,16 @@ for the seven non-thumb carpals and metacarpals 2–5; the trapezium, thumb
 metacarpal, and all finger bones stay separate. Each palm is a thin continuous
 triangulated surface anchored to the individual source bones.
 
-Each foot base is a **six-faced, irregular hexahedron**. Its sole runs from
-the farthest back of the calcaneus to the heads of the first and fifth
-metatarsals. The rear width is measured at the narrow back of the heel, not
-its wider middle, while the front spans the big-toe and little-toe bases.
-The filled upper quadrilateral covers the projected footprints of the distal
-tibia and fibula, in a plane perpendicular to the shin; it is not just a line
-between the two bones. Its four sides are fitted to the source-derived sole,
-keeping all faces planar. The toe phalanges remain separate. The feet point
-down in the registered source pose, so the sole follows their anatomical
-direction rather than lying level in world space. This is an approximation,
-not an anatomical surface or a change to the animation rig.
+Each foot base is a **closed ten-point volume**: four corners at the front,
+two at the narrow back of the heel, and four at the back and front of the
+ankle. The front's top and bottom are fitted to the actual heights and
+positions of the first and fifth metatarsal heads. The ankle top covers the
+projected distal tibia and fibula without being stretched forward to the toes;
+a separate instep joins it to the toe front. The sole reaches the back of the
+calcaneus, and the toe phalanges remain separate. The source feet point down in
+the registered pose, so the solid follows their anatomical direction rather
+than lying level in world space. This is an approximation, not an anatomical
+surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and

@@ -127,13 +127,15 @@ def unified_surface(bones, members):
     return points, triangles, boundary, owners
 
 
-def foot_hexahedron(bones, members, side):
-    """Fit a heel-to-toe solid with a real ankle-sized upper face.
+# Closed 10-point foot: toe bottom 0/1, toe top 2/3, heel bottom
+# 4/5, ankle rear 6/7 and ankle front 8/9, ordered across the foot.
+FOOT_TRIANGLES = ((4,5,1),(4,1,0), (0,1,3),(0,3,2), (4,6,7),(4,7,5),
+                  (6,8,9),(6,9,7), (8,2,3),(8,3,9),
+                  (4,0,2),(4,2,8),(4,8,6), (5,7,9),(5,9,3),(5,3,1))
 
-    The sole follows the source heel and outer metatarsal heads. The top is a
-    quadrilateral around the distal tibia and fibula, not their connecting line.
-    The registered feet point downward, so the sole follows the source pose.
-    """
+
+def foot_volume(bones, members, side):
+    """Ten bone-derived corners: four toe, two heel and four ankle points."""
     heel = bones[f'Cal_{side}']
     ankle = bones[f'Tal_{side}']
     metatarsals = [bones[f'FootMeta{i}_{side}'] for i in range(1, 6)]
@@ -147,30 +149,32 @@ def foot_hexahedron(bones, members, side):
     width /= np.linalg.norm(width)
     axes = np.array([forward, width, up])
     calc = heel @ axes.T
-    # Width at the back of the calcaneus, not its much wider midsection.
     rear = calc[calc[:, 0] <= np.quantile(calc[:, 0], 0.10)]
     heads = []
     for bone in (metatarsals[0], metatarsals[4]):
         vertices = bone @ axes.T
-        distal = vertices[vertices[:, 0] >= np.quantile(vertices[:, 0], 0.90)]
+        distal = vertices[vertices[:, 0] >= np.quantile(vertices[:, 0], 0.70)]
         heads.append((distal.mean(axis=0), distal))
     heads.sort(key=lambda item: item[0][1])
     toes = np.concatenate([item[1] for item in heads])
-    x0, z0 = calc[:, 0].min(), calc[:, 2].min()
-    x1 = toes[:, 0].max()
-    toe_height = np.mean([np.ptp((bone @ axes.T)[:, 2]) for bone in (metatarsals[0], metatarsals[4])])
-    z1 = toes[:, 2].min() - 0.35 * toe_height
-    def sole_height(x): return z0 + (z1-z0) * (x-x0) / (x1-x0)
-    low_x, high_x = (item[1][:, 0].max() for item in heads)
-    bottom = np.array([[x0, rear[:, 1].min(), z0],
-                       [x0, rear[:, 1].max(), z0],
-                       [high_x, toes[:, 1].max(), sole_height(high_x)],
-                       [low_x, toes[:, 1].min(), sole_height(low_x)]]) @ axes
+    # Project the two full distal heads along the foot axis. Fit a front
+    # quadrilateral whose top and bottom encompass both actual bone sections.
+    low_w, high_w = toes[:, 1].min(), toes[:, 1].max()
+    t = (toes[:, 1] - low_w) / (high_w-low_w)
+    dz_low = heads[1][1][:, 2].min() - heads[0][1][:, 2].min()
+    dz_high = heads[1][1][:, 2].max() - heads[0][1][:, 2].max()
+    low = np.min(toes[:, 2] - t*dz_low)
+    high = np.max(toes[:, 2] - t*dz_high)
+    x_left, x_right = (item[0][0] for item in heads)
+    front = np.array([[x_left, low_w, low], [x_right, high_w, low+dz_low],
+                      [x_left, low_w, high], [x_right, high_w, high+dz_high]]) @ axes
+    rear_x, heel_z = calc[:, 0].min(), calc[:, 2].min()
+    back = np.array([[rear_x, rear[:, 1].min(), heel_z],
+                     [rear_x, rear[:, 1].max(), heel_z]]) @ axes
     distal, proximal = [], []
     for name in ('Tibia', 'Fibula'):
         vertices = bones[f'{name}_{side}']
-        # The registered subjects' lower shin ends are at minimum world Y.
-        distal.append(vertices[vertices[:, 1] <= np.quantile(vertices[:, 1], 0.08)])
+        distal.append(vertices[vertices[:, 1] <= np.quantile(vertices[:, 1], 0.04)])
         proximal.append(vertices[vertices[:, 1] >= np.quantile(vertices[:, 1], 0.90)])
     origin = np.mean([p.mean(axis=0) for p in distal], axis=0)
     leg = np.mean([p.mean(axis=0) for p in proximal], axis=0) - origin
@@ -188,86 +192,33 @@ def foot_hexahedron(bones, members, side):
     dh = far[:, 1].max()-near[:, 1].max()
     v0 = np.min(footprint[:, 1]-t*dl)
     v1 = np.max(footprint[:, 1]-t*dh)
-    target = np.array([origin + along*u0 + across*v0,
-                       origin + along*u0 + across*v1,
-                       origin + along*u1 + across*(v1+dh),
-                       origin + along*u1 + across*(v0+dl)])
-    def plane(a, b, c):
-        normal = np.cross(b-a, c-a)
-        assert np.linalg.norm(normal) > 1e-10
-        return np.r_[normal, -np.dot(normal, a)]
-    top_plane = plane(target[0], target[1], target[2])
-    centre = target.mean(axis=0)
-    # A planar hexahedron cannot generally use two arbitrary source quads
-    # verbatim. Keep the measured sole, fit four planar sides, then enlarge the
-    # ankle face just enough to contain both projected distal-bone footprints.
-    def cross2(a, b): return a[0]*b[1] - a[1]*b[0]
-    for scale in np.linspace(1.0, 3.0, 101):
-        candidate = centre + (target-centre)*scale
-        sides = [plane(bottom[i], bottom[(i+1)%4], (candidate[i]+candidate[(i+1)%4])/2) for i in range(4)]
-        top = []
-        for i in range(4):
-            equations = np.stack((top_plane, sides[i-1], sides[i]))
-            top.append(np.linalg.solve(equations[:, :3], -equations[:, 3]))
-        top = np.array(top)
-        polygon = (top-origin) @ np.array([along, across]).T
-        middle = polygon.mean(axis=0)
-        if all(cross2(polygon[(i+1)%4]-polygon[i], p-polygon[i]) *
-               cross2(polygon[(i+1)%4]-polygon[i], middle-polygon[i]) >= -1e-12
-               for p in footprint for i in range(4)):
-            break
-    else:
-        raise ValueError(f'ankle footprint does not fit foot top: {side}')
-    # Binary indices are rear/front, low/high width, bottom/top.
-    order = (0, 1, 3, 2)
-    points = []
-    for index in order: points.extend((bottom[index], top[index]))
-    return np.array(points), axes
+    top = np.array([origin + along*u0 + across*v0,
+                    origin + along*u0 + across*v1,
+                    origin + along*u1 + across*(v0+dl),
+                    origin + along*u1 + across*(v1+dh)])
+    return np.concatenate((front, back, top)), axes
 
 
-def box_to_line(box, source, line):
-    """Attach an anatomical link to the low hexahedron's actual surface."""
-    points, _ = box
-    quads = ((0,1,3,2), (4,6,7,5), (0,4,5,1), (2,3,7,6), (0,2,6,4), (1,5,7,3))
-    centre = points.mean(axis=0)
-    planes = []
-    for face in quads:
-        p = points[face[0]]
-        normal = np.cross(points[face[1]] - p, points[face[2]] - p)
-        normal /= np.linalg.norm(normal)
-        if np.dot(normal, centre - p) > 0: normal = -normal
-        planes.append((p, normal))
-    def inside(p): return all(np.dot(normal, p - origin) <= 1e-8 for origin, normal in planes)
-    choices = [closest_to_point(point, line) for point in source if inside(point)]
-    if not choices:
-        # Thin feet intentionally do not enclose the tall ankle bones. Project
-        # the selected bone's anchors to the closest triangle on the surface.
-        def nearest_triangle(p, a, b, c):
-            u, v, w = b-a, c-a, p-a
-            uu, uv, vv, wu, wv = np.dot(u,u), np.dot(u,v), np.dot(v,v), np.dot(w,u), np.dot(w,v)
-            den = uu*vv - uv*uv
-            s, t = (wu*vv-wv*uv)/den, (wv*uu-wu*uv)/den
-            candidates = []
-            if s >= 0 and t >= 0 and s+t <= 1: candidates.append(a+s*u+t*v)
-            for x, y in ((a,b),(b,c),(c,a)):
-                d = y-x
-                candidates.append(x + np.clip(np.dot(p-x,d)/np.dot(d,d), 0, 1)*d)
-            return min(candidates, key=lambda q: np.linalg.norm(p-q))
-        projected = []
-        for p in source:
-            candidates = [nearest_triangle(p, points[q[0]], points[q[j]], points[q[j+1]])
-                          for q in quads for j in (1,2)]
-            projected.append(min(candidates, key=lambda q: np.linalg.norm(p-q)))
-        return min((closest_to_point(p, line) for p in projected), key=lambda value: value[0])
-    _, start, end = min(choices, key=lambda value: value[0])
-    direction = end - start
-    if np.linalg.norm(direction) < 1e-10: direction = start - centre
-    if np.linalg.norm(direction) < 1e-10: direction = points[4] - points[0]
-    times = [-np.dot(normal, start-origin) / np.dot(normal, direction)
-             for origin, normal in planes if np.dot(normal, direction) > 1e-12]
-    assert times
-    on_surface = start + max(0, min(times)) * direction
-    return closest_to_point(on_surface, line)
+def foot_to_line(foot, source, line):
+    """Connect a preselected anatomical link to the actual foot surface."""
+    points, _ = foot
+    def nearest_triangle(p, a, b, c):
+        u, v, w = b-a, c-a, p-a
+        uu, uv, vv, wu, wv = np.dot(u,u), np.dot(u,v), np.dot(v,v), np.dot(w,u), np.dot(w,v)
+        den = uu*vv - uv*uv
+        if den < 1e-20: raise ValueError('degenerate foot face')
+        s, t = (wu*vv-wv*uv)/den, (wv*uu-wu*uv)/den
+        candidates = []
+        if s >= 0 and t >= 0 and s+t <= 1: candidates.append(a+s*u+t*v)
+        for x, y in ((a,b),(b,c),(c,a)):
+            d = y-x
+            candidates.append(x + np.clip(np.dot(p-x,d)/np.dot(d,d), 0, 1)*d)
+        return min(candidates, key=lambda q: np.linalg.norm(p-q))
+    projected = []
+    for p in source:
+        candidates = [nearest_triangle(p, *(points[i] for i in face)) for face in FOOT_TRIANGLES]
+        projected.append(min(candidates, key=lambda q: np.linalg.norm(p-q)))
+    return min((closest_to_point(p, line) for p in projected), key=lambda value: value[0])
 
 
 def read_bones(path):
@@ -377,7 +328,7 @@ def build(sex):
     solids, boxes = {}, {}
     for group, members in groups.items():
         if group.startswith('FootBase_'):
-            boxes[group] = foot_hexahedron(bones, members, group[-1])
+            boxes[group] = foot_volume(bones, members, group[-1])
         else:
             solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
@@ -390,7 +341,7 @@ def build(sex):
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; M palm mesh; H foot hexahedron; J joint; C cartilage.']
+           '# D vertebra dot; B bone segment; M palm mesh; F ten-point foot; J joint; C cartilage.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
@@ -400,7 +351,7 @@ def build(sex):
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
     for name in sorted(boxes):
-        out.append(f'H {name} ' + ' '.join(fmt(p) for p in boxes[name][0]))
+        out.append(f'F {name} ' + ' '.join(fmt(p) for p in boxes[name][0]))
     for name in sorted(solids):
         points, triangles, boundary, owners = solids[name]
         for member, indices in owners.items():
@@ -424,9 +375,9 @@ def build(sex):
         elif b in VERTEBRAE:
             _, y, x = closest_to_point(lines[b][0], lines[a])
         elif a in boxes:
-            _, x, y = box_to_line(boxes[a], line_for(original_a, bones[original_a], bones), lines[b])
+            _, x, y = foot_to_line(boxes[a], line_for(original_a, bones[original_a], bones), lines[b])
         elif b in boxes:
-            _, y, x = box_to_line(boxes[b], line_for(original_b, bones[original_b], bones), lines[a])
+            _, y, x = foot_to_line(boxes[b], line_for(original_b, bones[original_b], bones), lines[a])
         elif a in solids:
             _, x, y = solid_to_line(solids[a], original_a, lines[b])
         elif b in solids:

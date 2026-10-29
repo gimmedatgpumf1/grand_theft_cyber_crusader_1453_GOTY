@@ -57,15 +57,15 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
     std::size_t solids = 0, vertexOffset = 0, indexOffset = 0;
     const double c = std::cos(yaw), s = std::sin(yaw);
     while (std::getline(file, row)) {
-        const bool hexahedron = row.rfind("H ", 0) == 0;
-        if (!hexahedron && row.rfind("M ", 0) != 0) continue;
+        const bool foot = row.rfind("F ", 0) == 0;
+        if (!foot && row.rfind("M ", 0) != 0) continue;
         std::istringstream input(row);
-        char kind; std::string name; double thickness = 0; int count = 8, faceCount = 0, edgeCount = 0;
+        char kind; std::string name; double thickness = 0; int count = 10, faceCount = 0, edgeCount = 0;
         input >> kind >> name;
-        if (!hexahedron) input >> thickness >> count >> faceCount >> edgeCount;
-        const std::size_t vertexCount = hexahedron ? 8 : 2 * count;
-        const std::size_t indexCount = hexahedron ? 36 : (faceCount + edgeCount) * 6;
-        if (!input || count < 3 || (!hexahedron && (thickness <= 0 || thickness > 0.001)) ||
+        if (!foot) input >> thickness >> count >> faceCount >> edgeCount;
+        const std::size_t vertexCount = foot ? 10 : 2 * count;
+        const std::size_t indexCount = foot ? 48 : (faceCount + edgeCount) * 6;
+        if (!input || count < 3 || (!foot && (thickness <= 0 || thickness > 0.001)) ||
             vertexOffset + vertexCount > batch.vertices.size() || indexOffset + indexCount > batch.indices.size()) return false;
         for (int i = 0; i < count; ++i) {
             Vec3 p; input >> p.x >> p.y >> p.z;
@@ -73,7 +73,7 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
             const auto& a = batch.vertices[vertexOffset+i];
             const Vec3 first{a.x,a.y,a.z};
             if (!input) return false;
-            if (hexahedron) {
+            if (foot) {
                 if (length(first - expected) > 1e-6) return false;
             } else {
                 const auto& b = batch.vertices[vertexOffset+count+i];
@@ -82,7 +82,15 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
                     std::abs(length(second - first) - thickness) > 1e-6) return false;
             }
         }
-        // All six hexahedron faces and both palm caps form closed meshes.
+        // Verify the real renderer emits the requested toe, heel, ankle and
+        // instep faces, not just any closed surface over the ten points.
+        if (foot) {
+            const unsigned expected[] = {4,5,1, 4,1,0, 0,1,3, 0,3,2, 4,6,7, 4,7,5,
+                6,8,9, 6,9,7, 8,2,3, 8,3,9, 4,0,2, 4,2,8, 4,8,6, 5,7,9, 5,9,3, 5,3,1};
+            for (std::size_t i = 0; i < 48; ++i)
+                if (batch.indices[indexOffset+i] != vertexOffset+expected[i]) return false;
+        }
+        // Foot volumes and both palm caps form closed meshes.
         std::map<std::pair<unsigned,unsigned>, int> edges;
         for (std::size_t i = indexOffset; i < indexOffset + indexCount; i += 3) {
             for (int corner = 0; corner < 3; ++corner) {
