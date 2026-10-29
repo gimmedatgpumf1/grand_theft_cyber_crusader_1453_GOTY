@@ -155,7 +155,6 @@ bool buildBody(const std::string& root, const gtc::native::ViewState& view, Skul
     if (!out.male.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return false;
     if (!out.female.load(root + "/tools/skeleton-source/skeleton-female.obj", error)) return false;
     out.male.poseIdle(0.75, 0.0);
-    out.female.poseIdle(0.75, 1.7);
     gtc::native::Rasterizer rasterizer(out.camera.width, out.camera.height, gtc::native::colorHex("#0d1210"),
                                       out.camera.focal(), true, gtc::native::GpuScene{});
     rasterizer.setCamera(out.camera);
@@ -359,7 +358,6 @@ int runSkullBenchmark(const std::string& root, gtc::native::ViewState view, cons
         if (!male.load(root + "/tools/skeleton-source/skeleton-male.obj", error)) return 1;
         if (!female.load(root + "/tools/skeleton-source/skeleton-female.obj", error)) return 1;
         male.poseIdle(0.75, 0.0);
-        female.poseIdle(0.75, 0.0);
         std::size_t femaleTriangles = 0;
         const double start = nowMs();
         for (int iteration = 0; iteration < iterations; ++iteration) {

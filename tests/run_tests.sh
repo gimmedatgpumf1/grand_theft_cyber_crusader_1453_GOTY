@@ -3,13 +3,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 bash tools/nagger.sh
-# The skeletons are checked against human osteometry before anything is built on
-# them. Both are scanned bodies, so each is judged against its own sex's series
-# and against the tolerance a real person allows for bilateral asymmetry.
+# The constructed male can be checked in a standing pose. The female is in
+# the source's asymmetric registered pose; validate provenance, labels and
+# geometry instead of pretending that standing-pose mirror rules apply.
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
-node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
-  --sex female --scanned
-echo '[test] both skeletons pass their anatomical checks.'
+python3 tests/female_source_pose.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.
 python3 tests/build_scripts.py
@@ -39,6 +37,10 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+  tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-room
+./build/bin/gtc-skeleton-source-room
 python3 tests/quiet_interactive.py
 # The Vulkan projection can be checked without a driver, so it is: the clip
 # matrix has to put every point on the pixel the CPU rasterizer would use.

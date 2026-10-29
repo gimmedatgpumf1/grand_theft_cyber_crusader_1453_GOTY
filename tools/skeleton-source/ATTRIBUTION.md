@@ -10,8 +10,9 @@ legs (femur, patella, tibia, fibula, tarsals, metatarsals, every toe phalanx).
 segmentations published by Duquesne, Destryker, Segers and Audenaert (Ghent
 University) from the New Mexico Decedent Image Database — under **CC BY 4.0**,
 subject `N186416`. She is a different person from the male and a different body
-from the older Visible Human Female build kept in `vhf/`; she is verified by
-`verify-obj.mjs --sex female --scanned`.
+from the older Visible Human Female build kept in `vhf/`. Her source labels and
+registered pose are checked by `tests/female_source_pose.py`; anatomical
+correctness is not certified.
 
 ## Where they come from
 
@@ -31,8 +32,8 @@ Credit lines, as the licences require:
 > Further modified for this project: filtered to the skeletal system, mirrored
 > to a complete body, grouped into 28 rig parts, decimated, written as OBJ.
 
-The female comes from the Visible Human Female dataset; its credit line is in
-the section at the end.
+The current female comes from OpenSkeleton; the Visible Human data mentioned
+below describes an earlier, replaced asset.
 
 This asset — the modified skeleton and any derivative of it — has to stay under
 CC BY-SA 4.0 when it is redistributed. That is a share-alike obligation inherited
@@ -69,6 +70,8 @@ sub-meshes of bones and are dropped. Then:
 5. each *bone* is welded and simplified on its own towards the part's triangle
    budget, with a floor of 12 triangles per bone so no phalanx disappears.
 
+The following old low-poly export counts are historical, not the current assets:
+
 | body | parts | bones | vertices | triangles | height |
 | --- | --- | --- | --- | --- | --- |
 | male | 28 | 272 | 9,739 | 18,699 | 1.696 m |
@@ -88,8 +91,8 @@ node tools/skeleton-source/prepare-zanatomy.mjs /path/to/SkeletalSystem100.fbx \
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
 ```
 
-`prepare.mjs` (the older, open-anatomy-3d route) still regenerates the female
-file; `verify.mjs` reproduces the measurements of that body against its source.
+`prepare.mjs` and `verify.mjs` are historical tools for the earlier
+open-anatomy-3d female, not the current OpenSkeleton asset.
 
 ## The old female, kept for the record
 

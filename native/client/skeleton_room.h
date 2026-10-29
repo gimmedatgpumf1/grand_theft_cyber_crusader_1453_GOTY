@@ -12,12 +12,9 @@
 namespace gtc::native {
 
 // The test room: an empty box with a tiled floor and the two anatomical
-// skeletons standing in it, so animation and rigging work has somewhere to
-// happen without a server, a citizen, or a toilet.
-//
-// The skeletons are drawn at their source heights -- 1.696 m and 1.713 m -- and
-// nothing here scales them. A body that is the wrong size for the room gets a
-// taller room, not a shorter body.
+// skeletons in it, so animation and rigging work has somewhere to happen.
+// The female remains in the original OpenSkeleton registered pose; the source
+// is asymmetric and may not be anatomically assembled. Neither body is scaled.
 class SkeletonRoom {
 public:
     bool load(const std::string& root, std::string& error);

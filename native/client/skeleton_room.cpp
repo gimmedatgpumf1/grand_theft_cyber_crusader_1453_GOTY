@@ -107,21 +107,20 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    // Posing is trigonometry over 56 bones: worth doing when the pose actually
-    // changes, and worth skipping on the nineteen frames out of twenty where
-    // only the camera moved.
+    // Animate the male only; the female keeps the source's registered pose.
     const bool poseChanged = pose != cachedPose_;
     if (poseChanged) {
         male_.poseIdle(seconds, 0.0);
-        female_.poseIdle(seconds, 1.7);
+        // Keep the female in the source's original registered pose. The old
+        // idle rig estimated joint pivots and moved her away from that pose.
     }
 
     if (view.gpu) {
         // A bone is a rigid body. So the triangles are emitted once, in rest
         // position, one batch per bone -- and a pose is then 56 matrices rather
         // than 195,000 transformed vertices per body plus the same geometry
-        // travelling to the GPU again. The pose still updates at fifteen hertz;
-        // it just costs microseconds now instead of milliseconds.
+        // travelling to the GPU again. The male pose updates at fifteen hertz;
+        // the female matrices retain the source pose.
         if (!restReady_ || camera.width != cachedWidth_ || camera.height != cachedHeight_) {
             const int maleBase = 9001;
             const int femaleBase = 8001;

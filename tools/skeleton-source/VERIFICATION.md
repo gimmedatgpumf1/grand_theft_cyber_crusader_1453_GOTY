@@ -1,25 +1,25 @@
 # Verification
 
-Everything below is produced by the scripts in this directory, from the files
-that are actually shipped. Nothing here is an assertion about what a pipeline
-"should" have done.
+## Current female: source registered pose, not anatomically certified
 
-Two checkers, two questions:
+The 182 source names, rig-group assignments, OBJ face ranges and vertex
+proximity to the corresponding unmodified source bone are checked by
+`python3 tests/female_source_pose.py`. No per-bone repositioning or mirroring
+is applied; the output is simplified and has one global coordinate transform.
+This is the dataset's registered geometry, not necessarily the original patient
+pose. The source labels and registration have not been independently validated
+against medical anatomy.
 
-| script | question | needs |
-| --- | --- | --- |
-| `verify-obj.mjs` | is the *shipped OBJ* anatomically sane? | nothing but the file |
-| `verify.mjs` | did the export from open-anatomy-3d move anything? | that checkout + glTF deps |
+`node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj --sex female --scanned`
+currently reports **8 failures** on this asymmetric pose: foot-length checks and
+left/right mirror checks. Those include pose-dependent metrics and are retained
+as diagnostics, not silently reclassified as a pass. They do not establish the
+cause or correctness of individual joints. The room keeps the female still.
 
-```bash
-node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
-node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj
-```
+## Historical verification (earlier assets and poses)
 
-`verify-obj.mjs` exits non-zero on a missing part, a mirrored-part error over
-3 mm, or a long bone more than 10 mm outside its reference band. A smaller
-proportional miss is reported as `off` and tolerated, because the reference
-bands are population limits and a skeleton is one individual.
+The following measurements describe earlier builds, **not the currently shipped
+female skeleton**. They are preserved as historical notes only.
 
 ## The shipped male — passes
 

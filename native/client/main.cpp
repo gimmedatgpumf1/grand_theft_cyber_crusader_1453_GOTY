@@ -439,7 +439,8 @@ int main(int argc, char** argv) {
             if (!frame.save(output + ".room-" + std::to_string(size.first) + ".png")) return 1;
         }
         std::cout << "test room: PASS (male " << room.male().height() << " m, female " << room.female().height()
-                  << " m, " << room.male().bones().size() << " bones each)\n";
+                  << " m, rig groups male " << room.male().bones().size()
+                  << ", female " << room.female().bones().size() << ")\n";
         return 0;
     }
     if (mode == "fps") view.mode = gtc::native::ViewMode::FirstPerson;

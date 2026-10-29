@@ -18,12 +18,14 @@ same structure list.
 | structures | 182 per subject, complete skeleton |
 | creators | Duquesne K., BioCAT, Destryker T., Segers V., Audenaert E. — Ghent University |
 
-## Why nothing is committed from it yet
+## Included subject
 
-The sandbox can only reach github.com, codeload, npm and PyPI. `zenodo.org`
-answers `000` on connect, so the archive cannot be fetched from here. The data
-must either be unblocked for `zenodo.org` (plus the storage host it redirects
-to) or placed in a directory by hand.
+`data/skelly-out.npz` and its manifest contain the 182 exported registered
+structures for subject N186416. The original multi-subject archive is not in
+this repository. `03-import.py` now uses the included file directly, preserves
+its per-bone registered placement and source names, and simplifies each mesh.
+The result is not guaranteed to be the original CT patient pose or an
+anatomically assembled skeleton; source registration leaves visible asymmetries.
 
 ## Files it ships
 
@@ -71,45 +73,16 @@ downloaded, and she is never scaled afterwards.
 | N102924 | 172.0 cm | 2 cm tall, lean (BMI 21.1) |
 | N197064 | 171.0 cm | BMI 34.9 |
 
-## Order of work once the files are present
-
-Only two files are needed from the 2.5 GB archive, and both are read in
-streaming fashion:
+## Rebuilding and checking the included subject
 
 ```sh
-pip install h5py numpy
-python3 02-export-subject.py --dir /path/to/ZENODO --subject N186416 \
-    --out /tmp/openskeleton/N186416.npz
+python3 tools/skeleton-source/openskeleton/03-import.py
+python3 tests/female_source_pose.py
 ```
 
-That writes one `.npz` (a few MB) plus a JSON manifest. Upload those two; the
-import step runs here, where it can be checked against the verifier.
-
-Then, in order:
-
-1. **Pick the subject.** A female whose CT-measured stature is closest to
-   1.70 m. Her height is hers: it is never scaled to fit, exactly as with the
-   two bodies already shipped.
-2. **Join the frame.** `NM_combined` already carries the upper limbs in the
-   torso frame; verify that by checking shoulder-to-hip distances against the
-   metadata rather than trusting the field name.
-3. **Map 182 structures onto the 28 rig parts** (`PART_ORDER` in
-   `../02-bones.py`), keeping every named bone separate — 27 bones per hand and
-   26 per foot are acceptance criteria, so grouped structures are not good
-   enough.
-4. **Emit the OBJ contract**: metres, soles at y = 0, facing +z, `o <part>`
-   blocks, 1-based faces without `//`.
-5. **Verify before shipping**: `node tools/skeleton-source/verify-obj.mjs
-   <obj> --sex female --scanned`, then the shell census, then the test-room
-   render at 1568 x 929, zoomed on the hands, feet and sternum.
-
-## What it will and will not fix
-
-It fixes the things that made her look wrong: thin plates that a 1 mm 1995 CT
-cannot resolve, fingers modelled as loose slats, and a donor whose body habitus
-was unlike a game character.
-
-It does not change the pipeline's contract. The parts, the rig, the verifier and
-the test room stay exactly as they are; only the geometry behind them is
-replaced, and both bodies must still pass `tests/run_tests.sh` before anything
-is pushed.
+The importer needs NumPy and `fast-simplification`. It applies only a common
+coordinate transform and translation, keeps the source left and right bones,
+and retains each source name in the OBJ and manifest. The test checks those names,
+rig group mappings, faces and proximity of every simplified vertex to its own
+source bone. It cannot establish anatomical correctness of the source labels
+or the source registration.
