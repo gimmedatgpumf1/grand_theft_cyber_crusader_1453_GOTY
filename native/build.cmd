@@ -55,8 +55,11 @@ if errorlevel 1 exit /b 1
 REM The counter is drawn on the host into pixels, so it is checked as pixels.
 cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\interface_check.cpp" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
+cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
+if errorlevel 1 exit /b 1
 echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-smoke.exe
 echo [native] Success: %ROOT%\build\bin\gtc-interface-check.exe
+echo [native] Success: %ROOT%\build\bin\gtc-vulkan-ui-check.exe
 exit /b 0

@@ -173,6 +173,16 @@ clamped cheat adjustments, puddles, and autonomous AI toilet use. When the nativ
 built, it also starts a separate test server and runs two real native clients through replication,
 customization, movement, pathfinding, and toilet interaction. It does not invoke browser tooling.
 
+The native build also produces `build/bin/gtc-vulkan-ui-check` (`.exe` on Windows).
+Run it from the repository root to render the interface offscreen with the installed Vulkan
+implementation and check its pixels, alpha, font coverage, placement and resize behaviour.
+This is not an interactive presentation or frame-rate test. On Linux it can also be included
+in the test suite with `GTC_VULKAN_UI_TEST=1 ./tests/run_tests.sh`.
+
+Interactive frames draw the UI on Vulkan; the font-coverage asset is generated offline from
+`native/assets/ui-sans.ttf` with `tools/bake-ui-atlas.cpp`. The runtime lays out text but does
+not rasterize glyphs on the CPU. F12 is an explicit screenshot readback, not the normal frame path.
+
 ## Native C++ runtime and portrait fitter
 
 The native-only path is in [`native/`](native/README.md). Build `./native/build.sh` (or
@@ -218,3 +228,5 @@ corresponding source archives are under `tools/ccache/`. Character geometry, rig
 facial masks are CC0 MakeHuman/MPFB assets; provenance and regeneration instructions are in
 `web/assets/human/LICENSE.md`. No MakeHuman/MPFB program code is distributed. The active game
 runtime is repository-local C++; legacy HTML/CSS/JavaScript is not the active client.
+
+The UI font and its derived glyph-coverage asset are covered by `native/assets/FONT-LICENSE.txt`.

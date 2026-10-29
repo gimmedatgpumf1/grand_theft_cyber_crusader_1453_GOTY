@@ -32,6 +32,17 @@ typedef struct VkWin32SurfaceCreateInfoKHR {
 } VkWin32SurfaceCreateInfoKHR;
 typedef VkResult(VKAPI_PTR* PFN_vkCreateWin32SurfaceKHR)(VkInstance, const VkWin32SurfaceCreateInfoKHR*,
                                                         const VkAllocationCallbacks*, VkSurfaceKHR*);
+#else
+// ABI of VK_KHR_xlib_surface, without linking Xlib or requiring X11 headers.
+struct VkXlibSurfaceCreateInfoKHR {
+    VkStructureType sType;
+    const void* pNext;
+    VkFlags flags;
+    void* dpy;
+    unsigned long window;
+};
+using PFN_vkCreateXlibSurfaceKHR = VkResult(VKAPI_PTR*)(VkInstance, const VkXlibSurfaceCreateInfoKHR*,
+                                                        const VkAllocationCallbacks*, VkSurfaceKHR*);
 #endif
 
 #include <cstdio>
@@ -98,12 +109,18 @@ bool Renderer::prepareSurface() {
     info.hwnd = static_cast<HWND>(wsiHandle_);
     created = create(instance_, &info, nullptr, &surface_);
 #else
-    (void)created;
-    // Not a window backend: nothing here is expected to present.
-    return false;
+    const auto create = reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(
+        getInstanceProcAddr_(instance_, "vkCreateXlibSurfaceKHR"));
+    if (!create || wsiKind_ != 2) fatalSwapchain("Xlib surface entry point or target missing");
+    const auto* target = static_cast<const XlibSurfaceTarget*>(wsiHandle_);
+    VkXlibSurfaceCreateInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+    info.dpy = target->display;
+    info.window = target->window;
+    created = create(instance_, &info, nullptr, &surface_);
 #endif
     if (created != VK_SUCCESS || surface_ == VK_NULL_HANDLE) {
-        std::fprintf(stderr, "[vk] surface: vkCreateWin32SurfaceKHR failed (%d)\n", static_cast<int>(created));
+        std::fprintf(stderr, "[vk] surface: surface creation failed (%d)\n", static_cast<int>(created));
         fatalSwapchain("the window would not give up a surface");
     }
     VkBool32 supported = VK_FALSE;
@@ -308,12 +325,12 @@ bool Renderer::acquirePresentImage(int slot, int& imageIndex) {
     std::uint32_t index = 0;
     // No timeout: an image is either coming or the window is gone.
     const VkResult result = acquireNextImage(device_, swapchain_, UINT64_MAX, imageReady_[slot], VK_NULL_HANDLE, &index);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         // A resize. Not a failure: the next frame makes a swapchain that fits.
         swapReady_ = false;
         return false;
     }
-    if (result != VK_SUCCESS) {
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         std::fprintf(stderr, "[vk] swapchain: vkAcquireNextImageKHR failed (%d)\n", static_cast<int>(result));
         fatalSwapchain("the swapchain would not give up an image");
     }

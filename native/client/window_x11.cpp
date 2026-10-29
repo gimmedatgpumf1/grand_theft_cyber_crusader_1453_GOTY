@@ -204,6 +204,7 @@ struct NativeWindow::Impl {
     GlxApi glx;
     Display* display = nullptr;
     Window window = 0;
+    XlibSurfaceTarget surfaceTarget{};
     GC gc = nullptr;
     Visual* visual = nullptr;
     int depth = 0;
@@ -410,6 +411,10 @@ bool NativeWindow::open(const std::string& title, std::string& error, bool prefe
     impl_->api.flush(impl_->display);
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
+    if (wantVulkan(preferOpenGl)) {
+        impl_->surfaceTarget = {impl_->display, impl_->window};
+        setVulkanSurfaceTarget(&impl_->surfaceTarget, 2);
+    }
     if (wantVulkan(preferOpenGl) && vulkanAvailable()) {
         impl_->vulkan = true;
         impl_->gpu = true;

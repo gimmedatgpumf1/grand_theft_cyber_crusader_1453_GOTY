@@ -62,6 +62,8 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 # the box, the border, every glyph block, both byte orders, four window sizes.
 "$COMPILER" -pthread -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-interface-check"
+"$COMPILER" -pthread -std=c++17 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
+  "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
   cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
@@ -72,4 +74,5 @@ echo "[native] Success: $ROOT/build/bin/gtc-native-fit"
 echo "[native] Success: $ROOT/build/bin/gtc-native-client"
 echo "[native] Success: $ROOT/build/bin/gtc-native-smoke"
 echo "[native] Success: $ROOT/build/bin/gtc-interface-check"
+echo "[native] Success: $ROOT/build/bin/gtc-vulkan-ui-check"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi

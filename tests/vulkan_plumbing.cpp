@@ -8,11 +8,13 @@
 // projection matrix's own bytes. That is the point. Rendering quality needs a
 // real device; plumbing failures are what this catches.
 
+#include "client/ui_layer.h"
 #include "vulkan/vk_internal.h"
 #include "vulkan/vk_renderer.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <dlfcn.h>
 #include <vector>
 
 namespace {
@@ -50,6 +52,45 @@ int main() {
         frame.width != 64 || frame.height != 48) {
         std::printf("first frame did not arrive\n");
         ++failures;
+    }
+    // The test double records pipeline state and binds, not pixels. This checks
+    // that UI batches select blending with no depth test; vulkan_ui.cpp checks
+    // actual pixels separately, against a real Vulkan implementation.
+    {
+        void* driver = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+        using Query = int (*)(int);
+        using Count = int (*)();
+        auto count = driver ? reinterpret_cast<Count>(dlsym(driver, "stubPipelineCount")) : nullptr;
+        auto blend = driver ? reinterpret_cast<Query>(dlsym(driver, "stubPipelineBlended")) : nullptr;
+        auto depth = driver ? reinterpret_cast<Query>(dlsym(driver, "stubPipelineDepthTest")) : nullptr;
+        auto boundCount = driver ? reinterpret_cast<Count>(dlsym(driver, "stubBoundCount")) : nullptr;
+        auto boundBlend = driver ? reinterpret_cast<Query>(dlsym(driver, "stubBoundBlended")) : nullptr;
+        if (!count || !blend || !depth || !boundCount || !boundBlend || count() != 8) {
+            std::puts("UI pipeline inspection unavailable"); ++failures;
+        } else {
+            for (int index = 0; index < 8; ++index) {
+                if (blend(index) != (index >= 4) || depth(index) != (index < 4)) {
+                    std::printf("incorrect pipeline state %d\n", index); ++failures;
+                }
+            }
+            gtc::native::Camera camera;
+            camera.position = {0, 0, 0}; camera.target = {0, 0, 1};
+            camera.width = scene.width; camera.height = scene.height;
+            gtc::native::GpuScene withUi = scene;
+            withUi.viewMatrix = camera.viewMatrix(); withUi.focal = camera.focal();
+            gtc::native::UiLayer layer;
+            layer.clear(scene.width, scene.height);
+            layer.rectangle(4, 4, 12, 12, 255, 32, 0, 0.5);
+            gtc::native::NativeFrame layout;
+            layout.width = scene.width; layout.height = scene.height; layout.ui = &layer;
+            gtc::native::drawTextPixels(layout, 20, 5, "UI", {1, 1, 1}, 20);
+            gtc::native::appendUiBatches(layer, camera, withUi);
+            if (!gtc::native::renderVulkanScene(withUi, frame) || boundCount() == 0 ||
+                boundBlend(boundCount() - 1) != 1) {
+                std::puts("UI did not bind its blended pipeline"); ++failures;
+            }
+        }
+        if (driver) dlclose(driver);
     }
     // The frame contract includes the coverage mask. The world renderer refuses
     // a GPU frame without one, so a missing mask ends the session rather than

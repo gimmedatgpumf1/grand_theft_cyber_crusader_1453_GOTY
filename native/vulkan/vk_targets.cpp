@@ -3,6 +3,7 @@
 // Kept apart from the frame loop so the frame loop reads as a frame.
 
 #include "../client/diagnostics.h"
+#include "../client/ui_layer.h"
 #include "vk_internal.h"
 
 #include <cstdio>
@@ -12,6 +13,7 @@ namespace gtc::native {
 namespace detail {
 
 bool Renderer::createTargets(int width, int height) {
+    if (target_.framebuffer && deviceWaitIdle(device_) != VK_SUCCESS) return false;
     destroyTargets();
     VkPhysicalDeviceMemoryProperties memory{};
     getPhysicalDeviceMemoryProperties(physical_, &memory);
@@ -328,7 +330,7 @@ bool Renderer::createTexture(const Texture& texture, TextureSlot& slot) {
     allocation.descriptorPool = descriptorPool_;
     allocation.descriptorSetCount = 1;
     allocation.pSetLayouts = &textureLayout_;
-    if (allocateDescriptorSets(device_, &allocation, &slot.set) != VK_SUCCESS) return false;
+    if (slot.set == VK_NULL_HANDLE && allocateDescriptorSets(device_, &allocation, &slot.set) != VK_SUCCESS) return false;
 
     VkDescriptorImageInfo image{};
     image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -342,6 +344,33 @@ bool Renderer::createTexture(const Texture& texture, TextureSlot& slot) {
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &image;
     updateDescriptorSets(device_, 1, &write, 0, nullptr);
+    return true;
+}
+
+bool Renderer::ensureInterfaceAtlas() {
+    const std::uint64_t revision = uiGlyphAtlasRevision();
+    if (interfaceAtlasReady_ && revision == interfaceAtlasRevision_) return true;
+    const Texture& atlas = uiGlyphAtlas();
+    if (atlas.width <= 0 || atlas.height <= 0 || atlas.pixels.empty()) return false;
+    if (interfaceAtlasReady_) {
+        // Older frames may still sample this image. Keep its descriptor and
+        // replace its contents only after those frames have completed.
+        if (deviceWaitIdle(device_) != VK_SUCCESS) return false;
+        const VkDescriptorSet set = interfaceAtlas_.set;
+        if (interfaceAtlas_.view) destroyImageView(device_, interfaceAtlas_.view, nullptr);
+        if (interfaceAtlas_.image) destroyImage(device_, interfaceAtlas_.image, nullptr);
+        if (interfaceAtlas_.memory) freeMemory(device_, interfaceAtlas_.memory, nullptr);
+        interfaceAtlas_ = TextureSlot{};
+        interfaceAtlas_.set = set;
+        interfaceAtlasReady_ = false;
+    }
+    trace("vk: uploading interface atlas");
+    if (!createTexture(atlas, interfaceAtlas_)) return false;
+    trace("vk: uploaded interface atlas");
+    interfaceAtlasReady_ = true;
+    interfaceAtlasRevision_ = revision;
+    tracef("vk: interface atlas %dx%d uploaded (revision %llu)", atlas.width, atlas.height,
+           static_cast<unsigned long long>(revision));
     return true;
 }
 

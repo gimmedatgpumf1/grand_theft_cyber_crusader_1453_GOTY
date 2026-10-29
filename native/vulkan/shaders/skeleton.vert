@@ -13,7 +13,9 @@
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
+#ifndef NO_UV
 layout(location = 2) in vec2 inTexCoord;
+#endif
 
 layout(location = 0) out vec4 outColour;
 layout(location = 1) out vec2 outTexCoord;
@@ -56,7 +58,11 @@ void main() {
     // A batch with no texture is drawn with a pipeline that carries no texture
     // coordinate at all, so the attribute is not there to read. It is only ever
     // looked at by the fragment stage when flags.x says a texture is sampled.
+#ifdef NO_UV
+    outTexCoord = vec2(0.0);
+#else
     outTexCoord = batch.flags.x > 0.5 ? inTexCoord : vec2(0.0);
+#endif
     outColour = vec4(batch.colour.rgb, batch.colour.a);
 
     // flags.w is a batch with a single colour: the host encoded it, the fragment

@@ -4,161 +4,73 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <vector>
 
 namespace gtc::native {
 namespace {
 
-// Glyphs are packed by a shelf packer into one texture of fixed width that grows
-// downwards. The interface asks for two or three sizes, so the pack happens on
-// the first frames at a new window size and never again.
-struct Cell {
-    int left = 0, top = 0, width = 0, height = 0;
-};
-
-struct Atlas {
-    Texture texture;
-    std::map<unsigned, Cell> cells;   // key is size << 8 | character
-    std::vector<int> sizes;
-    int cursorX = 0;      // packing cursor
-    int cursorY = 0;
-    int rowHeight = 0;
-    int usedHeight = 0;
-    bool dirty = true;
-};
-
+// The antialiased font coverage is a build-time asset. Runtime layout computes
+// glyph metrics and atlas positions only; it never rasterizes glyph pixels.
+struct Cell { int left = 0, top = 0, width = 0, height = 0; };
 constexpr int kAtlasWidth = 1024;
 constexpr int kAtlasPadding = 2;
-
-Atlas& atlas() {
-    static Atlas instance;
-    return instance;
+constexpr int kFirstSize = 20, kLastSize = 48;
+unsigned keyOf(char c, int height) {
+    return (static_cast<unsigned>(height) << 8) | static_cast<unsigned char>(c);
 }
 
-unsigned keyOf(char character, int pixelHeight) {
-    return (static_cast<unsigned>(pixelHeight) << 8) | static_cast<unsigned>(character);
-}
-
-// Places one size's glyphs at the cursor. The width is fixed, so a size that does
-// not fit on the current shelf starts a new one -- there is no bookkeeping per
-// size and nothing to get wrong when a second size arrives after the first.
-void addSize(Atlas& value, int pixelHeight) {
-    constexpr int kFirst = 32, kLast = 126;
-    for (int code = kFirst; code <= kLast; ++code) {
-        const char character = static_cast<char>(code);
-        int glyphWidth = 0, glyphHeight = 0, xOffset = 0, yOffset = 0;
-        const unsigned char* coverage = nullptr;
-        if (!glyphCoverage(character, pixelHeight, glyphWidth, glyphHeight, xOffset, yOffset, &coverage)) {
-            continue;
-        }
-        if (value.cursorX + glyphWidth + kAtlasPadding > kAtlasWidth) {
-            value.cursorY += value.rowHeight + kAtlasPadding;
-            value.cursorX = kAtlasPadding;
-            value.rowHeight = 0;
-        }
-        Cell cell;
-        cell.left = value.cursorX;
-        cell.top = value.cursorY;
-        cell.width = glyphWidth;
-        cell.height = glyphHeight;
-        value.cells[keyOf(character, pixelHeight)] = cell;
-        value.cursorX += glyphWidth + kAtlasPadding;
-        value.rowHeight = std::max(value.rowHeight, glyphHeight);
-        value.usedHeight = std::max(value.usedHeight, cell.top + glyphHeight + kAtlasPadding);
-    }
-    value.cursorY += value.rowHeight + kAtlasPadding;
-    value.cursorX = kAtlasPadding;
-    value.rowHeight = 0;
-    value.texture.width = kAtlasWidth;
-    value.texture.height = std::max(64, value.usedHeight + kAtlasPadding);
-    value.dirty = true;
-}
-
-void rebuildPixels(Atlas& value) {
-    value.texture.pixels.assign(static_cast<std::size_t>(value.texture.width) * value.texture.height * 4U, 0);
-    for (const auto& entry : value.cells) {
-        const int pixelHeight = static_cast<int>(entry.first >> 8);
-        const char character = static_cast<char>(entry.first & 0xFFu);
-        const Cell& cell = entry.second;
-        int glyphWidth = 0, glyphHeight = 0, xOffset = 0, yOffset = 0;
-        const unsigned char* coverage = nullptr;
-        if (!glyphCoverage(character, pixelHeight, glyphWidth, glyphHeight, xOffset, yOffset, &coverage)) continue;
-        for (int row = 0; row < cell.height; ++row) {
-            if (cell.top + row >= value.texture.height) break;
-            for (int column = 0; column < cell.width; ++column) {
-                if (cell.left + column >= value.texture.width) break;
-                const std::size_t at = (static_cast<std::size_t>(cell.top + row) * value.texture.width +
-                                        (cell.left + column)) * 4U;
-                const unsigned char covered = coverage[static_cast<std::size_t>(row) * cell.width + column];
-                value.texture.pixels[at] = 255;       // white: the colour comes from the quad
-                value.texture.pixels[at + 1] = 255;
-                value.texture.pixels[at + 2] = 255;
-                value.texture.pixels[at + 3] = covered;   // the bit that matters
+const std::map<unsigned, Cell>& atlasCells() {
+    static const auto cells = [] {
+        std::map<unsigned, Cell> result;
+        int x = 0, y = 0, rowHeight = 0;
+        for (int size = kFirstSize; size <= kLastSize; ++size) {
+            for (int code = 32; code <= 126; ++code) {
+                int width = 0, height = 0, xOffset = 0, yOffset = 0;
+                if (!glyphMetrics(static_cast<char>(code), size, width, height, xOffset, yOffset)) continue;
+                if (x + width + kAtlasPadding > kAtlasWidth) {
+                    y += rowHeight + kAtlasPadding; x = kAtlasPadding; rowHeight = 0;
+                }
+                result[keyOf(static_cast<char>(code), size)] = {x, y, width, height};
+                x += width + kAtlasPadding;
+                rowHeight = std::max(rowHeight, height);
             }
+            y += rowHeight + kAtlasPadding; x = kAtlasPadding; rowHeight = 0;
         }
-    }
-    value.dirty = false;
-}
-
-const Cell* findCell(char character, int pixelHeight) {
-    Atlas& value = atlas();
-    const auto found = value.cells.find(keyOf(character, pixelHeight));
-    if (found != value.cells.end()) return &found->second;
-    if (std::find(value.sizes.begin(), value.sizes.end(), pixelHeight) != value.sizes.end()) return nullptr;
-    value.sizes.push_back(pixelHeight);
-    addSize(value, pixelHeight);
-    const auto again = value.cells.find(keyOf(character, pixelHeight));
-    return again == value.cells.end() ? nullptr : &again->second;
-}
-
-std::uint64_t& revisionRef() {
-    static std::uint64_t revision = 1;
-    return revision;
+        return result;
+    }();
+    return cells;
 }
 
 }  // namespace
 
 const Texture& uiGlyphAtlas() {
-    Atlas& value = atlas();
-    if (value.texture.width == 0) {
-        value.texture.width = kAtlasWidth;
-        value.texture.height = 64;
-        value.cursorX = kAtlasPadding;
-        value.cursorY = kAtlasPadding;
-        value.dirty = true;
+    const Texture& texture = loadTexture("native/assets/ui-glyphs.png");
+    if (texture.width != kAtlasWidth || texture.height != 1824 || texture.pixels.empty()) {
+        std::fprintf(stderr, "[ui] missing or invalid native/assets/ui-glyphs.png\n");
+        std::abort();
     }
-    if (value.dirty) {
-        rebuildPixels(value);
-        ++revisionRef();
-    }
-    return value.texture;
+    return texture;
 }
 
-std::uint64_t uiGlyphAtlasRevision() {
-    uiGlyphAtlas();   // makes sure a never-used atlas has a revision and pixels
-    return revisionRef();
-}
+std::uint64_t uiGlyphAtlasRevision() { return 1; }
 
 bool uiGlyphQuad(UiQuad& quad, char character, int pixelHeight, int penX, int baselineY) {
-    if (pixelHeight <= 0) return false;
-    const Cell* cell = findCell(character, pixelHeight);
-    if (cell == nullptr) return false;
-    if (cell->width <= 0 || cell->height <= 0) return false;
-    const Texture& texture = uiGlyphAtlas();
-    if (texture.width <= 0 || texture.height <= 0) return false;
-    // The pixel blitter placed a glyph at round(penX) + xOffset and
-    // round(baseline) + yOffset; this places the same rectangle.
-    int glyphWidth = 0, glyphHeight = 0, xOffset = 0, yOffset = 0;
-    const unsigned char* coverage = nullptr;
-    if (!glyphCoverage(character, pixelHeight, glyphWidth, glyphHeight, xOffset, yOffset, &coverage)) return false;
+    const auto& cells = atlasCells();
+    const auto found = cells.find(keyOf(character, pixelHeight));
+    if (found == cells.end()) return false;
+    const Cell& cell = found->second;
+    int width = 0, height = 0, xOffset = 0, yOffset = 0;
+    if (!glyphMetrics(character, pixelHeight, width, height, xOffset, yOffset)) return false;
     quad.left = static_cast<float>(penX + xOffset);
     quad.top = static_cast<float>(baselineY + yOffset);
-    quad.right = quad.left + static_cast<float>(cell->width);
-    quad.bottom = quad.top + static_cast<float>(cell->height);
-    quad.cellLeft = cell->left;
-    quad.cellTop = cell->top;
-    quad.texture = &texture;
+    quad.right = quad.left + static_cast<float>(cell.width);
+    quad.bottom = quad.top + static_cast<float>(cell.height);
+    quad.cellLeft = cell.left;
+    quad.cellTop = cell.top;
+    quad.texture = &uiGlyphAtlas();
     return true;
 }
 
@@ -255,6 +167,138 @@ void compositeUiQuad(NativeFrame& frame, const UiQuad& quad) {
     for (int y = firstRow; y < lastRow; ++y) {
         for (int x = firstColumn; x < lastColumn; ++x) frame.blendPixelAt(x, y, red, green, blue, alpha);
     }
+}
+
+namespace {
+
+// The interface draws in pixels that are already display-encoded; the device
+// wants a linear value and tone maps it on the way out. This is that curve
+// inverted, so the byte that arrives on screen is the byte the interface was
+// designed with. Bisection, because the curve is monotone and small.
+double inverseTone(int channel) {
+    static const auto table = [] {
+        std::array<double, 256> values{};
+        for (int i = 0; i < 256; ++i) {
+            const double encoded = i / 255.0;
+            double low = 0.0, high = 16.0;
+            for (int step = 0; step < 40; ++step) {
+                const double middle = (low + high) * 0.5;
+                const double tone = (middle * (2.51 * middle + 0.03)) / (middle * (2.43 * middle + 0.59) + 0.14);
+                const double srgb = tone <= 0.0031308 ? tone * 12.92 : 1.055 * std::pow(tone, 1.0 / 2.4) - 0.055;
+                if (srgb < encoded) low = middle; else high = middle;
+            }
+            values[i] = (low + high) * 0.5;
+        }
+        return values;
+    }();
+    return table[std::clamp(channel, 0, 255)];
+}
+
+struct BatchKey {
+    const Texture* texture = nullptr;
+    int red = 0, green = 0, blue = 0;
+    int opacity = 0;
+    bool operator==(const BatchKey& other) const {
+        return texture == other.texture && red == other.red && green == other.green && blue == other.blue &&
+               opacity == other.opacity;
+    }
+};
+
+}  // namespace
+
+void appendUiBatches(const UiLayer& layer, const Camera& camera, GpuScene& scene) {
+    const int width = layer.width() > 0 ? layer.width() : scene.width;
+    const int height = layer.height() > 0 ? layer.height() : scene.height;
+    if (width <= 0 || height <= 0) return;
+    const double focal = camera.focal();
+    if (focal <= 0.0) return;
+    // A hand's width in front of the eye. The interface has no depth of its own;
+    // the distance only has to be inside the projection's range and in front of
+    // everything the scene draws.
+    const double distance = 0.35;
+    const auto project = [&](float x, float y) {
+        const double viewX = (x - width * 0.5) * distance / focal;
+        const double viewY = (height * 0.5 - y) * distance / focal;
+        return camera.world({viewX, viewY, distance});
+    };
+
+    std::size_t start = 0;
+    BatchKey running;
+    bool haveRunning = false;
+    const auto flush = [&](std::size_t begin, std::size_t end, const BatchKey& key) {
+        if (begin >= end) return;
+        GpuBatch batch;
+        batch.interface = true;
+        batch.material.kind = key.texture != nullptr ? Material::Kind::Textured : Material::Kind::Solid;
+        batch.material.texture = key.texture;
+        batch.material.unlit = true;
+        batch.material.constantLighting = true;
+        // The inverse of the tone curve, so what the device writes is the byte
+        // that was asked for. A flat batch is tone mapped again by the draw call
+        // itself, which is the same curve, so this is its pre-image.
+        batch.material.color = {inverseTone(key.red), inverseTone(key.green), inverseTone(key.blue)};
+        batch.material.opacity = key.opacity / 255.0;
+        // A revision of its own: the interface changes every frame, and a batch
+        // whose revision never changes is a batch the device draws from memory
+        // that no longer matches it.
+        static std::uint64_t interfaceRevision = 0;
+        batch.revision = ++interfaceRevision;
+        for (std::size_t index = begin; index < end; ++index) {
+            const UiQuad& quad = layer.quads()[index];
+            const Vec3 a = project(quad.left, quad.top), b = project(quad.right, quad.top);
+            const Vec3 c = project(quad.right, quad.bottom), d = project(quad.left, quad.bottom);
+            // Texture coordinates: the atlas is read as coverage, so the whole
+            // cell is sampled and its alpha does the work.
+            const float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+            const auto vertex = [&](const Vec3& point, float u, float v) {
+                GpuVertex out;
+                out.x = static_cast<float>(point.x);
+                out.y = static_cast<float>(point.y);
+                out.z = static_cast<float>(point.z);
+                out.u = u;
+                out.v = v;
+                return out;
+            };
+            float quadU0 = u0, quadV0 = v0, quadU1 = u1, quadV1 = v1;
+            if (quad.texture != nullptr && quad.texture->width > 0 && quad.texture->height > 0) {
+                quadU0 = static_cast<float>(quad.cellLeft) / static_cast<float>(quad.texture->width);
+                quadV0 = static_cast<float>(quad.cellTop) / static_cast<float>(quad.texture->height);
+                const float cellWidth = quad.right - quad.left;
+                const float cellHeight = quad.bottom - quad.top;
+                quadU1 = static_cast<float>(quad.cellLeft + cellWidth) / static_cast<float>(quad.texture->width);
+                quadV1 = static_cast<float>(quad.cellTop + cellHeight) / static_cast<float>(quad.texture->height);
+            }
+            batch.vertices.push_back(vertex(a, quadU0, quadV0));
+            batch.vertices.push_back(vertex(b, quadU1, quadV0));
+            batch.vertices.push_back(vertex(c, quadU1, quadV1));
+            batch.vertices.push_back(vertex(a, quadU0, quadV0));
+            batch.vertices.push_back(vertex(c, quadU1, quadV1));
+            batch.vertices.push_back(vertex(d, quadU0, quadV1));
+        }
+        scene.batches.push_back(std::move(batch));
+    };
+
+    for (std::size_t index = 0; index < layer.quads().size(); ++index) {
+        const UiQuad& quad = layer.quads()[index];
+        BatchKey key;
+        key.texture = quad.texture;
+        key.red = quad.red;
+        key.green = quad.green;
+        key.blue = quad.blue;
+        key.opacity = static_cast<int>(std::lround(std::clamp(static_cast<double>(quad.opacity), 0.0, 1.0) * 255));
+        if (!haveRunning) {
+            running = key;
+            haveRunning = true;
+            start = index;
+            continue;
+        }
+        if (!(key == running)) {
+            flush(start, index, running);
+            running = key;
+            start = index;
+        }
+    }
+    flush(start, layer.quads().size(), running);
 }
 
 void compositeUi(NativeFrame& frame, const UiLayer& layer) {

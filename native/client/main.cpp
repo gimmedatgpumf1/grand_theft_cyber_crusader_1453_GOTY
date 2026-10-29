@@ -9,6 +9,7 @@
 #include "client/overlay_panel.h"
 #include "client/status_panel.h"
 #include "client/target_prompt.h"
+#include "client/ui_layer.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
@@ -246,7 +247,7 @@ int main(int argc, char** argv) {
         else {
             std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
-                         "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
+                         "  [--width PIXELS] [--height PIXELS] [--benchmark N] [--renderer cpu|vulkan]\n"
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG] [--cheats]\n"
                          "  [--overlay toilet|manual] (draw an overlay into the capture)\n"
                          "  [--prompt NAME] (draw the interact prompt for NAME)\n"
@@ -472,7 +473,19 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    if (rendererName == "vulkan") {
+        if (!gtc::native::vulkanAvailable()) {
+            std::cerr << "vulkan: unavailable on this machine\n";
+            return 1;
+        }
+        gtc::native::setGpuRenderer(&gtc::native::renderVulkanScene);
+        view.gpu = true;
+    } else if (rendererName != "cpu") {
+        std::cerr << "unknown headless renderer: " << rendererName << '\n';
+        return 2;
+    }
     gtc::native::NativeFrame frame;
+    frame.wantPixels = true; // A capture intentionally reads the final image once.
     const auto firstStart = std::chrono::steady_clock::now();
     if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
         std::cerr << "Native render failed: " << error << '\n';
@@ -493,43 +506,62 @@ int main(int argc, char** argv) {
         std::cout << "native render: " << measuredMilliseconds << " ms/frame at " << view.width << "x" << view.height
                   << '\n';
     }
-    // The counter is drawn by the host into the picture, so a capture carries it:
-    // this is the same call the window loop makes, over a real frame, with the
-    // rate this machine actually rendered at -- which is this machine's number
-    // and not the frame rate of the machine the picture is being sent to.
-    // The same three things the window loop draws, in the same order: the
-    // reticle, the need panel when it is open, and the frame rate.
-    gtc::native::drawCrosshair(frame, view);
-    if (!prompt.empty()) {
-        gtc::native::drawTargetPrompt(frame, gtc::native::layoutTargetPrompt(frame.width, frame.height,
-                                                                             frame.height / 2),
-                                      prompt.c_str());
+    // Captures use the same UI descriptions and the same Vulkan pass as the
+    // interactive frame. Only this explicit capture reads the final image back.
+    const auto drawCaptureUi = [&](gtc::native::NativeFrame& overlayFrame) {
+        gtc::native::drawCrosshair(overlayFrame, view);
+        if (!prompt.empty()) {
+            gtc::native::drawTargetPrompt(overlayFrame, gtc::native::layoutTargetPrompt(overlayFrame.width, overlayFrame.height,
+                                                                                 overlayFrame.height / 2),
+                                          prompt.c_str());
+        }
+        if (overlay == "toilet") {
+            // Drawn with the pointer on the first sector, so the capture shows what a
+            // lit sector looks like and not only the resting state.
+            const auto wheel = gtc::native::layoutInteractionWheel(overlayFrame.width, overlayFrame.height);
+            gtc::native::drawInteractionWheel(overlayFrame, wheel, wheel.labelX[0], wheel.labelY[0]);
+        }
+        else if (overlay == "manual") gtc::native::drawManual(overlayFrame);
+        if (cheats) {
+            const gtc::Character* citizen = client.state().character(client.playerId());
+            const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
+            const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
+            gtc::native::drawCheatMenu(overlayFrame, bladder, bowel, cheats ? hover : -1);
+        }
+        gtc::native::drawModeBar(overlayFrame, view.mode, cheats ? -1 : hover);
+        {
+            const gtc::Character* citizen = client.state().character(client.playerId());
+            const gtc::native::NeedsStatus status{
+                citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0,
+                citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0,
+                citizen ? static_cast<int>(std::lround(citizen->health)) : 0};
+            const gtc::native::ModeBarLayout bar = gtc::native::layoutModeBar(overlayFrame.width, overlayFrame.height);
+            gtc::native::drawNeedsPanel(overlayFrame, gtc::native::layoutNeedsPanel(overlayFrame.width, overlayFrame.height, bar.top, bar.width),
+                                        status);
+        }
+        gtc::native::drawFpsCounter(overlayFrame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
+    };
+    if (view.gpu) {
+        gtc::native::UiLayer layer;
+        layer.clear(view.width, view.height);
+        gtc::native::NativeFrame layout;
+        layout.width = view.width;
+        layout.height = view.height;
+        layout.ui = &layer;
+        drawCaptureUi(layout);
+        frame.uiLayer = &layer;
+        // The backend may return the previous submitted frame on a readback;
+        // submit the same final scene twice before saving the capture.
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
+                std::cerr << "Native UI capture failed: " << error << '\n';
+                return 1;
+            }
+        }
+        frame.uiLayer = nullptr;
+    } else {
+        drawCaptureUi(frame);
     }
-    if (overlay == "toilet") {
-        // Drawn with the pointer on the first sector, so the capture shows what a
-        // lit sector looks like and not only the resting state.
-        const auto wheel = gtc::native::layoutInteractionWheel(frame.width, frame.height);
-        gtc::native::drawInteractionWheel(frame, wheel, wheel.labelX[0], wheel.labelY[0]);
-    }
-    else if (overlay == "manual") gtc::native::drawManual(frame);
-    if (cheats) {
-        const gtc::Character* citizen = client.state().character(client.playerId());
-        const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
-        const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
-        gtc::native::drawCheatMenu(frame, bladder, bowel, cheats ? hover : -1);
-    }
-    gtc::native::drawModeBar(frame, view.mode, cheats ? -1 : hover);
-    {
-        const gtc::Character* citizen = client.state().character(client.playerId());
-        const gtc::native::NeedsStatus status{
-            citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0,
-            citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0,
-            citizen ? static_cast<int>(std::lround(citizen->health)) : 0};
-        const gtc::native::ModeBarLayout bar = gtc::native::layoutModeBar(frame.width, frame.height);
-        gtc::native::drawNeedsPanel(frame, gtc::native::layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width),
-                                    status);
-    }
-    gtc::native::drawFpsCounter(frame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
     if (!frame.save(output)) {
         std::cerr << "Native render failed: cannot save " << output << '\n';
         return 1;

@@ -403,14 +403,22 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         pipelineCovered_ != VK_NULL_HANDLE;
     const int slot = static_cast<int>(frames_ % kFramesInFlight);
     // A frame that is going to the window is rendered at the size of the
-    // swapchain image, so the handover is one to one. If any of this fails the
-    // frame simply takes the readback path it has always taken.
+    // swapchain image, so the handover is one to one. A resize may require one retry.
     int presentTarget = -1;
     if (presentWanted_ && surfaceUsable_ && !frame.wantPixels) {
-        if (createSwapchain(width, height) && acquirePresentImage(slot, presentTarget)) {
-            width = static_cast<int>(swapExtent_.width);
-            height = static_cast<int>(swapExtent_.height);
+        for (int attempt = 0; attempt < 2 && presentTarget < 0; ++attempt) {
+            if (createSwapchain(width, height) && acquirePresentImage(slot, presentTarget)) {
+                width = static_cast<int>(swapExtent_.width);
+                height = static_cast<int>(swapExtent_.height);
+            }
         }
+    }
+    if (wsiHandle_ && !frame.wantPixels && presentTarget < 0) {
+        // An out-of-date swapchain is transient (e.g. while resizing). Skip
+        // this frame, rather than reading it back or terminating the game.
+        if (surfaceUsable_ && !swapReady_) { frame.presented = true; return true; }
+        trace("vk: unable to acquire a presentation image");
+        return false;
     }
     if (width != target_.width || height != target_.height) {
         if (traced) tracef("vk: frame %d targets %dx%d", frames_, width, height);
@@ -442,6 +450,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         totalVertices += batch.vertices.size();
     }
     if (!uploadedValid_ || signature != uploadedSignature_) {
+        if (pendingSlot_ >= 0 && waitForFences(device_, 1, &fences_[pendingSlot_], VK_TRUE, 5000000000ull) != VK_SUCCESS) return false;
         if (traced) tracef("vk: frame %d upload %zu batches", frames_, scene.batches.size());
         if (!uploadVertices(scene)) { tracef("vk: frame %d upload failed", frames_); return false; }
         uploadedSignature_ = signature;
@@ -470,8 +479,17 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // Textures are uploaded before recording, because each upload submits its
     // own command buffer and commands cannot be nested.
     std::vector<VkDescriptorSet> textureSets(scene.batches.size(), VK_NULL_HANDLE);
+    bool interfaceLogged = false;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         if (scene.batches[index].vertices.empty()) continue;
+        if (scene.batches[index].interface) {
+            if (!interfaceLogged && traced) { trace("vk: drawing interface geometry on device"); interfaceLogged = true; }
+            if (texturedMaterial(scene.batches[index].material)) {
+                if (!ensureInterfaceAtlas()) return false;
+                textureSets[index] = interfaceAtlas_.set;
+                continue;
+            }
+        }
         textureSets[index] = textureFor(scene.batches[index].material).set;
     }
 
@@ -562,21 +580,21 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (index_.buffer != VK_NULL_HANDLE && !firstIndex_.empty()) {
         bindIndexBuffer(command_, index_.buffer, 0, VK_INDEX_TYPE_UINT32);
     }
-    // The pipeline is chosen per batch below: a batch that samples nothing is
-    // drawn with the layout that has no texture coordinate in it at all.
     VkPipeline boundPipeline = VK_NULL_HANDLE;
 
     // A room's bones are 56 batches that mostly share one material, so the same
     // texture set gets bound over and over. Binding it again changes nothing and
     // costs a validation-and-write per draw.
     VkDescriptorSet boundTexture = VK_NULL_HANDLE;
-    // This frame's matrices, before anything is recorded: a run reads them by
-    // slot, so the array has to be current by the time the draw is submitted.
     fillBones(scene);
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
         const bool textured = texturedMaterial(batch.material);
+        if (batch.interface) {
+            const VkDeviceSize base = static_cast<VkDeviceSize>(firstVertex_[index]) * sizeof(PackedVertex);
+            bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &base);
+        }
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
         if (textured) {
             // The coordinates of this batch, and only this batch: a body that
@@ -584,8 +602,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
-        const VkPipeline wanted = textured ? (covered ? pipelineUvCovered_ : pipelineUv_)
-                                           : (covered ? pipelineCovered_ : pipeline_);
+        const VkPipeline wanted = batch.interface
+            ? (textured ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
+            : (textured ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
             bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
             boundPipeline = wanted;
@@ -649,7 +668,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             if (count == 0) continue;
             drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
         } else {
-            drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1, firstVertex_[index], 0);
+            drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1,
+                   batch.interface ? 0 : firstVertex_[index], 0);
         }
     }
     endRenderPass(command_);
@@ -697,8 +717,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &command_;
-    // The acquire's semaphore is waited on here, and the submission signals the
-    // present's: the two things a swapchain frame actually needs.
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     if (presentTarget >= 0) {
         submit.waitSemaphoreCount = 1;
@@ -714,15 +732,13 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         tracef("vk: frame %d submit failed", frames_);
         return false;
     }
-    // Queued straight after the submission it waits on, so the present is not
-    // held up by the host collecting the frame before it.
     if (presentTarget >= 0) presentImage(presentTarget);
 
     // Collect the frame that was submitted before this one. Waiting for *this*
     // frame would leave the device idle while the host copies the picture out;
     // waiting for the previous one lets the two overlap, which is the whole
     // point of keeping more than one in flight.
-    int collect = pendingSlot_ >= 0 ? pendingSlot_ : slot;
+    int collect = frame.wantPixels ? slot : (pendingSlot_ >= 0 ? pendingSlot_ : slot);
     // On a presented frame there is nothing to collect and nothing to read, so
     // the very first one does not wait for itself: that is host time spent
     // watching the GPU it does not need to spend.

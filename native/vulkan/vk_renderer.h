@@ -29,6 +29,8 @@ void setReadbackMemory(int mode);
 // Tells the backend which window it may eventually present to, before the device
 // is created: surface extensions have to be requested at instance creation. With
 // no window attached, everything stays on the readback path.
+struct XlibSurfaceTarget { void* display; unsigned long window; };
+// kind 1: Win32 HWND, kind 2: XlibSurfaceTarget (kept alive by the window).
 void setVulkanSurfaceTarget(void* windowHandle, int kind);
 
 // Waits for any submitted frame to finish, so the next measurement starts from

@@ -13,6 +13,7 @@
 #include "client/overlay_panel.h"
 #include "client/status_panel.h"
 #include "client/target_prompt.h"
+#include "client/ui_layer.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -91,6 +92,10 @@ public:
         }
         window_.size(view_.width, view_.height);
         view_.gpu = window_.gpu();
+        if (std::string(window_.backend()) != "vulkan") {
+            std::cerr << "The interactive client requires Vulkan presentation\n";
+            return 1;
+        }
         // Which backend is actually carrying the frame is the first thing worth
         // knowing when a frame is slow; guessing it wastes an evening.
         tracef("window: backend=%s size=%dx%d", window_.backend(), view_.width, view_.height);
@@ -166,14 +171,23 @@ public:
                 view_.logicMilliseconds = logicMilliseconds;
                 continue;
             }
-            // The overlay is drawn into this frame on the CPU a few lines down,
-            // so this one has to come back through host memory -- but in the
-            // order the window wants it. Asking for rgb meant a channel shuffle
-            // out of the device and a second one back into the window: two
-            // passes over every pixel of every frame, to arrive where the
-            // device's own bytes already were.
-            frame.wantPixels = true;
-            frame.wantsBgra = true;
+            // The UI is geometry submitted with the world, never a CPU overlay.
+            frame.width = std::max(1, view_.width);
+            frame.height = std::max(1, view_.height);
+            layer_.clear(frame.width, frame.height);
+            frame.ui = &layer_;
+            drawInterface(frame);
+            frame.ui = nullptr;
+            frame.uiLayer = &layer_;
+            frame.wantPixels = false;
+            frame.wantsBgra = false;
+            frame.interfaceInFrame = false;
+            // A screenshot is the one thing a presented frame cannot serve: it
+            // needs the pixels, so this frame comes back to the host on purpose.
+            if (screenshot_) {
+                frame.wantPixels = true;
+                frame.wantsBgra = false;
+            }
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
                 // A frame that will not draw is the end of the run. Falling back
                 // to the software rasterizer hid a broken backend behind a slow
@@ -184,35 +198,14 @@ public:
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
-            // The only thing drawn over the picture: the frame rate, on the host,
-            // into pixels that already exist. Costs a few hundred fills a frame.
+            frame.uiLayer = nullptr;
             const auto overlayStart = Clock::now();
-            drawCrosshair(frame, view_);
-            // What the reticle is on and what E would do to it. The highlight state
-            // is the same one the interaction itself is gated on, so the prompt
-            // cannot promise something the key would refuse.
-            if (overlay_ == Overlay::None && view_.highlightToilet) {
-                // Laid out when the window changes size, not every frame: the
-                // prompt is two measured lines of type, and measuring them at 300
-                // frames a second is a font query nobody needs.
-                if (promptWidth_ != frame.width || promptHeight_ != frame.height) {
-                    prompt_ = layoutTargetPrompt(frame.width, frame.height, frame.height / 2);
-                    promptWidth_ = frame.width;
-                    promptHeight_ = frame.height;
-                }
-                drawTargetPrompt(frame, prompt_, "Toilet");
+            if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
+                std::cerr << "Vulkan did not present the interface on the device\n";
+                return 1;
             }
-            drawOpenOverlay(frame);
-            drawModeBar(frame, view_.mode, pointerBlock());
-            if (const Character* citizen = local()) {
-                const NeedsStatus status{static_cast<int>(std::lround(citizen->needs.bladder)),
-                                         static_cast<int>(std::lround(citizen->needs.bowel)),
-                                         static_cast<int>(std::lround(citizen->health))};
-                const ModeBarLayout bar = layoutModeBar(frame.width, frame.height);
-                drawNeedsPanel(frame, layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width), status);
-            }
-            drawFpsCounter(frame, view_.fps);
-            renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
+            renderMilliseconds = renderMs +
+                std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;
             view_.logicMilliseconds = logicMilliseconds;
             const auto presentStart = Clock::now();
@@ -236,6 +229,33 @@ public:
 
 private:
     const Character* local() const { return client_.state().character(client_.playerId()); }
+
+    // The whole interface, in one place, drawn into a frame or described as
+    // quads for a device depending on what `frame.ui` says.
+    void drawInterface(NativeFrame& frame) {
+        drawCrosshair(frame, view_);
+        if (overlay_ == Overlay::None && view_.highlightToilet) {
+            // Laid out when the window changes size, not every frame: the prompt
+            // is two measured lines of type, and measuring them at 300 frames a
+            // second is a font query nobody needs.
+            if (promptWidth_ != frame.width || promptHeight_ != frame.height) {
+                prompt_ = layoutTargetPrompt(frame.width, frame.height, frame.height / 2);
+                promptWidth_ = frame.width;
+                promptHeight_ = frame.height;
+            }
+            drawTargetPrompt(frame, prompt_, "Toilet");
+        }
+        drawOpenOverlay(frame);
+        drawModeBar(frame, view_.mode, pointerBlock());
+        if (const Character* citizen = local()) {
+            const NeedsStatus status{static_cast<int>(std::lround(citizen->needs.bladder)),
+                                     static_cast<int>(std::lround(citizen->needs.bowel)),
+                                     static_cast<int>(std::lround(citizen->health))};
+            const ModeBarLayout bar = layoutModeBar(frame.width, frame.height);
+            drawNeedsPanel(frame, layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width), status);
+        }
+        drawFpsCounter(frame, view_.fps);
+    }
 
     const ClientState& visualState() const {
         return presentationReady_ ? presentation_ : client_.state();
@@ -766,6 +786,7 @@ private:
     // Reused every frame: a vector built inside the loop is an allocation per
     // frame for the sake of a handful of events.
     std::vector<WindowEvent> events_;
+    UiLayer layer_;
     TargetPromptLayout prompt_{};
     int promptWidth_ = 0, promptHeight_ = 0;
     std::set<int> keys_;

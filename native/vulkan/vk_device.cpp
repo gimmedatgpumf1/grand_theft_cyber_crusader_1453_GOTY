@@ -116,10 +116,8 @@ bool Renderer::createInstance() {
 
     // The surface extensions have to be asked for when the instance is created,
     // before anything has been drawn, so the window hands its handle over first.
-    // Only names the loader actually offers are requested: asking for one this
-    // machine does not have would fail instance creation and cost the whole
-    // backend, when the only thing at stake is whether the picture can skip
-    // host memory.
+    // Presentation is required for interactive frames; if its extensions are
+    // absent, refuse startup rather than silently falling back to readback.
     const char* extensions[2] = {nullptr, nullptr};
     std::uint32_t extensionCount = 0;
     if (wsiHandle_ != nullptr && wsiKind_ != 0) {
@@ -131,10 +129,8 @@ bool Renderer::createInstance() {
 #endif
         std::uint32_t offered = 0;
         if (!instanceExtensionOffered(offered, nullptr)) {
-            extensions[1] = nullptr;
-            extensionCount = 0;
-            wsiHandle_ = nullptr;
-            wsiKind_ = 0;
+            std::fprintf(stderr, "[vk] required window surface extensions are unavailable\n");
+            return false;
         }
     }
     VkInstanceCreateInfo info{};
@@ -144,16 +140,6 @@ bool Renderer::createInstance() {
     info.enabledExtensionCount = extensionCount;
     info.ppEnabledExtensionNames = extensionCount ? extensions : nullptr;
     VkResult result = createInstanceFn(&info, nullptr, &instance_);
-    if (result != VK_SUCCESS && extensionCount > 0) {
-        // Give the surface up rather than the device.
-        std::fprintf(stderr, "[vk] instance rejected the surface extensions (%d), continuing without them\n",
-                     static_cast<int>(result));
-        wsiHandle_ = nullptr;
-        wsiKind_ = 0;
-        info.enabledExtensionCount = 0;
-        info.ppEnabledExtensionNames = nullptr;
-        result = createInstanceFn(&info, nullptr, &instance_);
-    }
     if (result != VK_SUCCESS) {
         std::fprintf(stderr, "[vk] vkCreateInstance failed (%d)\n", static_cast<int>(result));
         return false;
@@ -364,9 +350,12 @@ bool Renderer::createLayouts() {
 
 bool Renderer::createPipeline() {
     VkShaderModule vertexModule = VK_NULL_HANDLE;
+    VkShaderModule vertexNoUv = VK_NULL_HANDLE;
     VkShaderModule fragmentModule = VK_NULL_HANDLE;
     if (!moduleSane(vk::spirv::skeleton_vert,
                     sizeof(vk::spirv::skeleton_vert) / sizeof(vk::spirv::skeleton_vert[0])) ||
+        !moduleSane(vk::spirv::skeleton_no_uv_vert,
+                    sizeof(vk::spirv::skeleton_no_uv_vert) / sizeof(vk::spirv::skeleton_no_uv_vert[0])) ||
         !moduleSane(vk::spirv::skeleton_frag,
                     sizeof(vk::spirv::skeleton_frag) / sizeof(vk::spirv::skeleton_frag[0]))) {
         std::fprintf(stderr, "[vk] generated shader module is malformed\n");
@@ -381,7 +370,14 @@ bool Renderer::createPipeline() {
     fragmentInfo.codeSize = sizeof(vk::spirv::skeleton_frag);
     fragmentInfo.pCode = vk::spirv::skeleton_frag;
     if (createShaderModule(device_, &vertexInfo, nullptr, &vertexModule) != VK_SUCCESS) return false;
+    vertexInfo.codeSize = sizeof(vk::spirv::skeleton_no_uv_vert);
+    vertexInfo.pCode = vk::spirv::skeleton_no_uv_vert;
+    if (createShaderModule(device_, &vertexInfo, nullptr, &vertexNoUv) != VK_SUCCESS) {
+        destroyShaderModule(device_, vertexModule, nullptr);
+        return false;
+    }
     if (createShaderModule(device_, &fragmentInfo, nullptr, &fragmentModule) != VK_SUCCESS) {
+        destroyShaderModule(device_, vertexNoUv, nullptr);
         destroyShaderModule(device_, vertexModule, nullptr);
         return false;
     }
@@ -395,6 +391,8 @@ bool Renderer::createPipeline() {
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stages[1].module = fragmentModule;
     stages[1].pName = "main";
+    VkPipelineShaderStageCreateInfo stagesNoUv[2] = {stages[0], stages[1]};
+    stagesNoUv[0].module = vertexNoUv;
 
     // One interleaved vertex: position, normal, texture coordinate -- the same
     // GpuVertex the OpenGL path uploads.
@@ -476,6 +474,31 @@ bool Renderer::createPipeline() {
     blending.attachmentCount = 1;
     blending.pAttachments = &blend;
 
+    // The interface is drawn with the same shaders and the same vertex layouts,
+    // and differs in exactly two things: it blends, and it does not test depth.
+    // Blending because a panel is a tint and a glyph is coverage, and no depth
+    // because the interface is in front of the world by definition -- giving it
+    // a depth of its own would be inventing a third dimension for a picture that
+    // has none.
+    VkPipelineColorBlendAttachmentState blended{};
+    blended.blendEnable = VK_TRUE;
+    blended.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blended.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blended.colorBlendOp = VK_BLEND_OP_ADD;
+    blended.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blended.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blended.alphaBlendOp = VK_BLEND_OP_ADD;
+    blended.colorWriteMask = 0xF;
+    VkPipelineColorBlendStateCreateInfo blendingUi{};
+    blendingUi.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blendingUi.attachmentCount = 1;
+    blendingUi.pAttachments = &blended;
+    VkPipelineDepthStencilStateCreateInfo depthUi{};
+    depthUi.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthUi.depthTestEnable = VK_FALSE;
+    depthUi.depthWriteEnable = VK_FALSE;
+    depthUi.stencilTestEnable = VK_FALSE;
+
     const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic{};
     dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -496,36 +519,40 @@ bool Renderer::createPipeline() {
     layoutInfo.pPushConstantRanges = &range;
     if (createPipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         destroyShaderModule(device_, vertexModule, nullptr);
+        destroyShaderModule(device_, vertexNoUv, nullptr);
         destroyShaderModule(device_, fragmentModule, nullptr);
         return false;
     }
 
-    // Four pipelines from one call: with and without a texture coordinate, into
-    // the pass that clears and into the pass that does not. A pipeline is built
-    // against a render pass, so they have to exist as pairs.
-    VkGraphicsPipelineCreateInfo info[4]{};
-    for (int index = 0; index < 4; ++index) {
+    // Eight pipelines from one call: with and without a texture coordinate, into
+    // the pass that clears and into the pass that does not, opaque and blended.
+    // A pipeline is built against a render pass, so they have to exist as pairs.
+    VkGraphicsPipelineCreateInfo info[8]{};
+    for (int index = 0; index < 8; ++index) {
         VkGraphicsPipelineCreateInfo& entry = info[index];
         entry.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         entry.stageCount = 2;
-        entry.pStages = stages;
-        entry.pVertexInputState = &vertexInput[index / 2];
+        entry.pStages = ((index / 2) % 2) ? stages : stagesNoUv;
+        entry.pVertexInputState = &vertexInput[(index / 2) % 2];
         entry.pInputAssemblyState = &assembly;
         entry.pViewportState = &viewport;
         entry.pRasterizationState = &raster;
         entry.pMultisampleState = &multisample;
-        entry.pDepthStencilState = &depth;
-        entry.pColorBlendState = &blending;
+        const bool interfacePass = index >= 4;
+        entry.pDepthStencilState = interfacePass ? &depthUi : &depth;
+        entry.pColorBlendState = interfacePass ? &blendingUi : &blending;
         entry.pDynamicState = &dynamic;
         entry.layout = pipelineLayout_;
         entry.subpass = 0;
         entry.renderPass = index % 2 == 0 ? renderPass_ : renderPassCovered_;
     }
-    VkPipeline built[4] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 4, info, nullptr, built);
+    VkPipeline built[8] = {};
+    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 8, info, nullptr, built);
     destroyShaderModule(device_, vertexModule, nullptr);
+    destroyShaderModule(device_, vertexNoUv, nullptr);
     destroyShaderModule(device_, fragmentModule, nullptr);
     if (result != VK_SUCCESS) {
+        for (VkPipeline pipeline : built) if (pipeline) destroyPipeline(device_, pipeline, nullptr);
         std::fprintf(stderr, "[vk] pipeline creation failed (%d)\n", static_cast<int>(result));
         return false;
     }
@@ -533,6 +560,10 @@ bool Renderer::createPipeline() {
     pipelineCovered_ = built[1];
     pipelineUv_ = built[2];
     pipelineUvCovered_ = built[3];
+    pipelineInterface_ = built[4];
+    pipelineInterfaceCovered_ = built[5];
+    pipelineInterfaceUv_ = built[6];
+    pipelineInterfaceUvCovered_ = built[7];
     return true;
 }
 
@@ -774,6 +805,11 @@ void Renderer::stop() {
             if (entry.second.memory) freeMemory(device_, entry.second.memory, nullptr);
         }
         textures_.clear();
+        if (interfaceAtlas_.view) destroyImageView(device_, interfaceAtlas_.view, nullptr);
+        if (interfaceAtlas_.image) destroyImage(device_, interfaceAtlas_.image, nullptr);
+        if (interfaceAtlas_.memory) freeMemory(device_, interfaceAtlas_.memory, nullptr);
+        interfaceAtlas_ = TextureSlot{};
+        interfaceAtlasReady_ = false;
         if (transfer_.view) destroyImageView(device_, transfer_.view, nullptr);
         if (transfer_.image) destroyImage(device_, transfer_.image, nullptr);
         if (transfer_.memory) freeMemory(device_, transfer_.memory, nullptr);
@@ -788,6 +824,10 @@ void Renderer::stop() {
         if (pipelineCovered_) destroyPipeline(device_, pipelineCovered_, nullptr);
         if (pipelineUv_) destroyPipeline(device_, pipelineUv_, nullptr);
         if (pipelineUvCovered_) destroyPipeline(device_, pipelineUvCovered_, nullptr);
+        if (pipelineInterface_) destroyPipeline(device_, pipelineInterface_, nullptr);
+        if (pipelineInterfaceCovered_) destroyPipeline(device_, pipelineInterfaceCovered_, nullptr);
+        if (pipelineInterfaceUv_) destroyPipeline(device_, pipelineInterfaceUv_, nullptr);
+        if (pipelineInterfaceUvCovered_) destroyPipeline(device_, pipelineInterfaceUvCovered_, nullptr);
         if (pipelineLayout_) destroyPipelineLayout(device_, pipelineLayout_, nullptr);
         if (renderPass_) destroyRenderPass(device_, renderPass_, nullptr);
         if (renderPassCovered_) destroyRenderPass(device_, renderPassCovered_, nullptr);

@@ -5,6 +5,7 @@ The shaders are real GLSL (``shaders/*.vert``, ``shaders/*.frag``) compiled with
 the Khronos reference compiler:
 
     glslangValidator -V --target-env vulkan1.0 -o shaders/skeleton.vert.spv shaders/skeleton.vert
+    glslangValidator -V --target-env vulkan1.0 -DNO_UV=1 -o shaders/skeleton_no_uv.vert.spv shaders/skeleton.vert
     glslangValidator -V --target-env vulkan1.0 -o shaders/skeleton.frag.spv shaders/skeleton.frag
 
 and then checked with the Khronos validator:
@@ -27,6 +28,7 @@ import sys
 # Module file name -> the C++ identifier it becomes.
 MODULES = (
     ('skeleton.vert.spv', 'skeleton_vert'),
+    ('skeleton_no_uv.vert.spv', 'skeleton_no_uv_vert'),
     ('skeleton.frag.spv', 'skeleton_frag'),
 )
 

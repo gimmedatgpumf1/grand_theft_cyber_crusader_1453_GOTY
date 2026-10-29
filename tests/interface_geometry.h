@@ -49,7 +49,7 @@ inline void examineUiGeometry(int width, int height, bool windowOrder) {
     described.frame.ui = nullptr;
     check(!layer.empty(), where + ": the interface described itself as geometry");
     // Nothing may have been written while it was describing.
-    check(described.same(width / 2, height / 2, host.ground) || true, where + ": describing draws nothing");
+    check(described.same(width / 2, height / 2, host.ground), where + ": describing draws nothing");
     gtc::native::compositeUi(described.frame, layer);
 
     int differing = 0, worst = 0;

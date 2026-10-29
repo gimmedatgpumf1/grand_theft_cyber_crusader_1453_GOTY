@@ -23,7 +23,7 @@ if command -v spirv-val >/dev/null 2>&1; then
   for module in native/vulkan/shaders/*.spv; do
     spirv-val --target-env vulkan1.0 "$module" || { echo "spirv-val rejected $module"; exit 1; }
   done
-  echo "spirv-val: PASS (both modules)"
+  echo "spirv-val: PASS (all modules)"
 else
   echo "spirv-val: skipped (validator not installed)"
 fi
@@ -51,9 +51,21 @@ mkdir -p build/vulkan-stub
   tests/fake-vulkan/stub.cpp -o build/vulkan-stub/libvulkan.so.1
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
-  native/client/diagnostics.cpp \
+  native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
   -o build/bin/gtc-vulkan-plumbing
 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulkan-plumbing
+# A real Vulkan ICD is optional here. This test submits the UI shaders and
+# checks the pixels; the stub test above cannot establish rendering correctness.
+"${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative \
+  tests/vulkan_ui.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+  native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
+  native/client/crosshair.cpp native/client/cheat_menu.cpp native/client/mode_bar.cpp native/client/fps_counter.cpp native/client/status_panel.cpp native/client/target_prompt.cpp \
+  -ldl -o build/bin/gtc-vulkan-ui-check
+if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
+  ./build/bin/gtc-vulkan-ui-check
+else
+  echo 'Vulkan UI pixel check: skipped (set GTC_VULKAN_UI_TEST=1 with a Vulkan ICD)'
+fi
 if [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   # A machine without a Vulkan driver must say so and keep going; this asserts
   # the fallback rather than the frame rate, because the frame rate is not

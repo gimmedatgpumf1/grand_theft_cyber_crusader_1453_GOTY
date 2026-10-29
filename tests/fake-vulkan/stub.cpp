@@ -126,10 +126,56 @@ static VkResult createFramebufferStub(VkDevice, const VkFramebufferCreateInfo*, 
 static VkResult createLayoutStub(VkDevice, const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*, VkPipelineLayout* out) {
     std::memcpy(out, &g_handle, sizeof(void*)); return VK_SUCCESS;
 }
-static VkResult createPipelineStub(VkDevice, VkPipelineCache, std::uint32_t count, const VkGraphicsPipelineCreateInfo*,
+// Pipelines are the one thing this double has to tell apart, because the whole
+// question the interface asks of it is "is this draw blended and depth-free".
+// Every pipeline gets a handle of its own, its state is written down, and the
+// bind calls are recorded so a test can see which state a batch was drawn with.
+struct PipelineRecord {
+    void* handle = nullptr;
+    int blended = 0;
+    int depthTest = 0;
+};
+static PipelineRecord g_pipelines[32];
+static int g_pipelineCount = 0;
+static void* g_pipelineHandle = nullptr;
+static void* g_bound[512];
+static int g_boundCount = 0;
+
+static VkResult createPipelineStub(VkDevice, VkPipelineCache, std::uint32_t count, const VkGraphicsPipelineCreateInfo* infos,
                                    const VkAllocationCallbacks*, VkPipeline* out) {
-    for (std::uint32_t index = 0; index < count; ++index) std::memcpy(&out[index], &g_handle, sizeof(void*));
+    for (std::uint32_t index = 0; index < count; ++index) {
+        g_pipelineHandle = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(g_pipelineHandle) + 0x1000);
+        std::memcpy(&out[index], &g_pipelineHandle, sizeof(void*));
+        if (g_pipelineCount < 32) {
+            PipelineRecord& record = g_pipelines[g_pipelineCount++];
+            record.handle = g_pipelineHandle;
+            const VkGraphicsPipelineCreateInfo& info = infos[index];
+            record.blended = info.pColorBlendState != nullptr && info.pColorBlendState->attachmentCount > 0 &&
+                info.pColorBlendState->pAttachments[0].blendEnable == VK_TRUE ? 1 : 0;
+            record.depthTest = info.pDepthStencilState != nullptr && info.pDepthStencilState->depthTestEnable == VK_TRUE ? 1 : 0;
+        }
+    }
     return VK_SUCCESS;
+}
+
+static void bindPipelineStub(VkCommandBuffer, VkPipelineBindPoint, VkPipeline pipeline) {
+    if (g_boundCount < 512) g_bound[g_boundCount++] = reinterpret_cast<void*>(pipeline);
+}
+
+extern "C" int stubPipelineCount() { return g_pipelineCount; }
+extern "C" int stubPipelineBlended(int index) {
+    return index >= 0 && index < g_pipelineCount ? g_pipelines[index].blended : -1;
+}
+extern "C" int stubPipelineDepthTest(int index) {
+    return index >= 0 && index < g_pipelineCount ? g_pipelines[index].depthTest : -1;
+}
+extern "C" int stubBoundCount() { return g_boundCount; }
+extern "C" int stubBoundBlended(int index) {
+    if (index < 0 || index >= g_boundCount) return -1;
+    for (int record = 0; record < g_pipelineCount; ++record) {
+        if (g_pipelines[record].handle == g_bound[index]) return g_pipelines[record].blended;
+    }
+    return -1;
 }
 static VkResult createSetLayoutStub(VkDevice, const VkDescriptorSetLayoutCreateInfo*, const VkAllocationCallbacks*, VkDescriptorSetLayout* out) {
     std::memcpy(out, &g_handle, sizeof(void*)); return VK_SUCCESS;
@@ -179,6 +225,7 @@ static void* lookup(const char* name) {
     if (!std::strcmp(name, "vkCreateCommandPool")) return (void*)&createCommandPoolStub;
     if (!std::strcmp(name, "vkCreateFence")) return (void*)&createFenceStub;
     if (!std::strcmp(name, "vkCreateDevice")) return (void*)&createDeviceStub;
+    if (!std::strcmp(name, "vkCmdBindPipeline")) return (void*)&bindPipelineStub;
     if (!std::strncmp(name, "vkCmd", 5)) return (void*)&nothing;
     if (!std::strncmp(name, "vkDestroy", 9)) return (void*)&nothing;
     if (!std::strcmp(name, "vkUpdateDescriptorSets")) return (void*)&nothing;

@@ -100,7 +100,7 @@ struct Glyph {
     std::vector<unsigned char> coverage;
 };
 
-const Glyph& cachedGlyph(char character, int pixelHeight) {
+Glyph& cachedGlyph(char character, int pixelHeight) {
     const unsigned key = (static_cast<unsigned>(pixelHeight) << 8) | static_cast<unsigned char>(character);
     static std::map<unsigned, Glyph> cache;
     const auto found = cache.find(key);
@@ -113,15 +113,25 @@ const Glyph& cachedGlyph(char character, int pixelHeight) {
     glyph.height = std::max(0, y1 - y0);
     glyph.xOffset = x0;
     glyph.yOffset = y0;
-    glyph.coverage.resize(static_cast<std::size_t>(glyph.width) * glyph.height);
-    if (!glyph.coverage.empty()) {
-        stbtt_MakeCodepointBitmap(&font().info, glyph.coverage.data(), glyph.width, glyph.height,
-                                  glyph.width, fontScale, fontScale, character);
-    }
     int advance = 0, bearing = 0;
     stbtt_GetCodepointHMetrics(&font().info, character, &advance, &bearing);
     glyph.advance = advance * fontScale;
     return cache.emplace(key, std::move(glyph)).first->second;
+}
+
+// The CPU reference renderer requests bitmaps explicitly. UI layout only asks
+// for metrics and never enters this function in the Vulkan frame path.
+std::size_t glyphRasterizations = 0;
+const Glyph& rasterGlyph(char character, int pixelHeight) {
+    Glyph& glyph = cachedGlyph(character, pixelHeight);
+    if (glyph.coverage.empty() && glyph.width > 0 && glyph.height > 0) {
+        glyph.coverage.resize(static_cast<std::size_t>(glyph.width) * glyph.height);
+        const float scale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+        stbtt_MakeCodepointBitmap(&font().info, glyph.coverage.data(), glyph.width, glyph.height,
+                                  glyph.width, scale, scale, character);
+        ++glyphRasterizations;
+    }
+    return glyph;
 }
 
 unsigned char srgbChannel(double value) {
@@ -171,7 +181,7 @@ void paintText(NativeFrame& frame, double penX, double baseline, const std::stri
         unsigned char* const mask = frame.alpha.empty() ? nullptr : frame.alpha.data();
         const int frameWidth = frame.width, frameHeight = frame.height;
         for (char character : text) {
-            const Glyph& glyph = cachedGlyph(character, pixelHeight);
+            const Glyph& glyph = rasterGlyph(character, pixelHeight);
             const int left = static_cast<int>(std::lround(penX)) + glyph.xOffset;
             const int top = static_cast<int>(std::lround(baseline)) + glyph.yOffset;
             for (int row = 0; row < glyph.height; ++row) for (int column = 0; column < glyph.width; ++column) {
@@ -232,7 +242,7 @@ int textWidthPixels(const std::string& text, int pixelHeight) {
 bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset,
                    const unsigned char** coverage) {
     if (!font().ready || pixelHeight <= 0) return false;
-    const Glyph& glyph = cachedGlyph(character, pixelHeight);
+    const Glyph& glyph = rasterGlyph(character, pixelHeight);
     width = glyph.width;
     height = glyph.height;
     xOffset = glyph.xOffset;
@@ -240,6 +250,16 @@ bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int
     *coverage = glyph.coverage.empty() ? nullptr : glyph.coverage.data();
     return !glyph.coverage.empty();
 }
+
+bool glyphMetrics(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset) {
+    if (!font().ready || pixelHeight <= 0) return false;
+    const Glyph& glyph = cachedGlyph(character, pixelHeight);
+    width = glyph.width; height = glyph.height;
+    xOffset = glyph.xOffset; yOffset = glyph.yOffset;
+    return width > 0 && height > 0;
+}
+
+std::size_t glyphRasterizationCount() { return glyphRasterizations; }
 
 void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight) {
     if (!font().ready || pixelHeight <= 0) return;

@@ -378,6 +378,11 @@ Vec3 Camera::view(Vec3 point) const {
     return {dot(relative, right), dot(relative, vertical), dot(relative, forward)};
 }
 
+Vec3 Camera::world(Vec3 viewPoint) const {
+    basis();
+    return position + right * viewPoint.x + vertical * viewPoint.y + forward * viewPoint.z;
+}
+
 Vec3 Camera::viewDirection(Vec3 direction) const {
     basis();
     return {dot(direction, right), dot(direction, vertical), dot(direction, forward)};

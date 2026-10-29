@@ -910,6 +910,7 @@ void examineTargetPrompt(int width, int height, bool windowOrder) {
 
 
 #include "../tests/interface_geometry.h"
+#include "../tests/interface_atlas.h"
 
 int main() {
     examineStrip(640, 480, false);
@@ -929,6 +930,7 @@ int main() {
     examineOverlayPanels(640, 480, true);
     examineOverlayPanels(1920, 1080, true);
 
+    examineFontAtlas();
     examineUiGeometry(640, 480, false);
     examineUiGeometry(640, 480, true);
     examineUiGeometry(1920, 1080, true);

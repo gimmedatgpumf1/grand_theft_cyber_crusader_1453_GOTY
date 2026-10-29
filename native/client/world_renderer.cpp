@@ -1,6 +1,7 @@
 #include "client/renderer.h"
 
 #include "client/blockbody.h"
+#include "client/ui_layer.h"
 #include "client/human_renderer.h"
 
 #include <algorithm>
@@ -833,6 +834,13 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         gpuScene_.focal = camera.focal();
         gpuScene_.viewMatrix = camera.viewMatrix();
         updateObjectTransforms(gpuScene_, state);
+        // The interface goes on the device with the world: the same batches, the
+        // same submission, the same image. Nothing is composited on the host and
+        // nothing has to come back out of the device to be drawn over.
+        if (frame.uiLayer != nullptr && !frame.uiLayer->empty()) {
+            appendUiBatches(*frame.uiLayer, camera, gpuScene_);
+            frame.interfaceInFrame = true;
+        }
         if (!renderGpuScene(gpuScene_, frame)) {
             error = "Native GPU scene rendering failed";
             return false;
@@ -844,7 +852,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
     // the rgb form has a mask to check.
     const bool havePixels = frame.canvasIsBgra() ||
         (frame.rgb.size() == framePixels * 3 && frame.alpha.size() == framePixels);
-    if (view.gpu && !havePixels) {
+    if (view.gpu && !frame.presented && !havePixels) {
         error = "Native GPU scene rendering failed";
         return false;
     }

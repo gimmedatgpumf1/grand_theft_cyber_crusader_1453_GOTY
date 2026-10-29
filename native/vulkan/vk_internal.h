@@ -343,6 +343,10 @@ private:
     bool createTargets(int width, int height);
     bool createTexture(const Texture& texture, TextureSlot& slot);
     TextureSlot& textureFor(const Material& material);
+    // The glyph atlas, uploaded when it grows a new text size. Separate from the
+    // material cache because its contents change: the cache keys on the address
+    // of an image that never does.
+    bool ensureInterfaceAtlas();
     bool createTransferTable();
     bool uploadVertices(const GpuScene& scene);
     bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
@@ -546,6 +550,16 @@ private:
     // hardware to fetch one anyway is eight bytes of every vertex in the frame.
     VkPipeline pipelineUv_ = VK_NULL_HANDLE;
     VkPipeline pipelineUvCovered_ = VK_NULL_HANDLE;
+    // The same four again, blended and without depth: the interface, drawn by the
+    // device over the scene instead of composited on the host afterwards.
+    VkPipeline pipelineInterface_ = VK_NULL_HANDLE;
+    VkPipeline pipelineInterfaceCovered_ = VK_NULL_HANDLE;
+    VkPipeline pipelineInterfaceUv_ = VK_NULL_HANDLE;
+    VkPipeline pipelineInterfaceUvCovered_ = VK_NULL_HANDLE;
+    // The glyph atlas: one texture, re-uploaded only when it grows a new size.
+    TextureSlot interfaceAtlas_;
+    std::uint64_t interfaceAtlasRevision_ = 0;
+    bool interfaceAtlasReady_ = false;
 
     VkBuffer frameBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory frameMemory_ = VK_NULL_HANDLE;

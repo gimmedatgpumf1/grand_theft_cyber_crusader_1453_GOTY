@@ -85,6 +85,13 @@ struct NativeFrame {
     // rather do with them. A screenshot is the one thing a presented frame
     // cannot serve.
     bool wantPixels = false;
+    // Set by a backend that drew the interface itself, into the same image the
+    // world is in. The loop then has nothing to composite: the picture already
+    // has the words in it.
+    bool interfaceInFrame = false;
+    // The interface, as quads, for a backend that can put them on the device.
+    // The loop fills this before the frame is rendered and clears it after.
+    const class UiLayer* uiLayer = nullptr;
     void syncToRgb();
     double uiScale = 1.0;
     double uiOffsetX = 0.0;
@@ -135,6 +142,9 @@ struct Camera {
     bool worldSpaceGpu = false;
 
     Vec3 view(Vec3 point) const;
+    // The inverse, for geometry that is described in screen pixels and has to be
+    // handed to a projection: a quad at a known distance in front of the eye.
+    Vec3 world(Vec3 viewPoint) const;
     Vec3 viewDirection(Vec3 direction) const;
     std::array<double, 16> viewMatrix() const;
     double focal() const;
@@ -174,6 +184,10 @@ struct GpuBatch {
     std::vector<std::uint32_t> indices;
     std::uint32_t objectId = 0;
     std::uint64_t revision = 0;
+    // This batch is interface, not world: it blends, it does not test depth, and
+    // its colour arrives already prepared for the display. Drawn last, so what it
+    // covers it covers.
+    bool interface = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
@@ -307,6 +321,9 @@ int textWidthPixels(const std::string& text, int pixelHeight);
 // belong to the glyph cache and stay valid for the life of the process.
 bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset,
                    const unsigned char** coverage);
+// Font metrics do not rasterize; the Vulkan path uses these for text placement.
+bool glyphMetrics(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset);
+std::size_t glyphRasterizationCount();
 int textHeightPixels(int pixelHeight);
 void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight);
 
