@@ -181,8 +181,8 @@ for sex in ('male', 'female'):
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
         assert 0.05 < span < 0.3, group
     # Each member owns real 3-D anchors derived from its source vertices.
-    # Long bones have two extent anchors plus the centroid; the rest use their
-    # centroid. The shared triangles preserve their original 3-D positions.
+    # Long bones have extent anchors plus the centroid. The heel also reaches
+    # the actual calcaneus bottom, rear and sides in source coordinates.
     for group, part_names in groups.items():
         points = solids[group][1]
         for name in part_names:
@@ -197,6 +197,25 @@ for sex in ('male', 'female'):
                     for axis in range(3):
                         values = [v[axis] for v in source_points]
                         assert min(values) - 0.005 <= point[axis] <= max(values) + 0.005
+            elif name.startswith('Cal_'):
+                assert len(indices) >= 3 and math.dist(points[indices[0]], mean) < 0.00001
+                heel_points = [points[i] for i in indices[1:]]
+                # The anchors are actual vertices on this calcaneus, not an
+                # invented ground point or a reflected opposite-side heel.
+                assert all(min(math.dist(p, source) for source in source_points) < 0.00001 for p in heel_points)
+                assert abs(min(p[1] for p in heel_points) - min(p[1] for p in source_points)) < 0.00001
+                assert abs(min(p[0] for p in heel_points) - min(p[0] for p in source_points)) < 0.00001
+                assert abs(max(p[0] for p in heel_points) - max(p[0] for p in source_points)) < 0.00001
+                side = name[-1]
+                forefoot = [member_vertices[f'FootMeta{i}_{side}'] for i in range(1, 6)]
+                centres = [tuple(sum(v[i] for v in bone)/len(bone) for i in range(3)) for bone in forefoot]
+                direction = tuple(mean[i] - sum(p[i] for p in centres)/len(centres) for i in range(3))
+                norm = math.sqrt(sum(x*x for x in direction))
+                direction = tuple(x/norm for x in direction)
+                projection = lambda p: sum((p[i]-mean[i])*direction[i] for i in range(3))
+                assert abs(max(map(projection, heel_points)) - max(map(projection, source_points))) < 0.00001
+                # These real extremities are part of the same filled foot mesh.
+                assert all(any(i in face for face in solids[group][2]) for i in indices)
             else:
                 assert len(indices) == 1 and math.dist(points[indices[0]], mean) < 0.00001
     assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))

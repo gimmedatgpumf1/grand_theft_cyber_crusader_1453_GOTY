@@ -15,6 +15,7 @@ using namespace gtc::native;
 static bool bothVisible = true;
 static bool dotsVisible = false;
 static bool solidsVisible = false;
+static bool heelsVisible = false;
 
 static bool renderAndCheck(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
@@ -146,6 +147,82 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     return true;
 }
 
+// Remove only triangles touching the added source-calcaneus extremities. This
+// checks that the extended heel actually contributes pixels on the GPU.
+static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
+    if (!renderVulkanScene(scene, frame)) return false;
+    const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
+    const unsigned char* pixels = frame.direct ? frame.direct : frame.bgra.data();
+    const std::vector<unsigned char> original(pixels, pixels + bytes);
+    int revision = 0;
+    for (std::uint32_t id : {8001u, 9001u}) {
+        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
+        for (char side : {'L', 'R'}) {
+            std::ifstream input(path);
+            const std::string group = std::string("FootBase_") + side, bone = std::string("Cal_") + side;
+            std::vector<unsigned> heel;
+            std::size_t vertexOffset = 0, indexOffset = 0, vertexCount = 0, indexCount = 0;
+            std::size_t totalVertices = 0, totalIndices = 0;
+            std::string row;
+            while (std::getline(input, row)) {
+                std::istringstream fields(row);
+                std::string token, name, member;
+                fields >> token;
+                if (token == "#") {
+                    fields >> token >> name >> member;
+                    if (token == "Anchor" && name == group && member == bone) {
+                        unsigned index; fields >> index; // centroid is not an added extremity
+                        while (fields >> index) heel.push_back(index);
+                    }
+                } else if (token == "M") {
+                    double thickness; std::size_t n, f, e;
+                    fields >> name >> thickness >> n >> f >> e;
+                    if (!fields) return false;
+                    if (name == group) { vertexOffset = totalVertices; indexOffset = totalIndices;
+                                         vertexCount = n; indexCount = (f+e)*6; }
+                    totalVertices += n*2; totalIndices += (f+e)*6;
+                }
+            }
+            if (heel.empty() || !vertexCount || !indexCount) return false;
+            GpuScene without = scene;
+            without.revision += 60000 + revision++;
+            bool removed = false;
+            for (auto& batch : without.batches) {
+                if (batch.objectId != id || batch.vertices.size() != totalVertices || batch.indices.size() != totalIndices) continue;
+                std::vector<std::uint32_t> kept;
+                for (std::size_t i = 0; i < batch.indices.size(); i += 3) {
+                    bool isHeel = false;
+                    if (i >= indexOffset && i < indexOffset + indexCount) {
+                        for (int corner = 0; corner < 3; ++corner) for (unsigned anchor : heel) {
+                            const auto index = batch.indices[i+corner];
+                            if (index == vertexOffset+anchor || index == vertexOffset+vertexCount+anchor) isHeel = true;
+                        }
+                    }
+                    if (isHeel) removed = true;
+                    else kept.insert(kept.end(), batch.indices.begin()+i, batch.indices.begin()+i+3);
+                }
+                batch.indices.swap(kept);
+            }
+            if (!removed) return false;
+            NativeFrame plain;
+            plain.width = scene.width; plain.height = scene.height;
+            plain.wantPixels = true; plain.wantsBgra = true;
+            if (!renderVulkanScene(without, plain)) return false;
+            const unsigned char* other = plain.direct ? plain.direct : plain.bgra.data();
+            int changed = 0;
+            for (std::size_t at = 0; at < bytes; at += 4) {
+                int difference = 0;
+                for (int c = 0; c < 3; ++c) difference += std::abs(int(original[at+c]) - int(other[at+c]));
+                if (difference > 24) ++changed;
+            }
+            std::printf("Vulkan heel %u %c: %d visible pixels\n", id, side, changed);
+            if (changed < 1) return false;
+        }
+    }
+    heelsVisible = true;
+    return true;
+}
+
 int main() {
     if (!vulkanAvailable()) { std::puts("Vulkan room resize: FAIL (no ICD)"); return 1; }
     SkeletonRoom room;
@@ -233,6 +310,9 @@ int main() {
         setGpuRenderer(&renderAndCheckSolids);
         room.render(frame, view, 2.5);
         ok = ok && solidsVisible;
+        setGpuRenderer(&renderAndCheckHeels);
+        room.render(frame, view, 2.5);
+        ok = ok && heelsVisible;
         view.width = 640; view.height = 480;
         room.toggleLineView();
         setGpuRenderer(&renderVulkanScene);

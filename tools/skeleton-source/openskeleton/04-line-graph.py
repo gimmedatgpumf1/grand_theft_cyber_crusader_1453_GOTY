@@ -89,7 +89,8 @@ def unified_groups():
 def unified_surface(bones, members):
     """A filled 3-D surface spanning the actual bone axes, not bone outlines.
 
-    Carpals/tarsals anchor the base; each metacarpal/metatarsal supplies its
+    Carpals/tarsals anchor the base; the calcaneus additionally anchors the
+    bottom, rear and sides of the heel. Each metacarpal/metatarsal supplies its
     own two ends and centre. Triangulation fills *between* those anchors. The
     3-D coordinates are retained: projection chooses connectivity only.
     """
@@ -98,6 +99,16 @@ def unified_surface(bones, members):
         vertices = bones[name]
         centre = vertices.mean(axis=0)
         anchors = [centre]
+        if name.startswith('Cal_'):
+            # The calcaneus is the heel. Its centroid alone cuts off the heel;
+            # use actual source vertices at the bottom, rear and both sides.
+            side = name[-1]
+            forefoot = np.mean([bones[f'FootMeta{i}_{side}'].mean(axis=0) for i in range(1, 6)], axis=0)
+            rear = centre - forefoot
+            rear /= np.linalg.norm(rear)
+            indices = [int(np.argmin(vertices[:, 1])), int(np.argmax((vertices - centre) @ rear)),
+                       int(np.argmin(vertices[:, 0])), int(np.argmax(vertices[:, 0]))]
+            anchors.extend(vertices[index] for index in dict.fromkeys(indices))
         if name.startswith(('HandMeta', 'FootMeta')):
             _, _, basis = np.linalg.svd(vertices - centre, full_matrices=False)
             axis = basis[0]
