@@ -128,54 +128,77 @@ def unified_surface(bones, members):
 
 
 def foot_hexahedron(bones, members, side):
-    """Low, truncated-pyramid foot, shaped from heel and metatarsal locations.
+    """Six irregular planar faces fitted to heel, ankle and toe bones.
 
-    The sole spans the full source footprint, including the heel. Its top is
-    inset on all four sides. Height is deliberately compressed: enclosing the
-    full talus vertically made the previous solid much too tall.
+    The sole runs from the back of the calcaneus to the metatarsal heads.
+    Its heel end is narrower than the big-to-little-toe end. The upper heel
+    corners follow the distal tibia and fibula; the upper front corners follow
+    the first and fifth metatarsal heads. The source is posed with pointed feet,
+    so the sole is horizontal in the foot's anatomical frame, not world space.
     """
     heel = bones[f'Cal_{side}'].mean(axis=0)
     ankle = bones[f'Tal_{side}'].mean(axis=0)
     metatarsals = [bones[f'FootMeta{i}_{side}'] for i in range(1, 6)]
-    forefoot = np.mean([bone.mean(axis=0) for bone in metatarsals], axis=0)
-    length = forefoot - heel
-    length /= np.linalg.norm(length)
-    height = ankle - heel
-    height -= np.dot(height, length) * length
-    assert np.linalg.norm(height) > 1e-8
-    height /= np.linalg.norm(height)
-    width = np.cross(height, length)
+    forward = np.mean([bone.mean(axis=0) for bone in metatarsals], axis=0) - heel
+    forward /= np.linalg.norm(forward)
+    up = ankle - heel
+    up -= np.dot(up, forward) * forward
+    assert np.linalg.norm(up) > 1e-8
+    up /= np.linalg.norm(up)
+    width = np.cross(up, forward)
     width /= np.linalg.norm(width)
-    axes = np.array([length, width, height])
-    local = np.concatenate([bones[name] for name in members]) @ axes.T
-    rear = np.concatenate([bones[f'Cal_{side}'], bones[f'Tal_{side}']]) @ axes.T
-    front = np.concatenate(metatarsals) @ axes.T
-    x0, x1 = local[:, 0].min(), local[:, 0].max()
-    t = (local[:, 0] - x0) / (x1 - x0)
-    # Width and sole height follow separately measured rear and forefoot bone
-    # extents, shifted to include their full footprint and lowest source points.
-    lower, upper = [], []
-    for axis in (1, 2):
-        low_delta = front[:, axis].min() - rear[:, axis].min()
-        high_delta = front[:, axis].max() - rear[:, axis].max()
-        low = np.min(local[:, axis] - t * low_delta)
-        high = np.max(local[:, axis] - t * high_delta)
-        lower.append((low, low + low_delta))
-        upper.append((high, high + high_delta))
-    sole = np.array([[x1 if i & 4 else x0,
-                      upper[0][int(bool(i & 4))] if i & 2 else lower[0][int(bool(i & 4))],
-                      lower[1][int(bool(i & 4))]] for i in (0, 2, 4, 6)])
-    centre = sole.mean(axis=0)
-    # A homothetic upper quadrilateral keeps all six faces planar. Height is
-    # 40% of the mean source heel/forefoot vertical extent, not a full-height
-    # bounding volume. The inset makes it a visibly truncated pyramid.
-    source_height = (np.ptp(rear[:, 2]) + np.ptp(front[:, 2])) / 2
-    thickness = 0.4 * source_height
+    axes = np.array([forward, width, up])
+    calc = bones[f'Cal_{side}'] @ axes.T
+    ankle_points = []
+    for name in ('Tibia', 'Fibula'):
+        vertices = bones[f'{name}_{side}']
+        # Registered subjects stand with the lower end of the shin at min Y.
+        distal = vertices[vertices[:, 1] <= np.quantile(vertices[:, 1], 0.08)]
+        ankle_points.append((distal @ axes.T).mean(axis=0))
+    ankle_points.sort(key=lambda p: p[1])
+    heads, head_points = [], []
+    for bone in (metatarsals[0], metatarsals[4]):
+        vertices = bone @ axes.T
+        distal = vertices[vertices[:, 0] >= np.quantile(vertices[:, 0], 0.90)]
+        heads.append(distal)
+        head_points.append((distal.mean(axis=0), distal[:, 0].max()))
+    head_points.sort(key=lambda item: item[0][1])
+    toe_vertices = np.concatenate(heads)
+    x0, z0 = calc[:, 0].min(), calc[:, 2].min()
+    x1 = toe_vertices[:, 0].max()
+    # Bone-scaled clearance below the low toe head avoids a zero-thickness
+    # front when the first and fifth metatarsals sit at different heights.
+    toe_height = np.mean([np.ptp((bone @ axes.T)[:, 2]) for bone in (metatarsals[0], metatarsals[4])])
+    z1 = toe_vertices[:, 2].min() - 0.35 * toe_height
+    def sole_height(x): return z0 + (z1-z0) * (x-x0) / (x1-x0)
+    low_x, high_x = (item[1] for item in head_points)
+    bottom = np.array([[x0, calc[:, 1].min(), z0],
+                       [x0, calc[:, 1].max(), z0],
+                       [high_x, toe_vertices[:, 1].max(), sole_height(high_x)],
+                       [low_x, toe_vertices[:, 1].min(), sole_height(low_x)]])
+    landmarks = np.array([ankle_points[0], ankle_points[1], head_points[1][0], head_points[0][0]])
+    # The four measured landmarks are not exactly coplanar. Fit one top plane
+    # instead of twisting its two triangles, then intersect it with four side
+    # planes passing through the source-derived sole edges.
+    coefficients = np.linalg.lstsq(np.column_stack((landmarks[:, :2], np.ones(4))), landmarks[:, 2], rcond=None)[0]
+    top = landmarks.copy()
+    top[:, 2] = top[:, 0]*coefficients[0] + top[:, 1]*coefficients[1] + coefficients[2]
+    def plane(a, b, c):
+        normal = np.cross(b-a, c-a)
+        assert np.linalg.norm(normal) > 1e-10
+        return np.r_[normal, -np.dot(normal, a)]
+    top_plane = plane(top[0], top[1], top[2])
+    sides = [plane(bottom[i], bottom[(i+1)%4], (top[i]+top[(i+1)%4])/2) for i in range(4)]
+    fitted_top = []
+    for i in range(4):
+        equations = np.stack((top_plane, sides[i-1], sides[i]))
+        fitted_top.append(np.linalg.solve(equations[:, :3], -equations[:, 3]))
+    # The renderer's binary indices are rear/front, low/high width, bottom/top.
+    order = (0, 1, 3, 2)
     points = []
-    for i in range(8):
-        p = sole[(i >> 1) & 3]
-        if i & 1: p = centre + 0.58 * (p - centre) + [0, 0, thickness]
-        points.append(p @ axes)
+    for i in range(4):
+        index = order[i]
+        points.extend((bottom[index] @ axes, fitted_top[index] @ axes))
     return np.array(points), axes
 
 

@@ -179,9 +179,9 @@ for sex in ('male', 'female'):
     with (base / f'skeleton-{sex}.obj').open() as obj:
         for row in obj:
             if row.startswith('g '): name = row[2:].strip()
-            elif (name in vertebrae or name in members) and row.startswith('v '):
+            elif (name in vertebrae or name in members or name in ('Tibia_L','Tibia_R','Fibula_L','Fibula_R')) and row.startswith('v '):
                 coords = list(map(float, row.split()[1:4]))
-                if name in members: member_vertices[name].append(coords)
+                if name in members or name.startswith(('Tibia_', 'Fibula_')): member_vertices[name].append(coords)
                 for i in range(3): totals[name][i] += coords[i]
                 totals[name][3] += 1
     for name, point in dots.items():
@@ -201,11 +201,10 @@ for sex in ('male', 'female'):
     for group, part_names in groups.items():
         points = solids[group][1]
         if group in hexahedra:
-            # The bottom covers the full bone footprint and heel, while a
-            # homothetically inset top makes a low, closed pyramid frustum.
+            # Check actual heel, distal shin and metatarsal landmarks rather
+            # than a generic prism or a centrally inset top.
             side = group[-1]
-            def centroid(name):
-                source = member_vertices[name]
+            def centroid(source):
                 return tuple(sum(p[i] for p in source)/len(source) for i in range(3))
             def dot(a,b): return sum(x*y for x,y in zip(a,b))
             def sub(a,b): return tuple(x-y for x,y in zip(a,b))
@@ -213,58 +212,60 @@ for sex in ('male', 'female'):
             def unit(p):
                 size = math.sqrt(dot(p,p)); assert size > 1e-9
                 return tuple(x/size for x in p)
-            heel, ankle = centroid(f'Cal_{side}'), centroid(f'Tal_{side}')
-            meta = [centroid(f'FootMeta{i}_{side}') for i in range(1,6)]
+            def quantile(values, fraction):
+                values = sorted(values); at = fraction * (len(values)-1)
+                lo = math.floor(at); hi = math.ceil(at)
+                return values[lo] + (values[hi]-values[lo])*(at-lo)
+            heel, ankle = (centroid(member_vertices[f'{name}_{side}']) for name in ('Cal','Tal'))
+            meta = [centroid(member_vertices[f'FootMeta{i}_{side}']) for i in range(1,6)]
             forward = unit(tuple(sum(p[i] for p in meta)/5 - heel[i] for i in range(3)))
             raw_up = sub(ankle, heel)
             up = unit(tuple(raw_up[i]-dot(raw_up,forward)*forward[i] for i in range(3)))
             width = unit(cross(up,forward))
             basis = (forward, width, up)
             local = [tuple(dot(p,axis) for axis in basis) for p in points]
-            all_bones = [p for member in part_names for p in member_vertices[member]]
-            rear_bones = member_vertices[f'Cal_{side}'] + member_vertices[f'Tal_{side}']
-            front_bones = [p for i in range(1,6) for p in member_vertices[f'FootMeta{i}_{side}']]
-            x0, x1 = local[0][0], local[4][0]
-            assert 0.1 < x1-x0 < 0.3
-            assert abs(x0 - min(dot(p,forward) for p in all_bones)) < 0.00001
-            assert abs(x1 - max(dot(p,forward) for p in all_bones)) < 0.00001
-            assert abs(local[2][0]-x0) < 0.00001 and abs(local[6][0]-x1) < 0.00001
-            for axis, bit in ((1,2),(2,0)):
-                rear = [dot(p,basis[axis]) for p in rear_bones]
-                front = [dot(p,basis[axis]) for p in front_bones]
-                low0, low1 = local[0][axis], local[4][axis]
-                assert abs((low1-low0) - (min(front)-min(rear))) < 0.00001
-                if bit:
-                    high0, high1 = local[bit][axis], local[4+bit][axis]
-                    assert abs((high1-high0) - (max(front)-max(rear))) < 0.00001
-                residuals = []
-                for p in all_bones:
-                    t = (dot(p,forward)-x0)/(x1-x0)
-                    value = dot(p,basis[axis]); lower = low0 + t*(low1-low0)
-                    assert value >= lower - 0.00001
-                    if bit:
-                        upper = high0 + t*(high1-high0)
-                        assert value <= upper + 0.00001
-                        residuals.append(upper-value)
-                if bit: assert min(residuals) < 0.00001
-            assert local[6][1]-local[4][1] > local[2][1]-local[0][1] + 0.005
-            centre = [sum(local[i][axis] for i in (0,2,4,6))/4 for axis in range(3)]
-            rear_z = [dot(p,up) for p in rear_bones]
-            front_z = [dot(p,up) for p in front_bones]
-            thickness = 0.4 * ((max(rear_z)-min(rear_z)) + (max(front_z)-min(front_z))) / 2
-            assert 0.01 < thickness < 0.04
-            for i in (0,2,4,6):
-                expected_top = [centre[a] + 0.58*(local[i][a]-centre[a]) + (thickness if a == 2 else 0)
-                                for a in range(3)]
-                assert math.dist(local[i+1], expected_top) < 0.00001
-            # Upper footprint is inset at both ends and on both sides.
-            assert x0 < local[1][0] < local[5][0] < x1
-            assert local[3][1]-local[1][1] < local[2][1]-local[0][1]
-            assert local[7][1]-local[5][1] < local[6][1]-local[4][1]
+            def project(p): return tuple(dot(p,axis) for axis in basis)
+            calc = [project(p) for p in member_vertices[f'Cal_{side}']]
+            x0, z0 = min(p[0] for p in calc), min(p[2] for p in calc)
+            assert abs(local[0][0]-x0) < 0.00001 and abs(local[2][0]-x0) < 0.00001
+            assert abs(local[0][1]-min(p[1] for p in calc)) < 0.00001
+            assert abs(local[2][1]-max(p[1] for p in calc)) < 0.00001
+            assert abs(local[0][2]-z0) < 0.00001 and abs(local[2][2]-z0) < 0.00001
+            distal_ankles = []
+            for name in ('Tibia','Fibula'):
+                vertices = member_vertices[f'{name}_{side}']
+                cutoff = quantile([p[1] for p in vertices], 0.08)
+                distal_ankles.append(project(centroid([p for p in vertices if p[1] <= cutoff])))
+            distal_ankles.sort(key=lambda p: p[1])
+            distal_toes = []
+            for digit in (1,5):
+                vertices = [project(p) for p in member_vertices[f'FootMeta{digit}_{side}']]
+                cutoff = quantile([p[0] for p in vertices], 0.90)
+                subset = [p for p in vertices if p[0] >= cutoff]
+                distal_toes.append((centroid(subset), subset))
+            distal_toes.sort(key=lambda item: item[0][1])
+            for index, landmark in zip((1,3), distal_ankles):
+                assert math.dist(local[index], landmark) < 0.012, (group, 'ankle', index)
+            for index, (landmark, _) in zip((5,7), distal_toes):
+                assert math.dist(local[index], landmark) < 0.012, (group, 'toe', index)
+            for index, (_, subset) in zip((4,6), distal_toes):
+                assert abs(local[index][0]-max(p[0] for p in subset)) < 0.00001
+            toe_vertices = distal_toes[0][1] + distal_toes[1][1]
+            assert abs(local[4][1]-min(p[1] for p in toe_vertices)) < 0.00001
+            assert abs(local[6][1]-max(p[1] for p in toe_vertices)) < 0.00001
+            assert local[6][1]-local[4][1] > local[2][1]-local[0][1]
+            assert 0.1 < (local[4][0]+local[6][0])/2-x0 < 0.25
+            centre = tuple(sum(p[i] for p in points)/8 for i in range(3))
             quads = ((0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3))
             for a,b,c,d in quads:
                 normal = unit(cross(sub(points[b],points[a]), sub(points[c],points[a])))
                 assert abs(dot(normal,sub(points[d],points[a]))) < 0.00001
+                if dot(normal,sub(centre,points[a])) > 0: normal = tuple(-x for x in normal)
+                assert all(dot(normal,sub(p,points[a])) < 0.00001 for p in points), group
+            # Front is not a rectangular face; ankle top and toe front each
+            # follow two separate bones rather than symmetric box dimensions.
+            assert abs(local[5][2]-local[7][2]) > 0.005
+            assert abs(local[1][2]-local[3][2]) > 0.002
             continue
         for name in part_names:
             indices = anchors[group][name]
