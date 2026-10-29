@@ -89,16 +89,16 @@ or the source registration.
 
 ## Extracting a male subject on Windows
 
-Download [extract-male.cmd](extract-male.cmd). It contains the extractor; no
-separate Python script or ZIP is needed. Use `Faces.mat` from the Zenodo record.
-
 The current male test candidate is **N197925**, whose metadata records a
-170 cm cadaver length. This is not evidence of normal anatomy or a correctly
-assembled pose. To extract it, put `NM_combined.mat` and `Faces.mat` alongside
-`extract-male.cmd` and double-click the batch file. Python 3 is required; the
-script installs NumPy, SciPy and h5py if they are missing. Send the generated
-`male-N197925.npz` and `male-N197925.json`. `Metadata.mat` is not needed by
-the extractor. No source geometry is rescaled or modified in this step.
+170 cm cadaver length. Put `NM_combined.mat` and `Faces.mat` in `E:\zenodo`.
+From the repository root, run:
+
+```cmd
+py -3 tools\skeleton-source\openskeleton\02-export-subject.py --dir E:\zenodo --subject N197925 --out E:\zenodo\male-N197925.npz
+```
+
+Python 3 with NumPy, SciPy and h5py is required. Send the resulting `.npz`
+and `.json`; the source geometry is not rescaled in this step.
 
 The exporter has been checked using the real Faces.mat and a synthetic MATLAB
 v5 file containing 182 structures. The full 2.5 GB combined file has not been
