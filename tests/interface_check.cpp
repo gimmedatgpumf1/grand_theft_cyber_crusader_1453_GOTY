@@ -344,8 +344,32 @@ void examineCheatMenu(int width, int height, bool windowOrder) {
     check(allFound, where + ": all eight entries can be clicked");
     check(gtc::native::cheatMenuAt(layout, layout.left + layout.width / 2, layout.titleTop) == -1,
           where + ": the title is not a button");
-    check(gtc::native::cheatMenuAt(layout, layout.left + layout.width / 2, layout.footerTop) == -1,
-          where + ": the footer is not a button");
+    // The footer is the close button, and it has to be one: the King pressed it.
+    const auto close = gtc::native::cheatMenuRect(layout, gtc::native::kCheatMenuClose);
+    check(close.width > layout.textHeight && close.height > 0, where + ": the close button has a box");
+    check(gtc::native::cheatMenuAt(layout, close.left + close.width / 2, close.top + close.height / 2) ==
+              gtc::native::kCheatMenuClose,
+          where + ": a click on CLOSE closes");
+    check(close.left >= layout.left && close.left + close.width <= layout.left + layout.width,
+          where + ": the close button is inside the panel");
+    check(close.top >= layout.firstRowTop + 3 * layout.rowGap,
+          where + ": the close button is below the entries, not on one");
+    check(gtc::native::cheatMenuAt(layout, layout.left + 2, close.top + 1) == -1,
+          where + ": the margin beside the close button is not a button");
+    // Hovering it marks it, and marks nothing else.
+    Picture closing(width, height, windowOrder);
+    gtc::native::drawCheatMenu(closing.frame, 62, 30, gtc::native::kCheatMenuClose);
+    int closeInside = 0, closeOutside = 0;
+    for (int y = layout.footerTop - layout.textHeight; y < layout.top + layout.height; ++y) {
+        for (int x = layout.left + 1; x < layout.left + layout.width - 1; ++x) {
+            if (worstChannel(closing.at(x, y), picture.at(x, y)) <= 1) continue;
+            if (x >= close.left && x < close.left + close.width && y >= close.top &&
+                y < close.top + close.height) ++closeInside;
+            else ++closeOutside;
+        }
+    }
+    check(closeInside > close.width, where + ": hovering CLOSE marks it");
+    check(closeOutside == 0, where + ": hovering CLOSE marks nothing else");
     check(gtc::native::cheatMenuAt(layout, layout.left + 1, layout.firstRowTop) == -1,
           where + ": the panel margin is not a button");
     // Row to entry, read left to right then down: row r has entries 2r and 2r+1,

@@ -562,7 +562,8 @@ private:
                 const CheatMenuLayout menu = layoutCheatMenu(view_.width, view_.height);
                 const int entry = cheatMenuAt(menu, static_cast<int>(std::lround(event.x)),
                                               static_cast<int>(std::lround(event.y)));
-                if (entry >= 0) cheat('1' + entry);
+                if (entry == kCheatMenuClose) closeOverlay();
+                else if (entry >= 0) cheat('1' + entry);
                 return;
             }
             if (overlay_ != Overlay::None) return;

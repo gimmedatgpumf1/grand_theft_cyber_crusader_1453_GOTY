@@ -90,8 +90,17 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight) {
 
 CheatMenuRect cheatMenuRect(const CheatMenuLayout& layout, int entry) {
     CheatMenuRect box;
-    if (entry < 0 || entry >= kRowCount * 2 || layout.width <= 0) return box;
+    if (entry < 0 || entry > kCheatMenuClose || layout.width <= 0) return box;
     const int gap = lineGap(layout.textHeight);
+    if (entry == kCheatMenuClose) {
+        const int slack = std::max(2, gap / 4);
+        const int width = textWidthPixels(kFooter, layout.textHeight);
+        box.left = layout.left + (layout.width - width) / 2 - slack;
+        box.top = layout.footerTop - slack;
+        box.width = width + slack * 2;
+        box.height = layout.textHeight + slack * 2;
+        return box;
+    }
     // Entries are numbered the way they are read: left to right, then down. The
     // row is the index halved and the column is its parity, so entry 3 is the
     // fourth key -- "4 Fill bladder" -- on the second row, right-hand side. The
@@ -114,6 +123,12 @@ int cheatMenuAt(const CheatMenuLayout& layout, int x, int y) {
     for (int entry = 0; entry < kRowCount * 2; ++entry) {
         const CheatMenuRect box = cheatMenuRect(layout, entry);
         if (x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height) return entry;
+    }
+    // The footer is the close button, and it is measured the same way the rest of
+    // the panel is: the drawn width of the words, not a guess at it.
+    const CheatMenuRect close = cheatMenuRect(layout, kCheatMenuClose);
+    if (x >= close.left && x < close.left + close.width && y >= close.top && y < close.top + close.height) {
+        return kCheatMenuClose;
     }
     return -1;
 }
@@ -142,7 +157,7 @@ void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int
     // The entry the pointer is on, marked before the words so it sits behind them.
     // Only that entry's own box: a wash across the whole row cannot tell you which
     // of the two things on it you are about to press.
-    if (hovered >= 0 && hovered < kRowCount * 2) {
+    if (hovered >= 0 && hovered <= kCheatMenuClose) {
         const CheatMenuRect box = cheatMenuRect(layout, hovered);
         fillBand(frame, box.left, box.top, box.width, box.height, colorHex(kInkColour), 0.14);
     }

@@ -37,8 +37,12 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight);
 
 // `bladderPercent` and `bowelPercent` are what the server says the local citizen
 // needs are; the panel shows them, clamped, next to the keys that change them.
-// `hovered` is the entry under the pointer, or -1: the rows are clickable, so they
-// have to answer to the pointer.
+// The footer closes the panel, and is an entry like any other for the pointer's
+// purposes: hovered == kCheatMenuClose marks it, and a click on it closes.
+constexpr int kCheatMenuClose = 8;
+
+// `hovered` is the entry under the pointer, kCheatMenuClose for the footer, or -1
+// for none: everything clickable has to answer to the pointer.
 void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int hovered = -1);
 
 // The box an entry occupies, in pixels. One definition for both the mark and the
@@ -51,6 +55,8 @@ struct CheatMenuRect {
     int height = 0;
 };
 CheatMenuRect cheatMenuRect(const CheatMenuLayout& layout, int entry);
+
+// Which entry or the footer is under this point: 0..7, kCheatMenuClose, or -1.
 
 // Which entry is under this point, 0..7, or -1 for none. Ordered the way the keys
 // are numbered and read: left to right, then down. Entry 0 is "1 Bladder +25",

@@ -69,7 +69,7 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   ranged weapon otherwise; RMB blocks melee or applies explicit ranged aim zoom.
 - **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it, with the
   current percentages on the panel. The server applies and clamps every change to 0–100%, so all
-  connected views share the result.
+  connected views share the result. Every entry is a button when the mouse is free, and so is CLOSE.
 - **H** opens the controls sheet, two columns so it fits a 640×480 frame at the 20-pixel text floor.
 - **F12** saves the current native **640×480 landscape** framebuffer.
 - Pointing at something you can use says so: the object lights up in the world (accent pool and ring
