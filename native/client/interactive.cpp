@@ -9,6 +9,7 @@
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/mode_bar.h"
+#include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/window.h"
 #include "core/projectile.h"
@@ -333,9 +334,17 @@ private:
         switch (overlay_) {
             case Overlay::None:
                 return;
-            case Overlay::Wheel:
-                drawToiletChoice(frame);
+            case Overlay::Wheel: {
+                const Character* citizen = local();
+                const char* subtitle = citizen == nullptr ? "" : citizen->appearance.male ? "STANDING" : "SEATED";
+                const InteractionWheelLayout layout = layoutInteractionWheel(frame.width, frame.height, subtitle);
+                // The pointer is the mouse: while the wheel is open the mouse is
+                // not captured, so these are real window pixels and the option
+                // under them is the option a click would take.
+                drawInteractionWheel(frame, layout, subtitle, static_cast<int>(std::lround(mouseX_)),
+                                     static_cast<int>(std::lround(mouseY_)));
                 return;
+            }
             case Overlay::Cheats: {
                 const Character* citizen = local();
                 const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
@@ -484,13 +493,18 @@ private:
                 return;
             }
             if (event.button != 1 && event.button != 3) return;
-            if (overlay_ == Overlay::Wheel && event.button == 1) {
-                // The rows a click lands on are the rows that were drawn: the
-                // panel is laid out in the frame's own pixels, and the mouse is
-                // already in them, so nothing has to be re-guessed here.
-                const int row = toiletChoiceRowAt(view_.width, view_.height, static_cast<int>(std::lround(event.x)),
-                                                  static_cast<int>(std::lround(event.y)));
-                if (row >= 0) toiletChoice(row + 1);
+            if (overlay_ == Overlay::Wheel) {
+                // The same layout that drew the wheel answers the click: a hit on
+                // an option takes it, a hit in the middle cancels, and a click on
+                // the panel around them does nothing, so a stray click cannot
+                // choose something by accident.
+                const InteractionWheelLayout layout = layoutInteractionWheel(
+                    view_.width, view_.height, local() != nullptr && local()->appearance.male ? "STANDING" : "SEATED");
+                const int hit = interactionWheelHit(layout, static_cast<int>(std::lround(event.x)),
+                                                    static_cast<int>(std::lround(event.y)));
+                if (event.button != 1) return;
+                if (hit >= 0) toiletChoice(hit + 1);
+                else if (hit == kWheelCancel) closeOverlay();
                 return;
             }
             if (overlay_ != Overlay::None) return;

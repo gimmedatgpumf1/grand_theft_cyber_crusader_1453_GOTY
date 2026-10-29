@@ -56,12 +56,7 @@ int overlayRowAt(const OverlayPanelLayout& layout, int rowCount, int x, int y);
 
 // The two panels, drawn from one definition so the window loop, the headless
 // capture and the check cannot drift apart.
-OverlayPanelLayout toiletChoiceLayout(int frameWidth, int frameHeight);
 OverlayPanelLayout manualLayout(int frameWidth, int frameHeight);
-void drawToiletChoice(NativeFrame& frame);
 void drawManual(NativeFrame& frame);
-// 0, 1, 2 for sit, shit, piss; -1 when the point is not on a row or the panel is
-// not where the frame says it is.
-int toiletChoiceRowAt(int frameWidth, int frameHeight, int x, int y);
 
 }  // namespace gtc::native

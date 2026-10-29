@@ -20,6 +20,7 @@
 #include "client/cheat_menu.h"
 #include "client/interface_style.h"
 #include "client/mode_bar.h"
+#include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
@@ -441,8 +442,9 @@ void examineOverlayPanels(int width, int height, bool windowOrder) {
         gtc::native::OverlayPanelLayout (*layout)(int, int);
         void (*draw)(gtc::native::NativeFrame&);
     };
+    // Only the sheet is a panel any more: the throne's choices are a circle, and
+    // that is checked on its own below.
     const Case cases[] = {
-        {"toilet", &gtc::native::toiletChoiceLayout, &gtc::native::drawToiletChoice},
         {"manual", &gtc::native::manualLayout, &gtc::native::drawManual},
     };
     for (const Case& testCase : cases) {
@@ -474,41 +476,119 @@ void examineOverlayPanels(int width, int height, bool windowOrder) {
         check(rows.levels > 8, name + ": the text is antialiased");
     }
 
-    // Every point of a row's band names that row, every row is reachable, and
-    // nothing outside the rows is a choice.
-    int seen[3] = {0, 0, 0};
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; x += 2) {
-            const int row = gtc::native::toiletChoiceRowAt(width, height, x, y);
-            if (row < 0) continue;
-            check(row >= 0 && row < 3, where + ": a click names one of the three choices");
-            if (row >= 0 && row < 3) ++seen[row];
-        }
-    }
-    for (int row = 0; row < 3; ++row) {
-        check(seen[row] > 40, where + ": toilet row " + std::to_string(row) + " is clickable");
-    }
-    check(gtc::native::toiletChoiceRowAt(width, height, 2, 2) < 0, where + ": the corner of the frame is no choice");
-    check(gtc::native::toiletChoiceRowAt(width, height, width / 2, height - 3) < 0,
-          where + ": below the panel is no choice");
-    check(gtc::native::toiletChoiceRowAt(width, height, width / 2, gtc::native::toiletChoiceLayout(width, height).titleTop) < 0,
-          where + ": the title is not a choice");
-
     if (!windowOrder) {
-        const auto toilet = gtc::native::toiletChoiceLayout(width, height);
-        Picture picture(width, height, windowOrder);
-        gtc::native::drawToiletChoice(picture.frame);
-        zoom(picture, toilet.left, toilet.top, toilet.width, toilet.height, 3,
-             "build/native-client/interface-toilet-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
         Picture manual(width, height, windowOrder);
         gtc::native::drawManual(manual.frame);
         manual.frame.save("build/native-client/interface-manual-" + std::to_string(width) + "x" +
                           std::to_string(height) + ".png");
     }
-    std::printf("  %-26s toilet and manual: drawn, centred, clickable\n", where.c_str());
+    std::printf("  %-26s controls sheet: drawn, centred, inside the frame\n", where.c_str());
 }
 
 }  // namespace
+
+
+// The interaction circle: three options on a ring around a cancel button.
+//
+// Three things are asserted, and the third is the one that costs a round trip if
+// it is wrong. The options have to be reachable and distinct, the middle has to
+// cancel, and what is under the pointer has to be what looks lit -- so the picture
+// is compared against the same hit test a click uses.
+void examineInteractionWheel(int width, int height, bool windowOrder) {
+    const std::string where = "wheel " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+    const auto layout = gtc::native::layoutInteractionWheel(width, height, "STANDING");
+
+    check(layout.panelWidth > 0 && layout.panelHeight > 0, where + ": the panel has a size");
+    check(layout.panelLeft >= 0 && layout.panelTop >= 0 && layout.panelLeft + layout.panelWidth <= width &&
+              layout.panelTop + layout.panelHeight <= height,
+          where + ": the panel fits inside the frame");
+    check(std::abs(layout.centreX - width / 2) <= 1, where + ": the circle is centred");
+    // The cancel button has to be smaller than the gap between two options, or a
+    // click near the middle is ambiguous.
+    check(layout.cancelRadius > 0 && layout.cancelRadius < layout.ringRadius - layout.optionRadius,
+          where + ": the cancel sits clear of the options");
+    for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
+        const long dx = layout.optionCentreX[index] - layout.centreX;
+        const long dy = layout.optionCentreY[index] - layout.centreY;
+        const long distance = static_cast<long>(std::lround(std::sqrt(static_cast<double>(dx * dx + dy * dy))));
+        check(std::abs(distance - layout.ringRadius) <= 1,
+              where + ": option " + std::to_string(index) + " is on the ring");
+        check(gtc::native::interactionWheelHit(layout, layout.optionCentreX[index], layout.optionCentreY[index]) == index,
+              where + ": the middle of option " + std::to_string(index) + " is that option");
+    }
+    check(gtc::native::interactionWheelHit(layout, layout.centreX, layout.centreY) == gtc::native::kWheelCancel,
+          where + ": the middle of the circle cancels");
+    check(gtc::native::interactionWheelHit(layout, 1, 1) == gtc::native::kWheelOutside,
+          where + ": the corner of the frame is outside");
+    check(gtc::native::interactionWheelHit(layout, layout.panelLeft + 1, layout.panelTop + 1) ==
+              gtc::native::kWheelOutside,
+          where + ": the panel around the circle is outside, so a stray click does nothing");
+
+    // Every option is reachable, only the nearest one wins at a time, and nothing
+    // in the frame answers to two of them.
+    int counts[gtc::native::kWheelOptionCount] = {0, 0, 0};
+    long cancels = 0;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const int hit = gtc::native::interactionWheelHit(layout, x, y);
+            if (hit == gtc::native::kWheelCancel) ++cancels;
+            if (hit >= 0) ++counts[hit];
+        }
+    }
+    for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
+        check(counts[index] > 400, where + ": option " + std::to_string(index) + " is a real target (" +
+                                        std::to_string(counts[index]) + " pixels)");
+    }
+    check(cancels > 100, where + ": the cancel is a real target (" + std::to_string(cancels) + " pixels)");
+
+    // Resting, and one option lit: only the hovered option's disc changes, and the
+    // cancel's cross does not.
+    Picture resting(width, height, windowOrder);
+    gtc::native::drawInteractionWheel(resting.frame, layout, "STANDING", -1, -1);
+    for (int index = 0; index < gtc::native::kWheelOptionCount; ++index) {
+        Picture hovered(width, height, windowOrder);
+        gtc::native::drawInteractionWheel(hovered.frame, layout, "STANDING", layout.optionCentreX[index],
+                                          layout.optionCentreY[index]);
+        // Inside the lit option, on the ring, is brighter than the same point at
+        // rest.
+        long lit = 0, rest = 0;
+        for (int dy = -layout.optionRadius; dy <= layout.optionRadius; dy += 3) {
+            for (int dx = -layout.optionRadius; dx <= layout.optionRadius; dx += 3) {
+                const auto a = hovered.at(layout.optionCentreX[index] + dx, layout.optionCentreY[index] + dy);
+                const auto b = resting.at(layout.optionCentreX[index] + dx, layout.optionCentreY[index] + dy);
+                if (a[0] < 0 || b[0] < 0) continue;
+                lit += a[0] + a[1] + a[2];
+                rest += b[0] + b[1] + b[2];
+            }
+        }
+        check(lit > rest + 2000, where + ": option " + std::to_string(index) + " lights up under the pointer");
+        for (int other = 0; other < gtc::native::kWheelOptionCount; ++other) {
+            if (other == index) continue;
+            const auto a = hovered.at(layout.optionCentreX[other], layout.optionCentreY[other]);
+            const auto b = resting.at(layout.optionCentreX[other], layout.optionCentreY[other]);
+            check(a[0] == b[0] && a[1] == b[1] && a[2] == b[2],
+                  where + ": option " + std::to_string(other) + " stays dark while " + std::to_string(index) +
+                      " is hovered");
+        }
+    }
+
+    // The middle, under the pointer, is the cancel: it has to look different from
+    // the middle at rest, or nobody would know it was a button.
+    Picture centreLit(width, height, windowOrder);
+    gtc::native::drawInteractionWheel(centreLit.frame, layout, "STANDING", layout.centreX, layout.centreY);
+    const auto atRest = resting.at(layout.centreX + layout.cancelRadius / 2, layout.centreY);
+    const auto atLit = centreLit.at(layout.centreX + layout.cancelRadius / 2, layout.centreY);
+    check(atLit != atRest, where + ": the cancel lights up under the pointer");
+
+    if (!windowOrder) {
+        zoom(resting, layout.panelLeft, layout.panelTop, layout.panelWidth, layout.panelHeight, 2,
+             "build/native-client/interface-wheel-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s circle %d px ring, %d px options, cancel %d px, %ld cancel pixels\n", where.c_str(),
+                layout.ringRadius, layout.optionRadius, layout.cancelRadius, cancels);
+}
+
 
 int main() {
     examineStrip(640, 480, false);
@@ -519,6 +599,10 @@ int main() {
     examineCrosshair(640, 480, false);
     examineCrosshair(640, 480, true);
     examineCrosshair(1920, 1080, true);
+
+    examineInteractionWheel(640, 480, false);
+    examineInteractionWheel(640, 480, true);
+    examineInteractionWheel(1920, 1080, true);
 
     examineOverlayPanels(640, 480, false);
     examineOverlayPanels(640, 480, true);
@@ -547,7 +631,7 @@ int main() {
     gtc::native::drawCheatMenu(frame, -20, 400);
 
     if (failures == 0) {
-        std::printf("interface: PASS (rate strip, reticle, need panel, mode bar; centred, translucent, antialiased)\n");
+        std::printf("interface: PASS (strip, reticle, need panel, mode bar, panels, interaction circle)\n");
         return 0;
     }
     std::printf("interface: FAIL (%d)\n", failures);

@@ -5,6 +5,7 @@
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/mode_bar.h"
+#include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
@@ -491,7 +492,12 @@ int main(int argc, char** argv) {
     // The same three things the window loop draws, in the same order: the
     // reticle, the need panel when it is open, and the frame rate.
     gtc::native::drawCrosshair(frame, view);
-    if (overlay == "toilet") gtc::native::drawToiletChoice(frame);
+    if (overlay == "toilet") {
+        // Drawn with the pointer at the first option, so the capture shows what a
+        // lit option looks like and not only the resting state.
+        const auto wheel = gtc::native::layoutInteractionWheel(frame.width, frame.height, "STANDING");
+        gtc::native::drawInteractionWheel(frame, wheel, "STANDING", wheel.optionCentreX[0], wheel.optionCentreY[0]);
+    }
     else if (overlay == "manual") gtc::native::drawManual(frame);
     if (cheats) {
         const gtc::Character* citizen = client.state().character(client.playerId());

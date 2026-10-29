@@ -113,14 +113,6 @@ void drawOverlayPanel(NativeFrame& frame, const OverlayPanelLayout& layout, cons
 
 namespace {
 
-constexpr OverlayRow kToiletRows[] = {
-    {"1", "Sit"},
-    {"2", "Shit"},
-    {"3", "Piss"},
-};
-
-// The sheet is two columns because thirteen rows at twenty pixels do not fit a
-// 480-line screen, and the floor on this game's text is twenty pixels.
 // Short keys and short labels: at the 20-pixel floor two columns of these are
 // what fits a 640-wide frame, and a sheet that runs off the edge is a sheet that
 // hides the keys it is there to explain.
@@ -142,31 +134,17 @@ constexpr OverlayRow kManualRows[] = {
     {"H", "This sheet"},
     {"F12", "Screenshot"},
 };
-constexpr int kToiletCount = static_cast<int>(sizeof(kToiletRows) / sizeof(kToiletRows[0]));
 constexpr int kManualCount = static_cast<int>(sizeof(kManualRows) / sizeof(kManualRows[0]));
 
 }  // namespace
-
-OverlayPanelLayout toiletChoiceLayout(int frameWidth, int frameHeight) {
-    return layoutOverlayPanel(frameWidth, frameHeight, kToiletRows, kToiletCount, 1, "TOILET", "E STAND / ESC CLOSE");
-}
 
 OverlayPanelLayout manualLayout(int frameWidth, int frameHeight) {
     return layoutOverlayPanel(frameWidth, frameHeight, kManualRows, kManualCount, 2, "CONTROLS", "H CLOSES");
 }
 
-void drawToiletChoice(NativeFrame& frame) {
-    const OverlayPanelLayout layout = toiletChoiceLayout(frame.width, frame.height);
-    drawOverlayPanel(frame, layout, kToiletRows, kToiletCount, "TOILET", "E STAND / ESC CLOSE");
-}
-
 void drawManual(NativeFrame& frame) {
     const OverlayPanelLayout layout = manualLayout(frame.width, frame.height);
     drawOverlayPanel(frame, layout, kManualRows, kManualCount, "CONTROLS", "H CLOSES");
-}
-
-int toiletChoiceRowAt(int frameWidth, int frameHeight, int x, int y) {
-    return overlayRowAt(toiletChoiceLayout(frameWidth, frameHeight), kToiletCount, x, y);
 }
 
 int overlayRowAt(const OverlayPanelLayout& layout, int rowCount, int x, int y) {

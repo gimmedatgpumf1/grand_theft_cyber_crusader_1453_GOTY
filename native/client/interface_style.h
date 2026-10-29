@@ -5,6 +5,9 @@
 
 #include "client/raster.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace gtc::native {
 
 // A strip of picture: dark, half strength, no border. A 2003 interface was not
@@ -41,5 +44,34 @@ inline int interfaceTextHeight(int frameHeight, double factor) {
 
 // Distance between lines of a list, for a given text size.
 inline int lineGap(int textHeight) { return textHeight * 3 / 4; }
+
+// A round shape, in pixels, with the frame's transform already neutralised by
+// the caller. Drawn as one span a row: at forty rows it is a disc, and a disc is
+// the only thing in this interface that is not a rectangle.
+inline void fillDisc(NativeFrame& frame, int cx, int cy, int radius, Color color, double opacity) {
+    if (radius <= 0) return;
+    for (int dy = -radius; dy <= radius; ++dy) {
+        const int half = static_cast<int>(std::sqrt(static_cast<double>(radius) * radius - dy * dy));
+        frame.blendRectangle(cx - half, cy + dy, 2 * half + 1, 1, color, opacity);
+    }
+}
+
+// The outline of one: two spans a row, from the inner radius out to the outer.
+inline void ringDisc(NativeFrame& frame, int cx, int cy, int radius, int thickness, Color color, double opacity) {
+    if (radius <= 0 || thickness <= 0) return;
+    const int inner = std::max(0, radius - thickness);
+    for (int dy = -radius; dy <= radius; ++dy) {
+        const int outerHalf = static_cast<int>(std::sqrt(static_cast<double>(radius) * radius - dy * dy));
+        const int innerHalf = std::abs(dy) >= inner
+            ? 0
+            : static_cast<int>(std::sqrt(static_cast<double>(inner) * inner - dy * dy));
+        if (innerHalf < outerHalf) {
+            frame.blendRectangle(cx - outerHalf, cy + dy, outerHalf - innerHalf, 1, color, opacity);
+            frame.blendRectangle(cx + innerHalf + 1, cy + dy, outerHalf - innerHalf, 1, color, opacity);
+        } else {
+            frame.blendRectangle(cx - outerHalf, cy + dy, 2 * outerHalf + 1, 1, color, opacity);
+        }
+    }
+}
 
 }  // namespace gtc::native
