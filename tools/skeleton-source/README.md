@@ -43,9 +43,16 @@ reproducibility; its output is not the currently shipped male.
 Press V in the C room to replace both skeleton meshes with source-pose lines;
 press V again to return to the mesh view. Pale lines approximate the supplied
 bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
-cyan lines connect anatomical neighbours, and orange lines are inferred costal cartilage (not present in the scans). Complex bones use multiple
-segments. Both models use the same explicit, connected table of 182 structures
-and 209 relationships. The table is based on OpenStax's
+cyan lines connect anatomical neighbours, and orange lines are inferred costal
+cartilage (not present in the scans). Each palm has one outline for the seven
+non-thumb carpals and metacarpals 2–5; the trapezium, thumb metacarpal, and all
+finger bones stay separate. Each foot has one outline for the tarsals,
+metatarsals and sesamoids; toes remain separate. These are simplified, planar
+convex outlines estimated from the source surfaces, not exact bone boundaries.
+
+Both models use the same explicit, connected table of 182 structures and 209
+relationships. Internal links within each unified outline are hidden and
+external links are retained, leaving 136 displayed shapes and 159 visible links. The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
 [upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)
 and [lower limb](https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb)

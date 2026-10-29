@@ -70,6 +70,47 @@ def anatomy():
     return edges
 
 
+def unified_groups():
+    groups = {}
+    for side in ('L', 'R'):
+        # Keep the thumb's trapezium and first metacarpal separate: their
+        # carpometacarpal joint is the mobile base of the thumb.
+        hand = ('HandScaphoid', 'HandLuna', 'HandTriquetrum', 'HandPisiform',
+                'HandTrapezoideum', 'HandCapitatum', 'HandHamata')
+        hand += tuple(f'HandMeta{i}' for i in range(2, 6))
+        foot = ('Tal', 'Cal', 'Nav', 'Cub', 'MedCun', 'InterCun', 'LatCun',
+                'FootSesaMed', 'FootSesaLat') + tuple(f'FootMeta{i}' for i in range(1, 6))
+        groups[f'HandPalm_{side}'] = tuple(f'{name}_{side}' for name in hand)
+        groups[f'FootBase_{side}'] = tuple(f'{name}_{side}' for name in foot)
+    return groups
+
+
+def unified_outline(vertices):
+    """One simplified outline in the best-fit plane of the source surfaces."""
+    centre = vertices.mean(axis=0)
+    _, _, basis = np.linalg.svd(vertices - centre, full_matrices=False)
+    projected = (vertices - centre) @ basis[:2].T
+    # 2-D convex hull, then simplify by discarding the least significant
+    # corner until at most 12 remain. Distances only determine the drawing,
+    # never group membership or which anatomical structures connect.
+    points = sorted(set(map(tuple, projected)))
+    def cross2(a, b, c):
+        return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+    def half(seq):
+        hull = []
+        for point in seq:
+            while len(hull) >= 2 and cross2(hull[-2], hull[-1], point) <= 0: hull.pop()
+            hull.append(point)
+        return hull
+    hull = half(points)[:-1] + half(reversed(points))[:-1]
+    assert len(hull) >= 3
+    while len(hull) > 12:
+        i = min(range(len(hull)), key=lambda j: abs(cross2(hull[j-1], hull[j], hull[(j+1) % len(hull)])))
+        hull.pop(i)
+    outline = [centre + point[0]*basis[0] + point[1]*basis[1] for point in hull]
+    return outline + outline[:1]
+
+
 def read_bones(path):
     result = {}; part = None
     for line in path.open():
@@ -169,10 +210,25 @@ def build(sex):
         if more == connected: break
         connected = more
     assert connected == expected, f'unconnected structures: {expected-connected}'
+    groups = unified_groups()
+    member_to_group = {member: group for group, members in groups.items() for member in members}
+    assert len(member_to_group) == sum(map(len, groups.values())) and set(member_to_group) <= expected
     lines = {name: [vertices.mean(axis=0)] if name in VERTEBRAE else line_for(name, vertices, bones)
-             for name, vertices in bones.items()}
+             for name, vertices in bones.items() if name not in member_to_group}
+    for group, members in groups.items():
+        lines[group] = unified_outline(np.concatenate([bones[member] for member in members]))
+    # Collapse only the explicit anatomical graph: internal group edges vanish;
+    # external edges are remapped and duplicates removed, never added by distance.
+    visible_links, seen = [], set()
+    for a, b, kind in links:
+        a, b = member_to_group.get(a, a), member_to_group.get(b, b)
+        if a == b: continue
+        key = (kind, *sorted((a, b)))
+        if key not in seen:
+            seen.add(key); visible_links.append((a, b, kind))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
            '# D vertebra dot; B bone segment; J joint connection; C inferred cartilage connection.']
+    for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
         pts = lines[name]
@@ -180,7 +236,7 @@ def build(sex):
             out.append(f'D {name} {fmt(pts[0])}')
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
-    for a,b,kind in links:
+    for a,b,kind in visible_links:
         # Anatomical endpoints are not supplied. Localise only the already-known
         # relationship with nearest points on its centrelines; never use
         # distance to decide which structures are connected.
@@ -197,7 +253,7 @@ def build(sex):
             _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
         out.append(f'{"C" if kind == "cartilage" else "J"} {a} {b} {fmt(x)} {fmt(y)}')
     (BASE / f'skeleton-{sex}.lines').write_text('\n'.join(out)+'\n')
-    print(f'{sex}: {len(bones)} structures, {len(links)} anatomical relationships, {len(out)-2} primitives')
+    print(f'{sex}: {len(bones)} structures, {len(links)} original and {len(visible_links)} visible links, {len(out)-2-len(groups)} primitives')
 
 if __name__ == '__main__':
     for sex in ('male','female'): build(sex)

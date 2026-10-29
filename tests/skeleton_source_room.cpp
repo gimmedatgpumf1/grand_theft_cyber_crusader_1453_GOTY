@@ -25,8 +25,8 @@ static bool capturedCovered;
 static bool lineObjectsOnly;
 static bool maleDots, femaleDots;
 static bool checkDots(const GpuBatch& batch, const char* path, double x, double yaw) {
-    constexpr std::size_t lineVertices = 494 * 12, dotVertices = 24 * 12;
-    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 494 * 36 + 24 * 60)
+    constexpr std::size_t lineVertices = 442 * 12, dotVertices = 24 * 12;
+    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 442 * 36 + 24 * 60)
         return false;
     std::ifstream file(path);
     std::string row, name;
@@ -175,8 +175,8 @@ int main() {
     const auto lineBatchCount = batchCount;
     pass = pass && room.lineView() && indicesValid && lineRevision != oldRevision &&
            female.size() == 3 && male.size() == 3 && lineBatchCount < oldBatches && lineObjectsOnly && maleDots && femaleDots &&
-           maleLineIndices <= 703 * 36 + 24 * 60 && femaleLineIndices <= 703 * 36 + 24 * 60 &&
-           maleLineIndices >= 494 * 36 + 24 * 60 && femaleLineIndices >= 494 * 36 + 24 * 60;
+           maleLineIndices <= 601 * 36 + 24 * 60 && femaleLineIndices <= 601 * 36 + 24 * 60 &&
+           maleLineIndices >= 442 * 36 + 24 * 60 && femaleLineIndices >= 442 * 36 + 24 * 60;
     WindowEvent moreLook{WindowEvent::Type::MouseMove}; moreLook.dx = 25;
     freecam.handle(moreLook, true);
     room.render(frame, view, 4.90, &freecam);
