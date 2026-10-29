@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import math
 import numpy as np
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay, ConvexHull
 
 BASE = Path(__file__).resolve().parent.parent
 VERTEBRAE = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
@@ -83,6 +83,8 @@ def unified_groups():
                 'FootSesaMed', 'FootSesaLat') + tuple(f'FootMeta{i}' for i in range(1, 6))
         groups[f'HandPalm_{side}'] = tuple(f'{name}_{side}' for name in hand)
         groups[f'FootBase_{side}'] = tuple(f'{name}_{side}' for name in foot)
+        groups[f'Forearm_{side}'] = (f'Radius_{side}', f'Ulna_{side}')
+        groups[f'Shin_{side}'] = (f'Tibia_{side}', f'Fibula_{side}')
     return groups
 
 
@@ -125,6 +127,32 @@ def unified_surface(bones, members):
     boundary = [edge for count, edge in edge_counts.values() if count == 1]
     assert set(int(i) for face in triangles for i in face) == set(range(len(points)))
     return points, triangles, boundary, owners
+
+
+def paired_bone_surface(bones, members):
+    """A thin plane around both bones, using their actual projected contours."""
+    samples = [bones[name] for name in members]
+    centres = [points.mean(axis=0) for points in samples]
+    centre = np.mean(centres, axis=0)
+    vertices = np.concatenate(samples)
+    _, _, basis = np.linalg.svd(vertices-centre, full_matrices=False)
+    length = basis[0]
+    across = centres[1] - centres[0]
+    across -= np.dot(across, length)*length
+    assert np.linalg.norm(across) > 1e-8
+    across /= np.linalg.norm(across)
+    plane = np.array([length, across])
+    projected = (vertices-centre) @ plane.T
+    hull = ConvexHull(projected).vertices
+    points = centre + projected[hull] @ plane
+    owners = {name: [] for name in members}
+    for index, original in enumerate(hull):
+        owners[members[0 if original < len(samples[0]) else 1]].append(index)
+    assert all(owners.values())
+    count = len(points)
+    faces = [(0, i, i+1) for i in range(1, count-1)]
+    boundary = [(i, (i+1) % count) for i in range(count)]
+    return points, faces, boundary, owners
 
 
 # Closed 10-point foot: toe bottom 0/1, toe top 2/3, heel bottom
@@ -199,8 +227,8 @@ def foot_volume(bones, members, side):
     return np.concatenate((front, back, top)), axes
 
 
-def foot_to_line(foot, source, line):
-    """Connect a preselected anatomical link to the actual foot surface."""
+def foot_anchors(foot, source):
+    """Project selected anatomical anchors onto the actual foot surface."""
     points, _ = foot
     def nearest_triangle(p, a, b, c):
         u, v, w = b-a, c-a, p-a
@@ -218,7 +246,11 @@ def foot_to_line(foot, source, line):
     for p in source:
         candidates = [nearest_triangle(p, *(points[i] for i in face)) for face in FOOT_TRIANGLES]
         projected.append(min(candidates, key=lambda q: np.linalg.norm(p-q)))
-    return min((closest_to_point(p, line) for p in projected), key=lambda value: value[0])
+    return projected
+
+
+def foot_to_line(foot, source, line):
+    return min((closest_to_point(p, line) for p in foot_anchors(foot, source)), key=lambda value: value[0])
 
 
 def read_bones(path):
@@ -329,6 +361,8 @@ def build(sex):
     for group, members in groups.items():
         if group.startswith('FootBase_'):
             boxes[group] = foot_volume(bones, members, group[-1])
+        elif group.startswith(('Forearm_', 'Shin_')):
+            solids[group] = paired_bone_surface(bones, members)
         else:
             solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
@@ -341,7 +375,7 @@ def build(sex):
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; M palm mesh; F ten-point foot; J joint; C cartilage.']
+           '# D vertebra dot; B bone segment; M thin surface; F ten-point foot; J joint; C cartilage.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
@@ -368,7 +402,16 @@ def build(sex):
         # Anatomical endpoints are not supplied. Localise only the already-known
         # relationship with nearest points on its centrelines; never use
         # distance to decide which structures are connected.
-        if a in VERTEBRAE and b in VERTEBRAE:
+        if (a in solids or a in boxes) and (b in solids or b in boxes):
+            def anchors(group, original):
+                if group in boxes:
+                    return foot_anchors(boxes[group], line_for(original, bones[original], bones))
+                points, _, _, owners = solids[group]
+                return [points[index] for index in owners[original]]
+            choices = [(np.linalg.norm(p-q), p, q)
+                       for p in anchors(a, original_a) for q in anchors(b, original_b)]
+            _, x, y = min(choices, key=lambda choice: choice[0])
+        elif a in VERTEBRAE and b in VERTEBRAE:
             x, y = lines[a][0], lines[b][0]
         elif a in VERTEBRAE:
             _, x, y = closest_to_point(lines[a][0], lines[b])

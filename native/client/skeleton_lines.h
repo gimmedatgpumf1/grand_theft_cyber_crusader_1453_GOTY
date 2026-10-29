@@ -185,8 +185,8 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
-        // Hands are thin source-anchored surfaces; feet are fitted closed
-        // volumes. Both use the same cached, device-rendered solid batch.
+        // Palms and paired limb bones are thin source-anchored surfaces;
+        // feet are fitted closed volumes. All use the cached GPU solid batch.
         std::vector<Vec3> points;
         std::vector<std::array<int, 3>> faces;
         for (const auto& solid : solids_) {

@@ -121,6 +121,8 @@ for sex in ('male', 'female'):
                 'FootSesaLat', *(f'FootMeta{i}' for i in range(1, 6)))
         expected_groups[f'HandPalm_{side}'] = {f'{n}_{side}' for n in hand}
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
+        expected_groups[f'Forearm_{side}'] = {f'Radius_{side}', f'Ulna_{side}'}
+        expected_groups[f'Shin_{side}'] = {f'Tibia_{side}', f'Fibula_{side}'}
     assert groups == expected_groups and set(solids) == set(groups)
     assert foot_volumes == {'FootBase_L', 'FootBase_R'}
     # The solid footprint replaces the outline tubes rather than covering them.
@@ -151,6 +153,12 @@ for sex in ('male', 'female'):
         if group in foot_volumes: continue
         assert set(anchors[group]) == groups[group]
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
+        if group.startswith(('Forearm_', 'Shin_')):
+            # Both bones contribute to one filled, connected surface.
+            assert any(any(i in anchors[group][name] for i in face) and
+                       any(i in anchors[group][other] for i in face)
+                       for face in faces for name in groups[group] for other in groups[group] if name != other)
+            continue
         # The surface must fill between neighbouring metacarpal/metatarsal
         # axes, not just join individual bone silhouettes with thin slivers.
         prefix = 'Hand' if group.startswith('Hand') else 'Foot'
@@ -168,10 +176,10 @@ for sex in ('male', 'female'):
                 return math.sqrt(sum(n*n for n in cross)) / 2
             assert max(map(area, between)) > 0.00005, (group, digit)
     members = {member: group for group, parts in groups.items() for member in parts}
-    assert len(members) == sum(map(len, groups.values())) == 50
+    assert len(members) == sum(map(len, groups.values())) == 58
     assert set(members) <= expected and len(expected) == 182
     visible = (expected - set(members)) | set(groups)
-    assert len(visible) == 136
+    assert len(visible) == 132
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
     # Dot placement is the centre of the corresponding supplied vertebra, not
@@ -198,7 +206,7 @@ for sex in ('male', 'female'):
         outline_center = tuple(sum(point[i] for point in vertices) / len(vertices) for i in range(3))
         assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
-        assert 0.05 < span < 0.3, group
+        assert 0.05 < span < (0.5 if group.startswith(('Forearm_', 'Shin_')) else 0.3), group
     # Hands use source-derived anchors; feet have source-derived heel, toe
     # and distal-shin dimensions.
     for group, part_names in groups.items():
@@ -317,6 +325,33 @@ for sex in ('male', 'female'):
                     for i in range(3):
                         assert not intersects(points[edge[i]],points[edge[(i+1)%3]],a,b,c), (group,'self intersection')
             continue
+        if group.startswith(('Forearm_', 'Shin_')):
+            def sub(a,b): return tuple(x-y for x,y in zip(a,b))
+            def dot(a,b): return sum(x*y for x,y in zip(a,b))
+            def cross(a,b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+            normals = [cross(sub(points[i],points[0]), sub(points[j],points[0]))
+                       for i in range(1,len(points)) for j in range(i+1,len(points))]
+            normal = max(normals, key=lambda n: dot(n,n))
+            size = math.sqrt(dot(normal,normal)); assert size > 1e-10
+            normal = tuple(x/size for x in normal)
+            assert all(abs(dot(sub(p,points[0]),normal)) < 0.00001 for p in points)
+            center = tuple(sum(p[i] for p in points)/len(points) for i in range(3))
+            for name in part_names:
+                source_points = member_vertices[name]
+                for index in anchors[group][name]:
+                    p = points[index]
+                    # Hull vertices are projections of actual vertices belonging
+                    # to this bone, not invented matching rectangles.
+                    closest = min(math.sqrt(max(0, dot(sub(q,p),sub(q,p))-dot(sub(q,p),normal)**2))
+                                  for q in source_points)
+                    assert closest < 0.00002, (group,name)
+                for p in source_points:
+                    for a,b in solids[group][3]:
+                        edge = sub(points[b],points[a])
+                        ref = dot(normal,cross(edge,sub(center,points[a])))
+                        value = dot(normal,cross(edge,sub(p,points[a])))
+                        assert value*(1 if ref > 0 else -1) >= -0.00001*math.sqrt(dot(edge,edge)), (group,name,'coverage')
+            continue
         for name in part_names:
             indices = anchors[group][name]
             source_points = member_vertices[name]
@@ -363,7 +398,7 @@ for sex in ('male', 'female'):
     while queue:
         for other in graph[queue.popleft()] - found:
             found.add(other); queue.append(other)
-    assert found == visible and len(topology) == 159
+    assert found == visible and len(topology) == 151
     collapsed = set()
     expected_anchors = defaultdict(set)
     for original_a, original_b, kind in anatomy:
@@ -396,4 +431,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, {len(solids)-len(foot_volumes)} palm surfaces, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, {len(dots)} vertebra dots)')

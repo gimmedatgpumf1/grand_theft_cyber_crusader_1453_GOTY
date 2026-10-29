@@ -47,7 +47,11 @@ cyan lines connect anatomical neighbours, and orange lines are inferred costal
 cartilage (not present in the scans). Each palm is one filled, closed 3D shape
 for the seven non-thumb carpals and metacarpals 2–5; the trapezium, thumb
 metacarpal, and all finger bones stay separate. Each palm is a thin continuous
-triangulated surface anchored to the individual source bones.
+triangulated surface anchored to the individual source bones. On each side,
+the radius and ulna share one thin filled forearm plane, and the tibia and
+fibula share one thin filled shin plane. Each plane's outline is fitted to the
+projected contours of both source bones; this deliberately flattens their 3D
+depth rather than presenting a full anatomical surface.
 
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the
@@ -62,7 +66,8 @@ surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
-external links are retained, leaving 136 displayed shapes and 159 visible links. The table is based on OpenStax's
+external links are retained, leaving 132 displayed shapes and 151 visible links.
+The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
 [upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)
 and [lower limb](https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb)
