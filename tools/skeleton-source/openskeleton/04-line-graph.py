@@ -128,12 +128,11 @@ def unified_surface(bones, members):
 
 
 def foot_hexahedron(bones, members, side):
-    """Fit a tapered, six-faced shoe shape around the source foot bones.
+    """Low, truncated-pyramid foot, shaped from heel and metatarsal locations.
 
-    The long axis follows heel to metatarsals; the height axis comes from heel
-    to ankle. Rear dimensions derive from calcaneus and talus, forefoot dimensions
-    from the five metatarsals. Shift the sloping sides only as far as needed to
-    contain all included source vertices, preserving the measured taper.
+    The sole spans the full source footprint, including the heel. Its top is
+    inset on all four sides. Height is deliberately compressed: enclosing the
+    full talus vertically made the previous solid much too tall.
     """
     heel = bones[f'Cal_{side}'].mean(axis=0)
     ankle = bones[f'Tal_{side}'].mean(axis=0)
@@ -153,27 +152,35 @@ def foot_hexahedron(bones, members, side):
     front = np.concatenate(metatarsals) @ axes.T
     x0, x1 = local[:, 0].min(), local[:, 0].max()
     t = (local[:, 0] - x0) / (x1 - x0)
-    low, high = np.zeros((2, 2)), np.zeros((2, 2))
+    # Width and sole height follow separately measured rear and forefoot bone
+    # extents, shifted to include their full footprint and lowest source points.
+    lower, upper = [], []
     for axis in (1, 2):
-        # Individual heel/forefoot dimensions choose the taper. The global
-        # extrema of residuals enclose every included bone at its real position.
         low_delta = front[:, axis].min() - rear[:, axis].min()
         high_delta = front[:, axis].max() - rear[:, axis].max()
-        low[0, axis-1] = np.min(local[:, axis] - t * low_delta)
-        high[0, axis-1] = np.max(local[:, axis] - t * high_delta)
-        low[1, axis-1] = low[0, axis-1] + low_delta
-        high[1, axis-1] = high[0, axis-1] + high_delta
-    # Binary indices are length (rear/front), width and height. The six quads
-    # are planar trapezoids, not an equal-sided cuboid.
-    points = np.array([np.array([x1 if i & 4 else x0,
-                                 high[int(bool(i & 4)), 0] if i & 2 else low[int(bool(i & 4)), 0],
-                                 high[int(bool(i & 4)), 1] if i & 1 else low[int(bool(i & 4)), 1]]) @ axes
-                       for i in range(8)])
-    return points, axes
+        low = np.min(local[:, axis] - t * low_delta)
+        high = np.max(local[:, axis] - t * high_delta)
+        lower.append((low, low + low_delta))
+        upper.append((high, high + high_delta))
+    sole = np.array([[x1 if i & 4 else x0,
+                      upper[0][int(bool(i & 4))] if i & 2 else lower[0][int(bool(i & 4))],
+                      lower[1][int(bool(i & 4))]] for i in (0, 2, 4, 6)])
+    centre = sole.mean(axis=0)
+    # A homothetic upper quadrilateral keeps all six faces planar. Height is
+    # 40% of the mean source heel/forefoot vertical extent, not a full-height
+    # bounding volume. The inset makes it a visibly truncated pyramid.
+    source_height = (np.ptp(rear[:, 2]) + np.ptp(front[:, 2])) / 2
+    thickness = 0.4 * source_height
+    points = []
+    for i in range(8):
+        p = sole[(i >> 1) & 3]
+        if i & 1: p = centre + 0.58 * (p - centre) + [0, 0, thickness]
+        points.append(p @ axes)
+    return np.array(points), axes
 
 
 def box_to_line(box, source, line):
-    """Attach an existing anatomical link to the fitted hexahedron surface."""
+    """Attach an anatomical link to the low hexahedron's actual surface."""
     points, _ = box
     quads = ((0,1,3,2), (4,6,7,5), (0,4,5,1), (2,3,7,6), (0,2,6,4), (1,5,7,3))
     centre = points.mean(axis=0)
@@ -186,7 +193,26 @@ def box_to_line(box, source, line):
         planes.append((p, normal))
     def inside(p): return all(np.dot(normal, p - origin) <= 1e-8 for origin, normal in planes)
     choices = [closest_to_point(point, line) for point in source if inside(point)]
-    assert choices, 'source link has no anchor inside its fitted foot'
+    if not choices:
+        # Thin feet intentionally do not enclose the tall ankle bones. Project
+        # the selected bone's anchors to the closest triangle on the surface.
+        def nearest_triangle(p, a, b, c):
+            u, v, w = b-a, c-a, p-a
+            uu, uv, vv, wu, wv = np.dot(u,u), np.dot(u,v), np.dot(v,v), np.dot(w,u), np.dot(w,v)
+            den = uu*vv - uv*uv
+            s, t = (wu*vv-wv*uv)/den, (wv*uu-wu*uv)/den
+            candidates = []
+            if s >= 0 and t >= 0 and s+t <= 1: candidates.append(a+s*u+t*v)
+            for x, y in ((a,b),(b,c),(c,a)):
+                d = y-x
+                candidates.append(x + np.clip(np.dot(p-x,d)/np.dot(d,d), 0, 1)*d)
+            return min(candidates, key=lambda q: np.linalg.norm(p-q))
+        projected = []
+        for p in source:
+            candidates = [nearest_triangle(p, points[q[0]], points[q[j]], points[q[j+1]])
+                          for q in quads for j in (1,2)]
+            projected.append(min(candidates, key=lambda q: np.linalg.norm(p-q)))
+        return min((closest_to_point(p, line) for p in projected), key=lambda value: value[0])
     _, start, end = min(choices, key=lambda value: value[0])
     direction = end - start
     if np.linalg.norm(direction) < 1e-10: direction = start - centre

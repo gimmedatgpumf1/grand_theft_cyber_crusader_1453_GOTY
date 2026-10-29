@@ -196,14 +196,13 @@ for sex in ('male', 'female'):
         assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
         assert 0.05 < span < 0.3, group
-    # Each member owns real 3-D anchors derived from its source vertices.
-    # Long bones have extent anchors plus the centroid. The heel also reaches
-    # the actual calcaneus bottom, rear and sides in source coordinates.
+    # Hands use source-derived anchors; feet use a low hexahedron whose sole
+    # reaches the actual heel and spans the source bone footprint.
     for group, part_names in groups.items():
         points = solids[group][1]
         if group in hexahedra:
-            # Verify the six planar faces, anatomical axes and tapered fit
-            # independently against the actual calcaneus, talus and metatarsals.
+            # The bottom covers the full bone footprint and heel, while a
+            # homothetically inset top makes a low, closed pyramid frustum.
             side = group[-1]
             def centroid(name):
                 source = member_vertices[name]
@@ -229,35 +228,39 @@ for sex in ('male', 'female'):
             assert 0.1 < x1-x0 < 0.3
             assert abs(x0 - min(dot(p,forward) for p in all_bones)) < 0.00001
             assert abs(x1 - max(dot(p,forward) for p in all_bones)) < 0.00001
-            for i in range(8):
-                assert abs(local[i][0] - (x1 if i & 4 else x0)) < 0.00001
-            for axis, bit in ((1,2),(2,1)):
-                low0, high0 = local[0][axis], local[bit][axis]
-                low1, high1 = local[4][axis], local[4+bit][axis]
-                assert high0 > low0 and high1 > low1
-                # Slopes match the separately measured heel and forefoot bone
-                # extents, rather than manufacturing equal-width box faces.
+            assert abs(local[2][0]-x0) < 0.00001 and abs(local[6][0]-x1) < 0.00001
+            for axis, bit in ((1,2),(2,0)):
                 rear = [dot(p,basis[axis]) for p in rear_bones]
                 front = [dot(p,basis[axis]) for p in front_bones]
+                low0, low1 = local[0][axis], local[4][axis]
                 assert abs((low1-low0) - (min(front)-min(rear))) < 0.00001
-                assert abs((high1-high0) - (max(front)-max(rear))) < 0.00001
-                for i in range(8):
-                    t = 1 if i & 4 else 0
-                    expected_coordinate = ((high1 if t else high0) if i & bit else (low1 if t else low0))
-                    assert abs(local[i][axis] - expected_coordinate) < 0.00001
+                if bit:
+                    high0, high1 = local[bit][axis], local[4+bit][axis]
+                    assert abs((high1-high0) - (max(front)-max(rear))) < 0.00001
                 residuals = []
                 for p in all_bones:
                     t = (dot(p,forward)-x0)/(x1-x0)
-                    value = dot(p,basis[axis])
-                    lower = low0 + t*(low1-low0); upper = high0 + t*(high1-high0)
-                    assert lower - 0.00001 <= value <= upper + 0.00001
-                    residuals.append((value-lower, upper-value))
-                assert min(x[0] for x in residuals) < 0.00001
-                assert min(x[1] for x in residuals) < 0.00001
-            rear_width, front_width = local[2][1]-local[0][1], local[6][1]-local[4][1]
-            rear_height, front_height = local[1][2]-local[0][2], local[5][2]-local[4][2]
-            assert front_width > rear_width + 0.005
-            assert rear_height > front_height + 0.01
+                    value = dot(p,basis[axis]); lower = low0 + t*(low1-low0)
+                    assert value >= lower - 0.00001
+                    if bit:
+                        upper = high0 + t*(high1-high0)
+                        assert value <= upper + 0.00001
+                        residuals.append(upper-value)
+                if bit: assert min(residuals) < 0.00001
+            assert local[6][1]-local[4][1] > local[2][1]-local[0][1] + 0.005
+            centre = [sum(local[i][axis] for i in (0,2,4,6))/4 for axis in range(3)]
+            rear_z = [dot(p,up) for p in rear_bones]
+            front_z = [dot(p,up) for p in front_bones]
+            thickness = 0.4 * ((max(rear_z)-min(rear_z)) + (max(front_z)-min(front_z))) / 2
+            assert 0.01 < thickness < 0.04
+            for i in (0,2,4,6):
+                expected_top = [centre[a] + 0.58*(local[i][a]-centre[a]) + (thickness if a == 2 else 0)
+                                for a in range(3)]
+                assert math.dist(local[i+1], expected_top) < 0.00001
+            # Upper footprint is inset at both ends and on both sides.
+            assert x0 < local[1][0] < local[5][0] < x1
+            assert local[3][1]-local[1][1] < local[2][1]-local[0][1]
+            assert local[7][1]-local[5][1] < local[6][1]-local[4][1]
             quads = ((0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3))
             for a,b,c,d in quads:
                 normal = unit(cross(sub(points[b],points[a]), sub(points[c],points[a])))

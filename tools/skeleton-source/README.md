@@ -49,15 +49,15 @@ for the seven non-thumb carpals and metacarpals 2–5; the trapezium, thumb
 metacarpal, and all finger bones stay separate. Each palm is a thin continuous
 triangulated surface anchored to the individual source bones.
 
-Each foot base is a **six-faced hexahedron**, containing its tarsals,
-metatarsals and sesamoids; toes remain separate. Its long axis runs from the
-calcaneus toward the metatarsals, and its height direction comes from the
-calcaneus to the talus. The rear and front widths and heights are measured
-separately from the heel/ankle and metatarsal bones, producing a tapered
-shoe-like shape rather than a rectangular box. Its sloping sides are fitted to
-contain all of the source foot-base vertices, including the heel. It remains a
-six-face approximation in the source's registered pose, not an anatomical
-surface or a change to the animation rig.
+Each foot base is a **low, six-faced truncated pyramid** spanning its tarsals,
+metatarsals and sesamoids in the source footprint; toes remain separate. Its
+long axis runs from the calcaneus toward the metatarsals, and its height
+direction comes from the calcaneus to the talus. The sole follows the measured
+heel and forefoot widths and includes the full heel. The smaller inset top
+slopes inward on all four sides. The thickness is 40% of the mean measured
+heel/ankle and metatarsal height, so it deliberately does not enclose every
+bone vertically. This is an approximation in the source's registered pose, not
+an anatomical surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
