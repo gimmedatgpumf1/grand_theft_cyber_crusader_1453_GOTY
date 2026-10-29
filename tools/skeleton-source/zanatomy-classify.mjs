@@ -13,7 +13,6 @@ const RULES = [
   // These source names do not follow the "... bone" convention.
   [/^(nasal bone|maxilla|vomer)$/i, () => 'skull'],
   [/^(malleus|incus|stapes)$/i, () => 'skull'],
-  [/nasal septal cartilage|major alar cartilage/i, () => 'skull'],
   [/^(atlas \(c1\)|axis \(c2\)|vertebra c\d)$/i, () => 'spine_cervical'],
   [/^vertebra t\d+$/i, () => 'spine_thoracic'],
   [/^vertebra l\d$/i, () => 'spine_lumbar'],
@@ -30,8 +29,8 @@ const RULES = [
   [/^(tibia|fibula)$/i, side => `lower_leg_${side}`],
   [/metacarpal|phalanx of .* finger of hand|^(capitate|hamate|lunate|pisiform|scaphoid|trapezium|trapezoid|triquetrum) bone$/i, side => `hand_${side}`],
   [/metatarsal|phalanx of .* finger of foot|sesamoid bones of foot|^(calcaneus|talus|navicular bone|cuboid bone|intermediate cuneiform bone|lateral cuneiform bone|medial cuneiform bone)$/i, side => `foot_${side}`],
-  // Laryngeal skeleton and hyoid ride with the neck.
-  [/^(hyoid bone|thyroid cartilage|cricoid cartilage|arytenoid cartilage|corniculate cartilage)$/i, () => 'spine_cervical'],
+  // Keep the hyoid bone; the separate nasal and laryngeal cartilages are not bone.
+  [/^hyoid bone$/i, () => 'spine_cervical'],
 ];
 
 export function classify(rawName) {

@@ -6,8 +6,8 @@
 // vertices, 1,069,941 triangles) with the pieces left in a half-body layout.
 // This script does four things to it, and nothing else:
 //
-//   1. keeps only skeletal objects (muscle markings and cross-section helpers
-//      are dropped by suffix, not by hand),
+//   1. keeps selected skeletal objects (muscle markings, cross-section helpers,
+//      nasal cartilage and laryngeal cartilage are excluded),
 //   2. mirrors the left-hand bones to make the body complete,
 //   3. groups the bones into the 27 parts the renderer and rig already use,
 //   4. welds each rig group, then simplifies its disconnected shells separately

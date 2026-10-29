@@ -1,7 +1,7 @@
 # Skeleton source
 
 `skeleton-male.obj` is the anatomical reference body: a real human skeleton with
-every bone kept — skull, jaw, teeth, ossicles, all 24 vertebrae, ribs and costal
+the selected bones — skull, jaw, teeth, ossicles, all 24 vertebrae, ribs and costal
 cartilages, sternum, scapulae, clavicles, pelvis and sacrum, both arms (humerus,
 radius, ulna, all eight carpals, five metacarpals, every finger phalanx) and both
 legs (femur, patella, tibia, fibula, tarsals, metatarsals, every toe phalanx).
@@ -58,10 +58,10 @@ bones carry a `.l` suffix and most have **no right-hand twin** in the file. Musc
 markings (`.i`, `.j`, `.o1l`, `.e1r`, …) and the cross-section helpers are
 sub-meshes of bones and are dropped. Then:
 
-1. skeletal objects only — 176 original named objects, the rest of the file is
-   muscle attachment geometry or excluded helpers;
+1. selected skeletal objects only; muscle attachment geometry, helpers, nasal
+   cartilage and laryngeal cartilages are excluded (the hyoid bone remains);
 2. every `.l` object whose `.r` twin is absent is mirrored through `x = 0` with
-   reversed winding — 101 of them, giving 277 named objects after mirroring;
+   reversed winding — 98 of them, giving 266 named objects after mirroring;
 3. per-object transforms (`Lcl Translation`/`Rotation`/`Scaling`, which include a
    −1/3 uniform scale, and the node hierarchy) are composed into world space;
 4. bones are grouped into the 28 parts the renderer and rig already use

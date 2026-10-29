@@ -48,10 +48,11 @@ The male's maxillae, nasal bones and vomer were previously omitted by the
 importer's name filter. They are restored from the Z-Anatomy FBX; the right
 maxilla and nasal bone are mirrored from the left because the FBX supplies only
 those left-hand meshes. They remain part of the existing skull rig group, not
-independently animated bones. The OBJ is simplified, and this restoration is
-not a clinical assessment of the source skull. The other 27 rig-group meshes
-are unchanged. `tests/male_skull_restoration.py` checks source-derived landmarks
-on actual exported skull faces, and `tests/male_skull_classification.mjs` checks
+independently animated bones. Nasal and laryngeal cartilage meshes are excluded;
+the nasal bones and hyoid bone remain. Costal cartilage is retained. The OBJ is
+simplified, and this is not a clinical assessment of the source skull.
+`tests/male_skull_restoration.py` checks source-derived landmarks on actual
+exported skull faces, and `tests/male_skull_classification.mjs` checks
 the source names used by the importer.
 
 The `reference-*.png` images predate these restorations and are not evidence of

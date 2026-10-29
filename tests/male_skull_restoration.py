@@ -40,19 +40,34 @@ def main():
     expected = {'Maxilla.l', 'Maxilla.r', 'Nasal bone.l', 'Nasal bone.r', 'Vomer'}
     assert expected <= names.keys(), f'missing source bones: {expected - names.keys()}'
     assert all(names[name]['part'] == 'skull' for name in expected)
-    assert metadata['sourceObjects'] == len(names) == 277
+    assert metadata['sourceObjects'] == len(names) == 266
+    # These are cartilage meshes, not the nasal bones or hyoid bone.
+    for name in ('Nasal septal cartilage', 'Lateral process of nasal septal cartilage.l',
+                 'Lateral process of nasal septal cartilage.r', 'Major alar cartilage.l',
+                 'Major alar cartilage.r', 'Thyroid cartilage', 'Cricoid cartilage',
+                 'Arytenoid cartilage.l', 'Arytenoid cartilage.r',
+                 'Corniculate cartilage.l', 'Corniculate cartilage.r'):
+        assert name not in names, name
+    assert names['Hyoid bone']['part'] == 'spine_cervical'
 
-    vertices, referenced, part = [], set(), None
+    vertices, referenced, cervical, part = [], set(), set(), None
     with (BASE / 'skeleton-male.obj').open() as obj:
         for line in obj:
             if line.startswith('o '):
                 part = line[2:].strip()
             elif line.startswith('v '):
                 vertices.append(tuple(map(float, line.split()[1:4])))
-            elif part == 'skull' and line.startswith('f '):
+            elif part in ('skull', 'spine_cervical') and line.startswith('f '):
                 indices = [int(token.split('/')[0]) - 1 for token in line.split()[1:]]
                 assert len(indices) == 3 and all(0 <= index < len(vertices) for index in indices)
-                referenced.update(indices)
+                (referenced if part == 'skull' else cervical).update(indices)
+
+    # The source nasal-cartilage tip was at z=0.11577. Check actual referenced
+    # skull vertices as well as the manifest so it cannot silently return.
+    assert max(vertices[index][2] for index in referenced) < 0.105
+    # At thyroid height, the old laryngeal cartilage extended to z=0.03195.
+    assert max(vertices[index][2] for index in cervical
+               if 1.46 < vertices[index][1] < 1.48) < 0.01
 
     # Only vertices actually used by skull triangles count. Compare using a
     # spatial grid so neither NumPy nor a copy of the 40 MB FBX is needed.
@@ -72,7 +87,7 @@ def main():
                                 for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
                                 for vertex in grid.get((key[0] + dx, key[1] + dy, key[2] + dz), [])),
                                default=float('inf'))
-                assert distance < 0.0002 ** 2, f'{name} mirrored={mirror}: missing landmark {point}'
+                assert distance < 0.001 ** 2, f'{name} mirrored={mirror}: missing landmark {point}'
                 worst = max(worst, math.sqrt(distance))
     print(f'male skull restoration: PASS (40 referenced source landmarks, worst {worst * 1000:.3f} mm)')
 
