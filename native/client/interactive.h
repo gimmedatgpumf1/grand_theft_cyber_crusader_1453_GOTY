@@ -13,6 +13,5 @@ struct InteractiveOptions {
 };
 
 int runInteractive(const InteractiveOptions& options);
-int runInteractiveReview(const InteractiveOptions& options, const std::string& output);
 
 } // namespace gtc::native

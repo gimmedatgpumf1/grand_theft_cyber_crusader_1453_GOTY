@@ -34,7 +34,7 @@ done
 mkdir -p "$ROOT/build/obj/native-client"
 CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
 CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
-  native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/skeleton_body.cpp native/client/skeleton_room.cpp native/client/world_renderer.cpp native/client/world_hud.cpp native/client/interactive.cpp
+  native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/skeleton_body.cpp native/client/skeleton_room.cpp native/client/world_renderer.cpp native/client/fps_counter.cpp native/client/interactive.cpp
   native/client/opengl_shared.cpp native/client/diagnostics.cpp native/client/window_x11.cpp native/client/main.cpp native/client/benchmark.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp
   native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp)
 CLIENT_OBJECTS=()
@@ -50,7 +50,7 @@ done
 CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-client/raster.o"
   "$ROOT/build/obj/native-client/hud.o" "$ROOT/build/obj/native-client/human_renderer.o"
   "$ROOT/build/obj/native-client/blockbody.o" "$ROOT/build/obj/native-client/skeleton_body.o" "$ROOT/build/obj/native-client/skeleton_room.o" "$ROOT/build/obj/native-client/human_materials.o"
-  "$ROOT/build/obj/native-client/world_renderer.o" "$ROOT/build/obj/native-client/world_hud.o" "$ROOT/build/obj/native/human.o"
+  "$ROOT/build/obj/native-client/world_renderer.o" "$ROOT/build/obj/native-client/fps_counter.o" "$ROOT/build/obj/native/human.o"
   "$ROOT/build/obj/native/hair.o" "$ROOT/build/obj/native/json.o"
   "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"
   "$ROOT/build/obj/native-client/sha1.o" "$ROOT/build/obj/native-client/diagnostics.o"
@@ -58,6 +58,10 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/main.o" "$ROOT/build/obj/native-client/benchmark.o" "$ROOT/build/obj/native-client/interactive.o" \
   "$ROOT/build/obj/native-client/window_x11.o" "$ROOT/build/obj/native-client/opengl_shared.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-client"
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-smoke"
+# The counter is drawn on the host into pixels, so it can be checked as pixels:
+# the box, the border, every glyph block, both byte orders, four window sizes.
+"$COMPILER" -pthread -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/fps_counter_check.cpp" \
+  "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-fps-counter-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
   cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
@@ -67,4 +71,5 @@ fi
 echo "[native] Success: $ROOT/build/bin/gtc-native-fit"
 echo "[native] Success: $ROOT/build/bin/gtc-native-client"
 echo "[native] Success: $ROOT/build/bin/gtc-native-smoke"
+echo "[native] Success: $ROOT/build/bin/gtc-fps-counter-check"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi

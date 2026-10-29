@@ -37,11 +37,11 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 | **2 — Godview** | RMB paths; Shift-RMB auto-runs; double-RMB uses advanced traversal; hold Alt to crouch | WASD fast-pans; Shift boosts; wheel zoom | LMB attacks; double-LMB melee uses advanced traversal; E interacts |
 | **3 — First person** | WASD; Shift to sprint | Click view to capture mouse; Esc releases | E; **T** toggles a male zip; unzipped LMB/F pees; RMB aims/blocks |
 
-- Targeted objects glow. **[E] Interact** appears only inside the **1.8 m interaction range**.
+- Targeted objects glow, and **E** interacts only inside the **1.8 m interaction range**.
 - E never auto-walks the player. Move closer yourself; explicit godview RMB paths use ordinary A*.
   Double-RMB instead permits server-controlled jumping, climbing, crouching, and crawling en route.
   Autonomous AI can path to the toilet before using it.
-- The throne is multi-use: E opens a real choice wheel for **Sit**, **Shit**, and **Piss**.
+- The throne is multi-use: E opens the choice for **Sit**, **Shit**, and **Piss**; **1/2/3** pick it.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
 - **C** opens the native character creator: generic styles and all 107 universal anatomical
@@ -63,10 +63,11 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   floor spots spread sideways. One game day is **96 real minutes (15× time)**, shown by the native clock,
   and urine stains dry after one complete game day. God LMB uses melee while zipped and the physical
   ranged weapon otherwise; RMB blocks melee or applies explicit ranged aim zoom.
-- **F1** opens the cheat console: boost/reduce either need by 25, empty it, or fill it. The
+- **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
-- **H** opens the native field manual. **F12** saves the current native **640×480 landscape** framebuffer.
-  Native UI text is 21 pixels high.
+- **F12** saves the current native **640×480 landscape** framebuffer.
+- The only thing drawn over the picture is a frame-rate box in the top-left corner: panel, accent
+  border, 5×7 digits, scaled with the window. The old overlay is gone, not hidden.
 
 ## One-click Windows build
 

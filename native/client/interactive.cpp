@@ -5,6 +5,7 @@
 #include "client/skeleton_room.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
+#include "client/fps_counter.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -54,13 +55,6 @@ void reportFrameRate(const std::chrono::steady_clock::time_point& now, double re
 }
 
 enum class Overlay { None, Wheel, Cheats, Help };
-
-void circle(NativeFrame& frame, int cx, int cy, int radius, Color color) {
-    for (int y = -radius; y <= radius; ++y) {
-        const int half = static_cast<int>(std::sqrt(std::max(0, radius * radius - y * y)));
-        frame.rectangle(cx - half, cy + y, half * 2 + 1, 1, color);
-    }
-}
 
 class App {
 public:
@@ -177,8 +171,10 @@ public:
             }
             const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
             view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
+            // The only thing drawn over the picture: the frame rate, on the host,
+            // into pixels that already exist. Costs a few hundred fills a frame.
             const auto overlayStart = Clock::now();
-            drawOverlay(frame);
+            drawFpsCounter(frame, view_.fps);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;
             view_.logicMilliseconds = logicMilliseconds;
@@ -198,45 +194,6 @@ public:
                 screenshot_ = false;
             }
         }
-        return 0;
-    }
-
-    int review(const std::string& output) {
-        std::string error;
-        if (!client_.connect(options_.host, options_.port, error) || !client_.sendJoin(options_.name) ||
-            !renderer_.load(options_.root, error) || !client_.receive(error)) {
-            std::cerr << error << '\n';
-            return 1;
-        }
-        view_.yaw = 3.14159265F;
-        view_.pitch = -0.18F;
-        NativeFrame base;
-        if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, base, error) ||
-            !base.save(output + "/base.png")) {
-            std::cerr << error << '\n';
-            return 1;
-        }
-        const std::pair<Overlay, const char*> captures[] = {
-            {Overlay::Wheel, "wheel"}, {Overlay::Cheats, "cheats"}, {Overlay::Help, "help"}};
-        for (const auto& [overlay, name] : captures) {
-            overlay_ = overlay;
-            NativeFrame frame = base;
-            drawOverlay(frame);
-            if (!frame.save(output + "/" + name + ".png")) return 1;
-        }
-        // The test room is a capture of its own, because it is a different
-        // renderer path and a swallowed room would otherwise go unnoticed.
-        std::string roomError;
-        if (room_.load(options_.root, roomError)) {
-            ViewState roomView = view_;
-            roomView.yaw = 0.16F;
-            NativeFrame roomFrame;
-            room_.render(roomFrame, roomView, 1.5);
-            if (!roomFrame.save(output + "/room.png")) return 1;
-        } else {
-            std::cerr << "Test room unavailable: " << roomError << '\n';
-        }
-        std::cout << "native UI review: " << output << " (640x480 landscape)\n";
         return 0;
     }
 
@@ -670,39 +627,6 @@ private:
         view_.godZ = std::clamp(view_.godZ, -7.0F, 7.0F);
     }
 
-    void drawOverlay(NativeFrame& frame) {
-        if (overlay_ == Overlay::None) return;
-        const Color panel = colorHex("#101713"), text = colorHex("#d7ff54"), muted = colorHex("#b4c5ba");
-        if (overlay_ == Overlay::Wheel) {
-            frame.rectangle(35, 60, 570, 360, panel);
-            drawText(frame, 230, 80, "TOILET CHOICE", text);
-            circle(frame, 150, 240, 85, colorHex("#334c42"));
-            circle(frame, 320, 240, 85, colorHex("#4b4030"));
-            circle(frame, 490, 240, 85, colorHex("#303f50"));
-            drawText(frame, 122, 230, "1 SIT", text);
-            drawText(frame, 286, 230, "2 SHIT", text);
-            drawText(frame, 456, 230, "3 PISS", text);
-            drawText(frame, 410, 285, local() && local()->appearance.male ? "STANDING" : "SEATED", muted);
-            drawText(frame, 215, 380, "E STAND / ESC CLOSE", muted);
-        } else if (overlay_ == Overlay::Cheats) {
-            frame.rectangle(60, 100, 520, 280, panel);
-            drawText(frame, 220, 120, "F1 NEED CHEATS", text);
-            drawText(frame, 90, 180, "1 BLADDER +25 2 -25", muted);
-            drawText(frame, 90, 230, "3 EMPTY       4 FILL", muted);
-            drawText(frame, 90, 280, "5 BOWEL +25  6 -25", muted);
-            drawText(frame, 90, 330, "7 EMPTY       8 FILL", muted);
-        } else if (overlay_ == Overlay::Help) {
-            frame.rectangle(30, 20, 580, 430, panel);
-            drawText(frame, 230, 35, "FIELD MANUAL", text);
-            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
-                "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
-                "RMB AIM RANGED / BLOCK MELEE", "MMB ORBIT TPS / RELEASE RESETS", "GOD RMB GO SHIFT RUN ALT CROUCH",
-                "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C TEST ROOM F1 CHEATS",
-                "F12 PNG H CLOSES MANUAL"};
-            for (int i = 0; i < 13; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
-        }
-    }
-
     SkeletonRoom room_;
     bool testRoom_ = false;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
@@ -737,11 +661,6 @@ private:
 int runInteractive(const InteractiveOptions& options) {
     App app(options);
     return app.run();
-}
-
-int runInteractiveReview(const InteractiveOptions& options, const std::string& output) {
-    App app(options);
-    return app.review(output);
 }
 
 } // namespace gtc::native

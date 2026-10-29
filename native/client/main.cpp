@@ -1,13 +1,13 @@
 #include "client/benchmark.h"
 #include "client/client.h"
 #include "client/diagnostics.h"
+#include "client/fps_counter.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
 #include "client/skeleton_room.h"
 #include "client/threadpool.h"
 #include "client/window.h"
-#include "client/world_hud.h"
 #include "client/opengl_shared.h"
 #include "vulkan/vk_renderer.h"
 
@@ -162,7 +162,6 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
     // Every frame advances the tick and moves a character, which is exactly the
     // condition that makes the renderer rebuild: nothing here is a cache hit.
     const double start = nowMs();
-    double hudTotal = 0.0;
     for (int iteration = 0; iteration < iterations; ++iteration) {
         state.tick += 1;
         for (gtc::Character& citizen : state.characters) citizen.position.x += 0.01F;
@@ -170,13 +169,8 @@ int runWorldBenchmark(const std::string& root, gtc::native::ViewState view, cons
             std::cerr << "World benchmark: " << error << '\n';
             return 1;
         }
-        hudTotal += gtc::native::lastHudMilliseconds();
     }
     reportLine("street frame", (nowMs() - start) / iterations);
-    // The HUD is drawn on the host over the read-back picture. It is a slice of
-    // the street's frame and it is the slice that forces the picture back to the
-    // host at all, so it is measured on its own rather than inferred.
-    reportLine("  of which hud (cpu)", hudTotal / iterations);
     gtc::native::setGpuRenderer(nullptr);
     if (renderer == "vulkan") {
         std::string path = "build/native-client/world-vulkan.png";
@@ -193,7 +187,7 @@ int main(int argc, char** argv) {
     gtc::native::installCrashHandler(argc > 0 ? argv[0] : "gtc-native-client");
     gtc::native::trace("main: start");
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
-    std::string output = "build/native-client/frame.png", mode = "tps", toilet, reviewUi;
+    std::string output = "build/native-client/frame.png", mode = "tps", toilet;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
     int roomBenchmark = 0;
@@ -211,7 +205,6 @@ int main(int argc, char** argv) {
         else if (argument == "--skull-benchmark" && i + 1 < argc) skullBenchmark = static_cast<int>(number(argv[++i], 1));
         else if (argument == "--world-benchmark" && i + 1 < argc) worldBenchmark = static_cast<int>(number(argv[++i], 1));
         else if (argument == "--characters" && i + 1 < argc) worldCharacters = static_cast<int>(number(argv[++i], 3));
-        else if (argument == "--review-ui" && i + 1 < argc) reviewUi = argv[++i];
         else if (argument == "--host" && i + 1 < argc) host = argv[++i];
         else if (argument == "--port" && i + 1 < argc) port = static_cast<int>(number(argv[++i], 1453));
         else if (argument == "--name" && i + 1 < argc) name = argv[++i];
@@ -234,7 +227,6 @@ int main(int argc, char** argv) {
         else {
             std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
-                         "  [--review-ui DIR] (render native overlays without a display)\n"
                          "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
             return 2;
@@ -430,13 +422,12 @@ int main(int argc, char** argv) {
     if (mode == "fps") view.mode = gtc::native::ViewMode::FirstPerson;
     else if (mode == "god") view.mode = gtc::native::ViewMode::God;
     else view.mode = gtc::native::ViewMode::ThirdPerson;
-    if (!headless || !reviewUi.empty()) {
+    if (!headless) {
         gtc::native::InteractiveOptions options;
         options.host = host;
         options.port = static_cast<std::uint16_t>(port);
         options.name = name;
         options.root = root;
-        if (!reviewUi.empty()) return gtc::native::runInteractiveReview(options, reviewUi);
         return gtc::native::runInteractive(options);
     }
     std::string error;
@@ -460,10 +451,13 @@ int main(int argc, char** argv) {
         }
     }
     gtc::native::NativeFrame frame;
+    const auto firstStart = std::chrono::steady_clock::now();
     if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
         std::cerr << "Native render failed: " << error << '\n';
         return 1;
     }
+    double measuredMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - firstStart).count();
     const auto benchmarkStart = std::chrono::steady_clock::now();
     for (int iteration = 1; iteration < benchmark; ++iteration) {
         if (!renderer.render(client.world(), client.state(), client.playerId(), view, frame, error)) {
@@ -472,10 +466,16 @@ int main(int argc, char** argv) {
         }
     }
     if (benchmark > 1) {
-        const double milliseconds = std::chrono::duration<double, std::milli>(
+        measuredMilliseconds = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - benchmarkStart).count() / (benchmark - 1);
-        std::cout << "native render: " << milliseconds << " ms/frame at " << view.width << "x" << view.height << '\n';
+        std::cout << "native render: " << measuredMilliseconds << " ms/frame at " << view.width << "x" << view.height
+                  << '\n';
     }
+    // The counter is drawn by the host into the picture, so a capture carries it:
+    // this is the same call the window loop makes, over a real frame, with the
+    // rate this machine actually rendered at -- which is this machine's number
+    // and not the frame rate of the machine the picture is being sent to.
+    gtc::native::drawFpsCounter(frame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
     if (!frame.save(output)) {
         std::cerr << "Native render failed: cannot save " << output << '\n';
         return 1;
