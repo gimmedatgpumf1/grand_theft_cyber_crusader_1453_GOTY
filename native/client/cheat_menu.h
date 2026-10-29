@@ -41,9 +41,21 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight);
 // have to answer to the pointer.
 void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int hovered = -1);
 
-// Which entry is under this point, 0..7, or -1 for none. Ordered the way the
-// keys are: 0..3 are the left column's rows 1/3/5/7, 4..7 the right column's
-// 2/4/6/8 -- that is, index + '1' is the key that does the same thing.
+// The box an entry occupies, in pixels. One definition for both the mark and the
+// click: a button whose drawn bounds and hit region come from two places is a
+// button that eventually disagrees with itself.
+struct CheatMenuRect {
+    int left = 0;
+    int top = 0;
+    int width = 0;
+    int height = 0;
+};
+CheatMenuRect cheatMenuRect(const CheatMenuLayout& layout, int entry);
+
+// Which entry is under this point, 0..7, or -1 for none. Ordered the way the keys
+// are numbered and read: left to right, then down. Entry 0 is "1 Bladder +25",
+// entry 1 is "2 Bladder -25" beside it, and so on -- so index + '1' is the key
+// printed on the entry, and the row is index / 2, the column index % 2.
 int cheatMenuAt(const CheatMenuLayout& layout, int x, int y);
 
 }  // namespace gtc::native

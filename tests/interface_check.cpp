@@ -348,35 +348,60 @@ void examineCheatMenu(int width, int height, bool windowOrder) {
           where + ": the footer is not a button");
     check(gtc::native::cheatMenuAt(layout, layout.left + 1, layout.firstRowTop) == -1,
           where + ": the panel margin is not a button");
-    // Row to entry: the left column is 0..3, the right 4..7, so index + '1' is the
-    // key that does the same thing. A click must not land on its neighbour.
+    // Row to entry, read left to right then down: row r has entries 2r and 2r+1,
+    // so index + '1' is the key printed on it. A click must not land on its
+    // neighbour, which is what the two-column numbering used to do.
     for (int row = 0; row < 4; ++row) {
         const int y = layout.firstRowTop + row * layout.rowGap + layout.textHeight / 2;
-        check(gtc::native::cheatMenuAt(layout, layout.contentLeft + 4, y) == row,
-              where + ": row " + std::to_string(row) + " left is entry " + std::to_string(row));
-        check(gtc::native::cheatMenuAt(layout, layout.rightKeyLeft + 4, y) == row + 4,
-              where + ": row " + std::to_string(row) + " right is entry " + std::to_string(row + 4));
+        check(gtc::native::cheatMenuAt(layout, layout.contentLeft + 4, y) == row * 2,
+              where + ": row " + std::to_string(row) + " left is entry " + std::to_string(row * 2));
+        check(gtc::native::cheatMenuAt(layout, layout.rightKeyLeft + 4, y) == row * 2 + 1,
+              where + ": row " + std::to_string(row) + " right is entry " + std::to_string(row * 2 + 1));
     }
 
-    // Hover marks the row it is on and no other. Entry 4 is the first row's right
-    // column, so row 0 carries the mark and rows 1..3 do not.
-    const auto changed = [&](const Picture& a, const Picture& b, int y) {
-        int count = 0;
-        for (int x = layout.left + layout.width / 8; x < layout.left + layout.width * 7 / 8; ++x) {
-            if (worstChannel(a.at(x, y), b.at(x, y)) > 1) ++count;
+    // Every entry, not just one of them: the first version marked entry 3 on the
+    // fourth row because the row was computed as index % 4, which is the row for
+    // the left column only. A check that samples a single entry can miss that, so
+    // this walks all eight and asks where the mark actually landed.
+    for (int entry = 0; entry < 8; ++entry) {
+        const auto box = gtc::native::cheatMenuRect(layout, entry);
+        check(box.width > layout.textHeight && box.height > layout.textHeight,
+              where + ": entry " + std::to_string(entry) + " has a clickable box");
+        check(gtc::native::cheatMenuAt(layout, box.left + box.width / 2, box.top + box.height / 2) == entry,
+              where + ": entry " + std::to_string(entry) + " answers to a click in its own box");
+        // Where the box IS, not just that the mark agrees with it -- the two come
+        // from one function, so a check that only compares them agrees with any
+        // mistake. Entries are read left to right then down.
+        const int row = entry / 2, column = entry % 2;
+        const int rowTop = layout.firstRowTop + row * layout.rowGap;
+        check(std::abs((box.top + box.height / 2) - (rowTop + layout.textHeight / 2)) <= 2,
+              where + ": entry " + std::to_string(entry) + " is on row " + std::to_string(row));
+        const int middle = layout.left + layout.width / 2;
+        check(column == 0 ? box.left + box.width <= middle + 2 : box.left >= middle - 2,
+              where + ": entry " + std::to_string(entry) + " is in column " + std::to_string(column));
+        // And its own key is inside it: the glyph for '1' + entry has to be in the
+        // box the click uses, or the button does something other than it says.
+        const std::string key(1, static_cast<char>('1' + entry));
+        const int keyLeft = column == 0 ? layout.contentLeft : layout.rightKeyLeft;
+        const int keyWidth = gtc::native::textWidthPixels(key, layout.textHeight);
+        check(keyLeft >= box.left && keyLeft + keyWidth <= box.left + box.width,
+              where + ": entry " + std::to_string(entry) + " covers its own key");
+        Picture one(width, height, windowOrder);
+        gtc::native::drawCheatMenu(one.frame, 62, 30, entry);
+        int inside = 0, outside = 0;
+        for (int y = layout.firstRowTop - layout.textHeight; y < layout.firstRowTop + 4 * layout.rowGap; ++y) {
+            for (int x = layout.left + 2; x < layout.left + layout.width - 2; ++x) {
+                const bool differs = worstChannel(one.at(x, y), picture.at(x, y)) > 1;
+                if (!differs) continue;
+                if (x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height) ++inside;
+                else ++outside;
+            }
         }
-        return count;
-    };
-    Picture hovered(width, height, windowOrder);
-    gtc::native::drawCheatMenu(hovered.frame, 62, 30, 4);
-    int marked = 0, unmarked = 0;
-    for (int row = 0; row < 4; ++row) {
-        const int y = layout.firstRowTop + row * layout.rowGap + layout.textHeight / 2;
-        const int count = changed(hovered, picture, y);
-        if (row == 0) marked = count; else unmarked = std::max(unmarked, count);
+        check(inside > box.width, where + ": entry " + std::to_string(entry) + " is marked (" +
+                                      std::to_string(inside) + " px)");
+        check(outside == 0, where + ": entry " + std::to_string(entry) + " marks nothing else (" +
+                                std::to_string(outside) + " px)");
     }
-    check(marked > layout.width / 4, where + ": the hovered row is marked (" + std::to_string(marked) + " px)");
-    check(unmarked == 0, where + ": hovering one row leaves the others alone (" + std::to_string(unmarked) + ")");
 
     if (!windowOrder) {
         zoom(picture, layout.left, layout.top, layout.width, layout.height, 3,

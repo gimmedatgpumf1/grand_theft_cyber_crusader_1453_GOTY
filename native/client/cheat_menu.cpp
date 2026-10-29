@@ -88,15 +88,32 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight) {
     return layout;
 }
 
+CheatMenuRect cheatMenuRect(const CheatMenuLayout& layout, int entry) {
+    CheatMenuRect box;
+    if (entry < 0 || entry >= kRowCount * 2 || layout.width <= 0) return box;
+    const int gap = lineGap(layout.textHeight);
+    // Entries are numbered the way they are read: left to right, then down. The
+    // row is the index halved and the column is its parity, so entry 3 is the
+    // fourth key -- "4 Fill bladder" -- on the second row, right-hand side. The
+    // first version numbered the left column 0..3 and the right 4..7, which put a
+    // mark three rows away from the pointer and sent the wrong key when clicked.
+    const int row = entry / 2;
+    const bool right = (entry % 2) == 1;
+    const int slack = std::max(2, gap / 4);
+    const int textLeft = right ? layout.rightKeyLeft : layout.contentLeft;
+    const int textRight = right ? layout.rightColumnRight : layout.leftColumnRight;
+    box.left = textLeft - slack;
+    box.top = layout.firstRowTop + row * layout.rowGap - slack;
+    box.width = textRight - textLeft + slack * 2;
+    box.height = layout.textHeight + slack * 2;
+    return box;
+}
+
 int cheatMenuAt(const CheatMenuLayout& layout, int x, int y) {
     if (layout.width <= 0 || layout.height <= 0) return -1;
-    const int gap = lineGap(layout.textHeight);
-    for (int row = 0; row < kRowCount; ++row) {
-        const int top = layout.firstRowTop + row * layout.rowGap;
-        // Half a line of slack above and below: a row is a target, not a glyph.
-        if (y < top - gap / 2 || y >= top + layout.textHeight + gap / 2) continue;
-        if (x >= layout.contentLeft && x < layout.leftColumnRight) return row;
-        if (x >= layout.rightKeyLeft && x < layout.rightColumnRight) return row + kRowCount;
+    for (int entry = 0; entry < kRowCount * 2; ++entry) {
+        const CheatMenuRect box = cheatMenuRect(layout, entry);
+        if (x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height) return entry;
     }
     return -1;
 }
@@ -122,12 +139,12 @@ void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int
     const int gap = lineGap(layout.textHeight);
     const int keyWidth = layout.keyWidth;
 
-    // The row the pointer is on, marked before the words so it sits behind them.
+    // The entry the pointer is on, marked before the words so it sits behind them.
+    // Only that entry's own box: a wash across the whole row cannot tell you which
+    // of the two things on it you are about to press.
     if (hovered >= 0 && hovered < kRowCount * 2) {
-        const int row = hovered % kRowCount;
-        const int top = layout.firstRowTop + row * layout.rowGap - gap / 2;
-        fillBand(frame, layout.left + gap / 2, top, layout.width - gap, layout.textHeight + gap,
-                 colorHex(kInkColour), 0.12);
+        const CheatMenuRect box = cheatMenuRect(layout, hovered);
+        fillBand(frame, box.left, box.top, box.width, box.height, colorHex(kInkColour), 0.14);
     }
 
     for (int index = 0; index < kRowCount; ++index) {
