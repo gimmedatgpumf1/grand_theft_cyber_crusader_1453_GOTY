@@ -11,6 +11,7 @@
 #include "client/mode_bar.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
+#include "client/status_panel.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -182,6 +183,13 @@ public:
             drawCrosshair(frame, view_);
             drawOpenOverlay(frame);
             drawModeBar(frame, view_.mode);
+            if (const Character* citizen = local()) {
+                const NeedsStatus status{static_cast<int>(std::lround(citizen->needs.bladder)),
+                                         static_cast<int>(std::lround(citizen->needs.bowel)),
+                                         static_cast<int>(std::lround(citizen->health))};
+                const ModeBarLayout bar = layoutModeBar(frame.width, frame.height);
+                drawNeedsPanel(frame, layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width), status);
+            }
             drawFpsCounter(frame, view_.fps);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;

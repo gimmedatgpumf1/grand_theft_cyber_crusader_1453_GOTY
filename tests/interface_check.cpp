@@ -20,6 +20,7 @@
 #include "client/cheat_menu.h"
 #include "client/interface_style.h"
 #include "client/mode_bar.h"
+#include "client/status_panel.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/crosshair.h"
@@ -592,6 +593,106 @@ void examineInteractionWheel(int width, int height, bool windowOrder) {
 }
 
 
+
+// The needs panel, bottom right: three rows, a bar per row, anchored to the
+// corner. The bar has to be the reading and the number has to agree with it, so
+// both are measured from the picture rather than from the layout.
+void examineNeedsPanel(int width, int height, bool windowOrder) {
+    const std::string where = "needs " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+    const auto bar = gtc::native::layoutModeBar(width, height);
+    const auto layout = gtc::native::layoutNeedsPanel(width, height, bar.top, bar.width);
+    check(layout.width > 0 && layout.height > 0, where + ": the panel has a size");
+    check(layout.left + layout.width <= width && layout.top + layout.height <= height,
+          where + ": the panel is inside the frame");
+    const int rightMargin = width - (layout.left + layout.width);
+    const int bottomMargin = height - (layout.top + layout.height);
+    check(rightMargin >= 6 && rightMargin <= layout.textHeight, where + ": it is against the right edge");
+    // Against the bottom edge, or lifted just clear of the mode bar when the two
+    // would otherwise overlap.
+    check((bottomMargin >= 6 && bottomMargin <= layout.textHeight) ||
+              (layout.top + layout.height <= bar.top && bar.top - (layout.top + layout.height) <= layout.textHeight),
+          where + ": it is against the bottom edge");
+    check(layout.left > width / 2 && layout.top > height / 2, where + ": it is in the bottom right, not the middle");
+    // Small: not a fourth of the screen. This is a glance, not a page.
+    check(layout.width < width / 3 && layout.height < height / 3,
+          where + ": it is small (" + std::to_string(layout.width) + "x" + std::to_string(layout.height) + ")");
+
+    // It sits on the same line as the mode bar, or above it, but never through it.
+    const bool overlap = layout.left < bar.left + bar.width && bar.left < layout.left + layout.width &&
+        layout.top < bar.top + bar.height && bar.top < layout.top + layout.height;
+    check(!overlap, where + ": it does not collide with the mode bar");
+
+    const gtc::native::NeedsStatus status{72, 56, 100};
+    Picture picture(width, height, windowOrder);
+    gtc::native::drawNeedsPanel(picture.frame, layout, status);
+
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+    const auto expected = blendOver(panel, picture.ground, gtc::native::kPanelOpacity);
+    check(worstChannel(picture.at(layout.left + 1, layout.top + 1), expected) <= 1,
+          where + ": the panel is half transparent");
+    check(!picture.same(layout.left + 1, layout.top + 1, panel), where + ": the panel is not opaque");
+    check(picture.untouched(2, 2), where + ": nothing is drawn in the opposite corner");
+
+    // Each row: a filled bar that is as long as the value says, and a track after
+    // it. Measured on the row's own middle line.
+    const int values[3] = {status.bladder, status.bowel, status.health};
+    for (int row = 0; row < gtc::native::kNeedsRowCount; ++row) {
+        const int y = layout.rowTop[row] + layout.rowHeight / 2;
+        // The fill colour, not "anything that is not the panel": the empty part of
+        // the bar is a track of its own and would otherwise count as filled.
+        const std::array<int, 3> fill = bytes(gtc::native::colorHex(
+            row == 0 ? "#d7ff54" : row == 1 ? "#b07a3c" : "#ff7a5e"));
+        int filled = 0;
+        for (int x = layout.barLeft; x < layout.barLeft + layout.barWidth; ++x) {
+            if (picture.same(x, y, fill)) ++filled;
+        }
+        const int want = layout.barWidth * values[row] / 100;
+        check(std::abs(filled - want) <= 2, where + ": row " + std::to_string(row) + " bar is " +
+                                              std::to_string(filled) + " of " + std::to_string(want));
+        // Text in the row: the label on the left, the value on the right.
+        const auto label = survey(picture, layout.left, layout.rowTop[row], layout.barLeft - layout.left,
+                                  layout.rowHeight, expected);
+        check(label.lit > 10, where + ": row " + std::to_string(row) + " has a label");
+    }
+
+    // The numbers are live: a different value has to change the picture, and a
+    // longer number has to stay inside the panel.
+    Picture other(width, height, windowOrder);
+    gtc::native::drawNeedsPanel(other.frame, layout, gtc::native::NeedsStatus{5, 100, 7});
+    bool differs = false;
+    for (int y = layout.top; y < layout.top + layout.height && !differs; ++y) {
+        for (int x = layout.left; x < layout.left + layout.width; ++x) {
+            if (picture.at(x, y) != other.at(x, y)) { differs = true; break; }
+        }
+    }
+    check(differs, where + ": the values shown are the ones handed over");
+    Picture extremes(width, height, windowOrder);
+    gtc::native::drawNeedsPanel(extremes.frame, layout, gtc::native::NeedsStatus{-10, 250, 100});
+    check(extremes.untouched(layout.left - 2, layout.top + layout.height / 2),
+          where + ": values outside 0..100 are clamped inside the panel");
+
+    // A full bar is the whole width, an empty one is none of it.
+    Picture full(width, height, windowOrder);
+    gtc::native::drawNeedsPanel(full.frame, layout, gtc::native::NeedsStatus{100, 100, 100});
+    const int y = layout.rowTop[0] + layout.rowHeight / 2;
+    check(full.same(layout.barLeft + layout.barWidth - 1, y, bytes(gtc::native::colorHex("#d7ff54"))),
+          where + ": a full bar reaches the end");
+    Picture empty(width, height, windowOrder);
+    gtc::native::drawNeedsPanel(empty.frame, layout, gtc::native::NeedsStatus{0, 0, 0});
+    const bool emptyBar = empty.same(layout.barLeft + layout.barWidth / 2, y,
+                                     bytes(gtc::native::colorHex("#1b2a24")));
+    check(emptyBar, where + ": an empty bar is empty");
+
+    if (!windowOrder) {
+        zoom(picture, layout.left, layout.top, layout.width, layout.height, 4,
+             "build/native-client/interface-needs-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s panel %dx%d at %d,%d (margins %d/%d)\n", where.c_str(), layout.width, layout.height,
+                layout.left, layout.top, rightMargin, bottomMargin);
+}
+
+
 int main() {
     examineStrip(640, 480, false);
     examineStrip(640, 480, true);
@@ -609,6 +710,11 @@ int main() {
     examineOverlayPanels(640, 480, false);
     examineOverlayPanels(640, 480, true);
     examineOverlayPanels(1920, 1080, true);
+
+    examineNeedsPanel(640, 480, false);
+    examineNeedsPanel(640, 480, true);
+    examineNeedsPanel(1568, 929, true);
+    examineNeedsPanel(1920, 1080, true);
 
     examineModeBar(640, 480, false);
     examineModeBar(640, 480, true);
@@ -633,7 +739,7 @@ int main() {
     gtc::native::drawCheatMenu(frame, -20, 400);
 
     if (failures == 0) {
-        std::printf("interface: PASS (strip, reticle, need panel, mode bar, panels, interaction circle)\n");
+        std::printf("interface: PASS (rate strip, reticle, needs panel, mode bar, overlays, interaction circle)\n");
         return 0;
     }
     std::printf("interface: FAIL (%d)\n", failures);

@@ -7,6 +7,7 @@
 #include "client/mode_bar.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
+#include "client/status_panel.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
@@ -506,6 +507,16 @@ int main(int argc, char** argv) {
         gtc::native::drawCheatMenu(frame, bladder, bowel);
     }
     gtc::native::drawModeBar(frame, view.mode);
+    {
+        const gtc::Character* citizen = client.state().character(client.playerId());
+        const gtc::native::NeedsStatus status{
+            citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0,
+            citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0,
+            citizen ? static_cast<int>(std::lround(citizen->health)) : 0};
+        const gtc::native::ModeBarLayout bar = gtc::native::layoutModeBar(frame.width, frame.height);
+        gtc::native::drawNeedsPanel(frame, gtc::native::layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width),
+                                    status);
+    }
     gtc::native::drawFpsCounter(frame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
     if (!frame.save(output)) {
         std::cerr << "Native render failed: cannot save " << output << '\n';

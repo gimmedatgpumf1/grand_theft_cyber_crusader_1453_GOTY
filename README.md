@@ -72,10 +72,11 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   connected views share the result.
 - **H** opens the controls sheet, two columns so it fits a 640×480 frame at the 20-pixel text floor.
 - **F12** saves the current native **640×480 landscape** framebuffer.
-- Four things are drawn over the picture, and they are being rebuilt one at a time: the reticle
+- Five things are drawn over the picture, and they are being rebuilt one at a time: the reticle
   (centred, dark-outlined, absent in god view), the **F1** need panel (translucent, centred, two
   columns of keys and their values), the mode bar along the bottom (**1 3rd person / 2 god /
-  3 1st person**, the running one ruled underneath) and the frame-rate strip at the top. The strip
+  3 1st person**, the running one ruled underneath), the needs panel in the bottom right
+  (**PISS**, **SHIT**, **HP** as three small bars with their values) and the frame-rate strip at the top. The strip
   is the faintest of them at half strength; the panel is darker because it has to be read. Text is
   the game's own proportional sans, antialiased, 20 pixels minimum at 640×480 and larger as the
   window grows. The old overlay is gone, not hidden.
