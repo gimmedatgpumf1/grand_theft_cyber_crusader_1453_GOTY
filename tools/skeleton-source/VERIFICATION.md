@@ -7,6 +7,15 @@ vertex proximity to the corresponding source structure are checked by
 `python3 tests/openskeleton_source_pose.py female` and
 `python3 tests/openskeleton_source_pose.py male`. No per-bone repositioning or mirroring
 is applied; the output is simplified and has one global coordinate transform.
+The original source's vertical bone spans are 179.577 cm (male) and 174.183 cm
+(female); the simplified source-pose OBJs span 179.579 cm and 174.241 cm,
+respectively. The per-bone maximum axis-span changes caused by simplification
+are 2.802 mm and 2.673 mm. These are skeletal bounding spans, not a clinical
+stature measurement. The source is converted from millimetres to metres; no
+stature normalization is applied. The rejected T-pose rotated the feet and
+lowered the vertical bounding heights to about 171 cm and 166 cm despite using
+rigid, unscaled per-bone transforms. It has been removed.
+
 This is the dataset's registered geometry, not necessarily the original patient
 pose. The source labels and registration have not been independently validated
 against medical anatomy.

@@ -2,7 +2,10 @@
 
 The table below classifies **every one of the 209 relationships** in
 `04-line-graph.py`; `openskeleton/joint_mobility.py` assigns the class from the
-actual source labels, including each finger and toe on both sides. These are
+actual source labels, including each finger and toe on both sides. The graph
+is not an exhaustive list of every human articulation: the source does not
+separately label the individual skull bones, teeth, hyoid or ear ossicles,
+and several real joints contain multiple surfaces and coupled motions. These are
 biological descriptions, **not implemented runtime animation constraints**.
 Individual joint centres and axes are not supplied by OpenSkeleton. Movement
 ranges vary with person, position, loading and measurement. The figures below
@@ -45,3 +48,9 @@ Sources: [OpenStax synovial joints](https://openstax.org/books/anatomy-and-physi
 [Physiopedia reference ranges](https://www.physio-pedia.com/Range_of_Motion_Normative_Values),
 [Hand Surgery Primer active hand ranges](https://learn.handsurgeryprimer.org/taxonomy/term/303),
 [Kenhub MTP joints](https://www.kenhub.com/en/library/anatomy/metatarsophalangeal-mtp-joints).
+
+Shoulder elevation is coupled to scapular and clavicular motion; the relative
+contributions vary through the motion, so a fixed 2:1 ratio is an approximation.
+See [McGraw Hill normative ranges](https://fadavispt.mhmedical.com/content.aspx?bookid=1964&sectionid=147190212),
+[scapular motion study](https://www.jstage.jst.go.jp/article/jpfsm/7/1/7_65/_pdf/-char/en),
+and [goniometry references including toes](https://highered.mheducation.com/sites/0071474013/student_view0/chapter8/goniometry.html).

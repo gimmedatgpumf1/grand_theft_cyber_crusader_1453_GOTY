@@ -116,6 +116,27 @@ def main():
         shift = (-centre, -lowest, -forward)
         assert max(abs(a - b) for a, b in zip(shift, meta['global_translation_m'])) < 1e-8
 
+        # Compare metre-converted source and emitted dimensions independently,
+        # both for the whole body and each labelled bone. A change of pose can
+        # alter a vertical bounding height; this checks the *original* pose.
+        source_height = (max(p[2] for points in source.values() for p in points) -
+                         min(p[2] for points in source.values() for p in points)) / 1000
+        emitted = [p for bone in actual.values() for p in bone['points']]
+        emitted_height = max(p[1] for p in emitted) - min(p[1] for p in emitted)
+        assert abs(source_height-meta['stature']) < 0.000001
+        assert abs(source_height-emitted_height) < 0.0061
+        worst_span = 0.0
+        for name, vertices in source.items():
+            src = [(p[0]/1000, p[2]/1000, -p[1]/1000) for p in vertices]
+            dst = actual[name]['points']
+            for axis in range(3):
+                source_span = max(p[axis] for p in src)-min(p[axis] for p in src)
+                output_span = max(p[axis] for p in dst)-min(p[axis] for p in dst)
+                worst_span = max(worst_span, abs(source_span-output_span))
+        # Decimation is allowed to move vertices by <5 mm; it is not a
+        # stature normalisation or a geometric scaling operation.
+        assert worst_span < 0.0061
+
         # Simplification can move vertices slightly; compare every emitted point
         # against the original *same* bone in a 5 mm spatial neighbourhood.
         cell, limit2, worst = 0.005, 0.005 ** 2, 0.0
@@ -138,6 +159,7 @@ def main():
                     raise AssertionError(f'{name}: simplified vertex farther than 5 mm from source')
                 worst = max(worst, best)
     print(f'{sex} source pose: PASS (182 named bones; worst vertex/source distance {math.sqrt(worst)*1000:.3f} mm)')
+    print(f'{sex} original source height: {source_height*100:.3f} cm; emitted {emitted_height*100:.3f} cm; worst per-bone axis-span difference {worst_span*1000:.3f} mm')
     print(f'{sex} anatomy: source registration is not independently certified')
 
 

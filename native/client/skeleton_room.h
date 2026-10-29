@@ -14,7 +14,7 @@ namespace gtc::native {
 
 // The test room: an empty box with a tiled floor and the two anatomical
 // skeletons in it, so animation and rigging work has somewhere to happen.
-// Both OpenSkeleton bodies use a source-derived, static T-pose. Neither body is scaled.
+// Both OpenSkeleton bodies retain the static registered source pose. Neither body is scaled.
 class RoomFreecam;
 
 class SkeletonRoom {

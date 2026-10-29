@@ -94,7 +94,7 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
 static bool renderAndCheckJoints(const GpuScene& scene, NativeFrame& frame) {
     int sequence = 0;
     for (std::uint32_t id : {8001u, 9001u}) {
-        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female-tpose.lines" : "tools/skeleton-source/skeleton-male-tpose.lines";
+        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         std::ifstream input(path);
         std::string row;
         int joint = 0;
@@ -108,7 +108,7 @@ static bool renderAndCheckJoints(const GpuScene& scene, NativeFrame& frame) {
             for (int direction : {1, -1}) {
                 Camera camera;
                 camera.width = scene.width; camera.height = scene.height;
-                camera.fovDegrees = 50; camera.position = {0,1.15,4.7*direction};
+                camera.fovDegrees = 50; camera.position = {0,1.15,3.5*direction};
                 camera.target = {0,0.95,0}; camera.worldSpaceGpu = true;
                 GpuScene intact = scene;
                 intact.viewMatrix = camera.viewMatrix();
@@ -157,7 +157,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     const std::vector<unsigned char> original(pixels, pixels + bytes);
     int sequence = 0;
     for (std::uint32_t id : {8001u, 9001u}) {
-        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female-tpose.lines" : "tools/skeleton-source/skeleton-male-tpose.lines";
+        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         std::ifstream input(path);
         struct Shape { std::string name; std::size_t offset, caps, indices; bool foot; };
         std::vector<Shape> shapes;
@@ -216,7 +216,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                     changed = 0;
                     Camera camera;
                     camera.width = scene.width; camera.height = scene.height;
-                    camera.fovDegrees = 50; camera.position = {0,1.15,-4.7}; camera.target = {0,0.95,0};
+                    camera.fovDegrees = 50; camera.position = {0,1.15,-3.5}; camera.target = {0,0.95,0};
                     camera.worldSpaceGpu = true;
                     GpuScene alternate = scene;
                     alternate.viewMatrix = camera.viewMatrix();
@@ -255,7 +255,7 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
     const std::vector<unsigned char> original(pixels, pixels + bytes);
     int revision = 0;
     for (std::uint32_t id : {8001u, 9001u}) {
-        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female-tpose.lines" : "tools/skeleton-source/skeleton-male-tpose.lines";
+        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         for (char side : {'L', 'R'}) {
             std::ifstream input(path);
             const std::string group = std::string("FootBase_") + side;
