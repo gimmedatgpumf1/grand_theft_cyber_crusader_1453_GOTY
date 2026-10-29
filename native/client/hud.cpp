@@ -1,5 +1,7 @@
 #include "client/raster.h"
 
+#include "client/ui_layer.h"
+
 #include <algorithm>
 #include <chrono>
 #include <array>
@@ -138,6 +140,25 @@ void paintText(NativeFrame& frame, double penX, double baseline, const std::stri
     // Glyphs go into whatever this frame is made of. A frame that came back from
     // the device in window order is written in window order, so the presenter has
     // nothing left to convert.
+    // A frame that is having its interface described rather than drawn: the text
+    // becomes one quad a glyph, and the device samples the atlas.
+    if (frame.ui != nullptr) {
+        const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
+        double pen = penX;
+        for (char character : text) {
+            UiQuad quad;
+            if (uiGlyphQuad(quad, character, pixelHeight, static_cast<int>(std::lround(pen)),
+                            static_cast<int>(std::lround(baseline)))) {
+                quad.red = red;
+                quad.green = green;
+                quad.blue = blue;
+                quad.opacity = 1.0f;
+                frame.ui->add(quad);
+            }
+            pen += cachedGlyph(character, pixelHeight).advance;
+        }
+        return;
+    }
     if (frame.canvasIsBgra()) frame.makeOverlayWritable();
     const bool bgraCanvas = frame.canvasIsBgra();
     {
@@ -208,6 +229,18 @@ int textWidthPixels(const std::string& text, int pixelHeight) {
 // Text at a size in pixels rather than in HUD scale steps, laid out from its top
 // left corner. The window loop and the headless capture both use this for the
 // frame-rate box.
+bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset,
+                   const unsigned char** coverage) {
+    if (!font().ready || pixelHeight <= 0) return false;
+    const Glyph& glyph = cachedGlyph(character, pixelHeight);
+    width = glyph.width;
+    height = glyph.height;
+    xOffset = glyph.xOffset;
+    yOffset = glyph.yOffset;
+    *coverage = glyph.coverage.empty() ? nullptr : glyph.coverage.data();
+    return !glyph.coverage.empty();
+}
+
 void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight) {
     if (!font().ready || pixelHeight <= 0) return;
     const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));

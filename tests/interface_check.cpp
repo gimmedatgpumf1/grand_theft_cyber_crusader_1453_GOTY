@@ -22,6 +22,8 @@
 #include "client/mode_bar.h"
 #include "client/status_panel.h"
 #include "client/target_prompt.h"
+#include "client/ui_layer.h"
+
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/crosshair.h"
@@ -34,6 +36,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+
 
 namespace {
 
@@ -904,6 +907,10 @@ void examineTargetPrompt(int width, int height, bool windowOrder) {
 }
 
 
+
+
+#include "../tests/interface_geometry.h"
+
 int main() {
     examineStrip(640, 480, false);
     examineStrip(640, 480, true);
@@ -921,6 +928,10 @@ int main() {
     examineOverlayPanels(640, 480, false);
     examineOverlayPanels(640, 480, true);
     examineOverlayPanels(1920, 1080, true);
+
+    examineUiGeometry(640, 480, false);
+    examineUiGeometry(640, 480, true);
+    examineUiGeometry(1920, 1080, true);
 
     examineTargetPrompt(640, 480, false);
     examineTargetPrompt(640, 480, true);

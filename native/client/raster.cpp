@@ -1,4 +1,6 @@
 #include "client/raster.h"
+
+#include "client/ui_layer.h"
 #include "client/threadpool.h"
 
 #include <algorithm>
@@ -216,6 +218,14 @@ double rectangleMilliseconds = 0.0;
 long rectanglePixels = 0;
 
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
+    if (ui != nullptr) {
+        const int red = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
+        const int green = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
+        const int blue = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
+        ui->rectangle(uiOffsetX + x * uiScale, uiOffsetY + y * uiScale, w * uiScale, h * uiScale, red, green,
+                      blue, 1.0);
+        return;
+    }
     const auto rectangleStart = std::chrono::steady_clock::now();
     // A frame that arrived in window order is drawn on where it lies: converting
     // it to rgb and back is two passes over a million pixels for nothing.
@@ -269,6 +279,14 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
 }
 
 void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
+    if (ui != nullptr) {
+        const int red = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
+        const int green = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
+        const int blue = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
+        ui->rectangle(uiOffsetX + x * uiScale, uiOffsetY + y * uiScale, w * uiScale, h * uiScale, red, green,
+                      blue, opacity);
+        return;
+    }
     if (canvasIsBgra()) makeOverlayWritable();
     else syncToRgb();
     const bool bgra = canvasIsBgra();

@@ -33,6 +33,8 @@ struct Texture {
 
 const Texture& loadTexture(const std::string& path);
 
+class UiLayer;
+
 struct NativeFrame {
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
@@ -92,6 +94,14 @@ struct NativeFrame {
     void logicalUi(int logicalWidth = kDefaultWindowWidth, int logicalHeight = kDefaultWindowHeight);
     void rectangle(int x, int y, int w, int h, Color color);
     void blendRectangle(int x, int y, int w, int h, Color color, double opacity);
+    // When this is set the interface is described rather than drawn: the shapes
+    // and the glyphs become quads and the picture is left alone, for a device to
+    // put them on. Null everywhere else, which is the old behaviour exactly.
+    UiLayer* ui = nullptr;
+    // One pixel, blended, with the arithmetic the interface has always used:
+    // a plain division by 255 over an opaque canvas, and a weighted blend over
+    // one that carries a coverage mask.
+    void blendPixelAt(int x, int y, int red, int green, int blue, int coverage);
 };
 
 // Measured where they are spent, for GTC_HUD_PROFILE: the HUD is drawn on the
@@ -292,6 +302,11 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
 // rate. Proportional, antialiased, and measured before it is drawn -- a centred
 // box needs the width first.
 int textWidthPixels(const std::string& text, int pixelHeight);
+
+// The bitmap of one glyph, for the atlas the device samples. The coverage bytes
+// belong to the glyph cache and stay valid for the life of the process.
+bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset,
+                   const unsigned char** coverage);
 int textHeightPixels(int pixelHeight);
 void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight);
 
