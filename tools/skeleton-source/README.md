@@ -51,10 +51,13 @@ triangulated surface anchored to the individual source bones.
 
 Each foot base is a **six-faced hexahedron**, containing its tarsals,
 metatarsals and sesamoids; toes remain separate. Its long axis runs from the
-calcaneus toward the metatarsals, its height direction comes from the calcaneus
-to the talus, and all three dimensions are fitted to the actual source vertices.
-This includes the full heel. It is a rectangular approximation in the source's
-registered pose, not an anatomical surface or a change to the animation rig.
+calcaneus toward the metatarsals, and its height direction comes from the
+calcaneus to the talus. The rear and front widths and heights are measured
+separately from the heel/ankle and metatarsal bones, producing a tapered
+shoe-like shape rather than a rectangular box. Its sloping sides are fitted to
+contain all of the source foot-base vertices, including the heel. It remains a
+six-face approximation in the source's registered pose, not an anatomical
+surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and

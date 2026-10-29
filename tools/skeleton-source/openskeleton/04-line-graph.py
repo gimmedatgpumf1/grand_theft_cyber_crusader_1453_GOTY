@@ -128,15 +128,17 @@ def unified_surface(bones, members):
 
 
 def foot_hexahedron(bones, members, side):
-    """Six-faced foot box fitted to all source tarsals and metatarsals.
+    """Fit a tapered, six-faced shoe shape around the source foot bones.
 
-    The long axis follows the heel-to-forefoot direction; the height axis uses
-    the talus-to-calcaneus direction. Width is perpendicular to both. All 14
-    foot-base structures, including the full heel, set each measured extent.
+    The long axis follows heel to metatarsals; the height axis comes from heel
+    to ankle. Rear dimensions derive from calcaneus and talus, forefoot dimensions
+    from the five metatarsals. Shift the sloping sides only as far as needed to
+    contain all included source vertices, preserving the measured taper.
     """
     heel = bones[f'Cal_{side}'].mean(axis=0)
     ankle = bones[f'Tal_{side}'].mean(axis=0)
-    forefoot = np.mean([bones[f'FootMeta{i}_{side}'].mean(axis=0) for i in range(1, 6)], axis=0)
+    metatarsals = [bones[f'FootMeta{i}_{side}'] for i in range(1, 6)]
+    forefoot = np.mean([bone.mean(axis=0) for bone in metatarsals], axis=0)
     length = forefoot - heel
     length /= np.linalg.norm(length)
     height = ankle - heel
@@ -146,32 +148,54 @@ def foot_hexahedron(bones, members, side):
     width = np.cross(height, length)
     width /= np.linalg.norm(width)
     axes = np.array([length, width, height])
-    vertices = np.concatenate([bones[name] for name in members])
-    local = vertices @ axes.T
-    low, high = local.min(axis=0), local.max(axis=0)
-    # Indices are binary: long, width, height, from rear/lower/inner corner.
-    points = np.array([np.array([high[0] if i & 4 else low[0],
-                                 high[1] if i & 2 else low[1],
-                                 high[2] if i & 1 else low[2]]) @ axes for i in range(8)])
-    return points, axes, low, high
+    local = np.concatenate([bones[name] for name in members]) @ axes.T
+    rear = np.concatenate([bones[f'Cal_{side}'], bones[f'Tal_{side}']]) @ axes.T
+    front = np.concatenate(metatarsals) @ axes.T
+    x0, x1 = local[:, 0].min(), local[:, 0].max()
+    t = (local[:, 0] - x0) / (x1 - x0)
+    low, high = np.zeros((2, 2)), np.zeros((2, 2))
+    for axis in (1, 2):
+        # Individual heel/forefoot dimensions choose the taper. The global
+        # extrema of residuals enclose every included bone at its real position.
+        low_delta = front[:, axis].min() - rear[:, axis].min()
+        high_delta = front[:, axis].max() - rear[:, axis].max()
+        low[0, axis-1] = np.min(local[:, axis] - t * low_delta)
+        high[0, axis-1] = np.max(local[:, axis] - t * high_delta)
+        low[1, axis-1] = low[0, axis-1] + low_delta
+        high[1, axis-1] = high[0, axis-1] + high_delta
+    # Binary indices are length (rear/front), width and height. The six quads
+    # are planar trapezoids, not an equal-sided cuboid.
+    points = np.array([np.array([x1 if i & 4 else x0,
+                                 high[int(bool(i & 4)), 0] if i & 2 else low[int(bool(i & 4)), 0],
+                                 high[int(bool(i & 4)), 1] if i & 1 else low[int(bool(i & 4)), 1]]) @ axes
+                       for i in range(8)])
+    return points, axes
 
 
 def box_to_line(box, source, line):
-    """Attach an existing anatomical link to the fitted box surface."""
-    _, axes, low, high = box
-    choices = [closest_to_point(point, line) for point in source]
+    """Attach an existing anatomical link to the fitted hexahedron surface."""
+    points, _ = box
+    quads = ((0,1,3,2), (4,6,7,5), (0,4,5,1), (2,3,7,6), (0,2,6,4), (1,5,7,3))
+    centre = points.mean(axis=0)
+    planes = []
+    for face in quads:
+        p = points[face[0]]
+        normal = np.cross(points[face[1]] - p, points[face[2]] - p)
+        normal /= np.linalg.norm(normal)
+        if np.dot(normal, centre - p) > 0: normal = -normal
+        planes.append((p, normal))
+    def inside(p): return all(np.dot(normal, p - origin) <= 1e-8 for origin, normal in planes)
+    choices = [closest_to_point(point, line) for point in source if inside(point)]
+    assert choices, 'source link has no anchor inside its fitted foot'
     _, start, end = min(choices, key=lambda value: value[0])
-    local = np.clip(start @ axes.T, low, high)
-    direction = (end - start) @ axes.T
-    if np.linalg.norm(direction) < 1e-10:
-        direction = local - (low + high) / 2
-    if np.linalg.norm(direction) < 1e-10:
-        direction = np.array([1.0, 0.0, 0.0])
-    times = [(high[i]-local[i])/direction[i] if direction[i] > 1e-12 else
-             (low[i]-local[i])/direction[i] if direction[i] < -1e-12 else float('inf') for i in range(3)]
-    distance = max(0.0, min(times))
-    on_box = np.clip(local + distance * direction, low, high) @ axes
-    return closest_to_point(on_box, line)
+    direction = end - start
+    if np.linalg.norm(direction) < 1e-10: direction = start - centre
+    if np.linalg.norm(direction) < 1e-10: direction = points[4] - points[0]
+    times = [-np.dot(normal, start-origin) / np.dot(normal, direction)
+             for origin, normal in planes if np.dot(normal, direction) > 1e-12]
+    assert times
+    on_surface = start + max(0, min(times)) * direction
+    return closest_to_point(on_surface, line)
 
 
 def read_bones(path):

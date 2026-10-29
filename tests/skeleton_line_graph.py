@@ -202,39 +202,66 @@ for sex in ('male', 'female'):
     for group, part_names in groups.items():
         points = solids[group][1]
         if group in hexahedra:
-            # Independent box-space checks: every supplied bone vertex is
-            # inside, and all six sides touch a source extremity. This tests
-            # width, height, length AND the full heel, not arbitrary padding.
-            origin = points[0]
-            axes = [tuple(points[i][j]-origin[j] for j in range(3)) for i in (4,2,1)]
-            lengths = [math.sqrt(sum(x*x for x in axis)) for axis in axes]
-            assert all(0.02 < size < 0.3 for size in lengths)
-            units = [tuple(x/size for x in axis) for axis,size in zip(axes,lengths)]
+            # Verify the six planar faces, anatomical axes and tapered fit
+            # independently against the actual calcaneus, talus and metatarsals.
             side = group[-1]
             def centroid(name):
                 source = member_vertices[name]
                 return tuple(sum(p[i] for p in source)/len(source) for i in range(3))
+            def dot(a,b): return sum(x*y for x,y in zip(a,b))
+            def sub(a,b): return tuple(x-y for x,y in zip(a,b))
+            def cross(a,b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+            def unit(p):
+                size = math.sqrt(dot(p,p)); assert size > 1e-9
+                return tuple(x/size for x in p)
             heel, ankle = centroid(f'Cal_{side}'), centroid(f'Tal_{side}')
             meta = [centroid(f'FootMeta{i}_{side}') for i in range(1,6)]
-            forward = tuple(sum(p[i] for p in meta)/5 - heel[i] for i in range(3))
-            mag = math.sqrt(sum(x*x for x in forward)); forward = tuple(x/mag for x in forward)
-            assert sum(units[0][i]*forward[i] for i in range(3)) > 0.9999
-            raw_up = tuple(ankle[i]-heel[i] for i in range(3))
-            along = sum(raw_up[i]*forward[i] for i in range(3))
-            up = tuple(raw_up[i]-along*forward[i] for i in range(3))
-            mag = math.sqrt(sum(x*x for x in up)); up = tuple(x/mag for x in up)
-            assert sum(units[2][i]*up[i] for i in range(3)) > 0.9999
-            assert all(abs(sum(units[i][k]*units[j][k] for k in range(3))) < 0.0001
-                       for i in range(3) for j in range(i+1,3))
+            forward = unit(tuple(sum(p[i] for p in meta)/5 - heel[i] for i in range(3)))
+            raw_up = sub(ankle, heel)
+            up = unit(tuple(raw_up[i]-dot(raw_up,forward)*forward[i] for i in range(3)))
+            width = unit(cross(up,forward))
+            basis = (forward, width, up)
+            local = [tuple(dot(p,axis) for axis in basis) for p in points]
+            all_bones = [p for member in part_names for p in member_vertices[member]]
+            rear_bones = member_vertices[f'Cal_{side}'] + member_vertices[f'Tal_{side}']
+            front_bones = [p for i in range(1,6) for p in member_vertices[f'FootMeta{i}_{side}']]
+            x0, x1 = local[0][0], local[4][0]
+            assert 0.1 < x1-x0 < 0.3
+            assert abs(x0 - min(dot(p,forward) for p in all_bones)) < 0.00001
+            assert abs(x1 - max(dot(p,forward) for p in all_bones)) < 0.00001
             for i in range(8):
-                predicted = tuple(origin[j] + sum(axes[k][j] for k,bit in enumerate((4,2,1)) if i & bit)
-                                  for j in range(3))
-                assert math.dist(points[i], predicted) < 0.00001
-            for axis, size in zip(units,lengths):
-                projections = [sum((p[j]-origin[j])*axis[j] for j in range(3))
-                               for member in part_names for p in member_vertices[member]]
-                assert abs(min(projections)) < 0.00001 and abs(max(projections)-size) < 0.00001
-                assert min(projections) >= -0.00001 and max(projections) <= size + 0.00001
+                assert abs(local[i][0] - (x1 if i & 4 else x0)) < 0.00001
+            for axis, bit in ((1,2),(2,1)):
+                low0, high0 = local[0][axis], local[bit][axis]
+                low1, high1 = local[4][axis], local[4+bit][axis]
+                assert high0 > low0 and high1 > low1
+                # Slopes match the separately measured heel and forefoot bone
+                # extents, rather than manufacturing equal-width box faces.
+                rear = [dot(p,basis[axis]) for p in rear_bones]
+                front = [dot(p,basis[axis]) for p in front_bones]
+                assert abs((low1-low0) - (min(front)-min(rear))) < 0.00001
+                assert abs((high1-high0) - (max(front)-max(rear))) < 0.00001
+                for i in range(8):
+                    t = 1 if i & 4 else 0
+                    expected_coordinate = ((high1 if t else high0) if i & bit else (low1 if t else low0))
+                    assert abs(local[i][axis] - expected_coordinate) < 0.00001
+                residuals = []
+                for p in all_bones:
+                    t = (dot(p,forward)-x0)/(x1-x0)
+                    value = dot(p,basis[axis])
+                    lower = low0 + t*(low1-low0); upper = high0 + t*(high1-high0)
+                    assert lower - 0.00001 <= value <= upper + 0.00001
+                    residuals.append((value-lower, upper-value))
+                assert min(x[0] for x in residuals) < 0.00001
+                assert min(x[1] for x in residuals) < 0.00001
+            rear_width, front_width = local[2][1]-local[0][1], local[6][1]-local[4][1]
+            rear_height, front_height = local[1][2]-local[0][2], local[5][2]-local[4][2]
+            assert front_width > rear_width + 0.005
+            assert rear_height > front_height + 0.01
+            quads = ((0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3))
+            for a,b,c,d in quads:
+                normal = unit(cross(sub(points[b],points[a]), sub(points[c],points[a])))
+                assert abs(dot(normal,sub(points[d],points[a]))) < 0.00001
             continue
         for name in part_names:
             indices = anchors[group][name]
