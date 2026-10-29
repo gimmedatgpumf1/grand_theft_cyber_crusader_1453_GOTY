@@ -51,14 +51,15 @@ triangulated surface anchored to the individual source bones.
 
 Each foot base is a **six-faced, irregular hexahedron**. Its sole runs from
 the farthest back of the calcaneus to the heads of the first and fifth
-metatarsals, with the heel and toe widths measured independently. The upper
-rear corners follow the distal tibia and fibula, and the upper front corners
-follow the big-toe and little-toe metatarsal heads. A fitted plane approximates
-those four landmarks, which are not exactly coplanar in the source; all six
-faces remain planar. The toe phalanges remain separate. The feet point down in
-the registered source pose, so the sole follows their anatomical direction
-rather than lying level in world space. This is an approximation, not an
-anatomical surface or a change to the animation rig.
+metatarsals. The rear width is measured at the narrow back of the heel, not
+its wider middle, while the front spans the big-toe and little-toe bases.
+The filled upper quadrilateral covers the projected footprints of the distal
+tibia and fibula, in a plane perpendicular to the shin; it is not just a line
+between the two bones. Its four sides are fitted to the source-derived sole,
+keeping all faces planar. The toe phalanges remain separate. The feet point
+down in the registered source pose, so the sole follows their anatomical
+direction rather than lying level in world space. This is an approximation,
+not an anatomical surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and

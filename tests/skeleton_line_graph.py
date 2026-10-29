@@ -196,8 +196,8 @@ for sex in ('male', 'female'):
         assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
         assert 0.05 < span < 0.3, group
-    # Hands use source-derived anchors; feet use a low hexahedron whose sole
-    # reaches the actual heel and spans the source bone footprint.
+    # Hands use source-derived anchors; feet have source-derived heel, toe
+    # and distal-shin dimensions.
     for group, part_names in groups.items():
         points = solids[group][1]
         if group in hexahedra:
@@ -228,15 +228,41 @@ for sex in ('male', 'female'):
             calc = [project(p) for p in member_vertices[f'Cal_{side}']]
             x0, z0 = min(p[0] for p in calc), min(p[2] for p in calc)
             assert abs(local[0][0]-x0) < 0.00001 and abs(local[2][0]-x0) < 0.00001
-            assert abs(local[0][1]-min(p[1] for p in calc)) < 0.00001
-            assert abs(local[2][1]-max(p[1] for p in calc)) < 0.00001
+            rear_cutoff = quantile([p[0] for p in calc], 0.10)
+            rear = [p for p in calc if p[0] <= rear_cutoff]
+            assert abs(local[0][1]-min(p[1] for p in rear)) < 0.00001
+            assert abs(local[2][1]-max(p[1] for p in rear)) < 0.00001
+            assert local[2][1]-local[0][1] < 0.75*(max(p[1] for p in calc)-min(p[1] for p in calc))
             assert abs(local[0][2]-z0) < 0.00001 and abs(local[2][2]-z0) < 0.00001
-            distal_ankles = []
+            distal_ankles, proximal_ankles = [], []
             for name in ('Tibia','Fibula'):
                 vertices = member_vertices[f'{name}_{side}']
-                cutoff = quantile([p[1] for p in vertices], 0.08)
-                distal_ankles.append(project(centroid([p for p in vertices if p[1] <= cutoff])))
-            distal_ankles.sort(key=lambda p: p[1])
+                low = quantile([p[1] for p in vertices], 0.08)
+                high = quantile([p[1] for p in vertices], 0.90)
+                distal_ankles.append([p for p in vertices if p[1] <= low])
+                proximal_ankles.append([p for p in vertices if p[1] >= high])
+            origin = centroid([centroid(bone) for bone in distal_ankles])
+            leg = unit(sub(centroid([centroid(bone) for bone in proximal_ankles]), origin))
+            top = [points[i] for i in (1,3,7,5)]
+            normal = unit(cross(sub(top[1],top[0]), sub(top[2],top[0])))
+            assert abs(dot(normal,leg)) > 0.9999
+            assert abs(dot(normal,sub(origin,top[0]))) < 0.00001
+            area = (math.sqrt(dot(cross(sub(top[1],top[0]),sub(top[2],top[0])),
+                                  cross(sub(top[1],top[0]),sub(top[2],top[0])))) +
+                    math.sqrt(dot(cross(sub(top[2],top[0]),sub(top[3],top[0])),
+                                  cross(sub(top[2],top[0]),sub(top[3],top[0]))))) / 2
+            assert 0.0004 < area < 0.02, (group, 'ankle face area', area)
+            middle = centroid(top)
+            for bone in distal_ankles:
+                # Project each real distal-bone vertex onto the top plane;
+                # both bones must fit inside the filled quadrilateral.
+                for p in bone:
+                    for i in range(4):
+                        edge = sub(top[(i+1)%4], top[i])
+                        ref = dot(normal, cross(edge, sub(middle,top[i])))
+                        value = dot(normal, cross(edge, sub(p,top[i])))
+                        edge_length = math.sqrt(dot(edge,edge))
+                        assert value*(1 if ref > 0 else -1) >= -0.00001*edge_length, (group, 'ankle coverage')
             distal_toes = []
             for digit in (1,5):
                 vertices = [project(p) for p in member_vertices[f'FootMeta{digit}_{side}']]
@@ -244,10 +270,6 @@ for sex in ('male', 'female'):
                 subset = [p for p in vertices if p[0] >= cutoff]
                 distal_toes.append((centroid(subset), subset))
             distal_toes.sort(key=lambda item: item[0][1])
-            for index, landmark in zip((1,3), distal_ankles):
-                assert math.dist(local[index], landmark) < 0.012, (group, 'ankle', index)
-            for index, (landmark, _) in zip((5,7), distal_toes):
-                assert math.dist(local[index], landmark) < 0.012, (group, 'toe', index)
             for index, (_, subset) in zip((4,6), distal_toes):
                 assert abs(local[index][0]-max(p[0] for p in subset)) < 0.00001
             toe_vertices = distal_toes[0][1] + distal_toes[1][1]
@@ -262,10 +284,10 @@ for sex in ('male', 'female'):
                 assert abs(dot(normal,sub(points[d],points[a]))) < 0.00001
                 if dot(normal,sub(centre,points[a])) > 0: normal = tuple(-x for x in normal)
                 assert all(dot(normal,sub(p,points[a])) < 0.00001 for p in points), group
-            # Front is not a rectangular face; ankle top and toe front each
-            # follow two separate bones rather than symmetric box dimensions.
-            assert abs(local[5][2]-local[7][2]) > 0.005
-            assert abs(local[1][2]-local[3][2]) > 0.002
+            # A real top has both width and depth; the front spans the two
+            # independently positioned outer toe bones.
+            assert math.dist(top[0],top[1]) > 0.02
+            assert math.dist(top[1],top[2]) > 0.02
             continue
         for name in part_names:
             indices = anchors[group][name]

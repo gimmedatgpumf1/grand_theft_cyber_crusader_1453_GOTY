@@ -128,77 +128,100 @@ def unified_surface(bones, members):
 
 
 def foot_hexahedron(bones, members, side):
-    """Six irregular planar faces fitted to heel, ankle and toe bones.
+    """Fit a heel-to-toe solid with a real ankle-sized upper face.
 
-    The sole runs from the back of the calcaneus to the metatarsal heads.
-    Its heel end is narrower than the big-to-little-toe end. The upper heel
-    corners follow the distal tibia and fibula; the upper front corners follow
-    the first and fifth metatarsal heads. The source is posed with pointed feet,
-    so the sole is horizontal in the foot's anatomical frame, not world space.
+    The sole follows the source heel and outer metatarsal heads. The top is a
+    quadrilateral around the distal tibia and fibula, not their connecting line.
+    The registered feet point downward, so the sole follows the source pose.
     """
-    heel = bones[f'Cal_{side}'].mean(axis=0)
-    ankle = bones[f'Tal_{side}'].mean(axis=0)
+    heel = bones[f'Cal_{side}']
+    ankle = bones[f'Tal_{side}']
     metatarsals = [bones[f'FootMeta{i}_{side}'] for i in range(1, 6)]
-    forward = np.mean([bone.mean(axis=0) for bone in metatarsals], axis=0) - heel
+    forward = np.mean([bone.mean(axis=0) for bone in metatarsals], axis=0) - heel.mean(axis=0)
     forward /= np.linalg.norm(forward)
-    up = ankle - heel
+    up = ankle.mean(axis=0) - heel.mean(axis=0)
     up -= np.dot(up, forward) * forward
     assert np.linalg.norm(up) > 1e-8
     up /= np.linalg.norm(up)
     width = np.cross(up, forward)
     width /= np.linalg.norm(width)
     axes = np.array([forward, width, up])
-    calc = bones[f'Cal_{side}'] @ axes.T
-    ankle_points = []
-    for name in ('Tibia', 'Fibula'):
-        vertices = bones[f'{name}_{side}']
-        # Registered subjects stand with the lower end of the shin at min Y.
-        distal = vertices[vertices[:, 1] <= np.quantile(vertices[:, 1], 0.08)]
-        ankle_points.append((distal @ axes.T).mean(axis=0))
-    ankle_points.sort(key=lambda p: p[1])
-    heads, head_points = [], []
+    calc = heel @ axes.T
+    # Width at the back of the calcaneus, not its much wider midsection.
+    rear = calc[calc[:, 0] <= np.quantile(calc[:, 0], 0.10)]
+    heads = []
     for bone in (metatarsals[0], metatarsals[4]):
         vertices = bone @ axes.T
         distal = vertices[vertices[:, 0] >= np.quantile(vertices[:, 0], 0.90)]
-        heads.append(distal)
-        head_points.append((distal.mean(axis=0), distal[:, 0].max()))
-    head_points.sort(key=lambda item: item[0][1])
-    toe_vertices = np.concatenate(heads)
+        heads.append((distal.mean(axis=0), distal))
+    heads.sort(key=lambda item: item[0][1])
+    toes = np.concatenate([item[1] for item in heads])
     x0, z0 = calc[:, 0].min(), calc[:, 2].min()
-    x1 = toe_vertices[:, 0].max()
-    # Bone-scaled clearance below the low toe head avoids a zero-thickness
-    # front when the first and fifth metatarsals sit at different heights.
+    x1 = toes[:, 0].max()
     toe_height = np.mean([np.ptp((bone @ axes.T)[:, 2]) for bone in (metatarsals[0], metatarsals[4])])
-    z1 = toe_vertices[:, 2].min() - 0.35 * toe_height
+    z1 = toes[:, 2].min() - 0.35 * toe_height
     def sole_height(x): return z0 + (z1-z0) * (x-x0) / (x1-x0)
-    low_x, high_x = (item[1] for item in head_points)
-    bottom = np.array([[x0, calc[:, 1].min(), z0],
-                       [x0, calc[:, 1].max(), z0],
-                       [high_x, toe_vertices[:, 1].max(), sole_height(high_x)],
-                       [low_x, toe_vertices[:, 1].min(), sole_height(low_x)]])
-    landmarks = np.array([ankle_points[0], ankle_points[1], head_points[1][0], head_points[0][0]])
-    # The four measured landmarks are not exactly coplanar. Fit one top plane
-    # instead of twisting its two triangles, then intersect it with four side
-    # planes passing through the source-derived sole edges.
-    coefficients = np.linalg.lstsq(np.column_stack((landmarks[:, :2], np.ones(4))), landmarks[:, 2], rcond=None)[0]
-    top = landmarks.copy()
-    top[:, 2] = top[:, 0]*coefficients[0] + top[:, 1]*coefficients[1] + coefficients[2]
+    low_x, high_x = (item[1][:, 0].max() for item in heads)
+    bottom = np.array([[x0, rear[:, 1].min(), z0],
+                       [x0, rear[:, 1].max(), z0],
+                       [high_x, toes[:, 1].max(), sole_height(high_x)],
+                       [low_x, toes[:, 1].min(), sole_height(low_x)]]) @ axes
+    distal, proximal = [], []
+    for name in ('Tibia', 'Fibula'):
+        vertices = bones[f'{name}_{side}']
+        # The registered subjects' lower shin ends are at minimum world Y.
+        distal.append(vertices[vertices[:, 1] <= np.quantile(vertices[:, 1], 0.08)])
+        proximal.append(vertices[vertices[:, 1] >= np.quantile(vertices[:, 1], 0.90)])
+    origin = np.mean([p.mean(axis=0) for p in distal], axis=0)
+    leg = np.mean([p.mean(axis=0) for p in proximal], axis=0) - origin
+    leg /= np.linalg.norm(leg)
+    along = forward - np.dot(forward, leg)*leg
+    along /= np.linalg.norm(along)
+    across = np.cross(leg, along)
+    if np.dot(across, width) < 0: across = -across
+    footprint = (np.concatenate(distal) - origin) @ np.array([along, across]).T
+    u0, u1 = footprint[:, 0].min(), footprint[:, 0].max()
+    near = footprint[footprint[:, 0] <= np.quantile(footprint[:, 0], 0.25)]
+    far = footprint[footprint[:, 0] >= np.quantile(footprint[:, 0], 0.75)]
+    t = (footprint[:, 0] - u0) / (u1-u0)
+    dl = far[:, 1].min()-near[:, 1].min()
+    dh = far[:, 1].max()-near[:, 1].max()
+    v0 = np.min(footprint[:, 1]-t*dl)
+    v1 = np.max(footprint[:, 1]-t*dh)
+    target = np.array([origin + along*u0 + across*v0,
+                       origin + along*u0 + across*v1,
+                       origin + along*u1 + across*(v1+dh),
+                       origin + along*u1 + across*(v0+dl)])
     def plane(a, b, c):
         normal = np.cross(b-a, c-a)
         assert np.linalg.norm(normal) > 1e-10
         return np.r_[normal, -np.dot(normal, a)]
-    top_plane = plane(top[0], top[1], top[2])
-    sides = [plane(bottom[i], bottom[(i+1)%4], (top[i]+top[(i+1)%4])/2) for i in range(4)]
-    fitted_top = []
-    for i in range(4):
-        equations = np.stack((top_plane, sides[i-1], sides[i]))
-        fitted_top.append(np.linalg.solve(equations[:, :3], -equations[:, 3]))
-    # The renderer's binary indices are rear/front, low/high width, bottom/top.
+    top_plane = plane(target[0], target[1], target[2])
+    centre = target.mean(axis=0)
+    # A planar hexahedron cannot generally use two arbitrary source quads
+    # verbatim. Keep the measured sole, fit four planar sides, then enlarge the
+    # ankle face just enough to contain both projected distal-bone footprints.
+    def cross2(a, b): return a[0]*b[1] - a[1]*b[0]
+    for scale in np.linspace(1.0, 3.0, 101):
+        candidate = centre + (target-centre)*scale
+        sides = [plane(bottom[i], bottom[(i+1)%4], (candidate[i]+candidate[(i+1)%4])/2) for i in range(4)]
+        top = []
+        for i in range(4):
+            equations = np.stack((top_plane, sides[i-1], sides[i]))
+            top.append(np.linalg.solve(equations[:, :3], -equations[:, 3]))
+        top = np.array(top)
+        polygon = (top-origin) @ np.array([along, across]).T
+        middle = polygon.mean(axis=0)
+        if all(cross2(polygon[(i+1)%4]-polygon[i], p-polygon[i]) *
+               cross2(polygon[(i+1)%4]-polygon[i], middle-polygon[i]) >= -1e-12
+               for p in footprint for i in range(4)):
+            break
+    else:
+        raise ValueError(f'ankle footprint does not fit foot top: {side}')
+    # Binary indices are rear/front, low/high width, bottom/top.
     order = (0, 1, 3, 2)
     points = []
-    for i in range(4):
-        index = order[i]
-        points.extend((bottom[index] @ axes, fitted_top[index] @ axes))
+    for index in order: points.extend((bottom[index], top[index]))
     return np.array(points), axes
 
 
