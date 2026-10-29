@@ -74,10 +74,17 @@ void drawWalls(Rasterizer& rasterizer, const Camera& camera) {
 } // namespace
 
 bool SkeletonRoom::load(const std::string& root, std::string& error) {
+    ready_ = false;
+    lineSceneReady_ = false;
+    restReady_ = false;
+    sceneReady_ = false;
     const std::string directory = root + "/tools/skeleton-source/";
     if (!male_.load(directory + "skeleton-male.obj", error)) return false;
     if (!female_.load(directory + "skeleton-female.obj", error)) return false;
+    if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
+    if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
     error_.clear();
+    ready_ = true;
     return true;
 }
 
@@ -91,6 +98,38 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.target = {0, 0.95, 0};
         camera.position = {std::sin(view.yaw) * 3.5, 1.15, std::cos(view.yaw) * 3.5};
         camera.worldSpaceGpu = view.gpu;
+    }
+    if (lineView_) {
+        // Line view is a static inspection of the registered source pose. Its
+        // triangles are built once and stay on the device; meshes are not drawn.
+        if (view.gpu) {
+            if (!lineSceneReady_) {
+                Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
+                raster.setCamera(camera);
+                drawFloor(raster, camera); drawWalls(raster, camera);
+                maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
+                femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+                lineScene_ = raster.takeGpuScene();
+                lineScene_.revision = ++revision_;
+                lineSceneReady_ = true;
+            }
+            lineScene_.width = camera.width; lineScene_.height = camera.height;
+            lineScene_.focal = camera.focal(); lineScene_.viewMatrix = camera.viewMatrix();
+            lineScene_.covered = freecam == nullptr;
+            frame.width = camera.width; frame.height = camera.height;
+            frame.wantsBgra = true; frame.rgb.clear();
+            if (!renderGpuScene(lineScene_, frame)) frame.rgb.clear();
+            frame.logicalUi();
+            return;
+        }
+        Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
+        raster.setCamera(camera);
+        drawFloor(raster, camera); drawWalls(raster, camera);
+        maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
+        femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+        frame = raster.finish();
+        frame.logicalUi();
+        return;
     }
     // Room geometry is in world space: resizing or orbiting changes only the
     // projection and view matrix, not the floor, walls or skeleton meshes.

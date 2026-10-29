@@ -3,6 +3,7 @@
 #include "client/raster.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
+#include "client/skeleton_lines.h"
 
 #include <cstdint>
 #include <utility>
@@ -20,16 +21,23 @@ class RoomFreecam;
 class SkeletonRoom {
 public:
     bool load(const std::string& root, std::string& error);
-    bool ready() const { return male_.loaded() && female_.loaded(); }
+    bool ready() const { return ready_; }
     std::size_t triangles() const { return sceneTriangles_; }
     const SkeletonModel& male() const { return male_; }
     const SkeletonModel& female() const { return female_; }
+    bool lineView() const { return lineView_; }
+    void toggleLineView() { lineView_ = !lineView_; }
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
     SkeletonModel male_;
     SkeletonModel female_;
+    SkeletonLines maleLines_, femaleLines_;
+    GpuScene lineScene_;
+    bool ready_ = false;
+    bool lineView_ = false;
+    bool lineSceneReady_ = false;
     std::string error_;
     // The room's geometry is kept between frames when the GPU path draws it:
     // two skeletons are three hundred thousand triangles, and re-sending them

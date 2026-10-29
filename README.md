@@ -51,7 +51,8 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - **C** opens/closes the skeleton test room. The room has an independent free camera:
   move with **WASD**, look with the mouse, fly up/down with **Space/Left Ctrl**, hold **Shift**
   for faster movement, and use the wheel to move closer or farther. **Esc** releases the
-  mouse; click to capture it again. Room controls do not move the player in the game.
+  mouse; click to capture it again. **V** toggles the static skeleton line view. Room controls
+  do not move the player in the game.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
   Male anatomy starts zipped behind a loose, projecting cloth tent in FPS and TPS; **T** intentionally
   exposes it. Holding LMB (or F in FPS) outside a toilet action works only while unzipped and empties

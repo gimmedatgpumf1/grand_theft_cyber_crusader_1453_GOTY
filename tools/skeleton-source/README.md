@@ -37,3 +37,29 @@ See `ATTRIBUTION.md` for attribution and `openskeleton/README.md` for the
 original source files and extraction. The reference PNGs are historical and do
 not show these current models. The Z-Anatomy importer remains for historical
 reproducibility; its output is not the currently shipped male.
+
+## C room line view
+
+Press V in the C room to replace both skeleton meshes with source-pose lines;
+press V again to return to the mesh view. Pale lines approximate the supplied
+bone shapes, cyan lines connect anatomical neighbours, and orange lines are
+inferred costal cartilage (not present in the scans). Complex bones use multiple
+segments. Both models use the same explicit, connected table of 182 structures
+and 209 relationships. The table is based on OpenStax's
+[thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
+[upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)
+and [lower limb](https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb)
+descriptions. Ribs 1–7 connect via inferred cartilage to the sternum, ribs 8–10
+via the preceding rib, and ribs 11–12 have no anterior connection.
+
+The source supplies surfaces, not joint landmarks. Line shapes and link endpoints
+are estimates from each surface; the anatomical table chooses the pairs, never
+proximity. The static graph does **not** visualize or validate the existing
+27-group animation rig, and neither the graph nor the source registration is a
+clinical certification. `Head` and `Jaw` are whole source structures, not
+individual skull bones. Regenerate and check after rebuilding the OBJs with:
+
+```sh
+python3 tools/skeleton-source/openskeleton/04-line-graph.py
+python3 tests/skeleton_line_graph.py
+```

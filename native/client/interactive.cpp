@@ -502,6 +502,8 @@ private:
         } else if (action == RoomFreecam::Action::Release) {
             window_.captureMouse(false);
             captured_ = false;
+        } else if (action == RoomFreecam::Action::ToggleLines) {
+            room_.toggleLineView();
         } else if (action == RoomFreecam::Action::Screenshot) {
             screenshot_ = true;
         }

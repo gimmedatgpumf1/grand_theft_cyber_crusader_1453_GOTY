@@ -20,10 +20,14 @@ static std::uint64_t capturedRevision;
 static std::uint32_t maleSkullId;
 static std::size_t skullIndexCount;
 static bool capturedCovered;
+static bool lineObjectsOnly;
+static std::size_t maleLineIndices, femaleLineIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
     indicesValid = true;
     skullIndexCount = 0;
+    lineObjectsOnly = true;
+    maleLineIndices = femaleLineIndices = 0;
     batchCount = scene.batches.size();
     capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
     capturedView = scene.viewMatrix;
@@ -32,8 +36,13 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
     for (const auto& batch : scene.batches) {
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
-        if (batch.objectId >= 9001 && batch.objectId < 10000) male.push_back(batch.modelMatrix);
-        else if (batch.objectId >= 8001 && batch.objectId < 9000) female.push_back(batch.modelMatrix);
+        if (batch.objectId >= 9001 && batch.objectId < 10000) {
+            male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
+            if (batch.objectId != 9001) lineObjectsOnly = false;
+        } else if (batch.objectId >= 8001 && batch.objectId < 9000) {
+            female.push_back(batch.modelMatrix); femaleLineIndices += batch.indices.size();
+            if (batch.objectId != 8001) lineObjectsOnly = false;
+        }
     }
     return true;
 }
@@ -125,6 +134,26 @@ int main() {
     pass = pass && capturedView != freecamView && capturedView == freecam.camera(640, 480, true).viewMatrix() &&
            female == femaleBeforeMove && male == maleBeforeMove && indicesValid && !capturedCovered &&
            capturedRevision == oldRevision && batchCount == oldBatches && skullIndexCount == expectedSkullIndices;
+    // V replaces both mesh bodies with static, cached line geometry. Camera
+    // changes and time changes do not rebuild or pose those lines.
+    room.toggleLineView();
+    room.render(frame, view, 1.90, &freecam);
+    const auto lineRevision = capturedRevision;
+    const auto lineView = capturedView;
+    const auto lineBatchCount = batchCount;
+    pass = pass && room.lineView() && indicesValid && lineRevision != oldRevision &&
+           female.size() == 3 && male.size() == 3 && lineBatchCount < oldBatches && lineObjectsOnly &&
+           maleLineIndices <= 751 * 36 && femaleLineIndices <= 751 * 36 &&
+           maleLineIndices >= 542 * 36 && femaleLineIndices >= 542 * 36;
+    WindowEvent moreLook{WindowEvent::Type::MouseMove}; moreLook.dx = 25;
+    freecam.handle(moreLook, true);
+    room.render(frame, view, 4.90, &freecam);
+    pass = pass && capturedRevision == lineRevision && capturedView != lineView &&
+           batchCount == lineBatchCount && indicesValid;
+    room.toggleLineView();
+    room.render(frame, view, 1.90, &freecam);
+    pass = pass && !room.lineView() && capturedRevision == oldRevision &&
+           female.size() == 27 && male.size() == 27 && skullIndexCount == expectedSkullIndices;
     setGpuRenderer(nullptr);
     std::printf("test room source pose and resize: %s (female %zu groups, male %zu groups)\n",
                 pass ? "PASS" : "FAIL", female.size(), male.size());

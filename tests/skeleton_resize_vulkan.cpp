@@ -103,6 +103,46 @@ int main() {
         ok = changed > 1000;
         std::printf("Vulkan room freecam: %s (%d changed pixels)\n", ok ? "PASS" : "FAIL", changed);
     }
+    if (ok) {
+        view.width = 640; view.height = 480;
+        setGpuRenderer(&renderVulkanScene);
+        room.render(frame, view, 2.5);
+        const std::size_t bytes = static_cast<std::size_t>(view.width) * view.height * 4;
+        const unsigned char* before = frame.direct ? frame.direct : frame.bgra.data();
+        std::vector<unsigned char> mesh(before, before + bytes);
+        room.toggleLineView();
+        room.render(frame, view, 2.5);
+        const unsigned char* after = frame.direct ? frame.direct : frame.bgra.data();
+        int changed = 0;
+        for (std::size_t i = 0; i < bytes; i += 4) {
+            int difference = 0;
+            for (int c = 0; c < 3; ++c)
+                difference += std::abs(static_cast<int>(mesh[i+c]) - after[i+c]);
+            if (difference > 24) ++changed;
+        }
+        setGpuRenderer(&renderAndCheck);
+        room.render(frame, view, 2.5);
+        ok = changed > 1000 && bothVisible;
+        for (const auto size : {std::pair<int,int>{800,600}, {480,360}, {640,480}}) {
+            view.width = size.first; view.height = size.second;
+            room.render(frame, view, 2.5);
+            ok = ok && bothVisible;
+        }
+        room.toggleLineView();
+        setGpuRenderer(&renderVulkanScene);
+        room.render(frame, view, 2.5);
+        after = frame.direct ? frame.direct : frame.bgra.data();
+        int restoreDiff = 0;
+        for (std::size_t i = 0; i < bytes; i += 4) {
+            int difference = 0;
+            for (int c = 0; c < 3; ++c)
+                difference += std::abs(static_cast<int>(mesh[i+c]) - after[i+c]);
+            if (difference > 24) ++restoreDiff;
+        }
+        ok = ok && restoreDiff < 10;
+        std::printf("Vulkan line view: %s (%d changed pixels; both bodies; mesh restored, %d different pixels)\n",
+                    ok ? "PASS" : "FAIL", changed, restoreDiff);
+    }
     setGpuRenderer(nullptr);
     shutdownVulkan();
     std::printf("Vulkan room resize: %s (%d offscreen frames)\n", ok ? "PASS" : "FAIL", step);

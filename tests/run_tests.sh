@@ -7,6 +7,7 @@ bash tools/nagger.sh
 python3 tests/openskeleton_source_pose.py female
 python3 tests/openskeleton_source_pose.py male
 python3 tests/openskeleton_extract.py
+python3 tests/skeleton_line_graph.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.
 python3 tests/build_scripts.py

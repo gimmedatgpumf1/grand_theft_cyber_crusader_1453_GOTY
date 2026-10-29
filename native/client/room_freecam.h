@@ -12,7 +12,7 @@ namespace gtc::native {
 // aim, attack, or change the player behind the room.
 class RoomFreecam {
 public:
-    enum class Action { None, Capture, Release, Exit, Screenshot };
+    enum class Action { None, Capture, Release, Exit, Screenshot, ToggleLines };
 
     Action handle(const WindowEvent& event, bool captured) {
         if (event.type == WindowEvent::Type::FocusLoss) { clear(); return Action::Release; }
@@ -27,6 +27,7 @@ public:
             keys_.erase(event.key);
         } else if (event.type == WindowEvent::Type::KeyDown) {
             if (event.key == 'c') return event.repeat ? Action::None : Action::Exit;
+            if (event.key == 'v') return event.repeat ? Action::None : Action::ToggleLines;
             if (event.key == kKeyEscape) { clear(); return Action::Release; }
             if (event.key == kKeyF12) return event.repeat ? Action::None : Action::Screenshot;
             if (event.key == 'w' || event.key == 'a' || event.key == 's' || event.key == 'd' ||

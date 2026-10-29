@@ -89,6 +89,11 @@ int main() {
     const auto originalView = app.view_;
     app.handle(down('c'));
     assert(app.testRoom_ && app.captured_ && neutral(receive(peer)));
+    assert(!app.room_.lineView());
+    app.handle(down('v')); assert(app.room_.lineView());
+    WindowEvent repeatV = down('v'); repeatV.repeat = true; app.handle(repeatV);
+    assert(app.room_.lineView());
+    app.handle(down('v')); assert(!app.room_.lineView());
     app.handle(down('w')); app.handle(down(' ')); app.handle(down(kKeyShift));
     app.handle(down('t')); app.handle(down('e')); app.handle(down('f'));
     WindowEvent mouse{WindowEvent::Type::MouseDown}; mouse.button = 3; app.handle(mouse);
