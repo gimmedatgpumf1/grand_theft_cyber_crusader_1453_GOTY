@@ -89,8 +89,8 @@ or the source registration.
 
 ## Extracting a male subject on Windows
 
-The ready-to-download [Windows extraction bundle](OpenSkeleton-male-extractor.zip)
-contains the scripts and the checksum-verified `Faces.mat` from the Zenodo record.
+Download [extract-male.cmd](extract-male.cmd). It contains the extractor; no
+separate Python script or ZIP is needed. Use `Faces.mat` from the Zenodo record.
 
 The current male test candidate is **N197925**, whose metadata records a
 170 cm cadaver length. This is not evidence of normal anatomy or a correctly
