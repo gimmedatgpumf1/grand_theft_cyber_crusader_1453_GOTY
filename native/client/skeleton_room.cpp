@@ -92,13 +92,18 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     camera.target = {0, 0.95, 0};
     camera.position = {std::sin(view.yaw) * distance, height, std::cos(view.yaw) * distance};
     camera.worldSpaceGpu = view.gpu;
-    // The idle pose is worth rebuilding the batches for four times a second,
-    // not sixty: the pose runs at the simulation's 15 Hz, the camera does not,
-    // and the camera is the only thing that changes between those rebuilds.
+    // Room geometry is in world space: resizing or orbiting changes only the
+    // projection and view matrix, not the floor, walls or skeleton meshes.
+    const auto updateCamera = [&] {
+        scene_.width = camera.width;
+        scene_.height = camera.height;
+        scene_.focal = camera.focal();
+        scene_.viewMatrix = camera.viewMatrix();
+    };
     const double pose = std::floor(std::max(0.0, seconds) * 15.0) / 15.0;
-    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_ &&
-        camera.width == cachedWidth_ && camera.height == cachedHeight_;
+    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_;
     if (reuse) {
+        updateCamera();
         frame.width = camera.width;
         frame.height = camera.height;
         frame.wantsBgra = true;
@@ -121,7 +126,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         // than 195,000 transformed vertices per body plus the same geometry
         // travelling to the GPU again. The male pose updates at fifteen hertz;
         // the female matrices retain the source pose.
-        if (!restReady_ || camera.width != cachedWidth_ || camera.height != cachedHeight_) {
+        if (!restReady_) {
             const int maleBase = 9001;
             const int femaleBase = 8001;
             Rasterizer room(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true,
@@ -153,8 +158,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             for (const GpuBatch& batch : scene_.batches) sceneTriangles_ += batch.vertices.size() / 3;
             restReady_ = true;
             sceneReady_ = true;
-            cachedWidth_ = camera.width;
-            cachedHeight_ = camera.height;
         }
         // The pose is the only thing that changes: write the bone matrices into
         // the batches they belong to. No vertex data moves. Between pose updates
@@ -183,6 +186,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             scene_.batches[entry.second].modelMatrix = (*matrices)[boneIndex];
         }
         cachedPose_ = pose;
+        updateCamera();
         frame.wantsBgra = true;
         frame.width = camera.width;
         frame.height = camera.height;

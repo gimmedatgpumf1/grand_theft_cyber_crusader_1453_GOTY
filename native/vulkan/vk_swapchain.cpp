@@ -161,7 +161,12 @@ bool Renderer::createSwapchain(int width, int height) {
         extent.height = std::min(std::max(static_cast<std::uint32_t>(height), caps.minImageExtent.height),
                                  caps.maxImageExtent.height);
     }
-    if (extent.width == 0 || extent.height == 0) return false;
+    if (extent.width == 0 || extent.height == 0) {
+        // Minimized surfaces can have no drawable area. Mark the old chain
+        // unavailable so draw() skips this frame until the surface returns.
+        swapReady_ = false;
+        return false;
+    }
     if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) {
         fatalSwapchain("this surface cannot take a transfer");
     }
@@ -232,8 +237,10 @@ bool Renderer::createSwapchain(int width, int height) {
     info.presentMode = mode;
     info.clipped = VK_TRUE;
     info.oldSwapchain = VK_NULL_HANDLE;
-    if (createSwapchainFn(device_, &info, nullptr, &swapchain_) != VK_SUCCESS) {
+    const VkResult created = createSwapchainFn(device_, &info, nullptr, &swapchain_);
+    if (created != VK_SUCCESS) {
         swapchain_ = VK_NULL_HANDLE;
+        if (created == VK_ERROR_OUT_OF_DATE_KHR) return false;
         fatalSwapchain("vkCreateSwapchainKHR failed");
     }
     std::uint32_t count = 0;

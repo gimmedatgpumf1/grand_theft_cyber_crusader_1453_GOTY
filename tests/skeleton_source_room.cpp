@@ -10,13 +10,46 @@
 
 using namespace gtc::native;
 static std::vector<std::array<double, 16>> female, male;
+static bool indicesValid;
+static std::size_t batchCount;
+static int capturedWidth, capturedHeight;
+static double capturedFocal;
+static std::array<double, 16> capturedView;
+static std::uint64_t capturedRevision;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
+    indicesValid = true;
+    batchCount = scene.batches.size();
+    capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
+    capturedView = scene.viewMatrix;
+    capturedRevision = scene.revision;
     for (const auto& batch : scene.batches) {
+        for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) male.push_back(batch.modelMatrix);
         else if (batch.objectId >= 8001 && batch.objectId < 9000) female.push_back(batch.modelMatrix);
     }
     return true;
+}
+
+static bool checkIndexedRecycle() {
+    Camera camera;
+    camera.width = 640; camera.height = 480; camera.worldSpaceGpu = true;
+    Material material;
+    const std::vector<Vec3> points{{0, 0, 1}, {1, 0, 1}, {0, 1, 1}};
+    const std::vector<std::array<int, 3>> faces{{0, 1, 2}};
+    Rasterizer first(640, 480, {}, camera.focal(), true);
+    first.setCamera(camera); first.setObject(42, {}, 0);
+    first.mesh(points, faces, material);
+    GpuScene recycled = first.takeGpuScene();
+    Rasterizer second(800, 600, {}, camera.focal(), true, std::move(recycled));
+    second.setCamera(camera); second.setObject(42, {}, 0);
+    second.mesh(points, faces, material);
+    GpuScene result = second.takeGpuScene();
+    for (const auto& batch : result.batches) {
+        if (batch.objectId != 42) continue;
+        return batch.vertices.size() == 3 && batch.indices == std::vector<std::uint32_t>{0, 1, 2};
+    }
+    return false;
 }
 
 int main() {
@@ -39,10 +72,29 @@ int main() {
             if (std::abs(matrix[i] - placement[i]) > 1e-12) unposed = false;
         }
     }
-    const bool pass = firstFemale.size() == 27 && firstMale.size() == 28 && unposed &&
-                      firstFemale == female && firstMale != male;
+    bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 28 && unposed &&
+                firstFemale == female && firstMale != male && indicesValid;
+    const auto oldFemale = female, oldMale = male;
+    const auto oldView = capturedView;
+    const auto oldRevision = capturedRevision;
+    const std::size_t oldBatches = batchCount;
+    // Multiple resizes in the same pose tick: keep the skeletons' matrices and
+    // world geometry, but update the actual camera and render dimensions.
+    for (const auto size : {std::pair<int, int>{800, 600}, {320, 240}, {1920, 1080}, {640, 480}}) {
+        view.width = size.first; view.height = size.second; view.yaw = 0.35f;
+        room.render(frame, view, 1.75);
+        pass = pass && indicesValid && female == oldFemale && male == oldMale &&
+               capturedWidth == size.first && capturedHeight == size.second && capturedView != oldView &&
+               std::abs(capturedFocal - size.second / (2.0 * std::tan(50.0 * 3.141592653589793 / 360.0))) < 1e-9 &&
+               capturedRevision == oldRevision && batchCount == oldBatches;
+    }
+    // A resize on the same call as an animation tick must also stay valid.
+    view.width = 1000; view.height = 700;
+    room.render(frame, view, 1.90);
+    pass = pass && indicesValid && female == oldFemale && male != oldMale &&
+           capturedWidth == 1000 && capturedHeight == 700 && batchCount == oldBatches;
     setGpuRenderer(nullptr);
-    std::printf("test room source pose: %s (female %zu groups, male %zu groups)\n",
+    std::printf("test room source pose and resize: %s (female %zu groups, male %zu groups)\n",
                 pass ? "PASS" : "FAIL", female.size(), male.size());
     return pass ? 0 : 1;
 }

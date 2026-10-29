@@ -67,6 +67,15 @@ GTC_FAKE_STAGED=1 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulk
   -ldl -o build/bin/gtc-vulkan-ui-check
 if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
   ./build/bin/gtc-vulkan-ui-check
+  # Actual Vulkan rendering through the C room, with repeated target resizes.
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+    tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+    native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
+    native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
+    native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+    -ldl -o build/bin/gtc-skeleton-resize-vulkan
+  ./build/bin/gtc-skeleton-resize-vulkan
+  python3 tests/skeleton_headless_wsi.py
 else
   echo 'Vulkan UI pixel check: skipped (set GTC_VULKAN_UI_TEST=1 with a Vulkan ICD)'
 fi

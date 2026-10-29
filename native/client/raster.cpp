@@ -409,7 +409,10 @@ Rasterizer::Rasterizer(int width, int height, Color background, double focal, bo
                        RasterBuffer* reusable)
     : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)),
       reusable_(gpu ? nullptr : reusable) {
-    for (GpuBatch& batch : scene_.batches) batch.vertices.clear();
+    for (GpuBatch& batch : scene_.batches) {
+        batch.vertices.clear();
+        batch.indices.clear();
+    }
     scene_.width = width;
     scene_.height = height;
     scene_.focal = focal;

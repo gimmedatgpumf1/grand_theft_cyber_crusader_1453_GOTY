@@ -46,8 +46,6 @@ private:
     std::vector<std::array<double, 16>> cachedFemaleMatrices_;
     bool sceneReady_ = false;
     double cachedPose_ = -1.0;
-    int cachedWidth_ = 0;
-    int cachedHeight_ = 0;
 };
 
 } // namespace gtc::native
