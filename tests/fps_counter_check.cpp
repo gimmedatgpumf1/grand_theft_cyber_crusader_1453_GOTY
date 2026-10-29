@@ -1,22 +1,22 @@
-// The counter, checked as pixels.
+// The frame-rate strip, checked as pixels.
 //
-// The overlay that used to live here is gone, and this is the smallest thing
-// that could replace it: a box with a frame rate in it. It is drawn by the host
-// into the finished picture, so unlike anything that was routed through the
-// device it can be checked exactly, on this machine, with no driver involved --
-// and that is the entire reason it is on the host.
+// The overlay that used to live here is gone, and this is the smallest thing that
+// could replace it: a strip across the top with the frame rate in it. It is drawn
+// by the host into the finished picture, so unlike anything that was routed
+// through the device it can be checked exactly, on this machine, with no driver
+// involved -- and that is the entire reason it is on the host.
 //
-// What is asserted:
+// What is asserted, on an rgb canvas and on the window-order one the game
+// actually hands over, at four window sizes:
 //
-//   * the box is where the header says, whatever size the window is, and it
-//     scales up with the window instead of staying a speck at 1080p;
-//   * the border is the accent colour and the interior is the panel colour, so
-//     the box cannot quietly become transparent over bright geometry;
-//   * every lit pixel of every glyph is part of a solid block whose corners are
-//     on the same grid -- no antialiasing, no fractional scaling, no smearing;
-//   * the glyphs are the digits they claim to be, against the table below;
-//   * the same picture comes out of an rgb canvas and of a window-order one,
-//     which is the canvas the game actually hands over.
+//   * the strip is centred on the window and hangs from the top edge;
+//   * it is translucent: over a known background it is half the panel colour and
+//     half the picture, not opaque black, and never the raw panel colour;
+//   * the text is the real proportional face -- antialiased, so it has to contain
+//     partially covered pixels, and it may not be a fixed grid of solid blocks;
+//   * the text height is at least the 20-pixel floor everywhere, and grows with
+//     the window;
+//   * the text sits inside the strip and is centred in it.
 
 #include "client/fps_counter.h"
 
@@ -30,8 +30,6 @@
 
 namespace {
 
-using gtc::native::Color;
-
 int failures = 0;
 
 void check(bool condition, const std::string& what) {
@@ -40,69 +38,35 @@ void check(bool condition, const std::string& what) {
     ++failures;
 }
 
-// The same table the counter draws from, repeated here on purpose: if a glyph is
-// edited by accident, the picture changes and this notices.
-using Glyph = std::array<unsigned char, 7>;
-const Glyph& glyphFor(char character) {
-    static const Glyph zero = {14, 17, 17, 17, 17, 17, 14};
-    static const Glyph one = {4, 12, 4, 4, 4, 4, 14};
-    static const Glyph two = {14, 17, 1, 2, 4, 8, 31};
-    static const Glyph three = {31, 2, 4, 2, 1, 17, 14};
-    static const Glyph four = {2, 6, 10, 18, 31, 2, 2};
-    static const Glyph five = {31, 16, 30, 1, 1, 17, 14};
-    static const Glyph six = {6, 8, 16, 30, 17, 17, 14};
-    static const Glyph seven = {31, 1, 2, 4, 8, 8, 8};
-    static const Glyph eight = {14, 17, 17, 14, 17, 17, 14};
-    static const Glyph nine = {14, 17, 17, 15, 1, 2, 12};
-    static const Glyph space = {0, 0, 0, 0, 0, 0, 0};
-    static const Glyph f = {31, 16, 16, 30, 16, 16, 16};
-    static const Glyph p = {30, 17, 17, 30, 16, 16, 16};
-    static const Glyph s = {15, 16, 16, 14, 1, 1, 30};
-    static const Glyph dot = {0, 0, 0, 0, 0, 12, 12};
-    static const Glyph dash = {0, 0, 0, 31, 0, 0, 0};
-    switch (character) {
-        case '0': return zero;
-        case '1': return one;
-        case '2': return two;
-        case '3': return three;
-        case '4': return four;
-        case '5': return five;
-        case '6': return six;
-        case '7': return seven;
-        case '8': return eight;
-        case '9': return nine;
-        case 'F': return f;
-        case 'P': return p;
-        case 'S': return s;
-        case '.': return dot;
-        case '-': return dash;
-        default: return space;
-    }
-}
-
 struct Picture {
     gtc::native::NativeFrame frame;
     int width = 0, height = 0;
     bool windowOrder = false;   // BGRA, the form the game's own frames arrive in
+    std::array<int, 3> ground{90, 30, 60};
 
     Picture(int w, int h, bool bgra) : width(w), height(h), windowOrder(bgra) {
         frame.width = w;
         frame.height = h;
         frame.wantsBgra = bgra;
-        // A colour nothing in the counter uses, so any pixel of it that changes
-        // is the counter's doing and not a coincidence of the fill.
-        const std::array<unsigned char, 3> ground = {90, 30, 60};
+        // A colour nothing in the strip uses, so any pixel that changes is the
+        // strip's doing and not a coincidence of the fill.
         if (bgra) {
             frame.bgra.resize(static_cast<std::size_t>(w) * h * 4, 255);
             for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(w) * h; ++pixel) {
-                frame.bgra[pixel * 4] = ground[2];
-                frame.bgra[pixel * 4 + 1] = ground[1];
-                frame.bgra[pixel * 4 + 2] = ground[0];
+                frame.bgra[pixel * 4] = static_cast<unsigned char>(ground[2]);
+                frame.bgra[pixel * 4 + 1] = static_cast<unsigned char>(ground[1]);
+                frame.bgra[pixel * 4 + 2] = static_cast<unsigned char>(ground[0]);
             }
         } else {
             frame.rgb.resize(static_cast<std::size_t>(w) * h * 3);
+            // Bytes, not ints: memcpy of an int array here paints one real byte in
+            // three, which is how a canvas ends up looking like a failing check
+            // rather than like a failing counter.
+            const std::array<unsigned char, 3> fill = {
+                static_cast<unsigned char>(ground[0]), static_cast<unsigned char>(ground[1]),
+                static_cast<unsigned char>(ground[2])};
             for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(w) * h; ++pixel) {
-                std::memcpy(frame.rgb.data() + pixel * 3, ground.data(), 3);
+                std::memcpy(frame.rgb.data() + pixel * 3, fill.data(), 3);
             }
         }
     }
@@ -116,7 +80,7 @@ struct Picture {
         return {frame.rgb[pixel * 3], frame.rgb[pixel * 3 + 1], frame.rgb[pixel * 3 + 2]};
     }
 
-    bool is(int x, int y, const std::array<int, 3>& colour) const {
+    bool same(int x, int y, const std::array<int, 3>& colour) const {
         const auto pixel = at(x, y);
         return pixel[0] == colour[0] && pixel[1] == colour[1] && pixel[2] == colour[2];
     }
@@ -124,8 +88,8 @@ struct Picture {
 
 // The bytes a colour becomes, asked of the drawing code rather than guessed at:
 // a one-pixel rectangle is filled on a scratch frame and read back. A test that
-// reimplements the colour pipeline tests its own copy of it.
-std::array<int, 3> bytes(Color colour) {
+// reimplements the colour pipeline only tests its own copy of it.
+std::array<int, 3> bytes(gtc::native::Color colour) {
     gtc::native::NativeFrame scratch;
     scratch.width = 4;
     scratch.height = 4;
@@ -134,123 +98,120 @@ std::array<int, 3> bytes(Color colour) {
     return {scratch.rgb[(4U + 1U) * 3U], scratch.rgb[(4U + 1U) * 3U + 1U], scratch.rgb[(4U + 1U) * 3U + 2U]};
 }
 
-int scaled(double logical, double uiScale) { return static_cast<int>(std::lround(logical * uiScale)); }
-
-// One counter, checked on a canvas of this size and this byte order.
 void examine(int width, int height, bool windowOrder) {
     Picture picture(width, height, windowOrder);
     gtc::native::drawFpsCounter(picture.frame, 300.0);
     const std::string where = std::to_string(width) + "x" + std::to_string(height) +
         (windowOrder ? " window-order" : " rgb");
 
-    // The transform the counter uses, worked out the same way it does.
-    const double uiScale = std::clamp(height / 480.0, 1.0, 3.0);
-    const int scale = gtc::native::kFpsCounterDigit;
-    const int padding = 8 * scale / 3;
-    const int textHeight = 7 * scale;
-    const std::string text = "FPS 300";
-    const int textWidth = static_cast<int>(text.size()) * 6 * scale - scale;
-    const int boxW = textWidth + padding * 2, boxH = textHeight + padding * 2;
-    const int left = scaled(gtc::native::kFpsCounterX, uiScale);
-    const int top = scaled(gtc::native::kFpsCounterY, uiScale);
-    const int right = scaled(gtc::native::kFpsCounterX + boxW, uiScale);
-    const int bottom = scaled(gtc::native::kFpsCounterY + boxH, uiScale);
+    const auto layout = gtc::native::layoutFpsCounter(width, height, 300.0);
+    check(layout.width > 0 && layout.height > 0, where + ": the strip has a size");
+    const int leftMargin = layout.left;
+    const int rightMargin = width - (layout.left + layout.width);
+    check(std::abs(leftMargin - rightMargin) <= gtc::native::kFpsCounterCentreTolerance,
+          where + ": the strip is centred (" + std::to_string(leftMargin) + " left, " +
+              std::to_string(rightMargin) + " right)");
+    check(layout.top == gtc::native::kFpsCounterMargin, where + ": the strip hangs from the top edge");
+    check(picture.same(0, height - 1, picture.ground), where + ": the rest of the frame is untouched");
 
-    const Color backColour = gtc::native::colorHex("#0b110e");
-    const Color accentColour = gtc::native::colorHex("#d7ff54");
-    const auto back = bytes(backColour);
-    const auto accent = bytes(accentColour);
-    const std::array<int, 3> ground = {90, 30, 60};
+    // Translucent: half panel, half picture. The panel's own bytes come from the
+    // drawing code, so this compares the blend and nothing else.
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+    std::array<int, 3> expected{};
+    for (int channel = 0; channel < 3; ++channel) {
+        expected[channel] = (panel[channel] + picture.ground[channel] + 1) / 2;
+    }
+    const auto inside = picture.at(layout.left + 1, layout.top + layout.height - 2);
+    int worst = 0;
+    for (int channel = 0; channel < 3; ++channel) worst = std::max(worst, std::abs(inside[channel] - expected[channel]));
+    check(worst <= 1, where + ": the strip is half transparent, off by " + std::to_string(worst));
+    check(inside != picture.ground, where + ": the strip is drawn at all");
+    check(worst <= 1 && inside != panel, where + ": the strip is not opaque");
 
-    check(right > left + 40 && bottom > top + 20, where + ": the box has a size");
-    check(picture.is(left - 2, top - 2, ground), where + ": nothing above or left of the box");
-    check(picture.is(right + 2, top + 2, ground), where + ": nothing right of the box");
-    check(picture.is(left, top, accent), where + ": the top-left corner is the accent colour");
-    check(picture.is(right - 1, top, accent), where + ": the top-right corner is the accent colour");
-    check(picture.is(left, bottom - 1, accent), where + ": the bottom-left corner is the accent colour");
-    check(picture.is(right - 1, bottom - 1, accent), where + ": the bottom-right corner is the accent colour");
+    // The text: brighter than the strip, and antialiased. A pixel font would give
+    // exactly two levels here; a real one gives a ramp at every curve.
+    int brightest = 0, midTones = 0, textPixels = 0;
+    std::array<bool, 256> levels{};
+    for (int y = layout.textTop; y < layout.textTop + layout.textHeight; ++y) {
+        for (int x = layout.textLeft; x < layout.textLeft + layout.textWidth; ++x) {
+            const auto pixel = picture.at(x, y);
+            const int luminance = (pixel[0] * 30 + pixel[1] * 59 + pixel[2] * 11) / 100;
+            brightest = std::max(brightest, luminance);
+            levels[static_cast<std::size_t>(std::clamp(luminance, 0, 255))] = true;
+            const int floor = (expected[0] * 30 + expected[1] * 59 + expected[2] * 11) / 100;
+            if (luminance > floor + 8) ++textPixels;
+            if (luminance > floor + 8 && luminance < brightest - 8) ++midTones;
+        }
+    }
+    int distinct = 0;
+    for (bool level : levels) distinct += level ? 1 : 0;
+    check(textPixels > 40, where + ": the text is drawn (" + std::to_string(textPixels) + " pixels)");
+    check(midTones > 10, where + ": the text is antialiased (" + std::to_string(midTones) + " partial pixels)");
+    check(distinct > 12, where + ": the text is not a two-colour bitmap (" + std::to_string(distinct) + " levels)");
 
-    // The interior: panel colour, and every glyph block solid and on the grid.
-    const int textLeft = scaled(gtc::native::kFpsCounterX + padding, uiScale);
-    const int textTop = scaled(gtc::native::kFpsCounterY + padding, uiScale);
-    check(picture.is(left + 2, textTop + 2, back), where + ": the panel is filled behind the text");
+    // Size: never below the floor, and bigger on a bigger window.
+    const int textHeight = gtc::native::fpsCounterTextHeight(height);
+    check(textHeight >= 20, where + ": text height " + std::to_string(textHeight) + " is below the 20-pixel floor");
+    check(layout.textHeight >= 20 && layout.textHeight <= textHeight + 2,
+          where + ": the measured line height matches the requested size");
+    check(layout.textLeft > layout.left && layout.textTop > layout.top &&
+              layout.textLeft + layout.textWidth < layout.left + layout.width &&
+              layout.textTop + layout.textHeight < layout.top + layout.height,
+          where + ": the text is inside the strip");
+    const int textLeftMargin = layout.textLeft - layout.left;
+    const int textRightMargin = (layout.left + layout.width) - (layout.textLeft + layout.textWidth);
+    check(std::abs(textLeftMargin - textRightMargin) <= 1,
+          where + ": the text is centred in the strip (" + std::to_string(textLeftMargin) + " vs " +
+              std::to_string(textRightMargin) + ")");
 
-    int litCells = 0, wrongCells = 0;
-    for (std::size_t character = 0; character < text.size(); ++character) {
-        const Glyph& rows = glyphFor(text[character]);
-        for (int row = 0; row < 7; ++row) {
-            for (int column = 0; column < 5; ++column) {
-                const bool lit = (rows[static_cast<std::size_t>(row)] & (1U << (4 - column))) != 0;
-                const int x0 = scaled(gtc::native::kFpsCounterX + padding + static_cast<int>(character) * 6 * scale +
-                                          column * scale, uiScale);
-                const int y0 = scaled(gtc::native::kFpsCounterY + padding + row * scale, uiScale);
-                const int x1 = scaled(gtc::native::kFpsCounterX + padding + static_cast<int>(character) * 6 * scale +
-                                          (column + 1) * scale, uiScale);
-                const int y1 = scaled(gtc::native::kFpsCounterY + padding + (row + 1) * scale, uiScale);
-                for (int y = y0; y < y1; ++y) {
-                    for (int x = x0; x < x1; ++x) {
-                        if (!picture.is(x, y, lit ? accent : back)) ++wrongCells;
-                    }
-                }
-                litCells += lit ? 1 : 0;
+    // The picture, and a six-times enlargement of the strip, because a line of
+    // type is either the face it should be or it is not, and that is a thing to
+    // look at.
+    const int zoom = 6;
+    gtc::native::NativeFrame big;
+    big.width = (layout.width + 8) * zoom;
+    big.height = (layout.height + 8) * zoom;
+    big.rgb.assign(static_cast<std::size_t>(big.width) * big.height * 3, 0);
+    for (int y = 0; y < big.height; ++y) {
+        for (int x = 0; x < big.width; ++x) {
+            const auto pixel = picture.at(layout.left - 4 + x / zoom, layout.top - 4 + y / zoom);
+            unsigned char* out = big.rgb.data() + (static_cast<std::size_t>(y) * big.width + x) * 3;
+            for (int channel = 0; channel < 3; ++channel) {
+                out[channel] = static_cast<unsigned char>(std::max(0, pixel[channel]));
             }
         }
     }
-    check(wrongCells == 0, where + ": every glyph block is solid and in its cell (" +
-                              std::to_string(wrongCells) + " pixels are not)");
-    check(litCells > 40, where + ": there is a number in the box (" + std::to_string(litCells) + " lit cells)");
-    check(textLeft < scaled(gtc::native::kFpsCounterX + padding + 1, uiScale) + 1, where + ": the text starts inside");
-
-    // The counter, enlarged six times with no filtering, because a glyph at this
-    // size is either the letter it should be or it is not, and that is a thing to
-    // look at rather than to infer from a pixel count.
+    big.save("build/native-client/fps-counter-zoom-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
     if (!windowOrder) {
-        const int zoom = 6;
-        gtc::native::NativeFrame big;
-        big.width = (right - left + 8) * zoom;
-        big.height = (bottom - top + 8) * zoom;
-        big.rgb.assign(static_cast<std::size_t>(big.width) * big.height * 3, 0);
-        for (int y = 0; y < big.height; ++y) {
-            for (int x = 0; x < big.width; ++x) {
-                const auto pixel = picture.at(left - 4 + x / zoom, top - 4 + y / zoom);
-                unsigned char* out = big.rgb.data() + (static_cast<std::size_t>(y) * big.width + x) * 3;
-                for (int channel = 0; channel < 3; ++channel) {
-                    out[channel] = static_cast<unsigned char>(std::max(0, pixel[channel]));
-                }
-            }
-        }
-        big.save("build/native-client/fps-counter-zoom.png");
+        picture.frame.save("build/native-client/fps-counter-" + std::to_string(width) + "x" +
+                           std::to_string(height) + ".png");
     }
-    if (!windowOrder) {
-        const std::string path = "build/native-client/fps-counter-" + std::to_string(width) + "x" +
-            std::to_string(height) + ".png";
-        picture.frame.save(path);
-    }
-    std::printf("  %-18s box %dx%d at %d,%d, %d lit cells\n", where.c_str(), right - left, bottom - top, left, top,
-                litCells);
+    std::printf("  %-18s strip %dx%d at %d,%d, text %d px, %d lit pixels, %d levels\n", where.c_str(), layout.width,
+                layout.height, layout.left, layout.top, textHeight, textPixels, distinct);
 }
 
 }  // namespace
 
 int main() {
-    // The size the sandbox renders at, then the size the King plays at, in both
-    // byte orders: the game's frames arrive in window order, so that one is not
-    // an afterthought.
     examine(640, 480, false);
     examine(640, 480, true);
     examine(1920, 1080, true);
     examine(1568, 929, true);
 
-    // A number that is not a number is not allowed to print nonsense.
+    // A number that is not a number is not allowed to print nonsense, and the
+    // strip has to keep its shape whatever the rate is.
     gtc::native::NativeFrame frame;
     frame.width = 640;
     frame.height = 480;
     frame.rgb.assign(640U * 480U * 3, 0);
     gtc::native::drawFpsCounter(frame, std::nan(""));
     gtc::native::drawFpsCounter(frame, -1.0);
+    gtc::native::drawFpsCounter(frame, 0.4);
+    check(gtc::native::fpsCounterTextHeight(480) >= 20 && gtc::native::fpsCounterTextHeight(2160) > 30,
+          "the text grows with the window and never falls below the floor");
 
     if (failures == 0) {
-        std::printf("fps counter: PASS (box, border, digits, both byte orders, 640x480 to 1080p)\n");
+        std::printf("fps counter: PASS (centred, translucent, proportional antialiased type, 640x480 to 1080p)\n");
         return 0;
     }
     std::printf("fps counter: FAIL (%d)\n", failures);

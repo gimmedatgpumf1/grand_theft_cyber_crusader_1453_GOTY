@@ -288,4 +288,13 @@ extern long textPixels;
 
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale = 3);
 
+// The same face, at a size in pixels and a position in pixels. The HUD-scale
+// variant exists because the old overlay was laid out on a 640x480 grid; this one
+// is for things that are positioned against the window itself, like the frame
+// rate. Proportional, antialiased, and measured before it is drawn -- a centred
+// box needs the width first.
+int textWidthPixels(const std::string& text, int pixelHeight);
+int textHeightPixels(int pixelHeight);
+void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight);
+
 } // namespace gtc::native

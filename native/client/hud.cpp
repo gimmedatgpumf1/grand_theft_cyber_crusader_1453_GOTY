@@ -133,21 +133,17 @@ unsigned char srgbChannel(double value) {
 double textMilliseconds = 0.0;
 long textPixels = 0;
 
-void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
-    const auto textStart = std::chrono::steady_clock::now();
-    scale = std::max(3, scale);
+// The glyph loop, in pixels: `penX` is the left edge of the text and `baseline`
+// the line it sits on. Both callers below want exactly this and differ only in
+// how they turn their coordinates into those two numbers.
+void paintText(NativeFrame& frame, double penX, double baseline, const std::string& text, Color color,
+               int pixelHeight) {
     // Glyphs go into whatever this frame is made of. A frame that came back from
     // the device in window order is written in window order, so the presenter has
     // nothing left to convert.
     if (frame.canvasIsBgra()) frame.makeOverlayWritable();
     const bool bgraCanvas = frame.canvasIsBgra();
-    if (font().ready) {
-        const int pixelHeight = std::max(20, static_cast<int>(std::lround(9 * scale * frame.uiScale)));
-        const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
-        int ascent = 0, descent = 0, gap = 0;
-        stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
-        double penX = frame.uiOffsetX + x * frame.uiScale;
-        const double baseline = frame.uiOffsetY + y * frame.uiScale + ascent * fontScale;
+    {
         const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
         // The canvas and the frame's size are read once, outside the glyph loop.
         // Inside it they were a call and a member load per pixel -- and because
@@ -192,10 +188,54 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
             }
             penX += glyph.advance;
         }
+    }
+}
+
+// How tall a line of this face actually is, in pixels, and how wide a string is.
+// Both are needed before the text is drawn: the counter is centred, and a box
+// that is centred on a guessed width is not centred.
+int textHeightPixels(int pixelHeight) {
+    if (!font().ready) return 0;
+    const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+    int ascent = 0, descent = 0, gap = 0;
+    stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+    return static_cast<int>(std::lround((ascent - descent) * fontScale));
+}
+
+int textWidthPixels(const std::string& text, int pixelHeight) {
+    if (!font().ready) return 0;
+    double width = 0.0;
+    for (char character : text) width += cachedGlyph(character, pixelHeight).advance;
+    return static_cast<int>(std::lround(width));
+}
+
+// Text at a size in pixels rather than in HUD scale steps, laid out from its top
+// left corner. The window loop and the headless capture both use this for the
+// frame-rate box.
+void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight) {
+    if (!font().ready || pixelHeight <= 0) return;
+    const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+    int ascent = 0, descent = 0, gap = 0;
+    stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+    paintText(frame, x, y + ascent * fontScale, text, color, pixelHeight);
+}
+
+void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
+    const auto textStart = std::chrono::steady_clock::now();
+    scale = std::max(3, scale);
+    if (font().ready) {
+        const int pixelHeight = std::max(20, static_cast<int>(std::lround(9 * scale * frame.uiScale)));
+        const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+        int ascent = 0, descent = 0, gap = 0;
+        stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+        paintText(frame, frame.uiOffsetX + x * frame.uiScale,
+                  frame.uiOffsetY + y * frame.uiScale + ascent * fontScale, text, color, pixelHeight);
         textMilliseconds += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - textStart).count();
         return;
     }
+    // No face on disk: the blocky fallback, which every machine can draw.
+    if (frame.canvasIsBgra()) frame.makeOverlayWritable();
     for (char character : text) {
         const auto rows = glyph(character);
         for (int row = 0; row < 7; ++row) for (int column = 0; column < 5; ++column) {

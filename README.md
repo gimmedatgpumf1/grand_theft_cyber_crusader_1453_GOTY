@@ -66,8 +66,9 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it. The
   server applies and clamps every change to 0–100%, so all connected views share the result.
 - **F12** saves the current native **640×480 landscape** framebuffer.
-- The only thing drawn over the picture is a frame-rate box in the top-left corner: panel, accent
-  border, 5×7 digits, scaled with the window. The old overlay is gone, not hidden.
+- The only thing drawn over the picture is a frame-rate strip centred at the top: a half-transparent
+  panel with `<rate> FPS` in the game's own proportional sans, antialiased, 20 pixels high at
+  640×480 and larger as the window grows. The old overlay is gone, not hidden.
 
 ## One-click Windows build
 

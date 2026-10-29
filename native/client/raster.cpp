@@ -296,9 +296,12 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
             green_[value] = static_cast<unsigned char>((g * alpha + value * (255 - alpha)) / 255);
             blue_[value] = static_cast<unsigned char>((b * alpha + value * (255 - alpha)) / 255);
         }
+        // The stride is the frame's, not four: an rgb canvas is three bytes a
+        // pixel, and walking it four at a time wrote the panel diagonally across
+        // the picture instead of into the rectangle that was asked for.
         for (int py = firstRow; py < lastRow; ++py) {
-            unsigned char* out = pixels + (static_cast<std::size_t>(py) * width + firstColumn) * 4U;
-            for (int px = firstColumn; px < lastColumn; ++px, out += 4) {
+            unsigned char* out = pixels + static_cast<std::size_t>(py) * width * stride + firstColumn * stride;
+            for (int px = firstColumn; px < lastColumn; ++px, out += stride) {
                 out[0] = bgra ? blue_[out[0]] : red_[out[0]];
                 out[1] = green_[out[1]];
                 out[2] = bgra ? red_[out[2]] : blue_[out[2]];
