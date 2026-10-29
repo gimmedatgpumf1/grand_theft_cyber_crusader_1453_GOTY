@@ -402,17 +402,31 @@ for sex in ('male', 'female'):
                        {tuple(sorted(edge)) for edge in solids[group][3]})
             continue
         if group == 'ShoulderGirdle':
-            # Four shoulder bones retain their own source-derived anchors; the
-            # sternal source is whole, so its upper section is approximate.
+            # Each bone is followed by eight narrow source-fitted sections,
+            # not filled as one convex hull across the chest.
+            assert len(points) == 68 and len(solids[group][2]) == 68
             for name in part_names:
                 indices = anchors[group][name]
                 source_points = member_vertices[name]
-                mean = tuple(sum(p[i] for p in source_points)/len(source_points) for i in range(3))
-                assert len(indices) == (5 if name.startswith('Scapula_') else 3)
-                assert math.dist(points[indices[1]], mean) < 0.00001
+                assert len(indices) == 16
                 for index in indices:
-                    for axis in range(3):
-                        assert min(p[axis] for p in source_points)-0.01 <= points[index][axis] <= max(p[axis] for p in source_points)+0.01
+                    assert min(math.dist(points[index],p) for p in source_points) < (0.016 if name.startswith('Scapula_') else 0.005)
+                sections = [(points[indices[i]],points[indices[i+1]]) for i in range(0,16,2)]
+                centers = [tuple((a[j]+b[j])/2 for j in range(3)) for a,b in sections]
+                for a,b in sections: assert 0.005 < math.dist(a,b) < 0.10
+                assert all(math.dist(a,b) < 0.05 for a,b in zip(centers,centers[1:]))
+            oriented = defaultdict(int)
+            for face in solids[group][2]:
+                for a,b in zip(face,face[1:]+face[:1]): oriented[(a,b)] += 1
+            boundary_edges = {tuple(sorted(edge)) for edge in solids[group][3]}
+            assert all(count == 1 for count in oriented.values())
+            assert all(oriented[(b,a)] == 1 for a,b in list(oriented) if tuple(sorted((a,b))) not in boundary_edges)
+            face_owners = {index:name for name,indices in anchors[group].items() for index in indices}
+            allowed = [{'Sternum'}, {'Scapula_L','Clavicula_L'}, {'Scapula_R','Clavicula_R'},
+                       {'Clavicula_L','Sternum'}, {'Clavicula_R','Sternum'}]
+            for face in solids[group][2]:
+                owners = {face_owners[i] for i in face}
+                assert len(owners) == 1 or any(owners <= pair for pair in allowed), (group, owners)
             for side in ('L','R'):
                 clavicle = set(anchors[group][f'Clavicula_{side}'])
                 for neighbour in (f'Scapula_{side}', 'Sternum'):
@@ -420,7 +434,7 @@ for sex in ('male', 'female'):
                     assert any(clavicle.intersection(face) and other.intersection(face)
                                for face in solids[group][2]), (group, side, neighbour)
             sternum_indices = anchors[group]['Sternum']
-            assert len(sternum_indices) == 6
+            assert len(sternum_indices) == 4
             upper, cut = points[sternum_indices[0]], points[sternum_indices[3]]
             # The remaining sternum body begins exactly where the grouped
             # manubrium approximation ends; no doubled upper bone line.

@@ -158,56 +158,79 @@ def paired_bone_surface(bones, members):
 
 
 def shoulder_surface(bones, members):
-    """One continuous shoulder surface with an approximate manubrium.
+    """One connected ribbon following the scapulae and clavicle bone lines.
 
-    OpenSkeleton labels the sternum as one bone, not separate manubrium/body.
-    Use its upper 35% as an explicitly approximate manubrium; the lower
-    centreline stays separate. Bone-derived 3D anchors are triangulated as a
-    connected sheet spanning the shoulder blades and collarbones.
+    Sample successive cross-sections of each source bone rather than filling
+    the convex hull between the shoulder blades and the sternum. The source
+    labels the sternum as a single structure; its upper 35% of the displayed
+    centreline is an approximate manubrium shared by the two ribbons.
     """
-    points, owners = [], {}
-    for name in members:
-        source = line_for(name, bones[name], bones)
-        # The scapula's principal and transverse branches describe its extent;
-        # clavicles use the two ends and centre of their source-derived axis.
-        selected = [source[i] for i in ((0,1,2,4,6) if name.startswith('Scapula_') else (0,1,2))]
-        owners[name] = list(range(len(points),len(points)+len(selected)))
-        points.extend(selected)
     sternum = line_for('Sternum', bones['Sternum'], bones)
     upper, lower = sorted((sternum[0], sternum[2]), key=lambda p: -p[1])
     cut = upper + 0.35*(lower-upper)
-    # Keep the source centreline on the sheet, including attachment locations
-    # used by the existing rib cage. The extra anchors describe its width.
-    centreline = [upper, upper+(lower-upper)/6, upper+(lower-upper)/3, cut]
-    direction = lower-upper
-    t = (bones['Sternum']-upper) @ direction / np.dot(direction,direction)
-    region = bones['Sternum'][(t >= 0) & (t <= 0.35)]
-    assert len(region) > 5
-    midpoint = region.mean(axis=0)
-    across = np.array([1., 0., 0.]) - direction*(direction[0]/np.dot(direction,direction))
-    across /= np.linalg.norm(across)
-    offsets = (region-midpoint) @ across
-    a,b = np.quantile(offsets,[0.10,0.90])
-    manubrium = centreline + [midpoint+across*a, midpoint+across*b]
-    owners['Sternum'] = list(range(len(points),len(points)+len(manubrium)))
-    points.extend(manubrium)
-    points = np.array(points)
-    centre = points.mean(axis=0)
-    _, _, basis = np.linalg.svd(points-centre, full_matrices=False)
-    projected = (points-centre) @ basis[:2].T
-    triangles, edge_counts = [], {}
-    for raw in Delaunay(projected).simplices:
-        a,b,c = map(int,raw)
-        u,v = projected[b]-projected[a], projected[c]-projected[a]
-        if u[0]*v[1]-u[1]*v[0] < 0: b,c = c,b
-        triangles.append((a,b,c))
-        for p,q in ((a,b),(b,c),(c,a)):
-            key = tuple(sorted((p,q)))
-            if key not in edge_counts: edge_counts[key] = [0,(p,q)]
+    def sections(name):
+        vertices = bones[name]
+        centre = vertices.mean(axis=0)
+        _, _, basis = np.linalg.svd(vertices-centre, full_matrices=False)
+        axis, across = basis[0], basis[1]
+        along = (vertices-centre) @ axis
+        bins = np.quantile(along, np.linspace(0, 1, 9))
+        result = []
+        for i in range(8):
+            mask = (along >= bins[i]) & (along <= bins[i+1] if i == 7 else along < bins[i+1])
+            subset = vertices[mask]
+            assert len(subset) > 2
+            middle = subset.mean(axis=0)
+            lo,hi = np.quantile((subset-middle) @ across, (0.05,0.95))
+            result.append([middle+across*lo, middle+across*hi])
+        return result
+    points, owners, faces = [], {}, []
+    medial = {}
+    for side in ('L','R'):
+        scapula, clavicle = f'Scapula_{side}', f'Clavicula_{side}'
+        blade, collar = sections(scapula), sections(clavicle)
+        # Start at the lower scapula, pass the shoulder joint, and end at the
+        # medial clavicle. This orders known anatomical neighbours; it does not
+        # discover connections by proximity.
+        if np.mean(blade[0],axis=0)[1] > np.mean(blade[-1],axis=0)[1]: blade.reverse()
+        if np.linalg.norm(np.mean(collar[0],axis=0)-upper) < np.linalg.norm(np.mean(collar[-1],axis=0)-upper):
+            collar.reverse()
+        ribbon = blade + collar
+        # Choose corresponding ribbon edges consistently through the bends.
+        for i in range(1,len(ribbon)):
+            direct = sum(np.linalg.norm(ribbon[i-1][k]-ribbon[i][k]) for k in (0,1))
+            swapped = sum(np.linalg.norm(ribbon[i-1][k]-ribbon[i][1-k]) for k in (0,1))
+            if swapped < direct: ribbon[i].reverse()
+        if np.linalg.norm(ribbon[-1][0]-upper) > np.linalg.norm(ribbon[-1][1]-upper):
+            for section in ribbon: section.reverse()
+        start = len(points)
+        for section in ribbon: points.extend(section)
+        owners[scapula] = list(range(start,start+16))
+        owners[clavicle] = list(range(start+16,start+32))
+        medial[side] = (start+30,start+31)
+        for i in range(15):
+            a,b,c,d = start+2*i,start+2*i+1,start+2*i+2,start+2*i+3
+            triangles = ((a,b,d),(a,d,c))
+            faces.extend(triangles if side == 'L' else tuple((x,z,y) for x,y,z in triangles))
+    central = [upper, upper+(lower-upper)/6, upper+(lower-upper)/3, cut]
+    owners['Sternum'] = list(range(len(points),len(points)+len(central)))
+    points.extend(central)
+    top, mid1, mid2, bottom = owners['Sternum']
+    # Fill from each medial clavicle to the same sternal centreline. These
+    # faces connect the two source-following strips without a chest-wide hull.
+    for side in ('L','R'):
+        a,b = medial[side]
+        triangles = ((a,b,top),(b,mid1,top),(b,mid2,mid1),(b,bottom,mid2))
+        faces.extend(triangles if side == 'L' else tuple((x,z,y) for x,y,z in triangles))
+    edge_counts = {}
+    for face in faces:
+        for a,b in zip(face,face[1:]+face[:1]):
+            key = tuple(sorted((a,b)))
+            if key not in edge_counts: edge_counts[key] = [0,(a,b)]
             edge_counts[key][0] += 1
-    assert set(i for face in triangles for i in face) == set(range(len(points)))
+    assert all(count <= 2 for count,_ in edge_counts.values())
     boundary = [edge for count,edge in edge_counts.values() if count == 1]
-    return points, triangles, boundary, owners
+    return np.array(points), faces, boundary, owners
 
 
 def rib_cage(bones, members):

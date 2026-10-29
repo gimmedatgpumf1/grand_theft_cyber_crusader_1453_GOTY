@@ -59,8 +59,9 @@ cartilage areas join ribs 1–7 to the source-derived sternum centreline. Ribs
 simplification, not additional anatomical joints.
 
 Both scapulae, both clavicles and an approximate manubrium are grouped into
-one thin, filled shoulder-girdle surface using source-derived bone anchors.
-The source labels the sternum as a single bone rather than separately labelling
+one thin, filled shoulder-girdle surface. Narrow strips follow successive
+source-derived cross-sections of each bone rather than filling the convex hull
+across the shoulders and chest. The source labels the sternum as a single bone rather than separately labelling
 the manubrium, so the upper 35% of its displayed centreline is an approximation;
 the rest of the sternum remains separate and connects to the surface.
 
