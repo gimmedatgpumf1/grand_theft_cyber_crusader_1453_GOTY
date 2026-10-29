@@ -58,17 +58,19 @@ bones carry a `.l` suffix and most have **no right-hand twin** in the file. Musc
 markings (`.i`, `.j`, `.o1l`, `.e1r`, …) and the cross-section helpers are
 sub-meshes of bones and are dropped. Then:
 
-1. skeletal objects only — 177 of them, the rest of the file is muscle
-   attachment geometry;
+1. skeletal objects only — 176 original named objects, the rest of the file is
+   muscle attachment geometry or excluded helpers;
 2. every `.l` object whose `.r` twin is absent is mirrored through `x = 0` with
-   reversed winding — 99 of them, giving 272 bones in a complete body;
+   reversed winding — 101 of them, giving 277 named objects after mirroring;
 3. per-object transforms (`Lcl Translation`/`Rotation`/`Scaling`, which include a
    −1/3 uniform scale, and the node hierarchy) are composed into world space;
 4. bones are grouped into the 28 parts the renderer and rig already use
-   (`skull`, `femur_l`, `hand_r`, …), keeping the source name of every bone in
-   `skeleton-male.parts.json`;
-5. each *bone* is welded and simplified on its own towards the part's triangle
-   budget, with a floor of 12 triangles per bone so no phalanx disappears.
+   (`skull`, `femur_l`, `hand_r`, …), keeping the source name of every selected
+   bone in `skeleton-male.parts.json`. Maxillae, nasal bones and vomer were
+   previously excluded by a name-filter bug and have now been restored;
+5. each rig part is welded, then its disconnected mesh shells are simplified
+   separately towards the part's triangle budget, with a 40-triangle floor per
+   shell. This is simplification, not a guarantee of anatomical completeness.
 
 The following old low-poly export counts are historical, not the current assets:
 

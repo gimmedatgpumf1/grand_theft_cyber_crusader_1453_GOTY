@@ -22,10 +22,9 @@ struct SkeletonBone {
 };
 
 // A loaded skeleton. Rest pose is metres, soles on y = 0, facing +z, and the
-// source scale is never touched: the male is 1.696 m and the female 1.713 m
-// because that is the size of the source bodies, not because anyone liked those
-// numbers. Both are segmented from their own cadaver CT and both are verified by
-// tools/skeleton-source/verify-obj.mjs (see VERIFICATION.md).
+// source scale is never touched. The male is a modified Z-Anatomy atlas model;
+// the female is a registered OpenSkeleton CT-derived model. Their sources and
+// the limits of their verification are documented in tools/skeleton-source.
 class SkeletonModel {
 public:
     bool load(const std::string& path, std::string& error);

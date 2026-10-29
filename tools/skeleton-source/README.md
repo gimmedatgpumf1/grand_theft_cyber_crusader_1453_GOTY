@@ -44,6 +44,16 @@ left/right differences. Some checks are pose-dependent; the failures do not
 prove the precise cause. The normal test suite checks female source fidelity
 instead, not a false anatomical pass. `VERIFICATION.md` has the details.
 
-The `reference-*.png` images predate this restoration and are not evidence of
-the current female pose. The male can be regenerated with `prepare-zanatomy.mjs`;
+The male's maxillae, nasal bones and vomer were previously omitted by the
+importer's name filter. They are restored from the Z-Anatomy FBX; the right
+maxilla and nasal bone are mirrored from the left because the FBX supplies only
+those left-hand meshes. They remain part of the existing skull rig group, not
+independently animated bones. The OBJ is simplified, and this restoration is
+not a clinical assessment of the source skull. The other 27 rig-group meshes
+are unchanged. `tests/male_skull_restoration.py` checks source-derived landmarks
+on actual exported skull faces, and `tests/male_skull_classification.mjs` checks
+the source names used by the importer.
+
+The `reference-*.png` images predate these restorations and are not evidence of
+the current assets. The male can be regenerated with `prepare-zanatomy.mjs`;
 its source FBX is not included here.

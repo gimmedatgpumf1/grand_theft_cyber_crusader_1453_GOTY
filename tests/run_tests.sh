@@ -7,6 +7,8 @@ bash tools/nagger.sh
 # the source's asymmetric registered pose; validate provenance, labels and
 # geometry instead of pretending that standing-pose mirror rules apply.
 node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tests/male_skull_classification.mjs
+python3 tests/male_skull_restoration.py
 python3 tests/female_source_pose.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.

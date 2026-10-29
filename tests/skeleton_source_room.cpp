@@ -16,14 +16,18 @@ static int capturedWidth, capturedHeight;
 static double capturedFocal;
 static std::array<double, 16> capturedView;
 static std::uint64_t capturedRevision;
+static std::uint32_t maleSkullId;
+static std::size_t skullIndexCount;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
     indicesValid = true;
+    skullIndexCount = 0;
     batchCount = scene.batches.size();
     capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
     capturedView = scene.viewMatrix;
     capturedRevision = scene.revision;
     for (const auto& batch : scene.batches) {
+        if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) male.push_back(batch.modelMatrix);
         else if (batch.objectId >= 8001 && batch.objectId < 9000) female.push_back(batch.modelMatrix);
@@ -53,8 +57,16 @@ static bool checkIndexedRecycle() {
 }
 
 int main() {
-    SkeletonRoom room;
+    SkeletonModel maleModel;
     std::string error;
+    if (!maleModel.load("tools/skeleton-source/skeleton-male.obj", error)) {
+        std::printf("male load failed: %s\n", error.c_str()); return 1;
+    }
+    const int skull = maleModel.bone("skull");
+    if (skull < 0) { std::puts("male skull missing"); return 1; }
+    maleSkullId = 9001u + static_cast<std::uint32_t>(skull);
+    const std::size_t expectedSkullIndices = maleModel.bones()[skull].triangles.size() * 3;
+    SkeletonRoom room;
     if (!room.load(".", error)) { std::printf("room load failed: %s\n", error.c_str()); return 1; }
     setGpuRenderer(&capture);
     ViewState view;
@@ -73,7 +85,8 @@ int main() {
         }
     }
     bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 28 && unposed &&
-                firstFemale == female && firstMale != male && indicesValid;
+                firstFemale == female && firstMale != male && indicesValid &&
+                expectedSkullIndices > 0 && skullIndexCount == expectedSkullIndices;
     const auto oldFemale = female, oldMale = male;
     const auto oldView = capturedView;
     const auto oldRevision = capturedRevision;
@@ -83,7 +96,7 @@ int main() {
     for (const auto size : {std::pair<int, int>{800, 600}, {320, 240}, {1920, 1080}, {640, 480}}) {
         view.width = size.first; view.height = size.second; view.yaw = 0.35f;
         room.render(frame, view, 1.75);
-        pass = pass && indicesValid && female == oldFemale && male == oldMale &&
+        pass = pass && indicesValid && skullIndexCount == expectedSkullIndices && female == oldFemale && male == oldMale &&
                capturedWidth == size.first && capturedHeight == size.second && capturedView != oldView &&
                std::abs(capturedFocal - size.second / (2.0 * std::tan(50.0 * 3.141592653589793 / 360.0))) < 1e-9 &&
                capturedRevision == oldRevision && batchCount == oldBatches;
@@ -91,7 +104,7 @@ int main() {
     // A resize on the same call as an animation tick must also stay valid.
     view.width = 1000; view.height = 700;
     room.render(frame, view, 1.90);
-    pass = pass && indicesValid && female == oldFemale && male != oldMale &&
+    pass = pass && indicesValid && skullIndexCount == expectedSkullIndices && female == oldFemale && male != oldMale &&
            capturedWidth == 1000 && capturedHeight == 700 && batchCount == oldBatches;
     setGpuRenderer(nullptr);
     std::printf("test room source pose and resize: %s (female %zu groups, male %zu groups)\n",

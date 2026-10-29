@@ -10,8 +10,8 @@
 //      are dropped by suffix, not by hand),
 //   2. mirrors the left-hand bones to make the body complete,
 //   3. groups the bones into the 27 parts the renderer and rig already use,
-//   4. simplifies each *bone* separately towards a per-part triangle budget, so
-//      a phalanx never collapses because a skull sits in the same group.
+//   4. welds each rig group, then simplifies its disconnected shells separately
+//      towards a per-part triangle budget, with a minimum per shell.
 //
 // It never scales to fit a target height: the only factors applied are the
 // centimetre-to-metre conversion (x0.01) and a translation that puts the lowest
@@ -26,6 +26,7 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load } from './measure-zanatomy.mjs';
+import { classify, NOT_BONE, NOT_ANATOMY } from './zanatomy-classify.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = process.argv[2];
@@ -34,13 +35,6 @@ if (!SOURCE) {
   process.exit(2);
 }
 await MeshoptSimplifier.ready;
-
-// ---------------------------------------------------------------- selection
-// A muscle in this file is a sub-mesh of a bone and is named with a suffix:
-// .i/.j for surface markings, .el/.er/.ol/.or and .e1l/.o2r-style for muscle
-// origins and insertions. Real bones end in .l/.r or in nothing at all.
-const NOT_BONE = /\.(i|j|[eo]\d*[lr])$/;
-const NOT_ANATOMY = /^(Cross Section|Reference|Take a picture)/i;
 
 // Triangle budgets per shipped part, chosen so the two bodies stay inside the
 // software rasteriser's frame budget while the bones keep readable silhouettes.
@@ -62,46 +56,6 @@ const BUDGET = {
   lower_leg_l: 210, lower_leg_r: 210, foot_l: 760, foot_r: 760,
 };
 
-// Ordered rules: the first one that matches decides where a bone is filed.
-// Every rule is written against the Z-Anatomy vocabulary, which is a closed
-// list of 160 names; anything unmatched is reported rather than guessed at.
-const RULES = [
-  [/tooth|incisor|canine|premolar|molar/i, () => 'teeth'],
-  [/^mandible$/i, () => 'mandible'],
-  [/^(frontal|parietal|occipital|temporal|sphenoid|ethmoid|vomer|nasal bone|inferior nasal concha|lacrimal|zygomatic|maxilla|palatine) bone$|^(sinus of|anterior cells of ethmoid|middle cells of ethmoid|posterior cells of ethmoid)/i, () => 'skull'],
-  [/^(malleus|incus|stapes)$/i, () => 'skull'],
-  [/nasal septal cartilage|major alar cartilage/i, () => 'skull'],
-  [/^(atlas \(c1\)|axis \(c2\)|vertebra c\d)$/i, () => 'spine_cervical'],
-  [/^vertebra t\d+$/i, () => 'spine_thoracic'],
-  [/^vertebra l\d$/i, () => 'spine_lumbar'],
-  [/^(sacrum|coccyx)$/i, () => 'pelvis'],
-  [/^(hip bone)$/i, () => 'pelvis'],
-  [/costal cartilage|rib$/i, side => `ribs_${side}`],
-  [/^(body of sternum|manubrium of sternum|xiphoid process)$/i, () => 'sternum'],
-  [/^(clavicle)$/i, side => `clavicle_${side}`],
-  [/^(scapula)$/i, side => `scapula_${side}`],
-  [/^(humerus)$/i, side => `humerus_${side}`],
-  [/^(radius|ulna)$/i, side => `forearm_${side}`],
-  [/^(femur)$/i, side => `femur_${side}`],
-  [/^(patella)$/i, side => `patella_${side}`],
-  [/^(tibia|fibula)$/i, side => `lower_leg_${side}`],
-  [/metacarpal|phalanx of .* finger of hand|^(capitate|hamate|lunate|pisiform|scaphoid|trapezium|trapezoid|triquetrum) bone$/i, side => `hand_${side}`],
-  [/metatarsal|phalanx of .* finger of foot|sesamoid bones of foot|^(calcaneus|talus|navicular bone|cuboid bone|intermediate cuneiform bone|lateral cuneiform bone|medial cuneiform bone)$/i, side => `foot_${side}`],
-  // Laryngeal skeleton and hyoid ride with the neck.
-  [/^(hyoid bone|thyroid cartilage|cricoid cartilage|arytenoid cartilage|corniculate cartilage)$/i, () => 'spine_cervical'],
-];
-
-function classify(rawName) {
-  const side = /\.l$/.test(rawName) ? 'l' : /\.r$/.test(rawName) ? 'r' : null;
-  const base = rawName.replace(/\.(l|r)$/, '');
-  for (const [pattern, resolve] of RULES) {
-    if (pattern.test(base)) {
-      const part = resolve(side);
-      if (!part.endsWith('_null')) return { part, side, base };
-    }
-  }
-  return { part: null, side, base };
-}
 
 // ---------------------------------------------------------------- geometry
 function weld(points, indices) {
