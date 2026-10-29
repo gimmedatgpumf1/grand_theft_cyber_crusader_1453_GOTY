@@ -26,8 +26,8 @@ static bool capturedCovered;
 static bool lineObjectsOnly;
 static bool maleDots, femaleDots, maleSolids, femaleSolids;
 static bool checkDots(const GpuBatch& batch, const char* path, double x, double yaw) {
-    constexpr std::size_t lineVertices = 210 * 12, dotVertices = 24 * 12;
-    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 210 * 36 + 24 * 60)
+    constexpr std::size_t lineVertices = 194 * 12, dotVertices = 24 * 12;
+    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 194 * 36 + 24 * 60)
         return false;
     std::ifstream file(path);
     std::string row, name;
@@ -103,7 +103,7 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
         for (auto edge : edges) if (edge.second != 2) return false;
         vertexOffset += vertexCount; indexOffset += indexCount; ++solids;
     }
-    return solids == 9 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
+    return solids == 10 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
 }
 static std::size_t maleLineIndices, femaleLineIndices, maleSolidIndices, femaleSolidIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {
@@ -234,7 +234,7 @@ int main() {
            female.size() == 4 && male.size() == 4 && lineBatchCount < oldBatches && lineObjectsOnly &&
            maleDots && femaleDots && maleSolids && femaleSolids &&
            maleLineIndices <= 553 * 36 + 24 * 60 + maleSolidIndices && femaleLineIndices <= 553 * 36 + 24 * 60 + femaleSolidIndices &&
-           maleLineIndices >= 210 * 36 + 24 * 60 + maleSolidIndices && femaleLineIndices >= 210 * 36 + 24 * 60 + femaleSolidIndices;
+           maleLineIndices >= 194 * 36 + 24 * 60 + maleSolidIndices && femaleLineIndices >= 194 * 36 + 24 * 60 + femaleSolidIndices;
     WindowEvent moreLook{WindowEvent::Type::MouseMove}; moreLook.dx = 25;
     freecam.handle(moreLook, true);
     room.render(frame, view, 4.90, &freecam);

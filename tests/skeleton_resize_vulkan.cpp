@@ -64,7 +64,7 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
         noDots.revision += id + 20000;
         bool removed = false;
         for (auto& batch : noDots.batches) {
-            if (batch.objectId == id && batch.indices.size() == 210 * 36 + 24 * 60) {
+            if (batch.objectId == id && batch.indices.size() == 194 * 36 + 24 * 60) {
                 batch.indices.resize(batch.indices.size() - 24 * 60);
                 removed = true;
             }
@@ -119,7 +119,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                 shapes.push_back(shape);
             }
         }
-        if (shapes.size() != 9) return false;
+        if (shapes.size() != 10) return false;
         for (const Shape& shape : shapes) {
             for (int mode : {0, 1, 2}) {
                 if (mode == 1 && shape.foot) continue;

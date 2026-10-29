@@ -85,6 +85,7 @@ def unified_groups():
         groups[f'FootBase_{side}'] = tuple(f'{name}_{side}' for name in foot)
         groups[f'Forearm_{side}'] = (f'Radius_{side}', f'Ulna_{side}')
         groups[f'Shin_{side}'] = (f'Tibia_{side}', f'Fibula_{side}')
+    groups['ShoulderGirdle'] = ('Scapula_L', 'Clavicula_L', 'Scapula_R', 'Clavicula_R')
     groups['RibCage'] = tuple(f'Rib{rib}_{side}' for side in ('L', 'R') for rib in range(1, 13))
     return groups
 
@@ -154,6 +155,59 @@ def paired_bone_surface(bones, members):
     faces = [(0, i, i+1) for i in range(1, count-1)]
     boundary = [(i, (i+1) % count) for i in range(count)]
     return points, faces, boundary, owners
+
+
+def shoulder_surface(bones, members):
+    """One continuous shoulder surface with an approximate manubrium.
+
+    OpenSkeleton labels the sternum as one bone, not separate manubrium/body.
+    Use its upper 35% as an explicitly approximate manubrium; the lower
+    centreline stays separate. Bone-derived 3D anchors are triangulated as a
+    connected sheet spanning the shoulder blades and collarbones.
+    """
+    points, owners = [], {}
+    for name in members:
+        source = line_for(name, bones[name], bones)
+        # The scapula's principal and transverse branches describe its extent;
+        # clavicles use the two ends and centre of their source-derived axis.
+        selected = [source[i] for i in ((0,1,2,4,6) if name.startswith('Scapula_') else (0,1,2))]
+        owners[name] = list(range(len(points),len(points)+len(selected)))
+        points.extend(selected)
+    sternum = line_for('Sternum', bones['Sternum'], bones)
+    upper, lower = sorted((sternum[0], sternum[2]), key=lambda p: -p[1])
+    cut = upper + 0.35*(lower-upper)
+    # Keep the source centreline on the sheet, including attachment locations
+    # used by the existing rib cage. The extra anchors describe its width.
+    centreline = [upper, upper+(lower-upper)/6, upper+(lower-upper)/3, cut]
+    direction = lower-upper
+    t = (bones['Sternum']-upper) @ direction / np.dot(direction,direction)
+    region = bones['Sternum'][(t >= 0) & (t <= 0.35)]
+    assert len(region) > 5
+    midpoint = region.mean(axis=0)
+    across = np.array([1., 0., 0.]) - direction*(direction[0]/np.dot(direction,direction))
+    across /= np.linalg.norm(across)
+    offsets = (region-midpoint) @ across
+    a,b = np.quantile(offsets,[0.10,0.90])
+    manubrium = centreline + [midpoint+across*a, midpoint+across*b]
+    owners['Sternum'] = list(range(len(points),len(points)+len(manubrium)))
+    points.extend(manubrium)
+    points = np.array(points)
+    centre = points.mean(axis=0)
+    _, _, basis = np.linalg.svd(points-centre, full_matrices=False)
+    projected = (points-centre) @ basis[:2].T
+    triangles, edge_counts = [], {}
+    for raw in Delaunay(projected).simplices:
+        a,b,c = map(int,raw)
+        u,v = projected[b]-projected[a], projected[c]-projected[a]
+        if u[0]*v[1]-u[1]*v[0] < 0: b,c = c,b
+        triangles.append((a,b,c))
+        for p,q in ((a,b),(b,c),(c,a)):
+            key = tuple(sorted((p,q)))
+            if key not in edge_counts: edge_counts[key] = [0,(p,q)]
+            edge_counts[key][0] += 1
+    assert set(i for face in triangles for i in face) == set(range(len(points)))
+    boundary = [edge for count,edge in edge_counts.values() if count == 1]
+    return points, triangles, boundary, owners
 
 
 def rib_cage(bones, members):
@@ -418,6 +472,8 @@ def build(sex):
             solids[group] = paired_bone_surface(bones, members)
         elif group == 'RibCage':
             solids[group] = rib_cage(bones, members)
+        elif group == 'ShoulderGirdle':
+            solids[group] = shoulder_surface(bones, members)
         else:
             solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
@@ -439,6 +495,13 @@ def build(sex):
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
         pts = lines[name]
+        if name == 'Sternum':
+            # Its upper 35% is already in ShoulderGirdle; keep the rest as the
+            # separate sternal body and retain the original full line for links.
+            pts = list(pts)
+            upper = 0 if pts[0][1] > pts[2][1] else 2
+            lower = 2 if upper == 0 else 0
+            pts[upper] = pts[upper] + 0.35*(pts[lower]-pts[upper])
         if name in VERTEBRAE:
             out.append(f'D {name} {fmt(pts[0])}')
         for a,b in zip(pts,pts[1:]):

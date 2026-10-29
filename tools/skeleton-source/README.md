@@ -58,6 +58,12 @@ cartilage areas join ribs 1–7 to the source-derived sternum centreline. Ribs
 8–12 have no invented direct sternal attachments. The surface is a visual
 simplification, not additional anatomical joints.
 
+Both scapulae, both clavicles and an approximate manubrium are grouped into
+one thin, filled shoulder-girdle surface using source-derived bone anchors.
+The source labels the sternum as a single bone rather than separately labelling
+the manubrium, so the upper 35% of its displayed centreline is an approximation;
+the rest of the sternum remains separate and connects to the surface.
+
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the
 ankle. The front's top and bottom are fitted to the actual heights and
@@ -71,7 +77,7 @@ surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
-external links are retained, leaving 109 displayed shapes and 145 visible links.
+external links are retained, leaving 106 displayed shapes and 142 visible links.
 The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
 [upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)

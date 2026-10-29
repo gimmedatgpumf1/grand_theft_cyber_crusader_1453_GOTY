@@ -123,6 +123,7 @@ for sex in ('male', 'female'):
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
         expected_groups[f'Forearm_{side}'] = {f'Radius_{side}', f'Ulna_{side}'}
         expected_groups[f'Shin_{side}'] = {f'Tibia_{side}', f'Fibula_{side}'}
+    expected_groups['ShoulderGirdle'] = {'Scapula_L','Scapula_R','Clavicula_L','Clavicula_R'}
     expected_groups['RibCage'] = {f'Rib{rib}_{side}' for side in ('L','R') for rib in range(1,13)}
     assert groups == expected_groups and set(solids) == set(groups)
     assert foot_volumes == {'FootBase_L', 'FootBase_R'}
@@ -152,10 +153,11 @@ for sex in ('male', 'female'):
                 found_points.add(point); queue.append(point)
         assert found_points == set(range(len(points))), group
         if group in foot_volumes: continue
-        assert set(anchors[group]) == groups[group]
+        expected_anchors = groups[group] | ({'Sternum'} if group == 'ShoulderGirdle' else set())
+        assert set(anchors[group]) == expected_anchors
         expected_owned = len(points)-7 if group == 'RibCage' else len(points)
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(expected_owned))
-        if group.startswith(('Forearm_', 'Shin_', 'RibCage')):
+        if group.startswith(('Forearm_', 'Shin_', 'RibCage', 'ShoulderGirdle')):
             # Both bones contribute to one filled, connected surface.
             assert any(any(i in anchors[group][name] for i in face) and
                        any(i in anchors[group][other] for i in face)
@@ -178,10 +180,10 @@ for sex in ('male', 'female'):
                 return math.sqrt(sum(n*n for n in cross)) / 2
             assert max(map(area, between)) > 0.00005, (group, digit)
     members = {member: group for group, parts in groups.items() for member in parts}
-    assert len(members) == sum(map(len, groups.values())) == 82
+    assert len(members) == sum(map(len, groups.values())) == 86
     assert set(members) <= expected and len(expected) == 182
     visible = (expected - set(members)) | set(groups)
-    assert len(visible) == 109
+    assert len(visible) == 106
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
     # Dot placement is the centre of the corresponding supplied vertebra, not
@@ -208,7 +210,7 @@ for sex in ('male', 'female'):
         outline_center = tuple(sum(point[i] for point in vertices) / len(vertices) for i in range(3))
         assert math.dist(source_center, outline_center) < 0.08, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
-        assert 0.05 < span < (0.5 if group.startswith(('Forearm_', 'Shin_', 'RibCage')) else 0.3), group
+        assert 0.05 < span < (0.5 if group.startswith(('Forearm_', 'Shin_', 'RibCage', 'ShoulderGirdle')) else 0.3), group
     # Hands use source-derived anchors; feet have source-derived heel, toe
     # and distal-shin dimensions.
     for group, part_names in groups.items():
@@ -378,7 +380,8 @@ for sex in ('male', 'female'):
                 t = max(0, min(1, sum((x-y)*z for x,y,z in zip(p,a,v)) / sum(x*x for x in v)))
                 return math.dist(p, tuple(x+t*y for x,y in zip(a,v)))
             for point in sternum_points:
-                assert min(distance_to_line(point,a,b) for a,b in sternum_segments) < 0.00001
+                assert (min(distance_to_line(point,a,b) for a,b in sternum_segments) < 0.00001 or
+                        point_in_solid(point, solids['ShoulderGirdle']))
             assert all(math.dist(sternum_points[i],sternum_points[i+1]) > 0.01 for i in range(6))
             for side, offset in (('L',-1),('R',0)):
                 for rib in range(1,7):
@@ -397,6 +400,34 @@ for sex in ('male', 'female'):
             assert all(count == 1 for count in oriented.values())
             assert all(oriented[(b,a)] == 1 for (a,b),count in list(oriented.items()) if tuple(sorted((a,b))) not in
                        {tuple(sorted(edge)) for edge in solids[group][3]})
+            continue
+        if group == 'ShoulderGirdle':
+            # Four shoulder bones retain their own source-derived anchors; the
+            # sternal source is whole, so its upper section is approximate.
+            for name in part_names:
+                indices = anchors[group][name]
+                source_points = member_vertices[name]
+                mean = tuple(sum(p[i] for p in source_points)/len(source_points) for i in range(3))
+                assert len(indices) == (5 if name.startswith('Scapula_') else 3)
+                assert math.dist(points[indices[1]], mean) < 0.00001
+                for index in indices:
+                    for axis in range(3):
+                        assert min(p[axis] for p in source_points)-0.01 <= points[index][axis] <= max(p[axis] for p in source_points)+0.01
+            for side in ('L','R'):
+                clavicle = set(anchors[group][f'Clavicula_{side}'])
+                for neighbour in (f'Scapula_{side}', 'Sternum'):
+                    other = set(anchors[group][neighbour])
+                    assert any(clavicle.intersection(face) and other.intersection(face)
+                               for face in solids[group][2]), (group, side, neighbour)
+            sternum_indices = anchors[group]['Sternum']
+            assert len(sternum_indices) == 6
+            upper, cut = points[sternum_indices[0]], points[sternum_indices[3]]
+            # The remaining sternum body begins exactly where the grouped
+            # manubrium approximation ends; no doubled upper bone line.
+            assert any(math.dist(p,cut) < 0.00001 for segment in segments['Sternum'] for p in segment)
+            assert all(p[1] <= cut[1] + 0.00001 for segment in segments['Sternum'] for p in segment)
+            assert math.dist(points[sternum_indices[1]],tuple(upper[i]+(cut[i]-upper[i])*(1/6)/0.35 for i in range(3))) < 0.00001
+            assert math.dist(points[sternum_indices[2]],tuple(upper[i]+(cut[i]-upper[i])*(1/3)/0.35 for i in range(3))) < 0.00001
             continue
         if group.startswith(('Forearm_', 'Shin_')):
             def sub(a,b): return tuple(x-y for x,y in zip(a,b))
@@ -460,7 +491,9 @@ for sex in ('male', 'female'):
             if bone in dots: assert math.dist(point, dots[bone]) < 0.00001, bone
             elif bone in solids:
                 assert point_in_solid(point, solids[bone]), bone
-            else: assert any(distance_to_segment(point, a, b) < 0.00001 for a,b in segments[bone]), bone
+            else:
+                on_line = any(distance_to_segment(point, a, b) < 0.00001 for a,b in segments[bone])
+                assert on_line or (bone == 'Sternum' and point_in_solid(point, solids['ShoulderGirdle'])), bone
     graph = defaultdict(set)
     topology = set()
     for kind, a, b, _ in edges:
@@ -471,7 +504,7 @@ for sex in ('male', 'female'):
     while queue:
         for other in graph[queue.popleft()] - found:
             found.add(other); queue.append(other)
-    assert found == visible and len(edges) == 145
+    assert found == visible and len(edges) == 142
     collapsed = set()
     expected_anchors = defaultdict(set)
     for original_a, original_b, kind in anatomy:
@@ -515,4 +548,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(edges)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, one connected rib cage, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(edges)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, one connected rib cage, one shoulder girdle, {len(dots)} vertebra dots)')
