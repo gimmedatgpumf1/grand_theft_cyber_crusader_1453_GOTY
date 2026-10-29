@@ -130,9 +130,6 @@ unsigned char srgbChannel(double value) {
 
 } // namespace
 
-double textMilliseconds = 0.0;
-long textPixels = 0;
-
 // The glyph loop, in pixels: `penX` is the left edge of the text and `baseline`
 // the line it sits on. Both callers below want exactly this and differ only in
 // how they turn their coordinates into those two numbers.
@@ -162,7 +159,6 @@ void paintText(NativeFrame& frame, double penX, double baseline, const std::stri
                 const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
                 if (!coverage) continue;
                 const std::size_t pixel = static_cast<std::size_t>(py) * frameWidth + px;
-                ++textPixels;
                 if (bgraCanvas) {
                     unsigned char* out = canvas + pixel * 4;
                     out[0] = static_cast<unsigned char>((blue * coverage + out[0] * (255 - coverage)) / 255);
@@ -221,7 +217,6 @@ void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, C
 }
 
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
-    const auto textStart = std::chrono::steady_clock::now();
     scale = std::max(3, scale);
     if (font().ready) {
         const int pixelHeight = std::max(20, static_cast<int>(std::lround(9 * scale * frame.uiScale)));
@@ -230,8 +225,6 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
         stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
         paintText(frame, frame.uiOffsetX + x * frame.uiScale,
                   frame.uiOffsetY + y * frame.uiScale + ascent * fontScale, text, color, pixelHeight);
-        textMilliseconds += std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - textStart).count();
         return;
     }
     // No face on disk: the blocky fallback, which every machine can draw.
@@ -245,8 +238,6 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
         }
         x += 6 * scale;
     }
-    textMilliseconds += std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - textStart).count();
 }
 
 } // namespace gtc::native

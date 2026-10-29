@@ -41,8 +41,13 @@ namespace {
 // picture onto the screen, and those two want opposite fixes.
 void reportFrameRate(const std::chrono::steady_clock::time_point& now, double renderMs, double presentMs,
                      double logicMs) {
-    const char* setting = std::getenv("GTC_FPS");
-    if (!setting || !*setting || *setting == '0') return;
+    // Asked once. getenv walks the environment block, and this is a per-frame
+    // call: the answer cannot change while the process runs.
+    static const bool enabled = [] {
+        const char* setting = std::getenv("GTC_FPS");
+        return setting && *setting && *setting != '0';
+    }();
+    if (!enabled) return;
     static auto window = now;
     static int frames = 0;
     static double renderTotal = 0.0, presentTotal = 0.0, logicTotal = 0.0;
@@ -116,10 +121,10 @@ public:
                 return 1;
             }
             trackBodyTurn();
-            std::vector<WindowEvent> events;
-            if (!window_.poll(events)) break;
+            events_.clear();
+            if (!window_.poll(events_)) break;
             window_.size(view_.width, view_.height);
-            for (const WindowEvent& event : events) {
+            for (const WindowEvent& event : events_) {
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
@@ -758,6 +763,9 @@ private:
     NativeWindow window_;
     ViewState view_;
     Overlay overlay_ = Overlay::None;
+    // Reused every frame: a vector built inside the loop is an allocation per
+    // frame for the sake of a handful of events.
+    std::vector<WindowEvent> events_;
     TargetPromptLayout prompt_{};
     int promptWidth_ = 0, promptHeight_ = 0;
     std::set<int> keys_;

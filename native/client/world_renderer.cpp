@@ -729,7 +729,7 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         Rasterizer rasterizer(std::max(1, view.width), std::max(1, view.height), colorHex("#111913"), camera.focal(), view.gpu,
                               view.gpu ? std::move(gpuScene_) : GpuScene{}, &buffer_);
         rasterizer.setCamera(camera);
-        const bool subProfile = std::getenv("GTC_PROFILE2") != nullptr;
+        static const bool subProfile = std::getenv("GTC_PROFILE2") != nullptr;
         const auto t0 = std::chrono::steady_clock::now();
         drawFloor(rasterizer, camera, world);
         const auto t1 = std::chrono::steady_clock::now();
@@ -848,7 +848,8 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
         error = "Native GPU scene rendering failed";
         return false;
     }
-    if (std::getenv("GTC_PROFILE")) {
+    static const bool profiling = std::getenv("GTC_PROFILE") != nullptr;
+    if (profiling) {
         const auto end = std::chrono::steady_clock::now();
         const auto milliseconds = [](auto start, auto stop) {
             return std::chrono::duration<double, std::milli>(stop - start).count();

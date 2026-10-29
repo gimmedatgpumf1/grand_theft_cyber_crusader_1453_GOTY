@@ -837,7 +837,7 @@ NativeFrame Rasterizer::finish() {
         frame.rgb.clear();
         return frame;
     }
-    const bool profileRaster = std::getenv("GTC_RASTER_PROFILE") != nullptr;
+    static const bool profileRaster = std::getenv("GTC_RASTER_PROFILE") != nullptr;
     const auto rasterStart = std::chrono::steady_clock::now();
     flush();
     const auto rasterDone = std::chrono::steady_clock::now();

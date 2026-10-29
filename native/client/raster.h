@@ -283,8 +283,6 @@ void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 siz
              const Material& material);
 void drawEllipsoid(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 radii,
                    const Material& material, int segments = 16, int rings = 10);
-extern double textMilliseconds;
-extern long textPixels;
 
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale = 3);
 
