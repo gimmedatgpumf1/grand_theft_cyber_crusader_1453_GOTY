@@ -8,6 +8,7 @@
 #include "client/cheat_menu.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
+#include "client/fps_report.h"
 #include "client/mode_bar.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
@@ -34,40 +35,6 @@ namespace {
 // The character creator used to live here and opened on C. It is gone: the
 // test room took the key, and the next creator will be built fresh rather than
 // grown back out of this switchboard.
-// A frame rate that only lives in the HUD is a frame rate nobody can quote.
-// With GTC_FPS=1 the loop also writes an average to stderr once a second, which
-// is the number to send back when asking whether the target was met.
-// What the second is made of, not just how many frames fitted in it: a frame
-// rate alone cannot say whether the time went into drawing or into getting the
-// picture onto the screen, and those two want opposite fixes.
-void reportFrameRate(const std::chrono::steady_clock::time_point& now, double renderMs, double presentMs,
-                     double logicMs) {
-    // Asked once. getenv walks the environment block, and this is a per-frame
-    // call: the answer cannot change while the process runs.
-    static const bool enabled = [] {
-        const char* setting = std::getenv("GTC_FPS");
-        return setting && *setting && *setting != '0';
-    }();
-    if (!enabled) return;
-    static auto window = now;
-    static int frames = 0;
-    static double renderTotal = 0.0, presentTotal = 0.0, logicTotal = 0.0;
-    ++frames;
-    renderTotal += renderMs;
-    presentTotal += presentMs;
-    logicTotal += logicMs;
-    const auto span = std::chrono::duration<double>(now - window).count();
-    if (span < 1.0) return;
-    // Three numbers, because a frame rate alone cannot say where the millisecond
-    // went: drawing wants one fix, getting the picture onto the screen wants
-    // another, and the game's own work wants a third.
-    std::fprintf(stderr, "[fps] %.1f (%.2f ms/frame: draw %.2f, present %.2f, logic %.2f)\n", frames / span,
-                 1000.0 * span / frames, renderTotal / frames, presentTotal / frames, logicTotal / frames);
-    window = now;
-    frames = 0;
-    renderTotal = presentTotal = logicTotal = 0.0;
-}
-
 enum class Overlay { None, Wheel, Cheats, Help };
 
 class App {
@@ -113,6 +80,7 @@ public:
         double renderMilliseconds = 0.0;
         double presentMilliseconds = 0.0;
         double logicMilliseconds = 0.0;
+        FrameRateReporter frameRate(previous);
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
             const float elapsed = std::max(0.0001F, std::chrono::duration<float>(now - previous).count());
@@ -120,7 +88,6 @@ public:
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
             const auto loopStart = Clock::now();
-            reportFrameRate(now, renderMilliseconds, presentMilliseconds, logicMilliseconds);
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;
@@ -169,6 +136,7 @@ public:
                 view_.drawMilliseconds = renderMilliseconds;
                 view_.presentMilliseconds = presentMilliseconds;
                 view_.logicMilliseconds = logicMilliseconds;
+                frameRate.record(Clock::now(), renderMilliseconds, presentMilliseconds, logicMilliseconds);
                 continue;
             }
             // The UI is geometry submitted with the world, never a CPU overlay.
@@ -223,6 +191,7 @@ public:
                 }
                 screenshot_ = false;
             }
+            frameRate.record(Clock::now(), renderMilliseconds, presentMilliseconds, logicMilliseconds);
         }
         return 0;
     }

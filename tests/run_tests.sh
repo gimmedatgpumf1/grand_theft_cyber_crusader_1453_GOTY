@@ -39,6 +39,12 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+# FPS reporting is unconditional; even the former off switch must not disable it.
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Inative \
+  tests/fps_report.cpp -o build/bin/gtc-fps-report-check
+env -u GTC_FPS ./build/bin/gtc-fps-report-check
+GTC_FPS=0 ./build/bin/gtc-fps-report-check
+GTC_FPS=1 ./build/bin/gtc-fps-report-check
 # The Vulkan projection can be checked without a driver, so it is: the clip
 # matrix has to put every point on the pixel the CPU rasterizer would use.
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
