@@ -187,7 +187,7 @@ struct GpuBatch {
     // This batch is interface, not world: it blends, it does not test depth, and
     // its colour arrives already prepared for the display. Drawn last, so what it
     // covers it covers.
-    bool interface = false;
+    bool isUi = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };

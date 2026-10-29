@@ -95,6 +95,7 @@ def main():
     # it unqualified, and MSVC says so while nothing here ever notices.
     failures.extend(nested_type_failures(['native/client/window_win32.cpp',
                                           'native/client/window_x11.cpp']))
+    failures.extend(windows_interface_keyword_failures())
 
     if failures:
         for failure in failures:
@@ -132,6 +133,27 @@ def narrowing_failures(sources):
                           or 'error' in line), 'unknown error')
             problems.append(f'{source} would fail the Windows build: {first.strip()}')
     return problems
+
+
+def windows_interface_keyword_failures():
+    """Simulate Windows' `interface` token, including declarations and uses.
+
+    MSVC rejects `interface` as an identifier even when a Linux build accepts it.
+    Defining it as `struct` catches the same collision in the UI and Vulkan path.
+    """
+    import shutil
+    import subprocess
+    compiler = shutil.which('g++') or shutil.which('c++')
+    if compiler is None:
+        return []
+    result = subprocess.run([compiler, '-std=c++17', '-Dinterface=struct', '-fsyntax-only',
+                             '-Isrc', '-Inative', 'native/client/ui_layer.cpp',
+                             'native/vulkan/vk_renderer.cpp'],
+                            cwd=ROOT, capture_output=True, text=True)
+    if result.returncode == 0:
+        return []
+    first = next((line for line in result.stderr.splitlines() if 'error:' in line), 'unknown error')
+    return [f'Windows interface token collision: {first.strip()}']
 
 
 def nested_type_failures(paths):

@@ -228,7 +228,7 @@ void appendUiBatches(const UiLayer& layer, const Camera& camera, GpuScene& scene
     const auto flush = [&](std::size_t begin, std::size_t end, const BatchKey& key) {
         if (begin >= end) return;
         GpuBatch batch;
-        batch.interface = true;
+        batch.isUi = true;
         batch.material.kind = key.texture != nullptr ? Material::Kind::Textured : Material::Kind::Solid;
         batch.material.texture = key.texture;
         batch.material.unlit = true;

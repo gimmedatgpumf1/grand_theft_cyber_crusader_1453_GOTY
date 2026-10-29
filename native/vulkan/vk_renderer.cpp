@@ -482,7 +482,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     bool interfaceLogged = false;
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         if (scene.batches[index].vertices.empty()) continue;
-        if (scene.batches[index].interface) {
+        if (scene.batches[index].isUi) {
             if (!interfaceLogged && traced) { trace("vk: drawing interface geometry on device"); interfaceLogged = true; }
             if (texturedMaterial(scene.batches[index].material)) {
                 if (!ensureInterfaceAtlas()) return false;
@@ -591,7 +591,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
         const bool textured = texturedMaterial(batch.material);
-        if (batch.interface) {
+        if (batch.isUi) {
             const VkDeviceSize base = static_cast<VkDeviceSize>(firstVertex_[index]) * sizeof(PackedVertex);
             bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &base);
         }
@@ -602,7 +602,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
-        const VkPipeline wanted = batch.interface
+        const VkPipeline wanted = batch.isUi
             ? (textured ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
             : (textured ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
@@ -669,7 +669,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
         } else {
             drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1,
-                   batch.interface ? 0 : firstVertex_[index], 0);
+                   batch.isUi ? 0 : firstVertex_[index], 0);
         }
     }
     endRenderPass(command_);
