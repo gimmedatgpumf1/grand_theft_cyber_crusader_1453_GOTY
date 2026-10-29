@@ -25,7 +25,7 @@ reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges, dots, groups = defaultdict(list), [], {}, {}
+    segments, edges, dots, groups, solids = defaultdict(list), [], {}, {}, {}
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
         if row.startswith('# Group '):
             parts = row.split()
@@ -41,6 +41,13 @@ for sex in ('male', 'female'):
             point = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, point))
             dots[fields[1]] = point
+        elif kind == 'P':
+            name, thickness, count = fields[1], float(fields[2]), int(fields[3])
+            assert name not in solids and 3 <= count <= 12 and len(fields) == 4 + 3 * count
+            values = tuple(map(float, fields[4:]))
+            assert all(map(math.isfinite, values)) and 0.008 <= thickness <= 0.08
+            points = [values[i:i+3] for i in range(0, len(values), 3)]
+            solids[name] = (thickness, points)
         elif kind == 'B':
             assert len(fields) == 8
             name = fields[1]
@@ -62,7 +69,24 @@ for sex in ('male', 'female'):
                 'FootSesaLat', *(f'FootMeta{i}' for i in range(1, 6)))
         expected_groups[f'HandPalm_{side}'] = {f'{n}_{side}' for n in hand}
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
-    assert groups == expected_groups
+    assert groups == expected_groups and set(solids) == set(groups)
+    # The solid footprint replaces the outline tubes rather than covering them.
+    assert not (set(solids) & set(segments))
+    for group, (_, points) in solids.items():
+        segments[group] = list(zip(points, points[1:] + points[:1]))
+        def sub(a, b): return tuple(x-y for x, y in zip(a, b))
+        def cross(a, b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+        def dot(a, b): return sum(x*y for x,y in zip(a,b))
+        triangles = [cross(sub(points[i],points[0]), sub(points[i+1],points[0]))
+                     for i in range(1, len(points)-1)]
+        normal = tuple(sum(t[i] for t in triangles) for i in range(3))
+        length = math.sqrt(dot(normal, normal))
+        assert length > 1e-10
+        normal = tuple(x/length for x in normal)
+        for i, point in enumerate(points):
+            assert abs(dot(sub(point,points[0]), normal)) < 0.00001
+            assert dot(cross(sub(points[(i+1)%len(points)],point),
+                             sub(points[(i+2)%len(points)],points[(i+1)%len(points)])), normal) > -1e-9
     members = {member: group for group, parts in groups.items() for member in parts}
     assert len(members) == sum(map(len, groups.values())) == 50
     assert set(members) <= expected and len(expected) == 182
@@ -70,7 +94,7 @@ for sex in ('male', 'female'):
     assert len(visible) == 136
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
-    # Each unified body is one closed outline, not its old individual bones.
+    # Each solid has one closed footprint, not its old individual bones.
     for group in groups:
         shape = segments[group]
         assert 3 <= len(shape) <= 12 and shape[0][0] == shape[-1][1]
@@ -149,4 +173,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(groups)} unified shapes, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(solids)} solid shapes, {len(dots)} vertebra dots)')

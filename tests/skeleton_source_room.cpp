@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <cmath>
 #include <string>
@@ -23,10 +24,10 @@ static std::uint32_t maleSkullId;
 static std::size_t skullIndexCount;
 static bool capturedCovered;
 static bool lineObjectsOnly;
-static bool maleDots, femaleDots;
+static bool maleDots, femaleDots, maleSolids, femaleSolids;
 static bool checkDots(const GpuBatch& batch, const char* path, double x, double yaw) {
-    constexpr std::size_t lineVertices = 442 * 12, dotVertices = 24 * 12;
-    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 442 * 36 + 24 * 60)
+    constexpr std::size_t lineVertices = 394 * 12, dotVertices = 24 * 12;
+    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 394 * 36 + 24 * 60)
         return false;
     std::ifstream file(path);
     std::string row, name;
@@ -50,13 +51,50 @@ static bool checkDots(const GpuBatch& batch, const char* path, double x, double 
     }
     return dot == 24;
 }
+static bool checkSolids(const GpuBatch& batch, const char* path, double x, double yaw) {
+    if (batch.vertices.size() != 4 * 24 || batch.indices.size() != 4 * 132) return false;
+    std::ifstream file(path);
+    std::string row;
+    std::size_t solid = 0;
+    const double c = std::cos(yaw), s = std::sin(yaw);
+    while (std::getline(file, row)) {
+        if (row.rfind("P ", 0) != 0) continue;
+        std::istringstream input(row);
+        char kind; std::string name; double thickness; int count;
+        input >> kind >> name >> thickness >> count;
+        if (!input || count != 12 || solid >= 4) return false;
+        for (int i = 0; i < count; ++i) {
+            Vec3 p; input >> p.x >> p.y >> p.z;
+            const Vec3 expected{x + c*p.x + s*p.z, p.y, -s*p.x + c*p.z};
+            const auto& a = batch.vertices[solid*24+i];
+            const auto& b = batch.vertices[solid*24+count+i];
+            const Vec3 first{a.x,a.y,a.z}, second{b.x,b.y,b.z};
+            if (!input || length((first + second) / 2 - expected) > 1e-6 ||
+                std::abs(length(second - first) - thickness) > 1e-6) return false;
+        }
+        // Every edge belongs to exactly two triangles: both filled caps and
+        // the sides must form a closed prism, not a wireframe or open sheet.
+        std::map<std::pair<unsigned,unsigned>, int> edges;
+        for (std::size_t i = solid*132; i < (solid+1)*132; i += 3) {
+            for (int corner = 0; corner < 3; ++corner) {
+                auto a = batch.indices[i+corner], b = batch.indices[i+(corner+1)%3];
+                if (a < solid*24 || a >= (solid+1)*24 || b < solid*24 || b >= (solid+1)*24) return false;
+                if (a > b) std::swap(a,b);
+                ++edges[{a,b}];
+            }
+        }
+        for (auto edge : edges) if (edge.second != 2) return false;
+        ++solid;
+    }
+    return solid == 4;
+}
 static std::size_t maleLineIndices, femaleLineIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
     indicesValid = true;
     skullIndexCount = 0;
     lineObjectsOnly = true;
-    maleDots = femaleDots = false;
+    maleDots = femaleDots = maleSolids = femaleSolids = false;
     maleLineIndices = femaleLineIndices = 0;
     batchCount = scene.batches.size();
     capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
@@ -67,6 +105,8 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleDots = true;
         if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleDots = true;
+        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleSolids = true;
+        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleSolids = true;
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
@@ -174,9 +214,10 @@ int main() {
     const auto lineView = capturedView;
     const auto lineBatchCount = batchCount;
     pass = pass && room.lineView() && indicesValid && lineRevision != oldRevision &&
-           female.size() == 3 && male.size() == 3 && lineBatchCount < oldBatches && lineObjectsOnly && maleDots && femaleDots &&
-           maleLineIndices <= 601 * 36 + 24 * 60 && femaleLineIndices <= 601 * 36 + 24 * 60 &&
-           maleLineIndices >= 442 * 36 + 24 * 60 && femaleLineIndices >= 442 * 36 + 24 * 60;
+           female.size() == 4 && male.size() == 4 && lineBatchCount < oldBatches && lineObjectsOnly &&
+           maleDots && femaleDots && maleSolids && femaleSolids &&
+           maleLineIndices <= 553 * 36 + 24 * 60 + 4 * 132 && femaleLineIndices <= 553 * 36 + 24 * 60 + 4 * 132 &&
+           maleLineIndices >= 394 * 36 + 24 * 60 + 4 * 132 && femaleLineIndices >= 394 * 36 + 24 * 60 + 4 * 132;
     WindowEvent moreLook{WindowEvent::Type::MouseMove}; moreLook.dx = 25;
     freecam.handle(moreLook, true);
     room.render(frame, view, 4.90, &freecam);

@@ -11,22 +11,46 @@ namespace gtc::native {
 
 // An inspection overlay generated offline from the registered source meshes.
 // Links follow an explicit anatomical table; endpoints are estimates, not
-// measured joint landmarks. Tube triangles keep this on the existing GPU path.
+// measured joint landmarks. Tubes and solid palms/feet use the GPU scene path.
 class SkeletonLines {
 public:
     struct Segment { Vec3 a, b; char kind; };
+    struct Solid { std::vector<Vec3> outline; double thickness = 0; };
 
     bool load(const std::string& path, std::string& error) {
         std::ifstream input(path);
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }
         segments_.clear();
         dots_.clear();
+        solids_.clear();
         std::string line;
         while (std::getline(input, line)) {
             if (line.empty() || line[0] == '#') continue;
             std::istringstream row(line);
             char kind; std::string first, second; Segment s;
             row >> kind >> first;
+            if (kind == 'P') {
+                Solid solid;
+                int count = 0;
+                row >> solid.thickness >> count;
+                if (!row || !std::isfinite(solid.thickness) || solid.thickness <= 0 ||
+                    solid.thickness > 1 || count < 3 || count > 64) {
+                    error = "Invalid skeleton solid in " + path; return false;
+                }
+                for (int i = 0; i < count; ++i) {
+                    Vec3 point;
+                    row >> point.x >> point.y >> point.z;
+                    if (!row || !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+                        error = "Invalid skeleton solid vertex in " + path; return false;
+                    }
+                    solid.outline.push_back(point);
+                }
+                if (length(planeNormal(solid.outline)) < 1e-9) {
+                    error = "Degenerate skeleton solid in " + path; return false;
+                }
+                solids_.push_back(std::move(solid));
+                continue;
+            }
             if (kind == 'J' || kind == 'C') row >> second;
             row >> s.a.x >> s.a.y >> s.a.z;
             if (kind != 'D') row >> s.b.x >> s.b.y >> s.b.z;
@@ -101,11 +125,42 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
+        // Filled, closed prisms instead of outlines. Their thickness comes from
+        // the source surfaces; face lighting makes the volume easy to read.
+        std::vector<Vec3> points;
+        std::vector<std::array<int, 3>> faces;
+        for (const auto& solid : solids_) {
+            const int start = static_cast<int>(points.size());
+            const int count = static_cast<int>(solid.outline.size());
+            const Vec3 normal = planeNormal(solid.outline);
+            for (int layer = 0; layer < 2; ++layer)
+                for (Vec3 point : solid.outline)
+                    points.push_back(place(point + normal * ((layer ? 0.5 : -0.5) * solid.thickness)));
+            for (int i = 1; i + 1 < count; ++i) {
+                faces.push_back({start, start+i+1, start+i});
+                faces.push_back({start+count, start+count+i, start+count+i+1});
+            }
+            for (int i = 0; i < count; ++i) {
+                const int next = (i + 1) % count;
+                faces.push_back({start+i, start+next, start+count+i});
+                faces.push_back({start+next, start+count+next, start+count+i});
+            }
+        }
+        Material solid;
+        solid.color = colorHex("#eee6c7");
+        out.mesh(points, faces, solid);
     }
 
 private:
+    static Vec3 planeNormal(const std::vector<Vec3>& polygon) {
+        Vec3 normal;
+        for (std::size_t i = 1; i + 1 < polygon.size(); ++i)
+            normal += cross(polygon[i] - polygon[0], polygon[i+1] - polygon[0]);
+        return normalized(normal);
+    }
     std::vector<Segment> segments_;
     std::vector<Vec3> dots_;
+    std::vector<Solid> solids_;
 };
 
 } // namespace gtc::native

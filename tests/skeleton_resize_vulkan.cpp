@@ -14,7 +14,7 @@ using namespace gtc::native;
 
 static bool bothVisible = true;
 static bool dotsVisible = false;
-static bool outlinesVisible = false;
+static bool solidsVisible = false;
 
 static bool renderAndCheck(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
@@ -63,7 +63,7 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
         noDots.revision += id + 20000;
         bool removed = false;
         for (auto& batch : noDots.batches) {
-            if (batch.objectId == id && batch.indices.size() == 442 * 36 + 24 * 60) {
+            if (batch.objectId == id && batch.indices.size() == 394 * 36 + 24 * 60) {
                 batch.indices.resize(batch.indices.size() - 24 * 60);
                 removed = true;
             }
@@ -87,9 +87,9 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
     return true;
 }
 
-// Remove each unified outline from the real device scene and measure its
-// visible pixels. Index ranges follow B rows; dot triangles are left intact.
-static bool renderAndCheckOutlines(const GpuScene& scene, NativeFrame& frame) {
+// Compare real Vulkan pixels with each closed prism removed. Also remove just
+// its filled caps: this checks filled triangles, not merely an outline.
+static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
     const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
     const unsigned char* pixels = frame.direct ? frame.direct : frame.bgra.data();
@@ -100,42 +100,41 @@ static bool renderAndCheckOutlines(const GpuScene& scene, NativeFrame& frame) {
         std::ifstream input(path);
         std::vector<std::string> names;
         std::string row;
-        while (std::getline(input, row)) if (row.rfind("B ", 0) == 0) {
+        while (std::getline(input, row)) if (row.rfind("P ", 0) == 0) {
             std::istringstream fields(row);
             char kind; std::string name; fields >> kind >> name; names.push_back(name);
         }
-        if (names.size() != 442) return false;
-        for (const char* group : {"HandPalm_L", "HandPalm_R", "FootBase_L", "FootBase_R"}) {
-            GpuScene without = scene;
-            without.revision += 40000 + sequence++;
-            bool removed = false;
-            for (auto& batch : without.batches) {
-                if (batch.objectId != id || batch.indices.size() != 442 * 36 + 24 * 60) continue;
-                std::vector<std::uint32_t> kept;
-                for (std::size_t i = 0; i < names.size(); ++i) {
-                    if (names[i] == group) { removed = true; continue; }
-                    kept.insert(kept.end(), batch.indices.begin() + i*36, batch.indices.begin() + (i+1)*36);
+        if (names.size() != 4) return false;
+        for (std::size_t shape = 0; shape < names.size(); ++shape) {
+            for (bool onlyCaps : {false, true}) {
+                GpuScene without = scene;
+                without.revision += 40000 + sequence++;
+                bool removed = false;
+                for (auto& batch : without.batches) {
+                    if (batch.objectId != id || batch.indices.size() != 4 * 132 || batch.vertices.size() != 4 * 24) continue;
+                    const auto begin = batch.indices.begin() + shape * 132;
+                    batch.indices.erase(begin, begin + (onlyCaps ? 60 : 132));
+                    removed = true;
                 }
-                kept.insert(kept.end(), batch.indices.begin() + names.size()*36, batch.indices.end());
-                batch.indices.swap(kept);
+                if (!removed) return false;
+                NativeFrame plain;
+                plain.width = scene.width; plain.height = scene.height;
+                plain.wantPixels = true; plain.wantsBgra = true;
+                if (!renderVulkanScene(without, plain)) return false;
+                const unsigned char* other = plain.direct ? plain.direct : plain.bgra.data();
+                int changed = 0;
+                for (std::size_t at = 0; at < bytes; at += 4) {
+                    int difference = 0;
+                    for (int c = 0; c < 3; ++c) difference += std::abs(int(original[at+c]) - int(other[at+c]));
+                    if (difference > 24) ++changed;
+                }
+                std::printf("Vulkan %s %u %s: %d visible pixels\n", onlyCaps ? "filled faces" : "solid",
+                            id, names[shape].c_str(), changed);
+                if (changed < 1) return false;
             }
-            if (!removed) return false;
-            NativeFrame plain;
-            plain.width = scene.width; plain.height = scene.height;
-            plain.wantPixels = true; plain.wantsBgra = true;
-            if (!renderVulkanScene(without, plain)) return false;
-            const unsigned char* other = plain.direct ? plain.direct : plain.bgra.data();
-            int changed = 0;
-            for (std::size_t at = 0; at < bytes; at += 4) {
-                int difference = 0;
-                for (int c = 0; c < 3; ++c) difference += std::abs(int(original[at+c]) - int(other[at+c]));
-                if (difference > 24) ++changed;
-            }
-            std::printf("Vulkan outline %u %s: %d visible pixels\n", id, group, changed);
-            if (changed < 1) return false;
         }
     }
-    outlinesVisible = true;
+    solidsVisible = true;
     return true;
 }
 
@@ -223,9 +222,9 @@ int main() {
         setGpuRenderer(&renderAndCheckDots);
         room.render(frame, view, 2.5);
         ok = ok && dotsVisible;
-        setGpuRenderer(&renderAndCheckOutlines);
+        setGpuRenderer(&renderAndCheckSolids);
         room.render(frame, view, 2.5);
-        ok = ok && outlinesVisible;
+        ok = ok && solidsVisible;
         view.width = 640; view.height = 480;
         room.toggleLineView();
         setGpuRenderer(&renderVulkanScene);

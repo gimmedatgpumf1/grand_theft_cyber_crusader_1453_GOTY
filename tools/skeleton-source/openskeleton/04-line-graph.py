@@ -86,7 +86,7 @@ def unified_groups():
 
 
 def unified_outline(vertices):
-    """One simplified outline in the best-fit plane of the source surfaces."""
+    """Convex footprint and source-derived depth for a simple solid."""
     centre = vertices.mean(axis=0)
     _, _, basis = np.linalg.svd(vertices - centre, full_matrices=False)
     projected = (vertices - centre) @ basis[:2].T
@@ -108,7 +108,9 @@ def unified_outline(vertices):
         i = min(range(len(hull)), key=lambda j: abs(cross2(hull[j-1], hull[j], hull[(j+1) % len(hull)])))
         hull.pop(i)
     outline = [centre + point[0]*basis[0] + point[1]*basis[1] for point in hull]
-    return outline + outline[:1]
+    depth = (vertices - centre) @ basis[2]
+    thickness = max(0.008, float(np.quantile(depth, 0.9) - np.quantile(depth, 0.1)))
+    return outline + outline[:1], thickness
 
 
 def read_bones(path):
@@ -215,8 +217,9 @@ def build(sex):
     assert len(member_to_group) == sum(map(len, groups.values())) and set(member_to_group) <= expected
     lines = {name: [vertices.mean(axis=0)] if name in VERTEBRAE else line_for(name, vertices, bones)
              for name, vertices in bones.items() if name not in member_to_group}
+    thicknesses = {}
     for group, members in groups.items():
-        lines[group] = unified_outline(np.concatenate([bones[member] for member in members]))
+        lines[group], thicknesses[group] = unified_outline(np.concatenate([bones[member] for member in members]))
     # Collapse only the explicit anatomical graph: internal group edges vanish;
     # external edges are remapped and duplicates removed, never added by distance.
     visible_links, seen = [], set()
@@ -227,13 +230,16 @@ def build(sex):
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; J joint connection; C inferred cartilage connection.']
+           '# D vertebra dot; B bone segment; P solid polygon; J joint; C inferred cartilage.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
         pts = lines[name]
         if name in VERTEBRAE:
             out.append(f'D {name} {fmt(pts[0])}')
+        if name in groups:
+            out.append(f'P {name} {thicknesses[name]:.6f} {len(pts)-1} ' + ' '.join(fmt(p) for p in pts[:-1]))
+            continue
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
     for a,b,kind in visible_links:
