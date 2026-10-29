@@ -1,0 +1,370 @@
+// The interface, checked as pixels.
+//
+// The overlay that used to live here was deleted and is being rebuilt one piece
+// at a time. What exists now is the frame-rate strip, the reticle and the F1 need
+// controls. All three are drawn by the host into the finished picture, so unlike
+// anything routed through the device they can be checked exactly, on this
+// machine, with no driver involved -- and that is the entire reason they are on
+// the host.
+//
+// What is asserted:
+//
+//   * the strip is centred, translucent, and set in the real antialiased face;
+//   * the reticle is at the middle of the window, is drawn in the reading colour
+//     with a dark outline, has a gap around the centre, and is absent in god view;
+//   * the need panel is centred, translucent, fits inside a 480-line frame, its
+//     four rows do not collide, its two columns do not collide, and it draws the
+//     values it was handed rather than last round's;
+//   * the panel is drawn over the reticle, in the order the loop draws them.
+
+#include "client/cheat_menu.h"
+#include "client/interface_style.h"
+#include "client/crosshair.h"
+#include "client/fps_counter.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+namespace {
+
+int failures = 0;
+
+void check(bool condition, const std::string& what) {
+    if (condition) return;
+    std::printf("FAIL: %s\n", what.c_str());
+    ++failures;
+}
+
+struct Picture {
+    gtc::native::NativeFrame frame;
+    int width = 0, height = 0;
+    bool windowOrder = false;   // BGRA, the form the game's own frames arrive in
+    std::array<int, 3> ground{90, 30, 60};
+
+    Picture(int w, int h, bool bgra) : width(w), height(h), windowOrder(bgra) {
+        frame.width = w;
+        frame.height = h;
+        frame.wantsBgra = bgra;
+        // A colour nothing in the interface uses, so any pixel that changes is
+        // the interface's doing and not a coincidence of the fill.
+        if (bgra) {
+            frame.bgra.resize(static_cast<std::size_t>(w) * h * 4, 255);
+            for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(w) * h; ++pixel) {
+                frame.bgra[pixel * 4] = static_cast<unsigned char>(ground[2]);
+                frame.bgra[pixel * 4 + 1] = static_cast<unsigned char>(ground[1]);
+                frame.bgra[pixel * 4 + 2] = static_cast<unsigned char>(ground[0]);
+            }
+        } else {
+            frame.rgb.resize(static_cast<std::size_t>(w) * h * 3);
+            const std::array<unsigned char, 3> fill = {
+                static_cast<unsigned char>(ground[0]), static_cast<unsigned char>(ground[1]),
+                static_cast<unsigned char>(ground[2])};
+            for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(w) * h; ++pixel) {
+                std::memcpy(frame.rgb.data() + pixel * 3, fill.data(), 3);
+            }
+        }
+    }
+
+    std::array<int, 3> at(int x, int y) const {
+        if (x < 0 || y < 0 || x >= width || y >= height) return {-1, -1, -1};
+        const std::size_t pixel = static_cast<std::size_t>(y) * width + x;
+        if (windowOrder) {
+            return {frame.bgra[pixel * 4 + 2], frame.bgra[pixel * 4 + 1], frame.bgra[pixel * 4]};
+        }
+        return {frame.rgb[pixel * 3], frame.rgb[pixel * 3 + 1], frame.rgb[pixel * 3 + 2]};
+    }
+
+    bool same(int x, int y, const std::array<int, 3>& colour) const {
+        const auto pixel = at(x, y);
+        return pixel[0] == colour[0] && pixel[1] == colour[1] && pixel[2] == colour[2];
+    }
+
+    bool untouched(int x, int y) const { return same(x, y, ground); }
+};
+
+// The bytes a colour becomes, asked of the drawing code rather than guessed at:
+// a one-pixel rectangle is filled on a scratch frame and read back. A test that
+// reimplements the colour pipeline only tests its own copy of it.
+std::array<int, 3> bytes(gtc::native::Color colour) {
+    gtc::native::NativeFrame scratch;
+    scratch.width = 4;
+    scratch.height = 4;
+    scratch.rgb.assign(4U * 4U * 3U, 0);
+    scratch.rectangle(1, 1, 1, 1, colour);
+    return {scratch.rgb[(4U + 1U) * 3U], scratch.rgb[(4U + 1U) * 3U + 1U], scratch.rgb[(4U + 1U) * 3U + 2U]};
+}
+
+// The same arithmetic the drawing uses: source over destination, rounded down,
+// with the opacity as a byte. Kept here as a formula rather than as a copy of the
+// code path, so a wrong blend shows up as a wrong picture.
+std::array<int, 3> blendOver(const std::array<int, 3>& colour, const std::array<int, 3>& under,
+                             double opacity = gtc::native::kPanelOpacity) {
+    const int alpha = static_cast<int>(std::clamp(opacity, 0.0, 1.0) * 255);
+    return {(colour[0] * alpha + under[0] * (255 - alpha)) / 255,
+            (colour[1] * alpha + under[1] * (255 - alpha)) / 255,
+            (colour[2] * alpha + under[2] * (255 - alpha)) / 255};
+}
+
+int worstChannel(const std::array<int, 3>& a, const std::array<int, 3>& b) {
+    return std::max({std::abs(a[0] - b[0]), std::abs(a[1] - b[1]), std::abs(a[2] - b[2])});
+}
+
+// Counts the pixels inside a box that are clearly brighter than what is under
+// them, and how many distinct luminance levels they span. A pixel font gives two
+// levels; the real face gives a ramp at every curve.
+struct TextSurvey {
+    int lit = 0;
+    int levels = 0;
+    int brightest = 0;
+};
+
+TextSurvey survey(const Picture& picture, int left, int top, int width, int height,
+                  const std::array<int, 3>& under) {
+    const int floorLuminance = (under[0] * 30 + under[1] * 59 + under[2] * 11) / 100;
+    std::array<bool, 256> seen{};
+    TextSurvey result;
+    for (int y = top; y < top + height; ++y) {
+        for (int x = left; x < left + width; ++x) {
+            const auto pixel = picture.at(x, y);
+            if (pixel[0] < 0) continue;
+            const int luminance = (pixel[0] * 30 + pixel[1] * 59 + pixel[2] * 11) / 100;
+            seen[static_cast<std::size_t>(std::clamp(luminance, 0, 255))] = true;
+            result.brightest = std::max(result.brightest, luminance);
+            if (luminance > floorLuminance + 8) ++result.lit;
+        }
+    }
+    for (bool level : seen) result.levels += level ? 1 : 0;
+    return result;
+}
+
+void zoom(Picture& picture, int left, int top, int width, int height, int zoomFactor, const std::string& path) {
+    gtc::native::NativeFrame big;
+    big.width = (width + 8) * zoomFactor;
+    big.height = (height + 8) * zoomFactor;
+    big.rgb.assign(static_cast<std::size_t>(big.width) * big.height * 3, 0);
+    for (int y = 0; y < big.height; ++y) {
+        for (int x = 0; x < big.width; ++x) {
+            const auto pixel = picture.at(left - 4 + x / zoomFactor, top - 4 + y / zoomFactor);
+            unsigned char* out = big.rgb.data() + (static_cast<std::size_t>(y) * big.width + x) * 3;
+            for (int channel = 0; channel < 3; ++channel) {
+                out[channel] = static_cast<unsigned char>(std::max(0, pixel[channel]));
+            }
+        }
+    }
+    big.save(path);
+}
+
+void examineStrip(int width, int height, bool windowOrder) {
+    Picture picture(width, height, windowOrder);
+    gtc::native::drawFpsCounter(picture.frame, 300.0);
+    const std::string where = "strip " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+
+    const auto layout = gtc::native::layoutFpsCounter(width, height, 300.0);
+    check(layout.width > 0 && layout.height > 0, where + ": the strip has a size");
+    const int leftMargin = layout.left;
+    const int rightMargin = width - (layout.left + layout.width);
+    check(std::abs(leftMargin - rightMargin) <= gtc::native::kFpsCounterCentreTolerance,
+          where + ": the strip is centred (" + std::to_string(leftMargin) + " left, " +
+              std::to_string(rightMargin) + " right)");
+    check(layout.top == gtc::native::kFpsCounterMargin, where + ": the strip hangs from the top edge");
+    check(picture.untouched(0, height - 1), where + ": the rest of the frame is untouched");
+
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+    const auto expected = blendOver(panel, picture.ground);
+    const auto inside = picture.at(layout.left + 1, layout.top + layout.height - 2);
+    check(worstChannel(inside, expected) <= 1, where + ": the strip is half transparent");
+    check(inside != picture.ground, where + ": the strip is drawn at all");
+    check(inside != panel, where + ": the strip is not opaque");
+
+    const auto text = survey(picture, layout.textLeft, layout.textTop, layout.textWidth, layout.textHeight, expected);
+    check(text.lit > 40, where + ": the text is drawn (" + std::to_string(text.lit) + " pixels)");
+    check(text.levels > 12, where + ": the text is antialiased (" + std::to_string(text.levels) + " levels)");
+    check(gtc::native::fpsCounterTextHeight(height) >= 20,
+          where + ": the text is below the 20-pixel floor");
+
+    if (!windowOrder) {
+        zoom(picture, layout.left, layout.top, layout.width, layout.height, 6,
+             "build/native-client/interface-strip-zoom-" + std::to_string(width) + "x" + std::to_string(height) +
+                 ".png");
+        picture.frame.save("build/native-client/interface-strip-" + std::to_string(width) + "x" +
+                           std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s strip %dx%d at %d,%d, %d lit pixels, %d levels\n", where.c_str(), layout.width,
+                layout.height, layout.left, layout.top, text.lit, text.levels);
+}
+
+void examineCrosshair(int width, int height, bool windowOrder) {
+    Picture picture(width, height, windowOrder);
+    gtc::native::ViewState view;
+    view.mode = gtc::native::ViewMode::ThirdPerson;
+    gtc::native::drawCrosshair(picture.frame, view);
+    const std::string where = "reticle " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+
+    const auto ink = bytes(gtc::native::colorHex("#d7ff54"));
+    const auto shadow = bytes(gtc::native::colorHex("#020604"));
+    const int centreX = width / 2, centreY = height / 2;
+    const int unit = std::clamp(static_cast<int>(std::lround(std::min(width, height) / 640.0)), 1, 4);
+    const int gap = 3 * unit, arm = 7 * unit;
+    const int row = centreY - unit / 2, column = centreX - unit / 2;
+
+    check(picture.same(column, row, ink), where + ": the centre dot is drawn in the reading colour");
+    // An arm, its gap, and the outline that makes it readable on a pale floor.
+    const int length = arm - gap + 1;
+    check(picture.same(centreX - arm, row, ink), where + ": the left arm starts where the unit says");
+    check(picture.same(centreX - arm + length - 1, row, ink), where + ": the left arm ends before the gap");
+    // The hole in the middle of the reticle: whatever the outline does, the gap
+    // itself is never ink, or it is not a reticle, it is a cross.
+    const auto gapPixel = picture.at(centreX - gap + 1, row);
+    check(worstChannel(gapPixel, ink) > 8, where + ": there is a gap between the arm and the dot");
+    check(picture.same(centreX - arm - 1, row, shadow) || picture.same(centreX - arm - unit, row, shadow),
+          where + ": the arm has a dark outline");
+    check(picture.untouched(centreX - arm - unit - 1, row), where + ": nothing is drawn past the arm");
+    check(picture.same(column, centreY - arm, ink), where + ": the top arm is drawn");
+    check(picture.same(centreX - arm, centreY - arm, shadow) || picture.untouched(centreX - arm, centreY - arm),
+          where + ": the corner of the arm is not a rectangle");
+
+    // God view: the cursor is a command, not an aim, so there is no reticle.
+    Picture god(width, height, windowOrder);
+    gtc::native::ViewState godView;
+    godView.mode = gtc::native::ViewMode::God;
+    gtc::native::drawCrosshair(god.frame, godView);
+    check(god.untouched(centreX, centreY), where + ": god view carries no reticle");
+
+    if (!windowOrder) {
+        zoom(picture, centreX - arm - 2, centreY - arm - 2, 2 * arm + 4, 2 * arm + 4, 4,
+             "build/native-client/interface-reticle-zoom-" + std::to_string(width) + "x" + std::to_string(height) +
+                 ".png");
+    }
+    std::printf("  %-26s reticle unit %d, arm %d, gap %d\n", where.c_str(), unit, arm, gap);
+}
+
+void examineCheatMenu(int width, int height, bool windowOrder) {
+    Picture picture(width, height, windowOrder);
+    gtc::native::drawCheatMenu(picture.frame, 62, 30);
+    const std::string where = "cheats " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+
+    const auto layout = gtc::native::layoutCheatMenu(width, height);
+    check(layout.width > 0 && layout.height > 0, where + ": the panel has a size");
+    check(layout.left >= 0 && layout.top >= 0 && layout.left + layout.width <= width &&
+              layout.top + layout.height <= height,
+          where + ": the panel fits inside the frame");
+    const int leftMargin = layout.left, rightMargin = width - (layout.left + layout.width);
+    const int topMargin = layout.top, bottomMargin = height - (layout.top + layout.height);
+    check(std::abs(leftMargin - rightMargin) <= 1, where + ": the panel is centred horizontally");
+    check(std::abs(topMargin - bottomMargin) <= 1, where + ": the panel is centred vertically");
+    check(layout.footerTop + layout.textHeight < layout.top + layout.height - 2,
+          where + ": the footer is inside the panel");
+    check(layout.firstRowTop > layout.statusTop + layout.textHeight - 1,
+          where + ": the rows start below the status line");
+    check(layout.firstRowTop + 3 * layout.rowGap + layout.textHeight < layout.footerTop,
+          where + ": the last row ends above the footer");
+
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+    const auto expected = blendOver(panel, picture.ground, gtc::native::kMenuPanelOpacity);
+    const auto corner = picture.at(layout.left + 1, layout.top + layout.height - 2);
+    check(worstChannel(corner, expected) <= 1, where + ": the panel is half transparent");
+    check(corner != panel, where + ": the panel is not opaque");
+
+    // Text in every band: the header, the values, the rows, the footer.
+    const int rowsTop = layout.firstRowTop;
+    const int rowsHeight = 3 * layout.rowGap + layout.textHeight;
+    const auto header = survey(picture, layout.left, layout.titleTop, layout.width, layout.titleHeight, expected);
+    const auto status = survey(picture, layout.left, layout.statusTop, layout.width, layout.textHeight, expected);
+    const auto rows = survey(picture, layout.contentLeft, rowsTop, layout.width - (layout.contentLeft - layout.left) * 2,
+                             rowsHeight, expected);
+    const auto footer = survey(picture, layout.left, layout.footerTop, layout.width, layout.textHeight, expected);
+    check(header.lit > 20, where + ": the header is drawn");
+    check(status.lit > 30, where + ": the values are drawn");
+    check(rows.lit > 120, where + ": the eight keys are drawn (" + std::to_string(rows.lit) + " pixels)");
+    check(footer.lit > 20, where + ": the footer is drawn");
+    check(header.levels > 8 && rows.levels > 12, where + ": the panel text is antialiased");
+
+    // Two columns that do not run into each other: the space between the left
+    // label column and the right column's keys is empty panel, on every row.
+    check(layout.rightKeyLeft > layout.leftColumnRight, where + ": the columns have a gap");
+    int drawnInTheGap = 0;
+    for (int y = rowsTop; y < rowsTop + rowsHeight; ++y) {
+        for (int x = layout.leftColumnRight; x < layout.rightKeyLeft; ++x) {
+            if (worstChannel(picture.at(x, y), expected) > 2) ++drawnInTheGap;
+        }
+    }
+    check(drawnInTheGap == 0, where + ": the columns do not collide (" +
+                                  std::to_string(drawnInTheGap) + " stray pixels)");
+
+    // The values are live: a different bladder must produce a different picture.
+    Picture other(width, height, windowOrder);
+    gtc::native::drawCheatMenu(other.frame, 7, 30);
+    bool differs = false;
+    for (int y = layout.statusTop; y < layout.statusTop + layout.textHeight && !differs; ++y) {
+        for (int x = layout.left; x < layout.left + layout.width; ++x) {
+            if (!picture.same(x, y, std::array<int, 3>{other.at(x, y)[0], other.at(x, y)[1], other.at(x, y)[2]})) {
+                differs = true;
+                break;
+            }
+        }
+    }
+    check(differs, where + ": the values shown are the ones that were handed over");
+
+    // Draw order: the panel is on top of the reticle, as in the loop.
+    Picture composite(width, height, windowOrder);
+    gtc::native::ViewState view;
+    view.mode = gtc::native::ViewMode::ThirdPerson;
+    gtc::native::drawCrosshair(composite.frame, view);
+    gtc::native::drawCheatMenu(composite.frame, 62, 30);
+    // The panel is drawn over whatever was there, which here is the reticle's ink.
+    const auto overInk = blendOver(panel, bytes(gtc::native::colorHex("#d7ff54")), gtc::native::kMenuPanelOpacity);
+    check(worstChannel(composite.at(width / 2, height / 2), overInk) <= 1,
+          where + ": the panel covers the reticle");
+
+    if (!windowOrder) {
+        zoom(picture, layout.left, layout.top, layout.width, layout.height, 3,
+             "build/native-client/interface-cheats-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s panel %dx%d at %d,%d, text %d px, %d row pixels\n", where.c_str(), layout.width,
+                layout.height, layout.left, layout.top, layout.textHeight, rows.lit);
+}
+
+}  // namespace
+
+int main() {
+    examineStrip(640, 480, false);
+    examineStrip(640, 480, true);
+    examineStrip(1920, 1080, true);
+    examineStrip(1568, 929, true);
+
+    examineCrosshair(640, 480, false);
+    examineCrosshair(640, 480, true);
+    examineCrosshair(1920, 1080, true);
+
+    examineCheatMenu(640, 480, false);
+    examineCheatMenu(640, 480, true);
+    examineCheatMenu(1568, 929, true);
+    examineCheatMenu(1920, 1080, true);
+
+    // A number that is not a number is not allowed to print nonsense, and the
+    // strip has to keep its shape whatever the rate is.
+    gtc::native::NativeFrame frame;
+    frame.width = 640;
+    frame.height = 480;
+    frame.rgb.assign(640U * 480U * 3, 0);
+    gtc::native::drawFpsCounter(frame, std::nan(""));
+    gtc::native::drawFpsCounter(frame, -1.0);
+    gtc::native::drawFpsCounter(frame, 0.4);
+    // Needs outside their range are clamped, not printed.
+    gtc::native::drawCheatMenu(frame, -20, 400);
+
+    if (failures == 0) {
+        std::printf("interface: PASS (strip, reticle, need panel; centred, translucent, antialiased)\n");
+        return 0;
+    }
+    std::printf("interface: FAIL (%d)\n", failures);
+    return 1;
+}

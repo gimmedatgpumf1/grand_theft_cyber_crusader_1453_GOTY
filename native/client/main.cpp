@@ -1,6 +1,8 @@
 #include "client/benchmark.h"
 #include "client/client.h"
 #include "client/diagnostics.h"
+#include "client/cheat_menu.h"
+#include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
@@ -12,6 +14,7 @@
 #include "vulkan/vk_renderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -188,6 +191,7 @@ int main(int argc, char** argv) {
     gtc::native::trace("main: start");
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet;
+    bool cheats = false;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
     int roomBenchmark = 0;
@@ -222,13 +226,17 @@ int main(int argc, char** argv) {
             movement = {static_cast<float>(number(argv[++i])), static_cast<float>(number(argv[++i]))};
             move = true;
         } else if (argument == "--toilet" && i + 1 < argc) toilet = argv[++i];
+        // A capture of the need panel, drawn by the same call the F1 key makes the
+        // window loop draw. Without a way to photograph it, the only proof of the
+        // panel would be a claim about it.
+        else if (argument == "--cheats") cheats = true;
         else if (argument == "--yaw" && i + 1 < argc) view.yaw = static_cast<float>(number(argv[++i]));
         else if (argument == "--pitch" && i + 1 < argc) view.pitch = static_cast<float>(number(argv[++i]));
         else {
             std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
                          "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
-                         "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG]\n";
+                         "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG] [--cheats]\n";
             return 2;
         }
     }
@@ -475,6 +483,15 @@ int main(int argc, char** argv) {
     // this is the same call the window loop makes, over a real frame, with the
     // rate this machine actually rendered at -- which is this machine's number
     // and not the frame rate of the machine the picture is being sent to.
+    // The same three things the window loop draws, in the same order: the
+    // reticle, the need panel when it is open, and the frame rate.
+    gtc::native::drawCrosshair(frame, view);
+    if (cheats) {
+        const gtc::Character* citizen = client.state().character(client.playerId());
+        const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
+        const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
+        gtc::native::drawCheatMenu(frame, bladder, bowel);
+    }
     gtc::native::drawFpsCounter(frame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
     if (!frame.save(output)) {
         std::cerr << "Native render failed: cannot save " << output << '\n';

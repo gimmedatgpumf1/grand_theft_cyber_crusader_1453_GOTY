@@ -77,8 +77,8 @@ fi
 # finished picture. That means it can be checked exactly here: every glyph block,
 # both byte orders, four window sizes, and the box in the place the header names.
 mkdir -p build/native-client
-if [ -x "$ROOT/build/bin/gtc-fps-counter-check" ]; then
-  "$ROOT/build/bin/gtc-fps-counter-check"
+if [ -x "$ROOT/build/bin/gtc-interface-check" ]; then
+  "$ROOT/build/bin/gtc-interface-check"
 fi
 if [ -x "$ROOT/build/bin/gtc1453" ] && [ -x "$ROOT/build/bin/gtc-native-smoke" ]; then
   "$ROOT/tests/native_smoke.sh" "$ROOT/build/native-smoke-tests"

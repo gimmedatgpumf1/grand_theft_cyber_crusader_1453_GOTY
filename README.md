@@ -63,12 +63,16 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   floor spots spread sideways. One game day is **96 real minutes (15× time)**, shown by the native clock,
   and urine stains dry after one complete game day. God LMB uses melee while zipped and the physical
   ranged weapon otherwise; RMB blocks melee or applies explicit ranged aim zoom.
-- **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it. The
-  server applies and clamps every change to 0–100%, so all connected views share the result.
+- **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it, with the
+  current percentages on the panel. The server applies and clamps every change to 0–100%, so all
+  connected views share the result.
 - **F12** saves the current native **640×480 landscape** framebuffer.
-- The only thing drawn over the picture is a frame-rate strip centred at the top: a half-transparent
-  panel with `<rate> FPS` in the game's own proportional sans, antialiased, 20 pixels high at
-  640×480 and larger as the window grows. The old overlay is gone, not hidden.
+- Three things are drawn over the picture, and they are being rebuilt one at a time: the reticle
+  (centred, dark-outlined, absent in god view), the **F1** need panel (translucent, centred, two
+  columns of keys and their values) and the frame-rate strip at the top (`<rate> FPS`). The strip
+  is the faintest of them at half strength; the panel is darker because it has to be read. Text is
+  the game's own proportional sans, antialiased, 20 pixels minimum at 640×480 and larger as the
+  window grows. The old overlay is gone, not hidden.
 
 ## One-click Windows build
 

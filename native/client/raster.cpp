@@ -223,7 +223,6 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     else syncToRgb();
     const bool bgra = canvasIsBgra();
     unsigned char* pixels = bgra ? canvasBgra() : rgb.data();
-    const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);

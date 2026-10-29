@@ -5,6 +5,8 @@
 #include "client/skeleton_room.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
+#include "client/cheat_menu.h"
+#include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/window.h"
 #include "core/projectile.h"
@@ -174,6 +176,13 @@ public:
             // The only thing drawn over the picture: the frame rate, on the host,
             // into pixels that already exist. Costs a few hundred fills a frame.
             const auto overlayStart = Clock::now();
+            drawCrosshair(frame, view_);
+            if (overlay_ == Overlay::Cheats) {
+                const Character* citizen = local();
+                const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
+                const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
+                drawCheatMenu(frame, bladder, bowel);
+            }
             drawFpsCounter(frame, view_.fps);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;
