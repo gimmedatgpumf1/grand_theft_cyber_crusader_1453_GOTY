@@ -21,6 +21,32 @@ namespace = {}
 exec(compile(module, 'anatomy schema', 'exec'), namespace)
 anatomy = namespace['anatomy']()
 assert len(anatomy) == 209
+def point_in_solid(point, solid, tolerance=0.0005):
+    # Barycentric point-in-triangle in 3D; allow for 0.25-mm silhouette
+    # simplification and six-decimal storage, not a change to the link graph.
+    _, points, faces, boundary = solid
+    def sub(a,b): return tuple(x-y for x,y in zip(a,b))
+    def dot(a,b): return sum(x*y for x,y in zip(a,b))
+    for ia, ib, ic in faces:
+        a, b, c = points[ia], points[ib], points[ic]
+        u, v, w = sub(b,a), sub(c,a), sub(point,a)
+        uu, uv, vv, wu, wv = dot(u,u), dot(u,v), dot(v,v), dot(w,u), dot(w,v)
+        den = uu*vv - uv*uv
+        if den < 1e-20: continue
+        s, t = (wu*vv-wv*uv)/den, (wv*uu-wu*uv)/den
+        closest = tuple(a[i] + s*u[i] + t*v[i] for i in range(3))
+        if s >= -0.002 and t >= -0.002 and s+t <= 1.002 and math.dist(point, closest) < tolerance:
+            return True
+    # Simplification can put a point just outside the boundary.
+    for ia, ib in boundary:
+        a,b = points[ia], points[ib]
+        v = sub(b,a); den = dot(v,v)
+        if den == 0: continue
+        t = max(0, min(1, dot(sub(point,a),v)/den))
+        if math.dist(point, tuple(a[i]+t*v[i] for i in range(3))) < tolerance: return True
+    return False
+
+
 reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
@@ -41,13 +67,22 @@ for sex in ('male', 'female'):
             point = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, point))
             dots[fields[1]] = point
-        elif kind == 'P':
-            name, thickness, count = fields[1], float(fields[2]), int(fields[3])
-            assert name not in solids and 3 <= count <= 12 and len(fields) == 4 + 3 * count
-            values = tuple(map(float, fields[4:]))
-            assert all(map(math.isfinite, values)) and 0.008 <= thickness <= 0.08
+        elif kind == 'M':
+            name, thickness = fields[1], float(fields[2])
+            count, faces, edges_count = map(int, fields[3:6])
+            assert name not in solids and 0 < thickness <= 0.003
+            assert 3 <= count <= 4096 and len(fields) == 6 + 3*count + 3*faces + 2*edges_count
+            end = 6 + 3*count
+            values = tuple(map(float, fields[6:end]))
+            assert all(map(math.isfinite, values))
             points = [values[i:i+3] for i in range(0, len(values), 3)]
-            solids[name] = (thickness, points)
+            face_values = list(map(int, fields[end:end+3*faces]))
+            face_list = [tuple(face_values[i:i+3]) for i in range(0, len(face_values), 3)]
+            edge_values = list(map(int, fields[end+3*faces:]))
+            edge_list = [tuple(edge_values[i:i+2]) for i in range(0, len(edge_values), 2)]
+            assert all(0 <= i < count for f in face_list for i in f)
+            assert all(0 <= i < count for e in edge_list for i in e)
+            solids[name] = (thickness, points, face_list, edge_list)
         elif kind == 'B':
             assert len(fields) == 8
             name = fields[1]
@@ -72,21 +107,24 @@ for sex in ('male', 'female'):
     assert groups == expected_groups and set(solids) == set(groups)
     # The solid footprint replaces the outline tubes rather than covering them.
     assert not (set(solids) & set(segments))
-    for group, (_, points) in solids.items():
-        segments[group] = list(zip(points, points[1:] + points[:1]))
-        def sub(a, b): return tuple(x-y for x, y in zip(a, b))
-        def cross(a, b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
-        def dot(a, b): return sum(x*y for x,y in zip(a,b))
-        triangles = [cross(sub(points[i],points[0]), sub(points[i+1],points[0]))
-                     for i in range(1, len(points)-1)]
-        normal = tuple(sum(t[i] for t in triangles) for i in range(3))
-        length = math.sqrt(dot(normal, normal))
-        assert length > 1e-10
-        normal = tuple(x/length for x in normal)
-        for i, point in enumerate(points):
-            assert abs(dot(sub(point,points[0]), normal)) < 0.00001
-            assert dot(cross(sub(points[(i+1)%len(points)],point),
-                             sub(points[(i+2)%len(points)],points[(i+1)%len(points)])), normal) > -1e-9
+    for group, (_, points, faces, boundary) in solids.items():
+        segments[group] = [(points[a], points[b]) for a,b in boundary]
+        # Filled planar triangle mesh: one use for each boundary edge, two for
+        # each internal edge; only one connected component, including holes.
+        counts = defaultdict(int); graph_points = defaultdict(set)
+        for face in faces:
+            assert len(set(face)) == 3
+            for a,b in zip(face, face[1:]+face[:1]):
+                counts[tuple(sorted((a,b)))] += 1
+                graph_points[a].add(b); graph_points[b].add(a)
+        actual_boundary = {edge for edge, count in counts.items() if count == 1}
+        assert actual_boundary == {tuple(sorted(edge)) for edge in boundary}
+        assert all(count in (1,2) for count in counts.values())
+        found_points = {faces[0][0]}; queue = deque(found_points)
+        while queue:
+            for point in graph_points[queue.popleft()] - found_points:
+                found_points.add(point); queue.append(point)
+        assert found_points == set(range(len(points))), group
     members = {member: group for group, parts in groups.items() for member in parts}
     assert len(members) == sum(map(len, groups.values())) == 50
     assert set(members) <= expected and len(expected) == 182
@@ -94,20 +132,17 @@ for sex in ('male', 'female'):
     assert len(visible) == 136
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
-    # Each solid has one closed footprint, not its old individual bones.
-    for group in groups:
-        shape = segments[group]
-        assert 3 <= len(shape) <= 12 and shape[0][0] == shape[-1][1]
-        assert all(a[1] == b[0] for a, b in zip(shape, shape[1:]))
     # Dot placement is the centre of the corresponding supplied vertebra, not
     # a guessed skeleton-level average or a dot duplicated from another bone.
     totals = defaultdict(lambda: [0.0, 0.0, 0.0, 0])
+    member_vertices = defaultdict(list)
     name = None
     with (base / f'skeleton-{sex}.obj').open() as obj:
         for row in obj:
             if row.startswith('g '): name = row[2:].strip()
             elif (name in vertebrae or name in members) and row.startswith('v '):
                 coords = list(map(float, row.split()[1:4]))
+                if name in members: member_vertices[name].append(coords)
                 for i in range(3): totals[name][i] += coords[i]
                 totals[name][3] += 1
     for name, point in dots.items():
@@ -117,14 +152,32 @@ for sex in ('male', 'female'):
         counts = sum(totals[name][3] for name in part_names)
         assert counts > 0 and all(totals[name][3] for name in part_names)
         source_center = tuple(sum(totals[name][i] for name in part_names) / counts for i in range(3))
-        vertices = [a for a, _ in segments[group]]
+        vertices = solids[group][1]
         outline_center = tuple(sum(point[i] for point in vertices) / len(vertices) for i in range(3))
         assert math.dist(source_center, outline_center) < 0.03, group
         span = max(max(point[i] for point in vertices) - min(point[i] for point in vertices) for i in range(3))
         assert 0.05 < span < 0.3, group
+    # Project samples of every included source bone onto its displayed plane;
+    # the filled surface must cover the real meshes, not a generic palm/foot.
+    for group, part_names in groups.items():
+        solid = solids[group]
+        points, faces = solid[1], solid[2]
+        def sub(a,b): return tuple(x-y for x,y in zip(a,b))
+        def cross(a,b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+        vectors = [cross(sub(points[b],points[a]), sub(points[c],points[a])) for a,b,c in faces]
+        normal = max(vectors, key=lambda v: sum(x*x for x in v))
+        norm = math.sqrt(sum(x*x for x in normal)); normal = tuple(x/norm for x in normal)
+        for name in part_names:
+            samples = member_vertices[name]
+            for index in range(0, len(samples), max(1, len(samples)//8)):
+                p = samples[index]
+                depth = sum((p[i]-points[0][i])*normal[i] for i in range(3))
+                projection = tuple(p[i]-depth*normal[i] for i in range(3))
+                assert point_in_solid(projection, solid, 0.001), (group, name, projection)
     assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))
     assert len(segments['Head']) >= 24
     for name, bone_segments in segments.items():
+        if name in solids: continue  # boundary can include holes
         points = defaultdict(set)
         for a, b in bone_segments:
             points[a].add(b); points[b].add(a)
@@ -140,6 +193,8 @@ for sex in ('male', 'female'):
                 t = max(0, min(1, sum((x-y)*z for x,y,z in zip(p,a,v)) / sum(x*x for x in v)))
                 return math.dist(p, tuple(x+t*y for x,y in zip(a,v)))
             if bone in dots: assert math.dist(point, dots[bone]) < 0.00001, bone
+            elif bone in solids:
+                assert point_in_solid(point, solids[bone]), bone
             else: assert any(distance_to_segment(point, a, b) < 0.00001 for a,b in segments[bone]), bone
     graph = defaultdict(set)
     topology = set()

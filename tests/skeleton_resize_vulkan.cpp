@@ -98,22 +98,30 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     for (std::uint32_t id : {8001u, 9001u}) {
         const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         std::ifstream input(path);
-        std::vector<std::string> names;
+        struct Shape { std::string name; std::size_t offset, caps, indices; };
+        std::vector<Shape> shapes;
+        std::size_t totalIndices = 0, totalVertices = 0;
         std::string row;
-        while (std::getline(input, row)) if (row.rfind("P ", 0) == 0) {
+        while (std::getline(input, row)) if (row.rfind("M ", 0) == 0) {
             std::istringstream fields(row);
-            char kind; std::string name; fields >> kind >> name; names.push_back(name);
+            char kind; std::string name; double thickness; int vertices, faces, edges;
+            fields >> kind >> name >> thickness >> vertices >> faces >> edges;
+            if (!fields) return false;
+            Shape shape{name, totalIndices, static_cast<std::size_t>(faces)*6,
+                        static_cast<std::size_t>(faces+edges)*6};
+            totalIndices += shape.indices; totalVertices += 2*vertices;
+            shapes.push_back(shape);
         }
-        if (names.size() != 4) return false;
-        for (std::size_t shape = 0; shape < names.size(); ++shape) {
+        if (shapes.size() != 4) return false;
+        for (const Shape& shape : shapes) {
             for (bool onlyCaps : {false, true}) {
                 GpuScene without = scene;
                 without.revision += 40000 + sequence++;
                 bool removed = false;
                 for (auto& batch : without.batches) {
-                    if (batch.objectId != id || batch.indices.size() != 4 * 132 || batch.vertices.size() != 4 * 24) continue;
-                    const auto begin = batch.indices.begin() + shape * 132;
-                    batch.indices.erase(begin, begin + (onlyCaps ? 60 : 132));
+                    if (batch.objectId != id || batch.indices.size() != totalIndices || batch.vertices.size() != totalVertices) continue;
+                    const auto begin = batch.indices.begin() + shape.offset;
+                    batch.indices.erase(begin, begin + (onlyCaps ? shape.caps : shape.indices));
                     removed = true;
                 }
                 if (!removed) return false;
@@ -129,7 +137,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                     if (difference > 24) ++changed;
                 }
                 std::printf("Vulkan %s %u %s: %d visible pixels\n", onlyCaps ? "filled faces" : "solid",
-                            id, names[shape].c_str(), changed);
+                            id, shape.name.c_str(), changed);
                 if (changed < 1) return false;
             }
         }

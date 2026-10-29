@@ -9,6 +9,9 @@ from pathlib import Path
 import json
 import math
 import numpy as np
+import shapely
+from shapely.geometry import LineString
+from shapely.ops import nearest_points
 
 BASE = Path(__file__).resolve().parent.parent
 VERTEBRAE = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
@@ -85,44 +88,73 @@ def unified_groups():
     return groups
 
 
-def unified_outline(vertices):
-    """Convex footprint and source-derived depth for a simple solid."""
+def unified_surface(bones, faces, members, links):
+    """Project the actual source triangles, then bridge anatomical neighbours.
+
+    The silhouette is a union of projected mesh faces, not a convex hull. A
+    2-mm wide connector joins a pair only if the anatomical schema names that
+    pair. The thin extrusion is an inspection shape, not bone thickness.
+    """
+    vertices = np.concatenate([bones[name] for name in members])
     centre = vertices.mean(axis=0)
     _, _, basis = np.linalg.svd(vertices - centre, full_matrices=False)
-    projected = (vertices - centre) @ basis[:2].T
-    # 2-D convex hull, then simplify by discarding the least significant
-    # corner until at most 12 remain. Distances only determine the drawing,
-    # never group membership or which anatomical structures connect.
-    points = sorted(set(map(tuple, projected)))
-    def cross2(a, b, c):
-        return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
-    def half(seq):
-        hull = []
-        for point in seq:
-            while len(hull) >= 2 and cross2(hull[-2], hull[-1], point) <= 0: hull.pop()
-            hull.append(point)
-        return hull
-    hull = half(points)[:-1] + half(reversed(points))[:-1]
-    assert len(hull) >= 3
-    while len(hull) > 12:
-        i = min(range(len(hull)), key=lambda j: abs(cross2(hull[j-1], hull[j], hull[(j+1) % len(hull)])))
-        hull.pop(i)
-    outline = [centre + point[0]*basis[0] + point[1]*basis[1] for point in hull]
-    depth = (vertices - centre) @ basis[2]
-    thickness = max(0.008, float(np.quantile(depth, 0.9) - np.quantile(depth, 0.1)))
-    return outline + outline[:1], thickness
+    components = {}
+    for name in members:
+        projected = (bones[name] - centre) @ basis[:2].T
+        triangles = shapely.polygons(projected[faces[name]])
+        triangles = triangles[shapely.area(triangles) > 1e-14]
+        components[name] = shapely.union_all(triangles, grid_size=0.00001).simplify(0.00025, preserve_topology=True)
+        assert not components[name].is_empty
+    patches = list(components.values())
+    for a, b, _ in links:
+        if a not in components or b not in components: continue
+        pa, pb = nearest_points(components[a], components[b])
+        if pa.distance(pb) > 1e-8:
+            patches.append(LineString([pa, pb]).buffer(0.001, quad_segs=2))
+    shape = shapely.union_all(patches, grid_size=0.00001).simplify(0.00025, preserve_topology=True)
+    if shape.geom_type != 'Polygon':
+        raise ValueError(f'unified projected surface is disconnected: {shape.geom_type} {members}')
+    mesh = shapely.constrained_delaunay_triangles(shape)
+    vertices2, triangles, boundary, index = [], [], [], {}
+    def vertex(point):
+        key = (round(point[0], 9), round(point[1], 9))
+        if key not in index:
+            index[key] = len(vertices2); vertices2.append(key)
+        return index[key]
+    for face in shapely.get_parts(mesh):
+        coords = list(face.exterior.coords)[:3]
+        triangles.append([vertex(p) for p in coords])
+    for ring in [shape.exterior, *shape.interiors]:
+        indices = [vertex(p) for p in list(ring.coords)[:-1]]
+        boundary.extend((a,b) for a,b in zip(indices, indices[1:] + indices[:1]))
+    points = [centre + p[0]*basis[0] + p[1]*basis[1] for p in vertices2]
+    # Separate member boundaries locate existing anatomical links at the
+    # correct source bone, even after several bones become one display shape.
+    boundaries = {}
+    for name, geom in components.items():
+        edges = []
+        for poly in shapely.get_parts(geom):
+            for ring in [poly.exterior, *poly.interiors]:
+                ring3 = [centre + p[0]*basis[0] + p[1]*basis[1] for p in ring.coords]
+                edges.extend(zip(ring3, ring3[1:]))
+        boundaries[name] = edges
+    return points, triangles, boundary, boundaries
 
 
 def read_bones(path):
-    result = {}; part = None
+    result = {}; faces = {}; part = None; total = 0; first = 0
     for line in path.open():
         if line.startswith('g '):
             part = line[2:].strip(); assert part not in result
-            result[part] = []
+            result[part] = []; faces[part] = []; first = total
         elif line.startswith('v '):
             assert part is not None
             result[part].append([float(v) for v in line.split()[1:4]])
-    return {k: np.array(v) for k, v in result.items()}
+            total += 1
+        elif line.startswith('f '):
+            faces[part].append([int(v.split('/')[0]) - first - 1 for v in line.split()[1:4]])
+    return ({k: np.array(v) for k, v in result.items()},
+            {k: np.array(v, dtype=int) for k, v in faces.items()})
 
 
 def line_for(name, vertices, bones):
@@ -199,7 +231,7 @@ def closest_to_point(point, polyline):
 
 
 def build(sex):
-    bones = read_bones(BASE / f'skeleton-{sex}.obj')
+    bones, faces = read_bones(BASE / f'skeleton-{sex}.obj')
     manifest = json.loads((BASE / f'skeleton-{sex}.parts.json').read_text())
     expected = {item['name'] for item in manifest['source_bones']}
     assert set(bones) == expected and len(bones) == 182
@@ -217,32 +249,36 @@ def build(sex):
     assert len(member_to_group) == sum(map(len, groups.values())) and set(member_to_group) <= expected
     lines = {name: [vertices.mean(axis=0)] if name in VERTEBRAE else line_for(name, vertices, bones)
              for name, vertices in bones.items() if name not in member_to_group}
-    thicknesses = {}
+    solids = {}
     for group, members in groups.items():
-        lines[group], thicknesses[group] = unified_outline(np.concatenate([bones[member] for member in members]))
+        solids[group] = unified_surface(bones, faces, members, links)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
     # external edges are remapped and duplicates removed, never added by distance.
     visible_links, seen = [], set()
-    for a, b, kind in links:
-        a, b = member_to_group.get(a, a), member_to_group.get(b, b)
+    for original_a, original_b, kind in links:
+        a, b = member_to_group.get(original_a, original_a), member_to_group.get(original_b, original_b)
         if a == b: continue
         key = (kind, *sorted((a, b)))
         if key not in seen:
-            seen.add(key); visible_links.append((a, b, kind))
+            seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; P solid polygon; J joint; C inferred cartilage.']
+           '# D vertebra dot; B bone segment; M solid triangle mesh; J joint; C inferred cartilage.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
         pts = lines[name]
         if name in VERTEBRAE:
             out.append(f'D {name} {fmt(pts[0])}')
-        if name in groups:
-            out.append(f'P {name} {thicknesses[name]:.6f} {len(pts)-1} ' + ' '.join(fmt(p) for p in pts[:-1]))
-            continue
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
-    for a,b,kind in visible_links:
+    for name in sorted(solids):
+        points, triangles, boundary, _ = solids[name]
+        values = [fmt(p) for p in points] + [' '.join(map(str, t)) for t in triangles] + [' '.join(map(str, e)) for e in boundary]
+        out.append(f'M {name} 0.002500 {len(points)} {len(triangles)} {len(boundary)} ' + ' '.join(values))
+    def line_segments(name, original):
+        if name in solids: return solids[name][3][original]
+        return list(zip(lines[name], lines[name][1:]))
+    for a,b,kind,original_a,original_b in visible_links:
         # Anatomical endpoints are not supplied. Localise only the already-known
         # relationship with nearest points on its centrelines; never use
         # distance to decide which structures are connected.
@@ -254,8 +290,8 @@ def build(sex):
             _, y, x = closest_to_point(lines[b][0], lines[a])
         else:
             choices = [closest_on_segments(p, q, r, s)
-                       for p, q in zip(lines[a], lines[a][1:])
-                       for r, s in zip(lines[b], lines[b][1:])]
+                       for p, q in line_segments(a, original_a)
+                       for r, s in line_segments(b, original_b)]
             _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
         out.append(f'{"C" if kind == "cartilage" else "J"} {a} {b} {fmt(x)} {fmt(y)}')
     (BASE / f'skeleton-{sex}.lines').write_text('\n'.join(out)+'\n')

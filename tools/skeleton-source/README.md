@@ -47,9 +47,12 @@ cyan lines connect anatomical neighbours, and orange lines are inferred costal
 cartilage (not present in the scans). Each palm is one filled, closed 3D shape
 for the seven non-thumb carpals and metacarpals 2–5; the trapezium, thumb
 metacarpal, and all finger bones stay separate. Each foot is one 3D shape for
-the tarsals, metatarsals and sesamoids; toes remain separate. These low-poly
-prisms are estimated from the source surfaces, not exact bone boundaries:
-a simplified planar convex footprint is extruded using the source depth.
+the tarsals, metatarsals and sesamoids; toes remain separate. These are thin
+2.5 mm inspection surfaces, not bone-thickness models. Their footprints are
+unions of the actual projected source-mesh triangles, simplified by 0.25 mm;
+small bridges connect only anatomically linked members. Gaps are retained rather
+than filled with a convex hull. Projection flattens depth and the bridges are
+inferred, so they are not a clinically accurate reconstruction.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
@@ -65,9 +68,12 @@ are estimates from each surface; the anatomical table chooses the pairs, never
 proximity. The static graph does **not** visualize or validate the existing
 27-group animation rig, and neither the graph nor the source registration is a
 clinical certification. `Head` and `Jaw` are whole source structures, not
-individual skull bones. Regenerate and check after rebuilding the OBJs with:
+individual skull bones. To regenerate these inspection surfaces, NumPy and
+Shapely >= 2.1 (GEOS >= 3.10) are required in addition to the OBJ importer
+requirements. Regenerate and check after rebuilding the OBJs with:
 
 ```sh
 python3 tools/skeleton-source/openskeleton/04-line-graph.py
 python3 tests/skeleton_line_graph.py
+python3 tests/skeleton_surface_fidelity.py
 ```

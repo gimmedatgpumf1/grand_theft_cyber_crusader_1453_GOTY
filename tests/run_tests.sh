@@ -8,6 +8,11 @@ python3 tests/openskeleton_source_pose.py female
 python3 tests/openskeleton_source_pose.py male
 python3 tests/openskeleton_extract.py
 python3 tests/skeleton_line_graph.py
+if python3 -c 'import numpy, shapely; assert hasattr(shapely, "constrained_delaunay_triangles")' 2>/dev/null; then
+  python3 tests/skeleton_surface_fidelity.py
+else
+  echo 'skeleton surface fidelity: skipped (requires NumPy and Shapely >= 2.1)'
+fi
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.
 python3 tests/build_scripts.py

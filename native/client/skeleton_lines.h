@@ -15,7 +15,13 @@ namespace gtc::native {
 class SkeletonLines {
 public:
     struct Segment { Vec3 a, b; char kind; };
-    struct Solid { std::vector<Vec3> outline; double thickness = 0; };
+    struct Solid {
+        std::vector<Vec3> points;
+        std::vector<std::array<int, 3>> faces;
+        std::vector<std::array<int, 2>> edges;
+        Vec3 normal;
+        double thickness = 0;
+    };
 
     bool load(const std::string& path, std::string& error) {
         std::ifstream input(path);
@@ -29,24 +35,45 @@ public:
             std::istringstream row(line);
             char kind; std::string first, second; Segment s;
             row >> kind >> first;
-            if (kind == 'P') {
+            if (kind == 'M') {
                 Solid solid;
-                int count = 0;
-                row >> solid.thickness >> count;
+                int vertices = 0, faces = 0, edges = 0;
+                row >> solid.thickness >> vertices >> faces >> edges;
                 if (!row || !std::isfinite(solid.thickness) || solid.thickness <= 0 ||
-                    solid.thickness > 1 || count < 3 || count > 64) {
+                    solid.thickness > 0.1 || vertices < 3 || vertices > 4096 ||
+                    faces < 1 || faces > 8192 || edges < 3 || edges > 8192) {
                     error = "Invalid skeleton solid in " + path; return false;
                 }
-                for (int i = 0; i < count; ++i) {
+                for (int i = 0; i < vertices; ++i) {
                     Vec3 point;
                     row >> point.x >> point.y >> point.z;
                     if (!row || !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
                         error = "Invalid skeleton solid vertex in " + path; return false;
                     }
-                    solid.outline.push_back(point);
+                    solid.points.push_back(point);
                 }
-                if (length(planeNormal(solid.outline)) < 1e-9) {
-                    error = "Degenerate skeleton solid in " + path; return false;
+                double largest = 0;
+                for (int i = 0; i < faces; ++i) {
+                    std::array<int, 3> face;
+                    row >> face[0] >> face[1] >> face[2];
+                    if (!row || face[0] < 0 || face[0] >= vertices || face[1] < 0 || face[1] >= vertices ||
+                        face[2] < 0 || face[2] >= vertices) {
+                        error = "Invalid skeleton solid face in " + path; return false;
+                    }
+                    const Vec3 normal = cross(solid.points[face[1]] - solid.points[face[0]],
+                                              solid.points[face[2]] - solid.points[face[0]]);
+                    if (dot(normal, normal) > largest) { largest = dot(normal, normal); solid.normal = normal; }
+                    solid.faces.push_back(face);
+                }
+                if (largest < 1e-18) { error = "Degenerate skeleton solid in " + path; return false; }
+                solid.normal = normalized(solid.normal);
+                for (int i = 0; i < edges; ++i) {
+                    std::array<int, 2> edge;
+                    row >> edge[0] >> edge[1];
+                    if (!row || edge[0] < 0 || edge[0] >= vertices || edge[1] < 0 || edge[1] >= vertices) {
+                        error = "Invalid skeleton solid edge in " + path; return false;
+                    }
+                    solid.edges.push_back(edge);
                 }
                 solids_.push_back(std::move(solid));
                 continue;
@@ -125,25 +152,23 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
-        // Filled, closed prisms instead of outlines. Their thickness comes from
-        // the source surfaces; face lighting makes the volume easy to read.
+        // Thin filled surfaces follow the projected source bones. Caps and
+        // boundary walls make them visible from both faces and from the side.
         std::vector<Vec3> points;
         std::vector<std::array<int, 3>> faces;
         for (const auto& solid : solids_) {
             const int start = static_cast<int>(points.size());
-            const int count = static_cast<int>(solid.outline.size());
-            const Vec3 normal = planeNormal(solid.outline);
+            const int count = static_cast<int>(solid.points.size());
             for (int layer = 0; layer < 2; ++layer)
-                for (Vec3 point : solid.outline)
-                    points.push_back(place(point + normal * ((layer ? 0.5 : -0.5) * solid.thickness)));
-            for (int i = 1; i + 1 < count; ++i) {
-                faces.push_back({start, start+i+1, start+i});
-                faces.push_back({start+count, start+count+i, start+count+i+1});
+                for (Vec3 point : solid.points)
+                    points.push_back(place(point + solid.normal * ((layer ? 0.5 : -0.5) * solid.thickness)));
+            for (const auto& face : solid.faces) {
+                faces.push_back({start+face[0], start+face[2], start+face[1]});
+                faces.push_back({start+count+face[0], start+count+face[1], start+count+face[2]});
             }
-            for (int i = 0; i < count; ++i) {
-                const int next = (i + 1) % count;
-                faces.push_back({start+i, start+next, start+count+i});
-                faces.push_back({start+next, start+count+next, start+count+i});
+            for (const auto& edge : solid.edges) {
+                faces.push_back({start+edge[0], start+edge[1], start+count+edge[0]});
+                faces.push_back({start+edge[1], start+count+edge[1], start+count+edge[0]});
             }
         }
         Material solid;
@@ -152,12 +177,6 @@ public:
     }
 
 private:
-    static Vec3 planeNormal(const std::vector<Vec3>& polygon) {
-        Vec3 normal;
-        for (std::size_t i = 1; i + 1 < polygon.size(); ++i)
-            normal += cross(polygon[i] - polygon[0], polygon[i+1] - polygon[0]);
-        return normalized(normal);
-    }
     std::vector<Segment> segments_;
     std::vector<Vec3> dots_;
     std::vector<Solid> solids_;
