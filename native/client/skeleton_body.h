@@ -22,9 +22,9 @@ struct SkeletonBone {
 };
 
 // A loaded skeleton. Rest pose is metres, soles on y = 0, facing +z, and the
-// source scale is never touched. The male is a modified Z-Anatomy atlas model;
-// the female is a registered OpenSkeleton CT-derived model. Their sources and
-// the limits of their verification are documented in tools/skeleton-source.
+// source scale is never touched. Both models are registered OpenSkeleton
+// CT-derived models. Their sources and the limits of their verification are
+// documented in tools/skeleton-source.
 class SkeletonModel {
 public:
     bool load(const std::string& path, std::string& error);

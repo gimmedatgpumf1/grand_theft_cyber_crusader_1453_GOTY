@@ -1,3 +1,6 @@
+> Historical pipeline: the current room assets are OpenSkeleton, not the
+> Visible Human Female output described below. See `../README.md`.
+
 # Skeleton source: the Visible Human cadavers
 
 The game's skeleton is not an artist's model and not a polygon library's

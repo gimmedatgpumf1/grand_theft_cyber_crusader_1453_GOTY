@@ -1,4 +1,4 @@
-"""Export the female OpenSkeleton source in its original registered pose.
+"""Export an OpenSkeleton source in its original registered pose.
 
 The only spatial changes are a common axis/unit conversion and a single global
 translation. No individual bone is posed, mirrored, shifted or scaled. The OBJ's
@@ -63,7 +63,15 @@ def simplify(points, faces, target):
 
 
 def main():
-    with np.load(SOURCE) as store:
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--male', action='store_true', help='import N197925 instead of N186416')
+    args = parser.parse_args()
+    source = HERE / 'data/male-N197925.npz' if args.male else SOURCE
+    obj = HERE.parent / 'skeleton-male.obj' if args.male else OBJ
+    parts = HERE.parent / 'skeleton-male.parts.json' if args.male else PARTS
+    subject = 'N197925' if args.male else 'N186416'
+    with np.load(source) as store:
         names = sorted(k[2:] for k in store if k.startswith('v_'))
         if not names or set(names) - NAME_MAP.keys():
             raise ValueError(f'unmapped source bones: {sorted(set(names) - NAME_MAP.keys())}')
@@ -91,7 +99,7 @@ def main():
     if sum(map(len, groups.values())) != len(names):
         raise ValueError('a source bone is missing from the ordered rig groups')
     total_faces = sum(len(faces[name]) for name in names)
-    lines = ['# OpenSkeleton registered source pose, subject N186416, CC BY 4.0.',
+    lines = [f'# OpenSkeleton registered source pose, subject {subject}, CC BY 4.0.',
              '# One common axis/unit conversion and translation; no individual bone movement.',
              '# o = rig part, g = original source bone label.']
     report, bones = [], []
@@ -121,11 +129,11 @@ def main():
         report.append({'name': part, 'vertices': len(points), 'triangles': part_faces,
                        'bones': len(members), 'bbox': {'low': points.min(0).tolist(),
                                                        'high': points.max(0).tolist()}})
-    OBJ.write_text('\n'.join(lines) + '\n')
+    obj.write_text('\n'.join(lines) + '\n')
     span = max(p[:, 1].max() for p in placed.values()) - min(p[:, 1].min() for p in placed.values())
-    PARTS.write_text(json.dumps({'stature': float(span), 'parts': report, 'bones': len(names),
+    parts.write_text(json.dumps({'stature': float(span), 'parts': report, 'bones': len(names),
                                  'source_bones': bones, 'global_translation_m': shift.tolist(),
-                                 'pose': 'source registered pose', 'subject': 'N186416',
+                                 'pose': 'source registered pose', 'subject': subject,
                                  'source': 'OpenSkeleton (NMDID) CC BY 4.0'}, indent=1) + '\n')
     print(f'{len(report)} rig parts, {len(names)} source bones, {running} vertices, '
           f'{sum(part["triangles"] for part in report)} triangles, {span:.5f} m')

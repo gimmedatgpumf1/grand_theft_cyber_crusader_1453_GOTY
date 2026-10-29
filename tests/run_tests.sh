@@ -3,13 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 bash tools/nagger.sh
-# The constructed male can be checked in a standing pose. The female is in
-# the source's asymmetric registered pose; validate provenance, labels and
-# geometry instead of pretending that standing-pose mirror rules apply.
-node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
-node tests/male_skull_classification.mjs
-python3 tests/male_skull_restoration.py
-python3 tests/female_source_pose.py
+# Check each body's actual triangles and registered source, not standing-pose assumptions.
+python3 tests/openskeleton_source_pose.py female
+python3 tests/openskeleton_source_pose.py male
 python3 tests/openskeleton_extract.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.

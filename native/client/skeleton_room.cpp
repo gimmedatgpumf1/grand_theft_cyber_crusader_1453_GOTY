@@ -164,7 +164,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         // the same, so the chain is not solved again.
         const bool poseMoved = poseChanged;
         if (poseMoved) {
-            cachedMaleMatrices_ = male_.boneMatrices({-0.52, 0, 0}, 3.14159265);
+            // The OpenSkeleton source faces the opposite way to the former atlas.
+            cachedMaleMatrices_ = male_.boneMatrices({-0.52, 0, 0}, 0.0);
             cachedFemaleMatrices_ = female_.boneMatrices({0.52, 0, 0}, 3.14159265);
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
@@ -205,7 +206,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
     std::thread worker([&] { female_.draw(second, camera, {0.52, 0, 0}, 3.14159265); });
-    male_.draw(room, camera, {-0.52, 0, 0}, 3.14159265);
+    male_.draw(room, camera, {-0.52, 0, 0}, 0.0);
     worker.join();
     second.drain(room);
     frame = room.finish();

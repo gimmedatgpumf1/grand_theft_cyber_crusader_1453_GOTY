@@ -21,8 +21,10 @@ same structure list.
 ## Included subject
 
 `data/skelly-out.npz` and its manifest contain the 182 exported registered
-structures for subject N186416. The original multi-subject archive is not in
-this repository. `03-import.py` now uses the included file directly, preserves
+structures for subject N186416. `data/male-N197925.npz` and its manifest contain
+the same source structures for subject N197925. The original multi-subject archive is not in
+this repository. `03-import.py` uses the included files directly (default female; `--male` for
+male), preserves
 its per-bone registered placement and source names, and simplifies each mesh.
 The result is not guaranteed to be the original CT patient pose or an
 anatomically assembled skeleton; source registration leaves visible asymmetries.
@@ -77,7 +79,7 @@ downloaded, and she is never scaled afterwards.
 
 ```sh
 python3 tools/skeleton-source/openskeleton/03-import.py
-python3 tests/female_source_pose.py
+python3 tests/openskeleton_source_pose.py
 ```
 
 The importer needs NumPy and `fast-simplification`. It applies only a common

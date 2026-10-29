@@ -1,4 +1,4 @@
-// Builds the shipped skeleton OBJ from the Z-Anatomy skeletal model.
+// Historical exporter for the former Z-Anatomy male (not the current room asset).
 //
 // Z-Anatomy (LluisV/Z-Anatomy, CC BY-SA 4.0) is a curated, medically derived
 // atlas: 177 skeletal objects for a single adult body, every bone named down to
@@ -234,7 +234,7 @@ for (const part of output) {
   running += part.points.length / 3;
 }
 
-const target = process.argv[3] || join(HERE, 'skeleton-male.obj');
+const target = process.argv[3] || join(HERE, 'skeleton-male-zanatomy.obj');
 writeFileSync(target, lines.join('\n') + '\n');
 
 let low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];

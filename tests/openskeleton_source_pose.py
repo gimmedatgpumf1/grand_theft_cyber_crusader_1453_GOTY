@@ -1,4 +1,4 @@
-"""Independently check the shipped female against the named source meshes.
+"""Independently check a shipped body against its named source meshes.
 
 This uses only the standard library. It checks every bone's name, rig grouping,
 OBJ faces and simplified vertices against the same named source bone, after one
@@ -10,6 +10,7 @@ import json
 import math
 from pathlib import Path
 import struct
+import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,8 +56,13 @@ def expected_part(name):
 
 
 def main():
-    meta = json.loads((BASE / 'skeleton-female.parts.json').read_text())
-    manifest = json.loads((BASE / 'openskeleton/data/skelly-out.json').read_text())
+    sex = sys.argv[1] if len(sys.argv) > 1 else 'female'
+    assert sex in ('male', 'female')
+    prefix = 'male-N197925' if sex == 'male' else 'skelly-out'
+    subject = 'N197925' if sex == 'male' else 'N186416'
+    meta = json.loads((BASE / f'skeleton-{sex}.parts.json').read_text())
+    manifest = json.loads((BASE / f'openskeleton/data/{prefix}.json').read_text())
+    assert meta['subject'] == manifest['subject'] == subject
     bone_info = {entry['name']: entry for entry in meta['source_bones']}
     assert len(bone_info) == 182 == meta['bones']
     assert set(bone_info) == set(manifest['structures']) and not manifest['skipped']
@@ -67,7 +73,7 @@ def main():
     actual = {}
     part = name = None
     total_vertices = 0
-    with (BASE / 'skeleton-female.obj').open() as obj:
+    with (BASE / f'skeleton-{sex}.obj').open() as obj:
         for line in obj:
             if line.startswith('o '):
                 part = line[2:].strip()
@@ -89,9 +95,15 @@ def main():
     for name, info in bone_info.items():
         assert len(actual[name]['points']) == info['vertices'] and actual[name]['faces'] == info['triangles'], name
 
-    with zipfile.ZipFile(BASE / 'openskeleton/data/skelly-out.npz') as archive:
+    with zipfile.ZipFile(BASE / f'openskeleton/data/{prefix}.npz') as archive:
         source_names = {path[2:-4] for path in archive.namelist() if path.startswith('v_') and path.endswith('.npy')}
         assert source_names == set(bone_info)
+        if sex == 'male':
+            # OpenSkeleton shares its triangulation across subjects. The female
+            # file was checked against the provided Faces.mat; compare all 182.
+            with zipfile.ZipFile(BASE / 'openskeleton/data/skelly-out.npz') as female:
+                for name in source_names:
+                    assert archive.read('f_' + name + '.npy') == female.read('f_' + name + '.npy'), name
         source = {name: load_points(archive, name) for name in source_names}
         # Recompute the common placement from the unmodified registered source.
         lowest = min(point[2] for points in source.values() for point in points) / 1000
@@ -125,8 +137,8 @@ def main():
                 if best > limit2:
                     raise AssertionError(f'{name}: simplified vertex farther than 5 mm from source')
                 worst = max(worst, best)
-    print(f'female source pose: PASS (182 named bones; worst vertex/source distance {math.sqrt(worst)*1000:.3f} mm)')
-    print('female anatomy: source registration is not independently certified')
+    print(f'{sex} source pose: PASS (182 named bones; worst vertex/source distance {math.sqrt(worst)*1000:.3f} mm)')
+    print(f'{sex} anatomy: source registration is not independently certified')
 
 
 if __name__ == '__main__':

@@ -87,7 +87,7 @@ int main() {
             if (std::abs(matrix[i] - placement[i]) > 1e-12) unposed = false;
         }
     }
-    bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 28 && unposed &&
+    bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 27 && unposed &&
                 firstFemale == female && firstMale != male && indicesValid &&
                 expectedSkullIndices > 0 && skullIndexCount == expectedSkullIndices;
     const auto oldFemale = female, oldMale = male;

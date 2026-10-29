@@ -1,10 +1,11 @@
 # Verification
 
-## Current female: source registered pose, not anatomically certified
+## Current models: source registered pose, not anatomically certified
 
-The 182 source names, rig-group assignments, OBJ face ranges and vertex
-proximity to the corresponding unmodified source bone are checked by
-`python3 tests/female_source_pose.py`. No per-bone repositioning or mirroring
+Each model has 182 source names. Rig-group assignments, OBJ face ranges and
+vertex proximity to the corresponding source structure are checked by
+`python3 tests/openskeleton_source_pose.py female` and
+`python3 tests/openskeleton_source_pose.py male`. No per-bone repositioning or mirroring
 is applied; the output is simplified and has one global coordinate transform.
 This is the dataset's registered geometry, not necessarily the original patient
 pose. The source labels and registration have not been independently validated
@@ -21,7 +22,7 @@ cause or correctness of individual joints. The room keeps the female still.
 The following measurements describe earlier builds, **not the currently shipped
 female skeleton**. They are preserved as historical notes only.
 
-## The shipped male — passes
+## Historical Z-Anatomy male — earlier verification
 
 Source: Z-Anatomy `SkeletalSystem100.fbx` (CC BY-SA 4.0, derived from
 BodyParts3D), assembled through its node transforms, filtered to the 177
@@ -57,7 +58,7 @@ here (that one had a 22.1 cm foot and a 30.6 cm humerus). Those numbers came
 from decimating BodyParts3D through a different pipeline; this one is the
 curated atlas at full resolution.
 
-## The shipped female — fails, and always did
+## Historical pre-OpenSkeleton female — earlier verification
 
 She is still the mesh from `open-anatomy-3d` (`anatomy-female.glb`), unchanged,
 because no female alternative has been found. Current measurement:
@@ -220,7 +221,7 @@ because the two bodies are different people rather than one model and one warp:
   bone happens to land inside its band.
 
 
-## The female, from OpenSkeleton — a different woman
+## Historical earlier OpenSkeleton female export and pose (not current)
 
 The shipped `skeleton-female.obj` is no longer the Visible Human Female cadaver.
 She is subject `N186416` of **OpenSkeleton** (Duquesne et al., Ghent University,
