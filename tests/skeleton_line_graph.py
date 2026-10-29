@@ -123,6 +123,8 @@ for sex in ('male', 'female'):
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
         expected_groups[f'Forearm_{side}'] = {f'Radius_{side}', f'Ulna_{side}'}
         expected_groups[f'Shin_{side}'] = {f'Tibia_{side}', f'Fibula_{side}'}
+        for rib in range(1, 13, 2):
+            expected_groups[f'RibBand{rib:02d}_{rib+1:02d}_{side}'] = {f'Rib{rib}_{side}', f'Rib{rib+1}_{side}'}
     assert groups == expected_groups and set(solids) == set(groups)
     assert foot_volumes == {'FootBase_L', 'FootBase_R'}
     # The solid footprint replaces the outline tubes rather than covering them.
@@ -153,7 +155,7 @@ for sex in ('male', 'female'):
         if group in foot_volumes: continue
         assert set(anchors[group]) == groups[group]
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
-        if group.startswith(('Forearm_', 'Shin_')):
+        if group.startswith(('Forearm_', 'Shin_', 'RibBand')):
             # Both bones contribute to one filled, connected surface.
             assert any(any(i in anchors[group][name] for i in face) and
                        any(i in anchors[group][other] for i in face)
@@ -176,10 +178,10 @@ for sex in ('male', 'female'):
                 return math.sqrt(sum(n*n for n in cross)) / 2
             assert max(map(area, between)) > 0.00005, (group, digit)
     members = {member: group for group, parts in groups.items() for member in parts}
-    assert len(members) == sum(map(len, groups.values())) == 58
+    assert len(members) == sum(map(len, groups.values())) == 82
     assert set(members) <= expected and len(expected) == 182
     visible = (expected - set(members)) | set(groups)
-    assert len(visible) == 132
+    assert len(visible) == 120
     assert set(dots) == vertebrae and not set(segments) & vertebrae
     assert set(segments) | set(dots) == visible
     # Dot placement is the centre of the corresponding supplied vertebra, not
@@ -190,9 +192,9 @@ for sex in ('male', 'female'):
     with (base / f'skeleton-{sex}.obj').open() as obj:
         for row in obj:
             if row.startswith('g '): name = row[2:].strip()
-            elif (name in vertebrae or name in members or name in ('Tibia_L','Tibia_R','Fibula_L','Fibula_R')) and row.startswith('v '):
+            elif (name in vertebrae or name in members or name == 'Sternum') and row.startswith('v '):
                 coords = list(map(float, row.split()[1:4]))
-                if name in members or name.startswith(('Tibia_', 'Fibula_')): member_vertices[name].append(coords)
+                if name in members: member_vertices[name].append(coords)
                 for i in range(3): totals[name][i] += coords[i]
                 totals[name][3] += 1
     for name, point in dots.items():
@@ -325,6 +327,37 @@ for sex in ('male', 'female'):
                     for i in range(3):
                         assert not intersects(points[edge[i]],points[edge[(i+1)%3]],a,b,c), (group,'self intersection')
             continue
+        if group.startswith('RibBand'):
+            # Independent reconstruction of each rib's angular samples; each
+            # curved strip uses the actual registered ribs, not a flat slab.
+            def quantile(values, fraction):
+                values = sorted(values); pos = fraction * (len(values)-1)
+                lo, hi = math.floor(pos), math.ceil(pos)
+                return values[lo] + (values[hi]-values[lo])*(pos-lo)
+            for name in part_names:
+                rib = int(name.split('_')[0][3:])
+                t = totals[f'T{rib}']; sternum = totals['Sternum']
+                axis = [(t[i]/t[3] + sternum[i]/sternum[3])/2 for i in range(3)]
+                source = member_vertices[name]
+                angles = [math.atan2(p[2]-axis[2],p[0]-axis[0]) for p in source]
+                mean = math.atan2(sum(math.sin(a) for a in angles), sum(math.cos(a) for a in angles))
+                angles = [math.atan2(math.sin(a-mean),math.cos(a-mean)) for a in angles]
+                limits = [quantile(angles, i/8) for i in range(9)]
+                expected_points = []
+                for i in range(8):
+                    samples = [p for p,a in zip(source,angles)
+                               if a >= limits[i] and (a <= limits[i+1] if i == 7 else a < limits[i+1])]
+                    assert samples
+                    expected_points.append(tuple(sum(p[j] for p in samples)/len(samples) for j in range(3)))
+                indices = anchors[group][name]
+                assert len(indices) == 8
+                assert all(math.dist(points[index], expected) < 0.00001
+                           for index,expected in zip(indices,expected_points))
+            first, second = sorted(part_names, key=lambda x:int(x.split('_')[0][3:]))
+            for a,b in zip(anchors[group][first],anchors[group][second]):
+                assert 0.005 < math.dist(points[a],points[b]) < 0.15
+            assert len(solids[group][2]) == 14
+            continue
         if group.startswith(('Forearm_', 'Shin_')):
             def sub(a,b): return tuple(x-y for x,y in zip(a,b))
             def dot(a,b): return sum(x*y for x,y in zip(a,b))
@@ -366,7 +399,7 @@ for sex in ('male', 'female'):
                         assert min(values) - 0.005 <= point[axis] <= max(values) + 0.005
             else:
                 assert len(indices) == 1 and math.dist(points[indices[0]], mean) < 0.00001
-    assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))
+    assert all(f'Rib{i}_{side}' not in segments for side in ('L','R') for i in range(1,13))
     assert len(segments['Head']) >= 24
     for name, bone_segments in segments.items():
         if name in solids: continue  # boundary can include holes
@@ -398,7 +431,7 @@ for sex in ('male', 'female'):
     while queue:
         for other in graph[queue.popleft()] - found:
             found.add(other); queue.append(other)
-    assert found == visible and len(topology) == 151
+    assert found == visible and len(topology) == 141
     collapsed = set()
     expected_anchors = defaultdict(set)
     for original_a, original_b, kind in anatomy:
@@ -417,9 +450,11 @@ for sex in ('male', 'female'):
                            for i in expected_anchors[(key, group)]), (group, key)
     for side in ('L','R'):
         for i in range(1, 13):
-            assert f'T{i}' in graph[f'Rib{i}_{side}']
-            if i <= 7: assert ('C', *sorted(('Sternum',f'Rib{i}_{side}'))) in topology
-            if i >= 11: assert 'Sternum' not in graph[f'Rib{i}_{side}']
+            band_start = i if i % 2 else i-1
+            band = f'RibBand{band_start:02d}_{band_start+1:02d}_{side}'
+            assert f'T{i}' in graph[band]
+            if i <= 7: assert ('C', *sorted(('Sternum',band))) in topology
+            if i >= 11: assert 'Sternum' not in graph[band]
         assert f'HandTrapezium_{side}' in graph[f'HandPalm_{side}']
         assert f'HandMeta1_{side}' in graph[f'HandTrapezium_{side}']
         for digit in range(1, 6):
@@ -431,4 +466,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, 12 rib bands, {len(dots)} vertebra dots)')

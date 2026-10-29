@@ -85,6 +85,8 @@ def unified_groups():
         groups[f'FootBase_{side}'] = tuple(f'{name}_{side}' for name in foot)
         groups[f'Forearm_{side}'] = (f'Radius_{side}', f'Ulna_{side}')
         groups[f'Shin_{side}'] = (f'Tibia_{side}', f'Fibula_{side}')
+        for rib in range(1, 13, 2):
+            groups[f'RibBand{rib:02d}_{rib+1:02d}_{side}'] = (f'Rib{rib}_{side}', f'Rib{rib+1}_{side}')
     return groups
 
 
@@ -152,6 +154,26 @@ def paired_bone_surface(bones, members):
     count = len(points)
     faces = [(0, i, i+1) for i in range(1, count-1)]
     boundary = [(i, (i+1) % count) for i in range(count)]
+    return points, faces, boundary, owners
+
+
+def rib_band(bones, members):
+    """One filled strip between two consecutive source-derived rib curves.
+
+    The angular order used by line_for is consistent within each side. Keep
+    the 3D samples, joining corresponding positions rather than flattening the
+    curved cage into one broad rectangle or selecting neighbours by distance.
+    """
+    curves = [line_for(name, bones[name], bones) for name in members]
+    assert len(curves[0]) == len(curves[1]) == 8
+    points = np.array(curves[0] + curves[1])
+    n = len(curves[0])
+    faces = []
+    for i in range(n-1):
+        faces += [(i, i+1, n+i+1), (i, n+i+1, n+i)]
+    boundary = ([(i, i+1) for i in range(n-1)] + [(n-1, 2*n-1)] +
+                [(i, i-1) for i in range(2*n-1, n, -1)] + [(n, 0)])
+    owners = {members[0]: list(range(n)), members[1]: list(range(n, 2*n))}
     return points, faces, boundary, owners
 
 
@@ -363,6 +385,8 @@ def build(sex):
             boxes[group] = foot_volume(bones, members, group[-1])
         elif group.startswith(('Forearm_', 'Shin_')):
             solids[group] = paired_bone_surface(bones, members)
+        elif group.startswith('RibBand'):
+            solids[group] = rib_band(bones, members)
         else:
             solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
@@ -414,9 +438,19 @@ def build(sex):
         elif a in VERTEBRAE and b in VERTEBRAE:
             x, y = lines[a][0], lines[b][0]
         elif a in VERTEBRAE:
-            _, x, y = closest_to_point(lines[a][0], lines[b])
+            x = lines[a][0]
+            if b in solids:
+                points, _, _, owners = solids[b]
+                y = min((points[i] for i in owners[original_b]), key=lambda p: np.linalg.norm(p-x))
+            else:
+                _, x, y = closest_to_point(x, lines[b])
         elif b in VERTEBRAE:
-            _, y, x = closest_to_point(lines[b][0], lines[a])
+            y = lines[b][0]
+            if a in solids:
+                points, _, _, owners = solids[a]
+                x = min((points[i] for i in owners[original_a]), key=lambda p: np.linalg.norm(p-y))
+            else:
+                _, y, x = closest_to_point(y, lines[a])
         elif a in boxes:
             _, x, y = foot_to_line(boxes[a], line_for(original_a, bones[original_a], bones), lines[b])
         elif b in boxes:
