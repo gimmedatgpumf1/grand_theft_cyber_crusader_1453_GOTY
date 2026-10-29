@@ -53,9 +53,10 @@ fibula share one thin filled shin plane. Each plane's outline is fitted to the
 projected contours of both source bones; this deliberately flattens their 3D
 depth rather than presenting a full anatomical surface. All 24 ribs form one
 continuous thin filled rib-cage surface: successive source-derived curves are
-joined on each side, with a rear seam connecting the sides. The front stays open
-around the sternum. The surface is a visual simplification, not additional
-anatomical joints.
+joined on each side, with a rear seam connecting the sides. Filled inferred
+cartilage areas join ribs 1–7 to the source-derived sternum centreline. Ribs
+8–12 have no invented direct sternal attachments. The surface is a visual
+simplification, not additional anatomical joints.
 
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the

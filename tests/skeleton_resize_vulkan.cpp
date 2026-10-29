@@ -121,15 +121,20 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
         }
         if (shapes.size() != 9) return false;
         for (const Shape& shape : shapes) {
-            for (bool onlyCaps : {false, true}) {
-                if (onlyCaps && shape.foot) continue;
+            for (int mode : {0, 1, 2}) {
+                if (mode == 1 && shape.foot) continue;
+                if (mode == 2 && shape.name != "RibCage") continue;
                 GpuScene without = scene;
                 without.revision += 40000 + sequence++;
                 bool removed = false;
                 for (auto& batch : without.batches) {
                     if (batch.objectId != id || batch.indices.size() != totalIndices || batch.vertices.size() != totalVertices) continue;
-                    const auto begin = batch.indices.begin() + shape.offset;
-                    batch.indices.erase(begin, begin + (onlyCaps ? shape.caps : shape.indices));
+                    // Last 24 source faces are the filled sternum bridges;
+                    // each contributes two three-index caps in this batch.
+                    const std::size_t offset = mode == 2 ? shape.offset + shape.caps - 24*6 : shape.offset;
+                    const std::size_t count = mode == 2 ? 24*6 : (mode == 1 ? shape.caps : shape.indices);
+                    const auto begin = batch.indices.begin() + offset;
+                    batch.indices.erase(begin, begin + count);
                     removed = true;
                 }
                 if (!removed) return false;
@@ -147,7 +152,8 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                 // The source pose has crossed arms. A continuous rib cage can
                 // legitimately occlude a hand from the default view, so also
                 // check the same intact scene from behind when needed.
-                if (changed == 0) {
+                if (changed == 0 || (mode == 2 && id == 8001)) {
+                    changed = 0;
                     Camera camera;
                     camera.width = scene.width; camera.height = scene.height;
                     camera.fovDegrees = 50; camera.position = {0,1.15,-3.5}; camera.target = {0,0.95,0};
@@ -170,9 +176,9 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                         if (difference > 24) ++changed;
                     }
                 }
-                std::printf("Vulkan %s %u %s: %d visible pixels\n", onlyCaps ? "filled faces" : "solid",
-                            id, shape.name.c_str(), changed);
-                if (changed < 1) return false;
+                const char* label = mode == 2 ? "sternum bridges" : mode == 1 ? "filled faces" : "solid";
+                std::printf("Vulkan %s %u %s: %d visible pixels\n", label, id, shape.name.c_str(), changed);
+                if (changed < (mode == 2 ? 10 : 1)) return false;
             }
         }
     }

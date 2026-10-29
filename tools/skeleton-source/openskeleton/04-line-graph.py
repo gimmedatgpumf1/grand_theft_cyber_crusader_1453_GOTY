@@ -160,8 +160,9 @@ def rib_cage(bones, members):
     """One connected surface through all 24 source-derived rib curves.
 
     Adjacent ribs on each side are joined along corresponding angular samples.
-    A posterior seam joins both sides; the front remains open around the sternum.
-    These are visual surfaces, not new anatomical articulations.
+    A posterior seam joins both sides. At the front, inferred cartilage areas
+    connect ribs 1–7 to the source-derived sternum centreline; ribs 8–12 are
+    not given invented direct sternal joints.
     """
     points, owners = [], {}
     for name in members:
@@ -181,6 +182,21 @@ def rib_cage(bones, members):
         a, b = owners[f'Rib{rib}_L'][0], owners[f'Rib{rib+1}_L'][0]
         c, d = owners[f'Rib{rib}_R'][-1], owners[f'Rib{rib+1}_R'][-1]
         faces.extend(((a,b,d), (a,d,c)))
+    # The source has no costal cartilage. Extend ribs 1–7 to seven actual
+    # positions on the sternum's existing centreline, filling the gap that
+    # previously contained only thin, often occluded orange connector lines.
+    sternum = line_for('Sternum', bones['Sternum'], bones)
+    upper, lower = sorted((sternum[0], sternum[2]), key=lambda p: -p[1])
+    sternum_indices = []
+    for rib in range(7):
+        t = rib/6
+        sternum_indices.append(len(points))
+        points.append((1-t)*upper + t*lower)
+    for rib in range(1, 7):
+        s0, s1 = sternum_indices[rib-1:rib+1]
+        l0, l1 = owners[f'Rib{rib}_L'][-1], owners[f'Rib{rib+1}_L'][-1]
+        r0, r1 = owners[f'Rib{rib}_R'][0], owners[f'Rib{rib+1}_R'][0]
+        faces.extend(((l1,l0,s0), (l1,s0,s1), (r0,r1,s1), (r0,s1,s0)))
     edges = {}
     for face in faces:
         for a,b in zip(face, face[1:]+face[:1]):

@@ -153,7 +153,8 @@ for sex in ('male', 'female'):
         assert found_points == set(range(len(points))), group
         if group in foot_volumes: continue
         assert set(anchors[group]) == groups[group]
-        assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
+        expected_owned = len(points)-7 if group == 'RibCage' else len(points)
+        assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(expected_owned))
         if group.startswith(('Forearm_', 'Shin_', 'RibCage')):
             # Both bones contribute to one filled, connected surface.
             assert any(any(i in anchors[group][name] for i in face) and
@@ -352,7 +353,7 @@ for sex in ('male', 'female'):
                 assert len(indices) == 8
                 assert all(math.dist(points[index], expected) < 0.00001
                            for index,expected in zip(indices,expected_points))
-            assert len(solids[group][2]) == 330 and len(points) == 192
+            assert len(solids[group][2]) == 354 and len(points) == 199
             faces = solids[group][2]
             # Every successive pair is joined at every segment, and left and
             # right halves share a full posterior seam. One mesh is not merely
@@ -368,6 +369,28 @@ for sex in ('male', 'female'):
                 cell = {anchors[group][f'Rib{rib}_L'][0], anchors[group][f'Rib{rib+1}_L'][0],
                         anchors[group][f'Rib{rib}_R'][-1], anchors[group][f'Rib{rib+1}_R'][-1]}
                 assert sum(set(face) <= cell for face in faces) == 2
+            # The seven new front anchors lie exactly on the displayed
+            # sternum, and filled faces join them to ribs 1–7 on both sides.
+            sternum_points = points[192:199]
+            sternum_segments = segments['Sternum']
+            def distance_to_line(p,a,b):
+                v = tuple(y-x for x,y in zip(a,b))
+                t = max(0, min(1, sum((x-y)*z for x,y,z in zip(p,a,v)) / sum(x*x for x in v)))
+                return math.dist(p, tuple(x+t*y for x,y in zip(a,v)))
+            for point in sternum_points:
+                assert min(distance_to_line(point,a,b) for a,b in sternum_segments) < 0.00001
+            assert all(math.dist(sternum_points[i],sternum_points[i+1]) > 0.01 for i in range(6))
+            for side, offset in (('L',-1),('R',0)):
+                for rib in range(1,7):
+                    cell = {anchors[group][f'Rib{rib}_{side}'][offset],
+                            anchors[group][f'Rib{rib+1}_{side}'][offset], 191+rib, 192+rib}
+                    assert sum(set(face) <= cell for face in faces) == 2
+            # Floating ribs must not acquire direct front-to-sternum faces.
+            for rib in range(8,13):
+                for side in ('L','R'):
+                    rib_points = set(anchors[group][f'Rib{rib}_{side}'])
+                    assert not any(rib_points.intersection(face) and set(range(192,199)).intersection(face)
+                                   for face in faces)
             oriented = defaultdict(int)
             for face in faces:
                 for a,b in zip(face,face[1:]+face[:1]): oriented[(a,b)] += 1
