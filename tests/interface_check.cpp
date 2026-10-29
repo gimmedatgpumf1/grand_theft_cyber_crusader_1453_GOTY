@@ -19,6 +19,7 @@
 
 #include "client/cheat_menu.h"
 #include "client/interface_style.h"
+#include "client/mode_bar.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 
@@ -332,6 +333,98 @@ void examineCheatMenu(int width, int height, bool windowOrder) {
                 layout.height, layout.left, layout.top, layout.textHeight, rows.lit);
 }
 
+// Mean luminance of a block, for telling the running mode from the other two
+// without knowing which colour it was drawn in.
+int meanLuminance(const Picture& picture, int left, int top, int width, int height) {
+    long total = 0;
+    int count = 0;
+    for (int y = top; y < top + height; ++y) {
+        for (int x = left; x < left + width; ++x) {
+            const auto pixel = picture.at(x, y);
+            if (pixel[0] < 0) continue;
+            total += (pixel[0] * 30 + pixel[1] * 59 + pixel[2] * 11) / 100;
+            ++count;
+        }
+    }
+    return count == 0 ? 0 : static_cast<int>(total / count);
+}
+
+void examineModeBar(int width, int height, bool windowOrder) {
+    const std::string where = "modes " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+    const auto layout = gtc::native::layoutModeBar(width, height);
+    check(layout.width > 0 && layout.height > 0, where + ": the bar has a size");
+    check(layout.left >= 0 && layout.left + layout.width <= width, where + ": the bar fits across the frame");
+    check(layout.top >= 0 && layout.top + layout.height <= height, where + ": the bar fits down the frame");
+    check(std::abs(layout.left - (width - layout.left - layout.width)) <= 1, where + ": the bar is centred");
+    const int bottomMargin = height - (layout.top + layout.height);
+    check(bottomMargin >= 6 && bottomMargin <= layout.textHeight,
+          where + ": the bar is anchored to the bottom (" + std::to_string(bottomMargin) + " px)");
+    check(layout.top > layout.height, where + ": the bar is at the bottom, not the top");
+
+    Picture picture(width, height, windowOrder);
+    gtc::native::drawModeBar(picture.frame, gtc::native::ViewMode::ThirdPerson);
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+    const auto expected = blendOver(panel, picture.ground, gtc::native::kPanelOpacity);
+    check(worstChannel(picture.at(layout.left + 1, layout.top + 1), expected) <= 1,
+          where + ": the bar is half transparent");
+    check(!picture.same(layout.left + 1, layout.top + 1, panel), where + ": the bar is not opaque");
+
+    // Three blocks with space between them, and the active one brighter with a
+    // rule under it. Switching modes has to move both of those.
+    for (int index = 0; index < 3; ++index) {
+        check(layout.blockWidth[index] > layout.textHeight, where + ": block " + std::to_string(index) + " has width");
+        if (index + 1 < 3) {
+            const int gapLeft = layout.blockLeft[index] + layout.blockWidth[index];
+            const int gapRight = layout.blockLeft[index + 1];
+            check(gapRight > gapLeft, where + ": the blocks are separated");
+            int stray = 0;
+            for (int y = layout.top + layout.height / 4; y < layout.top + layout.height * 3 / 4; ++y) {
+                for (int x = gapLeft; x < gapRight; ++x) {
+                    if (worstChannel(picture.at(x, y), expected) > 2) ++stray;
+                }
+            }
+            check(stray == 0, where + ": nothing is drawn between the blocks (" + std::to_string(stray) + ")");
+        }
+    }
+
+    const gtc::native::ViewMode modes[3] = {gtc::native::ViewMode::ThirdPerson, gtc::native::ViewMode::God,
+                                            gtc::native::ViewMode::FirstPerson};
+    const char* names[3] = {"third person", "god", "first person"};
+    for (int active = 0; active < 3; ++active) {
+        Picture shot(width, height, windowOrder);
+        gtc::native::drawModeBar(shot.frame, modes[active]);
+        int means[3] = {0, 0, 0};
+        for (int index = 0; index < 3; ++index) {
+            means[index] = meanLuminance(shot, layout.blockLeft[index], layout.top, layout.blockWidth[index],
+                                         layout.height);
+        }
+        for (int index = 0; index < 3; ++index) {
+            if (index == active) continue;
+            check(means[active] > means[index] + 2,
+                  where + ": " + std::string(names[active]) + " is the brightest block");
+        }
+        // The rule under the active block, and nowhere else.
+        const int ruleRow = layout.underlineTop + layout.underlineHeight / 2;
+        const auto rule = shot.at(layout.blockLeft[active] + layout.blockWidth[active] / 2, ruleRow);
+        check(worstChannel(rule, bytes(gtc::native::colorHex("#f2f7ea"))) <= 2,
+              where + ": " + std::string(names[active]) + " carries the rule");
+        for (int index = 0; index < 3; ++index) {
+            if (index == active) continue;
+            const auto other = shot.at(layout.blockLeft[index] + layout.blockWidth[index] / 2, ruleRow);
+            check(worstChannel(other, bytes(gtc::native::colorHex("#f2f7ea"))) > 8,
+                  where + ": the rule is not under block " + std::to_string(index));
+        }
+    }
+
+    if (!windowOrder) {
+        zoom(picture, layout.left, layout.top, layout.width, layout.height, 4,
+             "build/native-client/interface-modes-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s bar %dx%d at %d,%d, text %d px, bottom margin %d\n", where.c_str(), layout.width,
+                layout.height, layout.left, layout.top, layout.textHeight, bottomMargin);
+}
+
 }  // namespace
 
 int main() {
@@ -343,6 +436,11 @@ int main() {
     examineCrosshair(640, 480, false);
     examineCrosshair(640, 480, true);
     examineCrosshair(1920, 1080, true);
+
+    examineModeBar(640, 480, false);
+    examineModeBar(640, 480, true);
+    examineModeBar(1568, 929, true);
+    examineModeBar(1920, 1080, true);
 
     examineCheatMenu(640, 480, false);
     examineCheatMenu(640, 480, true);
@@ -362,7 +460,7 @@ int main() {
     gtc::native::drawCheatMenu(frame, -20, 400);
 
     if (failures == 0) {
-        std::printf("interface: PASS (strip, reticle, need panel; centred, translucent, antialiased)\n");
+        std::printf("interface: PASS (rate strip, reticle, need panel, mode bar; centred, translucent, antialiased)\n");
         return 0;
     }
     std::printf("interface: FAIL (%d)\n", failures);

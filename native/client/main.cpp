@@ -4,6 +4,7 @@
 #include "client/cheat_menu.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
+#include "client/mode_bar.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
@@ -492,6 +493,7 @@ int main(int argc, char** argv) {
         const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
         gtc::native::drawCheatMenu(frame, bladder, bowel);
     }
+    gtc::native::drawModeBar(frame, view.mode);
     gtc::native::drawFpsCounter(frame, measuredMilliseconds > 0.0 ? 1000.0 / measuredMilliseconds : 0.0);
     if (!frame.save(output)) {
         std::cerr << "Native render failed: cannot save " << output << '\n';

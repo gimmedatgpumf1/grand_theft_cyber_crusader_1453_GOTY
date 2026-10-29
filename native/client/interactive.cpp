@@ -8,6 +8,7 @@
 #include "client/cheat_menu.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
+#include "client/mode_bar.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -183,6 +184,7 @@ public:
                 const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
                 drawCheatMenu(frame, bladder, bowel);
             }
+            drawModeBar(frame, view_.mode);
             drawFpsCounter(frame, view_.fps);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
             view_.drawMilliseconds = renderMilliseconds;
