@@ -151,7 +151,9 @@ def build(sex):
             out.write(row)
     transforms = {n: {'parent': parents[n], 'rotation': rotation[n].tolist(), 'offset': offset[n].tolist()}
                   for n in sorted(bones)}
-    (BASE / f'skeleton-{sex}-tpose.json').write_text(json.dumps(transforms, indent=1) + '\n')
+    rows = [json.dumps(name) + ': ' + json.dumps(value, separators=(',', ':'))
+            for name, value in transforms.items()]
+    (BASE / f'skeleton-{sex}-tpose.json').write_text('{\n' + ',\n'.join(rows) + '\n}\n')
     print(f'{sex}: {len(bones)} rigid source structures, T-pose written')
 
 
