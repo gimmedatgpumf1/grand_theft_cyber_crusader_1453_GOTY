@@ -3,22 +3,29 @@
 Connectivity is the explicit textbook-based table, not inferred from distances.
 Endpoint positions are approximations because the dataset has no joint landmarks.
 """
-from collections import Counter, defaultdict, deque
+from collections import defaultdict, deque
 import json
 import math
 from pathlib import Path
 
 base = Path(__file__).resolve().parent.parent / 'tools/skeleton-source'
+vertebrae = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
+             for i in range(1, count + 1)}
 reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges = defaultdict(list), []
+    segments, edges, dots = defaultdict(list), [], {}
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
         if not row or row.startswith('#'): continue
         fields = row.split()
         kind = fields[0]
-        if kind == 'B':
+        if kind == 'D':
+            assert len(fields) == 5 and fields[1] in vertebrae and fields[1] not in dots
+            point = tuple(map(float, fields[2:]))
+            assert all(map(math.isfinite, point))
+            dots[fields[1]] = point
+        elif kind == 'B':
             assert len(fields) == 8
             name = fields[1]
             a, b = tuple(map(float, fields[2:5])), tuple(map(float, fields[5:8]))
@@ -31,7 +38,22 @@ for sex in ('male', 'female'):
             ends = tuple(map(float, fields[3:]))
             assert all(map(math.isfinite, ends))
             edges.append((kind, a, b, ends))
-    assert set(segments) == expected and len(expected) == 182
+    assert set(dots) == vertebrae and not set(segments) & vertebrae
+    assert set(segments) | set(dots) == expected and len(expected) == 182
+    # Dot placement is the centre of the corresponding supplied vertebra, not
+    # a guessed skeleton-level average or a dot duplicated from another bone.
+    totals = defaultdict(lambda: [0.0, 0.0, 0.0, 0])
+    name = None
+    with (base / f'skeleton-{sex}.obj').open() as obj:
+        for row in obj:
+            if row.startswith('g '): name = row[2:].strip()
+            elif name in vertebrae and row.startswith('v '):
+                coords = list(map(float, row.split()[1:4]))
+                for i in range(3): totals[name][i] += coords[i]
+                totals[name][3] += 1
+    for name, point in dots.items():
+        sums = totals[name]
+        assert sums[3] and math.dist(point, tuple(x / sums[3] for x in sums[:3])) < 0.00001
     assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))
     assert len(segments['Head']) >= 24
     for name, bone_segments in segments.items():
@@ -49,7 +71,8 @@ for sex in ('male', 'female'):
                 v = tuple(y-x for x,y in zip(a,b))
                 t = max(0, min(1, sum((x-y)*z for x,y,z in zip(p,a,v)) / sum(x*x for x in v)))
                 return math.dist(p, tuple(x+t*y for x,y in zip(a,v)))
-            assert any(distance_to_segment(point, a, b) < 0.00001 for a,b in segments[bone]), bone
+            if bone in dots: assert math.dist(point, dots[bone]) < 0.00001, bone
+            else: assert any(distance_to_segment(point, a, b) < 0.00001 for a,b in segments[bone]), bone
     graph = defaultdict(set)
     topology = set()
     for kind, a, b, _ in edges:
@@ -73,4 +96,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} named links)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} named links, {len(dots)} vertebra dots)')

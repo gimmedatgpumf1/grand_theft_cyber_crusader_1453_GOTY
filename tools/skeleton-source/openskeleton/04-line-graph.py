@@ -11,6 +11,8 @@ import math
 import numpy as np
 
 BASE = Path(__file__).resolve().parent.parent
+VERTEBRAE = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
+             for i in range(1, count + 1)}
 
 
 def anatomy():
@@ -141,6 +143,18 @@ def closest_on_segments(a0, a1, b0, b1):
     return min(candidates, key=lambda value: value[0])
 
 
+def closest_to_point(point, polyline):
+    choices = []
+    for a, b in zip(polyline, polyline[1:]):
+        delta = b - a
+        squared = np.dot(delta, delta)
+        if squared < 1e-18: continue
+        t = np.clip(np.dot(point - a, delta) / squared, 0, 1)
+        other = a + t * delta
+        choices.append((np.linalg.norm(point - other), point, other))
+    return min(choices, key=lambda value: value[0])
+
+
 def build(sex):
     bones = read_bones(BASE / f'skeleton-{sex}.obj')
     manifest = json.loads((BASE / f'skeleton-{sex}.parts.json').read_text())
@@ -155,25 +169,35 @@ def build(sex):
         if more == connected: break
         connected = more
     assert connected == expected, f'unconnected structures: {expected-connected}'
-    lines = {name: line_for(name, vertices, bones) for name, vertices in bones.items()}
+    lines = {name: [vertices.mean(axis=0)] if name in VERTEBRAE else line_for(name, vertices, bones)
+             for name, vertices in bones.items()}
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# B bone segment; J joint connection; C inferred cartilage connection.']
+           '# D vertebra dot; B bone segment; J joint connection; C inferred cartilage connection.']
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
         pts = lines[name]
+        if name in VERTEBRAE:
+            out.append(f'D {name} {fmt(pts[0])}')
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
     for a,b,kind in links:
         # Anatomical endpoints are not supplied. Localise only the already-known
         # relationship with nearest points on its centrelines; never use
         # distance to decide which structures are connected.
-        choices = [closest_on_segments(p, q, r, s)
-                   for p, q in zip(lines[a], lines[a][1:])
-                   for r, s in zip(lines[b], lines[b][1:])]
-        _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
+        if a in VERTEBRAE and b in VERTEBRAE:
+            x, y = lines[a][0], lines[b][0]
+        elif a in VERTEBRAE:
+            _, x, y = closest_to_point(lines[a][0], lines[b])
+        elif b in VERTEBRAE:
+            _, y, x = closest_to_point(lines[b][0], lines[a])
+        else:
+            choices = [closest_on_segments(p, q, r, s)
+                       for p, q in zip(lines[a], lines[a][1:])
+                       for r, s in zip(lines[b], lines[b][1:])]
+            _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
         out.append(f'{"C" if kind == "cartilage" else "J"} {a} {b} {fmt(x)} {fmt(y)}')
     (BASE / f'skeleton-{sex}.lines').write_text('\n'.join(out)+'\n')
-    print(f'{sex}: {len(bones)} structures, {len(links)} anatomical relationships, {len(out)-2} segments')
+    print(f'{sex}: {len(bones)} structures, {len(links)} anatomical relationships, {len(out)-2} primitives')
 
 if __name__ == '__main__':
     for sex in ('male','female'): build(sex)

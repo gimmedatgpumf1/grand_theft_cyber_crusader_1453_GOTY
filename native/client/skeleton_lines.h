@@ -20,6 +20,7 @@ public:
         std::ifstream input(path);
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }
         segments_.clear();
+        dots_.clear();
         std::string line;
         while (std::getline(input, line)) {
             if (line.empty() || line[0] == '#') continue;
@@ -27,14 +28,16 @@ public:
             char kind; std::string first, second; Segment s;
             row >> kind >> first;
             if (kind == 'J' || kind == 'C') row >> second;
-            row >> s.a.x >> s.a.y >> s.a.z >> s.b.x >> s.b.y >> s.b.z;
+            row >> s.a.x >> s.a.y >> s.a.z;
+            if (kind != 'D') row >> s.b.x >> s.b.y >> s.b.z;
             s.kind = kind;
-            if (!row || (kind != 'B' && kind != 'J' && kind != 'C') ||
+            if (!row || (kind != 'D' && kind != 'B' && kind != 'J' && kind != 'C') ||
                 !std::isfinite(s.a.x) || !std::isfinite(s.a.y) || !std::isfinite(s.a.z) ||
                 !std::isfinite(s.b.x) || !std::isfinite(s.b.y) || !std::isfinite(s.b.z)) {
                 error = "Invalid skeleton line in " + path; return false;
             }
-            segments_.push_back(s);
+            if (kind == 'D') dots_.push_back(s.a);
+            else segments_.push_back(s);
         }
         if (segments_.empty()) { error = "No skeleton lines in " + path; return false; }
         return true;
@@ -77,12 +80,32 @@ public:
                     faces.push_back({start+next, start+sides+next, start+sides+i});
                 }
             }
+            if (kind == 'B') {
+                // A low-poly sphere reads as a dot from any camera angle.
+                // It shares the bone material and the cached GPU batch.
+                constexpr double phi = 1.618033988749895;
+                const Vec3 vertices[] = {{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
+                    {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
+                    {phi,0,-1},{phi,0,1},{-phi,0,-1},{-phi,0,1}};
+                const int triangles[][3] = {{0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},
+                    {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
+                    {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
+                    {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
+                for (Vec3 dot : dots_) {
+                    const int start = static_cast<int>(points.size());
+                    const Vec3 center = place(dot);
+                    for (Vec3 vertex : vertices) points.push_back(center + normalized(vertex) * 0.007);
+                    for (const auto& triangle : triangles)
+                        faces.push_back({start+triangle[0], start+triangle[1], start+triangle[2]});
+                }
+            }
             out.mesh(points, faces, materials[type]);
         }
     }
 
 private:
     std::vector<Segment> segments_;
+    std::vector<Vec3> dots_;
 };
 
 } // namespace gtc::native

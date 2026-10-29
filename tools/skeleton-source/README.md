@@ -42,8 +42,8 @@ reproducibility; its output is not the currently shipped male.
 
 Press V in the C room to replace both skeleton meshes with source-pose lines;
 press V again to return to the mesh view. Pale lines approximate the supplied
-bone shapes, cyan lines connect anatomical neighbours, and orange lines are
-inferred costal cartilage (not present in the scans). Complex bones use multiple
+bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
+cyan lines connect anatomical neighbours, and orange lines are inferred costal cartilage (not present in the scans). Complex bones use multiple
 segments. Both models use the same explicit, connected table of 182 structures
 and 209 relationships. The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),

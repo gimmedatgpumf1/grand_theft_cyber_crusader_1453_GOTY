@@ -5,6 +5,8 @@
 #include "client/room_freecam.h"
 #include <array>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -21,12 +23,40 @@ static std::uint32_t maleSkullId;
 static std::size_t skullIndexCount;
 static bool capturedCovered;
 static bool lineObjectsOnly;
+static bool maleDots, femaleDots;
+static bool checkDots(const GpuBatch& batch, const char* path, double x, double yaw) {
+    constexpr std::size_t lineVertices = 494 * 12, dotVertices = 24 * 12;
+    if (batch.vertices.size() != lineVertices + dotVertices || batch.indices.size() != 494 * 36 + 24 * 60)
+        return false;
+    std::ifstream file(path);
+    std::string row, name;
+    std::size_t dot = 0;
+    while (std::getline(file, row)) {
+        if (row.rfind("D ", 0) != 0) continue;
+        std::istringstream input(row);
+        char kind; Vec3 source; input >> kind >> name >> source.x >> source.y >> source.z;
+        if (!input || dot >= 24) return false;
+        const Vec3 expected{x + std::cos(yaw)*source.x + std::sin(yaw)*source.z,
+                            source.y, -std::sin(yaw)*source.x + std::cos(yaw)*source.z};
+        Vec3 center;
+        for (std::size_t i = 0; i < 12; ++i) {
+            const auto& v = batch.vertices[lineVertices + dot * 12 + i];
+            const Vec3 vertex{v.x, v.y, v.z};
+            if (std::abs(length(vertex - expected) - 0.007) > 1e-6) return false;
+            center += vertex;
+        }
+        if (length(center / 12 - expected) > 1e-6) return false;
+        ++dot;
+    }
+    return dot == 24;
+}
 static std::size_t maleLineIndices, femaleLineIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
     indicesValid = true;
     skullIndexCount = 0;
     lineObjectsOnly = true;
+    maleDots = femaleDots = false;
     maleLineIndices = femaleLineIndices = 0;
     batchCount = scene.batches.size();
     capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
@@ -35,6 +65,8 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
     capturedCovered = scene.covered;
     for (const auto& batch : scene.batches) {
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
+        if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleDots = true;
+        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleDots = true;
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
@@ -142,9 +174,9 @@ int main() {
     const auto lineView = capturedView;
     const auto lineBatchCount = batchCount;
     pass = pass && room.lineView() && indicesValid && lineRevision != oldRevision &&
-           female.size() == 3 && male.size() == 3 && lineBatchCount < oldBatches && lineObjectsOnly &&
-           maleLineIndices <= 751 * 36 && femaleLineIndices <= 751 * 36 &&
-           maleLineIndices >= 542 * 36 && femaleLineIndices >= 542 * 36;
+           female.size() == 3 && male.size() == 3 && lineBatchCount < oldBatches && lineObjectsOnly && maleDots && femaleDots &&
+           maleLineIndices <= 703 * 36 + 24 * 60 && femaleLineIndices <= 703 * 36 + 24 * 60 &&
+           maleLineIndices >= 494 * 36 + 24 * 60 && femaleLineIndices >= 494 * 36 + 24 * 60;
     WindowEvent moreLook{WindowEvent::Type::MouseMove}; moreLook.dx = 25;
     freecam.handle(moreLook, true);
     room.render(frame, view, 4.90, &freecam);

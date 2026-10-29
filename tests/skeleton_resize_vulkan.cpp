@@ -11,6 +11,7 @@
 using namespace gtc::native;
 
 static bool bothVisible = true;
+static bool dotsVisible = false;
 
 static bool renderAndCheck(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
@@ -45,6 +46,41 @@ static bool renderAndCheck(const GpuScene& scene, NativeFrame& frame) {
             bothVisible = false;
         }
     }
+    return true;
+}
+
+// Compare actual Vulkan pixels with each body's 24 dot spheres removed.
+static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
+    if (!renderVulkanScene(scene, frame)) return false;
+    const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
+    const unsigned char* pixels = frame.direct ? frame.direct : frame.bgra.data();
+    const std::vector<unsigned char> withDots(pixels, pixels + bytes);
+    for (std::uint32_t id : {8001u, 9001u}) {
+        GpuScene noDots = scene;
+        noDots.revision += id + 20000;
+        bool removed = false;
+        for (auto& batch : noDots.batches) {
+            if (batch.objectId == id && batch.indices.size() == 494 * 36 + 24 * 60) {
+                batch.indices.resize(batch.indices.size() - 24 * 60);
+                removed = true;
+            }
+        }
+        if (!removed) return false;
+        NativeFrame plain;
+        plain.width = scene.width; plain.height = scene.height;
+        plain.wantPixels = true; plain.wantsBgra = true;
+        if (!renderVulkanScene(noDots, plain)) return false;
+        const unsigned char* other = plain.direct ? plain.direct : plain.bgra.data();
+        int changed = 0;
+        for (std::size_t at = 0; at < bytes; at += 4) {
+            int difference = 0;
+            for (int c = 0; c < 3; ++c) difference += std::abs(int(withDots[at+c]) - int(other[at+c]));
+            if (difference > 24) ++changed;
+        }
+        std::printf("Vulkan vertebra dots %u: %d visible pixels\n", id, changed);
+        if (changed < 5) return false;
+    }
+    dotsVisible = true;
     return true;
 }
 
@@ -128,6 +164,11 @@ int main() {
             room.render(frame, view, 2.5);
             ok = ok && bothVisible;
         }
+        view.width = 960; view.height = 720;
+        setGpuRenderer(&renderAndCheckDots);
+        room.render(frame, view, 2.5);
+        ok = ok && dotsVisible;
+        view.width = 640; view.height = 480;
         room.toggleLineView();
         setGpuRenderer(&renderVulkanScene);
         room.render(frame, view, 2.5);
