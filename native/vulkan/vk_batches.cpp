@@ -17,31 +17,18 @@ namespace gtc::native::detail {
 // draws the wrong triangle from this batch's own vertices, which looks like a
 // modelling fault rather than an offset one, so it is checked at upload.
 bool Renderer::fillIndices(const GpuScene& scene, VkDeviceSize bytes) {
+    const bool reallocate = !index_.buffer || bytes > index_.capacity;
     if (!reserveArray(index_, bytes)) return false;
-    const auto write = [&](char* cursor) {
-        std::uint32_t running = 0;
-        firstIndex_.assign(scene.batches.size(), 0);
-        indexCount_.assign(scene.batches.size(), 0);
-        for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
-            const GpuBatch& source = scene.batches[batch];
-            firstIndex_[batch] = running;
-            for (std::uint32_t value : source.indices) {
-                if (value >= source.vertices.size()) {
-                    std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
-                    return false;
-                }
-                const std::uint32_t global = value + firstVertex_[batch];
-                std::memcpy(cursor + static_cast<VkDeviceSize>(running) * sizeof(std::uint32_t), &global,
-                            sizeof(std::uint32_t));
-                ++running;
-            }
-            indexCount_[batch] = static_cast<std::uint32_t>(running - firstIndex_[batch]);
-        }
-        return true;
-    };
-    // uploadArray takes a writer that cannot fail, so the check above is run
-    // once over the scene before anything is written.
+    const std::size_t first = reallocate ? 0 : dirtyBatch_;
+    std::uint32_t running = 0, start = 0;
+    firstIndex_.assign(scene.batches.size(), 0);
+    indexCount_.assign(scene.batches.size(), 0);
     for (std::size_t batch = 0; batch < scene.batches.size(); ++batch) {
+        if (batch == first) start = running;
+        firstIndex_[batch] = running;
+        indexCount_[batch] = static_cast<std::uint32_t>(scene.batches[batch].indices.size());
+        running += indexCount_[batch];
+        if (batch < first) continue;
         for (std::uint32_t value : scene.batches[batch].indices) {
             if (value >= scene.batches[batch].vertices.size()) {
                 std::fprintf(stderr, "[vk] index %u is past the end of batch %zu\n", value, batch);
@@ -49,8 +36,19 @@ bool Renderer::fillIndices(const GpuScene& scene, VkDeviceSize bytes) {
             }
         }
     }
-    if (!uploadArray(index_, bytes, write)) return false;
-    return true;
+    if (first >= scene.batches.size()) start = running;
+    const VkDeviceSize offset = static_cast<VkDeviceSize>(start) * sizeof(std::uint32_t);
+    if (offset == bytes) return true;
+    const auto write = [&](char* cursor) {
+        std::uint32_t at = 0;
+        for (std::size_t batch = first; batch < scene.batches.size(); ++batch) {
+            for (std::uint32_t value : scene.batches[batch].indices) {
+                const std::uint32_t global = value + firstVertex_[batch];
+                std::memcpy(cursor + static_cast<VkDeviceSize>(at++) * sizeof(global), &global, sizeof(global));
+            }
+        }
+    };
+    return uploadArray(index_, bytes - offset, write, offset);
 }
 
 namespace {

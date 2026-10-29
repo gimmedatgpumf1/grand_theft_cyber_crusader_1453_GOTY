@@ -36,7 +36,7 @@ CLIENT_FLAGS=("${FLAGS[@]}" -pthread)
 CLIENT_SOURCES=(native/client/client.cpp native/client/raster.cpp native/client/hud.cpp
   native/client/human_renderer.cpp native/client/human_materials.cpp native/client/blockbody.cpp native/client/skeleton_body.cpp native/client/skeleton_room.cpp native/client/world_renderer.cpp native/client/fps_counter.cpp native/client/crosshair.cpp native/client/cheat_menu.cpp native/client/mode_bar.cpp native/client/overlay_panel.cpp native/client/interaction_wheel.cpp native/client/status_panel.cpp native/client/ui_layer.cpp native/client/target_prompt.cpp native/client/interactive.cpp
   native/client/opengl_shared.cpp native/client/diagnostics.cpp native/client/window_x11.cpp native/client/main.cpp native/client/benchmark.cpp native/client/smoke.cpp src/net/platform.cpp src/net/websocket.cpp src/net/sha1.cpp
-  native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp)
+  native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp)
 CLIENT_OBJECTS=()
 for SOURCE in "${CLIENT_SOURCES[@]}"; do
   OBJECT="$ROOT/build/obj/native-client/$(basename "${SOURCE%.cpp}").o"
@@ -54,7 +54,7 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
   "$ROOT/build/obj/native/hair.o" "$ROOT/build/obj/native/json.o"
   "$ROOT/build/obj/native-client/platform.o" "$ROOT/build/obj/native-client/websocket.o"
   "$ROOT/build/obj/native-client/sha1.o" "$ROOT/build/obj/native-client/diagnostics.o"
-  "$ROOT/build/obj/native-client/vk_device.o" "$ROOT/build/obj/native-client/vk_renderer.o" "$ROOT/build/obj/native-client/vk_batches.o" "$ROOT/build/obj/native-client/vk_targets.o" "$ROOT/build/obj/native-client/vk_swapchain.o")
+  "$ROOT/build/obj/native-client/vk_device.o" "$ROOT/build/obj/native-client/vk_renderer.o" "$ROOT/build/obj/native-client/vk_upload.o" "$ROOT/build/obj/native-client/vk_batches.o" "$ROOT/build/obj/native-client/vk_targets.o" "$ROOT/build/obj/native-client/vk_swapchain.o")
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/main.o" "$ROOT/build/obj/native-client/benchmark.o" "$ROOT/build/obj/native-client/interactive.o" \
   "$ROOT/build/obj/native-client/window_x11.o" "$ROOT/build/obj/native-client/opengl_shared.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-client"
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-smoke"

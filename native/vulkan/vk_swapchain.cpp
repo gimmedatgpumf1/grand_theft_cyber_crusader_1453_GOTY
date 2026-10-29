@@ -337,7 +337,7 @@ bool Renderer::acquirePresentImage(int slot, int& imageIndex) {
     if (index >= swapImageSlot_.size()) return false;
     const int owner = swapImageSlot_[index];
     if (owner >= 0 && owner < kFramesInFlight && fenceArmed_[owner]) {
-        waitForFences(device_, 1, &fences_[owner], VK_TRUE, 5000000000ull);
+        if (waitForFences(device_, 1, &fences_[owner], VK_TRUE, 5000000000ull) != VK_SUCCESS) return false;
         fenceArmed_[owner] = false;
         if (pendingSlot_ == owner) pendingSlot_ = -1;
     }

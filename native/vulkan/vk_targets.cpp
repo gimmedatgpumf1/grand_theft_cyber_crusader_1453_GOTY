@@ -196,12 +196,14 @@ bool Renderer::createTransferTable() {
     image.sampler = sampler_;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = frameSet_;
     write.dstBinding = 1;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &image;
-    updateDescriptorSets(device_, 1, &write, 0, nullptr);
+    for (VkDescriptorSet set : frameSets_) {
+        write.dstSet = set;
+        updateDescriptorSets(device_, 1, &write, 0, nullptr);
+    }
     return true;
 }
 

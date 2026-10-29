@@ -182,6 +182,10 @@ in the test suite with `GTC_VULKAN_UI_TEST=1 ./tests/run_tests.sh`.
 Interactive frames draw the UI on Vulkan; the font-coverage asset is generated offline from
 `native/assets/ui-sans.ttf` with `tools/bake-ui-atlas.cpp`. The runtime lays out text but does
 not rasterize glyphs on the CPU. F12 is an explicit screenshot readback, not the normal frame path.
+Vulkan keeps unchanged geometry batches resident and uploads the changed suffix; a growing buffer
+or changed world revision can require a full upload. Presentation uses per-frame uniform/command
+slots, but geometry buffers are shared and updates still wait for earlier GPU use. The offscreen
+check compares incremental and forced full uploads; it does not validate Windows presentation or FPS.
 
 ## Native C++ runtime and portrait fitter
 

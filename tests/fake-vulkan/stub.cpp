@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 
 // One block stands in for every allocation, so it has to be big enough for the
 // largest thing the renderer maps -- the vertex buffer of a full skeleton room.
@@ -53,6 +54,10 @@ static void stubMemory(VkPhysicalDevice, VkPhysicalDeviceMemoryProperties* memor
         memory->memoryTypes[index].propertyFlags =
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         memory->memoryTypes[index].heapIndex = 0;
+    }
+    if (std::getenv("GTC_FAKE_STAGED")) {
+        memory->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        memory->memoryTypes[1].propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     }
     memory->memoryHeapCount = 1;
     memory->memoryHeaps[0].size = sizeof(g_memory);
@@ -100,14 +105,46 @@ static VkResult stubAllocateCommandBuffers(VkDevice, const VkCommandBufferAlloca
 }
 static VkResult stubAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateInfo* info, VkDescriptorSet* sets) {
     for (std::uint32_t index = 0; index < info->descriptorSetCount; ++index) {
-        std::memcpy(&sets[index], &g_handle, sizeof(void*));
+        const std::uintptr_t unique = static_cast<std::uintptr_t>(++g_handle);
+        std::memcpy(&sets[index], &unique, sizeof(void*));
     }
     return VK_SUCCESS;
 }
 
 static VkResult createBufferStub(VkDevice, const VkBufferCreateInfo*, const VkAllocationCallbacks*, VkBuffer* out) {
-    std::memcpy(out, &g_handle, sizeof(void*)); return VK_SUCCESS;
+    const std::uintptr_t unique = static_cast<std::uintptr_t>(++g_handle);
+    std::memcpy(out, &unique, sizeof(void*)); return VK_SUCCESS;
 }
+static VkDescriptorSet g_frameSets[2]{};
+static VkBuffer g_frameBuffers[2]{};
+static int g_frameWrites = 0;
+static void updateDescriptorsStub(VkDevice, std::uint32_t count, const VkWriteDescriptorSet* writes,
+                                  std::uint32_t, const VkCopyDescriptorSet*) {
+    for (std::uint32_t i = 0; i < count; ++i) {
+        if (writes[i].dstBinding == 0 && writes[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
+            g_frameWrites < 2) {
+            g_frameSets[g_frameWrites] = writes[i].dstSet;
+            g_frameBuffers[g_frameWrites] = writes[i].pBufferInfo->buffer;
+            ++g_frameWrites;
+        }
+    }
+}
+extern "C" int stubDistinctFrameUniforms() {
+    return g_frameWrites == 2 && g_frameSets[0] != g_frameSets[1] && g_frameBuffers[0] != g_frameBuffers[1];
+}
+static int g_copyCount = 0;
+static VkDeviceSize g_lastCopyOffset = 0;
+static VkDeviceSize g_lastCopySize = 0;
+static void copyBufferStub(VkCommandBuffer, VkBuffer, VkBuffer, std::uint32_t count, const VkBufferCopy* regions) {
+    for (std::uint32_t i = 0; i < count; ++i) {
+        ++g_copyCount;
+        g_lastCopyOffset = regions[i].dstOffset;
+        g_lastCopySize = regions[i].size;
+    }
+}
+extern "C" int stubCopyCount() { return g_copyCount; }
+extern "C" std::uint64_t stubCopyOffset() { return g_lastCopyOffset; }
+extern "C" std::uint64_t stubCopySize() { return g_lastCopySize; }
 static VkResult createImageStub(VkDevice, const VkImageCreateInfo*, const VkAllocationCallbacks*, VkImage* out) {
     std::memcpy(out, &g_handle, sizeof(void*)); return VK_SUCCESS;
 }
@@ -225,10 +262,11 @@ static void* lookup(const char* name) {
     if (!std::strcmp(name, "vkCreateCommandPool")) return (void*)&createCommandPoolStub;
     if (!std::strcmp(name, "vkCreateFence")) return (void*)&createFenceStub;
     if (!std::strcmp(name, "vkCreateDevice")) return (void*)&createDeviceStub;
+    if (!std::strcmp(name, "vkCmdCopyBuffer")) return (void*)&copyBufferStub;
     if (!std::strcmp(name, "vkCmdBindPipeline")) return (void*)&bindPipelineStub;
     if (!std::strncmp(name, "vkCmd", 5)) return (void*)&nothing;
     if (!std::strncmp(name, "vkDestroy", 9)) return (void*)&nothing;
-    if (!std::strcmp(name, "vkUpdateDescriptorSets")) return (void*)&nothing;
+    if (!std::strcmp(name, "vkUpdateDescriptorSets")) return (void*)&updateDescriptorsStub;
     if (!std::strcmp(name, "vkFreeMemory")) return (void*)&nothing;
     if (!std::strcmp(name, "vkUnmapMemory")) return (void*)&nothing;
     return (void*)&ok;

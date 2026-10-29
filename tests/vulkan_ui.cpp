@@ -128,6 +128,8 @@ static bool checkGameUi(int width, int height) {
     return layer.quads().size() > 200 && ink > 3000 && missing < ink / 20 && outside < 150;
 }
 
+#include "vulkan_upload_check.h"
+
 int main() {
     if (!vulkanAvailable()) { std::puts("FAIL: no Vulkan device/ICD"); return 1; }
     const bool first = checkSize(320, 240, 24);
@@ -135,8 +137,9 @@ int main() {
     const bool third = checkSize(320, 240, 24);  // switch back to the first size
     const bool game = checkGameUi(640, 480);
     const bool game1080 = checkGameUi(1920, 1080);
+    const bool geometry = checkIncrementalGeometry();
     shutdownVulkan();
-    if (!first || !second || !third || !game || !game1080) { std::puts("Vulkan UI: FAIL"); return 1; }
+    if (!first || !second || !third || !game || !game1080 || !geometry) { std::puts("Vulkan UI: FAIL"); return 1; }
     std::puts("Vulkan UI: PASS (offscreen device-rendered pixels)");
     return 0;
 }

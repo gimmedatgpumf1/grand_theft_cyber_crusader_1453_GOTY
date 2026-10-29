@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace gtc::native {
 namespace {
@@ -32,6 +33,33 @@ int sectorOf(double angle) {
 
 // A run with nothing in it. Not -1: the cancel is -1 and it is a real answer.
 constexpr int kNoSector = -99;
+
+// Cache the exact horizontal runs of the original disc construction. The
+// pointer only changes their colour, not their geometry or ordering.
+struct WheelRun { int sector, x, y, width; };
+const std::vector<WheelRun>& wheelRuns(int radius, int cancelRadius) {
+    struct Cache { int radius = -1, cancelRadius = -1; std::vector<WheelRun> runs; };
+    static thread_local Cache cache;
+    if (cache.radius == radius && cache.cancelRadius == cancelRadius) return cache.runs;
+    cache.radius = radius;
+    cache.cancelRadius = cancelRadius;
+    cache.runs.clear();
+    for (int dy = -radius; dy <= radius; ++dy) {
+        const int half = static_cast<int>(std::sqrt(static_cast<double>(radius) * radius - dy * dy));
+        int runStart = -half, runSector = kNoSector;
+        for (int dx = -half; dx <= half; ++dx) {
+            const long distanceSquared = static_cast<long>(dx) * dx + static_cast<long>(dy) * dy;
+            const int sector = distanceSquared <= static_cast<long>(cancelRadius) * cancelRadius
+                ? kWheelCancel : sectorOf(degreesOf(dx, dy));
+            if (sector == runSector) continue;
+            if (runSector != kNoSector) cache.runs.push_back({runSector, runStart, dy, dx - runStart});
+            runStart = dx;
+            runSector = sector;
+        }
+        cache.runs.push_back({runSector, runStart, dy, half + 1 - runStart});
+    }
+    return cache.runs;
+}
 
 }  // namespace
 
@@ -93,21 +121,8 @@ void drawInteractionWheel(NativeFrame& frame, const InteractionWheelLayout& layo
             frame.blendRectangle(left, y, width, 1, shell, 0.26);
         }
     };
-    for (int dy = -radius; dy <= radius; ++dy) {
-        const int half = static_cast<int>(std::sqrt(static_cast<double>(radius) * radius - dy * dy));
-        int runStart = -half;
-        int runSector = kNoSector;
-        for (int dx = -half; dx <= half; ++dx) {
-            const long distanceSquared = static_cast<long>(dx) * dx + static_cast<long>(dy) * dy;
-            const int sector = distanceSquared <= static_cast<long>(layout.cancelRadius) * layout.cancelRadius
-                ? kWheelCancel
-                : sectorOf(degreesOf(dx, dy));
-            if (sector == runSector) continue;
-            if (runSector != kNoSector) paint(runSector, layout.centreX + runStart, layout.centreY + dy, dx - runStart);
-            runStart = dx;
-            runSector = sector;
-        }
-        paint(runSector, layout.centreX + runStart, layout.centreY + dy, half + 1 - runStart);
+    for (const WheelRun& run : wheelRuns(radius, layout.cancelRadius)) {
+        paint(run.sector, layout.centreX + run.x, layout.centreY + run.y, run.width);
     }
 
     // The rim, and the three cuts: the lines are what make it read as divided.

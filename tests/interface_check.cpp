@@ -910,6 +910,7 @@ void examineTargetPrompt(int width, int height, bool windowOrder) {
 
 
 #include "../tests/interface_geometry.h"
+#include "../tests/wheel_cache_check.h"
 #include "../tests/interface_atlas.h"
 
 int main() {
@@ -922,6 +923,7 @@ int main() {
     examineCrosshair(640, 480, true);
     examineCrosshair(1920, 1080, true);
 
+    examineWheelCache();
     examineInteractionWheel(640, 480, false);
     examineInteractionWheel(640, 480, true);
     examineInteractionWheel(1920, 1080, true);

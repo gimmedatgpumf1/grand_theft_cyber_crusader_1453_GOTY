@@ -50,14 +50,15 @@ mkdir -p build/vulkan-stub
 "${COMMAND[@]}" -std=c++17 -O2 -shared -fPIC -Inative/vendor/vulkan/include \
   tests/fake-vulkan/stub.cpp -o build/vulkan-stub/libvulkan.so.1
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
-  tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+  tests/vulkan_plumbing.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
   native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
   -o build/bin/gtc-vulkan-plumbing
 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulkan-plumbing
+GTC_FAKE_STAGED=1 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulkan-plumbing
 # A real Vulkan ICD is optional here. This test submits the UI shaders and
 # checks the pixels; the stub test above cannot establish rendering correctness.
 "${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative \
-  tests/vulkan_ui.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+  tests/vulkan_ui.cpp native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
   native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
   native/client/crosshair.cpp native/client/cheat_menu.cpp native/client/mode_bar.cpp native/client/fps_counter.cpp native/client/status_panel.cpp native/client/target_prompt.cpp \
   -ldl -o build/bin/gtc-vulkan-ui-check

@@ -343,9 +343,11 @@ bool Renderer::createLayouts() {
 
     setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setInfo.descriptorPool = descriptorPool_;
-    setInfo.descriptorSetCount = 1;
-    setInfo.pSetLayouts = &frameLayout_;
-    return allocateDescriptorSets(device_, &setInfo, &frameSet_) == VK_SUCCESS;
+    VkDescriptorSetLayout layouts[kFramesInFlight];
+    for (auto& layout : layouts) layout = frameLayout_;
+    setInfo.descriptorSetCount = kFramesInFlight;
+    setInfo.pSetLayouts = layouts;
+    return allocateDescriptorSets(device_, &setInfo, frameSets_) == VK_SUCCESS;
 }
 
 bool Renderer::createPipeline() {
@@ -612,58 +614,46 @@ bool Renderer::createSampler() {
 }
 
 bool Renderer::createFrameResources() {
-    VkBufferCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    // The frame block, then the bone matrices: one buffer, two bindings, both
-    // written from the host every frame.
-    info.size = kSlotOffset + kSlotBlock;
-    info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (createBuffer(device_, &info, nullptr, &frameBuffer_) != VK_SUCCESS) return false;
-    VkMemoryRequirements requirements{};
-    getBufferMemoryRequirements(device_, frameBuffer_, &requirements);
-    VkPhysicalDeviceMemoryProperties memory{};
-    getPhysicalDeviceMemoryProperties(physical_, &memory);
-    std::uint32_t type = 0;
-    const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    bool found = false;
-    for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-        if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
-        if ((memory.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
-        type = index;
-        found = true;
-        break;
+    for (int slot = 0; slot < kFramesInFlight; ++slot) {
+        VkBufferCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        info.size = kSlotOffset + kSlotBlock;
+        info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (createBuffer(device_, &info, nullptr, &frameBuffers_[slot]) != VK_SUCCESS) return false;
+        VkMemoryRequirements requirements{};
+        getBufferMemoryRequirements(device_, frameBuffers_[slot], &requirements);
+        VkPhysicalDeviceMemoryProperties memory{};
+        getPhysicalDeviceMemoryProperties(physical_, &memory);
+        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        std::uint32_t type = memory.memoryTypeCount;
+        for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
+            if ((requirements.memoryTypeBits & (1u << index)) &&
+                (memory.memoryTypes[index].propertyFlags & wanted) == wanted) { type = index; break; }
+        }
+        if (type == memory.memoryTypeCount) return false;
+        VkMemoryAllocateInfo allocation{};
+        allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocation.allocationSize = requirements.size;
+        allocation.memoryTypeIndex = type;
+        if (allocateMemory(device_, &allocation, nullptr, &frameMemories_[slot]) != VK_SUCCESS) return false;
+        if (bindBufferMemory(device_, frameBuffers_[slot], frameMemories_[slot], 0) != VK_SUCCESS) return false;
+        if (mapMemory(device_, frameMemories_[slot], 0, VK_WHOLE_SIZE, 0,
+                      reinterpret_cast<void**>(&frameMaps_[slot])) != VK_SUCCESS) return false;
+        VkDescriptorBufferInfo buffer{frameBuffers_[slot], 0, sizeof(FrameUniform)};
+        VkDescriptorBufferInfo bones{frameBuffers_[slot], kSlotOffset, kSlotBlock};
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = frameSets_[slot];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &buffer;
+        writes[1] = writes[0];
+        writes[1].dstBinding = 2;
+        writes[1].pBufferInfo = &bones;
+        updateDescriptorSets(device_, 2, writes, 0, nullptr);
     }
-    if (!found) return false;
-    VkMemoryAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocation.allocationSize = requirements.size;
-    allocation.memoryTypeIndex = type;
-    if (allocateMemory(device_, &allocation, nullptr, &frameMemory_) != VK_SUCCESS) return false;
-    if (bindBufferMemory(device_, frameBuffer_, frameMemory_, 0) != VK_SUCCESS) return false;
-    if (mapMemory(device_, frameMemory_, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void**>(&frameMap_)) != VK_SUCCESS) {
-        return false;
-    }
-    boneMap_ = reinterpret_cast<float*>(reinterpret_cast<char*>(frameMap_) + kSlotOffset);
-    VkDescriptorBufferInfo buffer{};
-    buffer.buffer = frameBuffer_;
-    buffer.offset = 0;
-    buffer.range = sizeof(FrameUniform);
-    VkDescriptorBufferInfo bones{};
-    bones.buffer = frameBuffer_;
-    bones.offset = kSlotOffset;
-    bones.range = kSlotBlock;
-    VkWriteDescriptorSet writes[2]{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = frameSet_;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].pBufferInfo = &buffer;
-    writes[1] = writes[0];
-    writes[1].dstBinding = 2;
-    writes[1].pBufferInfo = &bones;
-    updateDescriptorSets(device_, 2, writes, 0, nullptr);
     return true;
 }
 
@@ -788,7 +778,7 @@ void Renderer::stop() {
     destroySwapchain();
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
-        for (DeviceArray* array : {&vertex_, &uv_}) {
+        for (DeviceArray* array : {&vertex_, &uv_, &index_}) {
             if (array->buffer) destroyBuffer(device_, array->buffer, nullptr);
             if (array->memory) freeMemory(device_, array->memory, nullptr);
             *array = DeviceArray{};
@@ -805,6 +795,10 @@ void Renderer::stop() {
             if (entry.second.memory) freeMemory(device_, entry.second.memory, nullptr);
         }
         textures_.clear();
+        if (white_.view) destroyImageView(device_, white_.view, nullptr);
+        if (white_.image) destroyImage(device_, white_.image, nullptr);
+        if (white_.memory) freeMemory(device_, white_.memory, nullptr);
+        white_ = TextureSlot{};
         if (interfaceAtlas_.view) destroyImageView(device_, interfaceAtlas_.view, nullptr);
         if (interfaceAtlas_.image) destroyImage(device_, interfaceAtlas_.image, nullptr);
         if (interfaceAtlas_.memory) freeMemory(device_, interfaceAtlas_.memory, nullptr);
@@ -815,11 +809,15 @@ void Renderer::stop() {
         if (transfer_.memory) freeMemory(device_, transfer_.memory, nullptr);
         transfer_ = TextureSlot{};
         destroyTargets();
-        if (frameBuffer_) destroyBuffer(device_, frameBuffer_, nullptr);
-        if (frameMemory_) freeMemory(device_, frameMemory_, nullptr);
-        frameBuffer_ = VK_NULL_HANDLE;
-        frameMemory_ = VK_NULL_HANDLE;
+        for (int slot = 0; slot < kFramesInFlight; ++slot) {
+            if (frameBuffers_[slot]) destroyBuffer(device_, frameBuffers_[slot], nullptr);
+            if (frameMemories_[slot]) freeMemory(device_, frameMemories_[slot], nullptr);
+            frameBuffers_[slot] = VK_NULL_HANDLE;
+            frameMemories_[slot] = VK_NULL_HANDLE;
+            frameMaps_[slot] = nullptr;
+        }
         frameMap_ = nullptr;
+        boneMap_ = nullptr;
         if (pipeline_) destroyPipeline(device_, pipeline_, nullptr);
         if (pipelineCovered_) destroyPipeline(device_, pipelineCovered_, nullptr);
         if (pipelineUv_) destroyPipeline(device_, pipelineUv_, nullptr);
@@ -877,6 +875,10 @@ void Renderer::stop() {
     library_ = nullptr;
     getInstanceProcAddr_ = nullptr;
     ready_ = false;
+    geometryStamps_.clear();
+    geometryScene_ = nullptr;
+    uploadedValid_ = false;
+    frames_ = 0;
 }
 
 } // namespace detail

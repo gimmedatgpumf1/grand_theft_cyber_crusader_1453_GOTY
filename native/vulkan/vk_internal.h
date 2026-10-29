@@ -61,7 +61,6 @@ struct DeviceArray {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     void* map = nullptr;
     VkDeviceSize capacity = 0;
-    bool staged = false;
 };
 
 struct PushConstants {
@@ -326,6 +325,8 @@ public:
     void setSurfaceTarget(void* handle, int kind) { wsiHandle_ = handle; wsiKind_ = kind; }
     // True when this frame was handed to the compositor instead of to the host.
     bool presenting() const { return presentWanted_ && swapReady_; }
+    // Diagnostic: unchanged prefix; reallocation can still require a full copy.
+    std::size_t stableGeometryBatches() const { return dirtyBatch_; }
 
 private:
     bool openLoader();
@@ -348,6 +349,7 @@ private:
     // of an image that never does.
     bool ensureInterfaceAtlas();
     bool createTransferTable();
+    bool updateGeometry(const GpuScene& scene);
     bool uploadVertices(const GpuScene& scene);
     bool reserveArray(DeviceArray& array, VkDeviceSize bytes);
     bool fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes);
@@ -358,7 +360,7 @@ private:
     // here draws: the run list is what the draw loop walks.
     void findRuns(const GpuScene& scene);
     void fillBones(const GpuScene& scene);
-    bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write);
+    bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write, VkDeviceSize offset = 0);
     void destroyTargets();
     // -- swapchain ---------------------------------------------------------
     bool createSwapchain(int width, int height);
@@ -536,7 +538,8 @@ private:
     VkDescriptorSetLayout frameLayout_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout textureLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet frameSet_ = VK_NULL_HANDLE;
+    VkDescriptorSet frameSet_ = VK_NULL_HANDLE; // active slot
+    VkDescriptorSet frameSets_[kFramesInFlight]{};
     VkSampler sampler_ = VK_NULL_HANDLE;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
@@ -561,9 +564,10 @@ private:
     std::uint64_t interfaceAtlasRevision_ = 0;
     bool interfaceAtlasReady_ = false;
 
-    VkBuffer frameBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory frameMemory_ = VK_NULL_HANDLE;
-    FrameUniform* frameMap_ = nullptr;
+    VkBuffer frameBuffers_[kFramesInFlight]{};
+    VkDeviceMemory frameMemories_[kFramesInFlight]{};
+    FrameUniform* frameMaps_[kFramesInFlight]{};
+    FrameUniform* frameMap_ = nullptr; // active slot
 
     DeviceArray vertex_;
     DeviceArray uv_;
@@ -575,9 +579,19 @@ private:
     VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
     void* stagingMap_ = nullptr;
     VkDeviceSize stagingCapacity_ = 0;
-    std::uint64_t uploadedRevision_ = 0;
-    std::uint64_t uploadedSignature_ = 0;
-    std::size_t uploadedVertices_ = 0;
+    struct GeometryStamp {
+        std::uint64_t revision, sceneRevision;
+        std::size_t vertices, indices;
+        float slot;
+        bool textured;
+        bool operator==(const GeometryStamp& other) const {
+            return revision == other.revision && sceneRevision == other.sceneRevision &&
+                vertices == other.vertices && indices == other.indices && slot == other.slot && textured == other.textured;
+        }
+    };
+    std::vector<GeometryStamp> geometryStamps_;
+    const GpuScene* geometryScene_ = nullptr;
+    std::size_t dirtyBatch_ = 0;
     bool uploadedValid_ = false;
 
     Target target_;

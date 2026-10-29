@@ -1,7 +1,6 @@
-// The frame loop for the Vulkan backend: targets, textures, vertex upload, one
-// recorded pass, one readback. Kept intentional and synchronous -- the frame is
-// finished before this function returns, because the result is a NativeFrame
-// the rest of the client expects to own.
+// The frame loop for the Vulkan backend. Presented frames use two safe uniform
+// and command slots; explicit screenshots wait for their readback. Geometry is
+// shared and updates wait for its previous GPU users before writing it.
 
 #include "../client/diagnostics.h"
 #include "../client/threadpool.h"
@@ -120,10 +119,16 @@ bool Renderer::createRenderPass() {
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    // The offscreen attachments are shared by submissions. A previous frame's
+    // blit/readback and depth writes must finish before they are reused.
+    dependency.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo info{};
 
@@ -158,232 +163,6 @@ void Renderer::destroyTargets() {
 // Makes sure one device-side array can hold `bytes`, growing it when it cannot.
 // The memory type is chosen on the way: device-local, and host-visible too when
 // the device offers such a type, which is the case everywhere this has run.
-bool Renderer::reserveArray(DeviceArray& array, VkDeviceSize bytes) {
-    if (!memoryQueried_) {
-        getPhysicalDeviceMemoryProperties(physical_, &memory_);
-        memoryQueried_ = true;
-    }
-    const VkPhysicalDeviceMemoryProperties& memory = memory_;
-    const auto pickType = [&](const VkMemoryRequirements& requirements, VkMemoryPropertyFlags wanted) {
-        for (std::uint32_t index = 0; index < memory.memoryTypeCount; ++index) {
-            if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
-            if ((memory.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
-            return index;
-        }
-        return memory.memoryTypeCount;
-    };
-    if (array.buffer != VK_NULL_HANDLE && bytes <= array.capacity) return true;
-    if (array.buffer) destroyBuffer(device_, array.buffer, nullptr);
-    if (array.memory) freeMemory(device_, array.memory, nullptr);
-    array = DeviceArray{};
-    VkBufferCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = bytes;
-    // Transfer destination so a device-local buffer can be filled through the
-    // staging buffer where there is no memory type that is both.
-    info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                 VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (createBuffer(device_, &info, nullptr, &array.buffer) != VK_SUCCESS) return false;
-    VkMemoryRequirements requirements{};
-    getBufferMemoryRequirements(device_, array.buffer, &requirements);
-    // Host-visible memory that is *not* device local is often write-combined
-    // system memory, where the GPU's read of a few megabytes drags -- which is
-    // exactly what made a single skull cost milliseconds.
-    const VkMemoryPropertyFlags ideal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    std::uint32_t type = pickType(requirements, ideal);
-    VkMemoryAllocateInfo allocation{};
-    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocation.allocationSize = requirements.size;
-    if (type != memory.memoryTypeCount) {
-        allocation.memoryTypeIndex = type;
-        if (allocateMemory(device_, &allocation, nullptr, &array.memory) != VK_SUCCESS) return false;
-        if (bindBufferMemory(device_, array.buffer, array.memory, 0) != VK_SUCCESS) return false;
-        if (mapMemory(device_, array.memory, 0, VK_WHOLE_SIZE, 0, &array.map) != VK_SUCCESS) return false;
-    } else {
-        type = pickType(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (type == memory.memoryTypeCount) type = pickType(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-        if (type == memory.memoryTypeCount) return false;
-        allocation.memoryTypeIndex = type;
-        if (allocateMemory(device_, &allocation, nullptr, &array.memory) != VK_SUCCESS) return false;
-        if (bindBufferMemory(device_, array.buffer, array.memory, 0) != VK_SUCCESS) return false;
-        array.staged = true;
-    }
-    array.capacity = bytes;
-    return true;
-}
-
-// Fills an array from the scene: either every vertex's position and normal, or
-// the texture coordinates of the batches that have a texture to sample.
-bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, VkDeviceSize bytes) {
-    if (!reserveArray(array, bytes)) return false;
-    const auto write = [&](char* cursor) {
-        std::uint32_t running = 0;
-        // One array per call: the offsets of the array being written are the only
-        // ones this pass may touch, or the second pass would blank the first.
-        std::vector<std::uint32_t>& offsets = uvs ? firstUv_ : firstVertex_;
-        offsets.assign(scene.batches.size(), 0);
-        for (std::size_t index = 0; index < scene.batches.size(); ++index) {
-            const GpuBatch& batch = scene.batches[index];
-            const std::vector<GpuVertex>& vertices = batch.vertices;
-            // Only the batches that sample an image have a coordinate, so only
-            // they take up room in the coordinate array -- and only they move the
-            // offset on.
-            const bool keep = !uvs || texturedMaterial(batch.material);
-            if (!keep) continue;
-            offsets[index] = running;
-            for (std::size_t vertex = 0; vertex < vertices.size(); ++vertex) {
-                if (uvs) {
-                    UvVertex coordinate{vertices[vertex].u, vertices[vertex].v};
-                    std::memcpy(cursor + static_cast<VkDeviceSize>(running + vertex) * sizeof(UvVertex),
-                                &coordinate, sizeof(UvVertex));
-                } else {
-                    PackedVertex packed;
-                    packed.x = vertices[vertex].x;
-                    packed.y = vertices[vertex].y;
-                    packed.z = vertices[vertex].z;
-                    // A batch that goes into a run trades its normal for the slot
-                    // its matrix sits at: an indexed batch has no vertex normal,
-                    // and the slot has to reach the vertex stage somehow.
-                    const float slot = index < slots_.size() ? slots_[index] : -1.0F;
-                    packed.nx = slot >= 0.0F ? slot : vertices[vertex].nx;
-                    packed.ny = vertices[vertex].ny;
-                    packed.nz = vertices[vertex].nz;
-                    std::memcpy(cursor + static_cast<VkDeviceSize>(running + vertex) * sizeof(PackedVertex),
-                                &packed, sizeof(PackedVertex));
-                }
-            }
-            running += static_cast<std::uint32_t>(vertices.size());
-        }
-        if (!uvs) uploadedVertices_ = running;
-    };
-    return uploadArray(array, bytes, write);
-}
-
-// Where an array actually lands: straight into the mapping when the memory is
-// both device local and visible, otherwise through the reusable staging buffer.
-// Shared by the vertices, the coordinates and the indices, because the three
-// want the same thing.
-bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write) {
-    if (array.map) {
-        write(static_cast<char*>(array.map));
-        return true;
-    }
-    // Staged path: one host-visible buffer, reused, then copied on the device.
-    if (bytes > stagingCapacity_) {
-        if (stagingBuffer_) destroyBuffer(device_, stagingBuffer_, nullptr);
-        if (stagingMemory_) freeMemory(device_, stagingMemory_, nullptr);
-        stagingBuffer_ = VK_NULL_HANDLE;
-        stagingMemory_ = VK_NULL_HANDLE;
-        stagingMap_ = nullptr;
-        stagingCapacity_ = 0;
-        VkBufferCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        info.size = bytes;
-        info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        if (createBuffer(device_, &info, nullptr, &stagingBuffer_) != VK_SUCCESS) return false;
-        VkMemoryRequirements requirements{};
-        getBufferMemoryRequirements(device_, stagingBuffer_, &requirements);
-        if (!memoryQueried_) {
-            getPhysicalDeviceMemoryProperties(physical_, &memory_);
-            memoryQueried_ = true;
-        }
-        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        std::uint32_t type = memory_.memoryTypeCount;
-        for (std::uint32_t index = 0; index < memory_.memoryTypeCount; ++index) {
-            if ((requirements.memoryTypeBits & (1u << index)) == 0) continue;
-            if ((memory_.memoryTypes[index].propertyFlags & wanted) != wanted) continue;
-            type = index;
-            break;
-        }
-        if (type == memory_.memoryTypeCount) return false;
-        VkMemoryAllocateInfo allocation{};
-        allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocation.allocationSize = requirements.size;
-        allocation.memoryTypeIndex = type;
-        if (allocateMemory(device_, &allocation, nullptr, &stagingMemory_) != VK_SUCCESS) return false;
-        if (bindBufferMemory(device_, stagingBuffer_, stagingMemory_, 0) != VK_SUCCESS) return false;
-        if (mapMemory(device_, stagingMemory_, 0, VK_WHOLE_SIZE, 0, &stagingMap_) != VK_SUCCESS) return false;
-        stagingCapacity_ = bytes;
-    }
-    write(static_cast<char*>(stagingMap_));
-    return submitNow([&](VkCommandBuffer buffer) {
-        VkBufferCopy region{};
-        region.srcOffset = 0;
-        region.dstOffset = 0;
-        region.size = bytes;
-        copyBufferFn(buffer, stagingBuffer_, array.buffer, 1, &region);
-    });
-}
-
-bool Renderer::uploadVertices(const GpuScene& scene) {
-    std::size_t total = 0, coordinates = 0;
-    for (const GpuBatch& batch : scene.batches) {
-        total += batch.vertices.size();
-        if (texturedMaterial(batch.material)) coordinates += batch.vertices.size();
-    }
-    if (total == 0) {
-        firstVertex_.assign(scene.batches.size(), 0);
-        firstUv_.assign(scene.batches.size(), 0);
-        runs_.clear();
-        slots_.clear();
-        return true;
-    }
-    // Which batches share a draw, before the upload: a batch in a run writes its
-    // slot where its normal would have gone.
-    findRuns(scene);
-    if (!fillArray(vertex_, scene, false, static_cast<VkDeviceSize>(total) * sizeof(PackedVertex))) return false;
-    // A batch with no texture samples nothing, so it is never bound to this
-    // array and never has a coordinate fetched for it.
-    if (coordinates > 0 &&
-        !fillArray(uv_, scene, true, static_cast<VkDeviceSize>(coordinates) * sizeof(UvVertex))) {
-        return false;
-    }
-    // The draw loop indexes both arrays by these offsets. A wrong one samples
-    // another batch's pixels, which would look like a texture bug rather than an
-    // offset bug, so they are checked once per upload instead of diagnosed later.
-    std::size_t positions = 0, coordinatesUsed = 0;
-    for (std::size_t index = 0; index < scene.batches.size(); ++index) {
-        const GpuBatch& batch = scene.batches[index];
-        if (firstVertex_[index] != positions) {
-            std::fprintf(stderr, "[vk] vertex offset %u is not where batch %zu starts\n", firstVertex_[index],
-                         index);
-            return false;
-        }
-        positions += batch.vertices.size();
-        if (!texturedMaterial(batch.material)) continue;
-        if (firstUv_[index] != coordinatesUsed) {
-            std::fprintf(stderr, "[vk] texture coordinate offset %u is not where batch %zu starts\n",
-                         firstUv_[index], index);
-            return false;
-        }
-        coordinatesUsed += batch.vertices.size();
-    }
-    // Indices, if any batch is indexed. They are written after the vertex
-    // offsets above, because every index is shifted by one.
-    std::size_t indices = 0;
-    for (const GpuBatch& batch : scene.batches) indices += batch.indices.size();
-    if (indices > 0) {
-        if (!fillIndices(scene, static_cast<VkDeviceSize>(indices) * sizeof(std::uint32_t))) return false;
-    } else {
-        firstIndex_.assign(scene.batches.size(), 0);
-        indexCount_.assign(scene.batches.size(), 0);
-    }
-    // A run's indices are contiguous in the shared array, because they are
-    // written batch by batch in order.
-    for (BatchRun& run : runs_) {
-        run.indices = firstIndex_[run.last] + indexCount_[run.last] - firstIndex_[run.first];
-    }
-    if (positions != total || coordinatesUsed != coordinates) {
-        std::fprintf(stderr, "[vk] upload counted %zu of %zu vertices, %zu of %zu coordinates\n", positions, total,
-                     coordinatesUsed, coordinates);
-        return false;
-    }
-    return true;
-}
-
 bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (!ready_) return false;
     // The first frames are written down step by step: if the process dies in a
@@ -402,6 +181,15 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     const bool covered = scene.covered && renderPassCovered_ != VK_NULL_HANDLE &&
         pipelineCovered_ != VK_NULL_HANDLE;
     const int slot = static_cast<int>(frames_ % kFramesInFlight);
+    // Reuse neither its command buffer, acquire semaphore nor mapped uniforms
+    // until this particular submission has finished.
+    if (fenceArmed_[slot]) {
+        if (waitForFences(device_, 1, &fences_[slot], VK_TRUE, 5000000000ull) != VK_SUCCESS) return false;
+        fenceArmed_[slot] = false;
+    }
+    frameSet_ = frameSets_[slot];
+    frameMap_ = frameMaps_[slot];
+    boneMap_ = reinterpret_cast<float*>(reinterpret_cast<char*>(frameMap_) + kSlotOffset);
     // A frame that is going to the window is rendered at the size of the
     // swapchain image, so the handover is one to one. A resize may require one retry.
     int presentTarget = -1;
@@ -435,30 +223,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         if (!createTexture(white, white_)) { tracef("vk: frame %d white texture failed", frames_); return false; }
     }
 
-    // Geometry only needs to travel when it actually changed: the world is
-    // static between rebuilds, and the per-batch matrices ride in the push
-    // constant block.
-    std::uint64_t signature = 1469598103934665603ull;
-    std::size_t totalVertices = 0;
-    for (const GpuBatch& batch : scene.batches) {
-        signature = (signature ^ batch.revision) * 1099511628211ull;
-        signature = (signature ^ batch.vertices.size()) * 1099511628211ull;
-        // The indices are geometry too: a batch that keeps its vertices and
-        // changes its triangles -- a bone whose skinning changed -- has to
-        // travel again, or the GPU keeps drawing the old faces.
-        signature = (signature ^ batch.indices.size()) * 1099511628211ull;
-        totalVertices += batch.vertices.size();
-    }
-    if (!uploadedValid_ || signature != uploadedSignature_) {
-        if (pendingSlot_ >= 0 && waitForFences(device_, 1, &fences_[pendingSlot_], VK_TRUE, 5000000000ull) != VK_SUCCESS) return false;
-        if (traced) tracef("vk: frame %d upload %zu batches", frames_, scene.batches.size());
-        if (!uploadVertices(scene)) { tracef("vk: frame %d upload failed", frames_); return false; }
-        uploadedSignature_ = signature;
-        uploadedValid_ = true;
-    } else if (totalVertices == 0) {
-        firstVertex_.assign(scene.batches.size(), 0);
-        firstUv_.assign(scene.batches.size(), 0);
-    }
+    // Keep the stable prefix resident even when water or the interface changes.
+    if (!updateGeometry(scene)) return false;
     // The offsets are indexed by batch below, so they are made to fit the batch
     // list that is actually being recorded rather than the one that was
     // uploaded.
@@ -520,10 +286,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) { tracef("vk: frame %d begin failed", frames_); return false; }
 
     // The vertex and uniform buffers were written from the host this frame.
-    // Host writes are made available to the device by the submission itself, so
-    // there is deliberately no barrier here: HOST is not a pipeline stage, and
-    // passing it to vkCmdPipelineBarrier is invalid usage -- one that a lenient
-    // driver ignores and a strict one does not.
+    // Host writes to coherent memory are made available by queue submission;
+    // slot fences prevent overwriting uniforms still being read by the GPU.
     //
     // The only device-side dependency is the readback buffer: last frame's
     // transfer wrote it, this frame's transfer writes it again.
@@ -734,15 +498,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     }
     if (presentTarget >= 0) presentImage(presentTarget);
 
-    // Collect the frame that was submitted before this one. Waiting for *this*
-    // frame would leave the device idle while the host copies the picture out;
-    // waiting for the previous one lets the two overlap, which is the whole
-    // point of keeping more than one in flight.
-    int collect = frame.wantPixels ? slot : (pendingSlot_ >= 0 ? pendingSlot_ : slot);
-    // On a presented frame there is nothing to collect and nothing to read, so
-    // the very first one does not wait for itself: that is host time spent
-    // watching the GPU it does not need to spend.
-    if (presentTarget >= 0 && pendingSlot_ < 0) collect = -1;
+    // A present needs no host collection. Readback retains the previous-frame
+    // behavior unless a screenshot explicitly asks for the current frame.
+    int collect = presentTarget >= 0 ? -1 : (frame.wantPixels ? slot : (pendingSlot_ >= 0 ? pendingSlot_ : slot));
     if (collect >= 0 && waitForFences(device_, 1, &fences_[collect], VK_TRUE, 5000000000ull) != VK_SUCCESS) {
         tracef("vk: frame %d wait failed", frames_);
         return false;

@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <vector>
 
@@ -53,6 +54,27 @@ int main() {
         std::printf("first frame did not arrive\n");
         ++failures;
     }
+    if (std::getenv("GTC_FAKE_STAGED")) {
+        void* driver = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+        using Count = int (*)();
+        using Value = std::uint64_t (*)();
+        auto count = reinterpret_cast<Count>(dlsym(driver, "stubCopyCount"));
+        auto offset = reinterpret_cast<Value>(dlsym(driver, "stubCopyOffset"));
+        auto size = reinterpret_cast<Value>(dlsym(driver, "stubCopySize"));
+        auto moving = makeBatch(); moving.revision = 9;
+        scene.batches.push_back(moving);
+        if (!gtc::native::renderVulkanScene(scene, frame)) ++failures;
+        const int before = count();
+        scene.batches[1].revision++;
+        scene.batches[1].vertices[0].x += 0.1f;
+        if (!gtc::native::renderVulkanScene(scene, frame) || count() != before + 1 ||
+            offset() != 3 * sizeof(gtc::native::detail::PackedVertex) ||
+            size() != 3 * sizeof(gtc::native::detail::PackedVertex)) {
+            std::puts("staged dynamic upload did not preserve the static prefix"); ++failures;
+        } else std::puts("staged geometry: PASS (only changed suffix copied)");
+        scene.batches.pop_back();
+        dlclose(driver);
+    }
     // The test double records pipeline state and binds, not pixels. This checks
     // that UI batches select blending with no depth test; vulkan_ui.cpp checks
     // actual pixels separately, against a real Vulkan implementation.
@@ -60,6 +82,8 @@ int main() {
         void* driver = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
         using Query = int (*)(int);
         using Count = int (*)();
+        auto frameSlots = driver ? reinterpret_cast<Count>(dlsym(driver, "stubDistinctFrameUniforms")) : nullptr;
+        if (!frameSlots || !frameSlots()) { std::puts("frame slots share a uniform buffer or descriptor"); ++failures; }
         auto count = driver ? reinterpret_cast<Count>(dlsym(driver, "stubPipelineCount")) : nullptr;
         auto blend = driver ? reinterpret_cast<Query>(dlsym(driver, "stubPipelineBlended")) : nullptr;
         auto depth = driver ? reinterpret_cast<Query>(dlsym(driver, "stubPipelineDepthTest")) : nullptr;
