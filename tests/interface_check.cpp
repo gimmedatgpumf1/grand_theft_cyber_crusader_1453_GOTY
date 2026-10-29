@@ -20,6 +20,7 @@
 #include "client/cheat_menu.h"
 #include "client/interface_style.h"
 #include "client/mode_bar.h"
+#include "client/overlay_panel.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 
@@ -425,6 +426,88 @@ void examineModeBar(int width, int height, bool windowOrder) {
                 layout.height, layout.left, layout.top, layout.textHeight, bottomMargin);
 }
 
+// The bug this exists for: a panel that stops the game and draws nothing. Pressing
+// E or H used to put the client into a mode that swallowed every click and every
+// movement key while the screen showed nothing at all. So: every overlay has to
+// put ink on the screen, an open overlay has to be where clicks are aimed, and a
+// click on a row has to name that row and no other.
+void examineOverlayPanels(int width, int height, bool windowOrder) {
+    const std::string where = std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+    const auto panel = bytes(gtc::native::colorHex("#05090b"));
+
+    struct Case {
+        const char* name;
+        gtc::native::OverlayPanelLayout (*layout)(int, int);
+        void (*draw)(gtc::native::NativeFrame&);
+    };
+    const Case cases[] = {
+        {"toilet", &gtc::native::toiletChoiceLayout, &gtc::native::drawToiletChoice},
+        {"manual", &gtc::native::manualLayout, &gtc::native::drawManual},
+    };
+    for (const Case& testCase : cases) {
+        Picture picture(width, height, windowOrder);
+        testCase.draw(picture.frame);
+        const auto layout = testCase.layout(width, height);
+        const std::string name = where + " " + testCase.name;
+
+        check(layout.width > 0 && layout.height > 0, name + ": the panel has a size");
+        check(layout.left >= 0 && layout.top >= 0 && layout.left + layout.width <= width &&
+                  layout.top + layout.height <= height,
+              name + ": the panel fits inside the frame");
+        check(std::abs(layout.left - (width - layout.left - layout.width)) <= 1, name + ": centred horizontally");
+        check(std::abs(layout.top - (height - layout.top - layout.height)) <= 1, name + ": centred vertically");
+
+        // Half transparent, and not the raw panel colour: the world stays visible
+        // through it, which is what stops a panel looking like a hole.
+        const auto expected = blendOver(panel, picture.ground, gtc::native::kMenuPanelOpacity);
+        const auto inside = picture.at(layout.left + 1, layout.top + layout.height - 2);
+        check(worstChannel(inside, expected) <= 1, name + ": half transparent");
+        check(inside != panel, name + ": not opaque");
+
+        // Ink: the title, the rows and the footer are all drawn.
+        const auto title = survey(picture, layout.left, layout.titleTop, layout.width, layout.titleHeight, expected);
+        check(title.lit > 20, name + ": the title is drawn");
+        const auto rows = survey(picture, layout.left, layout.clickableTop, layout.width, layout.clickableHeight,
+                                 expected);
+        check(rows.lit > 60, name + ": the rows are drawn (" + std::to_string(rows.lit) + " pixels)");
+        check(rows.levels > 8, name + ": the text is antialiased");
+    }
+
+    // Every point of a row's band names that row, every row is reachable, and
+    // nothing outside the rows is a choice.
+    int seen[3] = {0, 0, 0};
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; x += 2) {
+            const int row = gtc::native::toiletChoiceRowAt(width, height, x, y);
+            if (row < 0) continue;
+            check(row >= 0 && row < 3, where + ": a click names one of the three choices");
+            if (row >= 0 && row < 3) ++seen[row];
+        }
+    }
+    for (int row = 0; row < 3; ++row) {
+        check(seen[row] > 40, where + ": toilet row " + std::to_string(row) + " is clickable");
+    }
+    check(gtc::native::toiletChoiceRowAt(width, height, 2, 2) < 0, where + ": the corner of the frame is no choice");
+    check(gtc::native::toiletChoiceRowAt(width, height, width / 2, height - 3) < 0,
+          where + ": below the panel is no choice");
+    check(gtc::native::toiletChoiceRowAt(width, height, width / 2, gtc::native::toiletChoiceLayout(width, height).titleTop) < 0,
+          where + ": the title is not a choice");
+
+    if (!windowOrder) {
+        const auto toilet = gtc::native::toiletChoiceLayout(width, height);
+        Picture picture(width, height, windowOrder);
+        gtc::native::drawToiletChoice(picture.frame);
+        zoom(picture, toilet.left, toilet.top, toilet.width, toilet.height, 3,
+             "build/native-client/interface-toilet-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
+        Picture manual(width, height, windowOrder);
+        gtc::native::drawManual(manual.frame);
+        manual.frame.save("build/native-client/interface-manual-" + std::to_string(width) + "x" +
+                          std::to_string(height) + ".png");
+    }
+    std::printf("  %-26s toilet and manual: drawn, centred, clickable\n", where.c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -436,6 +519,10 @@ int main() {
     examineCrosshair(640, 480, false);
     examineCrosshair(640, 480, true);
     examineCrosshair(1920, 1080, true);
+
+    examineOverlayPanels(640, 480, false);
+    examineOverlayPanels(640, 480, true);
+    examineOverlayPanels(1920, 1080, true);
 
     examineModeBar(640, 480, false);
     examineModeBar(640, 480, true);

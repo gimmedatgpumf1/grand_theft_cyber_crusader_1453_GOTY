@@ -41,7 +41,9 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - E never auto-walks the player. Move closer yourself; explicit godview RMB paths use ordinary A*.
   Double-RMB instead permits server-controlled jumping, climbing, crouching, and crawling en route.
   Autonomous AI can path to the toilet before using it.
-- The throne is multi-use: E opens the choice for **Sit**, **Shit**, and **Piss**; **1/2/3** pick it.
+- The throne is multi-use: E opens the choice for **Sit**, **Shit**, and **Piss**; **1/2/3** pick it, or
+  click the row. The panel is drawn by the same code that answers the click, so a row cannot be one
+  place on screen and another place under the mouse.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
 - **C** opens the native character creator: generic styles and all 107 universal anatomical
@@ -66,6 +68,7 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 - **F1** opens the need controls: boost/reduce either need by 25, empty it, or fill it, with the
   current percentages on the panel. The server applies and clamps every change to 0–100%, so all
   connected views share the result.
+- **H** opens the controls sheet, two columns so it fits a 640×480 frame at the 20-pixel text floor.
 - **F12** saves the current native **640×480 landscape** framebuffer.
 - Four things are drawn over the picture, and they are being rebuilt one at a time: the reticle
   (centred, dark-outlined, absent in god view), the **F1** need panel (translucent, centred, two

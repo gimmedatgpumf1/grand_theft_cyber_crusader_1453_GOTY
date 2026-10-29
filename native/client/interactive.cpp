@@ -9,6 +9,7 @@
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/mode_bar.h"
+#include "client/overlay_panel.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -178,12 +179,7 @@ public:
             // into pixels that already exist. Costs a few hundred fills a frame.
             const auto overlayStart = Clock::now();
             drawCrosshair(frame, view_);
-            if (overlay_ == Overlay::Cheats) {
-                const Character* citizen = local();
-                const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
-                const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
-                drawCheatMenu(frame, bladder, bowel);
-            }
+            drawOpenOverlay(frame);
             drawModeBar(frame, view_.mode);
             drawFpsCounter(frame, view_.fps);
             renderMilliseconds += std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
@@ -328,6 +324,31 @@ private:
         captured_ = false;
     }
 
+    // Every open overlay draws something. The switch below has no `default`, so
+    // adding a case to the enum and forgetting it here is a compiler warning and
+    // not a screen that has gone deaf for no visible reason -- which is exactly
+    // what happened when the old panels were deleted and these three states were
+    // left behind.
+    void drawOpenOverlay(NativeFrame& frame) {
+        switch (overlay_) {
+            case Overlay::None:
+                return;
+            case Overlay::Wheel:
+                drawToiletChoice(frame);
+                return;
+            case Overlay::Cheats: {
+                const Character* citizen = local();
+                const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
+                const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
+                drawCheatMenu(frame, bladder, bowel);
+                return;
+            }
+            case Overlay::Help:
+                drawManual(frame);
+                return;
+        }
+    }
+
     void interact() {
         const Character* citizen = local();
         if (!citizen) return;
@@ -464,12 +485,12 @@ private:
             }
             if (event.button != 1 && event.button != 3) return;
             if (overlay_ == Overlay::Wheel && event.button == 1) {
-                const double scale = std::min(1.0, std::min(view_.width / 640.0, view_.height / 480.0));
-                const double x = (event.x - (view_.width - 640 * scale) * 0.5) / scale;
-                const double y = (event.y - (view_.height - 480 * scale)) / scale;
-                if (std::hypot(x - 150, y - 240) < 88) toiletChoice(1);
-                else if (std::hypot(x - 320, y - 240) < 88) toiletChoice(2);
-                else if (std::hypot(x - 490, y - 240) < 88) toiletChoice(3);
+                // The rows a click lands on are the rows that were drawn: the
+                // panel is laid out in the frame's own pixels, and the mouse is
+                // already in them, so nothing has to be re-guessed here.
+                const int row = toiletChoiceRowAt(view_.width, view_.height, static_cast<int>(std::lround(event.x)),
+                                                  static_cast<int>(std::lround(event.y)));
+                if (row >= 0) toiletChoice(row + 1);
                 return;
             }
             if (overlay_ != Overlay::None) return;

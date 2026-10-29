@@ -5,6 +5,7 @@
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
 #include "client/mode_bar.h"
+#include "client/overlay_panel.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
@@ -193,6 +194,7 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet;
     bool cheats = false;
+    std::string overlay;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
     int roomBenchmark = 0;
@@ -231,13 +233,15 @@ int main(int argc, char** argv) {
         // window loop draw. Without a way to photograph it, the only proof of the
         // panel would be a claim about it.
         else if (argument == "--cheats") cheats = true;
+        else if (argument == "--overlay" && i + 1 < argc) overlay = argv[++i];
         else if (argument == "--yaw" && i + 1 < argc) view.yaw = static_cast<float>(number(argv[++i]));
         else if (argument == "--pitch" && i + 1 < argc) view.pitch = static_cast<float>(number(argv[++i]));
         else {
             std::cerr << "Usage: gtc-native-client [--headless] [--host HOST] [--port 1453] [--name NAME] [--frames N]\n"
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
                          "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
-                         "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG] [--cheats]\n";
+                         "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG] [--cheats]\n"
+                         "  [--overlay toilet|manual] (draw an overlay into the capture)\n";
             return 2;
         }
     }
@@ -487,6 +491,8 @@ int main(int argc, char** argv) {
     // The same three things the window loop draws, in the same order: the
     // reticle, the need panel when it is open, and the frame rate.
     gtc::native::drawCrosshair(frame, view);
+    if (overlay == "toilet") gtc::native::drawToiletChoice(frame);
+    else if (overlay == "manual") gtc::native::drawManual(frame);
     if (cheats) {
         const gtc::Character* citizen = client.state().character(client.playerId());
         const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
