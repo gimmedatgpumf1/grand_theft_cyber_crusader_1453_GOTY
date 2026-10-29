@@ -15,6 +15,8 @@ namespace gtc::native {
 // skeletons in it, so animation and rigging work has somewhere to happen.
 // The female remains in the original OpenSkeleton registered pose; the source
 // is asymmetric and may not be anatomically assembled. Neither body is scaled.
+class RoomFreecam;
+
 class SkeletonRoom {
 public:
     bool load(const std::string& root, std::string& error);
@@ -23,7 +25,7 @@ public:
     const SkeletonModel& male() const { return male_; }
     const SkeletonModel& female() const { return female_; }
 
-    void render(NativeFrame& frame, const ViewState& view, double seconds);
+    void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
     SkeletonModel male_;

@@ -43,6 +43,15 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-room
 ./build/bin/gtc-skeleton-source-room
+"${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
+./build/bin/gtc-room-freecam
+# Actual App event routing and WebSocket input, including walking before/after C.
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative tests/interactive_room.cpp \
+  native/client/{client,raster,hud,human_renderer,human_materials,blockbody,skeleton_body,skeleton_room,world_renderer,fps_counter,crosshair,cheat_menu,mode_bar,overlay_panel,interaction_wheel,status_panel,ui_layer,target_prompt,diagnostics,window_x11,opengl_shared}.cpp \
+  native/{human,hair}.cpp src/core/json.cpp src/net/{platform,websocket,sha1}.cpp \
+  native/vulkan/{vk_device,vk_renderer,vk_upload,vk_batches,vk_targets,vk_swapchain}.cpp \
+  -ldl -o build/bin/gtc-interactive-room
+./build/bin/gtc-interactive-room
 python3 tests/quiet_interactive.py
 # The Vulkan projection can be checked without a driver, so it is: the clip
 # matrix has to put every point on the pixel the CPU rasterizer would use.

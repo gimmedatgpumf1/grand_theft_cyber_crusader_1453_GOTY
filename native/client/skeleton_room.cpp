@@ -1,4 +1,5 @@
 #include "client/skeleton_room.h"
+#include "client/room_freecam.h"
 #include "client/threadpool.h"
 
 #include <thread>
@@ -80,18 +81,17 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     return true;
 }
 
-void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds) {
-    Camera camera;
-    camera.width = std::max(1, view.width);
-    camera.height = std::max(1, view.height);
-    camera.fovDegrees = 50;
-    // The camera orbits the pair at eye height; both bodies stand on the floor
-    // line so their heights can be compared directly.
-    const double distance = 3.5;
-    const double height = 1.15;
-    camera.target = {0, 0.95, 0};
-    camera.position = {std::sin(view.yaw) * distance, height, std::cos(view.yaw) * distance};
-    camera.worldSpaceGpu = view.gpu;
+void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
+    Camera camera = freecam ? freecam->camera(view.width, view.height, view.gpu) : Camera{};
+    if (!freecam) {
+        // Existing benchmark/preview orbit, independent of the interactive freecam.
+        camera.width = std::max(1, view.width);
+        camera.height = std::max(1, view.height);
+        camera.fovDegrees = 50;
+        camera.target = {0, 0.95, 0};
+        camera.position = {std::sin(view.yaw) * 3.5, 1.15, std::cos(view.yaw) * 3.5};
+        camera.worldSpaceGpu = view.gpu;
+    }
     // Room geometry is in world space: resizing or orbiting changes only the
     // projection and view matrix, not the floor, walls or skeleton meshes.
     const auto updateCamera = [&] {
@@ -99,6 +99,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         scene_.height = camera.height;
         scene_.focal = camera.focal();
         scene_.viewMatrix = camera.viewMatrix();
+        // A free camera can leave the room, so its background must be cleared.
+        scene_.covered = freecam == nullptr;
     };
     const double pose = std::floor(std::max(0.0, seconds) * 15.0) / 15.0;
     const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_;
@@ -143,9 +145,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             halves.push_back(room.takeGpuScene());
             scene_ = mergeScenes(std::move(halves));
             scene_.revision = ++revision_;
-            // A closed box seen from inside: every pixel is drawn over, so the
-            // colour attachment is never cleared before it is drawn on.
-            scene_.covered = true;
             // Which batch belongs to which bone. Batches keep their identity
             // until the scene is rebuilt, so this is looked up once.
             boneBatches_.clear();

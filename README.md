@@ -48,10 +48,10 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   so a sector cannot be one place on the screen and another place under the mouse.
   Sit persists until E or WASD stands up. Shit drains only bowel; Piss drains only bladder.
   Males piss standing at the bowl; females use the seated pose. Toilet piss makes no floor puddle.
-- **C** opens the native character creator: generic styles and all 107 universal anatomical
-  sliders are available through arrows/Page Up/Page Down; Enter sends the server-validated
-  `customize` message. There are no person-specific morphs or portrait textures. Reusable CC0
-  MakeHuman skin maps provide age/sex surface detail across the full skin palette.
+- **C** opens/closes the skeleton test room. The room has an independent free camera:
+  move with **WASD**, look with the mouse, fly up/down with **Space/Left Ctrl**, hold **Shift**
+  for faster movement, and use the wheel to move closer or farther. **Esc** releases the
+  mouse; click to capture it again. Room controls do not move the player in the game.
 - First-person view renders the local torso, arms, hands, legs and boots when looking down.
   Male anatomy starts zipped behind a loose, projecting cloth tent in FPS and TPS; **T** intentionally
   exposes it. Holding LMB (or F in FPS) outside a toilet action works only while unzipped and empties

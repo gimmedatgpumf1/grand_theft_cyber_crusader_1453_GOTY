@@ -2,6 +2,7 @@
 // the male remains animated. This exercises the GPU scene path without relying
 // on a screenshot or claiming the fake callback renders anything.
 #include "client/skeleton_room.h"
+#include "client/room_freecam.h"
 #include <array>
 #include <cstdio>
 #include <cmath>
@@ -18,6 +19,7 @@ static std::array<double, 16> capturedView;
 static std::uint64_t capturedRevision;
 static std::uint32_t maleSkullId;
 static std::size_t skullIndexCount;
+static bool capturedCovered;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
     indicesValid = true;
@@ -26,6 +28,7 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
     capturedWidth = scene.width; capturedHeight = scene.height; capturedFocal = scene.focal;
     capturedView = scene.viewMatrix;
     capturedRevision = scene.revision;
+    capturedCovered = scene.covered;
     for (const auto& batch : scene.batches) {
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
@@ -106,6 +109,22 @@ int main() {
     room.render(frame, view, 1.90);
     pass = pass && indicesValid && skullIndexCount == expectedSkullIndices && female == oldFemale && male != oldMale &&
            capturedWidth == 1000 && capturedHeight == 700 && batchCount == oldBatches;
+    // The interactive camera updates the scene even within a single pose tick,
+    // without rebuilding geometry or changing either skeleton's pose.
+    RoomFreecam freecam;
+    view.width = 640; view.height = 480;
+    room.render(frame, view, 1.90, &freecam);
+    const auto freecamView = capturedView;
+    const auto femaleBeforeMove = female, maleBeforeMove = male;
+    WindowEvent forwardKey{WindowEvent::Type::KeyDown, 'w'};
+    freecam.handle(forwardKey, true);
+    freecam.move(0.5);
+    WindowEvent look{WindowEvent::Type::MouseMove}; look.dx = 90; look.dy = -60;
+    freecam.handle(look, true);
+    room.render(frame, view, 1.90, &freecam);
+    pass = pass && capturedView != freecamView && capturedView == freecam.camera(640, 480, true).viewMatrix() &&
+           female == femaleBeforeMove && male == maleBeforeMove && indicesValid && !capturedCovered &&
+           capturedRevision == oldRevision && batchCount == oldBatches && skullIndexCount == expectedSkullIndices;
     setGpuRenderer(nullptr);
     std::printf("test room source pose and resize: %s (female %zu groups, male %zu groups)\n",
                 pass ? "PASS" : "FAIL", female.size(), male.size());

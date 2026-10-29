@@ -1,6 +1,7 @@
 // Offscreen Vulkan integration test for the test room's real resize path.
 // This executes the renderer on an ICD; it does not exercise a window swapchain.
 #include "client/skeleton_room.h"
+#include "client/room_freecam.h"
 #include "vulkan/vk_renderer.h"
 #include <algorithm>
 #include <cstdio>
@@ -75,6 +76,32 @@ int main() {
         if (!bothVisible) { ok = false; break; }
         ++step;
       }
+    }
+    // Exercise movement through the same room scene and actual Vulkan shader
+    // path, without rebuilding geometry or touching the gameplay view.
+    if (ok) {
+        setGpuRenderer(&renderVulkanScene);
+        RoomFreecam camera;
+        view.width = 640; view.height = 480;
+        room.render(frame, view, 2.5, &camera);
+        const std::size_t bytes = static_cast<std::size_t>(view.width) * view.height * 4;
+        const unsigned char* before = frame.direct ? frame.direct : frame.bgra.data();
+        std::vector<unsigned char> first(before, before + bytes);
+        camera.handle(WindowEvent{WindowEvent::Type::KeyDown, 'w'}, true);
+        camera.move(0.8);
+        WindowEvent look{WindowEvent::Type::MouseMove}; look.dx = 45; look.dy = -25;
+        camera.handle(look, true);
+        room.render(frame, view, 2.5, &camera);
+        const unsigned char* after = frame.direct ? frame.direct : frame.bgra.data();
+        int changed = 0;
+        for (std::size_t i = 0; i < bytes; i += 4) {
+            int difference = 0;
+            for (int c = 0; c < 3; ++c)
+                difference += std::abs(static_cast<int>(first[i + c]) - after[i + c]);
+            if (difference > 24) ++changed;
+        }
+        ok = changed > 1000;
+        std::printf("Vulkan room freecam: %s (%d changed pixels)\n", ok ? "PASS" : "FAIL", changed);
     }
     setGpuRenderer(nullptr);
     shutdownVulkan();

@@ -3,6 +3,7 @@
 #include "client/client.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
+#include "client/room_freecam.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
 #include "client/cheat_menu.h"
@@ -84,7 +85,8 @@ public:
                 std::cerr << error << '\n';
                 return 1;
             }
-            trackBodyTurn();
+            if (testRoom_) bodyTrackReady_ = false;
+            else trackBodyTurn();
             events_.clear();
             if (!window_.poll(events_)) break;
             window_.size(view_.width, view_.height);
@@ -92,7 +94,8 @@ public:
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
-            updateGod(dt);
+            if (testRoom_) roomCamera_.move(dt);
+            else updateGod(dt);
             if (now - inputTime >= std::chrono::milliseconds(50)) {
                 sendInput();
                 inputTime = now;
@@ -102,13 +105,20 @@ public:
             updateReticle();
             if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
-                // The room is the one path with no overlay drawn over it on the
-                // CPU, so its frame can go straight to the window.
-                frame.wantPixels = false;
-                room_.render(frame, view_, seconds);
+                // No readback except when explicitly taking a screenshot.
+                frame.wantPixels = screenshot_;
+                room_.render(frame, view_, seconds, &roomCamera_);
                 if (!window_.present(frame)) {
                     std::cerr << "Native window presentation failed\n";
                     return 1;
+                }
+                if (screenshot_) {
+                    std::filesystem::create_directories("build/native-client");
+                    if (!window_.save(frame, "build/native-client/window.png")) {
+                        std::cerr << "Native screenshot capture failed\n";
+                        return 1;
+                    }
+                    screenshot_ = false;
                 }
                 continue;
             }
@@ -463,8 +473,44 @@ private:
         return cheatMenuAt(layoutCheatMenu(view_.width, view_.height), at.first, at.second);
     }
 
+    void enterRoom() {
+        if (!room_.ready()) return;
+        endOrbit();
+        roomRestoreCapture_ = captured_;
+        keys_.clear();
+        roomCamera_.clear();
+        leftDown_ = rightDown_ = false;
+        testRoom_ = true;
+        window_.captureMouse(true);
+        captured_ = true;
+        sendInput();
+    }
+
+    void handleRoom(const WindowEvent& event) {
+        const RoomFreecam::Action action = roomCamera_.handle(event, captured_);
+        if (action == RoomFreecam::Action::Exit) {
+            testRoom_ = false;
+            roomCamera_.clear();
+            keys_.clear();
+            window_.captureMouse(roomRestoreCapture_);
+            captured_ = roomRestoreCapture_;
+            roomRestoreCapture_ = false;
+            sendInput();
+        } else if (action == RoomFreecam::Action::Capture) {
+            window_.captureMouse(true);
+            captured_ = true;
+        } else if (action == RoomFreecam::Action::Release) {
+            window_.captureMouse(false);
+            captured_ = false;
+        } else if (action == RoomFreecam::Action::Screenshot) {
+            screenshot_ = true;
+        }
+    }
+
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
+            roomCamera_.clear();
+            roomRestoreCapture_ = false;
             keys_.clear();
             endOrbit();
             leftDown_ = rightDown_ = false;
@@ -473,6 +519,7 @@ private:
             restoreMouseCapture_ = false;
             return;
         }
+        if (testRoom_) { handleRoom(event); return; }
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
@@ -612,7 +659,7 @@ private:
         else if (event.key == 't') { if (!event.repeat) client_.sendToggleZip(); }
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
-        else if (event.key == 'c') { if (!event.repeat) testRoom_ = !testRoom_; }
+        else if (event.key == 'c') { if (!event.repeat) enterRoom(); }
         else if (event.key == 'h') openOverlay(Overlay::Help);
         else {
             keys_.insert(event.key);
@@ -668,8 +715,9 @@ private:
         const ViewState control = controlView();
         float yaw = local() ? local()->yaw : control.yaw;
         view_.aiming = false;
-        crouch = overlay_ == Overlay::None && keys_.count(kKeyAlt) != 0;
-        if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
+        const bool gameControls = !testRoom_ && overlay_ == Overlay::None;
+        crouch = gameControls && keys_.count(kKeyAlt) != 0;
+        if (gameControls && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
             const double right = (keys_.count('d') ? 1 : 0) - (keys_.count('a') ? 1 : 0);
             move = {static_cast<float>(std::sin(control.yaw) * forward - std::cos(control.yaw) * right),
@@ -685,7 +733,8 @@ private:
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
         float aimHeight = 0.0F;
-        const bool hasAimTarget = ranged && view_.mode != ViewMode::God && crosshairTarget(control, aimTarget, aimHeight);
+        const bool hasAimTarget = !testRoom_ && ranged && view_.mode != ViewMode::God &&
+            crosshairTarget(control, aimTarget, aimHeight);
         client_.sendInput(move, sprint, piss, yaw, control.pitch, slowWalk_, crouch, grab, jump, block,
                           aimTarget, aimHeight, hasAimTarget);
     }
@@ -702,7 +751,9 @@ private:
     }
 
     SkeletonRoom room_;
+    RoomFreecam roomCamera_;
     bool testRoom_ = false;
+    bool roomRestoreCapture_ = false;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
     std::uint64_t presentationVersion_ = 0;
     std::chrono::steady_clock::time_point snapshotAt_{};
