@@ -197,6 +197,7 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet;
     bool cheats = false;
+    int hover = -1;
     std::string overlay, prompt;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
@@ -236,6 +237,7 @@ int main(int argc, char** argv) {
         // window loop draw. Without a way to photograph it, the only proof of the
         // panel would be a claim about it.
         else if (argument == "--cheats") cheats = true;
+        else if (argument == "--hover" && i + 1 < argc) hover = std::atoi(argv[++i]);
         else if (argument == "--overlay" && i + 1 < argc) overlay = argv[++i];
         else if (argument == "--prompt" && i + 1 < argc) prompt = argv[++i];
         else if (argument == "--highlight") view.highlightToilet = true;
@@ -514,9 +516,9 @@ int main(int argc, char** argv) {
         const gtc::Character* citizen = client.state().character(client.playerId());
         const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
         const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
-        gtc::native::drawCheatMenu(frame, bladder, bowel);
+        gtc::native::drawCheatMenu(frame, bladder, bowel, cheats ? hover : -1);
     }
-    gtc::native::drawModeBar(frame, view.mode);
+    gtc::native::drawModeBar(frame, view.mode, cheats ? -1 : hover);
     {
         const gtc::Character* citizen = client.state().character(client.playerId());
         const gtc::native::NeedsStatus status{

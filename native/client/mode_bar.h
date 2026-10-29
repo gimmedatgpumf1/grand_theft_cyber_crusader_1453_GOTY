@@ -27,6 +27,13 @@ ModeBarLayout layoutModeBar(int frameWidth, int frameHeight);
 
 // Draws `1 3RD PERSON   2 GOD   3 1ST PERSON` along the bottom edge, the active
 // mode in the reading colour with a rule under it and the other two dimmed.
-void drawModeBar(NativeFrame& frame, ViewMode mode);
+// `hovered` is the block the pointer is over, or -1 for none: the strip is
+// clickable whenever the mouse is free, so it has to look like it.
+void drawModeBar(NativeFrame& frame, ViewMode mode, int hovered = -1);
+
+// Which block is under this point: 0 third person, 1 god, 2 first person, or -1
+// for a point off the strip. The gaps between blocks belong to their neighbours,
+// so there is no dead column to click into.
+int modeBarAt(const ModeBarLayout& layout, int x, int y);
 
 }  // namespace gtc::native

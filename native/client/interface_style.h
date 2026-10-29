@@ -35,6 +35,19 @@ inline void fillPanel(NativeFrame& frame, int x, int y, int width, int height, d
     frame.uiOffsetY = offsetY;
 }
 
+// A band of any colour, in pixels. Used for the mark under a hovered row or
+// block: the same neutralised transform as fillPanel, without the panel colour.
+inline void fillBand(NativeFrame& frame, int x, int y, int width, int height, Color color, double opacity) {
+    if (width <= 0 || height <= 0) return;
+    const double scale = frame.uiScale, offsetX = frame.uiOffsetX, offsetY = frame.uiOffsetY;
+    frame.uiScale = 1.0;
+    frame.uiOffsetX = frame.uiOffsetY = 0.0;
+    frame.blendRectangle(x, y, width, height, color, opacity);
+    frame.uiScale = scale;
+    frame.uiOffsetX = offsetX;
+    frame.uiOffsetY = offsetY;
+}
+
 // Text in pixels, never below the 20-pixel floor this game's text has always
 // had, and larger on larger windows. `factor` is the size at 480 pixels tall.
 inline int interfaceTextHeight(int frameHeight, double factor) {

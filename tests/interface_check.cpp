@@ -329,6 +329,55 @@ void examineCheatMenu(int width, int height, bool windowOrder) {
     check(worstChannel(composite.at(width / 2, height / 2), overInk) <= 1,
           where + ": the panel covers the reticle");
 
+    // Clickable: eight entries, each answering to a click on its own row, and the
+    // title and footer answering to nothing.
+    int found[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    for (int x = layout.contentLeft; x < layout.rightColumnRight; ++x) {
+        for (int row = 0; row < 4; ++row) {
+            const int y = layout.firstRowTop + row * layout.rowGap + layout.textHeight / 2;
+            const int hit = gtc::native::cheatMenuAt(layout, x, y);
+            if (hit >= 0) found[hit] = 1;
+        }
+    }
+    bool allFound = true;
+    for (int index = 0; index < 8; ++index) allFound = allFound && found[index] == 1;
+    check(allFound, where + ": all eight entries can be clicked");
+    check(gtc::native::cheatMenuAt(layout, layout.left + layout.width / 2, layout.titleTop) == -1,
+          where + ": the title is not a button");
+    check(gtc::native::cheatMenuAt(layout, layout.left + layout.width / 2, layout.footerTop) == -1,
+          where + ": the footer is not a button");
+    check(gtc::native::cheatMenuAt(layout, layout.left + 1, layout.firstRowTop) == -1,
+          where + ": the panel margin is not a button");
+    // Row to entry: the left column is 0..3, the right 4..7, so index + '1' is the
+    // key that does the same thing. A click must not land on its neighbour.
+    for (int row = 0; row < 4; ++row) {
+        const int y = layout.firstRowTop + row * layout.rowGap + layout.textHeight / 2;
+        check(gtc::native::cheatMenuAt(layout, layout.contentLeft + 4, y) == row,
+              where + ": row " + std::to_string(row) + " left is entry " + std::to_string(row));
+        check(gtc::native::cheatMenuAt(layout, layout.rightKeyLeft + 4, y) == row + 4,
+              where + ": row " + std::to_string(row) + " right is entry " + std::to_string(row + 4));
+    }
+
+    // Hover marks the row it is on and no other. Entry 4 is the first row's right
+    // column, so row 0 carries the mark and rows 1..3 do not.
+    const auto changed = [&](const Picture& a, const Picture& b, int y) {
+        int count = 0;
+        for (int x = layout.left + layout.width / 8; x < layout.left + layout.width * 7 / 8; ++x) {
+            if (worstChannel(a.at(x, y), b.at(x, y)) > 1) ++count;
+        }
+        return count;
+    };
+    Picture hovered(width, height, windowOrder);
+    gtc::native::drawCheatMenu(hovered.frame, 62, 30, 4);
+    int marked = 0, unmarked = 0;
+    for (int row = 0; row < 4; ++row) {
+        const int y = layout.firstRowTop + row * layout.rowGap + layout.textHeight / 2;
+        const int count = changed(hovered, picture, y);
+        if (row == 0) marked = count; else unmarked = std::max(unmarked, count);
+    }
+    check(marked > layout.width / 4, where + ": the hovered row is marked (" + std::to_string(marked) + " px)");
+    check(unmarked == 0, where + ": hovering one row leaves the others alone (" + std::to_string(unmarked) + ")");
+
     if (!windowOrder) {
         zoom(picture, layout.left, layout.top, layout.width, layout.height, 3,
              "build/native-client/interface-cheats-" + std::to_string(width) + "x" + std::to_string(height) + ".png");
@@ -420,6 +469,42 @@ void examineModeBar(int width, int height, bool windowOrder) {
                   where + ": the rule is not under block " + std::to_string(index));
         }
     }
+
+    // Clickable: every column of the strip belongs to a block, so there is no
+    // dead space to hit, and a point off the strip belongs to nothing.
+    int seen[3] = {0, 0, 0};
+    for (int x = layout.left; x < layout.left + layout.width; ++x) {
+        const int hit = gtc::native::modeBarAt(layout, x, layout.top + layout.height / 2);
+        check(hit >= 0, where + ": column " + std::to_string(x) + " clicks nothing inside the strip");
+        if (hit >= 0) seen[hit] = 1;
+    }
+    check(seen[0] && seen[1] && seen[2], where + ": all three blocks can be clicked");
+    check(gtc::native::modeBarAt(layout, layout.left + layout.width / 2, layout.top - 8) == -1,
+          where + ": a click above the strip is not a mode change");
+    check(gtc::native::modeBarAt(layout, 2, layout.top + 2) == -1,
+          where + ": a click at the left of the screen is not a mode change");
+    for (int index = 0; index < 3; ++index) {
+        const int centre = layout.blockLeft[index] + layout.blockWidth[index] / 2;
+        check(gtc::native::modeBarAt(layout, centre, layout.top + layout.height / 2) == index,
+              where + ": block " + std::to_string(index) + " answers to a click on itself");
+    }
+
+    // Hovering the block that is not running lights it up, without moving any of
+    // the words: a hover mark that shifts the type would be worse than none.
+    const int litBefore = meanLuminance(picture, layout.blockLeft[2], layout.top, layout.blockWidth[2],
+                                        layout.height);
+    Picture hovered(width, height, windowOrder);
+    gtc::native::drawModeBar(hovered.frame, gtc::native::ViewMode::ThirdPerson, 2);
+    const int litAfter = meanLuminance(hovered, layout.blockLeft[2], layout.top, layout.blockWidth[2],
+                                       layout.height);
+    check(litAfter > litBefore + 1, where + ": the hovered block brightens");
+    // The block that is running keeps its rule, and the one on the far left is
+    // untouched: hover is a mark, not a mode change.
+    const int litLeft = meanLuminance(hovered, layout.blockLeft[0], layout.top, layout.blockWidth[0],
+                                      layout.height);
+    const int litLeftBefore = meanLuminance(picture, layout.blockLeft[0], layout.top, layout.blockWidth[0],
+                                           layout.height);
+    check(litLeft == litLeftBefore, where + ": hovering one block leaves the others alone");
 
     if (!windowOrder) {
         zoom(picture, layout.left, layout.top, layout.width, layout.height, 4,
@@ -747,6 +832,16 @@ void examineTargetPrompt(int width, int height, bool windowOrder) {
     }
     check(firstLit >= 0 && std::abs((firstLit + lastLit) / 2 - width / 2) <= 2,
           where + ": the action line is centred on the reticle");
+
+    // What counts as pointing at it. The bug this exists for: E used to fire
+    // whenever the player was merely in range, while the highlight asked for aim,
+    // so the key worked at times the screen said there was nothing to use.
+    check(gtc::native::pointerOnTarget(width, height, width / 2, height / 2, width / 2, height / 2),
+          where + ": a pointer on the thing is on the thing");
+    check(!gtc::native::pointerOnTarget(width, height, width / 2 + 300, height / 2, width / 2, height / 2),
+          where + ": a thing three hundred pixels to the side is not pointed at");
+    check(gtc::native::pointerOnTarget(width, height, width / 2 + 40, height / 2 - 40, width / 2, height / 2),
+          where + ": the target has a forgiving radius, not a pixel");
 
     if (!windowOrder) {
         const int top = layout.firstTop - 6;

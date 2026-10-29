@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <iostream>
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace gtc::native {
@@ -197,7 +198,7 @@ public:
                 drawTargetPrompt(frame, prompt_, "Toilet");
             }
             drawOpenOverlay(frame);
-            drawModeBar(frame, view_.mode);
+            drawModeBar(frame, view_.mode, pointerBlock());
             if (const Character* citizen = local()) {
                 const NeedsStatus status{static_cast<int>(std::lround(citizen->needs.bladder)),
                                          static_cast<int>(std::lround(citizen->needs.bowel)),
@@ -370,7 +371,7 @@ private:
                 const Character* citizen = local();
                 const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
                 const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
-                drawCheatMenu(frame, bladder, bowel);
+                drawCheatMenu(frame, bladder, bowel, pointerCheat());
                 return;
             }
             case Overlay::Help:
@@ -379,15 +380,31 @@ private:
         }
     }
 
+    // The one definition of "I am pointing at the throne": the light in the
+    // world, the words under the reticle and the E key all ask this, so they
+    // cannot disagree. Standing range is not enough -- E fires on the same
+    // condition the highlight draws on, which is what the King asked for.
+    bool toiletPointed() const {
+        const Character* citizen = local();
+        if (citizen == nullptr) return false;
+        if (distance(citizen->position, client_.world().toiletFront) > client_.world().interactionRange) return false;
+        if (client_.state().toiletUser != 0 && client_.state().toiletUser != citizen->id) return false;
+        const double x = captured_ ? view_.width * 0.5 : mouseX_;
+        const double y = captured_ ? view_.height * 0.5 : mouseY_;
+        return toiletHit(x, y);
+    }
+
     void interact() {
         const Character* citizen = local();
         if (!citizen) return;
+        // Standing up needs no aim: you are already on the thing you are using,
+        // and making people find it with the reticle behind them is punishment.
         if (citizen->toiletAction != ToiletAction::None) {
             client_.sendToilet("stand");
-        } else if (distance(citizen->position, client_.world().toiletFront) <= client_.world().interactionRange &&
-                   (client_.state().toiletUser == 0 || client_.state().toiletUser == citizen->id)) {
-            openOverlay(Overlay::Wheel);
+            return;
         }
+        if (!toiletPointed()) return;
+        openOverlay(Overlay::Wheel);
     }
 
     void toiletChoice(int choice) {
@@ -417,8 +434,7 @@ private:
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
         const double sy = view_.height * 0.5 - camera.focal() * point.y / point.z;
-        const double scale = std::min(view_.width / 640.0, view_.height / 480.0);
-        return std::hypot(sx - x, sy - y) <= 75 * scale;
+        return pointerOnTarget(view_.width, view_.height, sx, sy, x, y);
     }
 
     std::uint32_t characterAt(double x, double y) const {
@@ -470,11 +486,25 @@ private:
         view_.reticleY = static_cast<float>(view_.height * 0.5 - camera.focal() * point.y / point.z);
     }
 
-    void updateHighlight() {
-        const Character* citizen = local();
-        view_.highlightToilet = citizen &&
-            distance(citizen->position, client_.world().toiletFront) <= client_.world().interactionRange &&
-            toiletHit(captured_ ? view_.width * 0.5 : mouseX_, captured_ ? view_.height * 0.5 : mouseY_);
+    void updateHighlight() { view_.highlightToilet = overlay_ == Overlay::None && toiletPointed(); }
+
+    // The pointer, for the pieces that answer to it. When the mouse is captured it
+    // is pinned to the middle of the frame, which is where the reticle is.
+    std::pair<int, int> pointer() const {
+        if (captured_) return {static_cast<int>(view_.width * 0.5), static_cast<int>(view_.height * 0.5)};
+        return {static_cast<int>(std::lround(mouseX_)), static_cast<int>(std::lround(mouseY_))};
+    }
+
+    int pointerBlock() const {
+        if (overlay_ != Overlay::None || captured_) return -1;
+        const auto at = pointer();
+        return modeBarAt(layoutModeBar(view_.width, view_.height), at.first, at.second);
+    }
+
+    int pointerCheat() const {
+        if (overlay_ != Overlay::Cheats) return -1;
+        const auto at = pointer();
+        return cheatMenuAt(layoutCheatMenu(view_.width, view_.height), at.first, at.second);
     }
 
     void handle(const WindowEvent& event) {
@@ -527,7 +557,28 @@ private:
                 else if (hit == kWheelCancel) closeOverlay();
                 return;
             }
+            if (overlay_ == Overlay::Cheats) {
+                if (event.button != 1) return;
+                const CheatMenuLayout menu = layoutCheatMenu(view_.width, view_.height);
+                const int entry = cheatMenuAt(menu, static_cast<int>(std::lround(event.x)),
+                                              static_cast<int>(std::lround(event.y)));
+                if (entry >= 0) cheat('1' + entry);
+                return;
+            }
             if (overlay_ != Overlay::None) return;
+            // A click on the mode strip switches mode and goes no further: it must
+            // not also become a walk order behind the strip, which is what a
+            // clickable-but-transparent control would do in god mode.
+            if (event.button == 1) {
+                const int mode = modeBarAt(layoutModeBar(view_.width, view_.height), 
+                                           static_cast<int>(std::lround(event.x)),
+                                           static_cast<int>(std::lround(event.y)));
+                if (mode >= 0) {
+                    setMode(mode == 0 ? ViewMode::ThirdPerson
+                                      : (mode == 1 ? ViewMode::God : ViewMode::FirstPerson));
+                    return;
+                }
+            }
             const bool doubled = doubleClick(event.button == 3, event.x, event.y);
             if (view_.mode == ViewMode::God) {
                 if (event.button == 3) {

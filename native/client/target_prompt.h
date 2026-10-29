@@ -15,6 +15,13 @@ struct TargetPromptLayout {
     int secondTop = 0;    // the name of the thing, centred under it
 };
 
+// Whether a pointer at `pointerX, pointerY` is on the thing drawn at
+// `screenX, screenY`. One radius for the whole game: the world highlight, the
+// words under the reticle and the E key all ask this, so none of them can
+// disagree about what is being pointed at. Being in range is a separate question.
+bool pointerOnTarget(int frameWidth, int frameHeight, double screenX, double screenY, double pointerX,
+                     double pointerY);
+
 // `frameWidth`, `frameHeight` are the window; `reticleY` is where the reticle is,
 // which is the middle of the window unless a camera is being orbited.
 TargetPromptLayout layoutTargetPrompt(int frameWidth, int frameHeight, int reticleY);

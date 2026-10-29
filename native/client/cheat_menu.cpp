@@ -80,6 +80,7 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight) {
     layout.contentLeft = layout.left + (layout.width - contentWidth) / 2;
     layout.leftColumnRight = layout.contentLeft + keyWidth + keyGap + leftWidth;
     layout.rightKeyLeft = layout.contentLeft + keyWidth + keyGap + leftWidth + columnGap;
+    layout.rightColumnRight = layout.rightKeyLeft + keyWidth + keyGap + rightWidth;
     layout.titleTop = layout.top + padding;
     layout.statusTop = layout.titleTop + layout.titleHeight + gap;
     layout.firstRowTop = layout.statusTop + layout.textHeight + gap;
@@ -87,7 +88,20 @@ CheatMenuLayout layoutCheatMenu(int frameWidth, int frameHeight) {
     return layout;
 }
 
-void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent) {
+int cheatMenuAt(const CheatMenuLayout& layout, int x, int y) {
+    if (layout.width <= 0 || layout.height <= 0) return -1;
+    const int gap = lineGap(layout.textHeight);
+    for (int row = 0; row < kRowCount; ++row) {
+        const int top = layout.firstRowTop + row * layout.rowGap;
+        // Half a line of slack above and below: a row is a target, not a glyph.
+        if (y < top - gap / 2 || y >= top + layout.textHeight + gap / 2) continue;
+        if (x >= layout.contentLeft && x < layout.leftColumnRight) return row;
+        if (x >= layout.rightKeyLeft && x < layout.rightColumnRight) return row + kRowCount;
+    }
+    return -1;
+}
+
+void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int hovered) {
     const CheatMenuLayout layout = layoutCheatMenu(frame.width, frame.height);
     if (layout.width <= 0 || layout.height <= 0) return;
     bladderPercent = std::clamp(bladderPercent, 0, 100);
@@ -107,6 +121,14 @@ void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent) {
 
     const int gap = lineGap(layout.textHeight);
     const int keyWidth = layout.keyWidth;
+
+    // The row the pointer is on, marked before the words so it sits behind them.
+    if (hovered >= 0 && hovered < kRowCount * 2) {
+        const int row = hovered % kRowCount;
+        const int top = layout.firstRowTop + row * layout.rowGap - gap / 2;
+        fillBand(frame, layout.left + gap / 2, top, layout.width - gap, layout.textHeight + gap,
+                 colorHex(kInkColour), 0.12);
+    }
 
     for (int index = 0; index < kRowCount; ++index) {
         const int top = layout.firstRowTop + index * layout.rowGap;

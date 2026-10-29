@@ -29,6 +29,12 @@ void shadowedText(NativeFrame& frame, int left, int top, const std::string& text
 
 }  // namespace
 
+bool pointerOnTarget(int frameWidth, int frameHeight, double screenX, double screenY, double pointerX,
+                     double pointerY) {
+    const double scale = std::min(frameWidth / 640.0, frameHeight / 480.0);
+    return std::hypot(screenX - pointerX, screenY - pointerY) <= 75.0 * scale;
+}
+
 TargetPromptLayout layoutTargetPrompt(int frameWidth, int frameHeight, int reticleY) {
     TargetPromptLayout layout;
     layout.textHeight = interfaceTextHeight(frameHeight, 11.0);
