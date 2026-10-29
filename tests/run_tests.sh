@@ -10,6 +10,7 @@ node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.ob
 node tests/male_skull_classification.mjs
 python3 tests/male_skull_restoration.py
 python3 tests/female_source_pose.py
+python3 tests/openskeleton_extract.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
 # they have not drifted and that the object lists are still well formed.
 python3 tests/build_scripts.py

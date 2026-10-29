@@ -86,3 +86,18 @@ and retains each source name in the OBJ and manifest. The test checks those name
 rig group mappings, faces and proximity of every simplified vertex to its own
 source bone. It cannot establish anatomical correctness of the source labels
 or the source registration.
+
+## Extracting a male subject on Windows
+
+The current male test candidate is **N197925**, whose metadata records a
+170 cm cadaver length. This is not evidence of normal anatomy or a correctly
+assembled pose. To extract it, put `NM_combined.mat` and `Faces.mat` alongside
+`extract-male.cmd` and double-click the batch file. Python 3 is required; the
+script installs NumPy, SciPy and h5py if they are missing. Send the generated
+`male-N197925.npz` and `male-N197925.json`. `Metadata.mat` is not needed by
+the extractor. No source geometry is rescaled or modified in this step.
+
+The exporter has been checked using the real Faces.mat and a synthetic MATLAB
+v5 file containing 182 structures. The full 2.5 GB combined file has not been
+tested in this environment. If the combined file is not HDF5, SciPy loads it
+into memory and may need several gigabytes of RAM.

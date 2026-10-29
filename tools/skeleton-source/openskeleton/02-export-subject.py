@@ -98,24 +98,13 @@ def describe(root, kind, limit=12):
 
 
 def vertex_dataset(group, kind):
-    """Find the N x 3 vertex array of one bone, whatever it is called."""
+    """Use the documented Registered vertices; never guess a different array."""
     if kind == 'h5':
-        if 'Registered' in group:
-            return np.asarray(group['Registered'], dtype=np.float32)
-        best = None
-        for key in group:
-            item = group[key]
-            if hasattr(item, 'shape') and item.ndim == 2 and 3 in item.shape:
-                if best is None or item.shape[0] > best[1]:
-                    best = (key, item.shape[0])
-        if best is None:
+        if 'Registered' not in group:
             return None
-        return np.asarray(group[best[0]], dtype=np.float32)
-    for field in getattr(group, '_fieldnames', []):
-        value = getattr(group, field)
-        if getattr(value, 'ndim', 0) == 2 and 3 in value.shape:
-            return np.asarray(value, dtype=np.float32)
-    return None
+        return np.asarray(group['Registered'], dtype=np.float32)
+    value = getattr(group, 'Registered', None)
+    return None if value is None else np.asarray(value, dtype=np.float32)
 
 
 def as_triples(array):
