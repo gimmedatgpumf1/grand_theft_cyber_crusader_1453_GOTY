@@ -1,5 +1,4 @@
-// Check the game's actual test-room scene: female stays in source pose while
-// the male remains animated. This exercises the GPU scene path without relying
+// Check the game's actual test-room scene: both bodies stay in their source-derived T-pose. This exercises the GPU scene path without relying
 // on a screenshot or claiming the fake callback renders anything.
 #include "client/skeleton_room.h"
 #include "client/room_freecam.h"
@@ -152,12 +151,12 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
     capturedCovered = scene.covered;
     for (const auto& batch : scene.batches) {
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
-        if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleDots = true;
-        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleDots = true;
-        if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleJoints = true;
-        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleJoints = true;
-        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
-        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male-tpose.lines", -0.95, 0)) maleDots = true;
+        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female-tpose.lines", 0.95, 3.14159265)) femaleDots = true;
+        if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male-tpose.lines", -0.95, 0)) maleJoints = true;
+        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female-tpose.lines", 0.95, 3.14159265)) femaleJoints = true;
+        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male-tpose.lines", -0.95, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female-tpose.lines", 0.95, 3.14159265)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
@@ -194,7 +193,7 @@ static bool checkIndexedRecycle() {
 int main() {
     SkeletonModel maleModel;
     std::string error;
-    if (!maleModel.load("tools/skeleton-source/skeleton-male.obj", error)) {
+    if (!maleModel.load("tools/skeleton-source/skeleton-male-tpose.obj", error)) {
         std::printf("male load failed: %s\n", error.c_str()); return 1;
     }
     const int skull = maleModel.bone("skull");
@@ -212,7 +211,7 @@ int main() {
     const auto firstFemale = female, firstMale = male;
     room.render(frame, view, 1.75);
     const double c = std::cos(3.14159265), s = std::sin(3.14159265);
-    const std::array<double, 16> placement{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0.52, 0, 0, 1};
+    const std::array<double, 16> placement{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0.95, 0, 0, 1};
     bool unposed = true;
     for (const auto& matrix : firstFemale) {
         for (std::size_t i = 0; i < matrix.size(); ++i) {
@@ -220,7 +219,7 @@ int main() {
         }
     }
     bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 27 && unposed &&
-                firstFemale == female && firstMale != male && indicesValid &&
+                firstFemale == female && firstMale == male && indicesValid &&
                 expectedSkullIndices > 0 && skullIndexCount == expectedSkullIndices;
     const auto oldFemale = female, oldMale = male;
     const auto oldView = capturedView;
@@ -239,7 +238,7 @@ int main() {
     // A resize on the same call as an animation tick must also stay valid.
     view.width = 1000; view.height = 700;
     room.render(frame, view, 1.90);
-    pass = pass && indicesValid && skullIndexCount == expectedSkullIndices && female == oldFemale && male != oldMale &&
+    pass = pass && indicesValid && skullIndexCount == expectedSkullIndices && female == oldFemale && male == oldMale &&
            capturedWidth == 1000 && capturedHeight == 700 && batchCount == oldBatches;
     // The interactive camera updates the scene even within a single pose tick,
     // without rebuilding geometry or changing either skeleton's pose.

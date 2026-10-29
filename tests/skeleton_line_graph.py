@@ -8,9 +8,12 @@ import ast
 import json
 from itertools import combinations
 import math
+import sys
 from pathlib import Path
 
 base = Path(__file__).resolve().parent.parent / 'tools/skeleton-source'
+pose = '-tpose' if sys.argv[1:] == ['tpose'] else ''
+assert sys.argv[1:] in ([], ['tpose'])
 vertebrae = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
              for i in range(1, count + 1)}
 # Execute only the dependency-free schema function. The generator itself uses
@@ -52,7 +55,7 @@ for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
     segments, edges, dots, groups, solids, anchors, foot_volumes, spheres = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set(), {}
-    for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
+    for row in (base / f'skeleton-{sex}{pose}.lines').read_text().splitlines():
         if row.startswith('# Anchor '):
             parts = row.split()
             group, name = parts[2:4]
@@ -199,7 +202,7 @@ for sex in ('male', 'female'):
     totals = defaultdict(lambda: [0.0, 0.0, 0.0, 0])
     member_vertices = defaultdict(list)
     name = None
-    with (base / f'skeleton-{sex}.obj').open() as obj:
+    with (base / f'skeleton-{sex}{pose}.obj').open() as obj:
         for row in obj:
             if row.startswith('g '): name = row[2:].strip()
             elif (name in vertebrae or name in members or name == 'Sternum' or (name is not None and name.startswith(('Patella_', 'Femur_', 'Humerus_', 'Pelvis_')))) and row.startswith('v '):

@@ -79,10 +79,10 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     restReady_ = false;
     sceneReady_ = false;
     const std::string directory = root + "/tools/skeleton-source/";
-    if (!male_.load(directory + "skeleton-male.obj", error)) return false;
-    if (!female_.load(directory + "skeleton-female.obj", error)) return false;
-    if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
-    if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
+    if (!male_.load(directory + "skeleton-male-tpose.obj", error)) return false;
+    if (!female_.load(directory + "skeleton-female-tpose.obj", error)) return false;
+    if (!maleLines_.load(directory + "skeleton-male-tpose.lines", error)) return false;
+    if (!femaleLines_.load(directory + "skeleton-female-tpose.lines", error)) return false;
     error_.clear();
     ready_ = true;
     return true;
@@ -96,19 +96,19 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.height = std::max(1, view.height);
         camera.fovDegrees = 50;
         camera.target = {0, 0.95, 0};
-        camera.position = {std::sin(view.yaw) * 3.5, 1.15, std::cos(view.yaw) * 3.5};
+        camera.position = {std::sin(view.yaw) * 4.7, 1.15, std::cos(view.yaw) * 4.7};
         camera.worldSpaceGpu = view.gpu;
     }
     if (lineView_) {
-        // Line view is a static inspection of the registered source pose. Its
+        // Line view is a static inspection of the T-pose. Its
         // triangles are built once and stay on the device; meshes are not drawn.
         if (view.gpu) {
             if (!lineSceneReady_) {
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
-                femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+                maleLines_.draw(raster, {-0.95, 0, 0}, 0.0, 9001);
+                femaleLines_.draw(raster, {0.95, 0, 0}, 3.14159265, 8001);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineSceneReady_ = true;
@@ -125,8 +125,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
         raster.setCamera(camera);
         drawFloor(raster, camera); drawWalls(raster, camera);
-        maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
-        femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+        maleLines_.draw(raster, {-0.95, 0, 0}, 0.0, 9001);
+        femaleLines_.draw(raster, {0.95, 0, 0}, 3.14159265, 8001);
         frame = raster.finish();
         frame.logicalUi();
         return;
@@ -141,7 +141,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         // A free camera can leave the room, so its background must be cleared.
         scene_.covered = freecam == nullptr;
     };
-    const double pose = std::floor(std::max(0.0, seconds) * 15.0) / 15.0;
+    (void)seconds;
+    const double pose = 0.0;
     const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_;
     if (reuse) {
         updateCamera();
@@ -153,20 +154,15 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    // Animate the male only; the female keeps the source's registered pose.
+    // Both inspection bodies retain the baked T-pose; no idle animation may
+    // displace their joints away from the requested pose.
     const bool poseChanged = pose != cachedPose_;
-    if (poseChanged) {
-        male_.poseIdle(seconds, 0.0);
-        // Keep the female in the source's original registered pose. The old
-        // idle rig estimated joint pivots and moved her away from that pose.
-    }
 
     if (view.gpu) {
         // A bone is a rigid body. So the triangles are emitted once, in rest
         // position, one batch per bone -- and a pose is then 56 matrices rather
         // than 195,000 transformed vertices per body plus the same geometry
-        // travelling to the GPU again. The male pose updates at fifteen hertz;
-        // the female matrices retain the source pose.
+        // travelling to the GPU again. Both bodies retain the static T-pose.
         if (!restReady_) {
             const int maleBase = 9001;
             const int femaleBase = 8001;
@@ -198,14 +194,12 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             sceneReady_ = true;
         }
         // The pose is the only thing that changes: write the bone matrices into
-        // the batches they belong to. No vertex data moves. Between pose updates
-        // -- which is nineteen frames in twenty at 300 fps -- the matrices are
-        // the same, so the chain is not solved again.
+        // the batches they belong to. No vertex data moves. The static pose is solved only once.
         const bool poseMoved = poseChanged;
         if (poseMoved) {
             // The OpenSkeleton source faces the opposite way to the former atlas.
-            cachedMaleMatrices_ = male_.boneMatrices({-0.52, 0, 0}, 0.0);
-            cachedFemaleMatrices_ = female_.boneMatrices({0.52, 0, 0}, 3.14159265);
+            cachedMaleMatrices_ = male_.boneMatrices({-0.95, 0, 0}, 0.0);
+            cachedFemaleMatrices_ = female_.boneMatrices({0.95, 0, 0}, 3.14159265);
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
@@ -244,8 +238,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     drawWalls(room, camera);
     Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
-    std::thread worker([&] { female_.draw(second, camera, {0.52, 0, 0}, 3.14159265); });
-    male_.draw(room, camera, {-0.52, 0, 0}, 0.0);
+    std::thread worker([&] { female_.draw(second, camera, {0.95, 0, 0}, 3.14159265); });
+    male_.draw(room, camera, {-0.95, 0, 0}, 0.0);
     worker.join();
     second.drain(room);
     frame = room.finish();

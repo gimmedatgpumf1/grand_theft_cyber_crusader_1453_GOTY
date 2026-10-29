@@ -40,7 +40,8 @@ reproducibility; its output is not the currently shipped male.
 
 ## C room line view
 
-Press V in the C room to replace both skeleton meshes with source-pose lines;
+Both C-room skeletons use a static, source-derived T-pose in mesh and V views.
+Press V to replace both skeleton meshes with the simplified view;
 press V again to return to the mesh view. Pale lines approximate the supplied
 bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
 cyan lines connect anatomical neighbours, and orange lines are inferred costal
@@ -102,11 +103,17 @@ are estimates from each surface; the anatomical table chooses the pairs, never
 proximity. The static graph does **not** visualize or validate the existing
 27-group animation rig, and neither the graph nor the source registration is a
 clinical certification. `Head` and `Jaw` are whole source structures, not
-individual skull bones. To regenerate these inspection surfaces, NumPy and
+individual skull bones. The T-pose is an offline hierarchy of 182 rigid source structures: each posed
+child carries its descendants, and V-view surfaces are regenerated from that same
+posed source. The exported 27-group runtime mesh and V-view grouped surfaces are
+not a full 182-joint interactive rig. Joint movement classes and limitations are
+documented in [JOINT_MOBILITY.md](JOINT_MOBILITY.md); they are reference data,
+not enforced runtime constraints. To regenerate these inspection surfaces, NumPy and
 SciPy are required in addition to the OBJ importer
 requirements. Regenerate and check after rebuilding the OBJs with:
 
 ```sh
+python3 tools/skeleton-source/openskeleton/05-t-pose.py
 python3 tools/skeleton-source/openskeleton/04-line-graph.py
 python3 tests/skeleton_line_graph.py
 ```

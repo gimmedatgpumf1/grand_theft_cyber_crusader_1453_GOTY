@@ -70,9 +70,9 @@ private:
         return {std::sin(yaw_) * horizontal, std::sin(pitch_), -std::cos(yaw_) * horizontal};
     }
 
-    Vec3 position_{0, 1.15, 3.5};
+    Vec3 position_{0, 1.15, 4.7};
     double yaw_ = 0;
-    double pitch_ = -std::atan2(0.20, 3.5);
+    double pitch_ = -std::atan2(0.20, 4.7);
     std::set<int> keys_;
 };
 

@@ -468,8 +468,8 @@ def closest_to_point(point, polyline):
     return min(choices, key=lambda value: value[0])
 
 
-def build(sex):
-    bones = read_bones(BASE / f'skeleton-{sex}.obj')
+def build(sex, pose=''):
+    bones = read_bones(BASE / f'skeleton-{sex}{pose}.obj')
     manifest = json.loads((BASE / f'skeleton-{sex}.parts.json').read_text())
     expected = {item['name'] for item in manifest['source_bones']}
     assert set(bones) == expected and len(bones) == 182
@@ -614,9 +614,11 @@ def build(sex):
             # its vertex radius; enclose samples even between its vertices.
             radius = (max(np.linalg.norm(samples-center, axis=1)) + 0.001) / 0.9341
             out.append(f'S {name}_{side} {fmt(center)} {radius:.6f}')
-    (BASE / f'skeleton-{sex}.lines').write_text('\n'.join(out)+'\n')
+    (BASE / f'skeleton-{sex}{pose}.lines').write_text('\n'.join(out)+'\n')
     primitive_count = sum(not row.startswith('#') for row in out)
     print(f'{sex}: {len(bones)} structures, {len(links)} original and {len(visible_links)} visible links, {primitive_count} primitives')
 
 if __name__ == '__main__':
-    for sex in ('male','female'): build(sex)
+    for sex in ('male','female'):
+        build(sex)
+        build(sex, '-tpose')
