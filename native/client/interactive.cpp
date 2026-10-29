@@ -12,6 +12,7 @@
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/status_panel.h"
+#include "client/target_prompt.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
@@ -181,6 +182,20 @@ public:
             // into pixels that already exist. Costs a few hundred fills a frame.
             const auto overlayStart = Clock::now();
             drawCrosshair(frame, view_);
+            // What the reticle is on and what E would do to it. The highlight state
+            // is the same one the interaction itself is gated on, so the prompt
+            // cannot promise something the key would refuse.
+            if (overlay_ == Overlay::None && view_.highlightToilet) {
+                // Laid out when the window changes size, not every frame: the
+                // prompt is two measured lines of type, and measuring them at 300
+                // frames a second is a font query nobody needs.
+                if (promptWidth_ != frame.width || promptHeight_ != frame.height) {
+                    prompt_ = layoutTargetPrompt(frame.width, frame.height, frame.height / 2);
+                    promptWidth_ = frame.width;
+                    promptHeight_ = frame.height;
+                }
+                drawTargetPrompt(frame, prompt_, "Toilet");
+            }
             drawOpenOverlay(frame);
             drawModeBar(frame, view_.mode);
             if (const Character* citizen = local()) {
@@ -691,6 +706,8 @@ private:
     NativeWindow window_;
     ViewState view_;
     Overlay overlay_ = Overlay::None;
+    TargetPromptLayout prompt_{};
+    int promptWidth_ = 0, promptHeight_ = 0;
     std::set<int> keys_;
     bool captured_ = false;
     bool restoreMouseCapture_ = false;

@@ -8,6 +8,7 @@
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/status_panel.h"
+#include "client/target_prompt.h"
 #include "client/interactive.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
@@ -196,7 +197,7 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1", name = "Native Citizen", root = ".";
     std::string output = "build/native-client/frame.png", mode = "tps", toilet;
     bool cheats = false;
-    std::string overlay;
+    std::string overlay, prompt;
     int port = 1453, frames = 1, benchmark = 1;
     bool path = false, move = false, headless = false, verifyRoom = false, verifyPose = false;
     int roomBenchmark = 0;
@@ -236,6 +237,8 @@ int main(int argc, char** argv) {
         // panel would be a claim about it.
         else if (argument == "--cheats") cheats = true;
         else if (argument == "--overlay" && i + 1 < argc) overlay = argv[++i];
+        else if (argument == "--prompt" && i + 1 < argc) prompt = argv[++i];
+        else if (argument == "--highlight") view.highlightToilet = true;
         else if (argument == "--yaw" && i + 1 < argc) view.yaw = static_cast<float>(number(argv[++i]));
         else if (argument == "--pitch" && i + 1 < argc) view.pitch = static_cast<float>(number(argv[++i]));
         else {
@@ -243,7 +246,9 @@ int main(int argc, char** argv) {
                          "  [--mode tps|fps|god] [--path X Z] [--move X Z] [--toilet sit|shit|piss]\n"
                          "  [--width PIXELS] [--height PIXELS] [--benchmark N]\n"
                          "  [--yaw RADIANS] [--pitch RADIANS] [--output PNG] [--cheats]\n"
-                         "  [--overlay toilet|manual] (draw an overlay into the capture)\n";
+                         "  [--overlay toilet|manual] (draw an overlay into the capture)\n"
+                         "  [--prompt NAME] (draw the interact prompt for NAME)\n"
+                         "  [--highlight] (light up the toilet as if pointed at)\n";
             return 2;
         }
     }
@@ -493,6 +498,11 @@ int main(int argc, char** argv) {
     // The same three things the window loop draws, in the same order: the
     // reticle, the need panel when it is open, and the frame rate.
     gtc::native::drawCrosshair(frame, view);
+    if (!prompt.empty()) {
+        gtc::native::drawTargetPrompt(frame, gtc::native::layoutTargetPrompt(frame.width, frame.height,
+                                                                             frame.height / 2),
+                                      prompt.c_str());
+    }
     if (overlay == "toilet") {
         // Drawn with the pointer on the first sector, so the capture shows what a
         // lit sector looks like and not only the resting state.

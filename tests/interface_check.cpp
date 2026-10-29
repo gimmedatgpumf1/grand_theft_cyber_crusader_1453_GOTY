@@ -21,6 +21,7 @@
 #include "client/interface_style.h"
 #include "client/mode_bar.h"
 #include "client/status_panel.h"
+#include "client/target_prompt.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
 #include "client/crosshair.h"
@@ -693,6 +694,72 @@ void examineNeedsPanel(int width, int height, bool windowOrder) {
 }
 
 
+
+// The interact prompt: two lines of text under the reticle, no panel. It may only
+// appear when there is something to interact with, and it must not sit on top of
+// the reticle or run off the frame.
+void examineTargetPrompt(int width, int height, bool windowOrder) {
+    const std::string where = "prompt " + std::to_string(width) + "x" + std::to_string(height) +
+        (windowOrder ? " window-order" : " rgb");
+    const auto layout = gtc::native::layoutTargetPrompt(width, height, height / 2);
+    check(layout.textHeight >= 20, where + ": the text is at or above the floor");
+    check(layout.firstTop > height / 2, where + ": it starts below the reticle");
+
+    // Nothing to show, nothing drawn: the prompt is gated on there being a target.
+    Picture blank(width, height, windowOrder);
+    gtc::native::drawTargetPrompt(blank.frame, layout, nullptr);
+    int touched = 0;
+    for (int y = 0; y < height; y += 2) {
+        for (int x = 0; x < width; x += 2) {
+            if (!blank.untouched(x, y)) ++touched;
+        }
+    }
+    check(touched == 0, where + ": no target, no prompt (" + std::to_string(touched) + " pixels drawn)");
+
+    Picture picture(width, height, windowOrder);
+    gtc::native::drawTargetPrompt(picture.frame, layout, "Toilet");
+
+    // Two lines, both centred, both legible: bright pixels where the words are and
+    // an untouched frame either side of them.
+    const int lineOne = gtc::native::textHeightPixels(layout.textHeight);
+    const auto action = survey(picture, 0, layout.firstTop, width, lineOne, picture.ground);
+    const auto name = survey(picture, 0, layout.secondTop, width, lineOne, picture.ground);
+    check(action.lit > 40, where + ": the action line is drawn");
+    check(name.lit > 10, where + ": the name is drawn");
+    check(name.brightest > action.brightest, where + ": the name is brighter than the action");
+    check(picture.untouched(4, height / 2), where + ": nothing is drawn at the left edge");
+    check(picture.untouched(width - 5, height / 2), where + ": nothing is drawn at the right edge");
+    // No panel and no box: the corners of the band the text sits in are untouched.
+    check(picture.untouched(2, layout.firstTop - 2), where + ": there is no box around it");
+    check(picture.untouched(width - 3, layout.secondTop + lineOne + 1), where + ": the box has no bottom edge");
+
+    // Centred on the reticle's column: the lit pixels are symmetric about the
+    // middle of the frame, to within a pixel or two of type.
+    int firstLit = -1, lastLit = -1;
+    for (int x = 0; x < width; ++x) {
+        int column = 0;
+        for (int y = layout.firstTop; y < layout.firstTop + lineOne; ++y) {
+            const auto pixel = picture.at(x, y);
+            if (pixel[0] < 0) continue;
+            if ((pixel[0] * 30 + pixel[1] * 59 + pixel[2] * 11) / 100 > 90) ++column;
+        }
+        if (column > 0) { if (firstLit < 0) firstLit = x; lastLit = x; }
+    }
+    check(firstLit >= 0 && std::abs((firstLit + lastLit) / 2 - width / 2) <= 2,
+          where + ": the action line is centred on the reticle");
+
+    if (!windowOrder) {
+        const int top = layout.firstTop - 6;
+        const int bandHeight = layout.secondTop + lineOne + 6 - top;
+        zoom(picture, width / 2 - 120, top, 240, bandHeight, 4,
+             "build/native-client/interface-prompt-" + std::to_string(width) + "x" + std::to_string(height) +
+                 ".png");
+    }
+    std::printf("  %-26s prompt at y=%d, %d/%d lit pixels\n", where.c_str(), layout.firstTop, action.lit,
+                name.lit);
+}
+
+
 int main() {
     examineStrip(640, 480, false);
     examineStrip(640, 480, true);
@@ -710,6 +777,10 @@ int main() {
     examineOverlayPanels(640, 480, false);
     examineOverlayPanels(640, 480, true);
     examineOverlayPanels(1920, 1080, true);
+
+    examineTargetPrompt(640, 480, false);
+    examineTargetPrompt(640, 480, true);
+    examineTargetPrompt(1920, 1080, true);
 
     examineNeedsPanel(640, 480, false);
     examineNeedsPanel(640, 480, true);
@@ -739,7 +810,7 @@ int main() {
     gtc::native::drawCheatMenu(frame, -20, 400);
 
     if (failures == 0) {
-        std::printf("interface: PASS (rate strip, reticle, needs panel, mode bar, overlays, interaction circle)\n");
+        std::printf("interface: PASS (rate strip, reticle, prompt, needs panel, mode bar, overlays, circle)\n");
         return 0;
     }
     std::printf("interface: FAIL (%d)\n", failures);

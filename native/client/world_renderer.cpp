@@ -746,10 +746,15 @@ bool WorldRenderer::render(const ClientWorld& world, const ClientState& state, s
             std::cerr << "  floor=" << ms(t0, t1) << " ceiling=" << ms(t1, t2) << " dressing=" << ms(t2, t3) << "\n";
         }
         if (view.highlightToilet) {
+            // A pool of accent colour under the thing the reticle is on, and a ring
+            // round its base. The old one was a darker green painted on a green
+            // floor: a highlight nobody could see is not a highlight.
             Material highlight;
-            highlight.color = colorHex("#86b83e");
+            highlight.color = colorHex("#c8ff5e");
+            highlight.unlit = true;
             drawEllipsoid(rasterizer, camera, Vec3{world.toilet.x, 0.025, world.toilet.y},
                           Vec3{0.82, 0.018, 0.94}, highlight, 24, 5);
+            drawRing(rasterizer, camera, {world.toilet.x, 0.03, world.toilet.y}, 0.72, 0.78, highlight);
         }
         drawObstacles(rasterizer, camera, world);
         drawPaths(rasterizer, camera, state, localId);

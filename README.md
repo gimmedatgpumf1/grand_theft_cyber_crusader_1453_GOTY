@@ -72,6 +72,10 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
   connected views share the result.
 - **H** opens the controls sheet, two columns so it fits a 640×480 frame at the 20-pixel text floor.
 - **F12** saves the current native **640×480 landscape** framebuffer.
+- Pointing at something you can use says so: the object lights up in the world (accent pool and ring
+  under it, unlit so it reads on any floor) and two lines of plain text appear under the reticle,
+  **[E] Interact** then the name of the thing, with no panel around them. Nothing is shown when
+  nothing is pointed at, and the prompt is gated on the same state that E requires.
 - Five things are drawn over the picture, and they are being rebuilt one at a time: the reticle
   (centred, dark-outlined, absent in god view), the **F1** need panel (translucent, centred, two
   columns of keys and their values), the mode bar along the bottom (**1 3rd person / 2 god /
