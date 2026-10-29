@@ -29,6 +29,7 @@ public:
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }
         segments_.clear();
         dots_.clear();
+        joints_.clear();
         solids_.clear();
         std::string line;
         while (std::getline(input, line)) {
@@ -36,6 +37,17 @@ public:
             std::istringstream row(line);
             char kind; std::string first, second; Segment s;
             row >> kind >> first;
+            if (kind == 'S') {
+                Joint joint;
+                row >> joint.center.x >> joint.center.y >> joint.center.z >> joint.radius;
+                if (!row || !std::isfinite(joint.center.x) || !std::isfinite(joint.center.y) ||
+                    !std::isfinite(joint.center.z) || !std::isfinite(joint.radius) ||
+                    joint.radius <= 0 || joint.radius > 0.15) {
+                    error = "Invalid skeleton joint sphere in " + path; return false;
+                }
+                joints_.push_back(joint);
+                continue;
+            }
             if (kind == 'H' || kind == 'F') {
                 Solid solid;
                 solid.volume = true;
@@ -185,6 +197,49 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
+        // One subdivided icosahedron per fitted joint, emitted into a single
+        // cached GPU batch. Nothing is generated per frame in the room view.
+        {
+            constexpr double phi = 1.618033988749895;
+            const Vec3 vertices[] = {{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
+                {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
+                {phi,0,-1},{phi,0,1},{-phi,0,-1},{-phi,0,1}};
+            const int triangles[][3] = {{0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},
+                {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
+                {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
+                {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
+            std::vector<Vec3> points;
+            std::vector<std::array<int, 3>> faces;
+            // Share the twelve corners and thirty edge midpoints per sphere.
+            std::vector<Vec3> unit;
+            for (Vec3 vertex : vertices) unit.push_back(normalized(vertex));
+            std::vector<std::array<int, 2>> edges;
+            std::vector<std::array<int, 3>> unitFaces;
+            auto midpoint = [&](int a, int b) {
+                if (a > b) std::swap(a,b);
+                const std::array<int, 2> edge{a,b};
+                for (std::size_t i = 0; i < edges.size(); ++i)
+                    if (edges[i] == edge) return static_cast<int>(12+i);
+                edges.push_back(edge);
+                unit.push_back(normalized(unit[a]+unit[b]));
+                return static_cast<int>(unit.size()-1);
+            };
+            for (const auto& triangle : triangles) {
+                const int a = triangle[0], b = triangle[1], c = triangle[2];
+                const int ab = midpoint(a,b), bc = midpoint(b,c), ca = midpoint(c,a);
+                unitFaces.push_back({a,ab,ca}); unitFaces.push_back({ab,b,bc});
+                unitFaces.push_back({ca,bc,c}); unitFaces.push_back({ab,bc,ca});
+            }
+            for (const Joint& joint : joints_) {
+                const int start = static_cast<int>(points.size());
+                const Vec3 center = place(joint.center);
+                for (Vec3 p : unit) points.push_back(center + p*joint.radius);
+                for (const auto& f : unitFaces) faces.push_back({start+f[0], start+f[1], start+f[2]});
+            }
+            Material material;
+            material.color = colorHex("#e9dfbd");
+            out.mesh(points, faces, material);
+        }
         // Palms, paired limbs, shoulder girdle and rib cage are thin surfaces;
         // feet are fitted closed volumes. All use the cached GPU solid batch.
         std::vector<Vec3> points;
@@ -216,6 +271,8 @@ public:
     }
 
 private:
+    struct Joint { Vec3 center; double radius = 0; };
+    std::vector<Joint> joints_;
     std::vector<Segment> segments_;
     std::vector<Vec3> dots_;
     std::vector<Solid> solids_;

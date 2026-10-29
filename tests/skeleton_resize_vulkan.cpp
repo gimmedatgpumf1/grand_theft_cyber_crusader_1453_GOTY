@@ -16,6 +16,7 @@ static bool bothVisible = true;
 static bool dotsVisible = false;
 static bool solidsVisible = false;
 static bool heelsVisible = false;
+static bool jointsVisible = false;
 
 static bool renderAndCheck(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
@@ -64,7 +65,7 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
         noDots.revision += id + 20000;
         bool removed = false;
         for (auto& batch : noDots.batches) {
-            if (batch.objectId == id && batch.indices.size() == 194 * 36 + 24 * 60) {
+            if (batch.objectId == id && batch.indices.size() == 190 * 36 + 24 * 60) {
                 batch.indices.resize(batch.indices.size() - 24 * 60);
                 removed = true;
             }
@@ -85,6 +86,65 @@ static bool renderAndCheckDots(const GpuScene& scene, NativeFrame& frame) {
         if (changed < 5) return false;
     }
     dotsVisible = true;
+    return true;
+}
+
+// Remove each joint sphere independently from the real device image. Try
+// both sides of the source pose because the crossed arms can occlude joints.
+static bool renderAndCheckJoints(const GpuScene& scene, NativeFrame& frame) {
+    int sequence = 0;
+    for (std::uint32_t id : {8001u, 9001u}) {
+        const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
+        std::ifstream input(path);
+        std::string row;
+        int joint = 0;
+        while (std::getline(input, row)) {
+            if (row.rfind("S ", 0) != 0) continue;
+            std::istringstream fields(row);
+            char type; std::string name; Vec3 p; double radius;
+            fields >> type >> name >> p.x >> p.y >> p.z >> radius;
+            if (!fields || joint >= 8) return false;
+            int changed = 0;
+            for (int direction : {1, -1}) {
+                Camera camera;
+                camera.width = scene.width; camera.height = scene.height;
+                camera.fovDegrees = 50; camera.position = {0,1.15,3.5*direction};
+                camera.target = {0,0.95,0}; camera.worldSpaceGpu = true;
+                GpuScene intact = scene;
+                intact.viewMatrix = camera.viewMatrix();
+                intact.revision += 100000 + sequence++;
+                NativeFrame image; image.width = scene.width; image.height = scene.height;
+                image.wantPixels = true; image.wantsBgra = true;
+                if (!renderVulkanScene(intact, image)) return false;
+                const std::size_t bytes = static_cast<std::size_t>(scene.width)*scene.height*4;
+                const unsigned char* pixels = image.direct ? image.direct : image.bgra.data();
+                const std::vector<unsigned char> original(pixels,pixels+bytes);
+                GpuScene without = intact; without.revision += 100000;
+                bool removed = false;
+                for (auto& batch : without.batches) {
+                    if (batch.objectId != id || batch.vertices.size() != 8*42 || batch.indices.size() != 8*240) continue;
+                    auto begin = batch.indices.begin() + joint*240;
+                    batch.indices.erase(begin, begin+240);
+                    removed = true;
+                }
+                if (!removed || !renderVulkanScene(without, image)) return false;
+                pixels = image.direct ? image.direct : image.bgra.data();
+                int viewChanged = 0;
+                for (std::size_t at = 0; at < bytes; at += 4) {
+                    int diff = 0;
+                    for (int c = 0; c < 3; ++c) diff += std::abs(int(original[at+c])-int(pixels[at+c]));
+                    if (diff > 24) ++viewChanged;
+                }
+                changed = std::max(changed, viewChanged);
+                if (changed > 2) break;
+            }
+            std::printf("Vulkan joint %u %s: %d visible pixels\n", id, name.c_str(), changed);
+            if (changed < 3) return false;
+            ++joint;
+        }
+        if (joint != 8) return false;
+    }
+    jointsVisible = true;
     return true;
 }
 
@@ -339,6 +399,9 @@ int main() {
         setGpuRenderer(&renderAndCheckDots);
         room.render(frame, view, 2.5);
         ok = ok && dotsVisible;
+        setGpuRenderer(&renderAndCheckJoints);
+        room.render(frame, view, 2.5);
+        ok = ok && jointsVisible;
         setGpuRenderer(&renderAndCheckSolids);
         room.render(frame, view, 2.5);
         ok = ok && solidsVisible;

@@ -1,5 +1,5 @@
 # OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.
-# D vertebra dot; B bone segment; M thin surface; F ten-point foot; J joint; C cartilage.
+# D vertebra dot; B bone segment; M thin surface; F ten-point foot; J joint; C cartilage; S joint sphere.
 # Group HandPalm_L HandScaphoid_L HandLuna_L HandTriquetrum_L HandPisiform_L HandTrapezoideum_L HandCapitatum_L HandHamata_L HandMeta2_L HandMeta3_L HandMeta4_L HandMeta5_L
 # Group FootBase_L Tal_L Cal_L Nav_L Cub_L MedCun_L InterCun_L LatCun_L FootSesaMed_L FootSesaLat_L FootMeta1_L FootMeta2_L FootMeta3_L FootMeta4_L FootMeta5_L
 # Group Forearm_L Radius_L Ulna_L
@@ -188,10 +188,6 @@ D L2 -0.030762 1.137976 -0.017970
 D L3 -0.027980 1.103885 -0.008525
 D L4 -0.027304 1.070066 0.000499
 D L5 -0.026331 1.037246 0.004738
-B Patella_L 0.126103 0.516227 0.035361 0.136292 0.529548 0.030296
-B Patella_L 0.136292 0.529548 0.030296 0.145932 0.542151 0.025503
-B Patella_R -0.243358 0.512190 0.051255 -0.253519 0.522330 0.042097
-B Patella_R -0.253519 0.522330 0.042097 -0.263386 0.532175 0.033205
 B Pelvis_L 0.077039 1.015270 0.004214 0.052202 0.945300 0.014979
 B Pelvis_L 0.052202 0.945300 0.014979 0.021203 0.857971 0.028414
 B Pelvis_L 0.021203 0.857971 0.028414 0.052202 0.945300 0.014979
@@ -439,3 +435,11 @@ C Sternum RibCage -0.034140 1.281496 0.080673 -0.116812 1.265850 0.079569
 C Sternum RibCage -0.034140 1.281496 0.080673 -0.123154 1.231060 0.081515
 C Sternum RibCage -0.039073 1.375932 0.058046 -0.071104 1.349008 -0.047340
 J Pelvis_L Pelvis_R 0.021203 0.857971 0.028414 -0.075178 0.855058 0.021798
+S Shoulder_L 0.098790 1.484863 0.007083 0.025479
+S Elbow_L 0.210085 1.227895 0.057754 0.021146
+S Hip_L 0.061355 0.902821 0.024550 0.027902
+S Knee_L 0.119362 0.524580 0.011300 0.043579
+S Shoulder_R -0.189133 1.470140 0.017480 0.025721
+S Elbow_R -0.119810 1.285312 0.236382 0.022391
+S Hip_R -0.112174 0.900415 0.012655 0.031107
+S Knee_R -0.230910 0.520140 0.027195 0.043076

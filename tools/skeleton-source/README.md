@@ -65,6 +65,14 @@ across the shoulders and chest. The source labels the sternum as a single bone r
 the manubrium, so the upper 35% of its displayed centreline is an approximation;
 the rest of the sternum remains separate and connects to the surface.
 
+Each shoulder, elbow, hip and knee has a low-poly 3D ball fitted to the
+source bone contact areas and the displayed connection endpoints. The kneecap
+(patella) is enclosed by its knee ball rather than drawn as a separate bone.
+The other long bones and grouped surfaces remain separate. OpenSkeleton does
+not label individual joint centres or other small bones at these joints; the
+balls are visual approximations, not measured joint surfaces. Their triangles
+are cached with the rest of the static V-view scene.
+
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the
 ankle. The front's top and bottom are fitted to the actual heights and
@@ -78,7 +86,8 @@ surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and
-external links are retained, leaving 106 displayed shapes and 142 visible links.
+external links are retained, leaving 106 graph nodes and 142 visible links;
+the eight joint balls visually cover the corresponding joint areas.
 The table is based on OpenStax's
 [thoracic cage](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage),
 [upper limb](https://openstax.org/books/anatomy-and-physiology/pages/8-2-bones-of-the-upper-limb)

@@ -51,7 +51,7 @@ reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges, dots, groups, solids, anchors, foot_volumes = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set()
+    segments, edges, dots, groups, solids, anchors, foot_volumes, spheres = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set(), {}
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
         if row.startswith('# Anchor '):
             parts = row.split()
@@ -68,7 +68,12 @@ for sex in ('male', 'female'):
         if not row or row.startswith('#'): continue
         fields = row.split()
         kind = fields[0]
-        if kind == 'D':
+        if kind == 'S':
+            assert len(fields) == 6 and fields[1] not in spheres
+            values = tuple(map(float, fields[2:]))
+            assert all(map(math.isfinite, values)) and 0.01 < values[3] < 0.08
+            spheres[fields[1]] = (values[:3], values[3])
+        elif kind == 'D':
             assert len(fields) == 5 and fields[1] in vertebrae and fields[1] not in dots
             point = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, point))
@@ -185,7 +190,10 @@ for sex in ('male', 'female'):
     visible = (expected - set(members)) | set(groups)
     assert len(visible) == 106
     assert set(dots) == vertebrae and not set(segments) & vertebrae
-    assert set(segments) | set(dots) == visible
+    patellae = {f'Patella_{side}' for side in ('L','R')}
+    assert set(spheres) == {f'{joint}_{side}' for joint in ('Shoulder','Elbow','Hip','Knee') for side in ('L','R')}
+    assert not (patellae & set(segments))
+    assert set(segments) | set(dots) | patellae == visible
     # Dot placement is the centre of the corresponding supplied vertebra, not
     # a guessed skeleton-level average or a dot duplicated from another bone.
     totals = defaultdict(lambda: [0.0, 0.0, 0.0, 0])
@@ -194,14 +202,32 @@ for sex in ('male', 'female'):
     with (base / f'skeleton-{sex}.obj').open() as obj:
         for row in obj:
             if row.startswith('g '): name = row[2:].strip()
-            elif (name in vertebrae or name in members or name == 'Sternum') and row.startswith('v '):
+            elif (name in vertebrae or name in members or name == 'Sternum' or (name is not None and name.startswith(('Patella_', 'Femur_', 'Humerus_', 'Pelvis_')))) and row.startswith('v '):
                 coords = list(map(float, row.split()[1:4]))
-                if name in members: member_vertices[name].append(coords)
+                if name in members or (name is not None and name.startswith(('Patella_', 'Femur_', 'Humerus_', 'Pelvis_'))): member_vertices[name].append(coords)
                 for i in range(3): totals[name][i] += coords[i]
                 totals[name][3] += 1
     for name, point in dots.items():
         sums = totals[name]
         assert sums[3] and math.dist(point, tuple(x / sums[3] for x in sums[:3])) < 0.00001
+    for side in ('L','R'):
+        for joint, names in (('Shoulder', ('Scapula','Humerus')), ('Elbow', ('Humerus','Radius','Ulna')),
+                             ('Hip', ('Pelvis','Femur')), ('Knee', ('Femur','Tibia','Patella'))):
+            center, radius = spheres[f'{joint}_{side}']
+            for name in names:
+                vertices = member_vertices[f'{name}_{side}']
+                assert min(math.dist(center, p) for p in vertices) < radius, (joint, side, name)
+            if joint == 'Knee':
+                assert max(math.dist(center, p) for p in member_vertices[f'Patella_{side}']) < radius*0.9341
+        for joint, pairs in (('Shoulder', [('ShoulderGirdle', f'Humerus_{side}')]),
+                             ('Elbow', [(f'Humerus_{side}', f'Forearm_{side}')]),
+                             ('Hip', [(f'Pelvis_{side}', f'Femur_{side}')]),
+                             ('Knee', [(f'Femur_{side}', f'Shin_{side}'), (f'Femur_{side}', f'Patella_{side}')])):
+            center, radius = spheres[f'{joint}_{side}']
+            for pair in pairs:
+                matches = [ends for kind,a,b,ends in edges if {a,b} == set(pair)]
+                assert len(matches) == 1
+                assert all(math.dist(center, p) <= radius+0.00001 for p in (matches[0][:3], matches[0][3:]))
     for group, part_names in groups.items():
         counts = sum(totals[name][3] for name in part_names)
         assert counts > 0 and all(totals[name][3] for name in part_names)
@@ -502,7 +528,8 @@ for sex in ('male', 'female'):
                 v = tuple(y-x for x,y in zip(a,b))
                 t = max(0, min(1, sum((x-y)*z for x,y,z in zip(p,a,v)) / sum(x*x for x in v)))
                 return math.dist(p, tuple(x+t*y for x,y in zip(a,v)))
-            if bone in dots: assert math.dist(point, dots[bone]) < 0.00001, bone
+            if bone in patellae: assert math.dist(point, spheres['Knee_'+bone[-1]][0]) <= spheres['Knee_'+bone[-1]][1] + 0.00001
+            elif bone in dots: assert math.dist(point, dots[bone]) < 0.00001, bone
             elif bone in solids:
                 assert point_in_solid(point, solids[bone]), bone
             else:
@@ -562,4 +589,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(edges)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, one connected rib cage, one shoulder girdle, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(edges)} visible links, {len(foot_volumes)} ten-point feet, 2 palm surfaces, 4 paired-bone planes, one connected rib cage, one shoulder girdle, 8 joint balls, {len(dots)} vertebra dots)')

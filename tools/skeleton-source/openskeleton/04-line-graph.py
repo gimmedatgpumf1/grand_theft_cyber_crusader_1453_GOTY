@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import math
 import numpy as np
-from scipy.spatial import Delaunay, ConvexHull
+from scipy.spatial import Delaunay, ConvexHull, cKDTree
 
 BASE = Path(__file__).resolve().parent.parent
 VERTEBRAE = {f'{region}{i}' for region, count in (('C', 7), ('T', 12), ('L', 5))
@@ -513,7 +513,7 @@ def build(sex):
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; M thin surface; F ten-point foot; J joint; C cartilage.']
+           '# D vertebra dot; B bone segment; M thin surface; F ten-point foot; J joint; C cartilage; S joint sphere.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
@@ -525,6 +525,9 @@ def build(sex):
             upper = 0 if pts[0][1] > pts[2][1] else 2
             lower = 2 if upper == 0 else 0
             pts[upper] = pts[upper] + 0.35*(pts[lower]-pts[upper])
+        # The patella is represented inside the knee sphere, not as a
+        # second visible bone. Keep its line internally for existing links.
+        if name.startswith('Patella_'): continue
         if name in VERTEBRAE:
             out.append(f'D {name} {fmt(pts[0])}')
         for a,b in zip(pts,pts[1:]):
@@ -543,6 +546,7 @@ def build(sex):
         points, _, _, owners = solid
         choices = [closest_to_point(points[index], line) for index in owners[original]]
         return min(choices, key=lambda value: value[0])
+    endpoints = {}
     for a,b,kind,original_a,original_b in visible_links:
         # Anatomical endpoints are not supplied. Localise only the already-known
         # relationship with nearest points on its centrelines; never use
@@ -585,7 +589,31 @@ def build(sex):
                        for p, q in line_segments(a)
                        for r, s in line_segments(b)]
             _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
+        endpoints[frozenset((a,b))] = (x,y)
         out.append(f'{"C" if kind == "cartilage" else "J"} {a} {b} {fmt(x)} {fmt(y)}')
+    for side in ('L', 'R'):
+        specs = (('Shoulder', [('Scapula','Humerus')], [('ShoulderGirdle', f'Humerus_{side}')]),
+                 ('Elbow', [('Humerus','Radius'), ('Humerus','Ulna')], [(f'Humerus_{side}', f'Forearm_{side}')]),
+                 ('Hip', [('Pelvis','Femur')], [(f'Pelvis_{side}', f'Femur_{side}')]),
+                 ('Knee', [('Femur','Tibia'), ('Femur','Patella')],
+                  [(f'Femur_{side}', f'Shin_{side}'), (f'Femur_{side}', f'Patella_{side}')]))
+        for name, pairs, visual in specs:
+            samples = []
+            for first, second in pairs:
+                a, b = bones[f'{first}_{side}'], bones[f'{second}_{side}']
+                distances, nearest = cKDTree(b).query(a)
+                near = distances <= np.quantile(distances, 0.01)
+                samples.extend((a[near] + b[nearest[near]]) * 0.5)
+            # Include the displayed line endpoints so bones reach the ball,
+            # and the full patella so that it really is merged into the knee.
+            samples.extend(point for pair in visual for point in endpoints[frozenset(pair)])
+            if name == 'Knee': samples.extend(bones[f'Patella_{side}'])
+            samples = np.array(samples)
+            center = (samples.min(axis=0) + samples.max(axis=0)) / 2
+            # The subdivided icosahedron has an inradius of 0.93417 times
+            # its vertex radius; enclose samples even between its vertices.
+            radius = (max(np.linalg.norm(samples-center, axis=1)) + 0.001) / 0.9341
+            out.append(f'S {name}_{side} {fmt(center)} {radius:.6f}')
     (BASE / f'skeleton-{sex}.lines').write_text('\n'.join(out)+'\n')
     primitive_count = sum(not row.startswith('#') for row in out)
     print(f'{sex}: {len(bones)} structures, {len(links)} original and {len(visible_links)} visible links, {primitive_count} primitives')
