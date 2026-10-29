@@ -72,8 +72,7 @@ readback -- for its first frames. When a backend is slow, that breakdown is the
 only thing that says which stage to fix; `GTC_VK_PROFILE=1` does the same for a
 normal run. `--renderer all` measures the software
 rasterizer, Vulkan and OpenGL in one run; OpenGL needs a real window, so it is
-measured through the window's own path. The game always reports its average frame
-rate once a second, and the first line on stdout names the backend carrying the frame.
+measured through the window's own path. The interactive game does not print periodic frame-rate reports.
 
 The room is the acceptance measurement, and it can be timed without a display:
 `gtc-native-client --room-benchmark 60 --width 1568 --height 929 --renderer vulkan`
@@ -82,7 +81,6 @@ start rather than quietly measuring the CPU fallback. `--renderer scene` does th
 backend that accepts the scene and draws nothing, which reports the half of the frame that stays on
 the CPU either way; on the two-core build machine that is 4.1 ms for the room at 1568x929 (the
 batches are rebuilt at the pose's 15 Hz, not per frame) against 94.6 ms for the full CPU path.
-The interactive loop prints its average to stderr once a second, including in the test room.
 
 Native controls: **1/2/3** select TPS/god/FPS; WASD moves or fast-pans god view; the player defaults to **6.4 km/h fast walking**, **Caps Lock** toggles **4 km/h slow walking**, and **Shift** sprints at **20 km/h** (or boosts god pan); NPCs use slow walking and fast walking for urgent trips. The default citizen is **1.7 m** tall. Click captures the mouse and Esc releases it; the wheel zooms. **T** zips/unzips male trousers, which start zipped with a loose, projecting two-panel cloth tent in every view. Unzipped **LMB** (or FPS **F**) pees; **RMB** aims the ranged weapon with modest zoom or blocks with melee. In god view, hold **Alt** to crouch; **RMB** paths, **Shift-RMB** auto-runs, **double-RMB** uses advanced jump/climb/crouch traversal, **LMB** attacks, and **double-LMB** gives melee an advanced approach; ranged double-LMB simply shoots. **E** opens the in-range Sit/Shit/Piss choice or stands, and **1/2/3** pick one. **C** opens the generic style + 107-universal-morph creator, **F1** opens the need controls, and **F12** saves a native PNG. The mode strip and the F1 panel are clickable when the mouse is free (Escape frees it): the block or
 entry under the pointer brightens, and a click on it does what its key does -- the box that lights

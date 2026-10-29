@@ -8,7 +8,6 @@
 #include "client/cheat_menu.h"
 #include "client/crosshair.h"
 #include "client/fps_counter.h"
-#include "client/fps_report.h"
 #include "client/mode_bar.h"
 #include "client/interaction_wheel.h"
 #include "client/overlay_panel.h"
@@ -66,7 +65,6 @@ public:
         // Which backend is actually carrying the frame is the first thing worth
         // knowing when a frame is slow; guessing it wastes an evening.
         tracef("window: backend=%s size=%dx%d", window_.backend(), view_.width, view_.height);
-        std::cout << "backend: " << window_.backend() << " at " << view_.width << 'x' << view_.height << '\n';
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;
@@ -76,18 +74,12 @@ public:
         auto inputTime = previous;
         NativeFrame frame;
         bool running = true;
-        // The two halves of a frame, measured where the test room runs.
-        double renderMilliseconds = 0.0;
-        double presentMilliseconds = 0.0;
-        double logicMilliseconds = 0.0;
-        FrameRateReporter frameRate(previous);
         while (running && window_.opened() && client_.connected()) {
             const auto now = Clock::now();
             const float elapsed = std::max(0.0001F, std::chrono::duration<float>(now - previous).count());
             const float dt = std::min(0.05F, elapsed);
             view_.fps = view_.fps > 0 ? view_.fps * 0.90 + (1.0 / elapsed) * 0.10 : 1.0 / elapsed;
             previous = now;
-            const auto loopStart = Clock::now();
             if (!client_.receive(error, 0)) {
                 std::cerr << error << '\n';
                 return 1;
@@ -108,35 +100,16 @@ public:
             updatePresentation();
             updateHighlight();
             updateReticle();
-            const auto renderStart = Clock::now();
-            // Everything above this line is the game's own work: reading the
-            // server, the events, the state the frame is drawn from.
-            logicMilliseconds = std::chrono::duration<double, std::milli>(renderStart - loopStart).count();
-            // The two halves of the frame, kept in the loop's scope so the
-            // reporter outside it sees this iteration's numbers rather than the
-            // zeros it was initialised with.
-            renderMilliseconds = 0.0;
-            presentMilliseconds = 0.0;
             if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
                 // The room is the one path with no overlay drawn over it on the
                 // CPU, so its frame can go straight to the window.
                 frame.wantPixels = false;
                 room_.render(frame, view_, seconds);
-                renderMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
-                view_.frameMilliseconds = view_.frameMilliseconds > 0
-                    ? view_.frameMilliseconds * 0.9 + renderMilliseconds * 0.1
-                    : renderMilliseconds;
-                const auto presentStart = Clock::now();
                 if (!window_.present(frame)) {
                     std::cerr << "Native window presentation failed\n";
                     return 1;
                 }
-                presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
-                view_.drawMilliseconds = renderMilliseconds;
-                view_.presentMilliseconds = presentMilliseconds;
-                view_.logicMilliseconds = logicMilliseconds;
-                frameRate.record(Clock::now(), renderMilliseconds, presentMilliseconds, logicMilliseconds);
                 continue;
             }
             // The UI is geometry submitted with the world, never a CPU overlay.
@@ -164,25 +137,15 @@ public:
                 std::cerr << "frame failed: " << error << '\n';
                 std::abort();
             }
-            const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
-            view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
             frame.uiLayer = nullptr;
-            const auto overlayStart = Clock::now();
             if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
                 std::cerr << "Vulkan did not present the interface on the device\n";
                 return 1;
             }
-            renderMilliseconds = renderMs +
-                std::chrono::duration<double, std::milli>(Clock::now() - overlayStart).count();
-            view_.drawMilliseconds = renderMilliseconds;
-            view_.logicMilliseconds = logicMilliseconds;
-            const auto presentStart = Clock::now();
             if (!window_.present(frame)) {
                 std::cerr << "Native window presentation failed\n";
                 return 1;
             }
-            presentMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - presentStart).count();
-            view_.presentMilliseconds = presentMilliseconds;
             if (screenshot_) {
                 std::filesystem::create_directories("build/native-client");
                 if (!window_.save(frame, "build/native-client/window.png")) {
@@ -191,7 +154,6 @@ public:
                 }
                 screenshot_ = false;
             }
-            frameRate.record(Clock::now(), renderMilliseconds, presentMilliseconds, logicMilliseconds);
         }
         return 0;
     }

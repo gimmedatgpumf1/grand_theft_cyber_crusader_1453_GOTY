@@ -283,10 +283,6 @@ bool Renderer::createSwapchain(int width, int height) {
     tracef("vk: swapchain %ux%u, %u images, %s", extent.width, extent.height, count,
            mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
            : mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo");
-    std::printf("[vk] swapchain: %ux%u, %u images, %s, %s handover\n", extent.width, extent.height, count,
-                mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
-                : mode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo",
-                swapFormat_ == colourFormat_ || sameChannelBytes(swapFormat_, colourFormat_) ? "copy" : "blit");
     return true;
 }
 
