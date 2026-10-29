@@ -57,34 +57,43 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
     std::size_t solids = 0, vertexOffset = 0, indexOffset = 0;
     const double c = std::cos(yaw), s = std::sin(yaw);
     while (std::getline(file, row)) {
-        if (row.rfind("M ", 0) != 0) continue;
+        const bool hexahedron = row.rfind("H ", 0) == 0;
+        if (!hexahedron && row.rfind("M ", 0) != 0) continue;
         std::istringstream input(row);
-        char kind; std::string name; double thickness; int count, faceCount, edgeCount;
-        input >> kind >> name >> thickness >> count >> faceCount >> edgeCount;
-        const std::size_t indexCount = (faceCount + edgeCount) * 6;
-        if (!input || count < 3 || thickness <= 0 || thickness > 0.003 ||
-            vertexOffset + 2*count > batch.vertices.size() || indexOffset + indexCount > batch.indices.size()) return false;
+        char kind; std::string name; double thickness = 0; int count = 8, faceCount = 0, edgeCount = 0;
+        input >> kind >> name;
+        if (!hexahedron) input >> thickness >> count >> faceCount >> edgeCount;
+        const std::size_t vertexCount = hexahedron ? 8 : 2 * count;
+        const std::size_t indexCount = hexahedron ? 36 : (faceCount + edgeCount) * 6;
+        if (!input || count < 3 || (!hexahedron && (thickness <= 0 || thickness > 0.001)) ||
+            vertexOffset + vertexCount > batch.vertices.size() || indexOffset + indexCount > batch.indices.size()) return false;
         for (int i = 0; i < count; ++i) {
             Vec3 p; input >> p.x >> p.y >> p.z;
             const Vec3 expected{x + c*p.x + s*p.z, p.y, -s*p.x + c*p.z};
             const auto& a = batch.vertices[vertexOffset+i];
-            const auto& b = batch.vertices[vertexOffset+count+i];
-            const Vec3 first{a.x,a.y,a.z}, second{b.x,b.y,b.z};
-            if (!input || length((first + second) / 2 - expected) > 1e-6 ||
-                std::abs(length(second - first) - thickness) > 1e-6) return false;
+            const Vec3 first{a.x,a.y,a.z};
+            if (!input) return false;
+            if (hexahedron) {
+                if (length(first - expected) > 1e-6) return false;
+            } else {
+                const auto& b = batch.vertices[vertexOffset+count+i];
+                const Vec3 second{b.x,b.y,b.z};
+                if (length((first + second) / 2 - expected) > 1e-6 ||
+                    std::abs(length(second - first) - thickness) > 1e-6) return false;
+            }
         }
-        // Caps and boundary walls form a closed triangle mesh, including holes.
+        // All six hexahedron faces and both palm caps form closed meshes.
         std::map<std::pair<unsigned,unsigned>, int> edges;
         for (std::size_t i = indexOffset; i < indexOffset + indexCount; i += 3) {
             for (int corner = 0; corner < 3; ++corner) {
                 auto a = batch.indices[i+corner], b = batch.indices[i+(corner+1)%3];
-                if (a < vertexOffset || a >= vertexOffset + 2*count || b < vertexOffset || b >= vertexOffset + 2*count) return false;
+                if (a < vertexOffset || a >= vertexOffset + vertexCount || b < vertexOffset || b >= vertexOffset + vertexCount) return false;
                 if (a > b) std::swap(a,b);
                 ++edges[{a,b}];
             }
         }
         for (auto edge : edges) if (edge.second != 2) return false;
-        vertexOffset += 2*count; indexOffset += indexCount; ++solids;
+        vertexOffset += vertexCount; indexOffset += indexCount; ++solids;
     }
     return solids == 4 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
 }

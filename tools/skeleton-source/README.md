@@ -46,15 +46,15 @@ bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
 cyan lines connect anatomical neighbours, and orange lines are inferred costal
 cartilage (not present in the scans). Each palm is one filled, closed 3D shape
 for the seven non-thumb carpals and metacarpals 2–5; the trapezium, thumb
-metacarpal, and all finger bones stay separate. Each foot is one 3D shape for
-the tarsals, metatarsals and sesamoids; toes remain separate. Each is one
-continuous, filled triangulated surface, spanning the carpal/tarsal centres and
-the centre and ends of each metacarpal/metatarsal. Each heel additionally reaches
-the source calcaneus's bottom, rear and side extremities, in its registered pose.
-Its vertices retain their
-source-derived 3D positions; projection is used only to select the triangles.
-It has a 1 mm thickness for visibility, not anatomical thickness. This is a
-simplified inspection shape, not a clinically accurate reconstruction.
+metacarpal, and all finger bones stay separate. Each palm is a thin continuous
+triangulated surface anchored to the individual source bones.
+
+Each foot base is a **six-faced hexahedron**, containing its tarsals,
+metatarsals and sesamoids; toes remain separate. Its long axis runs from the
+calcaneus toward the metatarsals, its height direction comes from the calcaneus
+to the talus, and all three dimensions are fitted to the actual source vertices.
+This includes the full heel. It is a rectangular approximation in the source's
+registered pose, not an anatomical surface or a change to the animation rig.
 
 Both models use the same explicit, connected table of 182 structures and 209
 relationships. Internal links within each unified shape are hidden and

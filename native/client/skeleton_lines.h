@@ -21,6 +21,7 @@ public:
         std::vector<std::array<int, 2>> edges;
         Vec3 normal;
         double thickness = 0;
+        bool hexahedron = false;
     };
 
     bool load(const std::string& path, std::string& error) {
@@ -35,6 +36,23 @@ public:
             std::istringstream row(line);
             char kind; std::string first, second; Segment s;
             row >> kind >> first;
+            if (kind == 'H') {
+                Solid solid;
+                solid.hexahedron = true;
+                for (int i = 0; i < 8; ++i) {
+                    Vec3 point;
+                    row >> point.x >> point.y >> point.z;
+                    if (!row || !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+                        error = "Invalid skeleton foot hexahedron in " + path; return false;
+                    }
+                    solid.points.push_back(point);
+                }
+                const double volume = std::abs(dot(solid.points[4]-solid.points[0],
+                    cross(solid.points[2]-solid.points[0], solid.points[1]-solid.points[0])));
+                if (volume < 1e-10) { error = "Degenerate skeleton foot in " + path; return false; }
+                solids_.push_back(std::move(solid));
+                continue;
+            }
             if (kind == 'M') {
                 Solid solid;
                 int vertices = 0, faces = 0, edges = 0;
@@ -152,13 +170,23 @@ public:
             }
             out.mesh(points, faces, materials[type]);
         }
-        // Thin filled surfaces span source-bone anchors in their original 3-D
-        // positions. Caps and boundary walls keep both sides visible.
+        // Hands are thin source-anchored surfaces; feet are fitted six-face
+        // volumes. Both use the same cached, device-rendered solid batch.
         std::vector<Vec3> points;
         std::vector<std::array<int, 3>> faces;
         for (const auto& solid : solids_) {
             const int start = static_cast<int>(points.size());
             const int count = static_cast<int>(solid.points.size());
+            if (solid.hexahedron) {
+                for (Vec3 point : solid.points) points.push_back(place(point));
+                const int quads[][4] = {{0,1,3,2}, {4,6,7,5}, {0,4,5,1},
+                                        {2,3,7,6}, {0,2,6,4}, {1,5,7,3}};
+                for (const auto& quad : quads) {
+                    faces.push_back({start+quad[0], start+quad[1], start+quad[2]});
+                    faces.push_back({start+quad[0], start+quad[2], start+quad[3]});
+                }
+                continue;
+            }
             for (int layer = 0; layer < 2; ++layer)
                 for (Vec3 point : solid.points)
                     points.push_back(place(point + solid.normal * ((layer ? 0.5 : -0.5) * solid.thickness)));

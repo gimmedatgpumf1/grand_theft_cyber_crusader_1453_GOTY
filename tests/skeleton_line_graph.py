@@ -50,7 +50,7 @@ reference = None
 for sex in ('male', 'female'):
     source = json.loads((base / f'skeleton-{sex}.parts.json').read_text())
     expected = {bone['name'] for bone in source['source_bones']}
-    segments, edges, dots, groups, solids, anchors = defaultdict(list), [], {}, {}, {}, defaultdict(dict)
+    segments, edges, dots, groups, solids, anchors, hexahedra = defaultdict(list), [], {}, {}, {}, defaultdict(dict), set()
     for row in (base / f'skeleton-{sex}.lines').read_text().splitlines():
         if row.startswith('# Anchor '):
             parts = row.split()
@@ -72,6 +72,16 @@ for sex in ('male', 'female'):
             point = tuple(map(float, fields[2:]))
             assert all(map(math.isfinite, point))
             dots[fields[1]] = point
+        elif kind == 'H':
+            name = fields[1]
+            assert name not in solids and name.startswith('FootBase_') and len(fields) == 26
+            values = tuple(map(float, fields[2:]))
+            assert all(map(math.isfinite, values))
+            points = [values[i:i+3] for i in range(0, len(values), 3)]
+            quads = ((0,1,3,2), (4,6,7,5), (0,4,5,1), (2,3,7,6), (0,2,6,4), (1,5,7,3))
+            faces = [(q[0],q[1],q[2]) for q in quads] + [(q[0],q[2],q[3]) for q in quads]
+            solids[name] = (0, points, faces, [])
+            hexahedra.add(name)
         elif kind == 'M':
             name, thickness = fields[1], float(fields[2])
             count, faces, edges_count = map(int, fields[3:6])
@@ -110,10 +120,14 @@ for sex in ('male', 'female'):
         expected_groups[f'HandPalm_{side}'] = {f'{n}_{side}' for n in hand}
         expected_groups[f'FootBase_{side}'] = {f'{n}_{side}' for n in foot}
     assert groups == expected_groups and set(solids) == set(groups)
+    assert hexahedra == {'FootBase_L', 'FootBase_R'}
     # The solid footprint replaces the outline tubes rather than covering them.
     assert not (set(solids) & set(segments))
     for group, (_, points, faces, boundary) in solids.items():
-        segments[group] = [(points[a], points[b]) for a,b in boundary]
+        if group in hexahedra:
+            segments[group] = [(points[i], points[i ^ bit]) for i in range(8) for bit in (1,2,4) if i < (i ^ bit)]
+        else:
+            segments[group] = [(points[a], points[b]) for a,b in boundary]
         # Filled triangle mesh: one use for each boundary edge, two for
         # each internal edge; only one connected component, including holes.
         counts = defaultdict(int); graph_points = defaultdict(set)
@@ -125,11 +139,13 @@ for sex in ('male', 'female'):
         actual_boundary = {edge for edge, count in counts.items() if count == 1}
         assert actual_boundary == {tuple(sorted(edge)) for edge in boundary}
         assert all(count in (1,2) for count in counts.values())
+        if group in hexahedra: assert len(faces) == 12 and all(count == 2 for count in counts.values())
         found_points = {faces[0][0]}; queue = deque(found_points)
         while queue:
             for point in graph_points[queue.popleft()] - found_points:
                 found_points.add(point); queue.append(point)
         assert found_points == set(range(len(points))), group
+        if group in hexahedra: continue
         assert set(anchors[group]) == groups[group]
         assert sorted(i for indices in anchors[group].values() for i in indices) == list(range(len(points)))
         # The surface must fill between neighbouring metacarpal/metatarsal
@@ -185,6 +201,41 @@ for sex in ('male', 'female'):
     # the actual calcaneus bottom, rear and sides in source coordinates.
     for group, part_names in groups.items():
         points = solids[group][1]
+        if group in hexahedra:
+            # Independent box-space checks: every supplied bone vertex is
+            # inside, and all six sides touch a source extremity. This tests
+            # width, height, length AND the full heel, not arbitrary padding.
+            origin = points[0]
+            axes = [tuple(points[i][j]-origin[j] for j in range(3)) for i in (4,2,1)]
+            lengths = [math.sqrt(sum(x*x for x in axis)) for axis in axes]
+            assert all(0.02 < size < 0.3 for size in lengths)
+            units = [tuple(x/size for x in axis) for axis,size in zip(axes,lengths)]
+            side = group[-1]
+            def centroid(name):
+                source = member_vertices[name]
+                return tuple(sum(p[i] for p in source)/len(source) for i in range(3))
+            heel, ankle = centroid(f'Cal_{side}'), centroid(f'Tal_{side}')
+            meta = [centroid(f'FootMeta{i}_{side}') for i in range(1,6)]
+            forward = tuple(sum(p[i] for p in meta)/5 - heel[i] for i in range(3))
+            mag = math.sqrt(sum(x*x for x in forward)); forward = tuple(x/mag for x in forward)
+            assert sum(units[0][i]*forward[i] for i in range(3)) > 0.9999
+            raw_up = tuple(ankle[i]-heel[i] for i in range(3))
+            along = sum(raw_up[i]*forward[i] for i in range(3))
+            up = tuple(raw_up[i]-along*forward[i] for i in range(3))
+            mag = math.sqrt(sum(x*x for x in up)); up = tuple(x/mag for x in up)
+            assert sum(units[2][i]*up[i] for i in range(3)) > 0.9999
+            assert all(abs(sum(units[i][k]*units[j][k] for k in range(3))) < 0.0001
+                       for i in range(3) for j in range(i+1,3))
+            for i in range(8):
+                predicted = tuple(origin[j] + sum(axes[k][j] for k,bit in enumerate((4,2,1)) if i & bit)
+                                  for j in range(3))
+                assert math.dist(points[i], predicted) < 0.00001
+            for axis, size in zip(units,lengths):
+                projections = [sum((p[j]-origin[j])*axis[j] for j in range(3))
+                               for member in part_names for p in member_vertices[member]]
+                assert abs(min(projections)) < 0.00001 and abs(max(projections)-size) < 0.00001
+                assert min(projections) >= -0.00001 and max(projections) <= size + 0.00001
+            continue
         for name in part_names:
             indices = anchors[group][name]
             source_points = member_vertices[name]
@@ -197,25 +248,6 @@ for sex in ('male', 'female'):
                     for axis in range(3):
                         values = [v[axis] for v in source_points]
                         assert min(values) - 0.005 <= point[axis] <= max(values) + 0.005
-            elif name.startswith('Cal_'):
-                assert len(indices) >= 3 and math.dist(points[indices[0]], mean) < 0.00001
-                heel_points = [points[i] for i in indices[1:]]
-                # The anchors are actual vertices on this calcaneus, not an
-                # invented ground point or a reflected opposite-side heel.
-                assert all(min(math.dist(p, source) for source in source_points) < 0.00001 for p in heel_points)
-                assert abs(min(p[1] for p in heel_points) - min(p[1] for p in source_points)) < 0.00001
-                assert abs(min(p[0] for p in heel_points) - min(p[0] for p in source_points)) < 0.00001
-                assert abs(max(p[0] for p in heel_points) - max(p[0] for p in source_points)) < 0.00001
-                side = name[-1]
-                forefoot = [member_vertices[f'FootMeta{i}_{side}'] for i in range(1, 6)]
-                centres = [tuple(sum(v[i] for v in bone)/len(bone) for i in range(3)) for bone in forefoot]
-                direction = tuple(mean[i] - sum(p[i] for p in centres)/len(centres) for i in range(3))
-                norm = math.sqrt(sum(x*x for x in direction))
-                direction = tuple(x/norm for x in direction)
-                projection = lambda p: sum((p[i]-mean[i])*direction[i] for i in range(3))
-                assert abs(max(map(projection, heel_points)) - max(map(projection, source_points))) < 0.00001
-                # These real extremities are part of the same filled foot mesh.
-                assert all(any(i in face for face in solids[group][2]) for i in indices)
             else:
                 assert len(indices) == 1 and math.dist(points[indices[0]], mean) < 0.00001
     assert all(len(segments[f'Rib{i}_{side}']) >= 5 for side in ('L','R') for i in range(1,13))
@@ -258,13 +290,13 @@ for sex in ('male', 'female'):
         if a != b:
             key = ('C' if kind == 'cartilage' else 'J', *sorted((a,b)))
             collapsed.add(key)
-            if a in solids: expected_anchors[(key, a)].update(anchors[a][original_a])
-            if b in solids: expected_anchors[(key, b)].update(anchors[b][original_b])
+            if a in solids and a not in hexahedra: expected_anchors[(key, a)].update(anchors[a][original_a])
+            if b in solids and b not in hexahedra: expected_anchors[(key, b)].update(anchors[b][original_b])
     assert topology == collapsed
     for kind, a, b, ends in edges:
         key = (kind, *sorted((a,b)))
         for group, point in ((a, ends[:3]), (b, ends[3:])):
-            if group in solids:
+            if group in solids and group not in hexahedra:
                 assert any(math.dist(point, solids[group][1][i]) < 0.00001
                            for i in expected_anchors[(key, group)]), (group, key)
     for side in ('L','R'):
@@ -283,4 +315,4 @@ for sex in ('male', 'female'):
                 assert f'{prefix}DistP{digit}_{side}' in graph[last]
     if reference is None: reference = topology
     else: assert reference == topology
-    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(solids)} solid shapes, {len(dots)} vertebra dots)')
+    print(f'{sex} line graph: PASS ({len(expected)} structures, {len(topology)} visible links, {len(hexahedra)} foot hexahedra, {len(solids)-len(hexahedra)} palm surfaces, {len(dots)} vertebra dots)')

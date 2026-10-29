@@ -99,23 +99,30 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     for (std::uint32_t id : {8001u, 9001u}) {
         const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         std::ifstream input(path);
-        struct Shape { std::string name; std::size_t offset, caps, indices; };
+        struct Shape { std::string name; std::size_t offset, caps, indices; bool hexahedron; };
         std::vector<Shape> shapes;
         std::size_t totalIndices = 0, totalVertices = 0;
         std::string row;
-        while (std::getline(input, row)) if (row.rfind("M ", 0) == 0) {
+        while (std::getline(input, row)) if (row.rfind("M ", 0) == 0 || row.rfind("H ", 0) == 0) {
             std::istringstream fields(row);
-            char kind; std::string name; double thickness; int vertices, faces, edges;
-            fields >> kind >> name >> thickness >> vertices >> faces >> edges;
-            if (!fields) return false;
-            Shape shape{name, totalIndices, static_cast<std::size_t>(faces)*6,
-                        static_cast<std::size_t>(faces+edges)*6};
-            totalIndices += shape.indices; totalVertices += 2*vertices;
-            shapes.push_back(shape);
+            char kind; std::string name; fields >> kind >> name;
+            if (kind == 'H') {
+                shapes.push_back({name, totalIndices, 0, 36, true});
+                totalIndices += 36; totalVertices += 8;
+            } else {
+                double thickness; int vertices, faces, edges;
+                fields >> thickness >> vertices >> faces >> edges;
+                if (!fields) return false;
+                Shape shape{name, totalIndices, static_cast<std::size_t>(faces)*6,
+                            static_cast<std::size_t>(faces+edges)*6, false};
+                totalIndices += shape.indices; totalVertices += 2*vertices;
+                shapes.push_back(shape);
+            }
         }
         if (shapes.size() != 4) return false;
         for (const Shape& shape : shapes) {
             for (bool onlyCaps : {false, true}) {
+                if (onlyCaps && shape.hexahedron) continue;
                 GpuScene without = scene;
                 without.revision += 40000 + sequence++;
                 bool removed = false;
@@ -147,8 +154,8 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
     return true;
 }
 
-// Remove only triangles touching the added source-calcaneus extremities. This
-// checks that the extended heel actually contributes pixels on the GPU.
+// Compare the real device image with the triangles incident to the heel-end
+// corners of each box removed; the geometry test separately checks dimensions.
 static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
     if (!renderVulkanScene(scene, frame)) return false;
     const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
@@ -159,31 +166,24 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
         const char* path = id == 8001 ? "tools/skeleton-source/skeleton-female.lines" : "tools/skeleton-source/skeleton-male.lines";
         for (char side : {'L', 'R'}) {
             std::ifstream input(path);
-            const std::string group = std::string("FootBase_") + side, bone = std::string("Cal_") + side;
-            std::vector<unsigned> heel;
-            std::size_t vertexOffset = 0, indexOffset = 0, vertexCount = 0, indexCount = 0;
-            std::size_t totalVertices = 0, totalIndices = 0;
+            const std::string group = std::string("FootBase_") + side;
+            std::size_t vertexOffset = 0, indexOffset = 0, totalVertices = 0, totalIndices = 0;
+            bool found = false;
             std::string row;
             while (std::getline(input, row)) {
+                if (row.rfind("H ", 0) != 0 && row.rfind("M ", 0) != 0) continue;
                 std::istringstream fields(row);
-                std::string token, name, member;
-                fields >> token;
-                if (token == "#") {
-                    fields >> token >> name >> member;
-                    if (token == "Anchor" && name == group && member == bone) {
-                        unsigned index; fields >> index; // centroid is not an added extremity
-                        while (fields >> index) heel.push_back(index);
-                    }
-                } else if (token == "M") {
-                    double thickness; std::size_t n, f, e;
-                    fields >> name >> thickness >> n >> f >> e;
+                char kind; std::string name; fields >> kind >> name;
+                if (kind == 'H') {
+                    if (name == group) { vertexOffset = totalVertices; indexOffset = totalIndices; found = true; }
+                    totalVertices += 8; totalIndices += 36;
+                } else {
+                    double thickness; std::size_t n, f, e; fields >> thickness >> n >> f >> e;
                     if (!fields) return false;
-                    if (name == group) { vertexOffset = totalVertices; indexOffset = totalIndices;
-                                         vertexCount = n; indexCount = (f+e)*6; }
                     totalVertices += n*2; totalIndices += (f+e)*6;
                 }
             }
-            if (heel.empty() || !vertexCount || !indexCount) return false;
+            if (!found) return false;
             GpuScene without = scene;
             without.revision += 60000 + revision++;
             bool removed = false;
@@ -192,10 +192,10 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
                 std::vector<std::uint32_t> kept;
                 for (std::size_t i = 0; i < batch.indices.size(); i += 3) {
                     bool isHeel = false;
-                    if (i >= indexOffset && i < indexOffset + indexCount) {
-                        for (int corner = 0; corner < 3; ++corner) for (unsigned anchor : heel) {
-                            const auto index = batch.indices[i+corner];
-                            if (index == vertexOffset+anchor || index == vertexOffset+vertexCount+anchor) isHeel = true;
+                    if (i >= indexOffset && i < indexOffset + 36) {
+                        for (int corner = 0; corner < 3; ++corner) {
+                            auto index = batch.indices[i+corner];
+                            if (index >= vertexOffset && index < vertexOffset+4) isHeel = true;
                         }
                     }
                     if (isHeel) removed = true;
@@ -215,7 +215,7 @@ static bool renderAndCheckHeels(const GpuScene& scene, NativeFrame& frame) {
                 for (int c = 0; c < 3; ++c) difference += std::abs(int(original[at+c]) - int(other[at+c]));
                 if (difference > 24) ++changed;
             }
-            std::printf("Vulkan heel %u %c: %d visible pixels\n", id, side, changed);
+            std::printf("Vulkan heel-end geometry %u %c: %d visible pixels\n", id, side, changed);
             if (changed < 1) return false;
         }
     }

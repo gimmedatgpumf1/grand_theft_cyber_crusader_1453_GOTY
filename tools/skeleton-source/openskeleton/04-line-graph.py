@@ -89,9 +89,7 @@ def unified_groups():
 def unified_surface(bones, members):
     """A filled 3-D surface spanning the actual bone axes, not bone outlines.
 
-    Carpals/tarsals anchor the base; the calcaneus additionally anchors the
-    bottom, rear and sides of the heel. Each metacarpal/metatarsal supplies its
-    own two ends and centre. Triangulation fills *between* those anchors. The
+    Carpals anchor the base; each metacarpal supplies its two ends and centre. Triangulation fills *between* those anchors. The
     3-D coordinates are retained: projection chooses connectivity only.
     """
     points, owners = [], {}
@@ -99,17 +97,7 @@ def unified_surface(bones, members):
         vertices = bones[name]
         centre = vertices.mean(axis=0)
         anchors = [centre]
-        if name.startswith('Cal_'):
-            # The calcaneus is the heel. Its centroid alone cuts off the heel;
-            # use actual source vertices at the bottom, rear and both sides.
-            side = name[-1]
-            forefoot = np.mean([bones[f'FootMeta{i}_{side}'].mean(axis=0) for i in range(1, 6)], axis=0)
-            rear = centre - forefoot
-            rear /= np.linalg.norm(rear)
-            indices = [int(np.argmin(vertices[:, 1])), int(np.argmax((vertices - centre) @ rear)),
-                       int(np.argmin(vertices[:, 0])), int(np.argmax(vertices[:, 0]))]
-            anchors.extend(vertices[index] for index in dict.fromkeys(indices))
-        if name.startswith(('HandMeta', 'FootMeta')):
+        if name.startswith('HandMeta'):
             _, _, basis = np.linalg.svd(vertices - centre, full_matrices=False)
             axis = basis[0]
             along = (vertices-centre) @ axis
@@ -137,6 +125,53 @@ def unified_surface(bones, members):
     boundary = [edge for count, edge in edge_counts.values() if count == 1]
     assert set(int(i) for face in triangles for i in face) == set(range(len(points)))
     return points, triangles, boundary, owners
+
+
+def foot_hexahedron(bones, members, side):
+    """Six-faced foot box fitted to all source tarsals and metatarsals.
+
+    The long axis follows the heel-to-forefoot direction; the height axis uses
+    the talus-to-calcaneus direction. Width is perpendicular to both. All 14
+    foot-base structures, including the full heel, set each measured extent.
+    """
+    heel = bones[f'Cal_{side}'].mean(axis=0)
+    ankle = bones[f'Tal_{side}'].mean(axis=0)
+    forefoot = np.mean([bones[f'FootMeta{i}_{side}'].mean(axis=0) for i in range(1, 6)], axis=0)
+    length = forefoot - heel
+    length /= np.linalg.norm(length)
+    height = ankle - heel
+    height -= np.dot(height, length) * length
+    assert np.linalg.norm(height) > 1e-8
+    height /= np.linalg.norm(height)
+    width = np.cross(height, length)
+    width /= np.linalg.norm(width)
+    axes = np.array([length, width, height])
+    vertices = np.concatenate([bones[name] for name in members])
+    local = vertices @ axes.T
+    low, high = local.min(axis=0), local.max(axis=0)
+    # Indices are binary: long, width, height, from rear/lower/inner corner.
+    points = np.array([np.array([high[0] if i & 4 else low[0],
+                                 high[1] if i & 2 else low[1],
+                                 high[2] if i & 1 else low[2]]) @ axes for i in range(8)])
+    return points, axes, low, high
+
+
+def box_to_line(box, source, line):
+    """Attach an existing anatomical link to the fitted box surface."""
+    _, axes, low, high = box
+    choices = [closest_to_point(point, line) for point in source]
+    _, start, end = min(choices, key=lambda value: value[0])
+    local = np.clip(start @ axes.T, low, high)
+    direction = (end - start) @ axes.T
+    if np.linalg.norm(direction) < 1e-10:
+        direction = local - (low + high) / 2
+    if np.linalg.norm(direction) < 1e-10:
+        direction = np.array([1.0, 0.0, 0.0])
+    times = [(high[i]-local[i])/direction[i] if direction[i] > 1e-12 else
+             (low[i]-local[i])/direction[i] if direction[i] < -1e-12 else float('inf') for i in range(3)]
+    distance = max(0.0, min(times))
+    on_box = np.clip(local + distance * direction, low, high) @ axes
+    return closest_to_point(on_box, line)
 
 
 def read_bones(path):
@@ -243,9 +278,12 @@ def build(sex):
     assert len(member_to_group) == sum(map(len, groups.values())) and set(member_to_group) <= expected
     lines = {name: [vertices.mean(axis=0)] if name in VERTEBRAE else line_for(name, vertices, bones)
              for name, vertices in bones.items() if name not in member_to_group}
-    solids = {}
+    solids, boxes = {}, {}
     for group, members in groups.items():
-        solids[group] = unified_surface(bones, members)
+        if group.startswith('FootBase_'):
+            boxes[group] = foot_hexahedron(bones, members, group[-1])
+        else:
+            solids[group] = unified_surface(bones, members)
     # Collapse only the explicit anatomical graph: internal group edges vanish;
     # external edges are remapped and duplicates removed, never added by distance.
     visible_links, seen = [], set()
@@ -256,7 +294,7 @@ def build(sex):
         if key not in seen:
             seen.add(key); visible_links.append((a, b, kind, original_a, original_b))
     out = ['# OpenSkeleton centreline approximation; connections from explicit anatomy, not proximity.',
-           '# D vertebra dot; B bone segment; M solid triangle mesh; J joint; C inferred cartilage.']
+           '# D vertebra dot; B bone segment; M palm mesh; H foot hexahedron; J joint; C cartilage.']
     for group, members in groups.items(): out.append(f'# Group {group} ' + ' '.join(members))
     def fmt(p): return ' '.join(f'{x:.6f}' for x in p)
     for name in sorted(lines):
@@ -265,6 +303,8 @@ def build(sex):
             out.append(f'D {name} {fmt(pts[0])}')
         for a,b in zip(pts,pts[1:]):
             if np.linalg.norm(b-a)>1e-7: out.append(f'B {name} {fmt(a)} {fmt(b)}')
+    for name in sorted(boxes):
+        out.append(f'H {name} ' + ' '.join(fmt(p) for p in boxes[name][0]))
     for name in sorted(solids):
         points, triangles, boundary, owners = solids[name]
         for member, indices in owners.items():
@@ -287,6 +327,10 @@ def build(sex):
             _, x, y = closest_to_point(lines[a][0], lines[b])
         elif b in VERTEBRAE:
             _, y, x = closest_to_point(lines[b][0], lines[a])
+        elif a in boxes:
+            _, x, y = box_to_line(boxes[a], line_for(original_a, bones[original_a], bones), lines[b])
+        elif b in boxes:
+            _, y, x = box_to_line(boxes[b], line_for(original_b, bones[original_b], bones), lines[a])
         elif a in solids:
             _, x, y = solid_to_line(solids[a], original_a, lines[b])
         elif b in solids:
