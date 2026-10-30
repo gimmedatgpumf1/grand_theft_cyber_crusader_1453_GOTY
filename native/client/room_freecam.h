@@ -12,7 +12,7 @@ namespace gtc::native {
 // aim, attack, or change the player behind the room.
 class RoomFreecam {
 public:
-    enum class Action { None, Capture, Release, Exit, Screenshot, ToggleLines };
+    enum class Action { None, Capture, Release, Exit, Screenshot, ToggleLines, BendJoints, RestorePose };
 
     Action handle(const WindowEvent& event, bool captured) {
         if (event.type == WindowEvent::Type::FocusLoss) { clear(); return Action::Release; }
@@ -28,6 +28,10 @@ public:
         } else if (event.type == WindowEvent::Type::KeyDown) {
             if (event.key == 'c') return event.repeat ? Action::None : Action::Exit;
             if (event.key == 'v') return event.repeat ? Action::None : Action::ToggleLines;
+            if ((event.key >= '0' && event.key <= '9') || event.key == 'q' || event.key == 'e' ||
+                event.key == 'f' || event.key == 'g' || event.key == 'h' || event.key == 'j' ||
+                event.key == 'k' || event.key == 'l' || event.key == 'z' || event.key == 'x') return Action::BendJoints;
+            if (event.key == 'r') return event.repeat ? Action::None : Action::RestorePose;
             if (event.key == kKeyEscape) { clear(); return Action::Release; }
             if (event.key == kKeyF12) return event.repeat ? Action::None : Action::Screenshot;
             if (event.key == 'w' || event.key == 'a' || event.key == 's' || event.key == 'd' ||
@@ -39,6 +43,7 @@ public:
     }
 
     void clear() { keys_.clear(); }
+    bool reverseBend() const { return keys_.count(kKeyShift) != 0; }
 
     void move(double dt) {
         const double along = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);

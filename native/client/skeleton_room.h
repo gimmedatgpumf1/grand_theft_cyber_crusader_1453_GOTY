@@ -28,6 +28,9 @@ public:
     SkeletonModel& female() { return female_; }
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
+    // Test-room controls act directly on named anatomical groups in both bodies.
+    bool adjustReferenceGroup(int key, double degrees);
+    bool restoreReferencePose();
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 

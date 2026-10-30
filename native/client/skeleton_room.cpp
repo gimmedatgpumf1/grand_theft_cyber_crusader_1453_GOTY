@@ -101,6 +101,51 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     return true;
 }
 
+bool SkeletonRoom::adjustReferenceGroup(int key, double degrees) {
+    if (!ready_ || !std::isfinite(degrees)) return false;
+    // Keys select concrete anatomical groups; there is no hidden joint-selection
+    // mode. Every finger/toe can be moved independently of its neighbours.
+    int digit = key >= '1' && key <= '5' ? key-'0' :
+                key >= '6' && key <= '9' ? key-'5' : key == '0' ? 5 : 0;
+    const bool hand = key >= '1' && key <= '5';
+    bool changed = false;
+    for (SkeletonModel* model : {&male_, &female_}) {
+        for (std::size_t i=0; i<model->sourceLinks().size(); ++i) {
+            const auto& link=model->sourceLinks()[i];
+            const auto& a=model->sourceStructures()[link.first].name;
+            const auto& b=model->sourceStructures()[link.second].name;
+            const std::string& kind=link.mobility;
+            bool match=false;
+            if (digit) {
+                const std::string token=std::string("P")+static_cast<char>('0'+digit)+"_";
+                const auto& prefix=hand ? "Hand" : "Foot";
+                match = (a.rfind(prefix,0)==0 || b.rfind(prefix,0)==0) &&
+                        (a.find(token)!=std::string::npos || b.find(token)!=std::string::npos) &&
+                        (kind=="thumb_mcp" || kind=="thumb_ip_hinge" ||
+                         kind=="finger_mcp_condyloid" || kind=="finger_pip_hinge" || kind=="finger_dip_hinge" ||
+                         kind=="great_toe_mtp" || kind=="lesser_toe_mtp" || kind=="toe_ip_hinge");
+            } else if (key=='q') match=kind=="shoulder_ball_socket";
+            else if (key=='e') match=kind=="elbow_hinge" && b.rfind("Ulna_",0)!=0;
+            else if (key=='f') match=kind=="wrist_condyloid" && b.rfind("HandLuna_",0)!=0;
+            else if (key=='g') match=kind=="hip_ball_socket";
+            else if (key=='h') match=kind=="knee_modified_hinge";
+            else if (key=='j') match=kind=="ankle_hinge";
+            else if (key=='k') match=kind=="intervertebral";
+            else if (key=='l') match=kind=="temporomandibular" || kind=="atlanto_occipital" || kind=="atlanto_axial";
+            else if (key=='z') match=kind=="sternoclavicular" || kind=="acromioclavicular";
+            else if (key=='x') match=kind=="thumb_cmc_saddle";
+            if (!match) continue;
+            const auto angle=model->referenceBend(i);
+            if (angle && model->setReferenceBend(i,*angle+degrees)) changed=true;
+        }
+    }
+    return changed;
+}
+
+bool SkeletonRoom::restoreReferencePose() {
+    return ready_ && male_.restoreSourcePose() && female_.restoreSourcePose();
+}
+
 void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
     Camera camera = freecam ? freecam->camera(view.width, view.height, view.gpu) : Camera{};
     if (!freecam) {

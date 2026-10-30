@@ -506,6 +506,10 @@ private:
             room_.toggleLineView();
         } else if (action == RoomFreecam::Action::Screenshot) {
             screenshot_ = true;
+        } else if (action == RoomFreecam::Action::BendJoints) {
+            room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0);
+        } else if (action == RoomFreecam::Action::RestorePose) {
+            room_.restoreReferencePose();
         }
     }
 

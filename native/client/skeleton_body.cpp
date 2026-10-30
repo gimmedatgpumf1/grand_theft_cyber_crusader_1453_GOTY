@@ -586,6 +586,16 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const int h = sourceStructure(side == 0 ? "Humerus_L" : "Humerus_R");
                     const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
                     if (h >= 0 && u >= 0) pivot = contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u));
+                } else if (link.mobility == "wrist_condyloid") {
+                    // The scaphoid and lunate both articulate with the radius.
+                    // Their palm descendants form one group; use one shared
+                    // frame instead of letting the wrist split that group.
+                    const int r = sourceStructure(side == 0 ? "Radius_L" : "Radius_R");
+                    const int sc = sourceStructure(side == 0 ? "HandScaphoid_L" : "HandScaphoid_R");
+                    const int lu = sourceStructure(side == 0 ? "HandLuna_L" : "HandLuna_R");
+                    if (r < 0 || sc < 0 || lu < 0) { error = "Missing wrist bones"; return false; }
+                    pivot = (contact(static_cast<std::size_t>(r),static_cast<std::size_t>(sc)) +
+                             contact(static_cast<std::size_t>(r),static_cast<std::size_t>(lu))) * 0.5;
                 }
                 Vec3 up = normalized(center(parent)-pivot);
                 Vec3 down = normalized(center(child)-pivot);
@@ -594,6 +604,13 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
                     if (h >= 0 && u >= 0)
                         down = normalized(contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u))-pivot);
+                }
+                if (link.mobility == "wrist_condyloid") {
+                    const int r = sourceStructure(side == 0 ? "Radius_L" : "Radius_R");
+                    const int middle = sourceStructure(side == 0 ? "HandMeta3_L" : "HandMeta3_R");
+                    if (r < 0 || middle < 0) { error = "Missing wrist frame"; return false; }
+                    up = normalized(center(static_cast<std::size_t>(r))-pivot);
+                    down = normalized(center(static_cast<std::size_t>(middle))-pivot);
                 }
                 if (link.mobility == "elbow_hinge") {
                     const int humerus = bone(side == 0 ? "humerus_l" : "humerus_r");
@@ -704,17 +721,18 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     auto angles = joint->angles();
     angles[0] = *bounded * radiansPerDegree;
     std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};
-    if (relationship.mobility == "elbow_hinge") {
-        // Radius and ulna share the anatomical flexion pivot; moving only one
-        // would split the forearm even when pronation is not being requested.
-        const auto humerus = sourceStructures_[relationship.first].name.rfind("Humerus_",0) == 0
-                                 ? relationship.first : relationship.second;
+    if (relationship.mobility == "elbow_hinge" || relationship.mobility == "wrist_condyloid") {
+        // A paired forearm or palm must not split when one of its anatomical
+        // links is addressed. Both child joints use the same frame and angle.
+        const std::string prefix = relationship.mobility == "elbow_hinge" ? "Humerus_" : "Radius_";
+        const auto parent = sourceStructures_[relationship.first].name.rfind(prefix,0) == 0
+                                ? relationship.first : relationship.second;
         for (const auto& other : sourceLinks_) {
-            if (&other == &relationship || other.mobility != "elbow_hinge" ||
-                (other.first != humerus && other.second != humerus)) continue;
-            const auto neighbour = other.first == humerus ? other.second : other.first;
+            if (&other == &relationship || other.mobility != relationship.mobility ||
+                (other.first != parent && other.second != parent)) continue;
+            const auto neighbour = other.first == parent ? other.second : other.first;
             const auto otherBody = sourceBodies_[neighbour];
-            if (sourceRig_->parent(otherBody) != sourceBodies_[humerus]) continue;
+            if (sourceRig_->parent(otherBody) != sourceBodies_[parent]) continue;
             const auto* otherJoint = sourceRig_->joint(otherBody);
             if (!otherJoint || otherJoint->angles().empty()) continue;
             auto otherAngles = otherJoint->angles(); otherAngles[0] = angles[0];

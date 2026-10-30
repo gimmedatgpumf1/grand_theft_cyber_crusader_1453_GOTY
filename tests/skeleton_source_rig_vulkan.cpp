@@ -114,12 +114,66 @@ static void liveBend(SkeletonRoom& room, ViewState view, SkeletonModel& model, c
     room.toggleLineView();
 }
 
+static void liveWrist(SkeletonRoom& room, ViewState view, SkeletonModel& model, const char* name) {
+    std::size_t scaphoid=0, lunate=0;
+    for (std::size_t i=0;i<model.sourceLinks().size();++i) {
+        const auto& edge=model.sourceLinks()[i];
+        const auto& a=model.sourceStructures()[edge.first].name;
+        const auto& b=model.sourceStructures()[edge.second].name;
+        if (a=="Radius_L" && b=="HandScaphoid_L") scaphoid=i;
+        if (a=="Radius_L" && b=="HandLuna_L") lunate=i;
+    }
+    assert(model.referenceBend(scaphoid) && model.referenceBend(lunate));
+    const double original=*model.referenceBend(scaphoid);
+    for (int line=0;line<2;++line) {
+        if (line) room.toggleLineView();
+        const auto before=pixels(room,view);
+        assert(model.setReferenceBend(scaphoid,65));
+        assert(std::abs(*model.referenceBend(lunate)-65)<1e-7);
+        const auto after=pixels(room,view); const int changed=differences(before,after);
+        std::printf("Vulkan live %s %s grouped wrist: %d changed pixels\n",name,line?"V-view":"mesh",changed);
+        assert(changed>10);
+        assert(model.setReferenceBend(scaphoid,original));
+        assert(differences(before,pixels(room,view))==0);
+    }
+    room.toggleLineView();
+}
+
+static int differencesHalf(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b,
+                           int width, int height, bool right) {
+    int changed=0;
+    for (int y=0;y<height;++y) for (int x=right ? width/2 : 0;x<(right ? width : width/2);++x) {
+        const auto i=static_cast<std::size_t>(y*width+x)*4; int delta=0;
+        for (int channel=0;channel<3;++channel) delta+=std::abs(int(a[i+channel])-int(b[i+channel]));
+        if (delta>24) ++changed;
+    }
+    return changed;
+}
+// The same group operation that the game's key events call, not a test rig.
+static void liveRoomControls(SkeletonRoom& room, ViewState view) {
+    for (int line=0;line<2;++line) {
+        if (line) room.toggleLineView();
+        for (const auto key : {'q','f','2'}) {
+            const auto before=pixels(room,view);
+            assert(room.adjustReferenceGroup(key,30)); const auto moved=pixels(room,view);
+            const int male=differencesHalf(before,moved,view.width,view.height,false);
+            const int female=differencesHalf(before,moved,view.width,view.height,true);
+            std::printf("Vulkan room %s %c controls: %d/%d changed pixels\n",line?"V-view":"mesh",key,male,female);
+            assert(male>0 && female>0);
+            assert(room.restoreReferencePose()); assert(differences(before,pixels(room,view))==0);
+        }
+    }
+    room.toggleLineView();
+}
+
 int main() {
     assert(vulkanAvailable());
     SkeletonRoom room; std::string error; assert(room.load(".",error));
     setGpuRenderer(&renderVulkanScene);
     ViewState view; view.gpu=true; view.width=640; view.height=480;
     liveBend(room,view,room.male(),"male"); liveBend(room,view,room.female(),"female");
+    liveWrist(room,view,room.male(),"male"); liveWrist(room,view,room.female(),"female");
+    liveRoomControls(room,view);
     assert(room.male().restoreSourcePose() && room.female().restoreSourcePose());
     clinicalBend(room,view,room.male()); clinicalBend(room,view,room.female());
     run(room,view,room.male()); run(room,view,room.female());

@@ -42,7 +42,13 @@ reproducibility; its output is not the currently shipped male.
 
 Both C-room skeletons use the same estimated source-rig pose in mesh and V views.
 Press V to replace both skeleton meshes with the simplified view;
-press V again to return to the mesh view. Pale lines approximate the supplied
+press V again to return to the mesh view. Joint keys act on both subjects:
+`1`–`5` bend each finger, `6`–`0` bend each toe, `Q` shoulders, `E` elbows,
+`F` wrists, `G` hips, `H` knees, `J` ankles, `K` spine, `L` jaw/neck,
+`Z` shoulder girdle and `X` thumb base. Hold Shift to reverse; `R` restores the source pose.
+The angles, frames and known collision limitations are described in
+[JOINT_MOBILITY.md](JOINT_MOBILITY.md); these controls are not medical validation.
+Pale lines approximate the supplied
 bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
 cyan lines connect anatomical neighbours, and orange lines are inferred costal
 cartilage (not present in the scans). Each palm is one filled, closed 3D shape

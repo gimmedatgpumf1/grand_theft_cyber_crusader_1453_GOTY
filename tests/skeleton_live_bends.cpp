@@ -81,6 +81,61 @@ static void checkLinePose(SkeletonRoom& room) {
     setGpuRenderer(nullptr); room.toggleLineView();
 }
 
+static std::size_t namedLink(const SkeletonModel& model, const std::string& first,
+                             const std::string& second) {
+    for (std::size_t i=0;i<model.sourceLinks().size();++i) {
+        const auto& link=model.sourceLinks()[i];
+        if (model.sourceStructures()[link.first].name==first &&
+            model.sourceStructures()[link.second].name==second) return i;
+    }
+    assert(false); return 0;
+}
+static void checkGroupedWrist(SkeletonModel& model) {
+    assert(model.restoreSourcePose());
+    for (const char side : {'L','R'}) {
+        const auto suffix=std::string("_")+side;
+        const auto sc=namedLink(model,"Radius"+suffix,"HandScaphoid"+suffix);
+        const auto lu=namedLink(model,"Radius"+suffix,"HandLuna"+suffix);
+        for (std::size_t link : {sc,lu}) {
+            assert(model.setReferenceBend(link,45));
+            assert(std::abs(*model.referenceBend(sc)-45)<1e-8);
+            assert(std::abs(*model.referenceBend(lu)-45)<1e-8);
+            const auto matrices=model.sourceMatrices({},0);
+            const int palm=model.sourceStructure("HandLuna"+suffix);
+            const auto& expected=matrices[static_cast<std::size_t>(palm)];
+            // All merged palm pieces, thumb and fingertips follow one wrist
+            // transform; radius and ulna remain at the forearm's source pose.
+            for (const auto& name : {"HandScaphoid","HandLuna","HandTriquetrum","HandPisiform",
+                                     "HandTrapezium","HandTrapezoideum","HandCapitatum","HandHamata",
+                                     "HandMeta1","HandMeta2","HandMeta3","HandMeta4","HandMeta5",
+                                     "HandDistP1","HandDistP2","HandDistP3","HandDistP4","HandDistP5"}) {
+                const int part=model.sourceStructure(std::string(name)+suffix); assert(part>=0);
+                for (int j=0;j<16;++j) assert(std::abs(matrices[part][j]-expected[j])<1e-7);
+            }
+            const int radius=model.sourceStructure("Radius"+suffix), ulna=model.sourceStructure("Ulna"+suffix);
+            const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            for (int j=0;j<16;++j) {
+                assert(std::abs(matrices[radius][j]-identity[j])<1e-7);
+                assert(std::abs(matrices[ulna][j]-identity[j])<1e-7);
+            }
+            // An individual finger still bends without dragging its neighbour.
+            const auto finger=namedLink(model,"HandProxP2"+suffix,"HandMidP2"+suffix);
+            const auto beforeFinger=model.referenceBend(finger); assert(beforeFinger);
+            const double target=*beforeFinger<50 ? 100 : 0;
+            assert(model.setReferenceBend(finger,target));
+            const auto moved=model.sourceMatrices({},0);
+            const auto index=model.sourceStructure("HandDistP2"+suffix);
+            const auto middle=model.sourceStructure("HandDistP3"+suffix);
+            bool indexMoved=false;
+            for (int j=0;j<16;++j) {
+                if (std::abs(moved[index][j]-matrices[index][j])>1e-7) indexMoved=true;
+                assert(std::abs(moved[middle][j]-matrices[middle][j])<1e-7);
+            }
+            assert(indexMoved && model.restoreSourcePose());
+        }
+    }
+}
+
 static void verify(SkeletonModel& model, const char* sex) {
     std::map<std::string,int> active;
     const auto original = model.sourceMatrices({},0);
@@ -128,6 +183,70 @@ int main() {
     if (!room.load(".",error)) { std::cerr << error << '\n'; return 1; }
     checkTPose(room.male()); checkTPose(room.female());
     checkLinePose(room);
+    // Room-level controls reach both subjects and restore their source pose.
+    const auto shoulder=namedLink(room.male(),"Scapula_L","Humerus_L");
+    const double maleBefore=*room.male().referenceBend(shoulder);
+    const double femaleBefore=*room.female().referenceBend(shoulder);
+    assert(room.adjustReferenceGroup('q',5));
+    assert(std::abs(*room.male().referenceBend(shoulder)-maleBefore-5)<1e-7);
+    assert(std::abs(*room.female().referenceBend(shoulder)-femaleBefore-5)<1e-7);
+    assert(room.restoreReferencePose());
+    // A paired group receives one step, not two steps through its two graph
+    // links. Both source skeletons and both anatomical sides are tested.
+    for (char key : {'e','f'}) {
+        double initial[2][2]{}; int subject=0;
+        for (SkeletonModel* model : {&room.male(),&room.female()}) {
+            int which=0;
+            for (char side : {'L','R'}) {
+                const auto suffix=std::string("_")+side;
+                const auto first=key=='e' ? namedLink(*model,"Humerus"+suffix,"Radius"+suffix) :
+                                           namedLink(*model,"Radius"+suffix,"HandScaphoid"+suffix);
+                const auto second=key=='e' ? namedLink(*model,"Humerus"+suffix,"Ulna"+suffix) :
+                                            namedLink(*model,"Radius"+suffix,"HandLuna"+suffix);
+                assert(std::abs(*model->referenceBend(first)-*model->referenceBend(second))<1e-8);
+                initial[subject][which++]=*model->referenceBend(first);
+            }
+            ++subject;
+        }
+        assert(room.adjustReferenceGroup(key,5)); subject=0;
+        for (SkeletonModel* model : {&room.male(),&room.female()}) {
+            int which=0;
+            for (char side : {'L','R'}) {
+                const auto suffix=std::string("_")+side;
+                const auto first=key=='e' ? namedLink(*model,"Humerus"+suffix,"Radius"+suffix) :
+                                           namedLink(*model,"Radius"+suffix,"HandScaphoid"+suffix);
+                const auto second=key=='e' ? namedLink(*model,"Humerus"+suffix,"Ulna"+suffix) :
+                                            namedLink(*model,"Radius"+suffix,"HandLuna"+suffix);
+                assert(std::abs(*model->referenceBend(first)-*model->referenceBend(second))<1e-8);
+                assert(std::abs(*model->referenceBend(first)-initial[subject][which++]-5)<1e-8);
+            }
+            ++subject;
+        }
+        assert(room.restoreReferencePose());
+    }
+    assert(!room.adjustReferenceGroup('v',5));
+    for (char key : {'1','2','3','4','5','6','7','8','9','0','q','e','f','g','h','j','k','l','z','x'}) {
+        assert(room.adjustReferenceGroup(key,5));
+        assert(room.restoreReferencePose());
+    }
+    assert(room.adjustReferenceGroup('2',5));
+    for (SkeletonModel* model : {&room.male(), &room.female()}) {
+        const auto matrices=model->sourceMatrices({},0);
+        for (char side : {'L','R'}) {
+            const auto suffix=std::string("_")+side;
+            const int index=model->sourceStructure("HandDistP2"+suffix);
+            const int middle=model->sourceStructure("HandDistP3"+suffix);
+            const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            bool moved=false;
+            for (int j=0;j<16;++j) {
+                if (std::abs(matrices[index][j]-identity[j])>1e-7) moved=true;
+                assert(std::abs(matrices[middle][j]-identity[j])<1e-7);
+            }
+            assert(moved);
+        }
+    }
+    assert(room.restoreReferencePose());
+    checkGroupedWrist(room.male()); checkGroupedWrist(room.female());
     verify(room.male(),"male"); verify(room.female(),"female");
     assert(room.male().restoreSourcePose() && room.female().restoreSourcePose());
     for (SkeletonModel* model : {&room.male(),&room.female()})

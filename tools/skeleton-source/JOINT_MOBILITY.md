@@ -125,7 +125,9 @@ elbows penetrate the humerus after straightening, so it is not enabled by defaul
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion.
 The simplified palm, foot, rib cage and shoulder surfaces deform between their
-source owners; they are not complete anatomical tissue simulations.
+source owners; they are not complete anatomical tissue simulations. Both wrist
+carpal roots now share a pivot and bend together, so the unified palm and
+individual fingers follow the wrist instead of splitting into two subtrees.
 
 The first coordinate in `skeleton_rom.h` is a simple population reference in
 degrees. For the shoulder it is an *approximate abduction* coordinate, not

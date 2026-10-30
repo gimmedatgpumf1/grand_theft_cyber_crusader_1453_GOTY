@@ -90,6 +90,27 @@ int main() {
     app.handle(down('c'));
     assert(app.testRoom_ && app.captured_ && neutral(receive(peer)));
     assert(!app.room_.lineView());
+    std::size_t shoulder=0;
+    for (;shoulder<app.room_.male().sourceLinks().size();++shoulder) {
+        const auto& edge=app.room_.male().sourceLinks()[shoulder];
+        if (edge.mobility=="shoulder_ball_socket" &&
+            app.room_.male().sourceStructures()[edge.second].name=="Humerus_L") break;
+    }
+    assert(shoulder<app.room_.male().sourceLinks().size());
+    const double maleBefore=*app.room_.male().referenceBend(shoulder);
+    const double femaleBefore=*app.room_.female().referenceBend(shoulder);
+    app.handle(down('q'));
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore-5)<1e-7);
+    assert(std::abs(*app.room_.female().referenceBend(shoulder)-femaleBefore-5)<1e-7);
+    WindowEvent repeatQ=down('q'); repeatQ.repeat=true; app.handle(repeatQ);
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore-10)<1e-7);
+    app.handle(down(kKeyShift)); app.handle(down('q'));
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore-5)<1e-7);
+    app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyShift});
+    app.handle(down('r'));
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)<1e-7);
+    assert(std::abs(*app.room_.female().referenceBend(shoulder)-femaleBefore)<1e-7);
+    assert(!net::waitReadable(peer,0)); // room joint input never reaches the game player
     app.handle(down('v')); assert(app.room_.lineView());
     WindowEvent repeatV = down('v'); repeatV.repeat = true; app.handle(repeatV);
     assert(app.room_.lineView());
