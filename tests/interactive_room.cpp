@@ -169,6 +169,13 @@ int main() {
     // The same momentary modifiers operate on MTP, PIP and DIP of each toe.
     for (int stage=1;stage<=3;++stage) {
         app.handle(down('r'));
+        std::map<std::pair<SkeletonModel*,std::string>,double> original;
+        for (auto* body : {&app.room_.male(),&app.room_.female()}) for (const auto& edge:body->sourceLinks()) {
+            const std::string& child=body->sourceStructures()[edge.second].name;
+            if (child.rfind("FootProxP2_",0)!=0 && child.rfind("FootMidP2_",0)!=0 && child.rfind("FootDistP2_",0)!=0) continue;
+            const auto index=static_cast<std::size_t>(&edge-body->sourceLinks().data());
+            if (body->referenceBend(index)) original[{body,child}]=*body->referenceBend(index);
+        }
         if (stage==1 || stage==3) app.handle(down(kKeyLeftControl));
         if (stage==2 || stage==3) app.handle(down(kKeyAlt));
         app.handle(down('7'));
@@ -180,7 +187,8 @@ int main() {
                 for (std::size_t i=0;i<body->sourceLinks().size();++i) {
                     const auto& edge=body->sourceLinks()[i];
                     if (body->sourceStructures()[edge.second].name==children[joint] && body->referenceBend(i)) {
-                        assert(std::abs(*body->referenceBend(i)-(joint==stage-1 ? 5.0 : 0.0))<1e-7);
+                        const auto old=original.find({body,children[joint]}); assert(old!=original.end());
+                        assert(std::abs(*body->referenceBend(i)-old->second-(joint==stage-1 ? 5.0 : 0.0))<1e-7);
                         found=true; break;
                     }
                 }

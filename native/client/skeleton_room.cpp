@@ -1,5 +1,6 @@
 #include "client/skeleton_room.h"
 #include "client/room_freecam.h"
+#include "client/skeleton_rest_toes.h"
 #include "client/threadpool.h"
 
 #include <thread>
@@ -197,12 +198,13 @@ bool SkeletonRoom::restoreReferencePose() {
             if (!model->referenceBend(i)) continue;
             double target=0;
             if (kind=="shoulder_ball_socket") target=90;
-            else if (kind!="intervertebral" && kind!="atlanto_axial" && kind!="hip_ball_socket" && kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
+            else if (kind!="intervertebral" && kind!="atlanto_axial" && kind!="atlanto_occipital" && kind!="hip_ball_socket" && kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
                      kind!="wrist_condyloid" && kind!="thumb_cmc_saddle" && kind!="thumb_mcp" && kind!="thumb_ip_hinge" &&
                      kind!="finger_mcp_condyloid" && kind!="finger_pip_hinge" && kind!="finger_dip_hinge" &&
                      kind!="great_toe_mtp" && kind!="lesser_toe_mtp" && kind!="toe_ip_hinge") continue;
             if (!model->setReferenceBend(i,target)) return false;
         }
+        if (!restToesOnSole(*model)) return false;
     }
     // Reposition each whole body onto the floor; no geometry is scaled.
     maleFloor_=-minimumY(male_); femaleFloor_=-minimumY(female_);

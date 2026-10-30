@@ -51,6 +51,8 @@ static void verifyPose(SkeletonModel& model) {
     auto m=model.sourceMatrices({},0);
     const Vec3 sacrum=posed(model,m,"Sacrum"), neck=posed(model,m,"C7");
     assert(std::abs(neck.x-sacrum.x)<1e-7); // upright at the actual spine, not camera placement
+    assert(std::abs(posed(model,m,"C2").x-neck.x)<1e-7);
+    assert(std::abs(posed(model,m,"Head").x-posed(model,m,"C1").x)<1e-7);
     const Vec3 face=posed(model,m,"Jaw")-posed(model,m,"Head");
     assert(face.z>0 && std::abs(face.x)<1e-7); // face forward without nodding
     for (const char* vertebra : {"L5","L4","L3","L2","L1","T12","T11","T10","T9","T8","T7",

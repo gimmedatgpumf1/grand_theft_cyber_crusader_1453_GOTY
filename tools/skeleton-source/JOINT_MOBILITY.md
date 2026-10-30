@@ -122,7 +122,8 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 The room installs a source-bone tree for both subjects and retains the original
 unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
 90° abduction, elbows and knees straight, ankles and wrists straightened,
-fingers and toes extended, palms facing forward, and feet aimed forward. Each
+fingers extended, palms facing forward, feet aimed forward, and toes resting
+near the sole instead of held artificially straight. Each
 hip-to-knee and knee-to-ankle line is aligned vertically, with both feet
 parallel and approximately hip-width apart. Hip flexion/extension, axial rotation
 and abduction/adduction are independent bounded controls (`G`, `N`, `U`);
@@ -189,7 +190,12 @@ replace either subject's source bone geometry.
 Toe reference directions use the actual neighbouring joint locations, rather
 than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
 DIP reference alignment is separate from bounded toe flexion; positive flexion
-moves toward the sole. All 28 joints per subject are tested individually in
+moves toward the sole. The resting pose uses each toe's source vertices and
+joint pivots to select bounded flexion toward the heel's support plane. Where
+a proximal bone contacts first, the other toe hinges can also bend; the female
+right little toe needs both IP joints at their population limits and its
+proximal surface extends about 0.6 mm below the heel plane. These are geometric
+pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
 mesh and V view, and the source pose is restorable.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and

@@ -22,6 +22,12 @@ static Vec3 center(const SkeletonModel& model, const std::string& name) {
 static Vec3 posed(const SkeletonModel& model, const std::vector<std::array<double,16>>& m, const std::string& name) {
     return transform(m[model.sourceStructure(name)],center(model,name));
 }
+static double bottom(const SkeletonModel& model, const std::vector<std::array<double,16>>& matrices, const std::string& name) {
+    const int i=model.sourceStructure(name); assert(i>=0); const auto& part=model.sourceStructures()[i];
+    double y=1e9; for (std::size_t j=0;j<part.pointCount;++j)
+        y=std::min(y,transform(matrices[i],model.bones()[part.group].points[part.firstPoint+j]).y);
+    return y;
+}
 static std::size_t namedLink(const SkeletonModel& model, const std::string& first, const std::string& second) {
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
         const auto& e=model.sourceLinks()[i];
@@ -75,24 +81,25 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
         for (int joint=0;joint<(digit==1 ? 2 : 3);++joint) {
             assert(room.restoreReferencePose()); const auto before=model.sourceMatrices({},0);
             const auto index=namedLink(model,parents[joint],children[joint]);
-            assert(model.referenceBend(index) && std::abs(*model.referenceBend(index))<1e-7);
+            assert(model.referenceBend(index)); const double rest=*model.referenceBend(index);
+            const auto& edge=model.sourceLinks()[index];
+            const auto range=referenceBendRange(edge.mobility,parents[joint],children[joint]); assert(range);
+            const double increment=rest+5<=range->flexion ? 5 : -5;
             const Vec3 forward=normalized(posed(model,before,"FootMeta3"+suffix)-posed(model,before,"Cal"+suffix));
             Vec3 dorsal=normalized(cross(posed(model,before,"FootMeta1"+suffix)-posed(model,before,"FootMeta5"+suffix),forward));
             if (dot(dorsal,posed(model,before,"Tibia"+suffix)-posed(model,before,"Tal"+suffix))<0) dorsal=dorsal*-1.0;
             const Vec3 start=posed(model,before,tip), startProx=posed(model,before,prox);
-            assert(dot(normalized(start-startProx),forward)>std::cos(10*3.141592653589793/180));
+            assert(std::abs(bottom(model,before,tip)-bottom(model,before,"Cal"+suffix))<0.001);
             referenceMaximum=std::max(referenceMaximum,std::acos(std::clamp(dot(normalized(start-startProx),forward),-1.0,1.0))*180/3.141592653589793);
             const auto beforeLines=lineVertices(lines,model);
-            assert(model.setReferenceBend(index,10)); const auto after=model.sourceMatrices({},0);
+            assert(model.setReferenceBend(index,rest+increment)); const auto after=model.sourceMatrices({},0);
             const Vec3 delta=posed(model,after,tip)-start;
-            assert(dot(delta,dorsal)<-0.00001); // positive bends each joint toward sole
+            assert(dot(delta,dorsal)*increment<-0.00001); // positive bends each joint toward sole
             for (int k=0;k<16;++k) assert(std::abs(after[model.sourceStructure(neighbour)][k]-before[model.sourceStructure(neighbour)][k])<1e-7);
             const auto afterLines=lineVertices(lines,model);
             assert(segments.count(tip) && segments.count(neighbour));
             assert(difference(beforeLines,afterLines,segments.at(tip))>0.00001);
             assert(difference(beforeLines,afterLines,segments.at(neighbour))<1e-6);
-            const auto& e=model.sourceLinks()[index];
-            const auto range=referenceBendRange(e.mobility,parents[joint],children[joint]); assert(range);
             assert(model.setReferenceBend(index,1000)); assert(std::abs(*model.referenceBend(index)-range->flexion)<1e-7);
             assert(model.setReferenceBend(index,-1000)); assert(std::abs(*model.referenceBend(index)-range->extension)<1e-7);
             ++total;

@@ -11,7 +11,6 @@
 #include <functional>
 #include <sstream>
 #include <set>
-
 namespace gtc::native {
 namespace {
 
@@ -607,7 +606,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
     constexpr double toRadians = 3.14159265358979323846 / 180.0;
-    double spineTurn=0;
+    double spineTurn=0; std::optional<NeckReferenceFrames> neckFrames;
     for (std::size_t head=0; head<queue.size(); ++head) {
         const auto parent = queue[head];
         for (const auto& link : sourceLinks_) {
@@ -709,11 +708,17 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                         const double localTurn=spineTurn-*pelvisAngle;
                         alignmentAxis={0,0,localTurn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(localTurn); alignToNeutral=true;
                     }
+                    if (parentName=="C7" && childName=="C6") {
+                        neckFrames=sourceNeckFrames(*this,spineTurn); if (!neckFrames) { error="Missing neck frame"; return false; }
+                        const double turn=neckFrames->neckTurn; alignmentAxis={0,0,turn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(turn); alignToNeutral=true;
+                    }
+                    if (link.mobility=="atlanto_occipital" && neckFrames) {
+                        alignmentAxis=neckFrames->headAxis; alignmentAngle=neckFrames->headAngle; alignToNeutral=true;
+                    }
                 } else if (link.mobility == "atlanto_axial") {
                     axis = {0,1,0};
-                    const int head=sourceStructure("Head"), jaw=sourceStructure("Jaw");
-                    if (head<0 || jaw<0) { error="Missing head reference"; return false; }
-                    const double yaw=forwardHeadYaw(center(jaw)-center(head),spineTurn);
+                    if (!neckFrames) { error="Missing neck frame"; return false; }
+                    const double yaw=neckFrames->atlasYaw;
                     alignmentAxis={0,yaw<0 ? -1.0 : 1.0,0}; alignmentAngle=std::abs(yaw); alignToNeutral=true;
                 } else if (link.mobility == "sternoclavicular" || link.mobility == "acromioclavicular") {
                     axis = {0,0,side == 0 ? 1.0 : -1.0};
@@ -829,17 +834,14 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     neutralAlignments_ = std::move(neutralAlignments);
     return true;
 }
-
 bool SkeletonModel::restoreSourcePose() {
     return !referenceBindPose_.empty() && setSourcePose(referenceBindPose_);
 }
-
 bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates) {
     if (!sourceRig_ || !sourceRig_->setPose(updates)) return false;
     ++sourcePoseRevision_;
     return true;
 }
-
 std::optional<double> SkeletonModel::referenceBend(std::size_t link) const {
     if (!sourceRig_ || link >= sourceLinks_.size()) return std::nullopt;
     const auto& edge = sourceLinks_[link];
@@ -853,7 +855,6 @@ std::optional<double> SkeletonModel::referenceBend(std::size_t link) const {
     if (!joint || joint->angles().empty()) return std::nullopt;
     return joint->angles()[0] * (180.0 / 3.14159265358979323846);
 }
-
 bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     if (!sourceRig_ || link >= sourceLinks_.size()) return false;
     const auto& relationship = sourceLinks_[link];
