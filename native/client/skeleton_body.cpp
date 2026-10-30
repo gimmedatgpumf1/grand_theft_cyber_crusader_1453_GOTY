@@ -686,7 +686,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const int ulna = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
                     if (ulna >= 0) down = normalized(center(static_cast<std::size_t>(ulna))-pivot);
                 }
-                Vec3 axis = cross(up,down * -1.0);
+                Vec3 axis = cross(up,down * -1.0), forearmAxis=down;
                 double current = 0;
                 if (link.mobility == "atlanto_occipital" || link.mobility == "intervertebral" ||
                     link.mobility == "temporomandibular") {
@@ -717,34 +717,25 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis=cross(up,down);
                     current=std::asin(std::clamp(-dot(up,down),-1.0,1.0));
                 } else if (link.mobility == "wrist_condyloid") {
-                    const int index=sourceStructure(side==0 ? "HandMeta2_L" : "HandMeta2_R");
-                    const int little=sourceStructure(side==0 ? "HandMeta5_L" : "HandMeta5_R");
-                    if (index<0 || little<0) { error="Missing wrist palm frame"; return false; }
-                    Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),down));
-                    palm=palm*(side==0 ? -1.0 : 1.0);
-                    axis=normalized(cross(down,palm));
-                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
-                    const Vec3 distal=normalized(down-axis*dot(down,axis));
-                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
+                    const int ulna=sourceStructure(side==0 ? "Ulna_L" : "Ulna_R");
+                    const int humerus=sourceStructure(side==0 ? "Humerus_L" : "Humerus_R");
+                    if (ulna<0 || humerus<0) { error="Missing wrist forearm frame"; return false; }
+                    const Vec3 elbow=hasElbowAxes_ ? elbowAxes_[side].origin : contact(humerus,ulna);
+                    const auto frame=sourceWristFrame(*this,side,center(ulna)-elbow);
+                    if (!frame) { error="Missing wrist palm frame"; return false; }
+                    const auto wrist=wristReferenceFrame(frame->wrist-elbow,frame->hand,frame->palm);
+                    axis=wrist.flexion; alignmentAxis=wrist.alignment; alignmentAngle=wrist.alignmentAngle; alignToNeutral=true;
+                } else if (link.mobility == "thumb_cmc_saddle") {
+                    const auto frame=sourceThumbFrame(*this,fingerFrames,parent,child,side);
+                    if (!frame) { error="Missing thumb reference frame"; return false; }
+                    axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "finger_mcp_condyloid" ||
                            link.mobility == "finger_pip_hinge" || link.mobility == "finger_dip_hinge" ||
                            link.mobility == "thumb_mcp" || link.mobility == "thumb_ip_hinge") {
-                    // The palm supplies a common flexion direction for every
-                    // finger. Inferring an axis separately from each small
-                    // bend made neighbouring fingers curl in opposite ways.
-                    const int index=sourceStructure(side==0 ? "HandMeta2_L" : "HandMeta2_R");
-                    const int little=sourceStructure(side==0 ? "HandMeta5_L" : "HandMeta5_R");
-                    const int middle=sourceStructure(side==0 ? "HandMeta3_L" : "HandMeta3_R");
-                    const int wrist=sourceStructure(side==0 ? "HandLuna_L" : "HandLuna_R");
-                    if (index<0 || little<0 || middle<0 || wrist<0) { error="Missing palm frame"; return false; }
-                    Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),
-                                               center(static_cast<std::size_t>(middle))-center(static_cast<std::size_t>(wrist))));
-                    palm=palm*(side==0 ? -1.0 : 1.0);
-                    const auto [pp,pn]=points(parent); const auto [cp,cn]=points(child);
-                    const Vec3 proximal=FingerReferenceFrames::shaft(pp,pn,center(parent),up)*-1.0;
-                    const Vec3 distal=FingerReferenceFrames::shaft(cp,cn,center(child),down);
-                    const auto frame=fingerFrames.attach(parent,child,proximal,distal,palm);
-                    axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
+                    const auto frame=sourceFingerFrame(*this,fingerFrames,parent,child,side,up,down,
+                                                       link.mobility=="finger_mcp_condyloid" || link.mobility=="thumb_mcp");
+                    if (!frame) { error="Missing finger reference frame"; return false; }
+                    axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
                            link.mobility == "toe_ip_hinge") {
                     const std::string tag=side==0 ? "_L" : "_R";
@@ -761,7 +752,12 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
                     const int h=bone(side==0 ? "humerus_l" : "humerus_r");
-                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,pivot+down,side==0);
+                    const auto w=sourceWristFrame(*this,side,down);
+                    if (h<0 || !w) { error="Missing elbow hand frame"; return false; }
+                    forearmAxis=normalized(w->wrist-pivot);
+                    const auto wrist=wristReferenceFrame(forearmAxis,w->hand,w->palm);
+                    const Vec3 palm=frameVector(joint_detail::rotate(wrist.alignment,wrist.alignmentAngle),w->palm);
+                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0);
                     axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
@@ -782,7 +778,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
                 bindAngles={current};
                 if (alignToNeutral) { axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0); }
-                if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({down*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
+                if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.
                     const Vec3 shaft=normalized(pivot-kneeAxes_[side].origin)*(side==0 ? -1.0 : 1.0);

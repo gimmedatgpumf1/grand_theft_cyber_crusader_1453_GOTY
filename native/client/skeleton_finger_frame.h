@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/skeleton_joint.h"
+#include "client/skeleton_limb_frame.h"
 #include <vector>
 
 namespace gtc::native {
@@ -27,6 +28,9 @@ public:
         reference_[child]=joint_detail::compose(p,joint_detail::rotate(alignment,alignmentAngle));
         return {flexion,alignment,alignmentAngle};
     }
+    Axes attachTowardPalm(std::size_t parent, std::size_t child, Vec3 target, Vec3 distal, Vec3 palm) {
+        return attach(parent,child,apply(joint_detail::inverse(reference_[parent]),target),distal,palm);
+    }
     static Vec3 shaft(const Vec3* points, std::size_t count, Vec3 center, Vec3 hint) {
         Vec3 direction=normalized(hint);
         for (int step=0;step<16;++step) {
@@ -44,4 +48,46 @@ private:
     }
     std::vector<JointRigidTransform> reference_;
 };
+inline std::optional<FingerReferenceFrames::Axes> sourceFingerFrame(
+        const SkeletonModel& model, FingerReferenceFrames& frames, std::size_t parent, std::size_t child,
+        int side, Vec3 up, Vec3 down, bool metacarpal) {
+    const auto wrist=sourceWristFrame(model,side,{1,0,0});
+    if (!wrist) return std::nullopt;
+    const auto points=[&](std::size_t i) {
+        const auto& s=model.sourceStructures()[i];
+        return std::pair<const Vec3*,std::size_t>{model.bones()[s.group].points.data()+s.firstPoint,s.pointCount};
+    };
+    const auto center=[&](std::size_t i) {
+        const auto [p,n]=points(i); Vec3 c; for (std::size_t j=0;j<n;++j) c+=p[j];
+        return n ? c/static_cast<double>(n) : Vec3{};
+    };
+    const auto [pp,pn]=points(parent); const auto [cp,cn]=points(child);
+    const Vec3 distal=FingerReferenceFrames::shaft(cp,cn,center(child),down);
+    if (metacarpal) return frames.attachTowardPalm(parent,child,wrist->hand,distal,wrist->palm);
+    const Vec3 proximal=FingerReferenceFrames::shaft(pp,pn,center(parent),up)*-1.0;
+    return frames.attach(parent,child,proximal,distal,wrist->palm);
+}
+
+// The thumb starts in its registered CT position. Measure its metacarpal
+// shaft and align it with the palm's longitudinal direction at T-pose; retain
+// its independent CMC flexion coordinate for interactive movement.
+inline std::optional<FingerReferenceFrames::Axes> sourceThumbFrame(
+        const SkeletonModel& model, FingerReferenceFrames& frames, std::size_t parent, std::size_t child, int side) {
+    const auto wrist=sourceWristFrame(model,side,{1,0,0});
+    const int proximal=model.sourceStructure(side==0 ? "HandProxP1_L" : "HandProxP1_R");
+    if (!wrist || proximal<0) return std::nullopt;
+    const auto points=[&](std::size_t i) {
+        const auto& s=model.sourceStructures()[i];
+        return std::pair<const Vec3*,std::size_t>{model.bones()[s.group].points.data()+s.firstPoint,s.pointCount};
+    };
+    const auto center=[&](std::size_t i) {
+        const auto [p,n]=points(i); Vec3 c; for (std::size_t j=0;j<n;++j) c+=p[j];
+        return n ? c/static_cast<double>(n) : Vec3{};
+    };
+    const auto [p,n]=points(child); const Vec3 c=center(child);
+    const Vec3 shaft=FingerReferenceFrames::shaft(p,n,c,center(proximal)-c);
+    constexpr double angle=35.0*3.14159265358979323846/180.0;
+    const Vec3 target=normalized(wrist->hand*std::cos(angle)+wrist->radial*std::sin(angle));
+    return frames.attachTowardPalm(parent,child,target,shaft,wrist->palm);
+}
 } // namespace gtc::native

@@ -190,7 +190,7 @@ bool SkeletonRoom::restoreReferencePose() {
             double target=0;
             if (kind=="shoulder_ball_socket") target=90;
             else if (kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
-                     kind!="wrist_condyloid" && kind!="thumb_mcp" && kind!="thumb_ip_hinge" &&
+                     kind!="wrist_condyloid" && kind!="thumb_cmc_saddle" && kind!="thumb_mcp" && kind!="thumb_ip_hinge" &&
                      kind!="finger_mcp_condyloid" && kind!="finger_pip_hinge" && kind!="finger_dip_hinge" &&
                      kind!="great_toe_mtp" && kind!="lesser_toe_mtp" && kind!="toe_ip_hinge") continue;
             if (!model->setReferenceBend(i,target)) return false;
@@ -218,30 +218,6 @@ bool SkeletonRoom::restoreReferencePose() {
                 (model->sourceStructures()[link.first].name=="Femur"+suffix ||
                  model->sourceStructures()[link.second].name=="Femur"+suffix)) {
                 if (!model->setReferenceHipRotation(i,angle)) return false;
-                found=true; break;
-            }
-        }
-        if (!found) return false;
-    }
-    // Orient the grouped forearms so the two palms use the same T-pose frame.
-    // This is bounded rotation of the simplified pair, not separate-bone pronation.
-    for (SkeletonModel* model : {&male_,&female_}) for (char side : {'L','R'}) {
-        const std::string suffix=std::string("_")+side;
-        const int index=model->sourceStructure("HandMeta2"+suffix), little=model->sourceStructure("HandMeta5"+suffix);
-        const int middle=model->sourceStructure("HandMeta3"+suffix), wrist=model->sourceStructure("HandLuna"+suffix);
-        if (index<0 || little<0 || middle<0 || wrist<0) return false;
-        const auto matrices=model->sourceMatrices({},0);
-        const auto p=[&](int i) { return transformed(matrices[i],structureCenter(*model,i)); };
-        Vec3 palm=normalized(cross(p(index)-p(little),p(middle)-p(wrist)))*(side=='L' ? -1.0 : 1.0);
-        const Vec3 axis{1,0,0}, target{0,-1,0};
-        const double angle=std::atan2(dot(axis,cross(palm,target)),dot(palm,target)-dot(axis,palm)*dot(axis,target))
-                           *(180.0/3.14159265358979323846);
-        bool found=false;
-        for (std::size_t i=0;i<model->sourceLinks().size();++i) {
-            const auto& link=model->sourceLinks()[i];
-            if (link.mobility=="elbow_hinge" && model->sourceStructures()[link.first].name=="Humerus"+suffix &&
-                model->sourceStructures()[link.second].name=="Radius"+suffix) {
-                if (!model->setReferenceForearmRotation(i,angle)) return false;
                 found=true; break;
             }
         }

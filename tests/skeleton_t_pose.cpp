@@ -1,5 +1,6 @@
 // Actual room skeletons: reference pose, controls, joint direction and rigid geometry.
 #include "client/skeleton_room.h"
+#include "client/skeleton_limb_frame.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -28,6 +29,16 @@ static std::size_t link(const SkeletonModel& model, const std::string& child, co
     }
     assert(false); return 0;
 }
+static void reportSourceWrists(SkeletonRoom& room, SkeletonModel& model, const char* name) {
+    assert(room.restoreOriginalPose());
+    for (int side=0;side<2;++side) {
+        const auto wrist=sourceWristFrame(model,side,{1,0,0}); assert(wrist);
+        const Vec3 forearm=normalized(wrist->wrist-model.elbowAxes()[side].origin);
+        const double degrees=std::acos(std::clamp(dot(forearm,wrist->hand),-1.0,1.0))*180/3.141592653589793;
+        std::printf("%s source %s wrist centre-line angle: %.2f degrees\n",name,side==0 ? "left" : "right",degrees);
+    }
+    assert(room.restoreReferencePose());
+}
 static void verifyPose(SkeletonModel& model) {
     auto m=model.sourceMatrices({},0);
     for (char side : {'L','R'}) {
@@ -44,11 +55,14 @@ static void verifyPose(SkeletonModel& model) {
         const Vec3 elbow=point(m[h],model.elbowAxes()[side=='L' ? 0 : 1].origin);
         const Vec3 upper=normalized(elbow-shoulder), target=side=='L' ? Vec3{1,0,0}:Vec3{-1,0,0};
         assert(dot(upper,target)>0.99999);
-        const Vec3 fore=normalized(posed(model,m,"Ulna"+tag)-elbow);
-        assert(dot(fore,target)>std::cos(20*3.141592653589793/180));
+        const auto frame=sourceWristFrame(model,side=='L' ? 0 : 1,target); assert(frame);
+        const int radius=model.sourceStructure("Radius"+tag);
+        const Vec3 wrist=point(m[radius],frame->wrist);
+        const Vec3 fore=normalized(wrist-elbow);
+        assert(dot(fore,target)>0.99999); // measured elbow-to-wrist line, not just ulna centroid
         const Vec3 palm=normalized(cross(posed(model,m,"HandMeta2"+tag)-posed(model,m,"HandMeta5"+tag),
                                          posed(model,m,"HandMeta3"+tag)-posed(model,m,"HandLuna"+tag)))*(side=='L' ? -1.0 : 1.0);
-        assert(palm.y < -0.93); // both palms face down in the reference pose
+        assert(palm.z > 0.93); // both palms face forward in the reference pose
         const Vec3 foot=normalized(posed(model,m,"FootMeta3"+tag)-posed(model,m,"Cal"+tag));
         const Vec3 shin=normalized(posed(model,m,"Tibia"+tag)-posed(model,m,"Cal"+tag));
         assert(std::abs(dot(foot,shin))<0.03 && foot.z>0.9);
@@ -201,6 +215,7 @@ int main() {
     NativeFrame frame; room.render(frame,view,0); setGpuRenderer(nullptr);
     assert(std::abs(lowMale)<1e-5 && std::abs(lowFemale)<1e-5);
     const auto male=room.male().sourceMatrices({},0), female=room.female().sourceMatrices({},0);
+    reportSourceWrists(room,room.male(),"male"); reportSourceWrists(room,room.female(),"female");
     verifyMirroredElbows(room,room.male()); verifyMirroredElbows(room,room.female());
     verifyMirroredForearms(room,room.male()); verifyMirroredForearms(room,room.female());
     verifyMirroredHips(room,room.male()); verifyMirroredHips(room,room.female());

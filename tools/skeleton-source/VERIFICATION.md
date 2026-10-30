@@ -29,13 +29,23 @@ cause or correctness of individual joints. The room retains the source pose for 
 ### Mirrored reference motion
 
 `tests/skeleton_t_pose.cpp` checks mirrored elbow, grouped-forearm and hip
-rotation matrices at several angles on both subjects, verifies palms face down,
+rotation matrices at several angles on both subjects, verifies palms face forward,
 and checks bilateral knee, ankle, wrist and toe movement directions. The knee
 and ankle axes remain individual estimates from each CT geometry, not exact
 mirrored bone copies. `tests/skeleton_finger_joints.cpp` checks 28 separate
 finger joints per model in mesh and V view, including flexion, permitted
 extension, limits, neighbouring-digit isolation and original-pose recovery.
 The original CT bone meshes are not mirrored or rescaled.
+
+The source angles are measured before posing, using principal directions of each
+labelled bone. `tests/skeleton_source_hand_angles.cpp` prints all 28 joint-pair
+shaft deviations per subject in both poses. In the registered source, maximum
+MCP/PIP-or-thumb-IP/DIP shaft deviations are 38.03°/98.69°/47.95° (male)
+and 45.75°/81.26°/55.40° (female). Wrist centre-line deviations from the
+elbow–wrist direction are 29.76°/26.26° (male L/R) and 12.62°/16.84°
+(female L/R). These geometric 3D angles are not clinical goniometer readings.
+The reference tests check the elbow-to-wrist line and every phalanx shaft against
+the extended arm, rather than assuming source bones began at zero.
 
 A headless SwiftShader Vulkan test exercised both skeletons through the room's
 mesh and V-view paths, including all three index finger stages and grouped

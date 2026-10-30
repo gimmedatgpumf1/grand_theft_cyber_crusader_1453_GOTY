@@ -121,7 +121,7 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 The room installs a source-bone tree for both subjects and retains the original
 unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
 90° abduction, elbows and knees straight, ankles and wrists straightened,
-fingers and toes extended, palms facing down, and feet aimed forward with bounded hip rotation.
+fingers and toes extended, palms facing forward, and feet aimed forward with bounded hip rotation.
 Each whole body is translated down to the floor. `B` returns the original source
 pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
@@ -163,7 +163,10 @@ The fixed-axis knee approximation still has known intersections at other
 angles (see `09-audit-knee-motion.py`).
 
 Finger axes use the principal shaft directions of the actual phalanges and
-metacarpals. Each joint's positive bend is oriented toward its palm after its
+metacarpals. The straight-arm pose first aligns the measured elbow–wrist and
+palm directions, then extends the finger shafts parallel to the arm and positions
+the thumb above the index finger. The thumb's 35° metacarpal-to-finger reference
+is a pose choice, not an individual clinical measurement. Each joint's positive bend is oriented toward its palm after its
 parent fingers have straightened; all MCP, PIP/IP and DIP joints are checked
 independently in mesh and V view. The extended hand pose aligns the measured
 bone shafts; it does not depend only on setting arbitrary angles to zero.

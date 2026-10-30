@@ -1,5 +1,6 @@
 // Exercise each actual thumb and finger joint independently in both room views.
 #include "client/skeleton_room.h"
+#include "client/skeleton_finger_frame.h"
 #include "client/skeleton_rom.h"
 #include <algorithm>
 #include <cassert>
@@ -22,6 +23,16 @@ static Vec3 center(const SkeletonModel& m, const std::string& name) {
 }
 static Vec3 posed(const SkeletonModel& model, const std::vector<std::array<double,16>>& matrices, const std::string& name) {
     return transform(matrices[model.sourceStructure(name)],center(model,name));
+}
+static Vec3 shaft(const SkeletonModel& model, const std::vector<std::array<double,16>>& matrices,
+                  const std::string& name, const std::string& next) {
+    const auto index=model.sourceStructure(name); const auto& part=model.sourceStructures()[index];
+    const Vec3* points=model.bones()[part.group].points.data()+part.firstPoint;
+    const Vec3 direction=FingerReferenceFrames::shaft(points,part.pointCount,center(model,name),center(model,next)-center(model,name));
+    const auto& m=matrices[index];
+    return normalized(Vec3{m[0]*direction.x+m[4]*direction.y+m[8]*direction.z,
+                           m[1]*direction.x+m[5]*direction.y+m[9]*direction.z,
+                           m[2]*direction.x+m[6]*direction.y+m[10]*direction.z});
 }
 static std::size_t namedLink(const SkeletonModel& model, const std::string& first, const std::string& second) {
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
@@ -64,28 +75,37 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
     const std::string path=std::string("tools/skeleton-source/skeleton-")+sex+".lines";
     SkeletonLines lines; std::string error; assert(lines.load(path,error) && lines.bind(model,error));
     const auto segments=lineSegments(path);
-    int total=0; double direction[2][5][3]{};
+    assert(room.restoreOriginalPose()); const auto source=model.sourceMatrices({},0);
+    int total=0; double direction[2][5][3]{}, maxSource[3]{};
     for (char side : {'L','R'}) for (int digit=1;digit<=5;++digit) {
         assert(room.restoreReferencePose());
         const auto suffix=std::string("_")+side, number=std::to_string(digit);
         const std::string meta="HandMeta"+number+suffix, prox="HandProxP"+number+suffix;
         const std::string mid="HandMidP"+number+suffix, tip="HandDistP"+number+suffix;
         auto bind=model.sourceMatrices({},0);
-        const Vec3 a=posed(model,bind,meta), b=posed(model,bind,prox);
-        const Vec3 c=posed(model,bind,digit==1 ? tip : mid);
-        // In the reference pose the actual phalanges are extended, not merely
-        // assigned a numerical zero on unrelated axes.
-        assert(dot(normalized(b-a),normalized(c-b))>std::cos(12*3.141592653589793/180));
+        // Check the actual long axes, not only centroid offsets or stored zeroes.
+        // The four fingers and thumb point outward along the arm in the reference.
+        const Vec3 outward=side=='L' ? Vec3{1,0,0} : Vec3{-1,0,0};
+        const auto firstNext=digit==1 ? tip : mid;
+        const Vec3 proximal=shaft(model,bind,prox,firstNext);
+        assert(dot(proximal,outward)>std::cos(3*3.141592653589793/180));
         if (digit!=1) {
-            const Vec3 d=posed(model,bind,tip);
-            assert(dot(normalized(c-b),normalized(d-c))>std::cos(12*3.141592653589793/180));
+            const Vec3 middle=shaft(model,bind,mid,tip);
+            assert(dot(middle,outward)>std::cos(3*3.141592653589793/180));
         }
+        const Vec3 distal=shaft(model,bind,tip,digit==1 ? prox : mid)*-1.0;
+        assert(dot(distal,outward)>std::cos(3*3.141592653589793/180));
+        if (digit==1) assert(posed(model,bind,tip).y>posed(model,bind,"HandDistP2"+suffix).y);
         const std::string neighbour="HandDistP"+std::to_string(digit==5 ? 2 : digit+1)+suffix;
         const std::string parents[]={meta,prox,mid}, children[]={prox,digit==1 ? tip : mid,tip};
         for (int joint=0;joint<(digit==1 ? 2 : 3);++joint) {
             assert(room.restoreReferencePose()); bind=model.sourceMatrices({},0);
             const auto beforeLines=lineVertices(lines,model);
             const auto i=namedLink(model,parents[joint],children[joint]);
+            const Vec3 originalParent=shaft(model,source,parents[joint],children[joint]);
+            const Vec3 originalChild=shaft(model,source,children[joint],parents[joint])*-1.0;
+            const double originalAngle=std::acos(std::clamp(dot(originalParent,originalChild),-1.0,1.0))*180/3.141592653589793;
+            maxSource[joint]=std::max(maxSource[joint],originalAngle);
             assert(model.referenceBend(i) && std::abs(*model.referenceBend(i))<1e-7);
             const auto& e=model.sourceLinks()[i];
             const auto range=referenceBendRange(e.mobility,parents[joint],children[joint]); assert(range);
@@ -117,7 +137,9 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
     assert(total==28);
     for (int digit=0;digit<5;++digit) for (int joint=0;joint<(digit==0 ? 2 : 3);++joint)
         assert(std::abs(direction[0][digit][joint]-direction[1][digit][joint]) < (digit==0 ? 0.35 : 0.15));
-    std::cout << sex << ": " << total << " independent mirrored finger joints, mesh and V lines PASS\n";
+    assert(maxSource[0]>20);
+    std::cout << sex << ": source shaft deviation maxima MCP " << maxSource[0] << ", PIP/IP " << maxSource[1]
+              << ", DIP " << maxSource[2] << " degrees; " << total << " independent joints PASS\n";
 }
 int main() {
     SkeletonRoom room; std::string error; assert(room.load(".",error));
