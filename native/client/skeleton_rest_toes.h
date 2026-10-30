@@ -109,7 +109,8 @@ inline bool restToesOnSole(SkeletonModel& model) {
                 const double before=tipHeight();
                 if (!model.setReferenceBend(ip,5)) return false;
                 const double drop=before-tipHeight();
-                const double target=drop>1e-8 ? std::clamp(5*(before-ground)/drop,0.0,bound->flexion) : 0.0;
+                // Resting flexion stays gentle; the controls retain the full ROM.
+                const double target=drop>1e-8 ? std::clamp(5*(before-ground)/drop,0.0,std::min(20.0,bound->flexion)) : 0.0;
                 if (!model.setReferenceBend(ip,target)) return false;
             }
             // A registered small-toe proximal bone may already touch first.

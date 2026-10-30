@@ -42,7 +42,7 @@ In the registered source, the maximum angle between proximal-to-distal toe
 centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
 (female); with the toes resting toward the sole, the respective maxima are
 14.48° and 14.50°. Each distal toe reaches within 1 mm of the heel support
-plane; the right female little toe's proximal bone extends about 0.6 mm below
+plane; the right female little toe's proximal bone extends about 1.3 mm below
 it. These are geometric direction measurements, not clinical joint angles.
 `tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
 toe-tip support, flexion toward the sole, range limits, neighbour
