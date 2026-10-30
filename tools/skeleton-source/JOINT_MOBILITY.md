@@ -132,7 +132,10 @@ The source trunk is rotated laterally at the sacrum/L5 link so C7 is above
 the sacrum; the source's front-to-back spinal curves remain intact. Head yaw
 is aligned forward without adding a nod. These are geometric reference-pose
 alignments, not measurements of individual neutral joint angles. Each whole
-body is translated down to the floor. `B` returns the original source pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
+body is translated down to the floor. Heel, medial sesamoid and lateral
+metatarsal support points define each sole; the pelvis is levelled against
+both feet while hip and trunk compensation preserves straight legs and spine.
+`B` returns the original source pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
 bounded ±80° axial rotation (`M`); the grouped rotation is a simplified visual

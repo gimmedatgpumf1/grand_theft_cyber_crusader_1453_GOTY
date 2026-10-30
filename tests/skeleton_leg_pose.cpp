@@ -25,6 +25,34 @@ static std::size_t hipLink(const SkeletonModel& model, const std::string& name) 
     }
     assert(false); return 0;
 }
+static double partBottom(const SkeletonModel& model, const std::vector<std::array<double,16>>& m, const std::string& name) {
+    const int i=model.sourceStructure(name); assert(i>=0);
+    const auto& s=model.sourceStructures()[i]; double y=1e9;
+    for (std::size_t j=0;j<s.pointCount;++j) y=std::min(y,point(m[i],model.bones()[s.group].points[s.firstPoint+j]).y);
+    return y;
+}
+static void checkFootVolumes(const SkeletonModel& model, const std::vector<std::array<double,16>>& m, const char* sex) {
+    const std::string path=std::string("tools/skeleton-source/skeleton-")+sex+".lines";
+    SkeletonLines lines; std::string error; assert(lines.load(path,error) && lines.bind(model,error));
+    Rasterizer out(640,480,colorHex("#000000"),400,true); lines.draw(out,{},0,9001,m);
+    const auto scene=out.takeGpuScene(); assert(!scene.batches.empty());
+    const auto& vertices=scene.batches.back().vertices;
+    std::ifstream file(path); assert(file); std::string row; std::size_t offset=0; int feet=0;
+    while (std::getline(file,row)) {
+        const bool foot=row.rfind("F ",0)==0; if (!foot && row.rfind("M ",0)!=0) continue;
+        std::istringstream in(row); char type; std::string name; in >> type >> name;
+        int count=10, faces=0, edges=0; double thickness=0;
+        if (!foot) in >> thickness >> count >> faces >> edges;
+        if (foot) {
+            assert(offset+10<=vertices.size()); const double y=vertices[offset].y;
+            for (int i : {1,4,5}) assert(std::abs(vertices[offset+i].y-y)<1e-6);
+            const double heel=partBottom(model,m,std::string("Cal_")+name.back());
+            assert(std::abs(y-heel)<1e-6); ++feet;
+        }
+        offset+=foot ? 10 : 2*count;
+    }
+    assert(feet==2);
+}
 static double footBottom(const SkeletonModel& model, const std::vector<std::array<double,16>>& m, char side) {
     const std::string suffix=std::string("_")+side; double low=1e9;
     for (std::size_t i=0;i<model.sourceStructures().size();++i) {
@@ -53,7 +81,7 @@ static void check(SkeletonRoom& room,SkeletonModel& model,const char* name) {
         assert(dot(upper,{0,-1,0})>0.999999999 && dot(lower,{0,-1,0})>0.999999999);
         assert(std::abs(hip.x-ankle.x)<1e-7 && std::abs(hip.z-ankle.z)<1e-7);
         const Vec3 foot=normalized(point(posed[met],center(model,met))-point(posed[heel],center(model,heel)));
-        assert(std::abs(foot.x)<1e-7 && foot.z>0.997);
+        assert(std::abs(foot.x)<1e-7 && foot.z>0.98);
         const Vec3 sourceUpper=normalized(point(source[femur],frame->knee)-point(source[femur],frame->hip));
         const Vec3 sourceLower=normalized(point(source[tibia],frame->ankle)-point(source[tibia],frame->knee));
         std::printf("%s %c source thigh/shin off vertical: %.2f/%.2f degrees; reference: %.2f/%.2f\n",name,letter,
@@ -61,6 +89,10 @@ static void check(SkeletonRoom& room,SkeletonModel& model,const char* name) {
             std::acos(std::clamp(dot(sourceLower,{0,-1,0}),-1.0,1.0))*180/3.141592653589793,
             std::acos(std::clamp(dot(upper,{0,-1,0}),-1.0,1.0))*180/3.141592653589793,
             std::acos(std::clamp(dot(lower,{0,-1,0}),-1.0,1.0))*180/3.141592653589793);
+        const double heelBottom=partBottom(model,posed,"Cal"+tag);
+        const double outerBottom=partBottom(model,posed,"FootMeta5"+tag);
+        const double innerBottom=std::min(partBottom(model,posed,"FootSesaMed"+tag),partBottom(model,posed,"FootSesaLat"+tag));
+        assert(std::abs(heelBottom-outerBottom)<1e-5 && std::abs(heelBottom-innerBottom)<1e-5);
         bottoms[side]=footBottom(model,posed,letter);
         const auto hipEdge=hipLink(model,"Femur"+tag);
         assert(model.referenceHipAbduction(hipEdge) && std::abs(*model.referenceHipAbduction(hipEdge))<1e-8);
@@ -75,8 +107,9 @@ static void check(SkeletonRoom& room,SkeletonModel& model,const char* name) {
         assert(model.setReferenceHipAbduction(hipEdge,-100)); assert(std::abs(*model.referenceHipAbduction(hipEdge)+30)<1e-8);
         assert(room.restoreReferencePose()); posed=model.sourceMatrices({},0);
     }
+    checkFootVolumes(model,posed,name);
     std::printf("%s ungrounded foot bottoms L/R: %.4f/%.4f m, difference %.1f mm\n",name,bottoms[0],bottoms[1],std::abs(bottoms[0]-bottoms[1])*1000);
-    assert(std::abs(bottoms[0]-bottoms[1])<0.01); // measured source asymmetry, no scaling
+    assert(std::abs(bottoms[0]-bottoms[1])<0.003); // measured source asymmetry, no scaling
     // The actual left/right hip rotations mirror in the coronal plane.
     for (double angle : {-30.0,15.0,45.0}) {
         std::array<std::array<double,9>,2> delta{};

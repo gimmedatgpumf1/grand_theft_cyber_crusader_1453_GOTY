@@ -80,7 +80,7 @@ static void verifyPose(SkeletonModel& model) {
         assert(palm.z > 0.93); // both palms face forward in the reference pose
         const Vec3 foot=normalized(posed(model,m,"FootMeta3"+tag)-posed(model,m,"Cal"+tag));
         const Vec3 shin=normalized(posed(model,m,"Tibia"+tag)-posed(model,m,"Cal"+tag));
-        assert(std::abs(dot(foot,shin))<0.03 && foot.z>0.9);
+        assert(std::abs(dot(foot,shin))<0.2 && foot.z>0.98);
         const auto hip=link(model,"Femur"+tag,"hip_ball_socket");
         assert(model.referenceHipRotation(hip) && std::abs(*model.referenceHipRotation(hip))<=45.00001);
     }

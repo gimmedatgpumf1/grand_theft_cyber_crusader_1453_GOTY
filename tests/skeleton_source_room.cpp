@@ -95,7 +95,7 @@ static bool checkJoints(const GpuBatch& batch, const char* path, double x, doubl
     }
     return count == 8;
 }
-static bool checkSolids(const GpuBatch& batch, const char* path, double x, double yaw) {
+static bool checkSolids(const GpuBatch& batch, const SkeletonModel& model, const char* path, double x, double yaw) {
     std::ifstream file(path);
     std::string row;
     std::size_t solids = 0, vertexOffset = 0, indexOffset = 0;
@@ -113,6 +113,10 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
             vertexOffset + vertexCount > batch.vertices.size() || indexOffset + indexCount > batch.indices.size()) return false;
         for (int i = 0; i < count; ++i) {
             Vec3 p; input >> p.x >> p.y >> p.z;
+            if (foot && (i==0 || i==1 || i==4 || i==5)) {
+                const auto frame=sourceLegFrame(model,name.back()=='L' ? 0 : 1); if (!frame) return false;
+                p+=frame->soleNormal*dot(frame->solePoint-p,frame->soleNormal);
+            }
             const Vec3 expected{x + c*p.x + s*p.z, p.y, -s*p.x + c*p.z};
             const auto& a = batch.vertices[vertexOffset+i];
             const Vec3 first{a.x,a.y,a.z};
@@ -195,8 +199,8 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
         if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) femaleDots = true;
         if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) maleJoints = true;
         if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) femaleJoints = true;
-        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
-        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 9001 && checkSolids(batch, *checkedMale, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 8001 && checkSolids(batch, *checkedFemale, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();

@@ -115,6 +115,11 @@ public:
     // source geometry supplies approximate pivots; neutral is estimated.
     bool installReferenceRig(std::string& error);
     bool restoreSourcePose();
+    bool levelReferencePelvis() {
+        const int sacrum=sourceStructure("Sacrum");
+        if (!sourceRig_ || sacrum<0) return false;
+        return setSourcePose({{sourceBodies_[sacrum],{referencePelvisAngle_}}});
+    }
     std::optional<double> referenceHipCoordinate(std::size_t link, std::size_t coordinate) const {
         if (!sourceRig_ || link>=sourceLinks_.size() || sourceLinks_[link].mobility!="hip_ball_socket" ||
             (coordinate!=1 && coordinate!=2)) return std::nullopt;
@@ -182,6 +187,7 @@ private:
     std::vector<SkeletonSourceLink> sourceLinks_;
     std::array<SkeletonKneeAxis, 2> kneeAxes_{};
     bool hasKneeAxes_ = false;
+    double referencePelvisAngle_ = 0;
     std::array<SkeletonElbowAxis, 2> elbowAxes_{};
     bool hasElbowAxes_ = false;
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;

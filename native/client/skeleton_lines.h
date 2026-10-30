@@ -2,6 +2,7 @@
 
 #include "client/raster.h"
 #include "client/skeleton_body.h"
+#include "client/skeleton_leg_frame.h"
 #include <map>
 #include <cmath>
 #include <fstream>
@@ -178,6 +179,16 @@ public:
             if (dot.ownerA<0) { error="Unknown dot owner: "+dot.first; return false; }
         }
         for (auto& solid : solids_) {
+            if (solid.volume && solid.name.rfind("FootBase_",0)==0 && body.hasKneeAxes()) {
+                const auto frame=sourceLegFrame(body,solid.name.back()=='L' ? 0 : 1);
+                if (!frame) { error="Missing foot sole frame: "+solid.name; return false; }
+                // The simplified four sole corners share the actual support
+                // plane, while all six upper corners retain their source shape.
+                for (int i : {0,1,4,5}) {
+                    Vec3& p=solid.points[static_cast<std::size_t>(i)];
+                    p+=frame->soleNormal*dot(frame->solePoint-p,frame->soleNormal);
+                }
+            }
             solid.owners.clear();
             for (Vec3 p : solid.points) {
                 const int index=owner(solid.name,p);

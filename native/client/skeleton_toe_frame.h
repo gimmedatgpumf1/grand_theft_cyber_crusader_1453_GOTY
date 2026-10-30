@@ -8,7 +8,7 @@ namespace gtc::native {
 // The clinical flexion coordinate is separate and points toward the sole.
 inline std::optional<FingerReferenceFrames::Axes> sourceToeFrame(
         const SkeletonModel& model, FingerReferenceFrames& frames, std::size_t parent, std::size_t child,
-        int side, Vec3 pivot) {
+        int side, Vec3 pivot, Vec3 soleNormal) {
     const std::string tag=side==0 ? "_L" : "_R";
     const int big=model.sourceStructure("FootMeta1"+tag), little=model.sourceStructure("FootMeta5"+tag);
     const int middle=model.sourceStructure("FootMeta3"+tag), heel=model.sourceStructure("Cal"+tag);
@@ -32,8 +32,9 @@ inline std::optional<FingerReferenceFrames::Axes> sourceToeFrame(
         }
         return result;
     };
-    const Vec3 forward=normalized(center(middle)-center(heel));
-    Vec3 dorsal=normalized(cross(center(big)-center(little),forward));
+    const Vec3 direction=center(middle)-center(heel);
+    const Vec3 forward=normalized(direction-soleNormal*dot(direction,soleNormal));
+    Vec3 dorsal=normalized(soleNormal);
     if (dot(dorsal,center(tibia)-center(talus))<0) dorsal=dorsal*-1.0;
     const auto& name=model.sourceStructures()[child].name;
     std::string next=name;

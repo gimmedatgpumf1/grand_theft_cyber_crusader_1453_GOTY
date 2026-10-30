@@ -5,8 +5,8 @@
 namespace gtc::native {
 struct LegReferenceFrames {
     Vec3 hip, knee, ankle;
-    Vec3 hipAlignment, kneeAlignment;
-    double hipAngle, kneeAngle;
+    Vec3 hipAlignment, kneeAlignment, ankleAlignment, soleNormal, solePoint;
+    double hipAngle, kneeAngle, ankleAngle, soleHeight;
 };
 
 // Straighten the real hip-to-knee and knee-to-ankle joint-centre lines, then
@@ -16,8 +16,10 @@ inline std::optional<LegReferenceFrames> sourceLegFrame(const SkeletonModel& mod
     const std::string tag=side==0 ? "_L" : "_R";
     const int femur=model.sourceStructure("Femur"+tag), tibia=model.sourceStructure("Tibia"+tag);
     const int talus=model.sourceStructure("Tal"+tag), heel=model.sourceStructure("Cal"+tag);
-    const int met=model.sourceStructure("FootMeta3"+tag), bone=model.bone(side==0 ? "femur_l" : "femur_r");
-    if (femur<0 || tibia<0 || talus<0 || heel<0 || met<0 || bone<0) return std::nullopt;
+    const int met=model.sourceStructure("FootMeta3"+tag), big=model.sourceStructure("FootMeta1"+tag);
+    const int little=model.sourceStructure("FootMeta5"+tag), bone=model.bone(side==0 ? "femur_l" : "femur_r");
+    const int medial=model.sourceStructure("FootSesaMed"+tag), lateral=model.sourceStructure("FootSesaLat"+tag);
+    if (femur<0 || tibia<0 || talus<0 || heel<0 || met<0 || big<0 || little<0 || medial<0 || lateral<0 || bone<0) return std::nullopt;
     const auto points=[&](int i) {
         const auto& s=model.sourceStructures()[i];
         return std::pair<const Vec3*,std::size_t>{model.bones()[s.group].points.data()+s.firstPoint,s.pointCount};
@@ -60,11 +62,65 @@ inline std::optional<LegReferenceFrames> sourceLegFrame(const SkeletonModel& mod
     if (length(ankleAxis)<1e-8) return std::nullopt;
     const double ankleCurrent=std::clamp(std::asin(std::clamp(-dot(ankleUp,foot),-1.0,1.0)),
                                          -20.0*3.141592653589793/180.0,50.0*3.141592653589793/180.0);
-    const Vec3 f=frameVector(joint_detail::rotate(hAxis,hAngle),
-                  frameVector(joint_detail::rotate(kAxis,kAngle),
-                  frameVector(joint_detail::rotate(ankleAxis,-ankleCurrent),foot)));
+    const auto rotation=joint_detail::compose(joint_detail::rotate(hAxis,hAngle),
+                        joint_detail::compose(joint_detail::rotate(kAxis,kAngle),joint_detail::rotate(ankleAxis,-ankleCurrent)));
+    // A flat foot is defined by the underside of the heel and the distal ends
+    // of the first and fifth metatarsals and their sesamoids, not by their
+    // centres or the tibia angle.
+    const auto lowest=[&](int index,bool distal,const JointRigidTransform& pose) {
+        const auto [p,n]=points(index); double minAlong=1e9, maxAlong=-1e9;
+        for (std::size_t i=0;i<n;++i) { const double v=dot(p[i],foot); minAlong=std::min(minAlong,v); maxAlong=std::max(maxAlong,v); }
+        Vec3 result; double low=1e9;
+        for (std::size_t i=0;i<n;++i) {
+            if (distal && dot(p[i],foot)<minAlong+0.6*(maxAlong-minAlong)) continue;
+            const Vec3 v=frameVector(pose,p[i]-ankle);
+            if (v.y<low) { low=v.y; result=v; }
+        }
+        return result;
+    };
+    Vec3 flatAxis{1,0,0}; double flatAngle=0;
+    // Updating the three support vertices after each small correction accounts
+    // for a different point becoming the bottom of an irregular source bone.
+    for (int pass=0;pass<12;++pass) {
+        const auto pose=joint_detail::compose(joint_detail::rotate(flatAxis,flatAngle),rotation);
+        const Vec3 back=lowest(heel,false,pose), outer=lowest(little,true,pose);
+        Vec3 inner=lowest(big,true,pose);
+        for (int sesamoid : {medial,lateral}) {
+            const Vec3 candidate=lowest(sesamoid,false,pose);
+            if (candidate.y<inner.y) inner=candidate;
+        }
+        Vec3 normal=normalized(cross(inner-back,outer-back));
+        if (normal.y<0) normal=normal*-1.0;
+        if (length(normal)<1e-8) return std::nullopt;
+        const auto [stepAxis,stepAngle]=align(normal,{0,1,0});
+        const auto accumulated=composeAlignments(flatAxis,flatAngle,stepAxis,stepAngle);
+        flatAxis=accumulated.first; flatAngle=accumulated.second;
+    }
+    const Vec3 ankleAlignment=frameVector(joint_detail::inverse(rotation),flatAxis);
+    const Vec3 f=frameVector(joint_detail::rotate(flatAxis,flatAngle),frameVector(rotation,foot));
     const double yaw=std::atan2(-f.x,f.z);
     const auto [neutralHipAxis,neutralHipAngle]=composeAlignments(hAxis,hAngle,{0,1,0},yaw);
-    return LegReferenceFrames{hip,knee,ankle,neutralHipAxis,neutralKneeAxis,neutralHipAngle,neutralKneeAngle};
+    const auto flattened=joint_detail::compose(joint_detail::rotate(flatAxis,flatAngle),rotation);
+    const double sole=std::min({lowest(heel,false,flattened).y,lowest(big,true,flattened).y,
+                                lowest(little,true,flattened).y,lowest(medial,false,flattened).y,lowest(lateral,false,flattened).y});
+    const auto inverse=joint_detail::inverse(flattened);
+    const Vec3 soleNormal=frameVector(inverse,{0,1,0});
+    const Vec3 solePoint=ankle+frameVector(inverse,lowest(heel,false,flattened));
+    return LegReferenceFrames{hip,knee,ankle,neutralHipAxis,neutralKneeAxis,ankleAlignment,soleNormal,solePoint,
+                              neutralHipAngle,neutralKneeAngle,flatAngle,sole};
+}
+// Registered limbs can differ in length and hip height. Tilt the pelvis just
+// enough to place the two straight legs on the same level, then counter-rotate
+// the trunk and hip frames; no bone is moved away from its joint or rescaled.
+inline std::optional<double> levelPelvisAngle(const SkeletonModel& model) {
+    const auto left=sourceLegFrame(model,0), right=sourceLegFrame(model,1);
+    if (!left || !right) return std::nullopt;
+    const auto offset=[](const LegReferenceFrames& f) {
+        return f.soleHeight-length(f.knee-f.hip)-length(f.ankle-f.knee);
+    };
+    const double dx=left->hip.x-right->hip.x, dy=left->hip.y-right->hip.y;
+    const double span=std::hypot(dx,dy);
+    if (span<1e-8) return std::nullopt;
+    return std::asin(std::clamp((offset(*right)-offset(*left))/span,-1.0,1.0))-std::atan2(dy,dx);
 }
 } // namespace gtc::native

@@ -38,7 +38,7 @@ source pose remains restorable; no bone is scaled or mirrored.
 
 In the registered source, the maximum angle between proximal-to-distal toe
 centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
-(female); in the reference pose the respective maxima are 7.32° and 4.68°.
+(female); in the reference pose the respective maxima are 7.82° and 8.14°.
 These are geometric direction measurements, not clinical joint angles.
 `tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
 straightened toe directions, flexion toward the sole, range limits, neighbour
@@ -59,8 +59,11 @@ ankle centres before posing. Source thigh/shin deviations from vertical are
 4.89°/4.35° and 4.71°/3.09° (male left/right), and 9.13°/11.48° and
 16.99°/28.16° (female left/right). The reference pose aligns both measured
 joint-centre lines vertically on all four legs, with forward-parallel feet.
-The remaining difference between left and right foot-bottom heights is 3.8 mm
-(male) and 5.1 mm (female); no source bone is scaled to remove asymmetry.
+A small pelvis roll balances the measured source leg-length difference;
+counter-rotation retains the upright spine and vertical legs. The heel,
+medial sesamoid and lateral metatarsal support points are level in both feet;
+the actual lowest-bone height differs by at most 1.5 mm between feet. No
+source bone is scaled or detached to remove asymmetry.
 The tests exercise bilateral abduction/adduction, limits, movement direction,
 reflection, joint-centre continuity and exact source-pose recovery. The source
 hip centre and knee axis are geometric fits, not clinical measurements.

@@ -191,7 +191,7 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
     for (SkeletonModel* model : {&male_,&female_}) {
-        if (!model->restoreSourcePose()) return false;
+        if (!model->restoreSourcePose() || !model->levelReferencePelvis()) return false;
         for (std::size_t i=0;i<model->sourceLinks().size();++i) {
             const auto& kind=model->sourceLinks()[i].mobility;
             if (!model->referenceBend(i)) continue;

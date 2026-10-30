@@ -572,11 +572,6 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     std::vector<double> neutralAlignments(count+1,-1.0);
     AnatomicalKinematicTree rig;
     std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
-    auto rootBody = rig.addFixed(0, {});
-    if (!rootBody) { error = "Unable to add source root"; return false; }
-    mapping[static_cast<std::size_t>(root)] = *rootBody;
-    visited[static_cast<std::size_t>(root)] = true;
-    queue.push_back(static_cast<std::size_t>(root));
     const auto points = [&](std::size_t index) -> std::pair<const Vec3*, std::size_t> {
         const auto& part = sourceStructures_[index];
         return {bones_[part.group].points.data()+part.firstPoint, part.pointCount};
@@ -597,6 +592,17 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         }
         return result;
     };
+    const std::array<std::optional<LegReferenceFrames>,2> legs{sourceLegFrame(*this,0),sourceLegFrame(*this,1)};
+    const auto pelvisAngle=levelPelvisAngle(*this);
+    if (!pelvisAngle) { error="Missing standing pelvis frame"; return false; }
+    referencePelvisAngle_=*pelvisAngle;
+    JointRigidTransform rootFrame; rootFrame.translation=center(static_cast<std::size_t>(root));
+    auto rootJoint=CalibratedRotationalJoint::create(rootFrame,rootFrame,{{{0,0,1},-0.5,0.5}});
+    auto rootBody=rootJoint ? rig.addJoint(0,*rootJoint) : std::nullopt;
+    if (!rootBody) { error="Unable to add source root"; return false; }
+    bindPose.push_back({*rootBody,{0}});
+    mapping[static_cast<std::size_t>(root)]=*rootBody;
+    visited[static_cast<std::size_t>(root)]=true; queue.push_back(static_cast<std::size_t>(root));
     const auto suffix = [](const std::string& name) -> int {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
@@ -697,8 +703,11 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     if (link.mobility=="intervertebral" && parentName=="Sacrum" && childName=="L5") {
                         const int neck=sourceStructure("C7");
                         if (neck<0) { error="Missing spine reference"; return false; }
-                        spineTurn=uprightSpineAngle(center(parent),pivot,center(neck));
-                        alignmentAxis={0,0,spineTurn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(spineTurn); alignToNeutral=true;
+                        const Vec3 sacrum=center(parent);
+                        const Vec3 shifted=sacrum+frameVector(joint_detail::rotate({0,0,1},*pelvisAngle),pivot-sacrum);
+                        spineTurn=uprightSpineAngle(sacrum,shifted,shifted+center(neck)-pivot);
+                        const double localTurn=spineTurn-*pelvisAngle;
+                        alignmentAxis={0,0,localTurn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(localTurn); alignToNeutral=true;
                     }
                 } else if (link.mobility == "atlanto_axial") {
                     axis = {0,1,0};
@@ -719,21 +728,24 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
                 } else if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // The same sagittal flexion plane on both sides of the pelvis.
-                    axis={-1,0,0};
-                    const auto leg=sourceLegFrame(*this,side); if (!leg) { error="Missing leg frame"; return false; }
-                    alignmentAxis=leg->hipAlignment; alignmentAngle=leg->hipAngle; alignToNeutral=true;
+                    axis=frameVector(joint_detail::rotate({0,0,1},-*pelvisAngle),{-1,0,0});
+                    const auto& leg=legs[side]; if (!leg) { error="Missing leg frame"; return false; }
+                    const auto correction=composeAlignments(leg->hipAlignment,leg->hipAngle,{0,0,1},-*pelvisAngle);
+                    alignmentAxis=correction.first; alignmentAngle=correction.second; alignToNeutral=true;
                 } else if (link.mobility == "knee_modified_hinge" && hasKneeAxes_) {
                     axis = kneeAxes_[side].medialDirection * (side == 0 ? -1.0 : 1.0);
                     up = normalized(up-axis*dot(up,axis));
                     const Vec3 other = normalized((down*-1.0)-axis*dot(down*-1.0,axis));
                     current = std::atan2(dot(axis,cross(up,other)),dot(up,other));
-                    const auto leg=sourceLegFrame(*this,side); if (!leg) { error="Missing leg frame"; return false; }
+                    const auto& leg=legs[side]; if (!leg) { error="Missing leg frame"; return false; }
                     alignmentAxis=leg->kneeAlignment; alignmentAngle=leg->kneeAngle; alignToNeutral=true;
                 } else if (link.mobility == "ankle_hinge") {
                     // Positive plantarflexion moves the forefoot away from
                     // the shin; 0 is perpendicular to the tibial shaft.
                     axis=cross(up,down);
                     current=std::asin(std::clamp(-dot(up,down),-1.0,1.0));
+                    const auto& leg=legs[side]; if (!leg) { error="Missing foot frame"; return false; }
+                    alignmentAxis=leg->ankleAlignment; alignmentAngle=leg->ankleAngle; alignToNeutral=true;
                 } else if (link.mobility == "wrist_condyloid") {
                     const int ulna=sourceStructure(side==0 ? "Ulna_L" : "Ulna_R");
                     const int humerus=sourceStructure(side==0 ? "Humerus_L" : "Humerus_R");
@@ -756,7 +768,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
                            link.mobility == "toe_ip_hinge") {
-                    const auto frame=sourceToeFrame(*this,fingerFrames,parent,child,side,pivot);
+                    const auto frame=sourceToeFrame(*this,fingerFrames,parent,child,side,pivot,legs[side]->soleNormal);
                     if (!frame) { error="Missing toe reference frame"; return false; }
                     axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
@@ -790,7 +802,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.
-                    const Vec3 shaft{0,side==0 ? -1.0 : 1.0,0};
+                    const Vec3 shaft=frameVector(joint_detail::rotate({0,0,1},-*pelvisAngle),{0,side==0 ? -1.0 : 1.0,0});
                     const auto rotation=*referenceBendRange("hip_rotation"), abduction=*referenceBendRange("hip_abduction");
                     axes.push_back({shaft,rotation.extension*toRadians,rotation.flexion*toRadians}); bindAngles.push_back(0);
                     axes.push_back({{0,0,side==0 ? 1.0 : -1.0},abduction.extension*toRadians,abduction.flexion*toRadians}); bindAngles.push_back(0);

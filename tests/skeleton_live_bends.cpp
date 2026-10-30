@@ -20,6 +20,7 @@ static Vec3 center(const SkeletonModel& model, int index) {
     return sum/static_cast<double>(part.pointCount);
 }
 static void checkArmAlignment(SkeletonModel& model) {
+    assert(model.levelReferencePelvis());
     // Check the actual transformed shafts, not just stored joint angles.
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
         const auto& edge=model.sourceLinks()[i]; if (!model.referenceBend(i)) continue;
