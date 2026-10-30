@@ -126,7 +126,7 @@ def narrowing_failures(sources):
         if source.endswith('window_win32.cpp'):
             continue  # needs windows.h, which is not on this machine
         result = subprocess.run([compiler, '-std=c++17', '-fsyntax-only', '-Werror=narrowing',
-                                 '-Isrc', '-Inative', source],
+                                 '-Isrc', '-Inative', '-Inative/vendor/bullet/src', source],
                                 cwd=ROOT, capture_output=True, text=True)
         if result.returncode != 0:
             first = next((line for line in result.stderr.splitlines() if 'narrowing' in line

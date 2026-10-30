@@ -52,7 +52,8 @@ and `M` grouped forearm rotation. For the finger
 keys, hold Ctrl for MCP only, Alt for PIP (thumb IP), or Ctrl+Alt for DIP
 (fingers 2–5). For toes, the same modifiers select MTP, PIP (big-toe IP),
 and DIP (toes 2–5). With no modifier each whole digit bends. Hold Shift to reverse;
-`R` restores the T-pose and `B` restores the original registered source pose.
+`R` turns on both ragdolls; press it again to return to the T-pose.
+`B` stops ragdoll simulation and restores the original registered source pose.
 The approximate reference angles and frames are described in
 [JOINT_MOBILITY.md](JOINT_MOBILITY.md); these controls are not medical validation.
 Pale lines approximate the supplied

@@ -141,7 +141,15 @@ alignments, not measurements of individual neutral joint angles. Each whole
 body is translated down to the floor. Heel, medial sesamoid and lateral
 metatarsal support points define each sole; the pelvis is levelled against
 both feet while hip and trunk compensation preserves straight legs and spine.
-`B` returns the original source pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
+`R` starts gravity-driven ragdolls for both subjects; pressing it again restores the
+T-pose. `B` stops the simulation and returns the original source pose. Bullet 3.25
+uses per-structure convex collision proxies and a shared floor/world, not
+exact CT-surface collision. Fixed tree structures share rigid bodies; remaining
+joints use fitted pivots and bounded hinges, with approximate three-axis hip and
+shoulder constraints. Neighbouring or initially overlapping proxies are filtered
+to avoid joint-contact conflicts; other bones and the two figures can collide.
+This is a game-physics approximation, not a validated biomechanical simulation.
+Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
 bounded ±80° axial rotation (`M`); the grouped rotation is a simplified visual

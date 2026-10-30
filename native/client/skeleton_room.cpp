@@ -128,7 +128,7 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
 }
 
 bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint) {
-    if (!ready_ || !std::isfinite(degrees)) return false;
+    if (!ready_ || ragdoll_ || !std::isfinite(degrees)) return false;
     // Keys select concrete anatomical groups; there is no hidden joint-selection
     // mode. Every finger/toe can be moved independently of its neighbours.
     int digit = key >= '1' && key <= '5' ? key-'0' :
@@ -194,6 +194,7 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
+    ragdoll_.reset(); male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     for (SkeletonModel* model : {&male_,&female_}) {
         if (!model->restoreSourcePose() || !model->levelReferencePelvis()) return false;
         for (std::size_t i=0;i<model->sourceLinks().size();++i) {
@@ -217,10 +218,22 @@ bool SkeletonRoom::restoreReferencePose() {
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
+    ragdoll_.reset(); male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
     maleFloor_=femaleFloor_=0;
     return true;
 }
+
+bool SkeletonRoom::toggleRagdoll() {
+    if (!ready_) return false;
+    if (ragdoll_) return restoreReferencePose();
+    auto simulation=std::make_unique<SkeletonRagdoll>();
+    if (!simulation->create(male_,{-0.95,maleFloor_,0},female_,{0.95,femaleFloor_,0})) return false;
+    ragdoll_=std::move(simulation);
+    return true;
+}
+
+void SkeletonRoom::advanceRagdoll(double seconds) { if (ragdoll_) ragdoll_->advance(seconds); }
 
 void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
     Camera camera = freecam ? freecam->camera(view.width, view.height, view.gpu) : Camera{};

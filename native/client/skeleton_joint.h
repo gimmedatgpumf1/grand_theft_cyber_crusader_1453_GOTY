@@ -99,6 +99,8 @@ public:
         return true;
     }
     const std::vector<double>& angles() const { return angles_; }
+    const std::vector<JointRotationalAxis>& axes() const { return axes_; }
+    const JointRigidTransform& parentFrame() const { return parentFrame_; }
     JointRigidTransform childInParent() const {
         JointRigidTransform motion;
         for (std::size_t i = 0; i < axes_.size(); ++i)

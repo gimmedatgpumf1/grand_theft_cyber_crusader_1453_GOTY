@@ -31,3 +31,9 @@ Three.js is vendored so the game works fully offline. No remote runtime assets a
 
 Ccache is a build-time tool, not a game runtime dependency. Its committed sources permit an
 offline audit/rebuild as described in `tools/ccache/BUILDING.md`.
+
+## Bullet Physics 3.25
+
+- Project and source: https://github.com/bulletphysics/bullet3/tree/3.25
+- License: zlib; full notice: `native/vendor/bullet/LICENSE.txt`
+- Vendored core source: `native/vendor/bullet/src/`

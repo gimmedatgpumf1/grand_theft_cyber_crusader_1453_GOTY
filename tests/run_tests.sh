@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 bash tools/nagger.sh
+bash native/vendor/bullet/build.sh
 # Check each body's actual triangles and registered source, not standing-pose assumptions.
 python3 tests/openskeleton_source_pose.py female
 python3 tests/openskeleton_source_pose.py male
@@ -43,38 +44,42 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-room
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-source-room
 ./build/bin/gtc-skeleton-source-room
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_live_bends.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-live-bends
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_ragdoll.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-ragdoll
+./build/bin/gtc-skeleton-ragdoll
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_live_bends.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-live-bends
 ./build/bin/gtc-skeleton-live-bends
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_t_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-t-pose
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_t_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-t-pose
 ./build/bin/gtc-skeleton-t-pose
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_leg_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-leg-pose
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_leg_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-leg-pose
 ./build/bin/gtc-skeleton-leg-pose
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-finger-joints
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-finger-joints
 ./build/bin/gtc-skeleton-finger-joints
 "${COMMAND[@]}" -std=c++17 -fsyntax-only -Isrc -Inative tests/skeleton_windows_macros.cpp
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-toe-joints
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-toe-joints
 ./build/bin/gtc-skeleton-toe-joints
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_source_hand_angles.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-hand-angles
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_source_hand_angles.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-hand-angles
 ./build/bin/gtc-skeleton-hand-angles
-"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
-  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-elbow-sweep
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-elbow-sweep
 python3 tests/openskeleton_elbow_collision.py
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_hip_fits.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
@@ -145,20 +150,27 @@ GTC_FAKE_STAGED=1 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulk
 if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
   ./build/bin/gtc-vulkan-ui-check
   # Actual Vulkan rendering through the C room, with repeated target resizes.
-  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-    tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+    tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
     native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
     native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
-    -ldl -o build/bin/gtc-skeleton-resize-vulkan
+    -ldl build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-resize-vulkan
   ./build/bin/gtc-skeleton-resize-vulkan
-  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
-    tests/skeleton_source_rig_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+    tests/skeleton_source_rig_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
     native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
     native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
-    -ldl -o build/bin/gtc-skeleton-source-rig-vulkan
+    -ldl build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-source-rig-vulkan
   ./build/bin/gtc-skeleton-source-rig-vulkan
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+    tests/skeleton_ragdoll_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
+    native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
+    native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
+    native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+    build/obj/bullet/libbullet.a -ldl -o build/bin/gtc-skeleton-ragdoll-vulkan
+  ./build/bin/gtc-skeleton-ragdoll-vulkan
   python3 tests/skeleton_headless_wsi.py
 else
   echo 'Vulkan UI pixel check: skipped (set GTC_VULKAN_UI_TEST=1 with a Vulkan ICD)'

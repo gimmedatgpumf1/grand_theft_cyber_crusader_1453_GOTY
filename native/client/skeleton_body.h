@@ -224,6 +224,40 @@ public:
         return setSourcePose({{body,angles}});
     }
     std::optional<double> referenceBend(std::size_t link) const;
+    const AnatomicalKinematicTree* sourceRig() const { return sourceRig_ ? &*sourceRig_ : nullptr; }
+    const std::vector<std::size_t>& sourceBodyMap() const { return sourceBodies_; }
+    bool setDynamicSourcePose(std::vector<std::array<double,16>> pose) {
+        if (pose.size()!=sourceStructures_.size()) return false;
+        dynamicSourcePose_=std::move(pose); ++sourcePoseRevision_; return true;
+    }
+    void clearDynamicSourcePose() { if (!dynamicSourcePose_.empty()) { dynamicSourcePose_.clear(); ++sourcePoseRevision_; } }
+    std::vector<std::array<double,16>> placedDynamicPose(Vec3 origin,double yaw) const {
+        auto result=dynamicSourcePose_; const double c=std::cos(yaw),s=std::sin(yaw);
+        for (auto& m:result) {
+            for (int k=0;k<4;++k) { const double x=m[k*4],z=m[k*4+2]; m[k*4]=c*x+s*z; m[k*4+2]=-s*x+c*z; }
+            m[12]+=origin.x; m[13]+=origin.y; m[14]+=origin.z;
+        }
+        return result;
+    }
+    void drawDynamicSource(Rasterizer& rasterizer, Vec3 origin, double yaw) const {
+        const auto matrices=placedDynamicPose(origin,yaw);
+        Material material; material.color=colorHex("#e3d9bf"); material.specular=0.12;
+        for (std::size_t i=0;i<sourceStructures_.size();++i) {
+            const auto& part=sourceStructures_[i]; const auto& bone=bones_[part.group]; const auto& m=matrices[i];
+            std::vector<Vec3> points; points.reserve(part.pointCount);
+            for (std::size_t j=part.firstPoint;j<part.firstPoint+part.pointCount;++j) {
+                const auto& p=bone.points[j];
+                points.push_back({m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
+                                  m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]});
+            }
+            for (std::size_t j=part.firstTriangle;j<part.firstTriangle+part.triangleCount;++j) {
+                const auto& face=bone.triangles[j];
+                const auto a=std::size_t(face[0])-part.firstPoint,b=std::size_t(face[1])-part.firstPoint,c=std::size_t(face[2])-part.firstPoint;
+                if (a>=points.size() || b>=points.size() || c>=points.size()) continue;
+                rasterizer.worldTriangle(points[a],points[b],points[c],cross(points[b]-points[a],points[c]-points[a]),material);
+            }
+        }
+    }
     std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;
@@ -242,6 +276,7 @@ private:
     std::vector<std::size_t> sourceBodies_;
     std::vector<double> neutralAlignments_;
     std::vector<bool> disabledAlignments_;
+    std::vector<std::array<double,16>> dynamicSourcePose_;
     std::vector<AnatomicalKinematicTree::PoseUpdate> referenceBindPose_;
     std::uint64_t sourcePoseRevision_ = 0;
     std::string name_;

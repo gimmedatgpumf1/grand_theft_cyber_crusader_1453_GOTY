@@ -4,6 +4,7 @@
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
 #include "client/skeleton_lines.h"
+#include "client/skeleton_ragdoll.h"
 
 #include <cstdint>
 #include <utility>
@@ -33,10 +34,15 @@ public:
     bool adjustReferenceGroup(int key, double degrees, int fingerJoint = 0);
     bool restoreReferencePose(); // straight-arm, straight-leg reference pose
     bool restoreOriginalPose(); // original registered CT pose
+    bool toggleRagdoll();
+    void advanceRagdoll(double seconds);
+    bool ragdollActive() const { return bool(ragdoll_); }
+    const SkeletonRagdoll* ragdoll() const { return ragdoll_.get(); }
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
+    std::unique_ptr<SkeletonRagdoll> ragdoll_;
     SkeletonModel male_;
     SkeletonModel female_;
     SkeletonLines maleLines_, femaleLines_;

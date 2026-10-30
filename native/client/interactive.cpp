@@ -94,7 +94,7 @@ public:
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
-            if (testRoom_) roomCamera_.move(dt);
+            if (testRoom_) { roomCamera_.move(dt); room_.advanceRagdoll(dt); }
             else updateGod(dt);
             if (now - inputTime >= std::chrono::milliseconds(50)) {
                 sendInput();
@@ -510,7 +510,7 @@ private:
             room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0,
                                        roomCamera_.fingerJoint());
         } else if (action == RoomFreecam::Action::RestorePose) {
-            room_.restoreReferencePose();
+            if (!room_.toggleRagdoll()) std::cerr << "Unable to start skeleton ragdolls\n";
         } else if (action == RoomFreecam::Action::RestoreOriginal) {
             room_.restoreOriginalPose();
         }

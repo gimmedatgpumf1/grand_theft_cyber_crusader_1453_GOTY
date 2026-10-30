@@ -136,7 +136,7 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     }
     bones_.clear();
     sourceStructures_.clear();
-    sourceLinks_.clear(); orbitalCenters_.reset();
+    sourceLinks_.clear(); orbitalCenters_.reset(); dynamicSourcePose_.clear();
     sourceRig_.reset();
     sourceBodies_.clear();
     neutralAlignments_.clear(); disabledAlignments_.clear();
@@ -456,6 +456,7 @@ void SkeletonModel::poseIdle(double seconds, double phase) {
 }
 
 void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw, int onlyBone) const {
+    if (!dynamicSourcePose_.empty()) { drawDynamicSource(rasterizer,origin,yaw); return; }
     if (onlyBone >= 0) {
         drawBones(rasterizer, camera, origin, yaw, static_cast<std::size_t>(onlyBone),
                   static_cast<std::size_t>(onlyBone) + 1);
@@ -921,7 +922,7 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
 
 std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {
     std::vector<std::array<double, 16>> matrices;
-    matrices.reserve(sourceStructures_.size());
+    matrices.reserve(sourceStructures_.size()); if (!dynamicSourcePose_.empty()) return placedDynamicPose(origin,yaw);
     if (sourceRig_) {
         const double c = std::cos(yaw), s = std::sin(yaw);
         JointRigidTransform placement;
@@ -935,8 +936,7 @@ std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, d
                                 t.rotation[2],t.rotation[5],t.rotation[8],0,
                                 t.translation.x,t.translation.y,t.translation.z,1});
         }
-    } else {
-        const auto groups = boneMatrices(origin, yaw);
+    } else { const auto groups = boneMatrices(origin, yaw);
         for (const auto& part : sourceStructures_) matrices.push_back(groups[part.group]);
     }
     return matrices;
