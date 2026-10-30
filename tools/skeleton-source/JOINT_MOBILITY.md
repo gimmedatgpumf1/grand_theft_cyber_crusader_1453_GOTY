@@ -54,3 +54,21 @@ contributions vary through the motion, so a fixed 2:1 ratio is an approximation.
 See [McGraw Hill normative ranges](https://fadavispt.mhmedical.com/content.aspx?bookid=1964&sectionid=147190212),
 [scapular motion study](https://www.jstage.jst.go.jp/article/jpfsm/7/1/7_65/_pdf/-char/en),
 and [goniometry references including toes](https://highered.mheducation.com/sites/0071474013/student_view0/chapter8/goniometry.html).
+
+## Model and coordinate-system research
+
+The [AAH OpenSim arm and hand model](https://github.com/nishbo/ms_arm_and_hand)
+is MIT-licensed and offers articulated shoulder, forearm and finger reference
+frames and coordinated mechanisms. It is not automatically fitted to either
+OpenSkeleton subject, and its documentation says it is an inverse-kinematics
+model without dynamic properties; it also fixes some carpal joints. It cannot
+by itself meet the all-joints requirement. The
+[ISB-style knee reference-frame study](https://pmc.ncbi.nlm.nih.gov/articles/PMC2866785/)
+uses bone-specific condyle fitting, not a nearest-centroid pivot.
+
+The source graph and labels alone do not provide the joint axes, neutral joint
+frames, secondary constraints, bone contacts, cartilage or ligaments needed to
+turn those classes into subject-specific motion. In particular, a tree of
+independent hinge rotations does not preserve the multiple articulations in
+the wrist, foot, thoracic cage or pelvis. Neither the runtime graph nor the
+coarse renderer mesh groups currently solve those constraints.

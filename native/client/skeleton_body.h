@@ -8,10 +8,8 @@
 
 namespace gtc::native {
 
-// One bone of the anatomical skeleton: a rigid piece of mesh, the joint it turns
-// about, and the bone it hangs from. Every bone in the source OBJ is already a
-// separate closed shell, so a bone is one rigid body and no vertex has to be
-// shared between two of them -- which is exactly why the joints behave.
+// A coarse runtime mesh group. One group can contain many named source
+// structures; it is not necessarily an independently articulated bone.
 struct SkeletonBone {
     std::string name;
     int parent = -1;
@@ -19,6 +17,22 @@ struct SkeletonBone {
     std::vector<Vec3> points;
     std::vector<std::array<int, 3>> triangles;
     double pitch = 0, yaw = 0, roll = 0;         // pose angles, radians
+};
+
+// Ranges inside a coarse runtime mesh group for one labelled source structure.
+// Source structure ranges are not joints and do not imply an articulated rig.
+struct SkeletonSourceStructure {
+    std::string name;
+    std::size_t group = 0;
+    std::size_t firstPoint = 0, pointCount = 0;
+    std::size_t firstTriangle = 0, triangleCount = 0;
+};
+
+// An explicitly listed anatomical relationship between source structures.
+// Classification describes biology; it is not a runtime joint constraint.
+struct SkeletonSourceLink {
+    std::size_t first = 0, second = 0;
+    std::string kind, mobility;
 };
 
 // A loaded skeleton. Rest pose is metres, soles on y = 0, facing +z, and the
@@ -29,10 +43,14 @@ class SkeletonModel {
 public:
     bool load(const std::string& path, std::string& error);
     bool loaded() const { return !bones_.empty(); }
+    bool loadSourceLinks(const std::string& path, std::string& error);
+    const std::vector<SkeletonSourceLink>& sourceLinks() const { return sourceLinks_; }
     const std::string& name() const { return name_; }
     double height() const { return height_; }
     const std::vector<SkeletonBone>& bones() const { return bones_; }
     std::vector<SkeletonBone>& bones() { return bones_; }
+    const std::vector<SkeletonSourceStructure>& sourceStructures() const { return sourceStructures_; }
+    int sourceStructure(const std::string& name) const;
     // Index of a bone by name, or -1.
     int bone(const std::string& name) const;
 
@@ -63,6 +81,8 @@ public:
 
 private:
     std::vector<SkeletonBone> bones_;
+    std::vector<SkeletonSourceStructure> sourceStructures_;
+    std::vector<SkeletonSourceLink> sourceLinks_;
     std::string name_;
     double height_ = 0;
 };

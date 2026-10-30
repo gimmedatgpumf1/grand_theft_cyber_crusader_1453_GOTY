@@ -202,6 +202,10 @@ int main() {
     const std::size_t expectedSkullIndices = maleModel.bones()[skull].triangles.size() * 3;
     SkeletonRoom room;
     if (!room.load(".", error)) { std::printf("room load failed: %s\n", error.c_str()); return 1; }
+    if (room.male().sourceStructures().size() != 182 || room.female().sourceStructures().size() != 182 ||
+        room.male().sourceLinks().size() != 209 || room.female().sourceLinks().size() != 209) {
+        std::puts("test room source structures or links missing"); return 1;
+    }
     setGpuRenderer(&capture);
     ViewState view;
     view.gpu = true;

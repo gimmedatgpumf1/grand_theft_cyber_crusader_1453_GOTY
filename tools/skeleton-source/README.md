@@ -104,7 +104,11 @@ proximity. The static graph does **not** visualize or validate the existing
 27-group animation rig, and neither the graph nor the source registration is a
 clinical certification. `Head` and `Jaw` are whole source structures, not
 individual skull bones. The 27-group runtime mesh and V-view grouped surfaces are
-not a full 182-joint interactive rig. Joint movement classes and limitations are
+not a full 182-joint interactive rig. The C room now loads the 182 individual
+source-mesh ranges and all 209 explicitly classified anatomical relationships
+into the runtime model; this makes the existing graph available to a future
+solver, but does not make the structures movable or enforce limits. Joint
+movement classes and limitations are
 documented in [JOINT_MOBILITY.md](JOINT_MOBILITY.md); they are reference data,
 not enforced runtime constraints. To regenerate these inspection surfaces, NumPy and
 SciPy are required in addition to the OBJ importer
@@ -112,5 +116,6 @@ requirements. Regenerate and check after rebuilding the OBJs with:
 
 ```sh
 python3 tools/skeleton-source/openskeleton/04-line-graph.py
+python3 tools/skeleton-source/openskeleton/05-joint-links.py
 python3 tests/skeleton_line_graph.py
 ```

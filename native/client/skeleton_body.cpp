@@ -6,6 +6,7 @@
 #include <fstream>
 #include <functional>
 #include <sstream>
+#include <set>
 
 namespace gtc::native {
 namespace {
@@ -133,10 +134,25 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
         return false;
     }
     bones_.clear();
+    sourceStructures_.clear();
+    sourceLinks_.clear();
+    // OBJ source labels are nested inside the larger runtime `o` groups.
+    // Record their exact local ranges without duplicating the mesh or changing
+    // the existing static GPU batches.
+    const auto finishStructure = [&] {
+        if (sourceStructures_.empty()) return;
+        SkeletonSourceStructure& source = sourceStructures_.back();
+        const SkeletonBone& group = bones_[source.group];
+        source.pointCount = group.points.size() - source.firstPoint;
+        source.triangleCount = group.triangles.size() - source.firstTriangle;
+    };
+    bool inStructure = false;
     std::vector<int> base;   // index of each group's first vertex in the file
     std::string line;
     while (std::getline(input, line)) {
         if (line.rfind("o ", 0) == 0) {
+            if (inStructure) finishStructure();
+            inStructure = false;
             SkeletonBone bone;
             bone.name = line.substr(2);
             while (!bone.name.empty() && (bone.name.back() == '\r' || bone.name.back() == ' ')) bone.name.pop_back();
@@ -146,6 +162,16 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
                 first += static_cast<int>(bones_[index].points.size());
             }
             base.push_back(first);
+        } else if (line.rfind("g ", 0) == 0 && !bones_.empty()) {
+            if (inStructure) finishStructure();
+            SkeletonSourceStructure source;
+            source.name = line.substr(2);
+            while (!source.name.empty() && (source.name.back() == '\r' || source.name.back() == ' ')) source.name.pop_back();
+            source.group = bones_.size() - 1;
+            source.firstPoint = bones_.back().points.size();
+            source.firstTriangle = bones_.back().triangles.size();
+            sourceStructures_.push_back(std::move(source));
+            inStructure = true;
         } else if (line.rfind("v ", 0) == 0 && !bones_.empty()) {
             std::istringstream stream(line.substr(2));
             Vec3 point;
@@ -164,6 +190,7 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
             bones_.back().triangles.push_back(face);
         }
     }
+    if (inStructure) finishStructure();
     if (bones_.empty()) {
         error = "Skeleton " + path + " has no bone groups";
         return false;
@@ -191,6 +218,37 @@ int SkeletonModel::bone(const std::string& name) const {
     for (std::size_t index = 0; index < bones_.size(); ++index) {
         if (bones_[index].name == name) return static_cast<int>(index);
     }
+    return -1;
+}
+
+bool SkeletonModel::loadSourceLinks(const std::string& path, std::string& error) {
+    std::ifstream input(path);
+    if (!input) { error = "Cannot open skeleton source links " + path; return false; }
+    std::vector<SkeletonSourceLink> links;
+    std::set<std::pair<int, int>> seen;
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream row(line);
+        std::string kind, first, second, mobility, extra;
+        row >> kind >> first >> second >> mobility;
+        if (!row || (row >> extra) || (kind != "joint" && kind != "cartilage")) {
+            error = "Invalid skeleton source link in " + path; return false;
+        }
+        const int a = sourceStructure(first), b = sourceStructure(second);
+        if (a < 0 || b < 0 || a == b || !seen.insert(std::minmax(a,b)).second) {
+            error = "Unknown or duplicate skeleton source link in " + path; return false;
+        }
+        links.push_back({static_cast<std::size_t>(a), static_cast<std::size_t>(b), kind, mobility});
+    }
+    if (links.empty()) { error = "No skeleton source links in " + path; return false; }
+    sourceLinks_ = std::move(links);
+    return true;
+}
+
+int SkeletonModel::sourceStructure(const std::string& name) const {
+    for (std::size_t index = 0; index < sourceStructures_.size(); ++index)
+        if (sourceStructures_[index].name == name) return static_cast<int>(index);
     return -1;
 }
 

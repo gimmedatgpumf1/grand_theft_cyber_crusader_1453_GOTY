@@ -10,7 +10,10 @@ body = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'an
 namespace = {}
 exec(compile(ast.Module(body=body, type_ignores=[]), 'anatomy', 'exec'), namespace)
 classify = runpy.run_path(str(base / 'joint_mobility.py'))['mobility']
-counts = Counter(classify(a, b, kind) for a, b, kind in namespace['anatomy']())
+edges = namespace['anatomy']()
+counts = Counter(classify(a, b, kind) for a, b, kind in edges)
+rows = [row.split() for row in (base.parent / 'skeleton-joint-links.txt').read_text().splitlines() if row and not row.startswith('#')]
+assert rows == [[kind, a, b, classify(a,b,kind)] for a,b,kind in edges]
 assert sum(counts.values()) == 209 and len(counts) == 31
 assert counts['finger_mcp_condyloid'] == counts['finger_pip_hinge'] == counts['finger_dip_hinge'] == 8
 assert counts['thumb_mcp'] == counts['thumb_ip_hinge'] == counts['thumb_cmc_saddle'] == 2
