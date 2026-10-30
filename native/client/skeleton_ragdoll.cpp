@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace gtc::native {
@@ -33,6 +34,7 @@ struct SkeletonRagdoll::Impl {
         SkeletonModel* model=nullptr;
         Vec3 origin{};
         std::vector<int> bodyForStructure;
+        std::vector<btTransform> localSkin;
     };
     std::unique_ptr<btDefaultCollisionConfiguration> config=std::make_unique<btDefaultCollisionConfiguration>();
     std::unique_ptr<btCollisionDispatcher> dispatcher=std::make_unique<btCollisionDispatcher>(config.get());
@@ -58,6 +60,59 @@ struct SkeletonRagdoll::Impl {
         for (auto& c:constraints) world->removeConstraint(c.get());
         for (auto& b:bodies) world->removeRigidBody(b.get());
     }
+    static btVector3 sourceCenter(const SkeletonModel& model, int index) {
+        const auto& part=model.sourceStructures()[std::size_t(index)];
+        const auto& points=model.bones()[part.group].points; btVector3 sum(0,0,0);
+        for (std::size_t i=0;i<part.pointCount;++i) sum+=v(points[part.firstPoint+i]);
+        return part.pointCount ? sum/btScalar(part.pointCount) : sum;
+    }
+    void addBoneCollision(const SkeletonModel& model, std::size_t index, const btTransform& relative,
+                          const btVector3& center, btCompoundShape& compound, btVector3& lo, btVector3& hi) {
+        const auto& part=model.sourceStructures()[index]; const auto& points=model.bones()[part.group].points;
+        std::vector<btVector3> local; local.reserve(part.pointCount);
+        for (std::size_t i=0;i<part.pointCount;++i) {
+            const auto p=relative*v(points[part.firstPoint+i])-center;
+            local.push_back(p); lo.setMin(p); hi.setMax(p);
+        }
+        auto addHull=[&](const std::vector<btVector3>& vertices) {
+            if (vertices.empty()) return;
+            auto hull=std::make_unique<btConvexHullShape>();
+            for (const auto& p:vertices) hull->addPoint(p,false);
+            if (vertices.size()>=4) hull->optimizeConvexHull();
+            hull->setMargin(0.001f); hull->recalcLocalAabb();
+            btTransform child; child.setIdentity(); compound.addChildShape(child,hull.get());
+            shapes.push_back(std::move(hull));
+        };
+        // A whole-rib convex hull fills the empty centre of the curved rib.
+        // Divide the actual CT vertices along their source-derived arc so the
+        // compound collider follows the bone instead of a huge solid wedge.
+        const auto underscore=part.name.find('_');
+        if (part.name.rfind("Rib",0)!=0 || underscore==std::string::npos || part.pointCount<32) {
+            addHull(local); return;
+        }
+        const auto vertebra=model.sourceStructure("T"+part.name.substr(3,underscore-3));
+        const auto sternum=model.sourceStructure("Sternum");
+        if (vertebra<0 || sternum<0) { addHull(local); return; }
+        const auto axis=(sourceCenter(model,vertebra)+sourceCenter(model,sternum))*0.5f;
+        std::vector<double> angles; angles.reserve(part.pointCount); double sn=0,cs=0;
+        for (std::size_t i=0;i<part.pointCount;++i) {
+            const auto p=v(points[part.firstPoint+i])-axis; const double a=std::atan2(p.z(),p.x());
+            angles.push_back(a); sn+=std::sin(a); cs+=std::cos(a);
+        }
+        const double mean=std::atan2(sn,cs);
+        std::vector<std::pair<double,std::size_t>> ordered; ordered.reserve(part.pointCount);
+        for (std::size_t i=0;i<angles.size();++i)
+            ordered.emplace_back(std::atan2(std::sin(angles[i]-mean),std::cos(angles[i]-mean)),i);
+        std::sort(ordered.begin(),ordered.end());
+        const std::size_t overlap=std::max<std::size_t>(1,ordered.size()/80);
+        for (std::size_t slice=0;slice<8;++slice) {
+            const auto begin=slice*ordered.size()/8, end=(slice+1)*ordered.size()/8;
+            const auto low=begin>overlap ? begin-overlap : 0, high=std::min(ordered.size(),end+overlap);
+            std::vector<btVector3> vertices; vertices.reserve(high-low);
+            for (auto i=low;i<high;++i) vertices.push_back(local[ordered[i].second]);
+            addHull(vertices);
+        }
+    }
     bool addFigure(SkeletonModel& model, Vec3 origin) {
         const auto* rig=model.sourceRig();
         const auto& structures=model.sourceStructures();
@@ -75,9 +130,23 @@ struct SkeletonRagdoll::Impl {
             else groupForNode[node]=groupForNode[p];
             groups[std::size_t(groupForNode[node])].push_back(std::size_t(index));
         }
+        // The existing reference rig intentionally drives radius and ulna
+        // together. They are siblings in its tree, so independent hinges let
+        // them swing apart despite sharing an elbow. Make each forearm one
+        // rigid compound for ragdoll physics, matching the existing model.
+        for (const auto& link:model.sourceLinks()) if (link.mobility=="radioulnar_pivot") {
+            int first=groupForNode[mapping[link.first]], second=groupForNode[mapping[link.second]];
+            if (first==second) continue;
+            groups[std::size_t(first)].insert(groups[std::size_t(first)].end(),
+                groups[std::size_t(second)].begin(),groups[std::size_t(second)].end());
+            groups[std::size_t(second)].clear();
+            for (auto& group:groupForNode) if (group==second) group=first;
+        }
         Figure f; f.model=&model; f.origin=origin; f.bodyForStructure.resize(structures.size());
-        std::vector<int> bodyForGroup(groups.size());
+        f.localSkin.resize(structures.size());
+        std::vector<int> bodyForGroup(groups.size(),-1);
         for (std::size_t group=0;group<groups.size();++group) {
+            if (groups[group].empty()) continue;
             const auto first=groups[group][0]; const auto& part=structures[first];
             const auto& points=model.bones()[part.group].points;
             btVector3 center(0,0,0);
@@ -87,18 +156,11 @@ struct SkeletonRagdoll::Impl {
             auto compound=std::make_unique<btCompoundShape>();
             btVector3 lo(BT_LARGE_FLOAT,BT_LARGE_FLOAT,BT_LARGE_FLOAT),hi(-BT_LARGE_FLOAT,-BT_LARGE_FLOAT,-BT_LARGE_FLOAT);
             for (const auto index:groups[group]) {
-                const auto& s=structures[index]; const auto& verts=model.bones()[s.group].points;
-                if (!s.pointCount) continue;
-                auto hull=std::make_unique<btConvexHullShape>();
-                // Build each hull from the complete CT structure, then remove
-                // interior points without changing its convex support surface.
-                for (std::size_t j=0;j<s.pointCount;++j) {
-                    const auto p=v(verts[s.firstPoint+j])-center;
-                    hull->addPoint(p,false); lo.setMin(p); hi.setMax(p);
-                }
-                if (s.pointCount>=4) hull->optimizeConvexHull();
-                hull->setMargin(0.001f); hull->recalcLocalAabb();
-                btTransform child; child.setIdentity(); compound->addChildShape(child,hull.get()); shapes.push_back(std::move(hull));
+                const auto& s=structures[index];
+                if (!s.pointCount) return false;
+                const btTransform relative=rigid(initial[first]).inverse()*rigid(initial[index]);
+                f.localSkin[index]=relative;
+                addBoneCollision(model,index,relative,center,*compound,lo,hi);
             }
             compound->setMargin(0.001f); compound->recalculateLocalAabb();
             const auto extent=hi-lo;
@@ -115,10 +177,12 @@ struct SkeletonRagdoll::Impl {
             for (auto index:groups[group]) f.bodyForStructure[index]=id;
         }
         const auto& abs=rig->absoluteTransforms();
+        std::set<std::pair<int,int>> connected;
         for (std::size_t node=1;node<rig->size();++node) {
             const auto parent=*rig->parent(node); const auto* joint=rig->joint(node);
             if (!parent || !joint) continue;
             const int a=bodyForGroup[std::size_t(groupForNode[parent])], b=bodyForGroup[std::size_t(groupForNode[node])];
+            if (a==b || !connected.insert(std::minmax(a,b)).second) continue;
             const btTransform jointWorld=rigid(abs[parent])*rigid(joint->parentFrame());
             const auto axis=jointWorld.getBasis()*v(joint->axes()[0].direction);
             const auto pivot=jointWorld.getOrigin();
@@ -176,17 +240,48 @@ struct SkeletonRagdoll::Impl {
                 world->addConstraint(hinge.get(),true); constraints.push_back(std::move(hinge));
             }
         }
+        // The source tree cannot represent the rib/sternum loops: without
+        // these links each vertebral hinge can pull its ribs away from the
+        // front of the cage. Approximate the missing cartilage by a limited
+        // positional constraint at the closest source-derived attachment area.
+        for (const auto& link:model.sourceLinks()) if (link.kind=="cartilage") {
+            const int a=f.bodyForStructure[link.first], b=f.bodyForStructure[link.second];
+            if (a==b) continue;
+            const auto& sa=structures[link.first]; const auto& sb=structures[link.second];
+            const auto& va=model.bones()[sa.group].points; const auto& vb=model.bones()[sb.group].points;
+            const auto ta=rigid(initial[link.first]), tb=rigid(initial[link.second]);
+            btScalar best=BT_LARGE_FLOAT; btVector3 pivot(0,0,0);
+            const auto as=std::max<std::size_t>(1,sa.pointCount/250), bs=std::max<std::size_t>(1,sb.pointCount/250);
+            for (std::size_t i=0;i<sa.pointCount;i+=as) {
+                const btVector3 p=ta*v(va[sa.firstPoint+i]);
+                for (std::size_t j=0;j<sb.pointCount;j+=bs) {
+                    const btVector3 q=tb*v(vb[sb.firstPoint+j]); const auto distance=(p-q).length2();
+                    if (distance<best) { best=distance; pivot=(p+q)*0.5f; }
+                }
+            }
+            if (best==BT_LARGE_FLOAT) continue;
+            btTransform frame; frame.setIdentity(); frame.setOrigin(pivot);
+            const auto aFrame=bodies[a]->getWorldTransform().inverse()*frame;
+            const auto bFrame=bodies[b]->getWorldTransform().inverse()*frame;
+            auto cartilage=std::make_unique<btGeneric6DofSpring2Constraint>(*bodies[a],*bodies[b],aFrame,bFrame);
+            cartilage->setLinearLowerLimit(btVector3(-0.004f,-0.004f,-0.004f));
+            cartilage->setLinearUpperLimit(btVector3(0.004f,0.004f,0.004f));
+            cartilage->setAngularLowerLimit(btVector3(1,1,1));
+            cartilage->setAngularUpperLimit(btVector3(-1,-1,-1)); // rotations are free
+            world->addConstraint(cartilage.get(),true); constraints.push_back(std::move(cartilage));
+        }
         // Adjacent anatomy and one-hop neighbours often overlap at rest (for
         // example a patella against femur, or the two bones of a forearm).
         // Avoid proxy contact fighting the anatomical joint constraints.
-        std::vector<std::vector<bool>> near(groups.size(),std::vector<bool>(groups.size(),false));
+        std::vector<std::vector<bool>> adjacency(groups.size(),std::vector<bool>(groups.size(),false));
         for (const auto& link:model.sourceLinks()) {
             const auto a=std::size_t(groupForNode[mapping[link.first]]), b=std::size_t(groupForNode[mapping[link.second]]);
-            near[a][b]=near[b][a]=true;
+            adjacency[a][b]=adjacency[b][a]=true;
         }
         for (std::size_t a=0;a<groups.size();++a) for (std::size_t b=a+1;b<groups.size();++b) {
-            bool adjacent=near[a][b];
-            for (std::size_t c=0;!adjacent && c<groups.size();++c) adjacent=near[a][c] && near[c][b];
+            if (bodyForGroup[a]<0 || bodyForGroup[b]<0) continue;
+            bool adjacent=adjacency[a][b];
+            for (std::size_t c=0;!adjacent && c<groups.size();++c) adjacent=adjacency[a][c] && adjacency[c][b];
             if (adjacent) {
                 auto* first=bodies[bodyForGroup[a]].get(); auto* second=bodies[bodyForGroup[b]].get();
                 first->setIgnoreCollisionCheck(second,true); second->setIgnoreCollisionCheck(first,true);
@@ -200,10 +295,11 @@ struct SkeletonRagdoll::Impl {
     void publish() {
         for (auto& f:figures) {
             std::vector<std::array<double,16>> pose; pose.reserve(f.bodyForStructure.size());
-            for (int id:f.bodyForStructure) {
+            for (std::size_t i=0;i<f.bodyForStructure.size();++i) {
+                const int id=f.bodyForStructure[i];
                 btTransform skin=bodies[id]->getWorldTransform();
                 skin.setOrigin(skin.getOrigin()-skin.getBasis()*centers[id]);
-                pose.push_back(matrix(skin,f.origin));
+                pose.push_back(matrix(skin*f.localSkin[i],f.origin));
             }
             f.model->setDynamicSourcePose(std::move(pose));
         }

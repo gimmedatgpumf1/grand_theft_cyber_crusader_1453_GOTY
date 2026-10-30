@@ -118,8 +118,9 @@ source mesh batches, population bend references and fitted or approximate
 pivots. Each V-view vertex is attached to a named structure or a declared group,
 so it follows poses; grouped surfaces deform as their owners move. This is not a
 complete or medically validated 182-joint rig: some links are redundant or
-fixed, some axes and source neutral angles are estimates, and cartilage,
-closed loops and subject-specific constraints are not modelled. See
+fixed, and some axes and source neutral angles are estimates. The reference
+pose tree does not model cartilage, closed loops or subject-specific constraints;
+the ragdoll adds approximate costal connections. See
 [JOINT_MOBILITY.md](JOINT_MOBILITY.md). To regenerate these inspection surfaces, NumPy and
 SciPy are required in addition to the OBJ importer
 requirements. Regenerate and check after rebuilding the OBJs with:

@@ -143,12 +143,19 @@ metatarsal support points define each sole; the pelvis is levelled against
 both feet while hip and trunk compensation preserves straight legs and spine.
 `R` starts gravity-driven ragdolls for both subjects; pressing it again restores the
 T-pose. `B` stops the simulation and returns the original source pose. Bullet 3.25
-uses per-structure convex collision proxies and a shared floor/world, not
-exact CT-surface collision. Fixed tree structures share rigid bodies; remaining
-joints use fitted pivots and bounded hinges, with approximate three-axis hip and
-shoulder constraints. Neighbouring or initially overlapping proxies are filtered
-to avoid joint-contact conflicts; other bones and the two figures can collide.
-This is a game-physics approximation, not a validated biomechanical simulation.
+uses bone-derived convex collision proxies and a shared floor/world, not exact
+CT-surface collision. Rib proxies are split along the source-derived arc instead
+of filling the space inside each curved rib. Fixed tree structures share rigid
+bodies; each radius/ulna pair also shares a compound body, as in the existing
+grouped forearm model, so individual radioulnar rotation is not simulated.
+Subject-specific rib/sternum and neighbouring-rib links inferred from the
+anatomical graph are retained as limited-displacement positional constraints;
+their attachment locations are approximate, because the source has no cartilage.
+Other joints use fitted pivots and bounded hinges, with approximate three-axis
+hip and shoulder constraints. Neighbouring or initially overlapping proxies
+are filtered to avoid joint-contact conflicts; other bones and the two figures
+can collide. This is a game-physics approximation, not a validated biomechanical
+simulation.
 Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a

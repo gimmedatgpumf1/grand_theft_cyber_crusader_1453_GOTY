@@ -1,5 +1,6 @@
 // Real source figures: fall, floor support, finite transforms and joint anchors.
 #include "client/skeleton_room.h"
+#include "client/skeleton_limb_frame.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -32,6 +33,36 @@ static std::vector<Anchor> anchors(SkeletonModel& model) {
     }
     return result;
 }
+// Source graph defines these anatomical links; nearest sampled mesh points
+// estimate their attachment locations, not the existence of a relationship.
+static std::vector<Anchor> pairedAnchors(const SkeletonModel& model, bool forearm) {
+    const auto pose=model.sourceMatrices({},0); std::vector<Anchor> result;
+    for (const auto& link:model.sourceLinks()) {
+        if (forearm ? link.mobility!="radioulnar_pivot" : link.kind!="cartilage") continue;
+        const auto a=link.first,b=link.second;
+        Vec3 pivot{};
+        if (forearm) {
+            const auto& name=model.sourceStructures()[a].name;
+            const int side=name.size()>2 && name.substr(name.size()-2)=="_L" ? 0 : 1;
+            const auto wrist=sourceWristFrame(model,side,{1,0,0}); assert(wrist);
+            pivot=(point(pose[a],wrist->wrist)+point(pose[b],wrist->wrist))*0.5;
+        } else {
+            const auto& sa=model.sourceStructures()[a]; const auto& sb=model.sourceStructures()[b];
+            const auto& va=model.bones()[sa.group].points; const auto& vb=model.bones()[sb.group].points;
+            const auto as=std::max<std::size_t>(1,sa.pointCount/250),bs=std::max<std::size_t>(1,sb.pointCount/250);
+            double best=1e9;
+            for (std::size_t i=0;i<sa.pointCount;i+=as) {
+                const auto p=point(pose[a],va[sa.firstPoint+i]);
+                for (std::size_t j=0;j<sb.pointCount;j+=bs) {
+                    const auto q=point(pose[b],vb[sb.firstPoint+j]); const double d=length(p-q);
+                    if (d<best) { best=d; pivot=(p+q)*0.5; }
+                }
+            }
+        }
+        result.push_back({a,b,inversePoint(pose[a],pivot),inversePoint(pose[b],pivot)});
+    }
+    return result;
+}
 static std::pair<double,double> extent(const SkeletonModel& model) {
     const auto m=model.sourceMatrices({},0); double low=100,high=-100;
     for (std::size_t i=0;i<m.size();++i) {
@@ -51,6 +82,10 @@ static double maxGap(const SkeletonModel& model,const std::vector<Anchor>& list)
 int main() {
     SkeletonRoom room; std::string error; assert(room.load(".",error));
     const auto maleAnchors=anchors(room.male()), femaleAnchors=anchors(room.female());
+    const auto maleForearms=pairedAnchors(room.male(),true), femaleForearms=pairedAnchors(room.female(),true);
+    const auto maleCartilage=pairedAnchors(room.male(),false), femaleCartilage=pairedAnchors(room.female(),false);
+    assert(maleForearms.size()==2 && femaleForearms.size()==2);
+    assert(maleCartilage.size()==20 && femaleCartilage.size()==20);
     const auto maleStart=extent(room.male()), femaleStart=extent(room.female());
     const auto malePose=room.male().sourceMatrices({},0),femalePose=room.female().sourceMatrices({},0);
     assert(maleAnchors.size()>90 && femaleAnchors.size()>90);
@@ -59,19 +94,24 @@ int main() {
                              std::make_pair(femalePose,room.female().sourceMatrices({},0))})
         for (std::size_t i=0;i<pair.first.size();++i) for (int j=0;j<16;++j)
             assert(std::abs(pair.first[i][j]-pair.second[i][j])<1e-5);
-    int selfContacts=0, floorContacts=0; double maxSeparation=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
+    int selfContacts=0, floorContacts=0;
+    double maxSeparation=0, maxForearm=0, maxCartilage=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
     for (int i=0;i<600;++i) {
         room.advanceRagdoll(1.0/120.0);
         const auto contacts=room.ragdoll()->contacts();
         selfContacts+=contacts.sameFigure; floorContacts+=contacts.floor;
         if ((i+1)%60==0) {
             maxSeparation=std::max({maxSeparation,maxGap(room.male(),maleAnchors),maxGap(room.female(),femaleAnchors)});
+            maxForearm=std::max({maxForearm,maxGap(room.male(),maleForearms),maxGap(room.female(),femaleForearms)});
+            maxCartilage=std::max({maxCartilage,maxGap(room.male(),maleCartilage),maxGap(room.female(),femaleCartilage)});
             lowestMale=std::min(lowestMale,extent(room.male()).first);
             lowestFemale=std::min(lowestFemale,extent(room.female()).first);
         }
     }
     std::printf("contacts: floor %d, non-neighbour bones %d; max joint gap %.4f; penetration %.4f / %.4f m\n",
         floorContacts,selfContacts,maxSeparation,maleStart.first-lowestMale,femaleStart.first-lowestFemale);
+    std::printf("max forearm separation %.6f m; cartilage displacement %.4f m\n",maxForearm,maxCartilage);
+    assert(maxForearm<0.0001 && maxCartilage<0.012);
     assert(maxSeparation<0.03 && lowestMale>maleStart.first-0.03 && lowestFemale>femaleStart.first-0.03);
     assert(floorContacts>0 && selfContacts>0);
     const auto male=extent(room.male()),female=extent(room.female());
@@ -93,5 +133,20 @@ int main() {
         assert(crossContacts>0);
     }
     assert(room.restoreOriginalPose());
-    assert(room.toggleRagdoll() && room.restoreOriginalPose() && !room.ragdollActive());
+    const auto originalMale=room.male().sourceMatrices({},0),originalFemale=room.female().sourceMatrices({},0);
+    assert(room.toggleRagdoll());
+    for (const auto& pair : {std::make_pair(originalMale,room.male().sourceMatrices({},0)),
+                             std::make_pair(originalFemale,room.female().sourceMatrices({},0))})
+        for (std::size_t i=0;i<pair.first.size();++i) for (int j=0;j<16;++j)
+            assert(std::abs(pair.first[i][j]-pair.second[i][j])<1e-5);
+    const auto sourceMale=pairedAnchors(room.male(),true), sourceFemale=pairedAnchors(room.female(),true);
+    for (int i=0;i<120;++i) room.advanceRagdoll(1.0/120.0);
+    assert(maxGap(room.male(),sourceMale)<0.0001 && maxGap(room.female(),sourceFemale)<0.0001);
+    assert(room.restoreOriginalPose() && !room.ragdollActive());
+    assert(room.restoreReferencePose());
+    assert(room.adjustReferenceGroup('e',45) && room.adjustReferenceGroup('m',30));
+    const auto bentMale=pairedAnchors(room.male(),true),bentFemale=pairedAnchors(room.female(),true);
+    assert(room.toggleRagdoll());
+    for (int i=0;i<120;++i) room.advanceRagdoll(1.0/120.0);
+    assert(maxGap(room.male(),bentMale)<0.0001 && maxGap(room.female(),bentFemale)<0.0001);
 }
