@@ -83,12 +83,19 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!female_.load(directory + "skeleton-female.obj", error)) return false;
     if (!male_.loadHipCenters(directory + "skeleton-male.hips", error)) return false;
     if (!female_.loadHipCenters(directory + "skeleton-female.hips", error)) return false;
+    if (!male_.loadShoulderCenters(directory + "skeleton-male.shoulders", error)) return false;
+    if (!female_.loadShoulderCenters(directory + "skeleton-female.shoulders", error)) return false;
     if (!male_.loadKneeAxes(directory + "skeleton-male.knees", error)) return false;
     if (!female_.loadKneeAxes(directory + "skeleton-female.knees", error)) return false;
     if (!male_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
     if (!female_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
+    if (!male_.installReferenceRig(error)) return false;
+    if (!female_.installReferenceRig(error)) return false;
     if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
     if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
+    if (!maleLines_.bind(male_, error) || !femaleLines_.bind(female_, error)) return false;
+    // Keep the source pose until the estimated elbow axes can be fitted well
+    // enough to straighten without intersecting the bones.
     error_.clear();
     ready_ = true;
     return true;
@@ -106,17 +113,19 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.worldSpaceGpu = view.gpu;
     }
     if (lineView_) {
-        // Line view is a static inspection of the source pose. Its
-        // triangles are built once and stay on the device; meshes are not drawn.
+        // Build only when a pose changes; a static view remains cached on GPU.
         if (view.gpu) {
-            if (!lineSceneReady_) {
+            if (!lineSceneReady_ || lineMalePoseRevision_ != male_.sourcePoseRevision() ||
+                lineFemalePoseRevision_ != female_.sourcePoseRevision()) {
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
-                femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+                maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001, male_.sourceMatrices({},0));
+                femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
+                lineMalePoseRevision_=male_.sourcePoseRevision();
+                lineFemalePoseRevision_=female_.sourcePoseRevision();
                 lineSceneReady_ = true;
             }
             lineScene_.width = camera.width; lineScene_.height = camera.height;
@@ -131,8 +140,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
         raster.setCamera(camera);
         drawFloor(raster, camera); drawWalls(raster, camera);
-        maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001);
-        femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001);
+        maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001, male_.sourceMatrices({},0));
+        femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
         frame = raster.finish();
         frame.logicalUi();
         return;
@@ -162,13 +171,13 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.logicalUi();
         return;
     }
-    // Both bodies retain the original source pose while the new rig is developed.
+    // Pose changes update the rigid source-batch matrices.
     const bool poseChanged = pose != cachedPose_ || !revisionsMatch;
 
     if (view.gpu) {
         // The original source structures are emitted once into independent
-        // rigid batches. Their matrices currently inherit the coarse group pose;
-        // splitting the batches alone does not implement joint constraints.
+        // rigid batches. Pose revisions update their matrices without replacing
+        // or rescaling the source geometry.
         if (!restReady_) {
             const int maleBase = 9001;
             const int femaleBase = 8001;

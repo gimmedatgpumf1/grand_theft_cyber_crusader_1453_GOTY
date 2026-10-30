@@ -60,6 +60,7 @@ public:
     // only changes pivots; it does not calibrate joint axes or enforce ROM.
     bool loadHipCenters(const std::string& path, std::string& error);
     bool loadKneeAxes(const std::string& path, std::string& error);
+    bool loadShoulderCenters(const std::string& path, std::string& error);
     const std::array<SkeletonKneeAxis, 2>& kneeAxes() const { return kneeAxes_; }
     bool hasKneeAxes() const { return hasKneeAxes_; }
     const std::vector<SkeletonSourceLink>& sourceLinks() const { return sourceLinks_; }
@@ -101,12 +102,17 @@ public:
     // Accept only a complete, explicitly supplied source-to-body map, at bind
     // pose. No clinical calibration is inferred or manufactured here.
     bool setSourceRig(AnatomicalKinematicTree rig, const std::vector<std::size_t>& sourceBodies, std::string& error);
+    // Install reference-angle joints on the anatomical source graph. The
+    // source geometry supplies approximate pivots; neutral is estimated.
+    bool installReferenceRig(std::string& error);
+    bool restoreSourcePose();
     bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
     // Drive a supplied, neutral-calibrated source joint's first coordinate in degrees.
-    // The caller must supply a rig whose first coordinate is flexion from anatomical
-    // neutral; this method cannot establish that calibration from a CT pose.
+    // The rig's first coordinate is the documented primary motion from anatomical
+    // neutral (shoulders use abduction, elbows and knees use flexion); this method cannot establish that calibration from a CT pose.
     // Returns false if the rig or a cited bend range is unavailable.
     bool setReferenceBend(std::size_t link, double degrees);
+    std::optional<double> referenceBend(std::size_t link) const;
     std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;
@@ -119,6 +125,7 @@ private:
     bool hasKneeAxes_ = false;
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;
     std::vector<std::size_t> sourceBodies_;
+    std::vector<AnatomicalKinematicTree::PoseUpdate> referenceBindPose_;
     std::uint64_t sourcePoseRevision_ = 0;
     std::string name_;
     double height_ = 0;

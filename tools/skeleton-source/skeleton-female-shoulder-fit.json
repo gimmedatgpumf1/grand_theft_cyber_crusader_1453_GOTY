@@ -1,0 +1,39 @@
+{
+  "subject": "N186416",
+  "clinical_validation": false,
+  "method": "robust sphere on humeral vertices near connected scapula",
+  "shoulders": {
+    "L": {
+      "source_center_mm": [
+        156.43473667660098,
+        138.65064877552973,
+        -118.71259051757008
+      ],
+      "center_m": [
+        0.11146630392012771,
+        1.4835273997168048,
+        0.017097164005147464
+      ],
+      "radius_mm": 22.65807511695047,
+      "rms_mm": 0.8638798226701985,
+      "surface_vertices": 938,
+      "cutoff_15mm_center_difference_mm": 0.5736714460602863
+    },
+    "R": {
+      "source_center_mm": [
+        -150.3448840390812,
+        123.46363295759892,
+        -136.07111338417292
+      ],
+      "center_m": [
+        -0.19531331679555447,
+        1.466168876850202,
+        0.03228417982307828
+      ],
+      "radius_mm": 23.049838734892443,
+      "rms_mm": 1.0658015313626068,
+      "surface_vertices": 851,
+      "cutoff_15mm_center_difference_mm": 1.0213555684246503
+    }
+  }
+}

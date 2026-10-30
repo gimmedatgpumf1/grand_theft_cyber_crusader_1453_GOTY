@@ -24,7 +24,7 @@ against medical anatomy.
 currently reports **8 failures** on this asymmetric pose: foot-length checks and
 left/right mirror checks. Those include pose-dependent metrics and are retained
 as diagnostics, not silently reclassified as a pass. They do not establish the
-cause or correctness of individual joints. The room keeps the female still.
+cause or correctness of individual joints. The room retains the source pose for both subjects.
 
 ### Femoral-head fit and source hip overlap
 

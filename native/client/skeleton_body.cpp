@@ -292,6 +292,40 @@ bool SkeletonModel::loadHipCenters(const std::string& path, std::string& error) 
     return true;
 }
 
+bool SkeletonModel::loadShoulderCenters(const std::string& path, std::string& error) {
+    std::ifstream input(path);
+    if (!input) { error = "Cannot open skeleton shoulder fits " + path; return false; }
+    std::array<Vec3,2> centers{}; std::array<bool,2> present{};
+    std::string line;
+    while (std::getline(input,line)) {
+        if (line.empty() || line[0]=='#') continue;
+        std::istringstream row(line); std::string side,extra; Vec3 c; double radius;
+        row >> side >> c.x >> c.y >> c.z >> radius;
+        if (!row || (row >> extra) || (side != "L" && side != "R") ||
+            !joint_detail::finite(c) || !std::isfinite(radius) || radius <= 0.015 || radius >= 0.035) {
+            error = "Invalid shoulder fit in " + path; return false;
+        }
+        const int which = side == "L" ? 0 : 1;
+        const int group = bone(which == 0 ? "humerus_l" : "humerus_r");
+        if (present[which] || group < 0 || bones_[group].points.empty()) {
+            error = "Missing or duplicate humerus in " + path; return false;
+        }
+        const auto& p = bones_[group].points; const Vec3 lo=minimum(p), hi=maximum(p);
+        if (c.x < lo.x-0.01 || c.x > hi.x+0.01 || c.y < lo.y-0.01 || c.y > hi.y+0.01 ||
+            c.z < lo.z-0.01 || c.z > hi.z+0.01) {
+            error = "Shoulder fit outside humerus in " + path; return false;
+        }
+        double best=1e9; for (Vec3 v : p) best=std::min(best,std::abs(length(v-c)-radius));
+        if (best > 0.003) { error = "Shoulder fit does not match surface in " + path; return false; }
+        centers[which]=c; present[which]=true;
+    }
+    if (!present[0] || !present[1]) { error = "Incomplete shoulder fits in " + path; return false; }
+    bones_[static_cast<std::size_t>(bone("humerus_l"))].pivot=centers[0];
+    bones_[static_cast<std::size_t>(bone("humerus_r"))].pivot=centers[1];
+    ++sourcePoseRevision_;
+    return true;
+}
+
 bool SkeletonModel::loadKneeAxes(const std::string& path, std::string& error) {
     std::ifstream input(path);
     if (!input) { error = "Cannot open skeleton knee fits " + path; return false; }
@@ -477,14 +511,180 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     }
     sourceRig_ = std::move(rig);
     sourceBodies_ = sourceBodies;
+    referenceBindPose_.clear();
     ++sourcePoseRevision_;
     return true;
+}
+
+bool SkeletonModel::installReferenceRig(std::string& error) {
+    if (sourceLinks_.empty() || sourceStructures_.empty()) {
+        error = "Cannot install a source rig without anatomical links"; return false;
+    }
+    const int root = sourceStructure("Sacrum");
+    if (root < 0) { error = "Skeleton is missing sacrum"; return false; }
+    const std::size_t count = sourceStructures_.size();
+    const std::size_t missing = static_cast<std::size_t>(-1);
+    std::vector<std::size_t> mapping(count, missing), queue;
+    std::vector<bool> visited(count);
+    AnatomicalKinematicTree rig;
+    std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
+    auto rootBody = rig.addFixed(0, {});
+    if (!rootBody) { error = "Unable to add source root"; return false; }
+    mapping[static_cast<std::size_t>(root)] = *rootBody;
+    visited[static_cast<std::size_t>(root)] = true;
+    queue.push_back(static_cast<std::size_t>(root));
+    const auto points = [&](std::size_t index) -> std::pair<const Vec3*, std::size_t> {
+        const auto& part = sourceStructures_[index];
+        return {bones_[part.group].points.data()+part.firstPoint, part.pointCount};
+    };
+    const auto center = [&](std::size_t index) {
+        const auto [p,n] = points(index);
+        Vec3 sum;
+        for (std::size_t i=0; i<n; ++i) sum += p[i];
+        return n ? sum / static_cast<double>(n) : Vec3{};
+    };
+    const auto contact = [&](std::size_t first, std::size_t second) {
+        const auto [a,na] = points(first); const auto [b,nb] = points(second);
+        const std::size_t as = std::max<std::size_t>(1,na/192), bs = std::max<std::size_t>(1,nb/192);
+        double best = 1e9; Vec3 result = (center(first)+center(second))*0.5;
+        for (std::size_t i=0; i<na; i+=as) for (std::size_t j=0; j<nb; j+=bs) {
+            const double d = length(a[i]-b[j]);
+            if (d < best) { best = d; result = (a[i]+b[j])*0.5; }
+        }
+        return result;
+    };
+    const auto suffix = [](const std::string& name) -> int {
+        return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
+    };
+    constexpr double toRadians = 3.14159265358979323846 / 180.0;
+    for (std::size_t head=0; head<queue.size(); ++head) {
+        const auto parent = queue[head];
+        for (const auto& link : sourceLinks_) {
+            if (link.first != parent && link.second != parent) continue;
+            const auto child = link.first == parent ? link.second : link.first;
+            if (visited[child]) continue;
+            const auto& parentName = sourceStructures_[parent].name;
+            const auto& childName = sourceStructures_[child].name;
+            const auto bounds = referenceBendRange(link.mobility, parentName, childName);
+            std::optional<std::size_t> body;
+            double bindAngle = 0;
+            if (bounds) {
+                Vec3 pivot = contact(parent, child);
+                const int side = suffix(childName);
+                if (link.mobility == "shoulder_ball_socket") {
+                    const int humerus = bone(side == 0 ? "humerus_l" : "humerus_r");
+                    if (humerus < 0) { error = "Missing humerus"; return false; }
+                    pivot = bones_[static_cast<std::size_t>(humerus)].pivot;
+                } else if (link.mobility == "hip_ball_socket") {
+                    const int femur = bone(side == 0 ? "femur_l" : "femur_r");
+                    if (femur < 0) { error = "Missing fitted femur"; return false; }
+                    pivot = bones_[static_cast<std::size_t>(femur)].pivot;
+                } else if (link.mobility == "knee_modified_hinge" && hasKneeAxes_) {
+                    pivot = kneeAxes_[side].origin;
+                } else if (link.mobility == "elbow_hinge") {
+                    // The radius and ulna share one elbow flexion axis.
+                    const int h = sourceStructure(side == 0 ? "Humerus_L" : "Humerus_R");
+                    const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
+                    if (h >= 0 && u >= 0) pivot = contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u));
+                }
+                Vec3 up = normalized(center(parent)-pivot);
+                Vec3 down = normalized(center(child)-pivot);
+                if (link.mobility == "shoulder_ball_socket") {
+                    const int h = sourceStructure(side == 0 ? "Humerus_L" : "Humerus_R");
+                    const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
+                    if (h >= 0 && u >= 0)
+                        down = normalized(contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u))-pivot);
+                }
+                if (link.mobility == "elbow_hinge") {
+                    const int humerus = bone(side == 0 ? "humerus_l" : "humerus_r");
+                    if (humerus >= 0) up = normalized(bones_[static_cast<std::size_t>(humerus)].pivot-pivot);
+                    const int ulna = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
+                    if (ulna >= 0) down = normalized(center(static_cast<std::size_t>(ulna))-pivot);
+                }
+                Vec3 axis = cross(up,down * -1.0);
+                double current = 0;
+                if (link.mobility == "atlanto_occipital" || link.mobility == "intervertebral" ||
+                    link.mobility == "temporomandibular") {
+                    axis = {1,0,0};
+                } else if (link.mobility == "atlanto_axial") {
+                    axis = {0,1,0};
+                } else if (link.mobility == "sternoclavicular" || link.mobility == "acromioclavicular") {
+                    axis = {0,0,side == 0 ? 1.0 : -1.0};
+                } else if (link.mobility == "shoulder_ball_socket") {
+                    // The primary shoulder control is abduction: align the
+                    // actual upper-arm shaft toward its side, not a world X
+                    // rotation that assumes the subject began in neutral.
+                    const Vec3 target = side == 0 ? Vec3{1,0,0} : Vec3{-1,0,0};
+                    axis = cross(down,target);
+                    current = (3.14159265358979323846/2) -
+                        std::acos(std::clamp(dot(down,target),-1.0,1.0));
+                } else if (link.mobility == "knee_modified_hinge" && hasKneeAxes_) {
+                    axis = kneeAxes_[side].medialDirection * (side == 0 ? -1.0 : 1.0);
+                    up = normalized(up-axis*dot(up,axis));
+                    const Vec3 other = normalized((down*-1.0)-axis*dot(down*-1.0,axis));
+                    current = std::atan2(dot(axis,cross(up,other)),dot(up,other));
+                } else if (link.mobility == "elbow_hinge" || link.mobility == "finger_pip_hinge" ||
+                           link.mobility == "finger_dip_hinge" || link.mobility == "thumb_ip_hinge" ||
+                           link.mobility == "toe_ip_hinge") {
+                    current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
+                }
+                if (length(axis) < 1e-5) {
+                    Vec3 guide = std::abs(up.z) < 0.9 ? Vec3{0,0,1} : Vec3{0,1,0};
+                    axis = cross(up,guide);
+                }
+                if (length(axis) < 1e-8) { error = "Degenerate source joint axis for " + childName; return false; }
+                // Coordinates refer to anatomical neutral, but the supplied
+                // mesh is already in its subject's source pose. Make every
+                // joint's source coordinate the identity relative transform.
+                // Otherwise a nonzero parent bind angle incorrectly rotates
+                // the child's pivot and axis before any posing occurs.
+                current = std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
+                JointRigidTransform frame; frame.translation = pivot;
+                const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));
+                auto joint = CalibratedRotationalJoint::create(parentFrame,frame,
+                    {{axis,bounds->extension*toRadians,bounds->flexion*toRadians}});
+                if (!joint || !joint->setAngles({current})) { error = "Invalid source joint " + childName; return false; }
+                body = rig.addJoint(mapping[parent],*joint);
+                bindAngle = current;
+            } else {
+                // No numeric bend range is specified for gliding/compound
+                // joints; attach them rather than inventing medical angles.
+                body = rig.addFixed(mapping[parent],{});
+            }
+            if (!body) { error = "Unable to attach source joint " + childName; return false; }
+            if (bounds) bindPose.push_back({*body,{bindAngle}});
+            mapping[child] = *body; visited[child] = true; queue.push_back(child);
+        }
+    }
+    if (queue.size() != count) { error = "Anatomical source graph is disconnected"; return false; }
+    rig.captureBindPose();
+    if (!setSourceRig(std::move(rig),mapping,error)) return false;
+    referenceBindPose_ = std::move(bindPose);
+    return true;
+}
+
+bool SkeletonModel::restoreSourcePose() {
+    return !referenceBindPose_.empty() && setSourcePose(referenceBindPose_);
 }
 
 bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates) {
     if (!sourceRig_ || !sourceRig_->setPose(updates)) return false;
     ++sourcePoseRevision_;
     return true;
+}
+
+std::optional<double> SkeletonModel::referenceBend(std::size_t link) const {
+    if (!sourceRig_ || link >= sourceLinks_.size()) return std::nullopt;
+    const auto& edge = sourceLinks_[link];
+    if (edge.first >= sourceBodies_.size() || edge.second >= sourceBodies_.size()) return std::nullopt;
+    const auto a = sourceBodies_[edge.first], b = sourceBodies_[edge.second];
+    std::size_t child;
+    if (sourceRig_->parent(b) == a) child = b;
+    else if (sourceRig_->parent(a) == b) child = a;
+    else return std::nullopt;
+    const auto* joint = sourceRig_->joint(child);
+    if (!joint || joint->angles().empty()) return std::nullopt;
+    return joint->angles()[0] * (180.0 / 3.14159265358979323846);
 }
 
 bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
@@ -497,13 +697,31 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     std::size_t body;
     if (sourceRig_->parent(second) == first) body = second;
     else if (sourceRig_->parent(first) == second) body = first;
-    else return false; // a graph edge alone does not make the bones parent and child
+    else return false;
     const auto* joint = sourceRig_->joint(body);
     if (!joint || joint->angles().empty()) return false;
     constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
     auto angles = joint->angles();
     angles[0] = *bounded * radiansPerDegree;
-    return setSourcePose({{body, angles}});
+    std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};
+    if (relationship.mobility == "elbow_hinge") {
+        // Radius and ulna share the anatomical flexion pivot; moving only one
+        // would split the forearm even when pronation is not being requested.
+        const auto humerus = sourceStructures_[relationship.first].name.rfind("Humerus_",0) == 0
+                                 ? relationship.first : relationship.second;
+        for (const auto& other : sourceLinks_) {
+            if (&other == &relationship || other.mobility != "elbow_hinge" ||
+                (other.first != humerus && other.second != humerus)) continue;
+            const auto neighbour = other.first == humerus ? other.second : other.first;
+            const auto otherBody = sourceBodies_[neighbour];
+            if (sourceRig_->parent(otherBody) != sourceBodies_[humerus]) continue;
+            const auto* otherJoint = sourceRig_->joint(otherBody);
+            if (!otherJoint || otherJoint->angles().empty()) continue;
+            auto otherAngles = otherJoint->angles(); otherAngles[0] = angles[0];
+            updates.push_back({otherBody,otherAngles});
+        }
+    }
+    return setSourcePose(updates);
 }
 
 std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {

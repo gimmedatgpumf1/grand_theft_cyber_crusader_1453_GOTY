@@ -14,7 +14,7 @@ namespace gtc::native {
 
 // The test room: an empty box with a tiled floor and the two anatomical
 // skeletons in it, so animation and rigging work has somewhere to happen.
-// Both OpenSkeleton bodies retain the static registered source pose. Neither body is scaled.
+// Both OpenSkeleton bodies use source-bone rigid transforms; neither body is scaled.
 class RoomFreecam;
 
 class SkeletonRoom {
@@ -39,6 +39,7 @@ private:
     bool ready_ = false;
     bool lineView_ = false;
     bool lineSceneReady_ = false;
+    std::uint64_t lineMalePoseRevision_ = 0, lineFemalePoseRevision_ = 0;
     std::string error_;
     // The room's geometry is kept between frames when the GPU path draws it:
     // two skeletons are three hundred thousand triangles, and re-sending them

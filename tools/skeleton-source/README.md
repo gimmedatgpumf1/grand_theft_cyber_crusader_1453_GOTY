@@ -8,11 +8,12 @@ The C room uses two CT-derived, registered OpenSkeleton subjects from the
 
 The included NPZ and JSON files contain the extracted source vertices and
 faces for each subject. Each OBJ retains all 182 source structure names in
-`g` groups and 27 runtime `o` groups. The rigid runtime groups are not 182
-independently animated bones. Each source structure is simplified separately
+`g` groups and 27 runtime `o` groups. The room renders individual source
+structures with rigid transforms. Each source structure is simplified separately
 into an overall budget near 180,000 triangles. No bones are mirrored, scaled
 or repositioned individually. A single coordinate conversion and translation
-places each body in the game. Both bodies retain the static registered pose.
+places each body in the game. The registered pose is the unscaled bind pose;
+the room retains it by default while the elbow pivots are being corrected.
 
 Both source files contain *registered* meshes, not necessarily the original CT
 patient pose. Our source-fidelity tests check names, face indices and the
@@ -39,7 +40,7 @@ reproducibility; its output is not the currently shipped male.
 
 ## C room line view
 
-Both C-room skeletons use the static registered source pose in mesh and V views.
+Both C-room skeletons use the same estimated source-rig pose in mesh and V views.
 Press V to replace both skeleton meshes with the simplified view;
 press V again to return to the mesh view. Pale lines approximate the supplied
 bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,
@@ -71,7 +72,7 @@ source bone contact areas and the displayed connection endpoints. The kneecap
 The other long bones and grouped surfaces remain separate. OpenSkeleton does
 not label individual joint centres or other small bones at these joints; the
 balls are visual approximations, not measured joint surfaces. Their triangles
-are cached with the rest of the static V-view scene.
+are cached with the rest of the V-view scene until a pose changes.
 
 Each foot base is a **closed ten-point volume**: four corners at the front,
 two at the narrow back of the heel, and four at the back and front of the
@@ -97,21 +98,15 @@ to the sternum, ribs 8–10 via the preceding rib, and leaves ribs 11–12 witho
 an anterior joint. Links internal to the rib-cage surface are hidden; each
 rib's spinal connection and inferred sternum connections remain visible.
 
-The source supplies surfaces, not joint landmarks. Line shapes and link endpoints
-are estimates from each surface; the anatomical table chooses the pairs, never
-proximity. The static graph does **not** visualize or validate the existing
-27-group animation rig, and neither the graph nor the source registration is a
-clinical certification. `Head` and `Jaw` are whole source structures, not
-individual skull bones. The 27-group runtime mesh and V-view grouped surfaces are
-not a full 182-joint interactive rig. The C room now loads the 182 individual
-source-mesh ranges and all 209 explicitly classified anatomical relationships
-into the runtime model. The GPU room path renders each source structure in its
-own rigid batch, with space for independent matrices; currently each matrix still
-inherits its coarse group transform. This does not implement joint movement or
-enforce limits, and V-view shapes remain static. Joint
-movement classes and limitations are
-documented in [JOINT_MOBILITY.md](JOINT_MOBILITY.md); they are reference data,
-not enforced runtime constraints. To regenerate these inspection surfaces, NumPy and
+The source supplies surfaces, not joint landmarks. The anatomical table selects
+relationships, never proximity alone. The room's estimated tree uses the 182
+source mesh batches, population bend references and fitted or approximate
+pivots. Each V-view vertex is attached to a named structure or a declared group,
+so it follows poses; grouped surfaces deform as their owners move. This is not a
+complete or medically validated 182-joint rig: some links are redundant or
+fixed, some axes and source neutral angles are estimates, and cartilage,
+closed loops and subject-specific constraints are not modelled. See
+[JOINT_MOBILITY.md](JOINT_MOBILITY.md). To regenerate these inspection surfaces, NumPy and
 SciPy are required in addition to the OBJ importer
 requirements. Regenerate and check after rebuilding the OBJs with:
 

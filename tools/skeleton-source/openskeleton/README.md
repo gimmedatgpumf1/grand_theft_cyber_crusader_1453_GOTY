@@ -165,6 +165,29 @@ that pose or change bone scale. These are **approximations**, not the complete
 knee joint: the source supplies no individual neutral angle, measured ROM,
 contact geometry, patellar gliding or flexion-dependent translations and
 rotations. The remaining coarse yaw/roll and pitch values are not biologically
-bounded. The per-structure solver and V-view do not yet use the knee fits.
+bounded. The per-structure tree uses these estimated knee axes and V-view follows its bone transforms.
 Reference-cohort errors and the CT atlas license are documented in
 `../reference/femoral/README.md`.
+
+## Humeral head estimates
+
+`10-fit-shoulders.py` fits a sphere to the humeral surface near the explicitly
+linked scapula, writing `.shoulders` and `-shoulder-fit.json` files. The room
+uses those pivots for shoulder movement and centers the V-view shoulder balls
+on them. Run the script with NumPy and SciPy and verify with
+`python3 tests/openskeleton_shoulder_fit.py`. The fit and cutoff-stability
+checks are geometric only; they are not expert landmark validation.
+
+## Arm-out collision audit
+
+The candidate arm-out pose is not enabled by default because its estimated
+elbow hinges cause bone intersections. To reproduce the surface audit (requires
+NumPy and `python-fcl`), from the repository root:
+
+```sh
+c++ -std=c++17 -O2 -pthread -Isrc -Inative tests/skeleton_arm_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-arm-pose
+python3 tools/skeleton-source/openskeleton/11-audit-arm-pose.py
+```
+
+The tool compares source-pose and candidate-pose triangle surfaces. It is not a
+soft-tissue, solid-containment, or anatomical-motion validation.

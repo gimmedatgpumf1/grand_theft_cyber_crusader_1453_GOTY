@@ -61,6 +61,18 @@ static bool checkJoints(const GpuBatch& batch, const char* path, double x, doubl
         char kind; Vec3 p; double radius;
         in >> kind >> name >> p.x >> p.y >> p.z >> radius;
         if (!in || count >= 8) return false;
+        if (name.rfind("Shoulder_",0)==0) {
+            std::string fileName=path; fileName.replace(fileName.size()-6,6,".shoulders");
+            std::ifstream fit(fileName); std::string row;
+            bool found=false;
+            while (std::getline(fit,row)) {
+                if (row.empty() || row[0]=='#') continue;
+                std::istringstream entry(row); std::string side; Vec3 center; double r;
+                entry >> side >> center.x >> center.y >> center.z >> r;
+                if (entry && side==name.substr(name.size()-1)) { p=center; found=true; break; }
+            }
+            if (!found) return false;
+        }
         const Vec3 center{x + std::cos(yaw)*p.x + std::sin(yaw)*p.z,
                           p.y, -std::sin(yaw)*p.x + std::cos(yaw)*p.z};
         for (std::size_t i = 0; i < 42; ++i) {
@@ -229,6 +241,8 @@ int main() {
     const std::size_t expectedSkullIndices = maleModel.sourceStructures()[skull].triangleCount * 3;
     SkeletonRoom room;
     if (!room.load(".", error)) { std::printf("room load failed: %s\n", error.c_str()); return 1; }
+    // This regression checks original source and line geometry.
+    if (!room.male().restoreSourcePose() || !room.female().restoreSourcePose()) return 1;
     if (room.male().sourceStructures().size() != 182 || room.female().sourceStructures().size() != 182 ||
         room.male().sourceLinks().size() != 209 || room.female().sourceLinks().size() != 209) {
         std::puts("test room source structures or links missing"); return 1;

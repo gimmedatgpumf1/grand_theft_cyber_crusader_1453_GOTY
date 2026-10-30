@@ -6,7 +6,7 @@ actual source labels, including each finger and toe on both sides. The graph
 is not an exhaustive list of every human articulation: the source does not
 separately label the individual skull bones, teeth, hyoid or ear ossicles,
 and several real joints contain multiple surfaces and coupled motions. These are
-biological descriptions, **not implemented runtime animation constraints**.
+biological descriptions; the runtime approximation and its gaps are described below.
 Individual joint centres and axes are not supplied by OpenSkeleton. Movement
 ranges vary with person, position, loading and measurement. The figures below
 are approximate clinical reference values measured from anatomical neutral,
@@ -90,8 +90,7 @@ individual subject's measured rhythm.
 These are *reference-model* results, not tests of joint frames fitted to either
 OpenSkeleton subject. The separate subject-specific femoral-head estimates in
 `openskeleton/README.md` provide hip pivot positions and an approximate
-femoral epicondylar line for each knee, not calibrated individual motion limits. The room can consume a supplied calibrated tree, but no subject-specific
-joint rig is installed, and V-view remains static. The solver does not
+femoral epicondylar line for each knee, not calibrated individual motion limits. The room now installs an estimated rig on both subjects, but it does not
 implement gliding, cartilage, contacts or closed loops.
 AAH's simple joint bounds are a model, not universal clinical hard limits.
 
@@ -113,27 +112,58 @@ and applies a complete mapping to the 182 independent source batches. The room
 caches the scene and updates only matrices after a pose revision. Tests compare
 the tree with the same 50 OpenSim-calculated AAH whole-finger poses and use a
 synthetic hinge to verify both source bodies through the Vulkan frame path.
-The synthetic hinge is a plumbing test, not a subject fit. **No subject rig or
-fitted joint range has yet been installed in the room.** Closed-loop anatomical
-constraints, bone collisions, cartilage and V-view attachment remain unsolved.
+The synthetic hinge is a plumbing test, not a subject fit. The current room
+also installs an approximate source rig; closed-loop anatomical constraints,
+bone collisions, cartilage and individual fitted ranges remain unsolved.
 
-## Simple reference bend angles
+## Current room implementation and limitations
 
-`native/client/skeleton_rom.h` contains the reference flexion/extension values
-above in degrees, and `setReferenceBend()` accepts a joint and a requested bend
-in degrees, clamps it, then updates the corresponding source-bone transform.
-The values are reference ranges measured from anatomical neutral, not measured
-individual limits. The caller must supply a rig whose first coordinate uses
-that neutral and the documented sign convention. These ranges **cannot** be
-applied as offsets from the original CT pose. No complete neutral-calibrated
-source rig is installed in the room yet, so this does not make every joint move.
-The test that applies them to source meshes uses a synthetic neutral frame.
+The room installs a source-bone tree for both subjects and retains the original
+source pose by default without scaling. A tested arm-out candidate aligns the
+upper arms and elbows, but an intersection audit found that all four estimated
+elbows penetrate the humerus after straightening, so it is not enabled by default. Meshes use rigid bone matrices; V-view vertices are associated
+with explicitly named source structures or declared anatomical groups and are
+rebuilt only after pose changes. Forearm radius and ulna share elbow motion.
+The simplified palm, foot, rib cage and shoulder surfaces deform between their
+source owners; they are not complete anatomical tissue simulations.
 
-Whole-shoulder flexion is about 180° with scapular movement; the simple
-reference for glenohumeral flexion alone is 120° (and extension 60°), as in
-[the shoulder-joint reference](https://books.byui.edu/the_introduction_and_application_of_kinesiology_biomechanics_and_assessment/chapter_7).
-For the lesser toes, the reference PIP range is 0–35° flexion and DIP is 30°
-extension to 60° flexion ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/)).
-Great toe IP flexion is about 50° ([range-of-motion reference](https://physical-therapy.us/range-of-motion-rom/)).
-For unspecified joints, no numeric range is invented. Other axes, coupled
-movement, subject neutral and individual limits still require calibration.
+The first coordinate in `skeleton_rom.h` is a simple population reference in
+degrees. For the shoulder it is an *approximate abduction* coordinate, not
+flexion: 0° approximates anatomical neutral and 90° the lateral upper arm;
+120° is a commonly cited approximate glenohumeral contribution, distinct from
+180° for the whole shoulder. The shoulder rotation plane is inferred from the
+source pose, not a measured scapular plane, and the scapular rhythm is not
+implemented. See [shoulder biomechanics](https://musculoskeletalkey.com/structure-and-function-of-the-shoulder-complex/).
+The glenohumeral centre is estimated from a sphere fitted to humeral surface
+vertices near the explicitly linked scapula; this is not expert-validated.
+See `openskeleton/10-fit-shoulders.py` and the subject-specific fit JSON files.
+
+Elbow and finger neutral angles are estimated from source geometry. Hip and knee
+use earlier shape-derived centres/axes; other pivots use sampled closest surfaces
+only after the anatomical graph has selected the relationship. Neck and most
+other initial angles are assumed zero. Values clamped to population ranges do
+**not** establish actual subject neutral, individual limits, functional axes or
+safe contact. The fixed-axis knee approximation has known mesh intersections
+in sampled motions (see `09-audit-knee-motion.py`). For the candidate arm-out pose the source-triangle collision audit found
+humerus–ulna intersections for all four elbows; the male left humerus–radius
+also intersected. A basic arm-alignment test is not clinical verification of a
+complete biological T-pose.
+
+Extra single-axis approximations include jaw rotation without translation,
+atlanto-occipital nodding, atlanto-axial rotation, shoulder-girdle elevation,
+thumb CMC and segmental spine movement. Published total cervical flexion-extension
+ranges are divided symmetrically only as an approximation; real flexion and
+extension are not necessarily symmetric. See [cervical segmental ranges](https://musculoskeletalkey.com/cervical-spine-10/),
+[atlanto-occipital and atlanto-axial cadaver review](https://squareonephysio.com.au/wp-content/uploads/2021/08/Bogduk-2000-Biomechanics-Cervical-Spine.pdf),
+[AC joint motion](https://www.kenhub.com/en/library/anatomy/acromioclavicular-ac-joint),
+and [SC motion](https://www.kenhub.com/en/library/anatomy/sternoclavicular-joint).
+The lesser toe PIP range is 0–35° and DIP is −30–60° ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/));
+great toe IP flexion is about 50° ([reference](https://physical-therapy.us/range-of-motion-rom/)).
+
+This remains a **partial** implementation: a single-axis tree cannot represent
+all three-dimensional ball-joint motion, pronation/supination with both
+radioulnar articulations, translation, coordinated scapular rhythm, closed loops,
+ligament constraints, cartilage, collision-free motion, or subject-specific
+neutral and limits. Some source links are redundant in the spanning tree and
+some small bones intentionally grouped. It should not be described as every
+joint working or medically validated.

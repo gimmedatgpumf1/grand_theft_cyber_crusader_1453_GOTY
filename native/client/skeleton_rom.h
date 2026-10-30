@@ -16,7 +16,14 @@ struct ReferenceBendRange {
 inline std::optional<ReferenceBendRange> referenceBendRange(std::string_view kind) {
     struct Entry { std::string_view kind; ReferenceBendRange range; };
     static constexpr Entry entries[] = {
-        {"shoulder_ball_socket", {-60, 120}}, // glenohumeral flexion, not whole shoulder
+        {"temporomandibular", {0, 25}},
+        {"atlanto_occipital", {-10, 10}},
+        {"atlanto_axial", {-35, 35}}, // primary axial rotation
+        {"sternoclavicular", {-10, 35}}, // elevation/depression
+        {"acromioclavicular", {-5, 10}}, // approximation of 15-degree total elevation
+        {"radioulnar_pivot", {-80, 80}},
+        {"thumb_cmc_saddle", {-15, 35}},
+        {"shoulder_ball_socket", {-30, 120}}, // abduction/adduction at glenohumeral joint
         {"elbow_hinge", {0, 150}},
         {"wrist_condyloid", {-70, 80}},
         {"thumb_mcp", {0, 50}},
@@ -36,6 +43,24 @@ inline std::optional<ReferenceBendRange> referenceBendRange(std::string_view kin
 
 inline std::optional<ReferenceBendRange> referenceBendRange(
     std::string_view kind, std::string_view first, std::string_view second) {
+    if (kind == "intervertebral") {
+        // Individual-level population references are small; never apply the
+        // complete spine's ROM to every vertebra. These are approximations.
+        if ((!first.empty() && first[0]=='C') || (!second.empty() && second[0]=='C')) {
+            // Published segment totals; symmetric split is an approximation.
+            const auto has = [&](const char* a, const char* b) {
+                return (first==a && second==b) || (first==b && second==a);
+            };
+            if (has("C2","C3")) return ReferenceBendRange{-4,4};
+            if (has("C3","C4")) return ReferenceBendRange{-6.5,6.5};
+            if (has("C4","C5")) return ReferenceBendRange{-9.5,9.5};
+            if (has("C5","C6")) return ReferenceBendRange{-8.5,8.5};
+            if (has("C6","C7")) return ReferenceBendRange{-8,8};
+            return ReferenceBendRange{-5,5};
+        }
+        if ((!first.empty() && first[0]=='T') || (!second.empty() && second[0]=='T')) return ReferenceBendRange{-5,5};
+        return ReferenceBendRange{-5,9};
+    }
     if (kind != "toe_ip_hinge") return referenceBendRange(kind);
     const auto has = [&](std::string_view fragment) {
         return first.find(fragment) != std::string_view::npos || second.find(fragment) != std::string_view::npos;

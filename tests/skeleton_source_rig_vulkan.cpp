@@ -91,11 +91,36 @@ static void clinicalBend(SkeletonRoom& room, ViewState view, SkeletonModel& mode
     assert(model.setReferenceBend(link, 0)); assert(differences(before,pixels(room, view)) == 0);
 }
 
+// Use the default room rig, not a synthetic replacement. This checks actual
+// GPU-visible motion and V-view cache invalidation, not clinical calibration.
+static void liveBend(SkeletonRoom& room, ViewState view, SkeletonModel& model, const char* name) {
+    std::size_t link=0;
+    for (; link<model.sourceLinks().size(); ++link) {
+        const auto& edge=model.sourceLinks()[link];
+        if (edge.mobility=="elbow_hinge" && model.sourceStructures()[edge.first].name=="Humerus_L" &&
+            model.sourceStructures()[edge.second].name=="Ulna_L") break;
+    }
+    assert(link<model.sourceLinks().size()); const double initial=*model.referenceBend(link);
+    const double target=initial > 65 ? 15 : 110;
+    for (int line=0;line<2;++line) {
+        if (line) room.toggleLineView();
+        const auto before=pixels(room,view);
+        assert(model.setReferenceBend(link,target)); const auto bent=pixels(room,view);
+        const int changed=differences(before,bent);
+        std::printf("Vulkan live %s %s elbow: %d changed pixels\n",name,line?"V-view":"mesh",changed);
+        assert(changed>10);
+        assert(model.setReferenceBend(link,initial)); assert(differences(before,pixels(room,view))==0);
+    }
+    room.toggleLineView();
+}
+
 int main() {
     assert(vulkanAvailable());
     SkeletonRoom room; std::string error; assert(room.load(".",error));
     setGpuRenderer(&renderVulkanScene);
     ViewState view; view.gpu=true; view.width=640; view.height=480;
+    liveBend(room,view,room.male(),"male"); liveBend(room,view,room.female(),"female");
+    assert(room.male().restoreSourcePose() && room.female().restoreSourcePose());
     clinicalBend(room,view,room.male()); clinicalBend(room,view,room.female());
     run(room,view,room.male()); run(room,view,room.female());
     setGpuRenderer(nullptr);
