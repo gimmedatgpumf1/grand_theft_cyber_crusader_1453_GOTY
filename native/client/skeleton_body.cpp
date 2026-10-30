@@ -134,6 +134,9 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     bones_.clear();
     sourceStructures_.clear();
     sourceLinks_.clear();
+    sourceRig_.reset();
+    sourceBodies_.clear();
+    ++sourcePoseRevision_;
     // OBJ source labels are nested inside the larger runtime `o` groups.
     // Record their exact local ranges without duplicating the mesh or changing
     // the existing static GPU batches.
@@ -386,11 +389,59 @@ void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& came
     }
 }
 
+bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
+                                 const std::vector<std::size_t>& sourceBodies, std::string& error) {
+    if (sourceStructures_.empty() || sourceBodies.size() != sourceStructures_.size() ||
+        !rig.hasBindPose() || !rig.evaluate()) {
+        error = "Source rig must map every labelled structure and have a bind pose"; return false;
+    }
+    std::vector<bool> seen(rig.size());
+    for (const auto body : sourceBodies) {
+        if (body >= rig.size() || seen[body]) {
+            error = "Source rig body map must be in range and unique"; return false;
+        }
+        seen[body] = true;
+        const auto& m = rig.skinTransforms()[body];
+        const JointRigidTransform identity;
+        for (int i = 0; i < 9; ++i) if (std::abs(m.rotation[i]-identity.rotation[i]) > 1e-7) {
+            error = "Source rig must be attached at its bind pose"; return false;
+        }
+        if (length(m.translation) > 1e-7) {
+            error = "Source rig must be attached at its bind pose"; return false;
+        }
+    }
+    sourceRig_ = std::move(rig);
+    sourceBodies_ = sourceBodies;
+    ++sourcePoseRevision_;
+    return true;
+}
+
+bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates) {
+    if (!sourceRig_ || !sourceRig_->setPose(updates)) return false;
+    ++sourcePoseRevision_;
+    return true;
+}
+
 std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {
-    const auto groupMatrices = boneMatrices(origin, yaw);
     std::vector<std::array<double, 16>> matrices;
     matrices.reserve(sourceStructures_.size());
-    for (const auto& part : sourceStructures_) matrices.push_back(groupMatrices[part.group]);
+    if (sourceRig_) {
+        const double c = std::cos(yaw), s = std::sin(yaw);
+        JointRigidTransform placement;
+        placement.rotation = {c,0,s, 0,1,0, -s,0,c};
+        placement.translation = origin;
+        if (!sourceRig_->evaluate(placement)) return {};
+        for (const auto body : sourceBodies_) {
+            const auto& t = sourceRig_->skinTransforms()[body];
+            matrices.push_back({t.rotation[0],t.rotation[3],t.rotation[6],0,
+                                t.rotation[1],t.rotation[4],t.rotation[7],0,
+                                t.rotation[2],t.rotation[5],t.rotation[8],0,
+                                t.translation.x,t.translation.y,t.translation.z,1});
+        }
+    } else {
+        const auto groups = boneMatrices(origin, yaw);
+        for (const auto& part : sourceStructures_) matrices.push_back(groups[part.group]);
+    }
     return matrices;
 }
 

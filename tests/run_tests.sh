@@ -49,12 +49,19 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-hip-fits
 ./build/bin/gtc-skeleton-hip-fits
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+  tests/skeleton_source_rig.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
+  native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-rig
+./build/bin/gtc-skeleton-source-rig
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_source_structures.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-structures
 ./build/bin/gtc-skeleton-source-structures
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/calibrated_joint.cpp -o build/bin/gtc-calibrated-joint
 ./build/bin/gtc-calibrated-joint
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/kinematic_tree.cpp -o build/bin/gtc-kinematic-tree
+./build/bin/gtc-kinematic-tree
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/calibrated_coupling.cpp -o build/bin/gtc-calibrated-coupling
 ./build/bin/gtc-calibrated-coupling
@@ -101,6 +108,13 @@ if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
     -ldl -o build/bin/gtc-skeleton-resize-vulkan
   ./build/bin/gtc-skeleton-resize-vulkan
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+    tests/skeleton_source_rig_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+    native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
+    native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
+    native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
+    -ldl -o build/bin/gtc-skeleton-source-rig-vulkan
+  ./build/bin/gtc-skeleton-source-rig-vulkan
   python3 tests/skeleton_headless_wsi.py
 else
   echo 'Vulkan UI pixel check: skipped (set GTC_VULKAN_UI_TEST=1 with a Vulkan ICD)'

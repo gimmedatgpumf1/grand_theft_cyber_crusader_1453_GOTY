@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/raster.h"
+#include "client/skeleton_kinematic_tree.h"
 
 #include <array>
 #include <string>
@@ -79,10 +80,15 @@ public:
     // from firstObjectId. Paired with boneMatrices() a pose change costs 28
     // matrices instead of 195,000 vertices.
     void buildRestGeometry(Rasterizer& rasterizer, const Camera& camera, int firstObjectId) const;
-    // Independent GPU batches per labelled source structure. Until a calibrated
-    // per-structure solver exists, each inherits its coarse group's transform.
+    // Independent GPU batches per labelled source structure. They inherit the
+    // coarse group's transform unless a complete calibrated source rig is supplied.
     void buildSourceRestGeometry(Rasterizer& rasterizer, int firstObjectId) const;
     std::vector<std::array<double, 16>> sourceMatrices(Vec3 origin, double yaw) const;
+    // Accept only a complete, explicitly supplied source-to-body map, at bind
+    // pose. No clinical calibration is inferred or manufactured here.
+    bool setSourceRig(AnatomicalKinematicTree rig, const std::vector<std::size_t>& sourceBodies, std::string& error);
+    bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
+    std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;
 
@@ -90,6 +96,9 @@ private:
     std::vector<SkeletonBone> bones_;
     std::vector<SkeletonSourceStructure> sourceStructures_;
     std::vector<SkeletonSourceLink> sourceLinks_;
+    mutable std::optional<AnatomicalKinematicTree> sourceRig_;
+    std::vector<std::size_t> sourceBodies_;
+    std::uint64_t sourcePoseRevision_ = 0;
     std::string name_;
     double height_ = 0;
 };

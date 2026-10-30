@@ -90,8 +90,9 @@ individual subject's measured rhythm.
 These are *reference-model* results, not tests of joint frames fitted to either
 OpenSkeleton subject. The separate subject-specific femoral-head estimates in
 `openskeleton/README.md` provide hip pivot positions only, not axes or motion
-limits. The solver is not connected to the C-room bodies or
-V-view, and it does not implement gliding, cartilage, contacts or closed loops.
+limits. The room can consume a supplied calibrated tree, but no subject-specific
+joint rig is installed, and V-view remains static. The solver does not
+implement gliding, cartilage, contacts or closed loops.
 AAH's simple joint bounds are a model, not universal clinical hard limits.
 
 Subject fitting must not use a geometry ICP score as a substitute for checking
@@ -102,3 +103,16 @@ differed by **35.57 mm**. That demonstrates an end-orientation ambiguity, not
 a clinically usable calibration. The [PIP CT and motion study](https://pmc.ncbi.nlm.nih.gov/articles/PMC3835607/)
 found a moving finite helical axis, showing even a fixed hinge is an
 approximation. Do not ship a guessed joint frame as medically validated.
+
+
+## Open-chain solver and source-mesh frame path
+
+`native/client/skeleton_kinematic_tree.h` composes supplied bounded joints in a
+parent-ordered open chain, captures a bind pose without scaling mesh geometry,
+and applies a complete mapping to the 182 independent source batches. The room
+caches the scene and updates only matrices after a pose revision. Tests compare
+the tree with the same 50 OpenSim-calculated AAH whole-finger poses and use a
+synthetic hinge to verify both source bodies through the Vulkan frame path.
+The synthetic hinge is a plumbing test, not a subject fit. **No subject rig or
+fitted joint range has yet been installed in the room.** Closed-loop anatomical
+constraints, bone collisions, cartilage and V-view attachment remain unsolved.

@@ -24,6 +24,8 @@ public:
     std::size_t triangles() const { return sceneTriangles_; }
     const SkeletonModel& male() const { return male_; }
     const SkeletonModel& female() const { return female_; }
+    SkeletonModel& male() { return male_; }
+    SkeletonModel& female() { return female_; }
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
 
@@ -55,6 +57,7 @@ private:
     std::vector<std::array<double, 16>> cachedFemaleMatrices_;
     bool sceneReady_ = false;
     double cachedPose_ = -1.0;
+    std::uint64_t cachedMalePoseRevision_ = 0, cachedFemalePoseRevision_ = 0;
 };
 
 } // namespace gtc::native

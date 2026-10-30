@@ -147,7 +147,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     };
     (void)seconds;
     const double pose = 0.0;
-    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_;
+    const bool revisionsMatch = cachedMalePoseRevision_ == male_.sourcePoseRevision() &&
+                                cachedFemalePoseRevision_ == female_.sourcePoseRevision();
+    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_ && revisionsMatch;
     if (reuse) {
         updateCamera();
         frame.width = camera.width;
@@ -159,7 +161,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         return;
     }
     // Both bodies retain the original source pose while the new rig is developed.
-    const bool poseChanged = pose != cachedPose_;
+    const bool poseChanged = pose != cachedPose_ || !revisionsMatch;
 
     if (view.gpu) {
         // The original source structures are emitted once into independent
@@ -222,6 +224,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             scene_.batches[entry.second].modelMatrix = (*matrices)[boneIndex];
         }
         cachedPose_ = pose;
+        cachedMalePoseRevision_ = male_.sourcePoseRevision();
+        cachedFemalePoseRevision_ = female_.sourcePoseRevision();
         updateCamera();
         frame.wantsBgra = true;
         frame.width = camera.width;
