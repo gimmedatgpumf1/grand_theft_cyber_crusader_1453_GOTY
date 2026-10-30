@@ -20,8 +20,7 @@ static Vec3 center(const SkeletonModel& model, int index) {
     return sum/static_cast<double>(part.pointCount);
 }
 static void checkArmAlignment(SkeletonModel& model) {
-    // Alignment is only a geometric check; collision audits demonstrate this
-    // candidate is not yet suitable as the room's default pose.
+    // Check the actual transformed shafts, not just stored joint angles.
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
         const auto& edge=model.sourceLinks()[i]; if (!model.referenceBend(i)) continue;
         if (edge.mobility=="shoulder_ball_socket") assert(model.setReferenceBend(i,90));
@@ -181,6 +180,10 @@ static void verify(SkeletonModel& model, const char* sex) {
             }
         }
         assert(changed);
+        assert(model.setReferenceBend(i,10000));
+        assert(std::abs(*model.referenceBend(i)-range->flexion)<1e-7);
+        assert(model.setReferenceBend(i,-10000));
+        assert(std::abs(*model.referenceBend(i)-range->extension)<1e-7);
         assert(model.setReferenceBend(i,*initial));
         const auto restored = model.sourceMatrices({},0);
         for (std::size_t k=0; k<restored.size(); ++k) for (int j=0; j<16; ++j)
@@ -200,6 +203,7 @@ static void verify(SkeletonModel& model, const char* sex) {
 int main() {
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) { std::cerr << error << '\n'; return 1; }
+    assert(room.restoreOriginalPose());
     checkArmAlignment(room.male()); checkArmAlignment(room.female());
     checkLinePose(room);
     // Room-level controls reach both subjects and restore their source pose.
@@ -209,7 +213,7 @@ int main() {
     assert(room.adjustReferenceGroup('q',5));
     assert(std::abs(*room.male().referenceBend(shoulder)-maleBefore-5)<1e-7);
     assert(std::abs(*room.female().referenceBend(shoulder)-femaleBefore-5)<1e-7);
-    assert(room.restoreReferencePose());
+    assert(room.restoreOriginalPose());
     // A paired group receives one step, not two steps through its two graph
     // links. Both source skeletons and both anatomical sides are tested.
     for (char key : {'e','f'}) {
@@ -241,12 +245,12 @@ int main() {
             }
             ++subject;
         }
-        assert(room.restoreReferencePose());
+        assert(room.restoreOriginalPose());
     }
     assert(!room.adjustReferenceGroup('v',5));
     for (char key : {'1','2','3','4','5','6','7','8','9','0','q','e','f','g','h','j','k','l','z','x'}) {
         assert(room.adjustReferenceGroup(key,5));
-        assert(room.restoreReferencePose());
+        assert(room.restoreOriginalPose());
     }
     assert(room.adjustReferenceGroup('2',5));
     for (SkeletonModel* model : {&room.male(), &room.female()}) {
@@ -264,7 +268,7 @@ int main() {
             assert(moved);
         }
     }
-    assert(room.restoreReferencePose());
+    assert(room.restoreOriginalPose());
     checkGroupedWrist(room.male()); checkGroupedWrist(room.female());
     checkPatellaCoupling(room.male()); checkPatellaCoupling(room.female());
     verify(room.male(),"male"); verify(room.female(),"female");

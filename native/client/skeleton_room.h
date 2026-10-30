@@ -30,7 +30,8 @@ public:
     void toggleLineView() { lineView_ = !lineView_; }
     // Test-room controls act directly on named anatomical groups in both bodies.
     bool adjustReferenceGroup(int key, double degrees);
-    bool restoreReferencePose();
+    bool restoreReferencePose(); // straight-arm, straight-leg reference pose
+    bool restoreOriginalPose(); // original registered CT pose
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
@@ -41,6 +42,7 @@ private:
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;
+    double maleFloor_ = 0, femaleFloor_ = 0;
     bool lineSceneReady_ = false;
     std::uint64_t lineMalePoseRevision_ = 0, lineFemalePoseRevision_ = 0;
     std::string error_;

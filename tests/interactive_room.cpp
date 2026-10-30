@@ -110,6 +110,21 @@ int main() {
     app.handle(down('r'));
     assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)<1e-7);
     assert(std::abs(*app.room_.female().referenceBend(shoulder)-femaleBefore)<1e-7);
+    app.handle(down('b')); // original CT pose remains directly available
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)>1);
+    app.handle(down('r'));
+    assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)<1e-7);
+    std::size_t hip=0;
+    for (;hip<app.room_.male().sourceLinks().size();++hip) {
+        const auto& edge=app.room_.male().sourceLinks()[hip];
+        if (edge.mobility=="hip_ball_socket" && app.room_.male().sourceStructures()[edge.second].name=="Femur_L") break;
+    }
+    assert(hip<app.room_.male().sourceLinks().size());
+    const double rotation=*app.room_.male().referenceHipRotation(hip);
+    app.handle(down('n'));
+    assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation-5)<1e-7);
+    app.handle(down('r'));
+    assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation)<1e-7);
     assert(!net::waitReadable(peer,0)); // room joint input never reaches the game player
     app.handle(down('v')); assert(app.room_.lineView());
     WindowEvent repeatV = down('v'); repeatV.repeat = true; app.handle(repeatV);

@@ -603,7 +603,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             const auto& childName = sourceStructures_[child].name;
             const auto bounds = referenceBendRange(link.mobility, parentName, childName);
             std::optional<std::size_t> body;
-            double bindAngle = 0;
+            std::vector<double> bindAngles{0};
             bool coupledPatella = false;
             if (link.mobility == "patellofemoral_glide" && hasKneeAxes_) {
                 // Patellar flexion is approximately 70% of tibiofemoral
@@ -662,6 +662,16 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     up = normalized(center(static_cast<std::size_t>(r))-pivot);
                     down = normalized(center(static_cast<std::size_t>(middle))-pivot);
                 }
+                if (link.mobility == "ankle_hinge") {
+                    // Use the whole grouped foot, not the talus centroid, to
+                    // establish plantarflexion relative to the tibial shaft.
+                    const int tibia=sourceStructure(side==0 ? "Tibia_L" : "Tibia_R");
+                    const int heel=sourceStructure(side==0 ? "Cal_L" : "Cal_R");
+                    const int middle=sourceStructure(side==0 ? "FootMeta3_L" : "FootMeta3_R");
+                    if (tibia<0 || heel<0 || middle<0) { error="Missing ankle frame"; return false; }
+                    up=normalized(center(static_cast<std::size_t>(tibia))-pivot);
+                    down=normalized(center(static_cast<std::size_t>(middle))-center(static_cast<std::size_t>(heel)));
+                }
                 if (link.mobility == "elbow_hinge") {
                     const int humerus = bone(side == 0 ? "humerus_l" : "humerus_r");
                     if (humerus >= 0) up = normalized(bones_[static_cast<std::size_t>(humerus)].pivot-pivot);
@@ -685,17 +695,67 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis = cross(down,target);
                     current = (3.14159265358979323846/2) -
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
+                } else if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
+                    // Positive hip flexion lifts the thigh toward the front,
+                    // rather than choosing its sign from the offset pelvis.
+                    const Vec3 thigh=normalized(kneeAxes_[side].origin-pivot);
+                    axis=cross(thigh,Vec3{0,0,1});
                 } else if (link.mobility == "knee_modified_hinge" && hasKneeAxes_) {
                     axis = kneeAxes_[side].medialDirection * (side == 0 ? -1.0 : 1.0);
                     up = normalized(up-axis*dot(up,axis));
                     const Vec3 other = normalized((down*-1.0)-axis*dot(down*-1.0,axis));
                     current = std::atan2(dot(axis,cross(up,other)),dot(up,other));
+                } else if (link.mobility == "ankle_hinge") {
+                    // Positive plantarflexion moves the forefoot away from
+                    // the shin; 0 is perpendicular to the tibial shaft.
+                    axis=cross(up,down);
+                    current=std::asin(std::clamp(-dot(up,down),-1.0,1.0));
+                } else if (link.mobility == "wrist_condyloid") {
+                    const int index=sourceStructure(side==0 ? "HandMeta2_L" : "HandMeta2_R");
+                    const int little=sourceStructure(side==0 ? "HandMeta5_L" : "HandMeta5_R");
+                    if (index<0 || little<0) { error="Missing wrist palm frame"; return false; }
+                    Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),down));
+                    palm=palm*(side==0 ? -1.0 : 1.0);
+                    axis=normalized(cross(down,palm));
+                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
+                    const Vec3 distal=normalized(down-axis*dot(down,axis));
+                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
+                } else if (link.mobility == "finger_mcp_condyloid" ||
+                           link.mobility == "finger_pip_hinge" || link.mobility == "finger_dip_hinge" ||
+                           link.mobility == "thumb_mcp" || link.mobility == "thumb_ip_hinge") {
+                    // The palm supplies a common flexion direction for every
+                    // finger. Inferring an axis separately from each small
+                    // bend made neighbouring fingers curl in opposite ways.
+                    const int index=sourceStructure(side==0 ? "HandMeta2_L" : "HandMeta2_R");
+                    const int little=sourceStructure(side==0 ? "HandMeta5_L" : "HandMeta5_R");
+                    const int middle=sourceStructure(side==0 ? "HandMeta3_L" : "HandMeta3_R");
+                    const int wrist=sourceStructure(side==0 ? "HandLuna_L" : "HandLuna_R");
+                    if (index<0 || little<0 || middle<0 || wrist<0) { error="Missing palm frame"; return false; }
+                    Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),
+                                               center(static_cast<std::size_t>(middle))-center(static_cast<std::size_t>(wrist))));
+                    palm=palm*(side==0 ? -1.0 : 1.0);
+                    axis=normalized(cross(up*-1.0,palm));
+                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
+                    const Vec3 distal=normalized(down-axis*dot(down,axis));
+                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
+                } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
+                           link.mobility == "toe_ip_hinge") {
+                    const std::string tag=side==0 ? "_L" : "_R";
+                    const int big=sourceStructure("FootMeta1"+tag), little=sourceStructure("FootMeta5"+tag);
+                    const int middle=sourceStructure("FootMeta3"+tag), heel=sourceStructure("Cal"+tag);
+                    const int tibia=sourceStructure("Tibia"+tag), talus=sourceStructure("Tal"+tag);
+                    if (big<0 || little<0 || middle<0 || heel<0 || tibia<0 || talus<0) { error="Missing foot frame"; return false; }
+                    const Vec3 forward=normalized(center(middle)-center(heel));
+                    Vec3 dorsal=normalized(cross(center(big)-center(little),forward));
+                    if (dot(dorsal,center(tibia)-center(talus))<0) dorsal=dorsal*-1.0;
+                    axis=normalized(cross(forward,dorsal*-1.0));
+                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
+                    const Vec3 distal=normalized(down-axis*dot(down,axis));
+                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
                     axis = elbowAxes_[side].direction;
                     current = elbowAxes_[side].sourceAngleDegrees * toRadians;
-                } else if (link.mobility == "elbow_hinge" || link.mobility == "finger_pip_hinge" ||
-                           link.mobility == "finger_dip_hinge" || link.mobility == "thumb_ip_hinge" ||
-                           link.mobility == "toe_ip_hinge") {
+                } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
                 }
                 if (length(axis) < 1e-5) {
@@ -711,18 +771,23 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 current = std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
                 JointRigidTransform frame; frame.translation = pivot;
                 const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));
-                auto joint = CalibratedRotationalJoint::create(parentFrame,frame,
-                    {{axis,bounds->extension*toRadians,bounds->flexion*toRadians}});
-                if (!joint || !joint->setAngles({current})) { error = "Invalid source joint " + childName; return false; }
+                std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
+                bindAngles={current};
+                if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
+                    // Internal/external rotation around the femoral shaft.
+                    const Vec3 shaft=normalized(pivot-kneeAxes_[side].origin)*(side==0 ? -1.0 : 1.0);
+                    axes.push_back({shaft,-45*toRadians,45*toRadians}); bindAngles.push_back(0);
+                }
+                auto joint = CalibratedRotationalJoint::create(parentFrame,frame,axes);
+                if (!joint || !joint->setAngles(bindAngles)) { error = "Invalid source joint " + childName; return false; }
                 body = rig.addJoint(mapping[parent],*joint);
-                bindAngle = current;
             } else {
                 // No numeric bend range is specified for gliding/compound
                 // joints; attach them rather than inventing medical angles.
                 body = rig.addFixed(mapping[parent],{});
             }
             if (!body) { error = "Unable to attach source joint " + childName; return false; }
-            if (bounds || coupledPatella) bindPose.push_back({*body,{bindAngle}});
+            if (bounds || coupledPatella) bindPose.push_back({*body,bindAngles});
             mapping[child] = *body; visited[child] = true; queue.push_back(child);
         }
     }
@@ -755,6 +820,26 @@ std::optional<double> SkeletonModel::referenceBend(std::size_t link) const {
     const auto* joint = sourceRig_->joint(child);
     if (!joint || joint->angles().empty()) return std::nullopt;
     return joint->angles()[0] * (180.0 / 3.14159265358979323846);
+}
+
+std::optional<double> SkeletonModel::referenceHipRotation(std::size_t link) const {
+    if (!sourceRig_ || link>=sourceLinks_.size() || sourceLinks_[link].mobility!="hip_ball_socket") return std::nullopt;
+    const auto& edge=sourceLinks_[link];
+    const auto first=sourceBodies_[edge.first],second=sourceBodies_[edge.second];
+    const auto child=sourceRig_->parent(second)==first ? second : sourceRig_->parent(first)==second ? first : 0;
+    const auto* joint=sourceRig_->joint(child);
+    if (!joint || joint->angles().size()!=2) return std::nullopt;
+    return joint->angles()[1]*(180.0/3.14159265358979323846);
+}
+
+bool SkeletonModel::setReferenceHipRotation(std::size_t link, double degrees) {
+    if (!std::isfinite(degrees) || !referenceHipRotation(link)) return false;
+    const auto& edge=sourceLinks_[link];
+    const auto first=sourceBodies_[edge.first],second=sourceBodies_[edge.second];
+    const auto child=sourceRig_->parent(second)==first ? second : first;
+    auto angles=sourceRig_->joint(child)->angles();
+    angles[1]=std::clamp(degrees,-45.0,45.0)*(3.14159265358979323846/180.0);
+    return setSourcePose({{child,angles}});
 }
 
 bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {

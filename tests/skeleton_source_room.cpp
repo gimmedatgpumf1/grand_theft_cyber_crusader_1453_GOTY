@@ -191,12 +191,12 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
             sourceGeometryCorrect = sourceGeometryCorrect && matchesSource(batch, *checkedFemale, batch.objectId - 8001);
         }
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
-        if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleDots = true;
-        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleDots = true;
-        if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleJoints = true;
-        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleJoints = true;
-        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
-        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) maleDots = true;
+        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) femaleDots = true;
+        if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) maleJoints = true;
+        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) femaleJoints = true;
+        if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
@@ -243,7 +243,7 @@ int main() {
     SkeletonRoom room;
     if (!room.load(".", error)) { std::printf("room load failed: %s\n", error.c_str()); return 1; }
     // This regression checks original source and line geometry.
-    if (!room.male().restoreSourcePose() || !room.female().restoreSourcePose()) return 1;
+    if (!room.restoreOriginalPose()) return 1;
     if (room.male().sourceStructures().size() != 182 || room.female().sourceStructures().size() != 182 ||
         room.male().sourceLinks().size() != 209 || room.female().sourceLinks().size() != 209) {
         std::puts("test room source structures or links missing"); return 1;
@@ -263,14 +263,14 @@ int main() {
     const auto firstFemale = female, firstMale = male;
     room.render(frame, view, 1.75);
     const double c = std::cos(3.14159265), s = std::sin(3.14159265);
-    const std::array<double, 16> placement{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0.52, 0, 0, 1};
+    const std::array<double, 16> placement{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0.95, 0, 0, 1};
     bool unposed = true;
     for (const auto& matrix : firstFemale) {
         for (std::size_t i = 0; i < matrix.size(); ++i) {
             if (std::abs(matrix[i] - placement[i]) > 1e-12) unposed = false;
         }
     }
-    const std::array<double, 16> malePlacement{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.52, 0, 0, 1};
+    const std::array<double, 16> malePlacement{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.95, 0, 0, 1};
     for (const auto& matrix : firstMale)
         for (std::size_t i = 0; i < matrix.size(); ++i)
             if (std::abs(matrix[i] - malePlacement[i]) > 1e-12) unposed = false;

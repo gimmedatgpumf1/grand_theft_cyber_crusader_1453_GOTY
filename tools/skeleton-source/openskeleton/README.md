@@ -187,7 +187,7 @@ axis. NumPy and SciPy are required. The generated `.elbows` and
 `-elbow-fit.json` files are loaded by the room and audited by
 `tests/openskeleton_elbow_fit.py`. They are estimates, not measurements of
 individual functional axes or clinical proof. The original pose remains
-unchanged; the elbow V-view balls use the estimated pivots.
+available using `B`; the elbow V-view balls use the estimated pivots.
 
 To reproduce full-resolution source triangle audits, install NumPy and
 `python-fcl`, then from the repository root:
@@ -200,8 +200,6 @@ c++ -std=c++17 -O2 -pthread -Isrc -Inative tests/skeleton_elbow_sweep.cpp native
 python3 tests/openskeleton_elbow_collision.py
 ```
 
-The arm/straight-knee candidate is not enabled by default. Extension surface
-pairs improved, but radius gaps remain excessive, other elbow angles still
-intersect, and feet and other joints are not verified for a T-pose. These are
-surface-intersection checks, not cartilage, solid-containment, functional ROM
-or anatomical-motion validation. See `../JOINT_MOBILITY.md` for details.
+The room now starts in a rigid-joint T-pose; the tests above are optional
+surface-intersection checks, not functional ROM or anatomical-motion
+validation. See `../JOINT_MOBILITY.md` for the joint directions and limits.

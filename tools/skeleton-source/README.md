@@ -13,8 +13,8 @@ structures with rigid transforms. Each source structure is simplified separately
 into an overall budget near 180,000 triangles. No bones are mirrored, scaled
 or repositioned individually. A single coordinate conversion and translation
 places each body in the game. The registered pose is the unscaled bind pose;
-the room retains it by default while the remaining articulation and T-pose
-are investigated.
+the room starts in a straight-arm reference T-pose made from rigid joint
+rotations and a whole-body floor translation, without scaling the source bones.
 
 Both source files contain *registered* meshes, not necessarily the original CT
 patient pose. Our source-fidelity tests check names, face indices and the
@@ -46,8 +46,9 @@ Press V to replace both skeleton meshes with the simplified view;
 press V again to return to the mesh view. Joint keys act on both subjects:
 `1`–`5` bend each finger, `6`–`0` bend each toe, `Q` shoulders, `E` elbows,
 `F` wrists, `G` hips, `H` knees, `J` ankles, `K` spine, `L` jaw/neck,
-`Z` shoulder girdle and `X` thumb base. Hold Shift to reverse; `R` restores the source pose.
-The angles, frames and known collision limitations are described in
+`Z` shoulder girdle, `X` thumb base and `N` hip rotation. Hold Shift to reverse;
+`R` restores the T-pose and `B` restores the original registered source pose.
+The approximate reference angles and frames are described in
 [JOINT_MOBILITY.md](JOINT_MOBILITY.md); these controls are not medical validation.
 Pale lines approximate the supplied
 bone shapes, pale dots represent the 24 cervical, thoracic and lumbar vertebrae,

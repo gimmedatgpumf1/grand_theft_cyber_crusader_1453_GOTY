@@ -115,6 +115,8 @@ public:
     // source geometry supplies approximate pivots; neutral is estimated.
     bool installReferenceRig(std::string& error);
     bool restoreSourcePose();
+    std::optional<double> referenceHipRotation(std::size_t link) const;
+    bool setReferenceHipRotation(std::size_t link, double degrees);
     bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
     // Drive a supplied, neutral-calibrated source joint's first coordinate in degrees.
     // The rig's first coordinate is the documented primary motion from anatomical

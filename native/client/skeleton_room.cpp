@@ -18,6 +18,27 @@ constexpr double kRoomHalf = 6.0;
 constexpr double kRoomHeight = 3.0;
 constexpr double kTile = 1.0;
 
+Vec3 structureCenter(const SkeletonModel& model, int index) {
+    if (index<0) return {};
+    const auto& part=model.sourceStructures()[static_cast<std::size_t>(index)];
+    const auto& points=model.bones()[part.group].points; Vec3 result;
+    for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) result+=points[i];
+    return part.pointCount ? result/static_cast<double>(part.pointCount) : result;
+}
+Vec3 transformed(const std::array<double,16>& m, Vec3 p) {
+    return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
+            m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
+}
+double minimumY(const SkeletonModel& model) {
+    const auto matrices=model.sourceMatrices({},0); double result=1e9;
+    for (std::size_t i=0;i<matrices.size();++i) {
+        const auto& part=model.sourceStructures()[i]; const auto& points=model.bones()[part.group].points;
+        for (std::size_t j=part.firstPoint;j<part.firstPoint+part.pointCount;++j)
+            result=std::min(result,transformed(matrices[i],points[j]).y);
+    }
+    return result;
+}
+
 void drawFloor(Rasterizer& rasterizer, const Camera& camera) {
     Material dark;
     dark.color = colorHex("#26332c");
@@ -96,10 +117,9 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
     if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
     if (!maleLines_.bind(male_, error) || !femaleLines_.bind(female_, error)) return false;
-    // Preserve the source pose: the candidate arm/leg pose and the fitted
-    // joints are not yet a validated complete biological T-pose.
-    error_.clear();
     ready_ = true;
+    if (!restoreReferencePose()) { ready_ = false; error = "Unable to pose skeletons"; return false; }
+    error_.clear();
     return true;
 }
 
@@ -136,6 +156,11 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees) {
             else if (key=='l') match=kind=="temporomandibular" || kind=="atlanto_occipital" || kind=="atlanto_axial";
             else if (key=='z') match=kind=="sternoclavicular" || kind=="acromioclavicular";
             else if (key=='x') match=kind=="thumb_cmc_saddle";
+            if (key=='n' && kind=="hip_ball_socket") {
+                const auto rotation=model->referenceHipRotation(i);
+                if (rotation && model->setReferenceHipRotation(i,*rotation+degrees)) changed=true;
+                continue;
+            }
             if (!match) continue;
             const auto angle=model->referenceBend(i);
             if (angle && model->setReferenceBend(i,*angle+degrees)) changed=true;
@@ -145,7 +170,57 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees) {
 }
 
 bool SkeletonRoom::restoreReferencePose() {
-    return ready_ && male_.restoreSourcePose() && female_.restoreSourcePose();
+    if (!ready_) return false;
+    for (SkeletonModel* model : {&male_,&female_}) {
+        if (!model->restoreSourcePose()) return false;
+        for (std::size_t i=0;i<model->sourceLinks().size();++i) {
+            const auto& kind=model->sourceLinks()[i].mobility;
+            if (!model->referenceBend(i)) continue;
+            double target=0;
+            if (kind=="shoulder_ball_socket") target=90;
+            else if (kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
+                     kind!="wrist_condyloid" && kind!="thumb_mcp" && kind!="thumb_ip_hinge" &&
+                     kind!="finger_mcp_condyloid" && kind!="finger_pip_hinge" && kind!="finger_dip_hinge" &&
+                     kind!="great_toe_mtp" && kind!="lesser_toe_mtp" && kind!="toe_ip_hinge") continue;
+            if (!model->setReferenceBend(i,target)) return false;
+        }
+    }
+    // Turn each foot forward by rotating the leg about its own femoral shaft,
+    // bounded by the approximate clinical hip rotation range.
+    for (SkeletonModel* model : {&male_,&female_}) for (char side : {'L','R'}) {
+        const std::string suffix=std::string("_")+side;
+        const int heel=model->sourceStructure("Cal"+suffix), met=model->sourceStructure("FootMeta3"+suffix);
+        const int femur=model->bone(side=='L' ? "femur_l" : "femur_r");
+        if (heel<0 || met<0 || femur<0) return false;
+        const auto matrices=model->sourceMatrices({},0);
+        const Vec3 forward=normalized(transformed(matrices[met],structureCenter(*model,met))-
+                                      transformed(matrices[heel],structureCenter(*model,heel)));
+        Vec3 shaft=normalized(model->bones()[femur].pivot-model->kneeAxes()[side=='L' ? 0 : 1].origin);
+        shaft=shaft*(side=='L' ? -1.0 : 1.0);
+        const Vec3 target{0,0,1};
+        const double angle=std::atan2(dot(shaft,cross(forward,target)),
+            dot(forward,target)-dot(shaft,forward)*dot(shaft,target))*(180.0/3.14159265358979323846);
+        bool found=false;
+        for (std::size_t i=0;i<model->sourceLinks().size();++i) {
+            const auto& link=model->sourceLinks()[i];
+            if (link.mobility=="hip_ball_socket" &&
+                (model->sourceStructures()[link.first].name=="Femur"+suffix ||
+                 model->sourceStructures()[link.second].name=="Femur"+suffix)) {
+                if (!model->setReferenceHipRotation(i,angle)) return false;
+                found=true; break;
+            }
+        }
+        if (!found) return false;
+    }
+    // Reposition each whole body onto the floor; no geometry is scaled.
+    maleFloor_=-minimumY(male_); femaleFloor_=-minimumY(female_);
+    return true;
+}
+
+bool SkeletonRoom::restoreOriginalPose() {
+    if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
+    maleFloor_=femaleFloor_=0;
+    return true;
 }
 
 void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
@@ -167,8 +242,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-                femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
+                maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
+                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -187,8 +262,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
         raster.setCamera(camera);
         drawFloor(raster, camera); drawWalls(raster, camera);
-        maleLines_.draw(raster, {-0.52, 0, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-        femaleLines_.draw(raster, {0.52, 0, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
+        maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
+        femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
         frame = raster.finish();
         frame.logicalUi();
         return;
@@ -261,8 +336,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         const bool poseMoved = poseChanged;
         if (poseMoved) {
             // The OpenSkeleton source faces the opposite way to the former atlas.
-            cachedMaleMatrices_ = male_.sourceMatrices({-0.52, 0, 0}, 0.0);
-            cachedFemaleMatrices_ = female_.sourceMatrices({0.52, 0, 0}, 3.14159265);
+            cachedMaleMatrices_ = male_.sourceMatrices({-0.95, maleFloor_, 0}, 0.0);
+            cachedFemaleMatrices_ = female_.sourceMatrices({0.95, femaleFloor_, 0}, 3.14159265);
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
@@ -303,8 +378,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     drawWalls(room, camera);
     Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
-    std::thread worker([&] { female_.draw(second, camera, {0.52, 0, 0}, 3.14159265); });
-    male_.draw(room, camera, {-0.52, 0, 0}, 0.0);
+    std::thread worker([&] { female_.draw(second, camera, {0.95, femaleFloor_, 0}, 3.14159265); });
+    male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
     frame = room.finish();

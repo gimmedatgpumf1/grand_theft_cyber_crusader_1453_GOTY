@@ -510,6 +510,8 @@ private:
             room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0);
         } else if (action == RoomFreecam::Action::RestorePose) {
             room_.restoreReferencePose();
+        } else if (action == RoomFreecam::Action::RestoreOriginal) {
+            room_.restoreOriginalPose();
         }
     }
 

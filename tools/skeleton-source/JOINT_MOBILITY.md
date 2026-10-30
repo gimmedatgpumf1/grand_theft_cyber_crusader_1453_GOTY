@@ -119,9 +119,11 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 ## Current room implementation and limitations
 
 The room installs a source-bone tree for both subjects and retains the original
-source pose by default without scaling. A tested candidate straightens the
-arms and knees but is not a validated complete T-pose and is not enabled by
-default. Meshes use rigid bone matrices; V-view vertices are associated
+unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
+90° abduction, elbows and knees straight, ankles and wrists straightened,
+fingers and toes extended, and feet aimed forward with bounded hip rotation.
+Each whole body is translated down to the floor. `B` returns the original source
+pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion.
 The simplified palm, foot, rib cage and shoulder surfaces deform between their
@@ -162,15 +164,17 @@ intersected at straight extension. See `openskeleton/13-audit-knee-straight.py`.
 The fixed-axis knee approximation still has known intersections at other
 angles (see `09-audit-knee-motion.py`).
 
-Finger neutral angles are estimated from source geometry. Hip and knee use
-earlier shape-derived centres/axes; other pivots use sampled closest surfaces
-only after the anatomical graph has selected the relationship. Neck and most
-other initial angles are assumed zero. Values clamped to population ranges do
-**not** establish actual subject neutral, individual limits, functional axes or
-safe contact. The source feet are plantarflexed; a trial of straightening them
-about a contact-derived ankle axis produced multiple bone intersections and
-was not installed. A basic alignment or endpoint test is not clinical
-verification of a complete biological T-pose.
+Finger flexion axes follow the local palm plane and proximal bone direction,
+so positive flexion curls toward the palm rather than alternating by digit.
+Toe axes follow the local foot plane so positive flexion moves toward the sole.
+Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
+foot direction relative to the shin. Hip flexion lifts the thigh forward and
+hip axial rotation has a separate approximate ±45° range. These directions
+are tested on both sides of both subjects in `tests/skeleton_t_pose.cpp`.
+Other pivots use sampled closest surfaces only after the anatomical graph has
+selected the relationship. Neck and most other initial angles are assumed zero.
+The values and frames are population and geometry-based approximations, not
+measurements of the individual subjects' functional axes or clinical limits.
 
 Extra single-axis approximations include jaw rotation without translation,
 atlanto-occipital nodding, atlanto-axial rotation, shoulder-girdle elevation,
