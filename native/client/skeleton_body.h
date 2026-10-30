@@ -176,6 +176,22 @@ public:
     // neutral (shoulders use abduction, elbows and knees use flexion); this method cannot establish that calibration from a CT pose.
     // Returns false if the rig or a cited bend range is unavailable.
     bool setReferenceBend(std::size_t link, double degrees);
+    // Preserve an individual toe's source frame when straightening it would
+    // push its proximal bone through the standing sole.
+    bool setReferenceToeAlignment(std::size_t link, bool enabled) {
+        if (!sourceRig_ || link>=sourceLinks_.size()) return false;
+        const auto& e=sourceLinks_[link];
+        if (e.mobility!="great_toe_mtp" && e.mobility!="lesser_toe_mtp" && e.mobility!="toe_ip_hinge") return false;
+        const auto a=sourceBodies_[e.first],b=sourceBodies_[e.second];
+        const auto body=sourceRig_->parent(b)==a ? b : (sourceRig_->parent(a)==b ? a : 0);
+        const auto* joint=sourceRig_->joint(body);
+        if (!joint || body>=neutralAlignments_.size() || body>=disabledAlignments_.size() ||
+            joint->angles().size()<2 || neutralAlignments_[body]<0) return false;
+        auto angles=joint->angles(); angles[1]=enabled ? neutralAlignments_[body] : 0;
+        if (!setSourcePose({{body,angles}})) return false;
+        disabledAlignments_[body]=!enabled;
+        return true;
+    }
     std::optional<double> referenceBend(std::size_t link) const;
     std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
@@ -193,6 +209,7 @@ private:
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;
     std::vector<std::size_t> sourceBodies_;
     std::vector<double> neutralAlignments_;
+    std::vector<bool> disabledAlignments_;
     std::vector<AnatomicalKinematicTree::PoseUpdate> referenceBindPose_;
     std::uint64_t sourcePoseRevision_ = 0;
     std::string name_;

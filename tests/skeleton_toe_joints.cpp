@@ -89,7 +89,9 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
             Vec3 dorsal=normalized(cross(posed(model,before,"FootMeta1"+suffix)-posed(model,before,"FootMeta5"+suffix),forward));
             if (dot(dorsal,posed(model,before,"Tibia"+suffix)-posed(model,before,"Tal"+suffix))<0) dorsal=dorsal*-1.0;
             const Vec3 start=posed(model,before,tip), startProx=posed(model,before,prox);
-            assert(std::abs(bottom(model,before,tip)-bottom(model,before,"Cal"+suffix))<0.001);
+            assert(std::abs(bottom(model,before,tip)-bottom(model,before,"Cal"+suffix))<0.0002);
+            for (const auto& part : {prox, digit==1 ? tip : mid, tip})
+                assert(bottom(model,before,part)>=bottom(model,before,"Cal"+suffix)-0.00001);
             referenceMaximum=std::max(referenceMaximum,std::acos(std::clamp(dot(normalized(start-startProx),forward),-1.0,1.0))*180/3.141592653589793);
             const auto beforeLines=lineVertices(lines,model);
             assert(model.setReferenceBend(index,rest+increment)); const auto after=model.sourceMatrices({},0);

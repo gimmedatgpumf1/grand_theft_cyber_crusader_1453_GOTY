@@ -34,18 +34,24 @@ rotation at the sacrum/L5 link to put their centres above one another; the
 remaining cervical, thoracic and lumbar centres are each within 10 mm of that
 vertical line on these two models. Separate source-derived cervical and head
 rotations place C2 above C7 and the head above C1, while keeping the face forward
-and retaining the source spine's front-to-back curvature. This is a geometric
+and retaining the source spine's front-to-back curvature. Forward yaw uses the
+bilateral posterior/superior jaw points as an estimated condylar axis rather
+than the jaw/skull centroid, which is affected by facial asymmetry. The jaw is
+parented to the skull and rotates around that estimated axis; the hinge is a
+mesh-derived approximation, not an expert-annotated TMJ landmark. This is a geometric
 straightening, not a clinical diagnosis or individual spinal alignment measurement. The original
 source pose remains restorable; no bone is scaled or mirrored.
 
 In the registered source, the maximum angle between proximal-to-distal toe
 centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
 (female); with the toes resting toward the sole, the respective maxima are
-14.48° and 14.50°. Each distal toe reaches within 1 mm of the heel support
-plane; the right female little toe's proximal bone extends about 1.3 mm below
-it. These are geometric direction measurements, not clinical joint angles.
+14.48° and 14.50°. Each distal toe reaches within 0.2 mm of the heel support
+plane, and all toe phalanges remain above it. The earlier pose forced the right
+female little toe's proximal bone below the sole when lowering its tip; keeping
+its original joint frames avoids that without scaling or moving the bones away
+from their joints. These are geometric direction measurements, not clinical joint angles.
 `tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
-toe-tip support, flexion toward the sole, range limits, neighbour
+toe-tip support, every phalanx above the sole, flexion toward the sole, range limits, neighbour
 isolation, V-view geometry and source restoration. Headless Vulkan tests also
 exercise the big toe and all three joints of a lesser toe in mesh and V view;
 the feet are raised for the individual plantar-flexion render checks.
@@ -74,7 +80,8 @@ hip centre and knee axis are geometric fits, not clinical measurements.
 
 ### Mirrored reference motion
 
-`tests/skeleton_t_pose.cpp` checks mirrored elbow, grouped-forearm and hip
+`tests/skeleton_t_pose.cpp` checks the jaw follows the skull and remains attached
+at the estimated hinge while opening. It checks mirrored elbow, grouped-forearm and hip
 rotation matrices at several angles on both subjects, verifies palms face forward,
 and checks bilateral knee, ankle, wrist and toe movement directions. The knee
 and ankle axes remain individual estimates from each CT geometry, not exact

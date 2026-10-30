@@ -85,7 +85,34 @@ inline bool restToesOnSole(SkeletonModel& model) {
                 if (!lift && closest<1e8) { angle=std::min(angle,closest); found=true; }
             }
             if (!found) angle=0;
-            if (!model.setReferenceBend(link,angle*180.0/pi)) return false;
+            if (lift) {
+                // The source toe is already bent. Forcing every phalanx into
+                // a straight reference frame can push its base below the sole.
+                // Retain its registered joint frames instead, then flex it.
+                for (int bone : {prox,mid,tip}) if (bone>=0) {
+                    for (std::size_t j=0;j<model.sourceLinks().size();++j) {
+                        const auto& e=model.sourceLinks()[j];
+                        if (e.second!=static_cast<std::size_t>(bone) || !model.referenceBend(j)) continue;
+                        if (!model.setReferenceBend(j,0) || !model.setReferenceToeAlignment(j,false)) return false;
+                        break;
+                    }
+                }
+                const auto bottom=[&]() {
+                    const auto pose=model.sourceMatrices({},0); double y=1e9;
+                    for (int bone : {prox,mid,tip}) if (bone>=0) {
+                        const auto [p,n]=points(bone);
+                        for (std::size_t j=0;j<n;++j) y=std::min(y,point(pose[bone],p[j]).y);
+                    }
+                    return y;
+                };
+                const double before=bottom();
+                if (before<ground) {
+                    if (!model.setReferenceBend(link,-5)) return false;
+                    const double rise=bottom()-before;
+                    const double degrees=rise>1e-8 ? std::clamp(-5*(ground-before+0.00005)/rise,range->extension,0.0) : 0;
+                    if (!model.setReferenceBend(link,degrees)) return false;
+                }
+            } else if (!model.setReferenceBend(link,angle*180.0/pi)) return false;
             // If the proximal bone contacted first, use the remaining toe
             // hinges to lower the tip rather than leaving it raised.
             const auto tipHeight=[&]() {
@@ -112,16 +139,6 @@ inline bool restToesOnSole(SkeletonModel& model) {
                 // Resting flexion stays gentle; the controls retain the full ROM.
                 const double target=drop>1e-8 ? std::clamp(5*(before-ground)/drop,0.0,std::min(20.0,bound->flexion)) : 0.0;
                 if (!model.setReferenceBend(ip,target)) return false;
-            }
-            // A registered small-toe proximal bone may already touch first.
-            // After using both hinges, bring the tip closer with the MTP joint.
-            if (lift && tipHeight()>ground+0.001) {
-                const double initial=*model.referenceBend(link), before=tipHeight();
-                const double trial=std::min(0.0,initial+5.0);
-                if (!model.setReferenceBend(link,trial)) return false;
-                const double drop=before-tipHeight();
-                const double target=drop>1e-8 ? std::min(0.0,initial+(trial-initial)*(before-ground)/drop) : initial;
-                if (!model.setReferenceBend(link,target)) return false;
             }
         }
     }

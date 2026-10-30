@@ -139,7 +139,7 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     sourceLinks_.clear();
     sourceRig_.reset();
     sourceBodies_.clear();
-    neutralAlignments_.clear();
+    neutralAlignments_.clear(); disabledAlignments_.clear();
     hasKneeAxes_ = false;
     kneeAxes_ = {};
     hasElbowAxes_ = false;
@@ -552,7 +552,7 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     sourceRig_ = std::move(rig);
     sourceBodies_ = sourceBodies;
     referenceBindPose_.clear();
-    neutralAlignments_.clear();
+    neutralAlignments_.clear(); disabledAlignments_.clear();
     ++sourcePoseRevision_;
     return true;
 }
@@ -561,11 +561,9 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     if (sourceLinks_.empty() || sourceStructures_.empty()) {
         error = "Cannot install a source rig without anatomical links"; return false;
     }
-    const int root = sourceStructure("Sacrum");
-    if (root < 0) { error = "Skeleton is missing sacrum"; return false; }
+    const int root = sourceStructure("Sacrum"); if (root < 0) { error = "Skeleton is missing sacrum"; return false; }
     const std::size_t count = sourceStructures_.size();
-    const std::size_t missing = static_cast<std::size_t>(-1);
-    std::vector<std::size_t> mapping(count, missing), queue;
+    const std::size_t missing = static_cast<std::size_t>(-1); std::vector<std::size_t> mapping(count, missing), queue;
     std::vector<bool> visited(count);
     FingerReferenceFrames fingerFrames(count);
     std::vector<double> neutralAlignments(count+1,-1.0);
@@ -633,7 +631,8 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 if (!joint) { error="Invalid patellar joint " + childName; return false; }
                 body=rig.addJoint(mapping[parent],*joint); coupledPatella=true;
             } else if (bounds) {
-                Vec3 pivot = contact(parent, child);
+                Vec3 pivot = contact(parent, child); const auto jawFrame=link.mobility=="temporomandibular" ? sourceJawHinge(*this) : std::nullopt;
+                if (link.mobility=="temporomandibular") { if (!jawFrame) { error="Missing jaw hinge"; return false; } pivot=jawFrame->pivot; }
                 const int side = suffix(childName);
                 if (link.mobility == "shoulder_ball_socket") {
                     const int humerus = bone(side == 0 ? "humerus_l" : "humerus_r");
@@ -698,7 +697,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 double current = 0;
                 if (link.mobility == "atlanto_occipital" || link.mobility == "intervertebral" ||
                     link.mobility == "temporomandibular") {
-                    axis = {1,0,0};
+                    axis = jawFrame ? jawFrame->axis : Vec3{1,0,0};
                     if (link.mobility=="intervertebral" && parentName=="Sacrum" && childName=="L5") {
                         const int neck=sourceStructure("C7");
                         if (neck<0) { error="Missing spine reference"; return false; }
@@ -831,10 +830,11 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     rig.captureBindPose();
     if (!setSourceRig(std::move(rig),mapping,error)) return false;
     referenceBindPose_ = std::move(bindPose);
-    neutralAlignments_ = std::move(neutralAlignments);
+    neutralAlignments_ = std::move(neutralAlignments); disabledAlignments_.assign(neutralAlignments_.size(),false);
     return true;
 }
 bool SkeletonModel::restoreSourcePose() {
+    std::fill(disabledAlignments_.begin(),disabledAlignments_.end(),false);
     return !referenceBindPose_.empty() && setSourcePose(referenceBindPose_);
 }
 bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates) {
@@ -871,7 +871,7 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
     auto angles = joint->angles();
     angles[0] = *bounded * radiansPerDegree;
-    if (body<neutralAlignments_.size() && neutralAlignments_[body]>=0 && angles.size()>1)
+    if (body<neutralAlignments_.size() && neutralAlignments_[body]>=0 && !disabledAlignments_[body] && angles.size()>1)
         angles[relationship.mobility=="hip_ball_socket" ? 3 : 1]=neutralAlignments_[body];
     std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};
     if (relationship.mobility == "elbow_hinge" || relationship.mobility == "wrist_condyloid") {

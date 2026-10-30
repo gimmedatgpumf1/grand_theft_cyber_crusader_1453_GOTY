@@ -1,6 +1,7 @@
 // Actual room skeletons: reference pose, controls, joint direction and rigid geometry.
 #include "client/skeleton_room.h"
 #include "client/skeleton_limb_frame.h"
+#include "client/skeleton_jaw_frame.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -54,7 +55,10 @@ static void verifyPose(SkeletonModel& model) {
     assert(std::abs(posed(model,m,"C2").x-neck.x)<1e-7);
     assert(std::abs(posed(model,m,"Head").x-posed(model,m,"C1").x)<1e-7);
     const Vec3 face=posed(model,m,"Jaw")-posed(model,m,"Head");
-    assert(face.z>0 && std::abs(face.x)<1e-7); // face forward without nodding
+    const auto hinge=sourceJawHinge(model); assert(hinge);
+    const auto& head=m[model.sourceStructure("Head")];
+    const Vec3 lateral=point(head,hinge->pivot+hinge->axis)-point(head,hinge->pivot);
+    assert(face.z>0 && std::abs(lateral.z)<1e-7); // condylar axis transverse to forward
     for (const char* vertebra : {"L5","L4","L3","L2","L1","T12","T11","T10","T9","T8","T7",
                                  "T6","T5","T4","T3","T2","T1","C7","C6","C5","C4","C3","C2","C1"})
         assert(std::abs(posed(model,m,vertebra).x-sacrum.x)<0.01);
@@ -215,6 +219,26 @@ static void verifyDirections(SkeletonRoom& room, SkeletonModel& model, const cha
     }
     std::printf("%s bilateral elbows, hips, knees, ankles, wrists, fingers and toes: directions PASS\n",subject);
 }
+static void verifyJaw(SkeletonRoom& room, SkeletonModel& model) {
+    assert(room.restoreReferencePose()); const auto hinge=sourceJawHinge(model); assert(hinge);
+    const auto jaw=link(model,"Jaw","temporomandibular"), head=link(model,"Head","atlanto_occipital");
+    const int h=model.sourceStructure("Head"), j=model.sourceStructure("Jaw");
+    auto pose=model.sourceMatrices({},0);
+    for (int k=0;k<16;++k) assert(std::abs(pose[h][k]-pose[j][k])<1e-7);
+    assert(model.setReferenceBend(head,5)); pose=model.sourceMatrices({},0);
+    for (int k=0;k<16;++k) assert(std::abs(pose[h][k]-pose[j][k])<1e-7); // jaw follows skull
+    const auto headBefore=pose[h]; const Vec3 jawBefore=posed(model,pose,"Jaw");
+    assert(model.setReferenceBend(jaw,15)); pose=model.sourceMatrices({},0);
+    for (int k=0;k<16;++k) assert(std::abs(pose[h][k]-headBefore[k])<1e-7);
+    for (double t : {-0.04,0.0,0.04}) {
+        const Vec3 anchor=hinge->pivot+hinge->axis*t;
+        assert(length(point(pose[h],anchor)-point(pose[j],anchor))<1e-7);
+    }
+    assert(posed(model,pose,"Jaw").y<jawBefore.y); // opening, not a tooth-pivot swing
+    assert(model.setReferenceBend(jaw,0)); pose=model.sourceMatrices({},0);
+    for (int k=0;k<16;++k) assert(std::abs(pose[h][k]-pose[j][k])<1e-7);
+    assert(room.restoreReferencePose());
+}
 static double lowMale,lowFemale;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     lowMale=lowFemale=1e9;
@@ -228,6 +252,7 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
 int main() {
     SkeletonRoom room; std::string error; assert(room.load(".",error));
     verifyPose(room.male()); verifyPose(room.female());
+    verifyJaw(room,room.male()); verifyJaw(room,room.female());
     setGpuRenderer(&capture); ViewState view; view.gpu=true; view.width=640; view.height=480;
     NativeFrame frame; room.render(frame,view,0); setGpuRenderer(nullptr);
     assert(std::abs(lowMale)<1e-5 && std::abs(lowFemale)<1e-5);

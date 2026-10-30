@@ -131,7 +131,10 @@ Shift reverses each control. Abduction is +45° and adduction −30° in the
 AAOS-based population reference, not an individual measurement.
 The source trunk is rotated laterally at the sacrum/L5 link so C7 is above
 the sacrum; the source's front-to-back spinal curves remain intact. Head yaw
-is aligned forward without adding a nod. These are geometric reference-pose
+is aligned using the jaw's estimated bilateral condylar axis, rather than the
+asymmetric jaw-to-skull centroid, without adding a nod. The jaw remains a
+child of the skull and opens about an estimated bilateral condylar hinge;
+its opening coordinate stays independent of skull movement. These are geometric reference-pose
 alignments, not measurements of individual neutral joint angles. Each whole
 body is translated down to the floor. Heel, medial sesamoid and lateral
 metatarsal support points define each sole; the pelvis is levelled against
@@ -191,11 +194,11 @@ Toe reference directions use the actual neighbouring joint locations, rather
 than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
 DIP reference alignment is separate from bounded toe flexion; positive flexion
 moves toward the sole. The resting pose uses each toe's source vertices and
-joint pivots to select bounded flexion toward the heel's support plane. Where
-a proximal bone contacts first, the other toe hinges can also bend. Resting IP
-flexion is capped at 20° (the controls still allow the full range); the female
-right little toe's proximal surface extends about 1.3 mm below the heel plane. These are geometric
-pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
+joint pivots to select bounded flexion toward the heel's support plane. If
+straightening the source phalanges would put a toe below the sole, its source
+joint frames are retained and the bounded hinges are flexed instead. Resting IP
+flexion is capped at 20° (the controls still allow the full range). These are
+geometric pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
 mesh and V view, and the source pose is restorable.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
