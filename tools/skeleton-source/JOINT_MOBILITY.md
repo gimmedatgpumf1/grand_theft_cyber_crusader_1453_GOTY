@@ -148,6 +148,14 @@ CT-surface collision. Rib proxies are split along the source-derived arc instead
 of filling the space inside each curved rib. Fixed tree structures share rigid
 bodies; each radius/ulna pair also shares a compound body, as in the existing
 grouped forearm model, so individual radioulnar rotation is not simulated.
+Linked carpal groups in each palm likewise share a rigid compound body rather
+than simulating individual carpal glides. Thumb and finger bones remain separate
+hinged bodies with their own collision proxies and bounded angular motion. A
+post-substep correction keeps their hinge anchors together during impacts by
+moving the physics bodies as well as their visible meshes. This correction can
+temporarily push a finger proxy into the floor or another collider during hard
+contact; Bullet resolves contacts in subsequent steps. This is stabilization,
+not a model of hand ligaments or clinically validated hand dynamics.
 Subject-specific rib/sternum and neighbouring-rib links inferred from the
 anatomical graph are retained as limited-displacement positional constraints;
 their attachment locations are approximate, because the source has no cartilage.

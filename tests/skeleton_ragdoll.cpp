@@ -79,6 +79,46 @@ static double maxGap(const SkeletonModel& model,const std::vector<Anchor>& list)
     for (const auto& a:list) gap=std::max(gap,length(point(m[a.a],a.pa)-point(m[a.b],a.pb)));
     return gap;
 }
+
+struct HandAnchors { std::vector<Anchor> carpal, digits; };
+static HandAnchors handAnchors(const SkeletonModel& model, const std::string& side) {
+    const auto pose=model.sourceMatrices({},0); const auto& rig=*model.sourceRig();
+    std::vector<int> index(rig.size(),-1); const auto& ids=model.sourceBodyMap();
+    for (std::size_t i=0;i<ids.size();++i) index[ids[i]]=int(i);
+    HandAnchors result;
+    for (const auto& link:model.sourceLinks()) {
+        const auto& name=model.sourceStructures()[link.first].name;
+        if (link.mobility!="carpal_glide" || name.size()<2 || name.substr(name.size()-2)!=side) continue;
+        result.carpal.push_back({link.first,link.second,inversePoint(pose[link.first],{}),inversePoint(pose[link.second],{})});
+    }
+    for (std::size_t n=1;n<rig.size();++n) {
+        const auto parent=*rig.parent(n); const auto* joint=rig.joint(n);
+        if (!parent || !joint) continue;
+        const auto a=std::size_t(index[parent]), b=std::size_t(index[n]);
+        const auto& name=model.sourceStructures()[b].name;
+        if (name.size()<2 || name.substr(name.size()-2)!=side) continue;
+        if (name.rfind("HandProxP",0)!=0 && name.rfind("HandMidP",0)!=0 &&
+            name.rfind("HandDistP",0)!=0 && name.rfind("HandMeta1",0)!=0) continue;
+        const auto frame=joint_detail::compose(rig.absoluteTransforms()[parent],joint->parentFrame());
+        result.digits.push_back({a,b,inversePoint(pose[a],frame.translation),inversePoint(pose[b],frame.translation)});
+    }
+    return result;
+}
+static Vec3 relativeDirection(const std::vector<std::array<double,16>>& pose, const Anchor& anchor) {
+    const auto& a=pose[anchor.a]; const auto& b=pose[anchor.b];
+    const Vec3 axis=point(b,{1,0,0})-point(b,{});
+    return inversePoint(a,Vec3{a[12],a[13],a[14]}+axis);
+}
+static double handLow(const SkeletonModel& model) {
+    const auto pose=model.sourceMatrices({},0); double low=100;
+    for (std::size_t i=0;i<pose.size();++i) {
+        const auto& part=model.sourceStructures()[i];
+        if (part.name.rfind("Hand",0)!=0) continue;
+        const auto& vertices=model.bones()[part.group].points;
+        for (std::size_t j=0;j<part.pointCount;++j) low=std::min(low,point(pose[i],vertices[part.firstPoint+j]).y);
+    }
+    return low;
+}
 int main() {
     SkeletonRoom room; std::string error; assert(room.load(".",error));
     const auto maleAnchors=anchors(room.male()), femaleAnchors=anchors(room.female());
@@ -87,6 +127,15 @@ int main() {
     assert(maleForearms.size()==2 && femaleForearms.size()==2);
     assert(maleCartilage.size()==20 && femaleCartilage.size()==20);
     const auto maleStart=extent(room.male()), femaleStart=extent(room.female());
+    const HandAnchors hands[]={handAnchors(room.male(),"_L"),handAnchors(room.male(),"_R"),
+                               handAnchors(room.female(),"_L"),handAnchors(room.female(),"_R")};
+    std::vector<std::vector<Vec3>> initialDirections(4);
+    for (int h=0;h<4;++h) {
+        assert(!hands[h].carpal.empty() && hands[h].digits.size()>=14);
+        const auto pose=(h<2 ? room.male() : room.female()).sourceMatrices({},0);
+        for (const auto& digit:hands[h].digits) initialDirections[h].push_back(relativeDirection(pose,digit));
+    }
+    double handGap[4]={},palmGap[4]={},motion[4]={},handFloor[2]={};
     const auto malePose=room.male().sourceMatrices({},0),femalePose=room.female().sourceMatrices({},0);
     assert(maleAnchors.size()>90 && femaleAnchors.size()>90);
     assert(room.toggleRagdoll() && room.ragdollActive());
@@ -98,6 +147,16 @@ int main() {
     double maxSeparation=0, maxForearm=0, maxCartilage=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
     for (int i=0;i<600;++i) {
         room.advanceRagdoll(1.0/120.0);
+        for (int h=0;h<4;++h) {
+            const auto& model=h<2 ? room.male() : room.female();
+            handGap[h]=std::max(handGap[h],maxGap(model,hands[h].digits));
+            palmGap[h]=std::max(palmGap[h],maxGap(model,hands[h].carpal));
+            const auto pose=model.sourceMatrices({},0);
+            for (std::size_t d=0;d<hands[h].digits.size();++d)
+                motion[h]=std::max(motion[h],length(relativeDirection(pose,hands[h].digits[d])-initialDirections[h][d]));
+        }
+        handFloor[0]=std::min(handFloor[0],handLow(room.male())-maleStart.first);
+        handFloor[1]=std::min(handFloor[1],handLow(room.female())-femaleStart.first);
         const auto contacts=room.ragdoll()->contacts();
         selfContacts+=contacts.sameFigure; floorContacts+=contacts.floor;
         if ((i+1)%60==0) {
@@ -111,6 +170,11 @@ int main() {
     std::printf("contacts: floor %d, non-neighbour bones %d; max joint gap %.4f; penetration %.4f / %.4f m\n",
         floorContacts,selfContacts,maxSeparation,maleStart.first-lowestMale,femaleStart.first-lowestFemale);
     std::printf("max forearm separation %.6f m; cartilage displacement %.4f m\n",maxForearm,maxCartilage);
+    for (int h=0;h<4;++h) {
+        std::printf("hand %d: palm %.6f m, digit %.4f m, motion %.3f\n",h,palmGap[h],handGap[h],motion[h]);
+        assert(palmGap[h]<0.0001 && handGap[h]<0.0001 && motion[h]>0.05);
+    }
+    assert(handFloor[0]>-0.02 && handFloor[1]>-0.02);
     assert(maxForearm<0.0001 && maxCartilage<0.012);
     assert(maxSeparation<0.03 && lowestMale>maleStart.first-0.03 && lowestFemale>femaleStart.first-0.03);
     assert(floorContacts>0 && selfContacts>0);

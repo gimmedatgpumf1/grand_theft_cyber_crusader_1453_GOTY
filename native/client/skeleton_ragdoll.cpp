@@ -44,9 +44,30 @@ struct SkeletonRagdoll::Impl {
     std::vector<std::unique_ptr<btCollisionShape>> shapes;
     std::vector<std::unique_ptr<btRigidBody>> bodies;
     std::vector<std::unique_ptr<btTypedConstraint>> constraints;
+    std::vector<btHingeConstraint*> fingerJoints;
     std::vector<btVector3> centers;
     std::vector<Figure> figures;
+    // Sequential impulses can leave a visible gap at a tiny finger joint
+    // during a hard contact. Finish each physics substep with a positional
+    // projection of the existing joint anchors, in parent-to-child order.
+    // The bodies, collision proxies and rendered matrices all use the corrected
+    // transforms; angular freedom and joint limits remain those of the hinge.
+    static void projectFingerJoints(btDynamicsWorld* dynamics, btScalar) {
+        auto* self=static_cast<Impl*>(dynamics->getWorldUserInfo());
+        for (auto* hinge:self->fingerJoints) {
+            auto& parent=hinge->getRigidBodyA(); auto& child=hinge->getRigidBodyB();
+            const auto parentAnchor=(parent.getWorldTransform()*hinge->getAFrame()).getOrigin();
+            const auto childAnchor=(child.getWorldTransform()*hinge->getBFrame()).getOrigin();
+            auto correction=parentAnchor-childAnchor;
+            if (correction.length2()<1e-14f) continue;
+            auto transform=child.getWorldTransform();
+            transform.setOrigin(transform.getOrigin()+correction);
+            child.setCenterOfMassTransform(transform);
+            self->world->updateSingleAabb(&child);
+        }
+    }
     Impl() {
+        world->setInternalTickCallback(&projectFingerJoints,this,false);
         world->setGravity(btVector3(0,-9.81f,0));
         world->getSolverInfo().m_numIterations=150;
         world->getSolverInfo().m_splitImpulse=true;
@@ -130,11 +151,12 @@ struct SkeletonRagdoll::Impl {
             else groupForNode[node]=groupForNode[p];
             groups[std::size_t(groupForNode[node])].push_back(std::size_t(index));
         }
-        // The existing reference rig intentionally drives radius and ulna
-        // together. They are siblings in its tree, so independent hinges let
-        // them swing apart despite sharing an elbow. Make each forearm one
-        // rigid compound for ragdoll physics, matching the existing model.
-        for (const auto& link:model.sourceLinks()) if (link.mobility=="radioulnar_pivot") {
+        // The tree has two elbow roots per forearm and two wrist roots per
+        // hand. Independent sibling hinges split structures that are coupled
+        // by the existing model. Merge only the explicitly linked forearm and
+        // carpal groups; finger and thumb joints remain separate bodies.
+        for (const auto& link:model.sourceLinks())
+            if (link.mobility=="radioulnar_pivot" || link.mobility=="carpal_glide") {
             int first=groupForNode[mapping[link.first]], second=groupForNode[mapping[link.second]];
             if (first==second) continue;
             groups[std::size_t(first)].insert(groups[std::size_t(first)].end(),
@@ -165,13 +187,18 @@ struct SkeletonRagdoll::Impl {
             compound->setMargin(0.001f); compound->recalculateLocalAabb();
             const auto extent=hi-lo;
             const btScalar mass=std::clamp(extent.x()*extent.y()*extent.z()*500.0f,0.015f,6.0f);
-            btVector3 inertia(0,0,0); compound->calculateLocalInertia(mass,inertia);
+            // Single-bone bodies can use their convex hull directly. Bullet's
+            // continuous collision detection does not run on compound shapes.
+            btCollisionShape* collision=compound->getNumChildShapes()==1 ? compound->getChildShape(0) : compound.get();
+            btVector3 inertia(0,0,0); collision->calculateLocalInertia(mass,inertia);
             btTransform pose=rigid(initial[first]); pose.setOrigin(pose*center);
-            btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,compound.get(),inertia);
+            btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,collision,inertia);
             auto body=std::make_unique<btRigidBody>(ci);
             body->setWorldTransform(pose); body->setFriction(0.7f); body->setRestitution(0.02f);
             body->setDamping(0.05f,0.15f);
-            body->setCcdMotionThreshold(0.01f); body->setCcdSweptSphereRadius(0.003f);
+            const bool hand=part.name.rfind("Hand",0)==0;
+            body->setCcdMotionThreshold(hand ? 0.001f : 0.01f);
+            body->setCcdSweptSphereRadius(0.003f);
             const int id=int(bodies.size()); body->setUserIndex(int(figures.size())); world->addRigidBody(body.get());
             bodyForGroup[group]=id; centers.push_back(center); bodies.push_back(std::move(body)); shapes.push_back(std::move(compound));
             for (auto index:groups[group]) f.bodyForStructure[index]=id;
@@ -236,6 +263,10 @@ struct SkeletonRagdoll::Impl {
                 const btMatrix3x3 basis(x.x(),y.x(),z.x(),x.y(),y.y(),z.y(),x.z(),y.z(),z.z());
                 const btTransform frame(basis,pivot);
                 auto hinge=std::make_unique<btHingeConstraint>(*bodies[a],*bodies[b],aInv*frame,bInv*frame,true);
+                if (structures[si].name.rfind("Hand",0)==0 && kind!="wrist_condyloid") {
+                    hinge->setParam(BT_CONSTRAINT_ERP,0.6f);
+                    fingerJoints.push_back(hinge.get());
+                }
                 hinge->setLimit(btScalar(range.minimum-q),btScalar(range.maximum-q),0.9f,0.3f,1.0f);
                 world->addConstraint(hinge.get(),true); constraints.push_back(std::move(hinge));
             }
@@ -342,7 +373,7 @@ SkeletonRagdoll::Contacts SkeletonRagdoll::contacts() const {
 }
 void SkeletonRagdoll::advance(double seconds) {
     if (!(seconds>0) || !std::isfinite(seconds)) return;
-    impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),10,1.0f/120.0f);
+    impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),20,1.0f/240.0f);
     impl_->publish();
 }
 } // namespace gtc::native
