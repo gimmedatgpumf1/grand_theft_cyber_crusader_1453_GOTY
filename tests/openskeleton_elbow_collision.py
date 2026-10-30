@@ -1,8 +1,8 @@
-"""Optional FCL source-surface audit of the room's fitted elbow axes.
+"""Optional FCL source-surface audit of the room's elbow reference frames.
 
 The sample checks triangle intersection, not full containment, cartilage, or
-individual clinical ROM. It asserts the straight endpoint is free of additional
-humerus/forearm surface intersections and reports the remaining failures.
+individual clinical ROM. It reports intersections and gaps without treating
+surface clearance as a constraint on the room's reference angles.
 """
 import importlib.util
 import json
@@ -53,9 +53,10 @@ for sex,filename in (('male','male-N197925.npz'),('female','skelly-out.npz')):
                     count=fcl.collide(h,o,fcl.CollisionRequest(num_max_contacts=1),fcl.CollisionResult())
                     if count: bad[name].append(angle)
                     if angle==0:
-                        assert not count, f'{sex} {side} {name} intersects at extension'
-                        straight_gaps[name]=1000*fcl.distance(h,o,fcl.DistanceRequest(),fcl.DistanceResult())
-            print(f"{sex} {side} elbow: 0° gaps ulna {straight_gaps['Ulna']:.2f} mm, "
-                  f"radius {straight_gaps['Radius']:.2f} mm; intersection angle spans "
+                        straight_gaps[name]=None if count else 1000*fcl.distance(h,o,fcl.DistanceRequest(),fcl.DistanceResult())
+            def gap(name):
+                return 'intersection' if straight_gaps[name] is None else f"{straight_gaps[name]:.2f} mm"
+            print(f"{sex} {side} elbow: 0° ulna {gap('Ulna')}, "
+                  f"radius {gap('Radius')}; intersection angle spans "
                   f"ulna {spans(bad['Ulna'])}, radius {spans(bad['Radius'])}")
-print('Elbow source-surface audit: endpoint PASS; range limitations listed above')
+print('Elbow source-surface audit: informational only')

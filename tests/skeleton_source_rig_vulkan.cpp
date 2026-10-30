@@ -153,7 +153,7 @@ static int differencesHalf(const std::vector<unsigned char>& a, const std::vecto
 static void liveRoomControls(SkeletonRoom& room, ViewState view) {
     for (int line=0;line<2;++line) {
         if (line) room.toggleLineView();
-        for (const auto key : {'q','e','f','2','6','g','h','j','n'}) {
+        for (const auto key : {'q','e','f','2','6','g','h','j','n','m'}) {
             const auto before=pixels(room,view);
             assert(room.adjustReferenceGroup(key,30)); const auto moved=pixels(room,view);
             const int male=differencesHalf(before,moved,view.width,view.height,false);

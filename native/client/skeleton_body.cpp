@@ -1,5 +1,6 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_finger_frame.h"
+#include "client/skeleton_limb_frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -137,6 +138,7 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     sourceLinks_.clear();
     sourceRig_.reset();
     sourceBodies_.clear();
+    neutralAlignments_.clear();
     hasKneeAxes_ = false;
     kneeAxes_ = {};
     hasElbowAxes_ = false;
@@ -549,6 +551,7 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     sourceRig_ = std::move(rig);
     sourceBodies_ = sourceBodies;
     referenceBindPose_.clear();
+    neutralAlignments_.clear();
     ++sourcePoseRevision_;
     return true;
 }
@@ -564,6 +567,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     std::vector<std::size_t> mapping(count, missing), queue;
     std::vector<bool> visited(count);
     FingerReferenceFrames fingerFrames(count);
+    std::vector<double> neutralAlignments(count+1,-1.0);
     AnatomicalKinematicTree rig;
     std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
     auto rootBody = rig.addFixed(0, {});
@@ -591,16 +595,6 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         }
         return result;
     };
-    const auto shaft = [&](std::size_t index, Vec3 hint) {
-        const auto [p,n]=points(index); const Vec3 c=center(index);
-        Vec3 direction=normalized(hint);
-        for (int step=0;step<16;++step) {
-            Vec3 v;
-            for (std::size_t i=0;i<n;++i) { const Vec3 d=p[i]-c; v+=d*dot(d,direction); }
-            if (length(v)>1e-12) direction=normalized(v);
-        }
-        return dot(direction,hint)<0 ? direction*-1.0 : direction;
-    };
     const auto suffix = [](const std::string& name) -> int {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
@@ -617,6 +611,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             const auto bounds = referenceBendRange(link.mobility, parentName, childName);
             std::optional<std::size_t> body;
             std::vector<double> bindAngles{0};
+            Vec3 alignmentAxis; double alignmentAngle=0; bool alignToNeutral=false;
             bool coupledPatella = false;
             if (link.mobility == "patellofemoral_glide" && hasKneeAxes_) {
                 // Patellar flexion is approximately 70% of tibiofemoral
@@ -709,10 +704,8 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     current = (3.14159265358979323846/2) -
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
                 } else if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
-                    // Positive hip flexion lifts the thigh toward the front,
-                    // rather than choosing its sign from the offset pelvis.
-                    const Vec3 thigh=normalized(kneeAxes_[side].origin-pivot);
-                    axis=cross(thigh,Vec3{0,0,1});
+                    // The same sagittal flexion plane on both sides of the pelvis.
+                    axis={-1,0,0};
                 } else if (link.mobility == "knee_modified_hinge" && hasKneeAxes_) {
                     axis = kneeAxes_[side].medialDirection * (side == 0 ? -1.0 : 1.0);
                     up = normalized(up-axis*dot(up,axis));
@@ -747,13 +740,11 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),
                                                center(static_cast<std::size_t>(middle))-center(static_cast<std::size_t>(wrist))));
                     palm=palm*(side==0 ? -1.0 : 1.0);
-                    const Vec3 proximal=shaft(parent,up)*-1.0, distal=shaft(child,down);
-                    const Vec3 flexion=normalized(cross(proximal,palm));
-                    const Vec3 sourceBend=cross(proximal,distal);
-                    axis=length(sourceBend)>1e-5 ? normalized(sourceBend) : flexion;
-                    if (dot(axis,flexion)<0) axis=axis*-1.0;
-                    current=std::atan2(dot(axis,sourceBend),dot(proximal,distal));
-                    fingerFrames.attach(parent,child,distal,palm,axis,current);
+                    const auto [pp,pn]=points(parent); const auto [cp,cn]=points(child);
+                    const Vec3 proximal=FingerReferenceFrames::shaft(pp,pn,center(parent),up)*-1.0;
+                    const Vec3 distal=FingerReferenceFrames::shaft(cp,cn,center(child),down);
+                    const auto frame=fingerFrames.attach(parent,child,proximal,distal,palm);
+                    axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
                            link.mobility == "toe_ip_hinge") {
                     const std::string tag=side==0 ? "_L" : "_R";
@@ -769,8 +760,9 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const Vec3 distal=normalized(down-axis*dot(down,axis));
                     current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
-                    axis = elbowAxes_[side].direction;
-                    current = elbowAxes_[side].sourceAngleDegrees * toRadians;
+                    const int h=bone(side==0 ? "humerus_l" : "humerus_r");
+                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,pivot+down,side==0);
+                    axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
                 }
@@ -784,14 +776,13 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 // joint's source coordinate the identity relative transform.
                 // Otherwise a nonzero parent bind angle incorrectly rotates
                 // the child's pivot and axis before any posing occurs.
-                const bool finger=link.mobility=="finger_mcp_condyloid" || link.mobility=="finger_pip_hinge" ||
-                    link.mobility=="finger_dip_hinge" || link.mobility=="thumb_mcp" || link.mobility=="thumb_ip_hinge";
-                if (!finger) current=std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
+                current=std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
                 JointRigidTransform frame; frame.translation = pivot;
                 const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));
-                std::vector<JointRotationalAxis> axes{{axis,std::min(bounds->extension*toRadians,current),
-                                                        std::max(bounds->flexion*toRadians,current)}};
+                std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
                 bindAngles={current};
+                if (alignToNeutral) { axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0); }
+                if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({down*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.
                     const Vec3 shaft=normalized(pivot-kneeAxes_[side].origin)*(side==0 ? -1.0 : 1.0);
@@ -807,6 +798,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             }
             if (!body) { error = "Unable to attach source joint " + childName; return false; }
             if (bounds || coupledPatella) bindPose.push_back({*body,bindAngles});
+            if (alignToNeutral) neutralAlignments[*body]=alignmentAngle;
             mapping[child] = *body; visited[child] = true; queue.push_back(child);
         }
     }
@@ -814,6 +806,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     rig.captureBindPose();
     if (!setSourceRig(std::move(rig),mapping,error)) return false;
     referenceBindPose_ = std::move(bindPose);
+    neutralAlignments_ = std::move(neutralAlignments);
     return true;
 }
 
@@ -877,6 +870,8 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
     auto angles = joint->angles();
     angles[0] = *bounded * radiansPerDegree;
+    if (body<neutralAlignments_.size() && neutralAlignments_[body]>=0 && angles.size()>1)
+        angles[1]=neutralAlignments_[body];
     std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};
     if (relationship.mobility == "elbow_hinge" || relationship.mobility == "wrist_condyloid") {
         // A paired forearm or palm must not split when one of its anatomical
@@ -893,6 +888,9 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
             const auto* otherJoint = sourceRig_->joint(otherBody);
             if (!otherJoint || otherJoint->angles().empty()) continue;
             auto otherAngles = otherJoint->angles(); otherAngles[0] = angles[0];
+            if (otherBody<neutralAlignments_.size() && neutralAlignments_[otherBody]>=0 && otherAngles.size()>1)
+                otherAngles[1]=neutralAlignments_[otherBody];
+            if (otherAngles.size()>2 && angles.size()>2) otherAngles[2]=angles[2];
             updates.push_back({otherBody,otherAngles});
         }
     }

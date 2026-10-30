@@ -182,12 +182,12 @@ checks are geometric only; they are not expert landmark validation.
 ## Elbow estimates and pose audits
 
 `12-fit-elbows.py` fits a capitellar sphere and trochlear cross-section circle,
-then applies subject-specific **geometric clearance refinements** to a fixed
-axis. NumPy and SciPy are required. The generated `.elbows` and
-`-elbow-fit.json` files are loaded by the room and audited by
-`tests/openskeleton_elbow_fit.py`. They are estimates, not measurements of
-individual functional axes or clinical proof. The original pose remains
-available using `B`; the elbow V-view balls use the estimated pivots.
+then applies subject-specific geometric refinements. NumPy and SciPy are
+required. The generated `.elbows` and `-elbow-fit.json` files are audited by
+`tests/openskeleton_elbow_fit.py`. The room uses the pivot estimates and the
+V-view balls follow them; elbow movement itself is mirrored in the T-pose
+frame, rather than using the fitted axis. These are estimates, not measurements
+of individual functional axes. The original pose remains available using `B`.
 
 To reproduce full-resolution source triangle audits, install NumPy and
 `python-fcl`, then from the repository root:
@@ -200,6 +200,5 @@ c++ -std=c++17 -O2 -pthread -Isrc -Inative tests/skeleton_elbow_sweep.cpp native
 python3 tests/openskeleton_elbow_collision.py
 ```
 
-The room now starts in a rigid-joint T-pose; the tests above are optional
-surface-intersection checks, not functional ROM or anatomical-motion
-validation. See `../JOINT_MOBILITY.md` for the joint directions and limits.
+The room starts in a rigid-joint T-pose; the tests above are optional
+surface-intersection checks, not functional ROM or anatomical-motion validation. See `../JOINT_MOBILITY.md` for the joint directions and limits.

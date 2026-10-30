@@ -64,7 +64,7 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
     const std::string path=std::string("tools/skeleton-source/skeleton-")+sex+".lines";
     SkeletonLines lines; std::string error; assert(lines.load(path,error) && lines.bind(model,error));
     const auto segments=lineSegments(path);
-    int total=0;
+    int total=0; double direction[2][5][3]{};
     for (char side : {'L','R'}) for (int digit=1;digit<=5;++digit) {
         assert(room.restoreReferencePose());
         const auto suffix=std::string("_")+side, number=std::to_string(digit);
@@ -92,20 +92,32 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
             const Vec3 normal=palmNormal(model,bind,side), start=posed(model,bind,tip);
             assert(model.setReferenceBend(i,10));
             auto moved=model.sourceMatrices({},0);
-            const double curl=dot(posed(model,moved,tip)-start,normal);
+            const Vec3 displacement=posed(model,moved,tip)-start;
+            const double curl=dot(displacement,normal);
             assert(curl>0.00005); // each MCP, PIP/IP and DIP curls toward the palm
+            const double ratio=curl/length(displacement);
+            assert(ratio>(digit==1 ? 0.6 : 0.8));
+            direction[side=='L' ? 0 : 1][digit-1][joint]=ratio;
             for (int k=0;k<16;++k) assert(std::abs(moved[model.sourceStructure(neighbour)][k]-bind[model.sourceStructure(neighbour)][k])<1e-7);
             const auto afterLines=lineVertices(lines,model);
             assert(segments.count(tip) && segments.count(neighbour));
             assert(difference(beforeLines,afterLines,segments.at(tip))>0.0001);
             assert(difference(beforeLines,afterLines,segments.at(neighbour))<1e-6);
+            assert(model.setReferenceBend(i,-10));
+            const Vec3 extension=posed(model,model.sourceMatrices({},0),tip)-start;
+            if (digit>1 && (joint==0 || joint==2)) {
+                assert(dot(extension,normal)<-0.00005);
+                assert(dot(extension,normal)/length(extension)<-0.8);
+            } else assert(length(extension)<1e-9); // no extension beyond neutral
             assert(model.setReferenceBend(i,1000)); assert(std::abs(*model.referenceBend(i)-range->flexion)<1e-7);
             assert(model.setReferenceBend(i,-1000)); assert(std::abs(*model.referenceBend(i)-range->extension)<1e-7);
             ++total;
         }
     }
     assert(total==28);
-    std::cout << sex << ": " << total << " independent finger joints, mesh and V lines PASS\n";
+    for (int digit=0;digit<5;++digit) for (int joint=0;joint<(digit==0 ? 2 : 3);++joint)
+        assert(std::abs(direction[0][digit][joint]-direction[1][digit][joint]) < (digit==0 ? 0.35 : 0.15));
+    std::cout << sex << ": " << total << " independent mirrored finger joints, mesh and V lines PASS\n";
 }
 int main() {
     SkeletonRoom room; std::string error; assert(room.load(".",error));

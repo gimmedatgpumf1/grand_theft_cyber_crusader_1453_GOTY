@@ -117,6 +117,34 @@ public:
     bool restoreSourcePose();
     std::optional<double> referenceHipRotation(std::size_t link) const;
     bool setReferenceHipRotation(std::size_t link, double degrees);
+    // The V-view forearm is one group; its bounded axial rotation drives
+    // radius and ulna together around the source forearm's longitudinal axis.
+    std::optional<double> referenceForearmRotation(std::size_t link) const {
+        if (!sourceRig_ || link>=sourceLinks_.size() || sourceLinks_[link].mobility!="elbow_hinge") return std::nullopt;
+        const auto& e=sourceLinks_[link];
+        const auto a=sourceBodies_[e.first], b=sourceBodies_[e.second];
+        const auto child=sourceRig_->parent(b)==a ? b : sourceRig_->parent(a)==b ? a : 0;
+        const auto* joint=sourceRig_->joint(child);
+        if (child>=neutralAlignments_.size() || neutralAlignments_[child]<0 || !joint || joint->angles().size()!=3) return std::nullopt;
+        return joint->angles()[2]*(180.0/3.14159265358979323846);
+    }
+    bool setReferenceForearmRotation(std::size_t link, double degrees) {
+        const auto bounded=clampReferenceBend("radioulnar_pivot",degrees);
+        if (!bounded || !referenceForearmRotation(link)) return false;
+        const auto& edge=sourceLinks_[link];
+        const auto humerus=sourceStructures_[edge.first].name.rfind("Humerus_",0)==0 ? edge.first : edge.second;
+        std::vector<AnatomicalKinematicTree::PoseUpdate> updates;
+        for (const auto& e:sourceLinks_) {
+            if (e.mobility!="elbow_hinge" || (e.first!=humerus && e.second!=humerus)) continue;
+            const auto child=sourceBodies_[e.first==humerus ? e.second : e.first];
+            if (sourceRig_->parent(child)!=sourceBodies_[humerus]) continue;
+            const auto* joint=sourceRig_->joint(child);
+            if (!joint || joint->angles().size()!=3) continue;
+            auto angles=joint->angles(); angles[2]=*bounded*(3.14159265358979323846/180.0);
+            updates.push_back({child,angles});
+        }
+        return updates.size()==2 && setSourcePose(updates);
+    }
     bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
     // Drive a supplied, neutral-calibrated source joint's first coordinate in degrees.
     // The rig's first coordinate is the documented primary motion from anatomical
@@ -138,6 +166,7 @@ private:
     bool hasElbowAxes_ = false;
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;
     std::vector<std::size_t> sourceBodies_;
+    std::vector<double> neutralAlignments_;
     std::vector<AnatomicalKinematicTree::PoseUpdate> referenceBindPose_;
     std::uint64_t sourcePoseRevision_ = 0;
     std::string name_;

@@ -26,6 +26,22 @@ left/right mirror checks. Those include pose-dependent metrics and are retained
 as diagnostics, not silently reclassified as a pass. They do not establish the
 cause or correctness of individual joints. The room retains the source pose for both subjects.
 
+### Mirrored reference motion
+
+`tests/skeleton_t_pose.cpp` checks mirrored elbow, grouped-forearm and hip
+rotation matrices at several angles on both subjects, verifies palms face down,
+and checks bilateral knee, ankle, wrist and toe movement directions. The knee
+and ankle axes remain individual estimates from each CT geometry, not exact
+mirrored bone copies. `tests/skeleton_finger_joints.cpp` checks 28 separate
+finger joints per model in mesh and V view, including flexion, permitted
+extension, limits, neighbouring-digit isolation and original-pose recovery.
+The original CT bone meshes are not mirrored or rescaled.
+
+A headless SwiftShader Vulkan test exercised both skeletons through the room's
+mesh and V-view paths, including all three index finger stages and grouped
+forearm rotation. This confirms visible motion in software Vulkan; it does not
+establish clinical validity or frame rate on the player's GPU.
+
 ### Femoral-head fit and source hip overlap
 
 A CT atlas labels the femoral-head region used to fit a sphere directly to each

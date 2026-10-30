@@ -125,6 +125,17 @@ int main() {
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation-5)<1e-7);
     app.handle(down('r'));
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation)<1e-7);
+    std::size_t elbow=0;
+    for (;elbow<app.room_.male().sourceLinks().size();++elbow) {
+        const auto& edge=app.room_.male().sourceLinks()[elbow];
+        if (edge.mobility=="elbow_hinge" && app.room_.male().sourceStructures()[edge.second].name=="Radius_R") break;
+    }
+    assert(elbow<app.room_.male().sourceLinks().size());
+    const double forearm=*app.room_.male().referenceForearmRotation(elbow);
+    app.handle(down('m'));
+    assert(std::abs(*app.room_.male().referenceForearmRotation(elbow)-forearm-5)<1e-7);
+    app.handle(down('r'));
+    assert(std::abs(*app.room_.male().referenceForearmRotation(elbow)-forearm)<1e-7);
     // Momentary modifiers independently drive MCP, PIP and DIP on both
     // actual models; releasing the modifiers leaves no selected joint mode.
     for (int stage=1;stage<=3;++stage) {

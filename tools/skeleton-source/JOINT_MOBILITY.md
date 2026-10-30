@@ -121,11 +121,13 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 The room installs a source-bone tree for both subjects and retains the original
 unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
 90° abduction, elbows and knees straight, ankles and wrists straightened,
-fingers and toes extended, and feet aimed forward with bounded hip rotation.
+fingers and toes extended, palms facing down, and feet aimed forward with bounded hip rotation.
 Each whole body is translated down to the floor. `B` returns the original source
 pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
-rebuilt only after pose changes. Forearm radius and ulna share elbow motion.
+rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
+bounded ±80° axial rotation (`M`); the grouped rotation is a simplified visual
+approximation, not separate anatomical pronation of radius around ulna.
 The simplified palm, foot, rib cage and shoulder surfaces deform between their
 source owners; they are not complete anatomical tissue simulations. Both wrist
 carpal roots now share a pivot and bend together, so the unified palm and
@@ -142,17 +144,13 @@ The glenohumeral centre is estimated from a sphere fitted to humeral surface
 vertices near the explicitly linked scapula; this is not expert-validated.
 See `openskeleton/10-fit-shoulders.py` and the subject-specific fit JSON files.
 
-Elbow pivots and axes are estimated from capitellar and trochlear surfaces,
-then refined for clearance against sampled source triangles; the V-view elbow
-balls use those pivots. These are geometric estimates, not measured individual
-kinematics. At straight extension the four humerus–ulna and humerus–radius
-surface pairs no longer intersect, but humerus–radius gaps of 3.35–6.48 mm are
-larger than in the source pose. A 1° full-range audit still finds intersections
-at higher flexion and at 70° on male right. Female left humerus–ulna and
-ulna–radius already overlap in the original source pose. See
-`openskeleton/12-fit-elbows.py`, `tests/openskeleton_elbow_collision.py`, and
-`openskeleton/11-audit-arm-pose.py`. A fixed axis cannot reproduce the changing
-[elbow axis measured with 4D CT](https://pmc.ncbi.nlm.nih.gov/articles/PMC8848841/).
+Elbow pivots are estimated from capitellar and trochlear surfaces. Elbow
+flexion uses the same mirrored movement in each subject's T-pose frame, with
+an explicit neutral alignment from the registered pose. Radius and ulna share
+that frame. The elbow V-view balls use the estimated pivots. These are geometric
+estimates, not measured individual functional axes. See
+`openskeleton/12-fit-elbows.py` and `tests/skeleton_t_pose.cpp`. The real
+[elbow axis varies with flexion](https://pmc.ncbi.nlm.nih.gov/articles/PMC8848841/).
 
 Each patella rotates relative to the femur by 70% of the change in knee flexion
 from the registered pose. This approximates a finding in eight cadaver knees
@@ -169,8 +167,10 @@ metacarpals. Each joint's positive bend is oriented toward its palm after its
 parent fingers have straightened; all MCP, PIP/IP and DIP joints are checked
 independently in mesh and V view. The extended hand pose aligns the measured
 bone shafts; it does not depend only on setting arbitrary angles to zero.
-The registered source may have an inferred angle outside the population range;
-its bind pose remains restorable, while interactive bends clamp to the cited range.
+A fixed source-to-neutral alignment is kept separate from flexion so the
+original CT pose can be restored. Interactive flexion clamps to the cited range.
+The same palm-relative convention is mirrored for left and right; it does not
+replace either subject's source bone geometry.
 Toe axes follow the local foot plane so positive flexion moves toward the sole.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
