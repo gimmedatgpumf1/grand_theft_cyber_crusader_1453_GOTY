@@ -119,9 +119,9 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 ## Current room implementation and limitations
 
 The room installs a source-bone tree for both subjects and retains the original
-source pose by default without scaling. A tested arm-out candidate aligns the
-upper arms and elbows, but an intersection audit found that all four estimated
-elbows penetrate the humerus after straightening, so it is not enabled by default. Meshes use rigid bone matrices; V-view vertices are associated
+source pose by default without scaling. A tested candidate straightens the
+arms and knees but is not a validated complete T-pose and is not enabled by
+default. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion.
 The simplified palm, foot, rib cage and shoulder surfaces deform between their
@@ -140,16 +140,37 @@ The glenohumeral centre is estimated from a sphere fitted to humeral surface
 vertices near the explicitly linked scapula; this is not expert-validated.
 See `openskeleton/10-fit-shoulders.py` and the subject-specific fit JSON files.
 
-Elbow and finger neutral angles are estimated from source geometry. Hip and knee
-use earlier shape-derived centres/axes; other pivots use sampled closest surfaces
+Elbow pivots and axes are estimated from capitellar and trochlear surfaces,
+then refined for clearance against sampled source triangles; the V-view elbow
+balls use those pivots. These are geometric estimates, not measured individual
+kinematics. At straight extension the four humerus–ulna and humerus–radius
+surface pairs no longer intersect, but humerus–radius gaps of 3.35–6.48 mm are
+larger than in the source pose. A 1° full-range audit still finds intersections
+at higher flexion and at 70° on male right. Female left humerus–ulna and
+ulna–radius already overlap in the original source pose. See
+`openskeleton/12-fit-elbows.py`, `tests/openskeleton_elbow_collision.py`, and
+`openskeleton/11-audit-arm-pose.py`. A fixed axis cannot reproduce the changing
+[elbow axis measured with 4D CT](https://pmc.ncbi.nlm.nih.gov/articles/PMC8848841/).
+
+Each patella rotates relative to the femur by 70% of the change in knee flexion
+from the registered pose. This approximates a finding in eight cadaver knees
+([Amis et al.](https://onlinelibrary.wiley.com/doi/10.1002/jor.20268)); the
+subjects' patellar translations and other rotations are unknown. At straight
+knees no tested femur–tibia, femur–patella, patella–tibia or tibia–fibula
+surface pair intersects. Before coupling, the female right patella and tibia
+intersected at straight extension. See `openskeleton/13-audit-knee-straight.py`.
+The fixed-axis knee approximation still has known intersections at other
+angles (see `09-audit-knee-motion.py`).
+
+Finger neutral angles are estimated from source geometry. Hip and knee use
+earlier shape-derived centres/axes; other pivots use sampled closest surfaces
 only after the anatomical graph has selected the relationship. Neck and most
 other initial angles are assumed zero. Values clamped to population ranges do
 **not** establish actual subject neutral, individual limits, functional axes or
-safe contact. The fixed-axis knee approximation has known mesh intersections
-in sampled motions (see `09-audit-knee-motion.py`). For the candidate arm-out pose the source-triangle collision audit found
-humerus–ulna intersections for all four elbows; the male left humerus–radius
-also intersected. A basic arm-alignment test is not clinical verification of a
-complete biological T-pose.
+safe contact. The source feet are plantarflexed; a trial of straightening them
+about a contact-derived ankle axis produced multiple bone intersections and
+was not installed. A basic alignment or endpoint test is not clinical
+verification of a complete biological T-pose.
 
 Extra single-axis approximations include jaw rotation without translation,
 atlanto-occipital nodding, atlanto-axial rotation, shoulder-girdle elevation,

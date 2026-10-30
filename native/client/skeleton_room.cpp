@@ -87,6 +87,8 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!female_.loadShoulderCenters(directory + "skeleton-female.shoulders", error)) return false;
     if (!male_.loadKneeAxes(directory + "skeleton-male.knees", error)) return false;
     if (!female_.loadKneeAxes(directory + "skeleton-female.knees", error)) return false;
+    if (!male_.loadElbowAxes(directory + "skeleton-male.elbows", error)) return false;
+    if (!female_.loadElbowAxes(directory + "skeleton-female.elbows", error)) return false;
     if (!male_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
     if (!female_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
     if (!male_.installReferenceRig(error)) return false;
@@ -94,8 +96,8 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
     if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
     if (!maleLines_.bind(male_, error) || !femaleLines_.bind(female_, error)) return false;
-    // Keep the source pose until the estimated elbow axes can be fitted well
-    // enough to straighten without intersecting the bones.
+    // Preserve the source pose: the candidate arm/leg pose and the fitted
+    // joints are not yet a validated complete biological T-pose.
     error_.clear();
     ready_ = true;
     return true;

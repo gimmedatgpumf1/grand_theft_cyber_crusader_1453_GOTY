@@ -13,7 +13,8 @@ structures with rigid transforms. Each source structure is simplified separately
 into an overall budget near 180,000 triangles. No bones are mirrored, scaled
 or repositioned individually. A single coordinate conversion and translation
 places each body in the game. The registered pose is the unscaled bind pose;
-the room retains it by default while the elbow pivots are being corrected.
+the room retains it by default while the remaining articulation and T-pose
+are investigated.
 
 Both source files contain *registered* meshes, not necessarily the original CT
 patient pose. Our source-fidelity tests check names, face indices and the

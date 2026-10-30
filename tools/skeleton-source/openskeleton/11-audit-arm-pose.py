@@ -3,8 +3,9 @@
 Requires NumPy and python-fcl plus build/bin/gtc-skeleton-arm-pose; build it as
 shown in openskeleton/README.md. MATLAB faces are 1-based. This tests surface
 intersection only, not containment, cartilage, or medical validity. The arm-out
-pose is deliberately not the default because the approximate elbow hinges
-intersect bone. Contact counts are capped at 10,000 triangle pairs.
+pose is deliberately not the default: the endpoint alone does not establish
+correct contact or a biologically realistic full-body pose. Contact counts are
+capped at 10,000 triangle pairs.
 """
 import json
 from pathlib import Path

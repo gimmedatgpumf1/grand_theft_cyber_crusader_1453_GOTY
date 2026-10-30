@@ -41,6 +41,12 @@ struct SkeletonSourceLink {
 
 // Femoral anatomical line through the epicondyles. A static shape-derived
 // estimate, not a knee motion model or individual range of motion.
+// Shape-derived fixed elbow frame. Estimated, not subject motion capture.
+struct SkeletonElbowAxis {
+    Vec3 origin, direction;
+    double sourceAngleDegrees = 0;
+};
+
 struct SkeletonKneeAxis {
     Vec3 origin;
     Vec3 medialDirection;
@@ -60,6 +66,9 @@ public:
     // only changes pivots; it does not calibrate joint axes or enforce ROM.
     bool loadHipCenters(const std::string& path, std::string& error);
     bool loadKneeAxes(const std::string& path, std::string& error);
+    bool loadElbowAxes(const std::string& path, std::string& error);
+    const std::array<SkeletonElbowAxis, 2>& elbowAxes() const { return elbowAxes_; }
+    bool hasElbowAxes() const { return hasElbowAxes_; }
     bool loadShoulderCenters(const std::string& path, std::string& error);
     const std::array<SkeletonKneeAxis, 2>& kneeAxes() const { return kneeAxes_; }
     bool hasKneeAxes() const { return hasKneeAxes_; }
@@ -123,6 +132,8 @@ private:
     std::vector<SkeletonSourceLink> sourceLinks_;
     std::array<SkeletonKneeAxis, 2> kneeAxes_{};
     bool hasKneeAxes_ = false;
+    std::array<SkeletonElbowAxis, 2> elbowAxes_{};
+    bool hasElbowAxes_ = false;
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;
     std::vector<std::size_t> sourceBodies_;
     std::vector<AnatomicalKinematicTree::PoseUpdate> referenceBindPose_;

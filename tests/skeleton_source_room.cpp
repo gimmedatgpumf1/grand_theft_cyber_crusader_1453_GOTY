@@ -61,8 +61,9 @@ static bool checkJoints(const GpuBatch& batch, const char* path, double x, doubl
         char kind; Vec3 p; double radius;
         in >> kind >> name >> p.x >> p.y >> p.z >> radius;
         if (!in || count >= 8) return false;
-        if (name.rfind("Shoulder_",0)==0) {
-            std::string fileName=path; fileName.replace(fileName.size()-6,6,".shoulders");
+        if (name.rfind("Shoulder_",0)==0 || name.rfind("Elbow_",0)==0) {
+            std::string fileName=path;
+            fileName.replace(fileName.size()-6,6,name.rfind("Shoulder_",0)==0 ? ".shoulders" : ".elbows");
             std::ifstream fit(fileName); std::string row;
             bool found=false;
             while (std::getline(fit,row)) {

@@ -16,6 +16,7 @@ int main() {
             if (!model.referenceBend(i)) continue;
             if (link.mobility=="shoulder_ball_socket" && !model.setReferenceBend(i,90)) return 1;
             if (link.mobility=="elbow_hinge" && !model.setReferenceBend(i,0)) return 1;
+            if (link.mobility=="knee_modified_hinge" && !model.setReferenceBend(i,0)) return 1;
         }
         const auto matrices=model.sourceMatrices({},0);
         for (std::size_t i=0;i<matrices.size();++i) {

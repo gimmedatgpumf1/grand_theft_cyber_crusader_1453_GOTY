@@ -192,9 +192,14 @@ public:
                 name="Scapula_"+side;
                 const int humerus=body.bone(side=="L" ? "humerus_l" : "humerus_r");
                 if (humerus>=0) joint.center=body.bones()[static_cast<std::size_t>(humerus)].pivot;
-            } else if (joint.name.rfind("Elbow_",0)==0) name="Humerus_"+side;
+            } else if (joint.name.rfind("Elbow_",0)==0) {
+                name="Humerus_"+side;
+                if (body.hasElbowAxes()) joint.center=body.elbowAxes()[side=="L" ? 0 : 1].origin;
+            }
             else if (joint.name.rfind("Hip_",0)==0) name="Pelvis_"+side;
-            else if (joint.name.rfind("Knee_",0)==0) name="Femur_"+side;
+            // The knee ball includes the patella; follow it when the
+            // source patella flexes, rather than leaving it at the femur.
+            else if (joint.name.rfind("Knee_",0)==0) name="Patella_"+side;
             joint.owner=owner(name,joint.center);
             if (joint.owner<0) { error="Unknown joint sphere owner: "+joint.name; return false; }
         }

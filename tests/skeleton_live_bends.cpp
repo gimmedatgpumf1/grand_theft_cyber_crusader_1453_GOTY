@@ -19,18 +19,7 @@ static Vec3 center(const SkeletonModel& model, int index) {
     for (std::size_t i=0;i<part.pointCount;++i) sum+=points[part.firstPoint+i];
     return sum/static_cast<double>(part.pointCount);
 }
-static Vec3 contact(const SkeletonModel& model, int first, int second) {
-    const auto& a=model.sourceStructures()[first]; const auto& b=model.sourceStructures()[second];
-    const auto& p=model.bones()[a.group].points; const auto& q=model.bones()[b.group].points;
-    double best=1e9; Vec3 result;
-    for (std::size_t i=0;i<a.pointCount;i+=std::max<std::size_t>(1,a.pointCount/192))
-        for (std::size_t j=0;j<b.pointCount;j+=std::max<std::size_t>(1,b.pointCount/192)) {
-            Vec3 x=p[a.firstPoint+i],y=q[b.firstPoint+j]; double d=length(x-y);
-            if (d<best) { best=d; result=(x+y)*0.5; }
-        }
-    return result;
-}
-static void checkTPose(SkeletonModel& model) {
+static void checkArmAlignment(SkeletonModel& model) {
     // Alignment is only a geometric check; collision audits demonstrate this
     // candidate is not yet suitable as the room's default pose.
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
@@ -44,11 +33,15 @@ static void checkTPose(SkeletonModel& model) {
         const int h=model.sourceStructure("Humerus"+suffix), u=model.sourceStructure("Ulna"+suffix);
         const int group=model.bone(side=='L' ? "humerus_l" : "humerus_r");
         assert(h>=0 && u>=0 && group>=0);
-        const Vec3 shoulder=model.bones()[group].pivot, elbow=contact(model,h,u);
+        assert(model.hasElbowAxes());
+        const Vec3 shoulder=model.bones()[group].pivot;
+        const Vec3 elbow=model.elbowAxes()[side=='L' ? 0 : 1].origin;
         const Vec3 upper=normalized(transform(matrices[h],elbow)-transform(matrices[h],shoulder));
         const Vec3 fore=normalized(transform(matrices[u],center(model,u))-transform(matrices[h],elbow));
         const Vec3 target=side=='L' ? Vec3{1,0,0} : Vec3{-1,0,0};
-        assert(dot(upper,target)>0.99999 && dot(fore,target)>0.99999);
+        // An elbow's carrying angle is not perfectly collinear; this is only
+        // a coarse alignment check, not a clinical T-pose certificate.
+        assert(dot(upper,target)>0.99999 && dot(fore,target)>std::cos(20*3.141592653589793/180));
     }
     assert(model.restoreSourcePose());
 }
@@ -136,6 +129,32 @@ static void checkGroupedWrist(SkeletonModel& model) {
     }
 }
 
+static void checkPatellaCoupling(SkeletonModel& model) {
+    assert(model.restoreSourcePose());
+    for (char side : {'L','R'}) {
+        const auto suffix=std::string("_")+side;
+        const auto knee=namedLink(model,"Femur"+suffix,"Tibia"+suffix);
+        const auto original=model.referenceBend(knee); assert(original);
+        const double target=*original>45 ? 0 : 60;
+        assert(model.setReferenceBend(knee,target));
+        const auto matrices=model.sourceMatrices({},0);
+        const auto& fit=model.kneeAxes()[side=='L' ? 0 : 1];
+        const Vec3 axis=fit.medialDirection*(side=='L' ? -1.0 : 1.0);
+        JointRigidTransform frame; frame.translation=fit.origin;
+        const double delta=0.7*(target-*original)*3.141592653589793/180;
+        const auto expected=joint_detail::compose(joint_detail::compose(frame,joint_detail::rotate(axis,delta)),
+                                                   joint_detail::inverse(frame));
+        const auto& patella=matrices[static_cast<std::size_t>(model.sourceStructure("Patella"+suffix))];
+        for (int row=0;row<3;++row) for (int col=0;col<3;++col)
+            assert(std::abs(patella[col*4+row]-expected.rotation[row*3+col])<1e-7);
+        assert(length(Vec3{patella[12],patella[13],patella[14]}-expected.translation)<1e-7);
+        const auto& tibia=matrices[static_cast<std::size_t>(model.sourceStructure("Tibia"+suffix))];
+        const auto& fibula=matrices[static_cast<std::size_t>(model.sourceStructure("Fibula"+suffix))];
+        for (int j=0;j<16;++j) assert(std::abs(tibia[j]-fibula[j])<1e-7);
+        assert(model.restoreSourcePose());
+    }
+}
+
 static void verify(SkeletonModel& model, const char* sex) {
     std::map<std::string,int> active;
     const auto original = model.sourceMatrices({},0);
@@ -181,7 +200,7 @@ static void verify(SkeletonModel& model, const char* sex) {
 int main() {
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) { std::cerr << error << '\n'; return 1; }
-    checkTPose(room.male()); checkTPose(room.female());
+    checkArmAlignment(room.male()); checkArmAlignment(room.female());
     checkLinePose(room);
     // Room-level controls reach both subjects and restore their source pose.
     const auto shoulder=namedLink(room.male(),"Scapula_L","Humerus_L");
@@ -247,6 +266,7 @@ int main() {
     }
     assert(room.restoreReferencePose());
     checkGroupedWrist(room.male()); checkGroupedWrist(room.female());
+    checkPatellaCoupling(room.male()); checkPatellaCoupling(room.female());
     verify(room.male(),"male"); verify(room.female(),"female");
     assert(room.male().restoreSourcePose() && room.female().restoreSourcePose());
     for (SkeletonModel* model : {&room.male(),&room.female()})

@@ -138,6 +138,8 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     sourceBodies_.clear();
     hasKneeAxes_ = false;
     kneeAxes_ = {};
+    hasElbowAxes_ = false;
+    elbowAxes_ = {};
     ++sourcePoseRevision_;
     // OBJ source labels are nested inside the larger runtime `o` groups.
     // Record their exact local ranges without duplicating the mesh or changing
@@ -323,6 +325,40 @@ bool SkeletonModel::loadShoulderCenters(const std::string& path, std::string& er
     bones_[static_cast<std::size_t>(bone("humerus_l"))].pivot=centers[0];
     bones_[static_cast<std::size_t>(bone("humerus_r"))].pivot=centers[1];
     ++sourcePoseRevision_;
+    return true;
+}
+
+bool SkeletonModel::loadElbowAxes(const std::string& path, std::string& error) {
+    std::ifstream input(path);
+    if (!input) { error = "Cannot open skeleton elbow fits " + path; return false; }
+    std::array<SkeletonElbowAxis,2> fits{}; std::array<bool,2> present{};
+    std::string line;
+    while (std::getline(input,line)) {
+        if (line.empty() || line[0]=='#') continue;
+        std::istringstream row(line); std::string side,extra; SkeletonElbowAxis fit;
+        row >> side >> fit.origin.x >> fit.origin.y >> fit.origin.z
+            >> fit.direction.x >> fit.direction.y >> fit.direction.z >> fit.sourceAngleDegrees;
+        if (!row || (row >> extra) || (side!="L" && side!="R") ||
+            !joint_detail::finite(fit.origin) || !joint_detail::finite(fit.direction) ||
+            std::abs(length(fit.direction)-1)>1e-6 || !std::isfinite(fit.sourceAngleDegrees) ||
+            fit.sourceAngleDegrees<0 || fit.sourceAngleDegrees>150) {
+            error="Invalid elbow fit in " + path; return false;
+        }
+        const int which=side=="L" ? 0 : 1;
+        const int h=bone(which==0 ? "humerus_l" : "humerus_r");
+        const int f=bone(which==0 ? "forearm_l" : "forearm_r");
+        if (present[which] || h<0 || f<0 || bones_[h].points.empty() || bones_[f].points.empty()) {
+            error="Missing or duplicate elbow bones in " + path; return false;
+        }
+        for (int group : {h,f}) {
+            double nearest=1e9;
+            for (Vec3 p : bones_[group].points) nearest=std::min(nearest,length(p-fit.origin));
+            if (nearest>0.04) { error="Elbow fit is not near its bones in " + path; return false; }
+        }
+        fits[which]=fit; present[which]=true;
+    }
+    if (!present[0] || !present[1]) { error="Incomplete elbow fits in " + path; return false; }
+    elbowAxes_=fits; hasElbowAxes_=true; ++sourcePoseRevision_;
     return true;
 }
 
@@ -568,7 +604,19 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             const auto bounds = referenceBendRange(link.mobility, parentName, childName);
             std::optional<std::size_t> body;
             double bindAngle = 0;
-            if (bounds) {
+            bool coupledPatella = false;
+            if (link.mobility == "patellofemoral_glide" && hasKneeAxes_) {
+                // Patellar flexion is approximately 70% of tibiofemoral
+                // flexion (Amis et al., 2006). This is a rotational
+                // approximation; actual patellar translation is not modelled.
+                const int side = suffix(childName);
+                const Vec3 axis=kneeAxes_[side].medialDirection * (side==0 ? -1.0 : 1.0);
+                JointRigidTransform frame; frame.translation=kneeAxes_[side].origin;
+                auto joint=CalibratedRotationalJoint::create(frame,frame,
+                    {{axis,-0.7*135*toRadians,0.7*135*toRadians}});
+                if (!joint) { error="Invalid patellar joint " + childName; return false; }
+                body=rig.addJoint(mapping[parent],*joint); coupledPatella=true;
+            } else if (bounds) {
                 Vec3 pivot = contact(parent, child);
                 const int side = suffix(childName);
                 if (link.mobility == "shoulder_ball_socket") {
@@ -585,7 +633,8 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     // The radius and ulna share one elbow flexion axis.
                     const int h = sourceStructure(side == 0 ? "Humerus_L" : "Humerus_R");
                     const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
-                    if (h >= 0 && u >= 0) pivot = contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u));
+                    if (hasElbowAxes_) pivot=elbowAxes_[side].origin;
+                    else if (h >= 0 && u >= 0) pivot = contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u));
                 } else if (link.mobility == "wrist_condyloid") {
                     // The scaphoid and lunate both articulate with the radius.
                     // Their palm descendants form one group; use one shared
@@ -602,7 +651,8 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 if (link.mobility == "shoulder_ball_socket") {
                     const int h = sourceStructure(side == 0 ? "Humerus_L" : "Humerus_R");
                     const int u = sourceStructure(side == 0 ? "Ulna_L" : "Ulna_R");
-                    if (h >= 0 && u >= 0)
+                    if (hasElbowAxes_) down=normalized(elbowAxes_[side].origin-pivot);
+                    else if (h >= 0 && u >= 0)
                         down = normalized(contact(static_cast<std::size_t>(h),static_cast<std::size_t>(u))-pivot);
                 }
                 if (link.mobility == "wrist_condyloid") {
@@ -640,6 +690,9 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     up = normalized(up-axis*dot(up,axis));
                     const Vec3 other = normalized((down*-1.0)-axis*dot(down*-1.0,axis));
                     current = std::atan2(dot(axis,cross(up,other)),dot(up,other));
+                } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
+                    axis = elbowAxes_[side].direction;
+                    current = elbowAxes_[side].sourceAngleDegrees * toRadians;
                 } else if (link.mobility == "elbow_hinge" || link.mobility == "finger_pip_hinge" ||
                            link.mobility == "finger_dip_hinge" || link.mobility == "thumb_ip_hinge" ||
                            link.mobility == "toe_ip_hinge") {
@@ -669,7 +722,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 body = rig.addFixed(mapping[parent],{});
             }
             if (!body) { error = "Unable to attach source joint " + childName; return false; }
-            if (bounds) bindPose.push_back({*body,{bindAngle}});
+            if (bounds || coupledPatella) bindPose.push_back({*body,{bindAngle}});
             mapping[child] = *body; visited[child] = true; queue.push_back(child);
         }
     }
@@ -737,6 +790,27 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
             if (!otherJoint || otherJoint->angles().empty()) continue;
             auto otherAngles = otherJoint->angles(); otherAngles[0] = angles[0];
             updates.push_back({otherBody,otherAngles});
+        }
+    }
+    if (relationship.mobility == "knee_modified_hinge") {
+        // Drive the patella relative to its *source* position. The source CT
+        // is not assumed to be fully extended, so coupling uses the change in
+        // knee angle, not an absolute angle from a guessed bind pose.
+        const auto femur=sourceStructures_[relationship.first].name.rfind("Femur_",0)==0
+                             ? relationship.first : relationship.second;
+        for (const auto& other : sourceLinks_) {
+            if (other.mobility != "patellofemoral_glide" ||
+                (other.first != femur && other.second != femur)) continue;
+            const auto patella=other.first==femur ? other.second : other.first;
+            const auto patellaBody=sourceBodies_[patella];
+            const auto* patellarJoint=sourceRig_->joint(patellaBody);
+            if (!patellarJoint || sourceRig_->parent(patellaBody)!=sourceBodies_[femur]) continue;
+            for (const auto& bind : referenceBindPose_) if (bind.body==body && !bind.angles.empty()) {
+                auto patellarAngles=patellarJoint->angles();
+                patellarAngles[0]=0.7*(angles[0]-bind.angles[0]);
+                updates.push_back({patellaBody,patellarAngles});
+                break;
+            }
         }
     }
     return setSourcePose(updates);

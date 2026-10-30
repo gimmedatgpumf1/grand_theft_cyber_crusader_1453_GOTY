@@ -1,0 +1,4 @@
+# Approximate elbow axes in registered metres; not a validated medical motion model.
+# side pivot_x pivot_y pivot_z axis_x axis_y axis_z source_flexion_degrees
+L 0.214874101 1.227213581 0.039706569 -0.365009951 -0.221947787 -0.904160890 106.301689222
+R -0.124015930 1.280658479 0.231201158 0.064187434 0.779434674 0.623186619 86.398655239
