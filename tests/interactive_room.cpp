@@ -125,6 +125,32 @@ int main() {
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation-5)<1e-7);
     app.handle(down('r'));
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation)<1e-7);
+    // Momentary modifiers independently drive MCP, PIP and DIP on both
+    // actual models; releasing the modifiers leaves no selected joint mode.
+    for (int stage=1;stage<=3;++stage) {
+        app.handle(down('r'));
+        if (stage==1 || stage==3) app.handle(down(kKeyLeftControl));
+        if (stage==2 || stage==3) app.handle(down(kKeyAlt));
+        app.handle(down('2'));
+        for (auto* body : {&app.room_.male(),&app.room_.female()}) for (char side : {'L','R'}) {
+            const auto tag=std::string("_")+side;
+            const std::string children[]={"HandProxP2"+tag,"HandMidP2"+tag,"HandDistP2"+tag};
+            for (int joint=0;joint<3;++joint) {
+                bool found=false;
+                for (std::size_t i=0;i<body->sourceLinks().size();++i) {
+                    const auto& edge=body->sourceLinks()[i];
+                    if (body->sourceStructures()[edge.second].name==children[joint] && body->referenceBend(i)) {
+                        assert(std::abs(*body->referenceBend(i)-(joint==stage-1 ? 5.0 : 0.0))<1e-7);
+                        found=true; break;
+                    }
+                }
+                assert(found);
+            }
+        }
+        if (stage==1 || stage==3) app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyLeftControl});
+        if (stage==2 || stage==3) app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyAlt});
+    }
+    app.handle(down('r'));
     assert(!net::waitReadable(peer,0)); // room joint input never reaches the game player
     app.handle(down('v')); assert(app.room_.lineView());
     WindowEvent repeatV = down('v'); repeatV.repeat = true; app.handle(repeatV);

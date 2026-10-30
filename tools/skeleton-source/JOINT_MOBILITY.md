@@ -164,8 +164,13 @@ intersected at straight extension. See `openskeleton/13-audit-knee-straight.py`.
 The fixed-axis knee approximation still has known intersections at other
 angles (see `09-audit-knee-motion.py`).
 
-Finger flexion axes follow the local palm plane and proximal bone direction,
-so positive flexion curls toward the palm rather than alternating by digit.
+Finger axes use the principal shaft directions of the actual phalanges and
+metacarpals. Each joint's positive bend is oriented toward its palm after its
+parent fingers have straightened; all MCP, PIP/IP and DIP joints are checked
+independently in mesh and V view. The extended hand pose aligns the measured
+bone shafts; it does not depend only on setting arbitrary angles to zero.
+The registered source may have an inferred angle outside the population range;
+its bind pose remains restorable, while interactive bends clamp to the cited range.
 Toe axes follow the local foot plane so positive flexion moves toward the sole.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and

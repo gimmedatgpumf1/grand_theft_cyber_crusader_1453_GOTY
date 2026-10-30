@@ -46,7 +46,9 @@ Press V to replace both skeleton meshes with the simplified view;
 press V again to return to the mesh view. Joint keys act on both subjects:
 `1`–`5` bend each finger, `6`–`0` bend each toe, `Q` shoulders, `E` elbows,
 `F` wrists, `G` hips, `H` knees, `J` ankles, `K` spine, `L` jaw/neck,
-`Z` shoulder girdle, `X` thumb base and `N` hip rotation. Hold Shift to reverse;
+`Z` shoulder girdle, `X` thumb base and `N` hip rotation. For the finger
+keys, hold Ctrl for MCP only, Alt for PIP (thumb IP), or Ctrl+Alt for DIP
+(fingers 2–5). With no modifier each whole finger bends. Hold Shift to reverse;
 `R` restores the T-pose and `B` restores the original registered source pose.
 The approximate reference angles and frames are described in
 [JOINT_MOBILITY.md](JOINT_MOBILITY.md); these controls are not medical validation.

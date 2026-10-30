@@ -36,7 +36,7 @@ public:
             if (event.key == kKeyEscape) { clear(); return Action::Release; }
             if (event.key == kKeyF12) return event.repeat ? Action::None : Action::Screenshot;
             if (event.key == 'w' || event.key == 'a' || event.key == 's' || event.key == 'd' ||
-                event.key == ' ' || event.key == kKeyLeftControl || event.key == kKeyShift) {
+                event.key == ' ' || event.key == kKeyLeftControl || event.key == kKeyShift || event.key == kKeyAlt) {
                 keys_.insert(event.key);
             }
         }
@@ -45,6 +45,11 @@ public:
 
     void clear() { keys_.clear(); }
     bool reverseBend() const { return keys_.count(kKeyShift) != 0; }
+    // Momentary modifiers, not a retained selection mode.
+    int fingerJoint() const {
+        const bool control=keys_.count(kKeyLeftControl), alt=keys_.count(kKeyAlt);
+        return control ? (alt ? 3 : 1) : (alt ? 2 : 0);
+    }
 
     void move(double dt) {
         const double along = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);

@@ -184,7 +184,9 @@ static void verify(SkeletonModel& model, const char* sex) {
         assert(std::abs(*model.referenceBend(i)-range->flexion)<1e-7);
         assert(model.setReferenceBend(i,-10000));
         assert(std::abs(*model.referenceBend(i)-range->extension)<1e-7);
-        assert(model.setReferenceBend(i,*initial));
+        // The registered source can start outside population bounds; only
+        // the explicit source-pose restore may recover that exact bind.
+        assert(model.restoreSourcePose());
         const auto restored = model.sourceMatrices({},0);
         for (std::size_t k=0; k<restored.size(); ++k) for (int j=0; j<16; ++j)
             assert(std::abs(restored[k][j]-original[k][j]) < 1e-7);

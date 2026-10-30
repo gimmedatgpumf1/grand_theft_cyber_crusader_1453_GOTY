@@ -1,4 +1,5 @@
 #include "client/skeleton_body.h"
+#include "client/skeleton_finger_frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -562,6 +563,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     const std::size_t missing = static_cast<std::size_t>(-1);
     std::vector<std::size_t> mapping(count, missing), queue;
     std::vector<bool> visited(count);
+    FingerReferenceFrames fingerFrames(count);
     AnatomicalKinematicTree rig;
     std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
     auto rootBody = rig.addFixed(0, {});
@@ -589,6 +591,16 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         }
         return result;
     };
+    const auto shaft = [&](std::size_t index, Vec3 hint) {
+        const auto [p,n]=points(index); const Vec3 c=center(index);
+        Vec3 direction=normalized(hint);
+        for (int step=0;step<16;++step) {
+            Vec3 v;
+            for (std::size_t i=0;i<n;++i) { const Vec3 d=p[i]-c; v+=d*dot(d,direction); }
+            if (length(v)>1e-12) direction=normalized(v);
+        }
+        return dot(direction,hint)<0 ? direction*-1.0 : direction;
+    };
     const auto suffix = [](const std::string& name) -> int {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
@@ -599,6 +611,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             if (link.first != parent && link.second != parent) continue;
             const auto child = link.first == parent ? link.second : link.first;
             if (visited[child]) continue;
+            fingerFrames.inherit(parent,child);
             const auto& parentName = sourceStructures_[parent].name;
             const auto& childName = sourceStructures_[child].name;
             const auto bounds = referenceBendRange(link.mobility, parentName, childName);
@@ -734,10 +747,13 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     Vec3 palm=normalized(cross(center(static_cast<std::size_t>(index))-center(static_cast<std::size_t>(little)),
                                                center(static_cast<std::size_t>(middle))-center(static_cast<std::size_t>(wrist))));
                     palm=palm*(side==0 ? -1.0 : 1.0);
-                    axis=normalized(cross(up*-1.0,palm));
-                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
-                    const Vec3 distal=normalized(down-axis*dot(down,axis));
-                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
+                    const Vec3 proximal=shaft(parent,up)*-1.0, distal=shaft(child,down);
+                    const Vec3 flexion=normalized(cross(proximal,palm));
+                    const Vec3 sourceBend=cross(proximal,distal);
+                    axis=length(sourceBend)>1e-5 ? normalized(sourceBend) : flexion;
+                    if (dot(axis,flexion)<0) axis=axis*-1.0;
+                    current=std::atan2(dot(axis,sourceBend),dot(proximal,distal));
+                    fingerFrames.attach(parent,child,distal,palm,axis,current);
                 } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
                            link.mobility == "toe_ip_hinge") {
                     const std::string tag=side==0 ? "_L" : "_R";
@@ -768,10 +784,13 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 // joint's source coordinate the identity relative transform.
                 // Otherwise a nonzero parent bind angle incorrectly rotates
                 // the child's pivot and axis before any posing occurs.
-                current = std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
+                const bool finger=link.mobility=="finger_mcp_condyloid" || link.mobility=="finger_pip_hinge" ||
+                    link.mobility=="finger_dip_hinge" || link.mobility=="thumb_mcp" || link.mobility=="thumb_ip_hinge";
+                if (!finger) current=std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
                 JointRigidTransform frame; frame.translation = pivot;
                 const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));
-                std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
+                std::vector<JointRotationalAxis> axes{{axis,std::min(bounds->extension*toRadians,current),
+                                                        std::max(bounds->flexion*toRadians,current)}};
                 bindAngles={current};
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.

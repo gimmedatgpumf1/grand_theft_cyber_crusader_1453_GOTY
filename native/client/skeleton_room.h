@@ -29,7 +29,8 @@ public:
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
     // Test-room controls act directly on named anatomical groups in both bodies.
-    bool adjustReferenceGroup(int key, double degrees);
+    // fingerJoint: 0 = whole digit, 1 = MCP, 2 = PIP/IP, 3 = DIP.
+    bool adjustReferenceGroup(int key, double degrees, int fingerJoint = 0);
     bool restoreReferencePose(); // straight-arm, straight-leg reference pose
     bool restoreOriginalPose(); // original registered CT pose
 

@@ -123,7 +123,7 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     return true;
 }
 
-bool SkeletonRoom::adjustReferenceGroup(int key, double degrees) {
+bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint) {
     if (!ready_ || !std::isfinite(degrees)) return false;
     // Keys select concrete anatomical groups; there is no hidden joint-selection
     // mode. Every finger/toe can be moved independently of its neighbours.
@@ -146,6 +146,12 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees) {
                         (kind=="thumb_mcp" || kind=="thumb_ip_hinge" ||
                          kind=="finger_mcp_condyloid" || kind=="finger_pip_hinge" || kind=="finger_dip_hinge" ||
                          kind=="great_toe_mtp" || kind=="lesser_toe_mtp" || kind=="toe_ip_hinge");
+                if (hand && fingerJoint) {
+                    const bool mcp=kind=="thumb_mcp" || kind=="finger_mcp_condyloid";
+                    const bool pip=kind=="thumb_ip_hinge" || kind=="finger_pip_hinge";
+                    const bool dip=kind=="finger_dip_hinge";
+                    match=match && ((fingerJoint==1 && mcp) || (fingerJoint==2 && pip) || (fingerJoint==3 && dip));
+                }
             } else if (key=='q') match=kind=="shoulder_ball_socket";
             else if (key=='e') match=kind=="elbow_hinge" && b.rfind("Ulna_",0)!=0;
             else if (key=='f') match=kind=="wrist_condyloid" && b.rfind("HandLuna_",0)!=0;

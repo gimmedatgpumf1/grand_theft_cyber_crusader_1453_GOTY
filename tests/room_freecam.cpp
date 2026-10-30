@@ -52,6 +52,11 @@ int main() {
     // No room collision or distance clamp: the camera can fly through walls.
     camera.move(10.0);
     assert(length(camera.camera(640, 480, true).position - start) > 50);
+    assert(camera.fingerJoint()==0);
+    camera.handle(key(Type::KeyDown,kKeyLeftControl),true); assert(camera.fingerJoint()==1);
+    camera.handle(key(Type::KeyDown,kKeyAlt),true); assert(camera.fingerJoint()==3);
+    camera.handle(key(Type::KeyUp,kKeyLeftControl),true); assert(camera.fingerJoint()==2);
+    camera.handle(key(Type::KeyUp,kKeyAlt),true); assert(camera.fingerJoint()==0);
     for (int bend : {'1','5','6','0','q','e','f','g','h','j','k','l','z','x','n'}) {
         assert(camera.handle(key(Type::KeyDown,bend),true)==Action::BendJoints);
         assert(camera.handle(key(Type::KeyDown,bend,true),true)==Action::BendJoints);

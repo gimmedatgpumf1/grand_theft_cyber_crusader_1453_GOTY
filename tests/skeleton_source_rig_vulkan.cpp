@@ -162,6 +162,15 @@ static void liveRoomControls(SkeletonRoom& room, ViewState view) {
             assert(male>0 && female>0);
             assert(room.restoreReferencePose()); assert(differences(before,pixels(room,view))==0);
         }
+        for (int stage=1;stage<=3;++stage) {
+            const auto before=pixels(room,view);
+            assert(room.adjustReferenceGroup('2',30,stage)); const auto moved=pixels(room,view);
+            const int male=differencesHalf(before,moved,view.width,view.height,false);
+            const int female=differencesHalf(before,moved,view.width,view.height,true);
+            std::printf("Vulkan room %s index joint %d: %d/%d changed pixels\n",line?"V-view":"mesh",stage,male,female);
+            assert(male>0 && female>0);
+            assert(room.restoreReferencePose()); assert(differences(before,pixels(room,view))==0);
+        }
     }
     room.toggleLineView();
 }

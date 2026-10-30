@@ -507,7 +507,8 @@ private:
         } else if (action == RoomFreecam::Action::Screenshot) {
             screenshot_ = true;
         } else if (action == RoomFreecam::Action::BendJoints) {
-            room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0);
+            room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0,
+                                       roomCamera_.fingerJoint());
         } else if (action == RoomFreecam::Action::RestorePose) {
             room_.restoreReferencePose();
         } else if (action == RoomFreecam::Action::RestoreOriginal) {
