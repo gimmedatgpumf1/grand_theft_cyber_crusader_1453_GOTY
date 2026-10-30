@@ -66,9 +66,12 @@ static void clinicalBend(SkeletonRoom& room, ViewState view, SkeletonModel& mode
     auto joint = CalibratedRotationalJoint::create(frame, frame,
         {{model.kneeAxes()[0].medialDirection, -4, 4}}); assert(joint);
     AnatomicalKinematicTree rig;
-    auto hinge = rig.addJoint(0, *joint); assert(hinge);
+    auto femur = rig.addFixed(0, {}); assert(femur);
+    auto hinge = rig.addJoint(*femur, *joint); assert(hinge);
+    const auto femurSource = model.sourceLinks()[link].first;
     std::vector<std::size_t> bodies(model.sourceStructures().size());
     for (std::size_t i=0; i<bodies.size(); ++i) {
+        if (i == femurSource) { bodies[i] = *femur; continue; }
         if (i == tibia) { bodies[i] = *hinge; continue; }
         const auto& part = model.sourceStructures()[i];
         const auto& group = model.bones()[part.group].name;

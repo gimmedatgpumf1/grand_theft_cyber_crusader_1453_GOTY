@@ -48,6 +48,10 @@ public:
         return append(std::move(node));
     }
     std::size_t size() const { return nodes_.size(); }
+    std::optional<std::size_t> parent(std::size_t body) const {
+        if (body == 0 || body >= nodes_.size()) return std::nullopt;
+        return nodes_[body].parent;
+    }
     const CalibratedRotationalJoint* joint(std::size_t body) const {
         if (body >= nodes_.size() || !nodes_[body].joint) return nullptr;
         return &*nodes_[body].joint;

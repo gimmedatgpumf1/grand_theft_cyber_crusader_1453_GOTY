@@ -24,10 +24,13 @@ static void verify(const char* sex) {
     JointRigidTransform frame; frame.translation = model.kneeAxes()[0].origin;
     auto joint = CalibratedRotationalJoint::create(frame,frame,{{model.kneeAxes()[0].medialDirection,-4,4}});
     assert(joint);
-    AnatomicalKinematicTree tree; std::vector<std::size_t> bodies;
+    AnatomicalKinematicTree tree; std::vector<std::size_t> bodies(model.sourceStructures().size());
+    const auto femur = model.sourceLinks()[link].first;
+    auto parent = tree.addFixed(0, {}); assert(parent); bodies[femur] = *parent;
+    auto hinge = tree.addJoint(*parent,*joint); assert(hinge); bodies[tibia] = *hinge;
     for (std::size_t i=0; i<model.sourceStructures().size(); ++i) {
-        auto node = i==tibia ? tree.addJoint(0,*joint) : tree.addFixed(0,{});
-        assert(node); bodies.push_back(*node);
+        if (i == femur || i == tibia) continue;
+        auto node = tree.addFixed(0,{}); assert(node); bodies[i] = *node;
     }
     tree.captureBindPose(); assert(model.setSourceRig(tree,bodies,error));
     const auto bind=model.sourceMatrices({},0);
@@ -44,6 +47,16 @@ static void verify(const char* sex) {
     const auto restored=model.sourceMatrices({},0);
     for (std::size_t i=0; i<bind.size(); ++i) for (int j=0; j<16; ++j)
         assert(std::abs(bind[i][j]-restored[i][j]) < 1e-12);
+    // A biological graph edge must not drive a joint attached elsewhere.
+    AnatomicalKinematicTree disconnected; std::vector<std::size_t> wrong;
+    for (std::size_t i=0; i<model.sourceStructures().size(); ++i) {
+        auto node = i==tibia ? disconnected.addJoint(0,*joint) : disconnected.addFixed(0,{});
+        assert(node); wrong.push_back(*node);
+    }
+    disconnected.captureBindPose(); assert(model.setSourceRig(disconnected,wrong,error));
+    const auto revision = model.sourcePoseRevision();
+    assert(!model.setReferenceBend(link,20));
+    assert(model.sourcePoseRevision() == revision);
 }
 int main() {
     verify("male"); verify("female");

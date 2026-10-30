@@ -492,8 +492,12 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     const auto& relationship = sourceLinks_[link];
     const auto bounded = clampReferenceBend(relationship.mobility, degrees,
         sourceStructures_[relationship.first].name, sourceStructures_[relationship.second].name);
-    if (!bounded || relationship.second >= sourceBodies_.size()) return false;
-    const std::size_t body = sourceBodies_[relationship.second];
+    if (!bounded || relationship.first >= sourceBodies_.size() || relationship.second >= sourceBodies_.size()) return false;
+    const auto first = sourceBodies_[relationship.first], second = sourceBodies_[relationship.second];
+    std::size_t body;
+    if (sourceRig_->parent(second) == first) body = second;
+    else if (sourceRig_->parent(first) == second) body = first;
+    else return false; // a graph edge alone does not make the bones parent and child
     const auto* joint = sourceRig_->joint(body);
     if (!joint || joint->angles().empty()) return false;
     constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
