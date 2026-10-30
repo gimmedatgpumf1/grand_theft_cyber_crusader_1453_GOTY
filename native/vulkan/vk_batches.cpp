@@ -2,9 +2,9 @@
 //
 // Two jobs live here. The first is turning a batch's own indices into offsets in
 // the one shared vertex stream. The second is the opposite of it: a whole
-// skeleton arrives as fifty-six rigid batches that share a material, and fifty-
-// six draw calls cost 0.7 ms of a 3 ms frame. So consecutive batches that differ
-// only by their matrix are drawn once, with the matrix read out of an array.
+// skeleton arrives as independently transformed rigid batches that share a
+// material. Consecutive batches that differ only by their matrix are drawn once,
+// with the matrix read out of a device buffer.
 
 #include "vk_internal.h"
 
@@ -111,9 +111,8 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
     }
 }
 
-// This frame's matrices, at the slots their batches were given. A pose is fifty-
-// six of these, so this is a few kilobytes of memory a frame rather than a
-// command per bone.
+// This frame's matrices, at the slots their batches were given, rather than a
+// command per source structure.
 void Renderer::fillBones(const GpuScene& scene) {
     if (boneMap_ == nullptr) return;
     for (const BatchRun& run : runs_) {

@@ -106,8 +106,10 @@ clinical certification. `Head` and `Jaw` are whole source structures, not
 individual skull bones. The 27-group runtime mesh and V-view grouped surfaces are
 not a full 182-joint interactive rig. The C room now loads the 182 individual
 source-mesh ranges and all 209 explicitly classified anatomical relationships
-into the runtime model; this makes the existing graph available to a future
-solver, but does not make the structures movable or enforce limits. Joint
+into the runtime model. The GPU room path renders each source structure in its
+own rigid batch, with space for independent matrices; currently each matrix still
+inherits its coarse group transform. This does not implement joint movement or
+enforce limits, and V-view shapes remain static. Joint
 movement classes and limitations are
 documented in [JOINT_MOBILITY.md](JOINT_MOBILITY.md); they are reference data,
 not enforced runtime constraints. To regenerate these inspection surfaces, NumPy and

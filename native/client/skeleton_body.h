@@ -76,6 +76,10 @@ public:
     // from firstObjectId. Paired with boneMatrices() a pose change costs 28
     // matrices instead of 195,000 vertices.
     void buildRestGeometry(Rasterizer& rasterizer, const Camera& camera, int firstObjectId) const;
+    // Independent GPU batches per labelled source structure. Until a calibrated
+    // per-structure solver exists, each inherits its coarse group's transform.
+    void buildSourceRestGeometry(Rasterizer& rasterizer, int firstObjectId) const;
+    std::vector<std::array<double, 16>> sourceMatrices(Vec3 origin, double yaw) const;
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;
 

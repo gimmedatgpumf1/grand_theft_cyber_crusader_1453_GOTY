@@ -302,7 +302,7 @@ bool Renderer::createLayouts() {
     // buffer, past the end of it, and is only read by the vertex stage.
     VkDescriptorSetLayoutBinding boneBinding{};
     boneBinding.binding = 2;
-    boneBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    boneBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     boneBinding.descriptorCount = 1;
     boneBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
@@ -327,15 +327,17 @@ bool Renderer::createLayouts() {
     textureInfo.pBindings = &textureBinding;
     if (createDescriptorSetLayout(device_, &textureInfo, nullptr, &textureLayout_) != VK_SUCCESS) return false;
 
-    VkDescriptorPoolSize sizes[2]{};
+    VkDescriptorPoolSize sizes[3]{};
     sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     sizes[0].descriptorCount = 16;
     sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     sizes[1].descriptorCount = 257;
+    sizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    sizes[2].descriptorCount = 16;
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.maxSets = 272;
-    poolInfo.poolSizeCount = 2;
+    poolInfo.poolSizeCount = 3;
     poolInfo.pPoolSizes = sizes;
     if (createDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) return false;
 
@@ -618,7 +620,7 @@ bool Renderer::createFrameResources() {
         VkBufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         info.size = kSlotOffset + kSlotBlock;
-        info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         if (createBuffer(device_, &info, nullptr, &frameBuffers_[slot]) != VK_SUCCESS) return false;
         VkMemoryRequirements requirements{};
@@ -651,6 +653,7 @@ bool Renderer::createFrameResources() {
         writes[0].pBufferInfo = &buffer;
         writes[1] = writes[0];
         writes[1].dstBinding = 2;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].pBufferInfo = &bones;
         updateDescriptorSets(device_, 2, writes, 0, nullptr);
     }

@@ -89,15 +89,13 @@ struct BatchRun {
 // it looks at the scene and answers, so it can be checked without a device.
 void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<float>& slots);
 
-// One draw for a whole skeleton. A body is fifty-six rigid batches, all sharing
-// one material, and submitting them one at a time was 0.7 ms of a frame that
-// had 3 ms to spend. Their matrices ride in one array instead of one push block
-// per draw, and the slot a vertex belongs to travels in its normal field --
-// which an indexed batch leaves empty, because its normal belongs to the
-// triangle. This is the array's ceiling: past it the extras are drawn singly.
-constexpr std::size_t kBatchSlots = 128;
+// Rigid batches sharing a material use one draw. Their matrices ride in a
+// storage buffer instead of one push block per draw, and each indexed vertex
+// carries its matrix slot in the otherwise-unused normal field. 512 slots fit
+// both 182-structure source bodies; past this ceiling runs are drawn singly.
+constexpr std::size_t kBatchSlots = 512;
 constexpr VkDeviceSize kSlotBlock = kBatchSlots * 16 * sizeof(float);
-// The frame block is 80 bytes; uniform buffer offsets are aligned to 256.
+// Both uniform and storage descriptor offsets are aligned to 256 bytes.
 constexpr VkDeviceSize kSlotOffset = 256;
 
 inline double srgbEncode(double value) {

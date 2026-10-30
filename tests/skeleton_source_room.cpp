@@ -136,6 +136,26 @@ static bool checkSolids(const GpuBatch& batch, const char* path, double x, doubl
     }
     return solids == 10 && vertexOffset == batch.vertices.size() && indexOffset == batch.indices.size();
 }
+static const SkeletonModel* checkedMale = nullptr;
+static const SkeletonModel* checkedFemale = nullptr;
+static bool verifySourceGeometry = false, sourceGeometryCorrect = true;
+static std::size_t sourceGeometryCount = 0;
+static bool matchesSource(const GpuBatch& batch, const SkeletonModel& model, std::size_t index) {
+    const auto& part = model.sourceStructures()[index];
+    const auto& group = model.bones()[part.group];
+    if (batch.vertices.size() != part.pointCount || batch.indices.size() != part.triangleCount * 3) return false;
+    for (std::size_t i = 0; i < part.pointCount; ++i) {
+        const auto& actual = batch.vertices[i];
+        const auto& source = group.points[part.firstPoint + i];
+        if (std::abs(actual.x-source.x) > 1e-6 || std::abs(actual.y-source.y) > 1e-6 ||
+            std::abs(actual.z-source.z) > 1e-6) return false;
+    }
+    for (std::size_t i = 0; i < part.triangleCount; ++i)
+        for (std::size_t c = 0; c < 3; ++c)
+            if (batch.indices[i*3+c] != static_cast<std::uint32_t>(group.triangles[part.firstTriangle+i][c] - part.firstPoint))
+                return false;
+    return true;
+}
 static std::size_t maleLineIndices, femaleLineIndices, maleSolidIndices, femaleSolidIndices;
 static bool capture(const GpuScene& scene, NativeFrame&) {
     female.clear(); male.clear();
@@ -150,6 +170,13 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
     capturedRevision = scene.revision;
     capturedCovered = scene.covered;
     for (const auto& batch : scene.batches) {
+        if (verifySourceGeometry && batch.objectId >= 9001 && batch.objectId < 9183) {
+            ++sourceGeometryCount;
+            sourceGeometryCorrect = sourceGeometryCorrect && matchesSource(batch, *checkedMale, batch.objectId - 9001);
+        } else if (verifySourceGeometry && batch.objectId >= 8001 && batch.objectId < 8183) {
+            ++sourceGeometryCount;
+            sourceGeometryCorrect = sourceGeometryCorrect && matchesSource(batch, *checkedFemale, batch.objectId - 8001);
+        }
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.52, 0)) maleDots = true;
         if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.52, 3.14159265)) femaleDots = true;
@@ -196,22 +223,28 @@ int main() {
     if (!maleModel.load("tools/skeleton-source/skeleton-male.obj", error)) {
         std::printf("male load failed: %s\n", error.c_str()); return 1;
     }
-    const int skull = maleModel.bone("skull");
+    const int skull = maleModel.sourceStructure("Head");
     if (skull < 0) { std::puts("male skull missing"); return 1; }
     maleSkullId = 9001u + static_cast<std::uint32_t>(skull);
-    const std::size_t expectedSkullIndices = maleModel.bones()[skull].triangles.size() * 3;
+    const std::size_t expectedSkullIndices = maleModel.sourceStructures()[skull].triangleCount * 3;
     SkeletonRoom room;
     if (!room.load(".", error)) { std::printf("room load failed: %s\n", error.c_str()); return 1; }
     if (room.male().sourceStructures().size() != 182 || room.female().sourceStructures().size() != 182 ||
         room.male().sourceLinks().size() != 209 || room.female().sourceLinks().size() != 209) {
         std::puts("test room source structures or links missing"); return 1;
     }
+    checkedMale = &room.male(); checkedFemale = &room.female();
+    verifySourceGeometry = true;
     setGpuRenderer(&capture);
     ViewState view;
     view.gpu = true;
     view.width = 640; view.height = 480;
     NativeFrame frame;
     room.render(frame, view, 0.75);
+    verifySourceGeometry = false;
+    if (!sourceGeometryCorrect || sourceGeometryCount != 364) {
+        std::puts("source GPU meshes do not match the loaded source partitions"); return 1;
+    }
     const auto firstFemale = female, firstMale = male;
     room.render(frame, view, 1.75);
     const double c = std::cos(3.14159265), s = std::sin(3.14159265);
@@ -226,7 +259,7 @@ int main() {
     for (const auto& matrix : firstMale)
         for (std::size_t i = 0; i < matrix.size(); ++i)
             if (std::abs(matrix[i] - malePlacement[i]) > 1e-12) unposed = false;
-    bool pass = checkIndexedRecycle() && firstFemale.size() == 27 && firstMale.size() == 27 && unposed &&
+    bool pass = checkIndexedRecycle() && firstFemale.size() == 182 && firstMale.size() == 182 && unposed &&
                 firstFemale == female && firstMale == male && indicesValid &&
                 expectedSkullIndices > 0 && skullIndexCount == expectedSkullIndices;
     const auto oldFemale = female, oldMale = male;
@@ -284,9 +317,9 @@ int main() {
     room.toggleLineView();
     room.render(frame, view, 1.90, &freecam);
     pass = pass && !room.lineView() && capturedRevision == oldRevision &&
-           female.size() == 27 && male.size() == 27 && skullIndexCount == expectedSkullIndices;
+           female.size() == 182 && male.size() == 182 && skullIndexCount == expectedSkullIndices;
     setGpuRenderer(nullptr);
-    std::printf("test room source pose and resize: %s (female %zu groups, male %zu groups)\n",
+    std::printf("test room source pose and resize: %s (female %zu structures, male %zu structures)\n",
                 pass ? "PASS" : "FAIL", female.size(), male.size());
     return pass ? 0 : 1;
 }

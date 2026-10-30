@@ -47,8 +47,8 @@ private:
     // changes with the thread count, the split is losing or duplicating work.
     std::size_t sceneTriangles_ = 0;
     // Rest geometry is emitted once; a pose then costs one matrix per bone. The
-    // pair is the batch index each bone owns, so a rebuild writes 56 matrices
-    // and uploads nothing.
+    // pair is the batch index each source structure owns, so a pose update
+    // changes transforms without re-uploading its mesh vertices.
     bool restReady_ = false;
     std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches_;
     std::vector<std::array<double, 16>> cachedMaleMatrices_;

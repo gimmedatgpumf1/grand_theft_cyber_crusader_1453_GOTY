@@ -12,6 +12,41 @@
 
 using namespace gtc::native;
 
+static std::uint32_t headObjects[2] = {};
+static bool sourceMotionVisible = false;
+// Device test of independent rigid batching, not an anatomically valid head
+// joint. A fixed scene pointer and revision test matrix-only GPU updates.
+static bool renderAndCheckSourceMotion(const GpuScene& scene, NativeFrame& frame) {
+    GpuScene moved = scene;
+    if (!renderVulkanScene(moved, frame)) return false;
+    const std::size_t bytes = static_cast<std::size_t>(scene.width) * scene.height * 4;
+    const unsigned char* pixels = frame.direct ? frame.direct : frame.bgra.data();
+    const std::vector<unsigned char> before(pixels, pixels + bytes);
+    for (std::uint32_t object : headObjects) {
+        GpuBatch* target = nullptr;
+        for (auto& batch : moved.batches) if (batch.objectId == object) {
+            if (target) return false;
+            target = &batch;
+        }
+        if (!target) return false;
+        target->modelMatrix[12] += 0.4;
+        if (!renderVulkanScene(moved, frame)) return false;
+        pixels = frame.direct ? frame.direct : frame.bgra.data();
+        int changed = 0;
+        for (std::size_t i = 0; i < bytes; i += 4) {
+            int diff = 0;
+            for (int c = 0; c < 3; ++c) diff += std::abs(int(before[i+c]) - int(pixels[i+c]));
+            if (diff > 24) ++changed;
+        }
+        std::printf("Vulkan independent source matrix %u: %s (%d changed pixels)\n",
+                    object, changed > 10 ? "PASS" : "FAIL", changed);
+        if (changed <= 10) return false;
+        target->modelMatrix[12] -= 0.4;
+    }
+    sourceMotionVisible = true;
+    return true;
+}
+
 static bool bothVisible = true;
 static bool dotsVisible = false;
 static bool solidsVisible = false;
@@ -329,6 +364,13 @@ int main() {
     bool ok = true;
     const std::pair<int, int> sizes[] = {{320, 240}, {800, 600}, {1, 1},
                                          {640, 480}, {400, 600}, {960, 540}, {320, 240}};
+    headObjects[0] = 9001u + static_cast<std::uint32_t>(room.male().sourceStructure("Head"));
+    headObjects[1] = 8001u + static_cast<std::uint32_t>(room.female().sourceStructure("Head"));
+    setGpuRenderer(&renderAndCheckSourceMotion);
+    view.width = 640; view.height = 480;
+    room.render(frame, view, 1.0);
+    if (!sourceMotionVisible) ok = false;
+    setGpuRenderer(&renderVulkanScene);
     // First use the unmodified backend in consecutive frames, then verify each
     // body contributes actual device pixels at every visible size.
     for (int pass = 0; pass < 2 && ok; ++pass) {

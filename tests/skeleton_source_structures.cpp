@@ -112,6 +112,15 @@ int main() {
     assert(model.load("tools/skeleton-source/skeleton-male.obj", error));
     assert(model.loadSourceLinks("tools/skeleton-source/skeleton-joint-links.txt", error));
     verify(model);
+    // Until fitted per-structure joints exist, each source part must inherit
+    // exactly the coarse group's rigid transform, even for a nonzero pose.
+    model.bones()[0].pitch = 0.12;
+    const auto groups = model.boneMatrices({1,2,3}, 0.3);
+    const auto sources = model.sourceMatrices({1,2,3}, 0.3);
+    assert(sources.size() == model.sourceStructures().size());
+    for (std::size_t i = 0; i < sources.size(); ++i)
+        assert(sources[i] == groups[model.sourceStructures()[i].group]);
+    model.bones()[0].pitch = 0;
     // Failed reload is transactional: it must not replace the valid graph.
     { std::ofstream bad("build/invalid-joint-links.txt"); bad << "joint Head ImaginaryBone elbow_hinge\n"; }
     assert(!model.loadSourceLinks("build/invalid-joint-links.txt", error));

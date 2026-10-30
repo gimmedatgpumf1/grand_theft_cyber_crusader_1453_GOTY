@@ -31,8 +31,8 @@ layout(set = 0, binding = 0) uniform Frame {
 // One matrix per rigid batch, for a body drawn in a single call. The slot is
 // per vertex and travels in the normal field, which an indexed batch leaves
 // empty because its normal belongs to the triangle.
-layout(set = 0, binding = 2) uniform Bones {
-    mat4 bone[128];
+layout(std430, set = 0, binding = 2) readonly buffer Bones {
+    mat4 bone[512];
 } bones;
 
 layout(push_constant) uniform Batch {

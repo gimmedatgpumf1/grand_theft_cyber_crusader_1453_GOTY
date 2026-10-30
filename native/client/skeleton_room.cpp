@@ -160,10 +160,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     const bool poseChanged = pose != cachedPose_;
 
     if (view.gpu) {
-        // A bone is a rigid body. So the triangles are emitted once, in rest
-        // position, one batch per bone -- and a pose is then 56 matrices rather
-        // than 195,000 transformed vertices per body plus the same geometry
-        // travelling to the GPU again. Both bodies retain their original source pose.
+        // The original source structures are emitted once into independent
+        // rigid batches. Their matrices currently inherit the coarse group pose;
+        // splitting the batches alone does not implement joint constraints.
         if (!restReady_) {
             const int maleBase = 9001;
             const int femaleBase = 8001;
@@ -174,8 +173,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             drawWalls(room, camera);
             room.setObject(0, {0.0, 0.0}, 0.0F);
             GpuScene parts = room.takeGpuScene();
-            male_.buildRestGeometry(room, camera, maleBase);
-            female_.buildRestGeometry(room, camera, femaleBase);
+            male_.buildSourceRestGeometry(room, maleBase);
+            female_.buildSourceRestGeometry(room, femaleBase);
             std::vector<GpuScene> halves;
             halves.push_back(std::move(parts));
             halves.push_back(room.takeGpuScene());
@@ -190,7 +189,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 boneBatches_.emplace_back(id, index);
             }
             sceneTriangles_ = 0;
-            for (const GpuBatch& batch : scene_.batches) sceneTriangles_ += batch.vertices.size() / 3;
+            for (const GpuBatch& batch : scene_.batches)
+                sceneTriangles_ += (batch.indices.empty() ? batch.vertices.size() : batch.indices.size()) / 3;
             restReady_ = true;
             sceneReady_ = true;
         }
@@ -199,8 +199,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         const bool poseMoved = poseChanged;
         if (poseMoved) {
             // The OpenSkeleton source faces the opposite way to the former atlas.
-            cachedMaleMatrices_ = male_.boneMatrices({-0.52, 0, 0}, 0.0);
-            cachedFemaleMatrices_ = female_.boneMatrices({0.52, 0, 0}, 3.14159265);
+            cachedMaleMatrices_ = male_.sourceMatrices({-0.52, 0, 0}, 0.0);
+            cachedFemaleMatrices_ = female_.sourceMatrices({0.52, 0, 0}, 3.14159265);
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;

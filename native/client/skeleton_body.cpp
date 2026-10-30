@@ -346,6 +346,37 @@ void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& came
     }
 }
 
+std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {
+    const auto groupMatrices = boneMatrices(origin, yaw);
+    std::vector<std::array<double, 16>> matrices;
+    matrices.reserve(sourceStructures_.size());
+    for (const auto& part : sourceStructures_) matrices.push_back(groupMatrices[part.group]);
+    return matrices;
+}
+
+void SkeletonModel::buildSourceRestGeometry(Rasterizer& rasterizer, int firstObjectId) const {
+    Material material;
+    material.color = colorHex("#e3d9bf");
+    material.specular = 0.12;
+    for (std::size_t index = 0; index < sourceStructures_.size(); ++index) {
+        const auto& source = sourceStructures_[index];
+        const auto& group = bones_[source.group];
+        std::vector<Vec3> points(group.points.begin() + source.firstPoint,
+                                 group.points.begin() + source.firstPoint + source.pointCount);
+        std::vector<std::array<int, 3>> triangles;
+        triangles.reserve(source.triangleCount);
+        for (std::size_t i = source.firstTriangle; i < source.firstTriangle + source.triangleCount; ++i) {
+            const auto face = group.triangles[i];
+            triangles.push_back({face[0] - static_cast<int>(source.firstPoint),
+                                 face[1] - static_cast<int>(source.firstPoint),
+                                 face[2] - static_cast<int>(source.firstPoint)});
+        }
+        rasterizer.setObject(static_cast<std::uint32_t>(firstObjectId + static_cast<int>(index)),
+                             {0.0, 0.0}, 0.0F);
+        rasterizer.mesh(points, triangles, material);
+    }
+}
+
 void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                               std::size_t begin, std::size_t end) const {
     const std::vector<Transform> pose = solvePose(bones_, origin, yaw);

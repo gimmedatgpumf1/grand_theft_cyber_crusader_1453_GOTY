@@ -191,6 +191,24 @@ int main() {
             seen.push_back(slot);
         }
     }
+    // Both 182-structure bodies should remain one coalesced draw rather than
+    // silently falling back to hundreds of individual draws.
+    {
+        gtc::native::GpuScene planned;
+        for (int i = 0; i < 364; ++i) {
+            auto batch = makeBatch();
+            batch.indices = {0, 1, 2};
+            planned.batches.push_back(batch);
+        }
+        std::vector<gtc::native::detail::BatchRun> runs;
+        std::vector<float> slots;
+        gtc::native::detail::planRuns(planned, runs, slots);
+        if (runs.size() != 1 || runs[0].first != 0 || runs[0].last != 363 ||
+            slots.size() != 364 || slots.front() != 0.0F || slots.back() != 363.0F) {
+            std::printf("364 source batches were not coalesced\n");
+            ++failures;
+        }
+    }
     gtc::native::shutdownVulkan();
     // After shutdown the backend must refuse rather than touch freed handles.
     if (gtc::native::renderVulkanScene(scene, frame)) {
