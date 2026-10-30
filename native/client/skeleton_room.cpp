@@ -146,11 +146,14 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
                         (kind=="thumb_mcp" || kind=="thumb_ip_hinge" ||
                          kind=="finger_mcp_condyloid" || kind=="finger_pip_hinge" || kind=="finger_dip_hinge" ||
                          kind=="great_toe_mtp" || kind=="lesser_toe_mtp" || kind=="toe_ip_hinge");
-                if (hand && fingerJoint) {
-                    const bool mcp=kind=="thumb_mcp" || kind=="finger_mcp_condyloid";
-                    const bool pip=kind=="thumb_ip_hinge" || kind=="finger_pip_hinge";
-                    const bool dip=kind=="finger_dip_hinge";
-                    match=match && ((fingerJoint==1 && mcp) || (fingerJoint==2 && pip) || (fingerJoint==3 && dip));
+                if (fingerJoint) {
+                    const bool base=hand ? (kind=="thumb_mcp" || kind=="finger_mcp_condyloid")
+                                         : (kind=="great_toe_mtp" || kind=="lesser_toe_mtp");
+                    const bool middle=hand ? (kind=="thumb_ip_hinge" || kind=="finger_pip_hinge")
+                                           : (kind=="toe_ip_hinge" && (b.rfind("FootMidP",0)==0 || digit==1));
+                    const bool tip=hand ? kind=="finger_dip_hinge"
+                                        : (kind=="toe_ip_hinge" && digit!=1 && b.rfind("FootDistP",0)==0);
+                    match=match && ((fingerJoint==1 && base) || (fingerJoint==2 && middle) || (fingerJoint==3 && tip));
                 }
             } else if (key=='q') match=kind=="shoulder_ball_socket";
             else if (key=='e') match=kind=="elbow_hinge" && b.rfind("Ulna_",0)!=0;
@@ -189,7 +192,7 @@ bool SkeletonRoom::restoreReferencePose() {
             if (!model->referenceBend(i)) continue;
             double target=0;
             if (kind=="shoulder_ball_socket") target=90;
-            else if (kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
+            else if (kind!="intervertebral" && kind!="atlanto_axial" && kind!="elbow_hinge" && kind!="knee_modified_hinge" && kind!="ankle_hinge" &&
                      kind!="wrist_condyloid" && kind!="thumb_cmc_saddle" && kind!="thumb_mcp" && kind!="thumb_ip_hinge" &&
                      kind!="finger_mcp_condyloid" && kind!="finger_pip_hinge" && kind!="finger_dip_hinge" &&
                      kind!="great_toe_mtp" && kind!="lesser_toe_mtp" && kind!="toe_ip_hinge") continue;
@@ -254,7 +257,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
+                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -274,7 +277,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         raster.setCamera(camera);
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-        femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 3.14159265, 8001, female_.sourceMatrices({},0));
+        femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
         frame = raster.finish();
         frame.logicalUi();
         return;
@@ -346,9 +349,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         // the batches they belong to. No vertex data moves. The static pose is solved only once.
         const bool poseMoved = poseChanged;
         if (poseMoved) {
-            // The OpenSkeleton source faces the opposite way to the former atlas.
+            // Both reference bodies face the same direction in the room.
             cachedMaleMatrices_ = male_.sourceMatrices({-0.95, maleFloor_, 0}, 0.0);
-            cachedFemaleMatrices_ = female_.sourceMatrices({0.95, femaleFloor_, 0}, 3.14159265);
+            cachedFemaleMatrices_ = female_.sourceMatrices({0.95, femaleFloor_, 0}, 0.0);
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
@@ -389,7 +392,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     drawWalls(room, camera);
     Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
-    std::thread worker([&] { female_.draw(second, camera, {0.95, femaleFloor_, 0}, 3.14159265); });
+    std::thread worker([&] { female_.draw(second, camera, {0.95, femaleFloor_, 0}, 0.0); });
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);

@@ -23,6 +23,8 @@ static void checkArmAlignment(SkeletonModel& model) {
     // Check the actual transformed shafts, not just stored joint angles.
     for (std::size_t i=0;i<model.sourceLinks().size();++i) {
         const auto& edge=model.sourceLinks()[i]; if (!model.referenceBend(i)) continue;
+        if (edge.mobility=="intervertebral" && model.sourceStructures()[edge.first].name=="L5" &&
+            model.sourceStructures()[edge.second].name=="Sacrum") assert(model.setReferenceBend(i,0));
         if (edge.mobility=="shoulder_ball_socket") assert(model.setReferenceBend(i,90));
         if (edge.mobility=="elbow_hinge") assert(model.setReferenceBend(i,0));
     }

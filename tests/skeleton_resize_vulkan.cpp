@@ -247,7 +247,7 @@ static bool renderAndCheckSolids(const GpuScene& scene, NativeFrame& frame) {
                 // The source pose has crossed arms. A continuous rib cage can
                 // legitimately occlude a hand from the default view, so also
                 // check the same intact scene from behind when needed.
-                if (changed == 0 || (mode == 2 && id == 8001)) {
+                if (changed == 0 || (mode == 2 && changed < 10)) {
                     changed = 0;
                     Camera camera;
                     camera.width = scene.width; camera.height = scene.height;

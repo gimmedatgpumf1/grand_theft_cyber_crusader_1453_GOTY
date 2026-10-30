@@ -31,6 +31,10 @@ static std::size_t link(const SkeletonModel& model, const std::string& child, co
 }
 static void reportSourceWrists(SkeletonRoom& room, SkeletonModel& model, const char* name) {
     assert(room.restoreOriginalPose());
+    const auto source=model.sourceMatrices({},0);
+    const double lean=posed(model,source,"C7").x-posed(model,source,"Sacrum").x;
+    assert(std::abs(lean)>0.015);
+    std::printf("%s source C7 lateral offset from sacrum: %.2f mm\n",name,lean*1000);
     for (int side=0;side<2;++side) {
         const auto wrist=sourceWristFrame(model,side,{1,0,0}); assert(wrist);
         const Vec3 forearm=normalized(wrist->wrist-model.elbowAxes()[side].origin);
@@ -41,6 +45,13 @@ static void reportSourceWrists(SkeletonRoom& room, SkeletonModel& model, const c
 }
 static void verifyPose(SkeletonModel& model) {
     auto m=model.sourceMatrices({},0);
+    const Vec3 sacrum=posed(model,m,"Sacrum"), neck=posed(model,m,"C7");
+    assert(std::abs(neck.x-sacrum.x)<1e-7); // upright at the actual spine, not camera placement
+    const Vec3 face=posed(model,m,"Jaw")-posed(model,m,"Head");
+    assert(face.z>0 && std::abs(face.x)<1e-7); // face forward without nodding
+    for (const char* vertebra : {"L5","L4","L3","L2","L1","T12","T11","T10","T9","T8","T7",
+                                 "T6","T5","T4","T3","T2","T1","C7","C6","C5","C4","C3","C2","C1"})
+        assert(std::abs(posed(model,m,vertebra).x-sacrum.x)<0.01);
     for (char side : {'L','R'}) {
         const auto tag=std::string("_")+side;
         for (const auto& pair : {std::pair<const char*,const char*>{"Humerus","shoulder_ball_socket"},

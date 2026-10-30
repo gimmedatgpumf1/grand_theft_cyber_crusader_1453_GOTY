@@ -192,11 +192,11 @@ static bool capture(const GpuScene& scene, NativeFrame&) {
         }
         if (batch.objectId == maleSkullId) skullIndexCount = batch.indices.size();
         if (batch.objectId == 9001 && checkDots(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) maleDots = true;
-        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) femaleDots = true;
+        if (batch.objectId == 8001 && checkDots(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) femaleDots = true;
         if (batch.objectId == 9001 && checkJoints(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) maleJoints = true;
-        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) femaleJoints = true;
+        if (batch.objectId == 8001 && checkJoints(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) femaleJoints = true;
         if (batch.objectId == 9001 && checkSolids(batch, "tools/skeleton-source/skeleton-male.lines", -0.95, 0)) { maleSolids = true; maleSolidIndices = batch.indices.size(); }
-        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 3.14159265)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
+        if (batch.objectId == 8001 && checkSolids(batch, "tools/skeleton-source/skeleton-female.lines", 0.95, 0.0)) { femaleSolids = true; femaleSolidIndices = batch.indices.size(); }
         for (std::uint32_t index : batch.indices) if (index >= batch.vertices.size()) indicesValid = false;
         if (batch.objectId >= 9001 && batch.objectId < 10000) {
             male.push_back(batch.modelMatrix); maleLineIndices += batch.indices.size();
@@ -262,7 +262,7 @@ int main() {
     }
     const auto firstFemale = female, firstMale = male;
     room.render(frame, view, 1.75);
-    const double c = std::cos(3.14159265), s = std::sin(3.14159265);
+    const double c = std::cos(0.0), s = std::sin(0.0);
     const std::array<double, 16> placement{c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0.95, 0, 0, 1};
     bool unposed = true;
     for (const auto& matrix : firstFemale) {

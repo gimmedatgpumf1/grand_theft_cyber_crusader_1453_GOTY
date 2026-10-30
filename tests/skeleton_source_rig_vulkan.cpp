@@ -175,6 +175,37 @@ static void liveRoomControls(SkeletonRoom& room, ViewState view) {
     room.toggleLineView();
 }
 
+// Individual toe joints are small, so inspect the same full room at a larger
+// render size rather than relying on a single 640x480 foot pixel.
+static void liveToeJoints(SkeletonRoom& room, ViewState view) {
+    view.width=1920; view.height=1080;
+    assert(room.adjustReferenceGroup('g',35)); // lift the feet clear of the floor for plantar flexion
+    for (int line=0;line<2;++line) {
+        if (line) room.toggleLineView();
+        const auto wholeBefore=pixels(room,view);
+        assert(room.adjustReferenceGroup('6',35));
+        const auto wholeAfter=pixels(room,view);
+        const int maleWhole=differencesHalf(wholeBefore,wholeAfter,view.width,view.height,false);
+        const int femaleWhole=differencesHalf(wholeBefore,wholeAfter,view.width,view.height,true);
+        std::printf("Vulkan room %s big toe: %d/%d changed pixels\n",line?"V-view":"mesh",maleWhole,femaleWhole);
+        assert(maleWhole>0 && femaleWhole>0);
+        assert(room.restoreReferencePose()); assert(room.adjustReferenceGroup('g',35));
+        assert(differences(wholeBefore,pixels(room,view))==0);
+        for (int stage=1;stage<=3;++stage) {
+            const auto before=pixels(room,view);
+            assert(room.adjustReferenceGroup('7',stage==3 ? -25 : 35,stage));
+            const auto after=pixels(room,view);
+            const int male=differencesHalf(before,after,view.width,view.height,false);
+            const int female=differencesHalf(before,after,view.width,view.height,true);
+            std::printf("Vulkan room %s toe joint %d: %d/%d changed pixels\n",line?"V-view":"mesh",stage,male,female);
+            assert(male>0 && female>0);
+            assert(room.restoreReferencePose()); assert(room.adjustReferenceGroup('g',35));
+            assert(differences(before,pixels(room,view))==0);
+        }
+    }
+    room.toggleLineView(); assert(room.restoreReferencePose());
+}
+
 int main() {
     assert(vulkanAvailable());
     SkeletonRoom room; std::string error; assert(room.load(".",error));
@@ -183,6 +214,7 @@ int main() {
     liveBend(room,view,room.male(),"male"); liveBend(room,view,room.female(),"female");
     liveWrist(room,view,room.male(),"male"); liveWrist(room,view,room.female(),"female");
     liveRoomControls(room,view);
+    liveToeJoints(room,view);
     assert(room.male().restoreSourcePose() && room.female().restoreSourcePose());
     clinicalBend(room,view,room.male()); clinicalBend(room,view,room.female());
     run(room,view,room.male()); run(room,view,room.female());

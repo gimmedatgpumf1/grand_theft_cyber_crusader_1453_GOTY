@@ -122,8 +122,11 @@ The room installs a source-bone tree for both subjects and retains the original
 unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
 90° abduction, elbows and knees straight, ankles and wrists straightened,
 fingers and toes extended, palms facing forward, and feet aimed forward with bounded hip rotation.
-Each whole body is translated down to the floor. `B` returns the original source
-pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
+The source trunk is rotated laterally at the sacrum/L5 link so C7 is above
+the sacrum; the source's front-to-back spinal curves remain intact. Head yaw
+is aligned forward without adding a nod. These are geometric reference-pose
+alignments, not measurements of individual neutral joint angles. Each whole
+body is translated down to the floor. `B` returns the original source pose; `R` returns the T-pose. Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
 bounded ±80° axial rotation (`M`); the grouped rotation is a simplified visual
@@ -174,13 +177,17 @@ A fixed source-to-neutral alignment is kept separate from flexion so the
 original CT pose can be restored. Interactive flexion clamps to the cited range.
 The same palm-relative convention is mirrored for left and right; it does not
 replace either subject's source bone geometry.
-Toe axes follow the local foot plane so positive flexion moves toward the sole.
+Toe reference directions use the actual neighbouring joint locations, rather
+than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
+DIP reference alignment is separate from bounded toe flexion; positive flexion
+moves toward the sole. All 28 joints per subject are tested individually in
+mesh and V view, and the source pose is restorable.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
 hip axial rotation has a separate approximate ±45° range. These directions
 are tested on both sides of both subjects in `tests/skeleton_t_pose.cpp`.
 Other pivots use sampled closest surfaces only after the anatomical graph has
-selected the relationship. Neck and most other initial angles are assumed zero.
+selected the relationship. Neck flexion and most other source angles are assumed zero.
 The values and frames are population and geometry-based approximations, not
 measurements of the individual subjects' functional axes or clinical limits.
 

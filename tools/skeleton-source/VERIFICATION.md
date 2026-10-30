@@ -26,6 +26,26 @@ left/right mirror checks. Those include pose-dependent metrics and are retained
 as diagnostics, not silently reclassified as a pass. They do not establish the
 cause or correctness of individual joints. The room retains the source pose for both subjects.
 
+### Upright spine and toes
+
+In the source pose, C7 is approximately 47.1 mm (male) and 21.4 mm (female)
+to one side of the sacrum. The reference pose uses a single source-derived
+rotation at the sacrum/L5 link to put their centres above one another; the
+remaining cervical, thoracic and lumbar centres are each within 10 mm of that
+vertical line on these two models. This is a geometric straightening, not a
+clinical diagnosis or individual spinal alignment measurement. The original
+source pose remains restorable; no bone is scaled or mirrored.
+
+In the registered source, the maximum angle between proximal-to-distal toe
+centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
+(female); in the reference pose the respective maxima are 7.32° and 4.68°.
+These are geometric direction measurements, not clinical joint angles.
+`tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
+straightened toe directions, flexion toward the sole, range limits, neighbour
+isolation, V-view geometry and source restoration. Headless Vulkan tests also
+exercise the big toe and all three joints of a lesser toe in mesh and V view;
+the feet are raised for the individual plantar-flexion render checks.
+
 ### Mirrored reference motion
 
 `tests/skeleton_t_pose.cpp` checks mirrored elbow, grouped-forearm and hip

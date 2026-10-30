@@ -71,19 +71,23 @@ inline std::pair<Vec3,double> composeAlignments(Vec3 first, double a, Vec3 secon
 // Match the illustrated straight, palm-forward T-pose while leaving source
 // geometry intact. Elbow flexion remains a separate, mirrored coordinate.
 inline ReferenceFrame mirroredElbowFrame(Vec3 shoulder, Vec3 elbow, Vec3 forearm,
-                                          Vec3 sourcePalm, bool left) {
+                                          Vec3 sourcePalm, bool left, double spineTurn=0) {
     const Vec3 arm=normalized(elbow-shoulder), fore=normalized(forearm-elbow);
-    const Vec3 target=left ? Vec3{1,0,0} : Vec3{-1,0,0};
+    const auto torso=joint_detail::rotate({0,0,1},spineTurn);
+    const auto inverseTorso=joint_detail::inverse(torso);
+    const Vec3 target=frameVector(inverseTorso,left ? Vec3{1,0,0} : Vec3{-1,0,0});
     Vec3 shoulderAxis=cross(arm,target);
     const double shoulderAngle=std::atan2(length(shoulderAxis),std::clamp(dot(arm,target),-1.0,1.0));
     if (length(shoulderAxis)<1e-8) shoulderAxis={0,0,1};
     const auto shoulderPose=joint_detail::rotate(normalized(shoulderAxis),shoulderAngle);
-    const Vec3 flexion=normalized(frameVector(joint_detail::inverse(shoulderPose),{0,left ? -1.0 : 1.0,0}));
+    const Vec3 flexion=normalized(frameVector(joint_detail::inverse(shoulderPose),
+                                                frameVector(inverseTorso,{0,left ? -1.0 : 1.0,0})));
     Vec3 straighten=cross(fore,arm);
     const double straightAngle=std::atan2(length(straighten),std::clamp(dot(fore,arm),-1.0,1.0));
     if (length(straighten)<1e-8) straighten=flexion;
     straighten=normalized(straighten);
-    const Vec3 palm=frameVector(shoulderPose,frameVector(joint_detail::rotate(straighten,straightAngle),sourcePalm));
+    const Vec3 palm=frameVector(torso,frameVector(shoulderPose,
+                                    frameVector(joint_detail::rotate(straighten,straightAngle),sourcePalm)));
     const Vec3 worldAxis{1,0,0}, forward{0,0,1};
     const double turn=std::atan2(dot(worldAxis,cross(palm,forward)),dot(palm,forward));
     const auto [alignment,angle]=composeAlignments(straighten,straightAngle,arm*(left ? 1.0 : -1.0),turn);

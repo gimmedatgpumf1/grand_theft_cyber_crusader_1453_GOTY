@@ -1,6 +1,8 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_finger_frame.h"
 #include "client/skeleton_limb_frame.h"
+#include "client/skeleton_spine_frame.h"
+#include "client/skeleton_toe_frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -599,6 +601,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
     constexpr double toRadians = 3.14159265358979323846 / 180.0;
+    double spineTurn=0;
     for (std::size_t head=0; head<queue.size(); ++head) {
         const auto parent = queue[head];
         for (const auto& link : sourceLinks_) {
@@ -691,15 +694,26 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 if (link.mobility == "atlanto_occipital" || link.mobility == "intervertebral" ||
                     link.mobility == "temporomandibular") {
                     axis = {1,0,0};
+                    if (link.mobility=="intervertebral" && parentName=="Sacrum" && childName=="L5") {
+                        const int neck=sourceStructure("C7");
+                        if (neck<0) { error="Missing spine reference"; return false; }
+                        spineTurn=uprightSpineAngle(center(parent),pivot,center(neck));
+                        alignmentAxis={0,0,spineTurn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(spineTurn); alignToNeutral=true;
+                    }
                 } else if (link.mobility == "atlanto_axial") {
                     axis = {0,1,0};
+                    const int head=sourceStructure("Head"), jaw=sourceStructure("Jaw");
+                    if (head<0 || jaw<0) { error="Missing head reference"; return false; }
+                    const double yaw=forwardHeadYaw(center(jaw)-center(head),spineTurn);
+                    alignmentAxis={0,yaw<0 ? -1.0 : 1.0,0}; alignmentAngle=std::abs(yaw); alignToNeutral=true;
                 } else if (link.mobility == "sternoclavicular" || link.mobility == "acromioclavicular") {
                     axis = {0,0,side == 0 ? 1.0 : -1.0};
                 } else if (link.mobility == "shoulder_ball_socket") {
                     // The primary shoulder control is abduction: align the
                     // actual upper-arm shaft toward its side, not a world X
                     // rotation that assumes the subject began in neutral.
-                    const Vec3 target = side == 0 ? Vec3{1,0,0} : Vec3{-1,0,0};
+                    const Vec3 worldTarget = side == 0 ? Vec3{1,0,0} : Vec3{-1,0,0};
+                    const Vec3 target=frameVector(joint_detail::rotate({0,0,1},-spineTurn),worldTarget);
                     axis = cross(down,target);
                     current = (3.14159265358979323846/2) -
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
@@ -738,18 +752,9 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "great_toe_mtp" || link.mobility == "lesser_toe_mtp" ||
                            link.mobility == "toe_ip_hinge") {
-                    const std::string tag=side==0 ? "_L" : "_R";
-                    const int big=sourceStructure("FootMeta1"+tag), little=sourceStructure("FootMeta5"+tag);
-                    const int middle=sourceStructure("FootMeta3"+tag), heel=sourceStructure("Cal"+tag);
-                    const int tibia=sourceStructure("Tibia"+tag), talus=sourceStructure("Tal"+tag);
-                    if (big<0 || little<0 || middle<0 || heel<0 || tibia<0 || talus<0) { error="Missing foot frame"; return false; }
-                    const Vec3 forward=normalized(center(middle)-center(heel));
-                    Vec3 dorsal=normalized(cross(center(big)-center(little),forward));
-                    if (dot(dorsal,center(tibia)-center(talus))<0) dorsal=dorsal*-1.0;
-                    axis=normalized(cross(forward,dorsal*-1.0));
-                    const Vec3 proximal=normalized(up*-1.0-axis*dot(up*-1.0,axis));
-                    const Vec3 distal=normalized(down-axis*dot(down,axis));
-                    current=std::atan2(dot(axis,cross(proximal,distal)),dot(proximal,distal));
+                    const auto frame=sourceToeFrame(*this,fingerFrames,parent,child,side,pivot);
+                    if (!frame) { error="Missing toe reference frame"; return false; }
+                    axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
                     const int h=bone(side==0 ? "humerus_l" : "humerus_r");
                     const auto w=sourceWristFrame(*this,side,down);
@@ -757,7 +762,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     forearmAxis=normalized(w->wrist-pivot);
                     const auto wrist=wristReferenceFrame(forearmAxis,w->hand,w->palm);
                     const Vec3 palm=frameVector(joint_detail::rotate(wrist.alignment,wrist.alignmentAngle),w->palm);
-                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0);
+                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0,spineTurn);
                     axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
