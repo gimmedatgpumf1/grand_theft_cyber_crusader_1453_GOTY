@@ -69,7 +69,7 @@ struct SkeletonRagdoll::Impl {
     Impl() {
         world->setInternalTickCallback(&projectFingerJoints,this,false);
         world->setGravity(btVector3(0,-9.81f,0));
-        world->getSolverInfo().m_numIterations=150;
+        world->getSolverInfo().m_numIterations=100;
         world->getSolverInfo().m_splitImpulse=true;
         auto floor=std::make_unique<btBoxShape>(btVector3(20,0.5f,20));
         btTransform t; t.setIdentity(); t.setOrigin(btVector3(0,-0.5f,0));
@@ -187,17 +187,18 @@ struct SkeletonRagdoll::Impl {
             compound->setMargin(0.001f); compound->recalculateLocalAabb();
             const auto extent=hi-lo;
             const btScalar mass=std::clamp(extent.x()*extent.y()*extent.z()*500.0f,0.015f,6.0f);
-            // Single-bone bodies can use their convex hull directly. Bullet's
-            // continuous collision detection does not run on compound shapes.
-            btCollisionShape* collision=compound->getNumChildShapes()==1 ? compound->getChildShape(0) : compound.get();
+            // Only fingers need direct convex shapes for CCD. Keep the other
+            // bodies compound as before: converting every bone to a direct
+            // hull makes Bullet's contacts substantially more expensive.
+            const bool hand=part.name.rfind("Hand",0)==0;
+            btCollisionShape* collision=hand && compound->getNumChildShapes()==1 ? compound->getChildShape(0) : compound.get();
             btVector3 inertia(0,0,0); collision->calculateLocalInertia(mass,inertia);
             btTransform pose=rigid(initial[first]); pose.setOrigin(pose*center);
             btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,collision,inertia);
             auto body=std::make_unique<btRigidBody>(ci);
             body->setWorldTransform(pose); body->setFriction(0.7f); body->setRestitution(0.02f);
             body->setDamping(0.05f,0.15f);
-            const bool hand=part.name.rfind("Hand",0)==0;
-            body->setCcdMotionThreshold(hand ? 0.001f : 0.01f);
+            body->setCcdMotionThreshold(hand ? 0.01f : 0.0f);
             body->setCcdSweptSphereRadius(0.003f);
             const int id=int(bodies.size()); body->setUserIndex(int(figures.size())); world->addRigidBody(body.get());
             bodyForGroup[group]=id; centers.push_back(center); bodies.push_back(std::move(body)); shapes.push_back(std::move(compound));
@@ -373,7 +374,7 @@ SkeletonRagdoll::Contacts SkeletonRagdoll::contacts() const {
 }
 void SkeletonRagdoll::advance(double seconds) {
     if (!(seconds>0) || !std::isfinite(seconds)) return;
-    impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),20,1.0f/240.0f);
+    impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),10,1.0f/120.0f);
     impl_->publish();
 }
 } // namespace gtc::native
