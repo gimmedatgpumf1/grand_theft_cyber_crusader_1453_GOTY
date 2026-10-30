@@ -110,11 +110,9 @@ const char* parentOf(const std::string& name) {
     return "";
 }
 
-// The joint a bone turns about: the cap of that bone which faces its parent.
-// Taking the centroid of the vertices nearest the parent -- rather than the
-// nearest vertex, which is noise, or the bbox corner, which drifts with how the
-// bone is oriented -- puts the hip pivot on the femoral head and the elbow
-// pivot on the trochlea, which is what makes a bend look like a bend.
+// A coarse fallback for group pivots, not a medically measured joint centre.
+// The C room replaces the two hip pivots with fitted femoral-head estimates;
+// the remaining pivots still need subject-specific anatomical calibration.
 Vec3 jointNear(const std::vector<Vec3>& points, Vec3 toward) {
     double closest = 1e9;
     for (const Vec3& point : points) closest = std::min(closest, length(point - toward));
@@ -243,6 +241,48 @@ bool SkeletonModel::loadSourceLinks(const std::string& path, std::string& error)
     }
     if (links.empty()) { error = "No skeleton source links in " + path; return false; }
     sourceLinks_ = std::move(links);
+    return true;
+}
+
+bool SkeletonModel::loadHipCenters(const std::string& path, std::string& error) {
+    std::ifstream input(path);
+    if (!input) { error = "Cannot open skeleton hip fits " + path; return false; }
+    std::array<Vec3, 2> centers{};
+    std::array<bool, 2> present{};
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream row(line);
+        std::string side, extra;
+        Vec3 center;
+        double radius = 0;
+        row >> side >> center.x >> center.y >> center.z >> radius;
+        if (!row || (row >> extra) || (side != "L" && side != "R") ||
+            !std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z) ||
+            !std::isfinite(radius) || radius <= 0.015 || radius >= 0.035) {
+            error = "Invalid skeleton hip fit in " + path; return false;
+        }
+        const int which = side == "L" ? 0 : 1;
+        const int group = bone(which == 0 ? "femur_l" : "femur_r");
+        if (present[which] || group < 0 || bones_[group].points.empty()) {
+            error = "Missing or duplicate femur for hip fit in " + path; return false;
+        }
+        const auto& points = bones_[group].points;
+        const Vec3 low = minimum(points), high = maximum(points);
+        if (center.x < low.x-0.01 || center.x > high.x+0.01 ||
+            center.y < high.y-0.1 || center.y > high.y+0.01 ||
+            center.z < low.z-0.01 || center.z > high.z+0.01) {
+            error = "Hip fit is not near its proximal femur in " + path; return false;
+        }
+        double best = 1e9;
+        for (const auto& point : points) best = std::min(best, std::abs(length(point-center)-radius));
+        if (best > 0.003) { error = "Hip fit does not match femur surface in " + path; return false; }
+        centers[which] = center;
+        present[which] = true;
+    }
+    if (!present[0] || !present[1]) { error = "Incomplete skeleton hip fits in " + path; return false; }
+    bones_[static_cast<std::size_t>(bone("femur_l"))].pivot = centers[0];
+    bones_[static_cast<std::size_t>(bone("femur_r"))].pivot = centers[1];
     return true;
 }
 

@@ -1,0 +1,4 @@
+# Subject femoral head estimates, metres in the original registered source pose.
+# Geometric atlas fit, NOT a clinically validated landmark or motion constraint.
+L 0.143617302 0.973891355 0.025512999 0.024626535
+R -0.023144350 0.964199290 0.026927704 0.023422629

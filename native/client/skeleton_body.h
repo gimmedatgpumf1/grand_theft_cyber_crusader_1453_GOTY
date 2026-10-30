@@ -44,6 +44,9 @@ public:
     bool load(const std::string& path, std::string& error);
     bool loaded() const { return !bones_.empty(); }
     bool loadSourceLinks(const std::string& path, std::string& error);
+    // Set the two femoral pivots from the source-fitted head estimates. This
+    // only changes pivots; it does not calibrate joint axes or enforce ROM.
+    bool loadHipCenters(const std::string& path, std::string& error);
     const std::vector<SkeletonSourceLink>& sourceLinks() const { return sourceLinks_; }
     const std::string& name() const { return name_; }
     double height() const { return height_; }

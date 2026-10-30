@@ -26,6 +26,28 @@ left/right mirror checks. Those include pose-dependent metrics and are retained
 as diagnostics, not silently reclassified as a pass. They do not establish the
 cause or correctness of individual joints. The room keeps the female still.
 
+### Femoral-head fit and source hip overlap
+
+A CT atlas labels the femoral-head region used to fit a sphere directly to each
+subject's original femur. This estimates each hip pivot but is not Fischer's
+full A&A method and has not been clinically validated. Mean radial residuals
+are 0.37–0.59 mm and subsampling changed centers by at most 0.28 mm; neither
+measures accuracy against expert annotations for these subjects. A comparison
+against six manually marked head points on 19 separate femoral surfaces from
+the atlas authors' published CT cohort found a mean 0.607 mm center difference
+from the average of 20 expert fits (median 0.513 mm, maximum 1.488 mm). That
+same-cohort comparison is not independent clinical validation. The C room consumes the four
+centers without rescaling or changing the rest meshes. V-view hip balls share
+their centers (but their display radii cover other connections). See
+`openskeleton/README.md` for provenance and reproduction.
+
+The input femur and pelvis meshes interpenetrate: a closed-mesh point-in-solid
+audit (`openskeleton/07-audit-hip-overlap.py`) found 254/541 male left, 330/670
+male right, 419/836 female left and 370/773 female right femoral vertices within
+3 mm of the pelvic surface inside the pelvis. The audit does not measure full
+intersection volume. These original registration problems remain unresolved;
+the fitted centers do not establish valid hip articulation or joint limits.
+
 ## Historical verification (earlier assets and poses)
 
 The following measurements describe earlier builds, **not the currently shipped

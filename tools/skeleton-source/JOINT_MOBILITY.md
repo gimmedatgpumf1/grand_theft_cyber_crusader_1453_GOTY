@@ -87,8 +87,10 @@ shoulder-girdle and wrist couplers at 234 OpenSim-generated sample values,
 including endpoint extrapolation. It does not claim the AAH rhythm is an
 individual subject's measured rhythm.
 
-These are *reference-model* results, not tests or joint frames fitted to either
-OpenSkeleton subject. The solver is not connected to the C-room bodies or
+These are *reference-model* results, not tests of joint frames fitted to either
+OpenSkeleton subject. The separate subject-specific femoral-head estimates in
+`openskeleton/README.md` provide hip pivot positions only, not axes or motion
+limits. The solver is not connected to the C-room bodies or
 V-view, and it does not implement gliding, cartilage, contacts or closed loops.
 AAH's simple joint bounds are a model, not universal clinical hard limits.
 

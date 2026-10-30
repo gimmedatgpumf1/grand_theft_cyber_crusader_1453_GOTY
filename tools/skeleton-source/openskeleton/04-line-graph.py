@@ -591,6 +591,14 @@ def build(sex):
             _, x, y = min((choice for choice in choices if choice is not None), key=lambda value: value[0])
         endpoints[frozenset((a,b))] = (x,y)
         out.append(f'{"C" if kind == "cartilage" else "J"} {a} {b} {fmt(x)} {fmt(y)}')
+    # Hip ball centres use subject femoral head fits. The other ball centres
+    # remain geometric display approximations, not calibrated joint centres.
+    hip_centers = {}
+    for row in (BASE / f'skeleton-{sex}.hips').read_text().splitlines():
+        if row and not row.startswith('#'):
+            side, x, y, z, _radius = row.split()
+            hip_centers[side] = np.array([float(x), float(y), float(z)])
+    assert set(hip_centers) == {'L', 'R'}
     for side in ('L', 'R'):
         specs = (('Shoulder', [('Scapula','Humerus')], [('ShoulderGirdle', f'Humerus_{side}')]),
                  ('Elbow', [('Humerus','Radius'), ('Humerus','Ulna')], [(f'Humerus_{side}', f'Forearm_{side}')]),
@@ -609,7 +617,7 @@ def build(sex):
             samples.extend(point for pair in visual for point in endpoints[frozenset(pair)])
             if name == 'Knee': samples.extend(bones[f'Patella_{side}'])
             samples = np.array(samples)
-            center = (samples.min(axis=0) + samples.max(axis=0)) / 2
+            center = hip_centers[side] if name == 'Hip' else (samples.min(axis=0) + samples.max(axis=0)) / 2
             # The subdivided icosahedron has an inradius of 0.93417 times
             # its vertex radius; enclose samples even between its vertices.
             radius = (max(np.linalg.norm(samples-center, axis=1)) + 0.001) / 0.9341

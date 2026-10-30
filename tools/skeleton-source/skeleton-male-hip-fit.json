@@ -1,0 +1,45 @@
+{
+  "subject": "N197925",
+  "method": "CT femoral atlas head labels, trimmed rigid similarity fit, robust subject sphere",
+  "clinical_validation": false,
+  "hips": {
+    "L": {
+      "center": [
+        0.143617302041798,
+        0.9738913547222356,
+        0.025512999283912013
+      ],
+      "source_center_mm": [
+        92.62210033854673,
+        145.87804367050285,
+        -560.6386745746395
+      ],
+      "radius_mm": 24.62653463066615,
+      "fit_rms_mm": 0.3687130423622958,
+      "registration_rms_mm": 4.399204700669347,
+      "pelvis_surface_distance_mm": 4.743069774761591,
+      "mapped_vertices": 302,
+      "inlier_vertices": 275,
+      "atlas_reflection": -1
+    },
+    "R": {
+      "center": [
+        -0.023144350479691683,
+        0.9641992902873137,
+        0.026927704098742122
+      ],
+      "source_center_mm": [
+        -74.13955218294296,
+        144.46333885567276,
+        -570.3307390095614
+      ],
+      "radius_mm": 23.422628696317254,
+      "fit_rms_mm": 0.5905834101571114,
+      "registration_rms_mm": 4.069048539422236,
+      "pelvis_surface_distance_mm": 3.9121003461431636,
+      "mapped_vertices": 369,
+      "inlier_vertices": 337,
+      "atlas_reflection": 1
+    }
+  }
+}

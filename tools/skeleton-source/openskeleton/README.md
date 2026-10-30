@@ -106,3 +106,35 @@ The exporter has been checked using the real Faces.mat and a synthetic MATLAB
 v5 file containing 182 structures. The full 2.5 GB combined file has not been
 tested in this environment. If the combined file is not HDF5, SciPy loads it
 into memory and may need several gigabytes of RAM.
+
+## Fitted femoral head estimates
+
+`06-fit-hips.py` fits each subject's *original* named femur surface in mm,
+using the head-labelled area of Fischer et al.'s CT-derived atlas (reference,
+license, source commit and checksums in `../reference/femoral/README.md`). It
+registers a scaled and possibly reflected **atlas** to each unscaled subject
+femur, maps the labelled region to subject vertices, then fits a robust sphere.
+This is a simplified rigid similarity fit, **not** the published nonrigid A&A
+method or a clinical validation. It needs NumPy and SciPy. Rebuild with:
+
+```sh
+python3 tools/skeleton-source/openskeleton/06-fit-hips.py
+python3 tools/skeleton-source/openskeleton/04-line-graph.py
+python3 tests/openskeleton_hip_fit.py
+```
+
+The four `../skeleton-{male,female}{.hips,-hip-fit.json}` outputs record the
+estimated head centers and fit diagnostics. The native room uses the `.hips`
+centers as femur-group rotation pivots, and the V-view hip balls use those same
+centers. Their visible ball radii cover nearby display connections and are
+therefore not equal to the fitted head radius. No original mesh is scaled,
+mirrored, or reposed. Other joints are not subject-fitted; axes, neutral
+frames, limits, collisions and motion coupling are not provided by this fit.
+
+Source registration is not guaranteed to preserve anatomical articulation.
+In fact `07-audit-hip-overlap.py` (requires NumPy, SciPy, trimesh and rtree)
+finds femoral surface vertices inside the closed pelvic meshes on **all four**
+sides in the registered input. The nearest pelvis surface is only 3.9–6.9 mm
+from each fitted head center. Sphere residuals and repeatable subsampling do
+not establish correct hip seating; do not interpret these fits as proof that
+the hip joint or its range of motion is anatomically correct.

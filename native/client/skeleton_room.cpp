@@ -81,6 +81,8 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     const std::string directory = root + "/tools/skeleton-source/";
     if (!male_.load(directory + "skeleton-male.obj", error)) return false;
     if (!female_.load(directory + "skeleton-female.obj", error)) return false;
+    if (!male_.loadHipCenters(directory + "skeleton-male.hips", error)) return false;
+    if (!female_.loadHipCenters(directory + "skeleton-female.hips", error)) return false;
     if (!male_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
     if (!female_.loadSourceLinks(directory + "skeleton-joint-links.txt", error)) return false;
     if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
