@@ -487,6 +487,21 @@ bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::Pos
     return true;
 }
 
+bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
+    if (!sourceRig_ || link >= sourceLinks_.size()) return false;
+    const auto& relationship = sourceLinks_[link];
+    const auto bounded = clampReferenceBend(relationship.mobility, degrees,
+        sourceStructures_[relationship.first].name, sourceStructures_[relationship.second].name);
+    if (!bounded || relationship.second >= sourceBodies_.size()) return false;
+    const std::size_t body = sourceBodies_[relationship.second];
+    const auto* joint = sourceRig_->joint(body);
+    if (!joint || joint->angles().empty()) return false;
+    constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
+    auto angles = joint->angles();
+    angles[0] = *bounded * radiansPerDegree;
+    return setSourcePose({{body, angles}});
+}
+
 std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {
     std::vector<std::array<double, 16>> matrices;
     matrices.reserve(sourceStructures_.size());

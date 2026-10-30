@@ -116,3 +116,24 @@ synthetic hinge to verify both source bodies through the Vulkan frame path.
 The synthetic hinge is a plumbing test, not a subject fit. **No subject rig or
 fitted joint range has yet been installed in the room.** Closed-loop anatomical
 constraints, bone collisions, cartilage and V-view attachment remain unsolved.
+
+## Simple reference bend angles
+
+`native/client/skeleton_rom.h` contains the reference flexion/extension values
+above in degrees, and `setReferenceBend()` accepts a joint and a requested bend
+in degrees, clamps it, then updates the corresponding source-bone transform.
+The values are reference ranges measured from anatomical neutral, not measured
+individual limits. The caller must supply a rig whose first coordinate uses
+that neutral and the documented sign convention. These ranges **cannot** be
+applied as offsets from the original CT pose. No complete neutral-calibrated
+source rig is installed in the room yet, so this does not make every joint move.
+The test that applies them to source meshes uses a synthetic neutral frame.
+
+Whole-shoulder flexion is about 180° with scapular movement; the simple
+reference for glenohumeral flexion alone is 120° (and extension 60°), as in
+[the shoulder-joint reference](https://books.byui.edu/the_introduction_and_application_of_kinesiology_biomechanics_and_assessment/chapter_7).
+For the lesser toes, the reference PIP range is 0–35° flexion and DIP is 30°
+extension to 60° flexion ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/)).
+Great toe IP flexion is about 50° ([range-of-motion reference](https://physical-therapy.us/range-of-motion-rom/)).
+For unspecified joints, no numeric range is invented. Other axes, coupled
+movement, subject neutral and individual limits still require calibration.

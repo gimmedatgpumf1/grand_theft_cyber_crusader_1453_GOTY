@@ -2,6 +2,7 @@
 
 #include "client/raster.h"
 #include "client/skeleton_kinematic_tree.h"
+#include "client/skeleton_rom.h"
 
 #include <array>
 #include <string>
@@ -101,6 +102,11 @@ public:
     // pose. No clinical calibration is inferred or manufactured here.
     bool setSourceRig(AnatomicalKinematicTree rig, const std::vector<std::size_t>& sourceBodies, std::string& error);
     bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
+    // Drive a supplied, neutral-calibrated source joint's first coordinate in degrees.
+    // The caller must supply a rig whose first coordinate is flexion from anatomical
+    // neutral; this method cannot establish that calibration from a CT pose.
+    // Returns false if the rig or a cited bend range is unavailable.
+    bool setReferenceBend(std::size_t link, double degrees);
     std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                    std::size_t begin, std::size_t end) const;

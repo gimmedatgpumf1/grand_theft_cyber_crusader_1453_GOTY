@@ -55,6 +55,12 @@ echo '[test] C++ simulation and signed geometry checks passed.'
 ./build/bin/gtc-skeleton-knee-fits
 "${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/rajagopal_spatial_joint.cpp -o build/bin/gtc-rajagopal-knee
 ./build/bin/gtc-rajagopal-knee
+"${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/clinical_bend_ranges.cpp -o build/bin/gtc-clinical-bend-ranges
+./build/bin/gtc-clinical-bend-ranges
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+  tests/skeleton_clinical_bend.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
+  native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-clinical-bend
+./build/bin/gtc-skeleton-clinical-bend
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_source_rig.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-rig
