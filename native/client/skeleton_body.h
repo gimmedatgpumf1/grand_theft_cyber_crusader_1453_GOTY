@@ -5,6 +5,7 @@
 #include "client/skeleton_rom.h"
 
 #include <array>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,17 @@ public:
     bool loadHipCenters(const std::string& path, std::string& error);
     bool loadKneeAxes(const std::string& path, std::string& error);
     bool loadElbowAxes(const std::string& path, std::string& error);
+    bool loadOrbitCenters(const std::string& path, std::string& error) {
+        std::ifstream file(path); std::string comment; std::array<Vec3,2> eyes;
+        if (!std::getline(file,comment) || !(file>>eyes[0].x>>eyes[0].y>>eyes[0].z
+                                                  >>eyes[1].x>>eyes[1].y>>eyes[1].z) ||
+            !joint_detail::finite(eyes[0]) || !joint_detail::finite(eyes[1]) ||
+            length(eyes[1]-eyes[0])<0.02 || length(eyes[1]-eyes[0])>0.1) {
+            error="Invalid orbital centres: "+path; return false;
+        }
+        orbitalCenters_=eyes; return true;
+    }
+    const std::optional<std::array<Vec3,2>>& orbitalCenters() const { return orbitalCenters_; }
     const std::array<SkeletonElbowAxis, 2>& elbowAxes() const { return elbowAxes_; }
     bool hasElbowAxes() const { return hasElbowAxes_; }
     bool loadShoulderCenters(const std::string& path, std::string& error);
@@ -192,6 +204,25 @@ public:
         disabledAlignments_[body]=!enabled;
         return true;
     }
+    // A fixed pose-registration yaw; this is not a toe IP abduction control.
+    std::optional<double> referenceToeYaw(std::size_t link) const {
+        if (!sourceRig_ || link>=sourceLinks_.size()) return std::nullopt;
+        const auto& e=sourceLinks_[link];
+        if (e.mobility!="great_toe_mtp" && e.mobility!="lesser_toe_mtp" && e.mobility!="toe_ip_hinge") return std::nullopt;
+        const auto a=sourceBodies_[e.first],b=sourceBodies_[e.second];
+        const auto body=sourceRig_->parent(b)==a ? b : (sourceRig_->parent(a)==b ? a : 0);
+        const auto* joint=sourceRig_->joint(body);
+        if (!joint || joint->angles().size()!=3) return std::nullopt;
+        return joint->angles()[2]*180.0/3.14159265358979323846;
+    }
+    bool setReferenceToeYaw(std::size_t link,double degrees) {
+        if (!std::isfinite(degrees) || !referenceToeYaw(link)) return false;
+        const auto& e=sourceLinks_[link]; const auto a=sourceBodies_[e.first],b=sourceBodies_[e.second];
+        const auto body=sourceRig_->parent(b)==a ? b : a;
+        auto angles=sourceRig_->joint(body)->angles();
+        angles[2]=std::clamp(degrees,-90.0,90.0)*3.14159265358979323846/180.0;
+        return setSourcePose({{body,angles}});
+    }
     std::optional<double> referenceBend(std::size_t link) const;
     std::uint64_t sourcePoseRevision() const { return sourcePoseRevision_; }
     void drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
@@ -201,6 +232,7 @@ private:
     std::vector<SkeletonBone> bones_;
     std::vector<SkeletonSourceStructure> sourceStructures_;
     std::vector<SkeletonSourceLink> sourceLinks_;
+    std::optional<std::array<Vec3,2>> orbitalCenters_;
     std::array<SkeletonKneeAxis, 2> kneeAxes_{};
     bool hasKneeAxes_ = false;
     double referencePelvisAngle_ = 0;

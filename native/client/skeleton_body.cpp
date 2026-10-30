@@ -136,7 +136,7 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     }
     bones_.clear();
     sourceStructures_.clear();
-    sourceLinks_.clear();
+    sourceLinks_.clear(); orbitalCenters_.reset();
     sourceRig_.reset();
     sourceBodies_.clear();
     neutralAlignments_.clear(); disabledAlignments_.clear();
@@ -564,8 +564,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     const int root = sourceStructure("Sacrum"); if (root < 0) { error = "Skeleton is missing sacrum"; return false; }
     const std::size_t count = sourceStructures_.size();
     const std::size_t missing = static_cast<std::size_t>(-1); std::vector<std::size_t> mapping(count, missing), queue;
-    std::vector<bool> visited(count);
-    FingerReferenceFrames fingerFrames(count);
+    std::vector<bool> visited(count); FingerReferenceFrames fingerFrames(count);
     std::vector<double> neutralAlignments(count+1,-1.0);
     AnatomicalKinematicTree rig;
     std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
@@ -617,7 +616,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             const auto bounds = referenceBendRange(link.mobility, parentName, childName);
             std::optional<std::size_t> body;
             std::vector<double> bindAngles{0};
-            Vec3 alignmentAxis; double alignmentAngle=0; bool alignToNeutral=false;
+            Vec3 alignmentAxis, toeYawAxis; double alignmentAngle=0; bool alignToNeutral=false;
             bool coupledPatella = false;
             if (link.mobility == "patellofemoral_glide" && hasKneeAxes_) {
                 // Patellar flexion is approximately 70% of tibiofemoral
@@ -774,7 +773,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                            link.mobility == "toe_ip_hinge") {
                     const auto frame=sourceToeFrame(*this,fingerFrames,parent,child,side,pivot,legs[side]->soleNormal);
                     if (!frame) { error="Missing toe reference frame"; return false; }
-                    axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; alignToNeutral=true;
+                    axis=frame->flexion; alignmentAxis=frame->alignment; alignmentAngle=frame->alignmentAngle; toeYawAxis=frame->yaw; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge" && hasElbowAxes_) {
                     const int h=bone(side==0 ? "humerus_l" : "humerus_r");
                     const auto w=sourceWristFrame(*this,side,down);
@@ -803,6 +802,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
                 bindAngles={current};
                 if (alignToNeutral && link.mobility!="hip_ball_socket") { axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0); }
+                if (length(toeYawAxis)>1e-8) { axes.push_back({toeYawAxis,-1.57079632679,1.57079632679}); bindAngles.push_back(0); }
                 if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.

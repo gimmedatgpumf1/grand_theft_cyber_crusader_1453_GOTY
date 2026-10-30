@@ -45,6 +45,8 @@ inline std::optional<FingerReferenceFrames::Axes> sourceToeFrame(
     if (!next.empty() && nextIndex<0) return std::nullopt;
     const Vec3 distal=normalized((nextIndex<0 ? center(child) : contact(child,nextIndex))-pivot);
     if (length(distal)<1e-8) return std::nullopt;
-    return frames.attachTowardPalm(parent,child,forward,distal,dorsal*-1.0);
+    auto result=frames.attachTowardPalm(parent,child,forward,distal,dorsal*-1.0);
+    result.yaw=normalized(frames.axisInFrame(child,dorsal));
+    return result;
 }
 } // namespace gtc::native

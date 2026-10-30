@@ -18,7 +18,7 @@ struct NeckReferenceFrames {
     Vec3 headAxis;
 };
 // Keep the source's front-to-back curvature but align the cervical column and
-// head laterally; align the estimated condylar axis so the face looks forward.
+// head laterally; the measured eye-socket line makes the skull face forward.
 inline std::optional<NeckReferenceFrames> sourceNeckFrames(const SkeletonModel& model,double spineTurn) {
     const int c7=model.sourceStructure("C7"), c6=model.sourceStructure("C6"), c2=model.sourceStructure("C2");
     const int c1=model.sourceStructure("C1"), head=model.sourceStructure("Head"), jaw=model.sourceStructure("Jaw");
@@ -40,17 +40,18 @@ inline std::optional<NeckReferenceFrames> sourceNeckFrames(const SkeletonModel& 
         }
         return result;
     };
-    const Vec3 neckPivot=contact(c7,c6), headPivot=contact(c1,head);
+    const Vec3 neckPivot=contact(c7,c6);
     const auto trunk=joint_detail::rotate({0,0,1},spineTurn);
     const double turn=uprightSpineAngle(frameVector(trunk,center(c7)-neckPivot),{},frameVector(trunk,center(c2)-neckPivot));
-    const auto hinge=sourceJawHinge(model); if (!hinge) return std::nullopt;
-    // The bilateral condyles define a transverse facial axis. Align it rather
-    // than using the jaw-to-skull centroid, which introduces a false yaw.
-    const double yaw=std::atan2(hinge->axis.z,hinge->axis.x);
-    const auto parent=joint_detail::compose(joint_detail::rotate({0,0,1},spineTurn+turn),joint_detail::rotate({0,1,0},yaw));
-    const Vec3 headLine=frameVector(parent,center(head)-headPivot), atlas=frameVector(parent,center(c1)-headPivot);
-    const double roll=uprightSpineAngle(atlas,{},headLine);
-    const Vec3 rollAxis={0,0,roll<0 ? -1.0 : 1.0};
-    return NeckReferenceFrames{turn,yaw,std::abs(roll),frameVector(joint_detail::inverse(parent),rollAxis)};
+    const auto& eyes=model.orbitalCenters(); if (!eyes) return std::nullopt;
+    // Rotate the skull itself at the atlas. The transverse line joining the
+    // measured socket centres becomes horizontal; its normal faces +Z.
+    const auto parent=joint_detail::rotate({0,0,1},spineTurn+turn);
+    const Vec3 across=frameVector(parent,(*eyes)[1]-(*eyes)[0]);
+    const double yaw=std::atan2(across.z,across.x);
+    const Vec3 yawed=frameVector(joint_detail::rotate({0,1,0},yaw),across);
+    const double roll=-std::atan2(yawed.y,yawed.x);
+    const auto alignment=composeAlignments({0,1,0},yaw,{0,0,1},roll);
+    return NeckReferenceFrames{turn,0,alignment.second,frameVector(joint_detail::inverse(parent),alignment.first)};
 }
 } // namespace gtc::native

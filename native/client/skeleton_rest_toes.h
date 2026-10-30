@@ -145,3 +145,67 @@ inline bool restToesOnSole(SkeletonModel& model) {
     return true;
 }
 } // namespace gtc::native
+
+namespace gtc::native {
+// After the horizontal reference correction, make the small remaining height
+// adjustment with the existing flexion hinges, not by translating a bone.
+inline bool settleReferenceToes(SkeletonModel& model) {
+    const auto point=[](const std::array<double,16>& m,Vec3 p) {
+        return Vec3{m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
+                    m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
+    };
+    const auto bottom=[&](int id,const std::vector<std::array<double,16>>& pose) {
+        const auto& part=model.sourceStructures()[id]; double y=1e9;
+        for (std::size_t i=0;i<part.pointCount;++i)
+            y=std::min(y,point(pose[id],model.bones()[part.group].points[part.firstPoint+i]).y);
+        return y;
+    };
+    const auto findLink=[&](int a,int b) {
+        for (std::size_t i=0;i<model.sourceLinks().size();++i) {
+            const auto& e=model.sourceLinks()[i];
+            if ((e.first==static_cast<std::size_t>(a) && e.second==static_cast<std::size_t>(b)) ||
+                (e.second==static_cast<std::size_t>(a) && e.first==static_cast<std::size_t>(b))) return i;
+        }
+        return model.sourceLinks().size();
+    };
+    for (char side : {'L','R'}) {
+        const std::string tag=std::string("_")+side;
+        const int heel=model.sourceStructure("Cal"+tag); if (heel<0) return false;
+        for (int digit=1;digit<=5;++digit) {
+            const auto n=std::to_string(digit)+tag;
+            const int meta=model.sourceStructure("FootMeta"+n),prox=model.sourceStructure("FootProxP"+n);
+            const int mid=digit==1 ? -1 : model.sourceStructure("FootMidP"+n);
+            const int tip=model.sourceStructure("FootDistP"+n);
+            if (meta<0 || prox<0 || tip<0 || (digit>1 && mid<0)) return false;
+            const auto base=findLink(meta,prox),ip=findLink(prox,digit==1 ? tip : mid);
+            if (base==model.sourceLinks().size() || ip==model.sourceLinks().size() ||
+                !model.referenceBend(base) || !model.referenceBend(ip)) return false;
+            const auto heights=[&]() {
+                const auto pose=model.sourceMatrices({},0);
+                const double ground=bottom(heel,pose), end=bottom(tip,pose);
+                double lowest=std::min(bottom(prox,pose),end);
+                if (mid>=0) lowest=std::min(lowest,bottom(mid,pose));
+                return std::array<double,3>{ground,lowest,end};
+            };
+            auto h=heights();
+            if (h[1]<h[0]-0.000001) {
+                const double q=*model.referenceBend(base), trial=q-1;
+                if (!model.setReferenceBend(base,trial)) return false;
+                const double rise=heights()[1]-h[1];
+                if (!model.setReferenceBend(base,rise>1e-9 ? q-(h[0]-h[1]+0.00002)/rise : q)) return false;
+            }
+            h=heights();
+            if (h[2]>h[0]+0.00015) {
+                const double q=*model.referenceBend(ip);
+                if (!model.setReferenceBend(ip,q+1)) return false;
+                const auto after=heights(); const double drop=h[2]-after[2];
+                double change=drop>1e-9 ? (h[2]-h[0]-0.00002)/drop : 0;
+                const double bottomDrop=h[1]-after[1];
+                if (bottomDrop>1e-9) change=std::min(change,std::max(0.0,(h[1]-h[0])/bottomDrop));
+                if (!model.setReferenceBend(ip,std::min(20.0,q+change))) return false;
+            }
+        }
+    }
+    return true;
+}
+} // namespace gtc::native

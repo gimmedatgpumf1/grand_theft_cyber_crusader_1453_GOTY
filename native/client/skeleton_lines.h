@@ -29,6 +29,14 @@ public:
         std::vector<int> owners;
     };
 
+    std::optional<Vec3> sourceBoneDirection(const std::string& name) const {
+        for (const auto& segment:segments_) if (segment.kind=='B' && segment.first==name) {
+            const Vec3 direction=segment.b-segment.a;
+            if (length(direction)>1e-8) return normalized(direction);
+        }
+        return std::nullopt;
+    }
+
     bool load(const std::string& path, std::string& error) {
         std::ifstream input(path);
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }

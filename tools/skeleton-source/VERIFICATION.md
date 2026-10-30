@@ -33,25 +33,30 @@ to one side of the sacrum. The reference pose uses a single source-derived
 rotation at the sacrum/L5 link to put their centres above one another; the
 remaining cervical, thoracic and lumbar centres are each within 10 mm of that
 vertical line on these two models. Separate source-derived cervical and head
-rotations place C2 above C7 and the head above C1, while keeping the face forward
-and retaining the source spine's front-to-back curvature. Forward yaw uses the
-bilateral posterior/superior jaw points as an estimated condylar axis rather
-than the jaw/skull centroid, which is affected by facial asymmetry. The jaw is
-parented to the skull and rotates around that estimated axis; the hinge is a
-mesh-derived approximation, not an expert-annotated TMJ landmark. This is a geometric
+rotations place C2 above C7 and the head within 2 mm of C1 laterally, while
+retaining the source spine's front-to-back curvature. Eye-socket centres are
+estimated from the two recessed orbital apertures in the anterior depth map of
+each source skull (`openskeleton/14-fit-orbits.py`). Skull rotation makes the
+line between these centres horizontal and its normal point forward. The source
+centre-line yaw is about −4.1° (male) and −2.7° (female), before posing. These
+landmarks are geometric estimates, not expert clinical annotations. The jaw is
+parented to the skull and rotates around its separately estimated condylar axis. This is a geometric
 straightening, not a clinical diagnosis or individual spinal alignment measurement. The original
 source pose remains restorable; no bone is scaled or mirrored.
 
 In the registered source, the maximum angle between proximal-to-distal toe
 centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
 (female); with the toes resting toward the sole, the respective maxima are
-14.48° and 14.50°. Each distal toe reaches within 0.2 mm of the heel support
+15.01° and 14.80° (including downward slope). In the horizontal plane each
+proximal-to-middle and middle-to-distal centre-line is within 1° of the foot's
+forward direction. Each distal toe reaches within 0.2 mm of the heel support
 plane, and all toe phalanges remain above it. The earlier pose forced the right
 female little toe's proximal bone below the sole when lowering its tip; keeping
 its original joint frames avoids that without scaling or moving the bones away
 from their joints. These are geometric direction measurements, not clinical joint angles.
 `tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
-toe-tip support, every phalanx above the sole, flexion toward the sole, range limits, neighbour
+toe-tip support, every phalanx above the sole, horizontal alignment, flexion
+toward the sole, range limits, neighbour
 isolation, V-view geometry and source restoration. Headless Vulkan tests also
 exercise the big toe and all three joints of a lesser toe in mesh and V view;
 the feet are raised for the individual plantar-flexion render checks.

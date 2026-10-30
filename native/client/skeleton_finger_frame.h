@@ -9,9 +9,12 @@ namespace gtc::native {
 // alignment is separate from the clinically bounded flexion coordinate.
 class FingerReferenceFrames {
 public:
-    struct Axes { Vec3 flexion, alignment; double alignmentAngle; };
+    struct Axes { Vec3 flexion, alignment; double alignmentAngle; Vec3 yaw{}; };
     explicit FingerReferenceFrames(std::size_t count) : reference_(count) {}
     void inherit(std::size_t parent, std::size_t child) { reference_[child]=reference_[parent]; }
+    Vec3 axisInFrame(std::size_t child, Vec3 direction) const {
+        return apply(joint_detail::inverse(reference_[child]),direction);
+    }
     Axes attach(std::size_t parent, std::size_t child, Vec3 proximal, Vec3 distal, Vec3 palm) {
         const auto& p=reference_[parent];
         const Vec3 crossToStraight=cross(distal,proximal);

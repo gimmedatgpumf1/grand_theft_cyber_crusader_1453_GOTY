@@ -1,6 +1,7 @@
 #include "client/skeleton_room.h"
 #include "client/room_freecam.h"
 #include "client/skeleton_rest_toes.h"
+#include "client/skeleton_toe_yaw.h"
 #include "client/threadpool.h"
 
 #include <thread>
@@ -103,6 +104,8 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     const std::string directory = root + "/tools/skeleton-source/";
     if (!male_.load(directory + "skeleton-male.obj", error)) return false;
     if (!female_.load(directory + "skeleton-female.obj", error)) return false;
+    if (!male_.loadOrbitCenters(directory + "skeleton-male.orbits", error)) return false;
+    if (!female_.loadOrbitCenters(directory + "skeleton-female.orbits", error)) return false;
     if (!male_.loadHipCenters(directory + "skeleton-male.hips", error)) return false;
     if (!female_.loadHipCenters(directory + "skeleton-female.hips", error)) return false;
     if (!male_.loadShoulderCenters(directory + "skeleton-male.shoulders", error)) return false;
@@ -205,6 +208,8 @@ bool SkeletonRoom::restoreReferencePose() {
             if (!model->setReferenceBend(i,target)) return false;
         }
         if (!restToesOnSole(*model)) return false;
+        for (int pass=0;pass<2;++pass)
+            if (!alignReferenceToeDirections(*model,model==&male_ ? maleLines_ : femaleLines_) || !settleReferenceToes(*model)) return false;
     }
     // Reposition each whole body onto the floor; no geometry is scaled.
     maleFloor_=-minimumY(male_); femaleFloor_=-minimumY(female_);

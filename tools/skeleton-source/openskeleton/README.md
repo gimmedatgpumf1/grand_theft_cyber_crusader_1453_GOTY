@@ -202,3 +202,10 @@ python3 tests/openskeleton_elbow_collision.py
 
 The room starts in a rigid-joint T-pose; the tests above are optional
 surface-intersection checks, not functional ROM or anatomical-motion validation. See `../JOINT_MOBILITY.md` for the joint directions and limits.
+
+### Eye-socket reference
+
+`14-fit-orbits.py` estimates each skull's two orbital aperture centres from its
+anterior depth image and writes `../skeleton-{male,female}.orbits`. The runtime
+uses those actual mesh-derived points to orient the skull, not the jaw centroid.
+It is a geometric estimate, not an expert-labelled anatomical measurement.

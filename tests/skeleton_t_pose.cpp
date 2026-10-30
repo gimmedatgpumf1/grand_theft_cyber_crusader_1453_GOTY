@@ -53,12 +53,13 @@ static void verifyPose(SkeletonModel& model) {
     const Vec3 sacrum=posed(model,m,"Sacrum"), neck=posed(model,m,"C7");
     assert(std::abs(neck.x-sacrum.x)<1e-7); // upright at the actual spine, not camera placement
     assert(std::abs(posed(model,m,"C2").x-neck.x)<1e-7);
-    assert(std::abs(posed(model,m,"Head").x-posed(model,m,"C1").x)<1e-7);
-    const Vec3 face=posed(model,m,"Jaw")-posed(model,m,"Head");
-    const auto hinge=sourceJawHinge(model); assert(hinge);
+    assert(std::abs(posed(model,m,"Head").x-posed(model,m,"C1").x)<0.002);
+    const auto& eyes=model.orbitalCenters(); assert(eyes);
     const auto& head=m[model.sourceStructure("Head")];
-    const Vec3 lateral=point(head,hinge->pivot+hinge->axis)-point(head,hinge->pivot);
-    assert(face.z>0 && std::abs(lateral.z)<1e-7); // condylar axis transverse to forward
+    const Vec3 across=normalized(point(head,(*eyes)[1])-point(head,(*eyes)[0]));
+    assert(across.x>0.999999 && std::abs(across.y)<1e-7 && std::abs(across.z)<1e-7);
+    const Vec3 look=normalized(cross(across,Vec3{0,1,0}));
+    assert(look.z>0.999999); // the eye-centre normal faces straight ahead
     for (const char* vertebra : {"L5","L4","L3","L2","L1","T12","T11","T10","T9","T8","T7",
                                  "T6","T5","T4","T3","T2","T1","C7","C6","C5","C4","C3","C2","C1"})
         assert(std::abs(posed(model,m,vertebra).x-sacrum.x)<0.01);

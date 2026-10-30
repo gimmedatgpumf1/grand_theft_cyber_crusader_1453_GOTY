@@ -89,6 +89,21 @@ static void test(SkeletonRoom& room, SkeletonModel& model, const char* sex) {
             Vec3 dorsal=normalized(cross(posed(model,before,"FootMeta1"+suffix)-posed(model,before,"FootMeta5"+suffix),forward));
             if (dot(dorsal,posed(model,before,"Tibia"+suffix)-posed(model,before,"Tal"+suffix))<0) dorsal=dorsal*-1.0;
             const Vec3 start=posed(model,before,tip), startProx=posed(model,before,prox);
+            const auto checkForward=[&](const std::string& a,const std::string& b) {
+                const Vec3 v=posed(model,before,b)-posed(model,before,a);
+                const double yaw=std::remainder(std::atan2(v.x,v.z)-std::atan2(forward.x,forward.z),2*3.141592653589793);
+                assert(std::abs(yaw)<3.141592653589793/180); // no sideways toe shafts
+            };
+            if (digit==1) {
+                checkForward(prox,tip);
+                for (const auto& bone : {prox,tip}) {
+                    const auto sourceAxis=lines.sourceBoneDirection(bone); assert(sourceAxis);
+                    const auto& matrix=before[model.sourceStructure(bone)];
+                    const Vec3 axis=transform(matrix,*sourceAxis)-transform(matrix,{});
+                    const double yaw=std::remainder(std::atan2(axis.x,axis.z)-std::atan2(forward.x,forward.z),3.141592653589793);
+                    assert(std::abs(yaw)<10*3.141592653589793/180);
+                }
+            } else { checkForward(prox,mid); checkForward(mid,tip); }
             assert(std::abs(bottom(model,before,tip)-bottom(model,before,"Cal"+suffix))<0.0002);
             for (const auto& part : {prox, digit==1 ? tip : mid, tip})
                 assert(bottom(model,before,part)>=bottom(model,before,"Cal"+suffix)-0.00001);
