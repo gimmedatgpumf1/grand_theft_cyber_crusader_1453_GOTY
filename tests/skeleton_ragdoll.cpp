@@ -138,6 +138,17 @@ int main() {
     double handGap[4]={},palmGap[4]={},motion[4]={},handFloor[2]={};
     const auto malePose=room.male().sourceMatrices({},0),femalePose=room.female().sourceMatrices({},0);
     assert(maleAnchors.size()>90 && femaleAnchors.size()>90);
+    // Rendering can run faster than the fixed physics rate. Do not invalidate
+    // either pose until accumulated time actually produces a physics step.
+    assert(room.toggleRagdoll() && room.ragdollActive());
+    const auto maleRevision=room.male().sourcePoseRevision(),femaleRevision=room.female().sourcePoseRevision();
+    const auto beforeMale=room.male().sourceMatrices({},0),beforeFemale=room.female().sourceMatrices({},0);
+    for (int i=0;i<3;++i) room.advanceRagdoll(0.001);
+    assert(room.male().sourcePoseRevision()==maleRevision && room.female().sourcePoseRevision()==femaleRevision);
+    assert(room.male().sourceMatrices({},0)==beforeMale && room.female().sourceMatrices({},0)==beforeFemale);
+    room.advanceRagdoll(0.006);
+    assert(room.male().sourcePoseRevision()>maleRevision && room.female().sourcePoseRevision()>femaleRevision);
+    assert(room.toggleRagdoll() && !room.ragdollActive());
     assert(room.toggleRagdoll() && room.ragdollActive());
     for (const auto& pair : {std::make_pair(malePose,room.male().sourceMatrices({},0)),
                              std::make_pair(femalePose,room.female().sourceMatrices({},0))})

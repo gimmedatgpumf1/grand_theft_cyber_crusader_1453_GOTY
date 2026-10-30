@@ -374,7 +374,9 @@ SkeletonRagdoll::Contacts SkeletonRagdoll::contacts() const {
 }
 void SkeletonRagdoll::advance(double seconds) {
     if (!(seconds>0) || !std::isfinite(seconds)) return;
-    impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),10,1.0f/120.0f);
-    impl_->publish();
+    // Bullet accumulates time between fixed steps. Publishing when no step
+    // ran only invalidates both pose caches and rebuilds the same V-view.
+    if (impl_->world->stepSimulation(btScalar(std::min(seconds,0.05)),10,1.0f/120.0f)>0)
+        impl_->publish();
 }
 } // namespace gtc::native
