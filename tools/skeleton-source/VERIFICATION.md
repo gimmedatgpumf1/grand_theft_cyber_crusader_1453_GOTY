@@ -41,12 +41,15 @@ centers without rescaling or changing the rest meshes. V-view hip balls share
 their centers (but their display radii cover other connections). See
 `openskeleton/README.md` for provenance and reproduction.
 
-The input femur and pelvis meshes interpenetrate: a closed-mesh point-in-solid
-audit (`openskeleton/07-audit-hip-overlap.py`) found 254/541 male left, 330/670
-male right, 419/836 female left and 370/773 female right femoral vertices within
-3 mm of the pelvic surface inside the pelvis. The audit does not measure full
-intersection volume. These original registration problems remain unresolved;
-the fitted centers do not establish valid hip articulation or joint limits.
+Correction: the initial point-in-solid hip audit used the MATLAB 1-based face
+indices as zero-based indices. Its previous counts (254/541, 330/670, 419/836,
+370/773) were invalid. With the index conversion fixed, the same limited test
+finds 1/541 male left, 0/670 male right, 0/836 female left and 15/773 female
+right femoral vertices within 3 mm of the pelvic surface inside the pelvis.
+Both Embree and triangle-ray implementations gave these same counts. This does
+not measure complete mesh intersection volume or cartilage, so even zero counts
+do not prove correct hip assembly. Fitted centers alone do not establish valid
+hip articulation or joint limits.
 
 ## Historical verification (earlier assets and poses)
 

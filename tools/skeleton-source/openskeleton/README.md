@@ -132,9 +132,16 @@ mirrored, or reposed. Other joints are not subject-fitted; axes, neutral
 frames, limits, collisions and motion coupling are not provided by this fit.
 
 Source registration is not guaranteed to preserve anatomical articulation.
-In fact `07-audit-hip-overlap.py` (requires NumPy, SciPy, trimesh and rtree)
-finds femoral surface vertices inside the closed pelvic meshes on **all four**
-sides in the registered input. The nearest pelvis surface is only 3.9–6.9 mm
-from each fitted head center. Sphere residuals and repeatable subsampling do
-not establish correct hip seating; do not interpret these fits as proof that
-the hip joint or its range of motion is anatomically correct.
+`07-audit-hip-overlap.py` (requires NumPy, SciPy, trimesh and rtree) checks
+whether femoral surface vertices within 3 mm of the pelvic surface lie inside
+the corresponding closed pelvis mesh. With correctly converted 1-based source
+faces it found 1, 0, 0 and 15 such vertices (male L/R, female L/R). This is a
+limited vertex test, not a complete triangle-intersection or cartilage test.
+A prior version erroneously treated source face indices as zero-based and its
+reported overlap counts were invalid; those results must not be used.
+
+The nearest pelvic surface is only 3.9–6.9 mm from each fitted head center;
+that warrants investigation but by itself does not prove bone intersection.
+Sphere residuals and repeatable subsampling do not establish correct hip
+seating; do not interpret these fits as proof that the hip joint or its range
+of motion is anatomically correct.

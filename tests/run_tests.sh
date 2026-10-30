@@ -8,6 +8,7 @@ python3 tests/openskeleton_source_pose.py female
 python3 tests/openskeleton_source_pose.py male
 python3 tests/openskeleton_extract.py
 python3 tests/openskeleton_hip_fit.py
+python3 tests/openskeleton_mesh_indices.py
 python3 tests/skeleton_line_graph.py
 python3 tests/skeleton_mobility.py
 # The Windows and Linux builds keep separate source lists by hand; this checks
