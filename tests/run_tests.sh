@@ -63,6 +63,7 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-finger-joints
 ./build/bin/gtc-skeleton-finger-joints
+"${COMMAND[@]}" -std=c++17 -fsyntax-only -Isrc -Inative tests/skeleton_windows_macros.cpp
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-toe-joints

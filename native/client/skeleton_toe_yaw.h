@@ -37,9 +37,9 @@ inline bool alignReferenceToeDirections(SkeletonModel& model, const SkeletonLine
             const int tip=model.sourceStructure("FootDistP"+n);
             if (meta<0 || prox<0 || tip<0 || (digit>1 && mid<0)) return false;
             struct Stage { int parent,child,from,to; };
-            const Stage small[]={{prox,mid,prox,mid},{mid,tip,mid,tip},{meta,prox,prox,mid}};
-            const Stage great[]={{meta,prox,-1,-1},{prox,tip,-1,-1},{meta,prox,prox,tip}};
-            const Stage* stages=digit==1 ? great : small;
+            const Stage lesserStages[]={{prox,mid,prox,mid},{mid,tip,mid,tip},{meta,prox,prox,mid}};
+            const Stage greatStages[]={{meta,prox,-1,-1},{prox,tip,-1,-1},{meta,prox,prox,tip}};
+            const Stage* stages=digit==1 ? greatStages : lesserStages;
             for (int sweep=0;sweep<2;++sweep) for (int k=0;k<3;++k) {
                 const auto& stage=stages[k];
                 if (stage.parent<0 || stage.child<0) continue;
