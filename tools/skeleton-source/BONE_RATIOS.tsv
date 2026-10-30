@@ -1,0 +1,189 @@
+Bone name	Gender	L/R	Known biological ratio avg	Known biological ratio std	Measured ratio
+Humerus / Radius	male	L	1.300	0.080	1.2135
+Humerus / Radius	male	R	1.300	0.080	1.2258
+Humerus / Radius	female	L	1.300	0.060	1.4106
+Humerus / Radius	female	R	1.300	0.060	1.4180
+Humerus / Ulna	male	L	1.220	0.090	1.1279
+Humerus / Ulna	male	R	1.220	0.090	1.1344
+Humerus / Ulna	female	L	1.200	0.060	1.3069
+Humerus / Ulna	female	R	1.200	0.060	1.3076
+Humerus / mean(Radius, Ulna)	male	L	1.260	0.080	1.1692
+Humerus / mean(Radius, Ulna)	male	R	1.260	0.080	1.1783
+Humerus / mean(Radius, Ulna)	female	L	1.250	0.060	1.3568
+Humerus / mean(Radius, Ulna)	female	R	1.250	0.060	1.3606
+Femur / Tibia	male	L	1.210	0.050	1.1726
+Femur / Tibia	male	R	1.210	0.050	1.1412
+Femur / Tibia	female	L	1.190	0.020	1.1574
+Femur / Tibia	female	R	1.190	0.020	1.1757
+Femur / mean(Tibia, Fibula)	male	L	1.210	0.050	1.1781
+Femur / mean(Tibia, Fibula)	male	R	1.210	0.050	1.1478
+Femur / mean(Tibia, Fibula)	female	L	1.200	0.020	1.1749
+Femur / mean(Tibia, Fibula)	female	R	1.200	0.020	1.1922
+Radius / Ulna	male	L			0.9294
+Radius / Ulna	male	R			0.9254
+Radius / Ulna	female	L			0.9265
+Radius / Ulna	female	R			0.9222
+Fibula / Tibia	male	L			0.9907
+Fibula / Tibia	male	R			0.9883
+Fibula / Tibia	female	L			0.9702
+Fibula / Tibia	female	R			0.9722
+Humerus / Femur	male	L	0.714		0.6782
+Humerus / Femur	male	R	0.714		0.7072
+Humerus / Femur	female	L	0.698		0.7568
+Humerus / Femur	female	R	0.698		0.7565
+sum(Humerus, Radius) / sum(Femur, Tibia)	male	L	0.697		0.6677
+sum(Humerus, Radius) / sum(Femur, Tibia)	male	R	0.697		0.6844
+sum(Humerus, Radius) / sum(Femur, Tibia)	female	L	0.685		0.6939
+sum(Humerus, Radius) / sum(Femur, Tibia)	female	R	0.685		0.6971
+Hand metacarpal 1 / proximal phalanx 1	male	L			1.4942
+Hand metacarpal 1 / proximal phalanx 1	male	R			1.4816
+Hand metacarpal 1 / proximal phalanx 1	female	L			1.4892
+Hand metacarpal 1 / proximal phalanx 1	female	R			1.4878
+Hand metacarpal 1 / sum(phalanges 1)	male	L			0.8437
+Hand metacarpal 1 / sum(phalanges 1)	male	R			0.8402
+Hand metacarpal 1 / sum(phalanges 1)	female	L			0.8540
+Hand metacarpal 1 / sum(phalanges 1)	female	R			0.8869
+Hand proximal phalanx 1 / distal phalanx 1	male	L			1.2970
+Hand proximal phalanx 1 / distal phalanx 1	male	R			1.3101
+Hand proximal phalanx 1 / distal phalanx 1	female	L			1.3445
+Hand proximal phalanx 1 / distal phalanx 1	female	R			1.4760
+Hand metacarpal 2 / proximal phalanx 2	male	L			1.7415
+Hand metacarpal 2 / proximal phalanx 2	male	R			1.6316
+Hand metacarpal 2 / proximal phalanx 2	female	L			1.6116
+Hand metacarpal 2 / proximal phalanx 2	female	R			1.5788
+Hand metacarpal 2 / sum(phalanges 2)	male	L			0.8521
+Hand metacarpal 2 / sum(phalanges 2)	male	R			0.7772
+Hand metacarpal 2 / sum(phalanges 2)	female	L			0.8211
+Hand metacarpal 2 / sum(phalanges 2)	female	R			0.8027
+Hand proximal phalanx 2 / middle phalanx 2	male	L			1.6343
+Hand proximal phalanx 2 / middle phalanx 2	male	R			1.6224
+Hand proximal phalanx 2 / middle phalanx 2	female	L			1.7315
+Hand proximal phalanx 2 / middle phalanx 2	female	R			1.6924
+Hand middle phalanx 2 / distal phalanx 2	male	L			1.4170
+Hand middle phalanx 2 / distal phalanx 2	male	R			1.2764
+Hand middle phalanx 2 / distal phalanx 2	female	L			1.4992
+Hand middle phalanx 2 / distal phalanx 2	female	R			1.5713
+Hand metacarpal 3 / proximal phalanx 3	male	L	1.500	0.070	1.6354
+Hand metacarpal 3 / proximal phalanx 3	male	R	1.500	0.070	1.4958
+Hand metacarpal 3 / proximal phalanx 3	female	L	1.500	0.070	1.4678
+Hand metacarpal 3 / proximal phalanx 3	female	R	1.500	0.070	1.4325
+Hand metacarpal 3 / sum(phalanges 3)	male	L	0.730	0.040	0.7961
+Hand metacarpal 3 / sum(phalanges 3)	male	R	0.730	0.040	0.7402
+Hand metacarpal 3 / sum(phalanges 3)	female	L	0.740	0.040	0.7651
+Hand metacarpal 3 / sum(phalanges 3)	female	R	0.740	0.040	0.7588
+Hand proximal phalanx 3 / middle phalanx 3	male	L	1.560	0.090	1.4574
+Hand proximal phalanx 3 / middle phalanx 3	male	R	1.560	0.090	1.5514
+Hand proximal phalanx 3 / middle phalanx 3	female	L	1.580	0.110	1.6941
+Hand proximal phalanx 3 / middle phalanx 3	female	R	1.580	0.110	1.7014
+Hand middle phalanx 3 / distal phalanx 3	male	L	1.520	0.130	1.8644
+Hand middle phalanx 3 / distal phalanx 3	male	R	1.520	0.130	1.7137
+Hand middle phalanx 3 / distal phalanx 3	female	L	1.580	0.160	1.7994
+Hand middle phalanx 3 / distal phalanx 3	female	R	1.580	0.160	1.9594
+Hand metacarpal 4 / proximal phalanx 4	male	L			1.4585
+Hand metacarpal 4 / proximal phalanx 4	male	R			1.4274
+Hand metacarpal 4 / proximal phalanx 4	female	L			1.3836
+Hand metacarpal 4 / proximal phalanx 4	female	R			1.3836
+Hand metacarpal 4 / sum(phalanges 4)	male	L			0.7114
+Hand metacarpal 4 / sum(phalanges 4)	male	R			0.7000
+Hand metacarpal 4 / sum(phalanges 4)	female	L			0.7250
+Hand metacarpal 4 / sum(phalanges 4)	female	R			0.6955
+Hand proximal phalanx 4 / middle phalanx 4	male	L			1.4383
+Hand proximal phalanx 4 / middle phalanx 4	male	R			1.5100
+Hand proximal phalanx 4 / middle phalanx 4	female	L			1.5966
+Hand proximal phalanx 4 / middle phalanx 4	female	R			1.5543
+Hand middle phalanx 4 / distal phalanx 4	male	L			1.9588
+Hand middle phalanx 4 / distal phalanx 4	male	R			1.7564
+Hand middle phalanx 4 / distal phalanx 4	female	L			2.2197
+Hand middle phalanx 4 / distal phalanx 4	female	R			1.8599
+Hand metacarpal 5 / proximal phalanx 5	male	L			1.6026
+Hand metacarpal 5 / proximal phalanx 5	male	R			1.5898
+Hand metacarpal 5 / proximal phalanx 5	female	L			1.5978
+Hand metacarpal 5 / proximal phalanx 5	female	R			1.6408
+Hand metacarpal 5 / sum(phalanges 5)	male	L			0.7768
+Hand metacarpal 5 / sum(phalanges 5)	male	R			0.7642
+Hand metacarpal 5 / sum(phalanges 5)	female	L			0.8249
+Hand metacarpal 5 / sum(phalanges 5)	female	R			0.7843
+Hand proximal phalanx 5 / middle phalanx 5	male	L			1.5228
+Hand proximal phalanx 5 / middle phalanx 5	male	R			1.7443
+Hand proximal phalanx 5 / middle phalanx 5	female	L			1.7811
+Hand proximal phalanx 5 / middle phalanx 5	female	R			1.6102
+Hand middle phalanx 5 / distal phalanx 5	male	L			1.6162
+Hand middle phalanx 5 / distal phalanx 5	male	R			1.1306
+Hand middle phalanx 5 / distal phalanx 5	female	L			1.4953
+Hand middle phalanx 5 / distal phalanx 5	female	R			1.3187
+Foot metatarsal 1 / proximal phalanx 1	male	L			1.8948
+Foot metatarsal 1 / proximal phalanx 1	male	R			1.9154
+Foot metatarsal 1 / proximal phalanx 1	female	L			2.0297
+Foot metatarsal 1 / proximal phalanx 1	female	R			1.9241
+Foot metatarsal 1 / sum(phalanges 1)	male	L			1.0061
+Foot metatarsal 1 / sum(phalanges 1)	male	R			1.0449
+Foot metatarsal 1 / sum(phalanges 1)	female	L			1.0981
+Foot metatarsal 1 / sum(phalanges 1)	female	R			1.0661
+Foot proximal phalanx 1 / distal phalanx 1	male	L			1.1320
+Foot proximal phalanx 1 / distal phalanx 1	male	R			1.2004
+Foot proximal phalanx 1 / distal phalanx 1	female	L			1.1787
+Foot proximal phalanx 1 / distal phalanx 1	female	R			1.2426
+Foot metatarsal 2 / proximal phalanx 2	male	L			2.7915
+Foot metatarsal 2 / proximal phalanx 2	male	R			2.6111
+Foot metatarsal 2 / proximal phalanx 2	female	L			2.7756
+Foot metatarsal 2 / proximal phalanx 2	female	R			2.5097
+Foot metatarsal 2 / sum(phalanges 2)	male	L			1.4825
+Foot metatarsal 2 / sum(phalanges 2)	male	R			1.4285
+Foot metatarsal 2 / sum(phalanges 2)	female	L			1.4844
+Foot metatarsal 2 / sum(phalanges 2)	female	R			1.3861
+Foot proximal phalanx 2 / middle phalanx 2	male	L			2.1088
+Foot proximal phalanx 2 / middle phalanx 2	male	R			2.6244
+Foot proximal phalanx 2 / middle phalanx 2	female	L			2.4461
+Foot proximal phalanx 2 / middle phalanx 2	female	R			2.3049
+Foot middle phalanx 2 / distal phalanx 2	male	L			1.1602
+Foot middle phalanx 2 / distal phalanx 2	male	R			0.8527
+Foot middle phalanx 2 / distal phalanx 2	female	L			0.8868
+Foot middle phalanx 2 / distal phalanx 2	female	R			1.1515
+Foot metatarsal 3 / proximal phalanx 3	male	L	2.570	0.150	3.0514
+Foot metatarsal 3 / proximal phalanx 3	male	R	2.570	0.150	3.3153
+Foot metatarsal 3 / proximal phalanx 3	female	L	2.700	0.160	3.8565
+Foot metatarsal 3 / proximal phalanx 3	female	R	2.700	0.160	3.5593
+Foot metatarsal 3 / sum(phalanges 3)	male	L	1.450	0.130	1.6145
+Foot metatarsal 3 / sum(phalanges 3)	male	R	1.450	0.130	1.6736
+Foot metatarsal 3 / sum(phalanges 3)	female	L	1.500	0.150	1.8133
+Foot metatarsal 3 / sum(phalanges 3)	female	R	1.500	0.150	1.7675
+Foot proximal phalanx 3 / middle phalanx 3	male	L	2.450	0.480	2.3637
+Foot proximal phalanx 3 / middle phalanx 3	male	R	2.450	0.480	2.4153
+Foot proximal phalanx 3 / middle phalanx 3	female	L	2.490	0.680	2.1817
+Foot proximal phalanx 3 / middle phalanx 3	female	R	2.490	0.680	2.2724
+Foot middle phalanx 3 / distal phalanx 3	male	L	1.190	0.220	0.9061
+Foot middle phalanx 3 / distal phalanx 3	male	R	1.190	0.220	0.7303
+Foot middle phalanx 3 / distal phalanx 3	female	L	1.110	0.220	0.6857
+Foot middle phalanx 3 / distal phalanx 3	female	R	1.110	0.220	0.7671
+Foot metatarsal 4 / proximal phalanx 4	male	L			2.9533
+Foot metatarsal 4 / proximal phalanx 4	male	R			2.8797
+Foot metatarsal 4 / proximal phalanx 4	female	L			3.5250
+Foot metatarsal 4 / proximal phalanx 4	female	R			3.3763
+Foot metatarsal 4 / sum(phalanges 4)	male	L			1.6774
+Foot metatarsal 4 / sum(phalanges 4)	male	R			1.6046
+Foot metatarsal 4 / sum(phalanges 4)	female	L			1.7692
+Foot metatarsal 4 / sum(phalanges 4)	female	R			1.7212
+Foot proximal phalanx 4 / middle phalanx 4	male	L			2.9742
+Foot proximal phalanx 4 / middle phalanx 4	male	R			2.9976
+Foot proximal phalanx 4 / middle phalanx 4	female	L			2.2850
+Foot proximal phalanx 4 / middle phalanx 4	female	R			2.3983
+Foot middle phalanx 4 / distal phalanx 4	male	L			0.7923
+Foot middle phalanx 4 / distal phalanx 4	male	R			0.7235
+Foot middle phalanx 4 / distal phalanx 4	female	L			0.7888
+Foot middle phalanx 4 / distal phalanx 4	female	R			0.7655
+Foot metatarsal 5 / proximal phalanx 5	male	L			3.5678
+Foot metatarsal 5 / proximal phalanx 5	male	R			3.4958
+Foot metatarsal 5 / proximal phalanx 5	female	L			3.6139
+Foot metatarsal 5 / proximal phalanx 5	female	R			3.1944
+Foot metatarsal 5 / sum(phalanges 5)	male	L			1.8219
+Foot metatarsal 5 / sum(phalanges 5)	male	R			1.9347
+Foot metatarsal 5 / sum(phalanges 5)	female	L			1.8750
+Foot metatarsal 5 / sum(phalanges 5)	female	R			1.7760
+Foot proximal phalanx 5 / middle phalanx 5	male	L			2.0719
+Foot proximal phalanx 5 / middle phalanx 5	male	R			2.5893
+Foot proximal phalanx 5 / middle phalanx 5	female	L			2.1219
+Foot proximal phalanx 5 / middle phalanx 5	female	R			2.3715
+Foot middle phalanx 5 / distal phalanx 5	male	L			1.0148
+Foot middle phalanx 5 / distal phalanx 5	male	R			0.9180
+Foot middle phalanx 5 / distal phalanx 5	female	L			1.0333
+Foot middle phalanx 5 / distal phalanx 5	female	R			1.1186
