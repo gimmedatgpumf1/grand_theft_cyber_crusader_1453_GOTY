@@ -46,6 +46,12 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_source_structures.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-structures
 ./build/bin/gtc-skeleton-source-structures
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/calibrated_joint.cpp -o build/bin/gtc-calibrated-joint
+./build/bin/gtc-calibrated-joint
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/calibrated_coupling.cpp -o build/bin/gtc-calibrated-coupling
+./build/bin/gtc-calibrated-coupling
 "${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.

@@ -72,3 +72,31 @@ turn those classes into subject-specific motion. In particular, a tree of
 independent hinge rotations does not preserve the multiple articulations in
 the wrist, foot, thoracic cage or pelvis. Neither the runtime graph nor the
 coarse renderer mesh groups currently solve those constraints.
+
+## Reference-model solver (not yet a subject rig)
+
+`native/client/skeleton_joint.h` implements bounded ordered rotations between
+two **supplied, calibrated** joint frames. A reproducible OpenSim 4.6 fixture
+exercises all 32 joints of the AAH bilateral finger/thumb reference models,
+including both thumb CMC stages, against 160 independently computed parent–child
+transforms and 50 full finger/thumb-chain poses. It clamps the AAH
+model's own coordinate ranges and rejects non-finite values. Source and license are in `reference/AAH_LICENSE.txt`.
+`native/client/skeleton_coupling.h` evaluates precomputed piecewise-cubic
+coordinate couplings. A further fixture verifies all 26 AAH bilateral
+shoulder-girdle and wrist couplers at 234 OpenSim-generated sample values,
+including endpoint extrapolation. It does not claim the AAH rhythm is an
+individual subject's measured rhythm.
+
+These are *reference-model* results, not tests or joint frames fitted to either
+OpenSkeleton subject. The solver is not connected to the C-room bodies or
+V-view, and it does not implement gliding, cartilage, contacts or closed loops.
+AAH's simple joint bounds are a model, not universal clinical hard limits.
+
+Subject fitting must not use a geometry ICP score as a substitute for checking
+joint frames. As an exploratory example, rigid ICP of the reference right
+index proximal/middle phalanges to the male model yielded surface RMS errors
+of 2.28 and 1.58 mm, but the transferred PIP parent and child reference centres
+differed by **35.57 mm**. That demonstrates an end-orientation ambiguity, not
+a clinically usable calibration. The [PIP CT and motion study](https://pmc.ncbi.nlm.nih.gov/articles/PMC3835607/)
+found a moving finite helical axis, showing even a fixed hinge is an
+approximation. Do not ship a guessed joint frame as medically validated.
