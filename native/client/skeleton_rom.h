@@ -32,6 +32,8 @@ inline std::optional<ReferenceBendRange> referenceBendRange(std::string_view kin
         {"finger_pip_hinge", {0, 100}},
         {"finger_dip_hinge", {-20, 90}},
         {"hip_ball_socket", {-20, 120}},
+        {"hip_abduction", {-30, 45}}, // adduction / abduction
+        {"hip_rotation", {-45, 45}},
         {"knee_modified_hinge", {0, 135}},
         {"ankle_hinge", {-20, 50}}, // negative dorsiflexion, positive plantarflexion
         {"great_toe_mtp", {-70, 45}},

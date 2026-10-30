@@ -56,6 +56,10 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-t-pose
 ./build/bin/gtc-skeleton-t-pose
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+  tests/skeleton_leg_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
+  native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-leg-pose
+./build/bin/gtc-skeleton-leg-pose
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-finger-joints
 ./build/bin/gtc-skeleton-finger-joints

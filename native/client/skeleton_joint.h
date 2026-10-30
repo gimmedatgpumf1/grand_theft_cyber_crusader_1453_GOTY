@@ -69,16 +69,17 @@ inline JointRigidTransform rotate(Vec3 axis, double q) {
 }
 } // namespace joint_detail
 
-// Ordered, independent rotational coordinates, like the specified OpenSim
+// Ordered rotational coordinates, like the specified OpenSim
 // CustomJoint subset. This does not support coupled limits, translations,
-// cartilage deformation, contact or closed-loop constraints.
+// cartilage deformation, contact or closed-loop constraints. A fourth axis
+// may carry a fixed source-to-reference alignment, not an extra anatomical DOF.
 class CalibratedRotationalJoint {
 public:
     static std::optional<CalibratedRotationalJoint> create(
         JointRigidTransform parentFrame, JointRigidTransform childFrame,
         std::vector<JointRotationalAxis> axes) {
         if (!joint_detail::rigid(parentFrame) || !joint_detail::rigid(childFrame) ||
-            axes.empty() || axes.size() > 3) return std::nullopt;
+            axes.empty() || axes.size() > 4) return std::nullopt;
         for (auto& axis : axes) {
             if (!joint_detail::finite(axis.direction) || !std::isfinite(axis.minimum) ||
                 !std::isfinite(axis.maximum) || axis.minimum > axis.maximum) return std::nullopt;

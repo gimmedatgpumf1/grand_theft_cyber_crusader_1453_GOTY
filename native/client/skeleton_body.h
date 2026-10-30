@@ -115,8 +115,28 @@ public:
     // source geometry supplies approximate pivots; neutral is estimated.
     bool installReferenceRig(std::string& error);
     bool restoreSourcePose();
-    std::optional<double> referenceHipRotation(std::size_t link) const;
-    bool setReferenceHipRotation(std::size_t link, double degrees);
+    std::optional<double> referenceHipCoordinate(std::size_t link, std::size_t coordinate) const {
+        if (!sourceRig_ || link>=sourceLinks_.size() || sourceLinks_[link].mobility!="hip_ball_socket" ||
+            (coordinate!=1 && coordinate!=2)) return std::nullopt;
+        const auto& e=sourceLinks_[link]; const auto a=sourceBodies_[e.first], b=sourceBodies_[e.second];
+        const auto child=sourceRig_->parent(b)==a ? b : sourceRig_->parent(a)==b ? a : 0;
+        const auto* joint=sourceRig_->joint(child);
+        if (!joint || joint->angles().size()!=4) return std::nullopt;
+        return joint->angles()[coordinate]*(180.0/3.14159265358979323846);
+    }
+    bool setReferenceHipCoordinate(std::size_t link, std::size_t coordinate, double degrees) {
+        const auto bounded=clampReferenceBend(coordinate==1 ? "hip_rotation" : "hip_abduction",degrees);
+        if (!bounded || !referenceHipCoordinate(link,coordinate)) return false;
+        const auto& e=sourceLinks_[link]; const auto a=sourceBodies_[e.first], b=sourceBodies_[e.second];
+        const auto child=sourceRig_->parent(b)==a ? b : a;
+        auto angles=sourceRig_->joint(child)->angles();
+        angles[coordinate]=*bounded*(3.14159265358979323846/180.0);
+        return setSourcePose({{child,angles}});
+    }
+    std::optional<double> referenceHipRotation(std::size_t link) const { return referenceHipCoordinate(link,1); }
+    bool setReferenceHipRotation(std::size_t link, double degrees) { return setReferenceHipCoordinate(link,1,degrees); }
+    std::optional<double> referenceHipAbduction(std::size_t link) const { return referenceHipCoordinate(link,2); }
+    bool setReferenceHipAbduction(std::size_t link, double degrees) { return setReferenceHipCoordinate(link,2,degrees); }
     // The V-view forearm is one group; its bounded axial rotation drives
     // radius and ulna together around the source forearm's longitudinal axis.
     std::optional<double> referenceForearmRotation(std::size_t link) const {

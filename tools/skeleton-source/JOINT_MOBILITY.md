@@ -32,7 +32,7 @@ registered cadaver pose. Combined rotations are coupled, not independent boxes.
 | Finger MCP condyloid | Flexion about 90°, extension about 30–45°, abduction about 20°; spreading is constrained when flexed. No unrestricted axial spin. |
 | Finger PIP / DIP hinges | Mainly flexion/extension, PIP ~0–100°, DIP flexion ~90° (some extension up to ~20°); not side-bending or free twisting. |
 | Thumb IP hinge | Primarily flexion/extension, approximately 0–80° flexion, with variable extension. |
-| Hip ball-and-socket | Flexion ~120°, extension ~20°, abduction ~40°, adduction ~20°, internal/external rotation ~45° each; more constrained than shoulder and coupled by posture. |
+| Hip ball-and-socket | Flexion ~120°, extension ~20°, abduction ~45°, adduction ~30°, internal/external rotation ~45° each; more constrained than shoulder and coupled by posture. |
 | Knee modified hinge | Primarily flexion/extension, ~0–135° flexion; some coupled axial rotation when flexed, very limited in full extension. Patella glides with knee movement and is not an independently rotating ball. |
 | Tibiofibular | Limited coupled glides; distal syndesmosis is not a free hinge. Tibia and fibula form one rigid V-view plane. |
 | Ankle hinge | Primarily dorsiflexion ~20° and plantarflexion ~50°; inversion/eversion is mainly through adjacent foot joints rather than a free ankle ball. |
@@ -46,6 +46,7 @@ Sources: [OpenStax synovial joints](https://openstax.org/books/anatomy-and-physi
 [movements](https://openstax.org/books/anatomy-and-physiology-2e/pages/9-5-types-of-body-movements),
 [selected joints, knee and shoulder](https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints),
 [Physiopedia reference ranges](https://www.physio-pedia.com/Range_of_Motion_Normative_Values),
+[AAOS-based hip goniometry](https://goniometer.io/hip-range-of-motion),
 [Hand Surgery Primer active hand ranges](https://learn.handsurgeryprimer.org/taxonomy/term/303),
 [Kenhub MTP joints](https://www.kenhub.com/en/library/anatomy/metatarsophalangeal-mtp-joints).
 
@@ -121,7 +122,12 @@ bone collisions, cartilage and individual fitted ranges remain unsolved.
 The room installs a source-bone tree for both subjects and retains the original
 unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
 90° abduction, elbows and knees straight, ankles and wrists straightened,
-fingers and toes extended, palms facing forward, and feet aimed forward with bounded hip rotation.
+fingers and toes extended, palms facing forward, and feet aimed forward. Each
+hip-to-knee and knee-to-ankle line is aligned vertically, with both feet
+parallel and approximately hip-width apart. Hip flexion/extension, axial rotation
+and abduction/adduction are independent bounded controls (`G`, `N`, `U`);
+Shift reverses each control. Abduction is +45° and adduction −30° in the
+AAOS-based population reference, not an individual measurement.
 The source trunk is rotated laterally at the sacrum/L5 link so C7 is above
 the sacrum; the source's front-to-back spinal curves remain intact. Head yaw
 is aligned forward without adding a nod. These are geometric reference-pose
@@ -184,7 +190,8 @@ moves toward the sole. All 28 joints per subject are tested individually in
 mesh and V view, and the source pose is restorable.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
-hip axial rotation has a separate approximate ±45° range. These directions
+hip axial rotation has a separate approximate ±45° range. Hip abduction is
+bounded from −30° adduction to +45° abduction. These directions
 are tested on both sides of both subjects in `tests/skeleton_t_pose.cpp`.
 Other pivots use sampled closest surfaces only after the anatomical graph has
 selected the relationship. Neck flexion and most other source angles are assumed zero.

@@ -46,6 +46,11 @@ static std::map<std::string, CalibratedRotationalJoint> loadJoints() {
     assert(joints.size() == 32); return joints;
 }
 int main() {
+    // Three anatomical hip coordinates plus a separate reference alignment.
+    std::vector<JointRotationalAxis> hipAxes{{{1,0,0},-1,2},{{0,1,0},-1,1},{{0,0,1},-1,1},{{1,0,0},0,3}};
+    auto hip=CalibratedRotationalJoint::create({}, {}, hipAxes); assert(hip);
+    assert(hip->setAngles({0.1,0.2,0.3,0.4}) && joint_detail::rigid(hip->childInParent()));
+    hipAxes.push_back({{1,0,0},0,1}); assert(!CalibratedRotationalJoint::create({}, {}, hipAxes));
     auto joints = loadJoints();
     std::ifstream in("tests/aah_finger_chain_cases.txt"); assert(in);
     std::string line, name;

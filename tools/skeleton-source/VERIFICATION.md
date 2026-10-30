@@ -46,6 +46,25 @@ isolation, V-view geometry and source restoration. Headless Vulkan tests also
 exercise the big toe and all three joints of a lesser toe in mesh and V view;
 the feet are raised for the individual plantar-flexion render checks.
 
+### Straight-leg T-pose
+
+A [T-pose reference](https://geturna.com/en/guides/t-pose-blender) has a
+forward-facing body, straight legs slightly apart and arms horizontal; an
+[anatomical standing reference](https://bio.libretexts.org/Courses/Lemoore_College/Human_Anatomy_Laboratory_Manual_(Hartline)/01%3A_Introduction_to_Anatomy_and_Anatomical_Terms/1.02%3A_Anatomical_Position)
+also specifies straight legs, forward-facing palms and feet flat. The user’s
+palms-forward hand position is retained.
+
+`tests/skeleton_leg_pose.cpp` measures the fitted hip, knee and estimated
+ankle centres before posing. Source thigh/shin deviations from vertical are
+4.89°/4.35° and 4.71°/3.09° (male left/right), and 9.13°/11.48° and
+16.99°/28.16° (female left/right). The reference pose aligns both measured
+joint-centre lines vertically on all four legs, with forward-parallel feet.
+The remaining difference between left and right foot-bottom heights is 3.8 mm
+(male) and 5.1 mm (female); no source bone is scaled to remove asymmetry.
+The tests exercise bilateral abduction/adduction, limits, movement direction,
+reflection, joint-centre continuity and exact source-pose recovery. The source
+hip centre and knee axis are geometric fits, not clinical measurements.
+
 ### Mirrored reference motion
 
 `tests/skeleton_t_pose.cpp` checks mirrored elbow, grouped-forearm and hip

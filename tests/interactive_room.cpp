@@ -125,6 +125,11 @@ int main() {
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation-5)<1e-7);
     app.handle(down('r'));
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation)<1e-7);
+    const double abduction=*app.room_.male().referenceHipAbduction(hip);
+    app.handle(down('u'));
+    assert(std::abs(*app.room_.male().referenceHipAbduction(hip)-abduction-5)<1e-7);
+    app.handle(down(kKeyShift)); app.handle(down('u')); app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyShift});
+    assert(std::abs(*app.room_.male().referenceHipAbduction(hip)-abduction)<1e-7);
     std::size_t elbow=0;
     for (;elbow<app.room_.male().sourceLinks().size();++elbow) {
         const auto& edge=app.room_.male().sourceLinks()[elbow];

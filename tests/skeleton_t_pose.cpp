@@ -42,6 +42,10 @@ static void reportSourceWrists(SkeletonRoom& room, SkeletonModel& model, const c
         std::printf("%s source %s wrist centre-line angle: %.2f degrees\n",name,side==0 ? "left" : "right",degrees);
     }
     assert(room.restoreReferencePose());
+    const auto reference=model.sourceMatrices({},0);
+    for (const char* vertebra : {"L5","L4","L3","L2","L1","T12","T11","T10","T9","T8","T7",
+                                 "T6","T5","T4","T3","T2","T1","C7","C6","C5","C4","C3","C2"})
+        assert(std::abs(posed(model,source,vertebra).z-posed(model,reference,vertebra).z)<1e-7); // no forward/back straightening
 }
 static void verifyPose(SkeletonModel& model) {
     auto m=model.sourceMatrices({},0);
