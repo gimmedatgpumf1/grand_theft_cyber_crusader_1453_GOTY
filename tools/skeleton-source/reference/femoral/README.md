@@ -43,3 +43,16 @@ published nonrigid A&A method. They do not measure accuracy on OpenSkeleton or
 validate this line as the dynamic axis of a person's knee. The knee's center
 and orientation vary during motion and the static CT meshes do not provide an
 individual's physiological neutral, active ROM, or cartilage/tendon constraints.
+
+The single fixed-axis knee approximation is not sufficient for motion. An FCL
+triangle-surface sweep of each subject's *source* femur and tibia, using the
+fitted line and no translation, can be reproduced with
+`python3 tools/skeleton-source/openskeleton/09-audit-knee-motion.py` (requires
+python-fcl, NumPy and SciPy). At the registered pose, surface distances are
+2.596/1.686 mm (male L/R) and 2.102/1.668 mm (female L/R). Across the sampled
+0–120 degree source-relative sweep, the male right femur/tibia surfaces first
+intersect at 40 degrees and female right at 120 degrees. Neither male left nor
+female left intersects at these 5-degree samples. This is a numerical mesh
+surface test, not a test of cartilage contact, solid containment, anatomical
+neutral or individual ROM. It demonstrates why a fixed anatomical line alone
+cannot safely be treated as the true joint trajectory.

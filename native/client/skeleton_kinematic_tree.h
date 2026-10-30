@@ -1,10 +1,10 @@
 #pragma once
 
-// Forward kinematics for explicitly calibrated, rigid, open-chain joints.
+// Forward kinematics for explicitly calibrated, open-chain rigid-body joints.
 // This does not infer anatomical frames, solve contacts or close joint loops.
 // Use only with subject-fitted inputs; independent coordinate bounds are not a
 // complete physiological range-of-motion model.
-#include "client/skeleton_joint.h"
+#include "client/skeleton_spatial_joint.h"
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -33,6 +33,13 @@ public:
         node.joint = joint;
         return append(std::move(node));
     }
+    std::optional<std::size_t> addSpatialJoint(std::size_t parent, const CalibratedSpatialJoint& joint) {
+        if (parent >= nodes_.size() || nodes_.size() >= 512) return std::nullopt;
+        Node node;
+        node.parent = parent;
+        node.spatial = joint;
+        return append(std::move(node));
+    }
     std::optional<std::size_t> addFixed(std::size_t parent, JointRigidTransform childInParent) {
         if (parent >= nodes_.size() || nodes_.size() >= 512 || !joint_detail::rigid(childInParent)) return std::nullopt;
         Node node;
@@ -45,20 +52,31 @@ public:
         if (body >= nodes_.size() || !nodes_[body].joint) return nullptr;
         return &*nodes_[body].joint;
     }
+    const CalibratedSpatialJoint* spatialJoint(std::size_t body) const {
+        if (body >= nodes_.size() || !nodes_[body].spatial) return nullptr;
+        return &*nodes_[body].spatial;
+    }
     // Validate the entire request before changing any joint. Finite values are
     // clamped by each supplied model's bounds, not by invented global limits.
     bool setPose(const std::vector<PoseUpdate>& pose) {
         for (std::size_t i = 0; i < pose.size(); ++i) {
             const auto* j = joint(pose[i].body);
-            if (!j || pose[i].angles.size() != j->angles().size()) return false;
+            const auto* spatial = spatialJoint(pose[i].body);
+            if ((!j && !spatial) || (j && pose[i].angles.size() != j->angles().size()) ||
+                (spatial && pose[i].angles.size() != 1)) return false;
             for (const auto& q : pose[i].angles) if (!std::isfinite(q)) return false;
+            if (spatial) { auto copy = *spatial; if (!copy.setAngle(pose[i].angles[0])) return false; }
             for (std::size_t k = 0; k < i; ++k) if (pose[k].body == pose[i].body) return false;
         }
-        for (const auto& item : pose) nodes_[item.body].joint->setAngles(item.angles);
+        for (const auto& item : pose) {
+            auto& node = nodes_[item.body];
+            if (node.joint) node.joint->setAngles(item.angles);
+            else node.spatial->setAngle(item.angles[0]);
+        }
         dirty_ = true;
         return true;
     }
-    // Freeze the current calibrated configuration as the mesh's bind pose.
+    // Freeze the current reference configuration as the mesh's bind pose.
     // This does not change the geometry or replace the joint model's neutral.
     void captureBindPose() {
         updateLocal();
@@ -85,6 +103,7 @@ private:
     struct Node {
         std::size_t parent = 0;
         std::optional<CalibratedRotationalJoint> joint;
+        std::optional<CalibratedSpatialJoint> spatial;
         JointRigidTransform fixed, bindInverse;
     };
     std::optional<std::size_t> append(Node node) {
@@ -101,7 +120,8 @@ private:
         local_[0] = {};
         for (std::size_t i = 1; i < nodes_.size(); ++i) {
             const auto& n = nodes_[i];
-            const auto localJoint = n.joint ? n.joint->childInParent() : n.fixed;
+            const auto localJoint = n.joint ? n.joint->childInParent() :
+                                    n.spatial ? n.spatial->childInParent() : n.fixed;
             local_[i] = joint_detail::compose(local_[n.parent], localJoint);
         }
         dirty_ = false;
