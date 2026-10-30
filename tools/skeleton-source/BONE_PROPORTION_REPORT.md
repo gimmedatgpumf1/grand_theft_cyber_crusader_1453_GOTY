@@ -1,119 +1,97 @@
-# Bone-size proportion report
+# Skeleton measurements — corrected report
 
-- **Models:** OpenSkeleton N197925 (male) and N186416 (female), as shipped in the test room.
-- **Scope:** lengths of the six major limb bones and the metacarpals, metatarsals and phalanges on both sides, plus an approximate pelvic breadth.
-- **Date:** 30 October 2026.
+**30 October 2026.** This report supersedes the earlier mesh-diameter report. It measures the game meshes and the underlying registered OpenSkeleton surfaces; it does not change either skeleton or game behavior.
 
-## Bottom line
+## Correction and bottom line
 
-The measured arm-to-leg indices are broadly human-like in both models. However, **it would be misleading to certify either entire skeleton as medically normal** from these meshes alone. The clearest items worth checking are:
+The earlier report treated farthest-vertex distances too much like anatomical measurements. **Its third-toe, male-femur and arm-ratio flags are withdrawn as claims of abnormal anatomy.** A mesh diameter is not automatically a clinical length. The new leg estimates use anatomical regions and a projected measurement instead; third-toe and upper-limb numbers remain explicitly geometric proxies. None has been checked by an anatomist against the original CT.
 
-1. **Third toes, both models:** the third metatarsal is long relative to the third proximal phalanx compared with the published reference sample. This difference is especially pronounced in the female model. It is present in the included source meshes as well as the simplified game meshes; it is not solely an export artefact.
-2. **Male femora:** the left mesh's maximum span is 12.2 mm longer than the right (12.0 mm in the source meshes). That is larger than the 9 mm 95th-percentile side-to-side femoral difference in one adult radiographic series, but the mesh and clinical measurements use different landmarks. This is a **review flag**, not proof of a real limb-length discrepancy or a source error.
-3. **Upper arms:** the female humerus-to-femur and humerus-to-forearm ratios are above selected sex-specific reference means; the male humerus-to-forearm ratios are below them. Reference populations are small and methods differ, so a mean is not a clinical boundary.
+- **Neither skeleton can currently be certified normal or abnormal.** There is no diagnosis, matched clinical measurement, or original-image verification here.
+- The estimated male femoral side difference persists in a different measurement: **12.4 mm in the game meshes** (12.9 mm in the source). This warrants verification, not a conclusion that the original person had a leg-length discrepancy.
+- The female third proximal toe bones have game long-axis spans of **18.5 and 19.5 mm**, against **18.4–26.4 mm observed** in one female radiographic sample. These are different measurement techniques; similarity does not establish clinical normality. The earlier ratio-based alarm is not justified.
+- Our best available leg ratio proxies are male **1.200 / 1.172** and female **1.187 / 1.204** (left / right). They are numerically within the observed **1.16–1.39** in Aitken's radiographic study, but **not measured by its method**; we cannot classify them against that interval.
 
-The numerical tables below do not evaluate bone thickness, bone health, joint positions, alignment, visual pose, or bone proportions of the skull and spine. They cannot diagnose a patient or establish a universal range of normal anatomy.
+## Known source-subject data
 
-## What was measured
+| Source subject | Sex recorded | Age | Recorded cadaver length | Weight | BMI | Race / ethnicity |
+|---|---|---:|---:|---:|---:|---|
+| N197925 | Male | Not available in this checkout | 170.0 cm | Not available | Not available | Not available |
+| N186416 | Female | 41 years | 170.2 cm | 78.0 kg | 26.9 | Not available |
 
-The main numbers are measured directly from `skeleton-male.obj` and `skeleton-female.obj`, **not from a posed screenshot or collision hulls**. Each OBJ source-bone group was measured separately. The reported **mesh diameter** is the longest straight-line distance between any two vertices on that bone's convex hull, in millimetres. A farthest pair of mesh vertices must lie on the convex hull. A separate PCA-axis span is also supplied in the data file as a cross-check. Neither is guaranteed to reproduce an osteometric-board measurement, an anatomical joint-to-joint distance, or a radiographic landmark measurement.
+The values are transcribed in [OpenSkeleton README](openskeleton/README.md); the original source metadata file has not been independently rechecked for this report. Male age/weight and both subjects' race, specific ethnicity, diseases, injuries and other clinical history are **unknown**, not absent. Sex is the dataset label. Neither ancestry nor health can be determined from the mesh or the database's location.
 
-The CSV includes both the shipped, simplified OBJ and the included unsimplified OpenSkeleton registered meshes, measured in the same way. The source is in millimetres; the OBJ is in metres and was converted to millimetres. No body-wide or individual bone rescaling was applied for this report. The importer changes axes and translates the whole subject, then simplifies each bone. In the 12 major long bones for each subject, game/source maximum-span differences are at most **1.1 mm male** and **1.7 mm female**. For the measured hand and foot bones, the largest such differences are **1.2 mm male** and **1.1 mm female**. These checks do not establish the accuracy of the underlying segmentation or registration.
+[OpenSkeleton](https://doi.org/10.5281/zenodo.22833546) derives these registered structures from the New Mexico Decedent Image Database. Its public `Metadata.mat` is not in this repository. It may contain additional fields; this report cannot say which until the actual file is inspected. NMDID describes potentially available demographic and medical fields, but availability varies by case and full database access is controlled ([NMDID](http://nmdid.unm.edu/), [NIJ database description](https://nij.ojp.gov/library/publications/announcement-new-mexico-decedent-image-database)). Recorded cadaver length is not the height of the registered or posed game skeleton, nor necessarily living standing stature.
 
-These are registered shape-model structures derived from CT, not a verified reproduction of the patient's original assembled pose. Rigid T-posing or ragdoll rotation does not itself change an individual bone's dimensions, but the simplified V-view is not the CT bone surface. The recorded cadaver lengths in the repository documentation are **170.0 cm male** and **170.2 cm female**. They must not be conflated with the vertical spans of the registered or T-posed game models; we therefore do not use game-model height as a proxy for living stature.
+## How the revised estimates work
 
-## Major limb bone dimensions
+The input is the actual simplified `skeleton-{male,female}.obj` and the corresponding unsimplified registered source structures, in millimetres. Source coordinates were rigidly rotated and translated into the game; there was no per-bone scaling. Registration, segmentation and simplification can still change local surface geometry. Registered bone placement is not guaranteed to reproduce the original patient's standing pose.
 
-Mesh diameters in **mm**, rounded to 0.1 mm. Left and right are the labels in the source dataset.
+1. **Legs:** for each femur and tibia, a shaft axis is estimated by PCA. An approximate medial direction is derived from the previously fitted femoral epicondyles. The femoral head is located using the earlier atlas-guided sphere fit. A vertex at the top of that head and an estimated medial-condyle surface point define the femoral estimate. On the tibia, automatic medial-plateau and central distal-surface candidates approximate the tibial endpoints, deliberately avoiding the intercondylar eminence and medial-malleolus tip. Distances are projected onto each bone's estimated medial/shaft plane. These are **landmark-guided geometric approximations**, not a simulated calibrated standing radiograph: the precise medial articular centres, image-plane orientation, positioning and radiographic silhouettes have not been validated. The epicondyle/head fits themselves are not expert-validated.
+2. The displayed game leg values use the nearest game-surface vertices to the source-selected endpoints, inverse-transformed into the source frame. This allows a concrete endpoint comparison but is **not an independent manual identification** on the game mesh. Nearest-vertex errors are in the CSV (up to 3.7 mm); their effect can partially cancel in a length.
+3. **Toes and other bones:** a long-axis span is the difference between maximum and minimum projections onto a bone's PCA axis. This avoids measuring the full diagonal between arbitrary end corners, but is **not a landmark-to-landmark caliper or X-ray measurement**. In particular, a phalanx articular surface may be concave, so its true articular midpoint need not be the farthest vertex. PCA may be unstable for short or irregular bones. The third-toe endpoints should be visually reviewed in [LANDMARK_AUDIT.png](LANDMARK_AUDIT.png).
+4. Femur and tibia endpoint search windows of 3, 5 and 8 mm were tried; the table uses 5 mm. Across those choices the source estimates varied by up to **2.6 mm** for a bone. This is **not a total error bound**: systematic errors from the estimated plane and landmark definitions, registration, and missing original CT can be larger.
 
-| Bone | Male L | Male R | Female L | Female R |
+The accompanying audit image shows the source surfaces, search results and measurement lines. Axes are local projections; points which overlap in a view may be separated in depth. The image makes the algorithm inspectable, but does not establish that the automatic endpoints are anatomically correct.
+
+## Re-measured legs: landmark-guided estimates
+
+Lengths in mm. Ratios use the unrounded values on the same side. Source values follow the slash. These should not be mixed with the PCA spans in the next table.
+
+| | Male L | Male R | Female L | Female R |
 |---|---:|---:|---:|---:|
-| Femur | 460.1 | 447.9 | 414.9 | 420.5 |
-| Tibia | 392.8 | 392.6 | 359.0 | 358.8 |
-| Fibula | 388.6 | 387.3 | 347.7 | 347.4 |
-| Humerus | 312.1 | 316.6 | 314.5 | 318.3 |
-| Radius | 257.6 | 258.5 | 222.9 | 224.6 |
-| Ulna | 276.7 | 279.1 | 240.3 | 243.1 |
+| Femur, game / source | 457.0 / 457.9 | 444.6 / 445.0 | 412.2 / 412.8 | 418.4 / 417.9 |
+| Tibia, game / source | 380.7 / 380.6 | 379.3 / 380.1 | 347.4 / 347.4 | 347.5 / 347.6 |
+| Femur / tibia, game / source | 1.200 / 1.203 | 1.172 / 1.171 | 1.187 / 1.188 | 1.204 / 1.202 |
 
-For context, Pietak et al. [1] measured adult dry bones with an osteometric board. Their Asian Indian samples had male/female mean femur lengths of **425.4 / 403.6 mm**, tibia lengths of **353.3 / 339.9 mm**, and humerus lengths of **307.0 / 286.6 mm**. Male *n* = 24, female *n* = 14. The sample was not selected as a universal sex-specific normal range, and its measurement method differs from ours. The authors also reported a separate, very small New Zealand European sample. Absolute length varies with body size and population; these means do not by themselves imply a problem with a larger or smaller bone.
+The earlier male **12.2 mm** figure was a game mesh-diameter difference. Its revised projected estimate is 12.4 mm, and the female difference is 6.2 mm. Aitken's 324 paired radiographs had 95% of femoral and tibial differences no greater than 9 mm [1], but its landmarks and standing imaging differ from our algorithm. We **cannot apply that threshold to these proxies** or decide whether a real asymmetry, image-registration effect, surface error or landmark error is responsible. Tibial proxy differences are 1.3 mm male and 0.1 mm female, not a measurement of total leg-length discrepancy.
 
-## Ratios and reference comparisons
+Aitken's actual femoral measurement is **top of femoral head to centre of medial femoral condyle**, and the tibial measurement is **centre of medial tibial plateau to centre of tibial plafond**. The previous report's unqualified shorthand for those points was imprecise. Aitken studied 1,077 limbs of 753 patients, 61% male, and did not publish sex-specific ratio ranges in that report [1]. Its observed range is not a universal biological or diagnostic boundary.
 
-Each entry uses the mesh diameter for the stated bones on the **same side**. Reference values are published **means**, not cutoffs. Where a standard deviation (SD) is provided it describes the study's sample, not a validated normal range for these individuals.
+## Other limb sizes and ratios: game long-axis spans
 
-| Ratio | Male L | Male R | Female L | Female R | Published comparison |
-|---|---:|---:|---:|---:|---|
-| Femur / tibia | 1.171 | 1.141 | 1.156 | 1.172 | Pietak [1]: male 1.21 ± 0.05 SD; female 1.19 ± 0.02 SD |
-| Humerus / ulna | 1.128 | 1.134 | 1.309 | 1.310 | Pietak [1]: male 1.22 ± 0.09; female 1.20 ± 0.06 |
-| Humerus / radius | 1.212 | 1.225 | 1.411 | 1.418 | Pietak [1]: male 1.30 ± 0.08; female 1.30 ± 0.06 |
-| Radius / ulna | 0.931 | 0.926 | 0.927 | 0.924 | Descriptive; no matched individual-level reference range used |
-| Fibula / tibia | 0.989 | 0.986 | 0.969 | 0.968 | Descriptive; no matched individual-level reference range used |
-| Humerus / femur × 100 | 67.84 | 70.68 | 75.81 | 75.71 | Bogin and Varela-Silva [2]: male mean 71.4, female mean 69.8; no individual range reported there |
-| (Humerus + radius) / (femur + tibia) × 100 | 66.79 | 68.42 | 69.44 | 69.66 | Bogin and Varela-Silva [2]: male mean 69.7, female mean 68.5; no individual range reported there |
+These are **PCA spans, not validated osteometric lengths**. They retain the source's left/right labels and describe the entire bone's projected surface extent, not joint-to-joint distances. Femur and tibia here intentionally include their extremities and consequently differ from the leg estimates above.
 
-The two lower-limb indices in [2] are called the humerofemoral and intermembral indices. They give useful context, not a test of every bone or of stature.
-
-**Important femur/tibia caveat:** Aitken's larger radiographic series [3] reports a mean femur/tibia ratio of **1.28** and an observed **1.16–1.39** in 1,077 limbs. Its femur is measured from the top of the head to the medial femoral condyle; its tibia is measured from the medial tibial plateau to the tibial plafond. Our unconstrained farthest-vertex tibia can include the intercondylar eminence and medial malleolus. Pietak's tibial osteometric procedure also explicitly excludes the intercondylar eminence. **Our 1.14–1.17 mesh ratios cannot be classified as inside or outside Aitken's clinical range.** The difference in definitions could account for part of the difference; it has not been quantified here.
-
-## Pelvis breadth: an approximate trunk comparison
-
-In the registered pose, the transverse X span of both pelvic bones together is **273.6 mm male** and **292.1 mm female**; the corresponding unsimplified spans are **273.3 mm** and **292.0 mm**. Dividing by the average left/right femur mesh diameter gives a descriptive pelvis-to-femur ratio of **0.603 male** and **0.699 female**. This is the outermost projected mesh width, **not a clinically located iliac-crest measurement**. The relative assembly and pose of the two registered halves can influence it.
-
-For context only, Gruss et al. [4] measured bi-iliac breadth on living adults with external calipers: **286 ± 24 mm in 12 males** and **269 ± 14 mm in 14 females**; the observed female sample range was 236–294 mm. Soft tissue and anatomical endpoint definitions make those numbers different from our projected bone-mesh extent. The female proxy is near the upper end of that small sample, not evidence of a problem. Pelvis shape and inlet dimensions have not been assessed.
-
-## Hand and foot spot checks
-
-Lengths are mesh diameters in mm. These are the **third digit**, not the entire hand or foot. Short bones are particularly sensitive to definition of endpoints, mesh simplification and small absolute errors.
-
-| Third-digit bone | Male L | Male R | Female L | Female R |
+| Bone, mm | Male L | Male R | Female L | Female R |
 |---|---:|---:|---:|---:|
-| Hand metacarpal | 72.4 | 70.9 | 64.0 | 62.5 |
-| Hand proximal phalanx | 44.8 | 47.6 | 44.4 | 44.1 |
-| Hand middle phalanx | 30.5 | 31.3 | 25.9 | 26.0 |
-| Hand distal phalanx | 16.9 | 19.3 | 15.1 | 13.6 |
-| Foot metatarsal | 80.7 | 81.6 | 71.2 | 69.7 |
-| Foot proximal phalanx | 27.2 | 25.2 | 19.6 | 20.2 |
-| Foot middle phalanx | 12.9 | 10.9 | 9.3 | 9.5 |
-| Foot distal phalanx | 12.9 | 14.0 | 12.7 | 11.2 |
+| Humerus | 311.8 | 316.1 | 313.8 | 317.7 |
+| Radius | 257.0 | 257.9 | 222.5 | 224.1 |
+| Ulna | 276.5 | 278.7 | 240.1 | 243.0 |
+| Fibula | 388.4 | 387.1 | 347.6 | 347.3 |
+| Femur | 459.8 | 446.9 | 414.7 | 420.0 |
+| Tibia | 392.1 | 391.7 | 358.3 | 357.2 |
 
-| Third-digit ratio | Male L | Male R | Female L | Female R | Pietak et al. [1] reference means ± SD |
-|---|---:|---:|---:|---:|---|
-| Hand metacarpal / proximal phalanx | 1.616 | 1.490 | 1.440 | 1.416 | Male 1.50 ± 0.07; female 1.50 ± 0.07 |
-| Hand middle / distal phalanx | 1.803 | 1.620 | 1.718 | 1.912 | Male 1.52 ± 0.13; female 1.58 ± 0.16 |
-| Foot metatarsal / proximal phalanx | 2.972 | 3.237 | 3.628 | 3.447 | Male 2.57 ± 0.15; female 2.70 ± 0.16 |
-| Foot middle / distal phalanx | 0.998 | 0.783 | 0.733 | 0.844 | Male 1.19 ± 0.22; female 1.11 ± 0.22 |
+| Same-side ratio, PCA spans | Male L | Male R | Female L | Female R |
+|---|---:|---:|---:|---:|
+| Humerus / ulna | 1.128 | 1.134 | 1.307 | 1.308 |
+| Humerus / radius | 1.214 | 1.226 | 1.411 | 1.418 |
+| Radius / ulna | 0.929 | 0.925 | 0.927 | 0.922 |
 
-The short-bone reference groups were only **13 males and 9 females** from the Asian Indian subset. Their short bones were measured by caliper between proximal and distal endpoints, not as unrestricted farthest vertex pairs. Consequently, the apparent deviations are indications for further measurement, **not matched clinical z-scores or proof of abnormality**. For the female third toe, the same metatarsal/proximal ratios calculated from the unsimplified source meshes are approximately **3.67 left and 3.50 right**, close to the shipped values. This makes a pure simplification explanation unlikely, but does not separate subject anatomy, shape-model registration and endpoint-definition effects.
+For anatomical definitions, the osteometric maximum humerus length is head to trochlea, and maximum ulna length is olecranon to styloid; PCA extrema do not guarantee those landmarks ([CoRA measurement guide](https://docs.coracore.org/en/v2.0.0/forensics-anthro-guide/measurements/)). Pietak et al. [2] report osteometric-board male/female H:U means 1.22 ± 0.09 / 1.20 ± 0.06, and H:R means 1.30 ± 0.08 / 1.30 ± 0.06 in a small Asian Indian sample. These are study means and standard deviations, not individual normal limits; our spans are not sufficiently matched to classify either subject. No ethnicity match is known.
 
-## Side-to-side differences
+## Third-toe audit
 
-Absolute L–R mesh-diameter differences, in mm:
+Long-axis spans, mm, and same-side ratios. These are not the centre-of-articular-surface measurements in the radiographic reference.
 
-| Bone | Male | Female |
-|---|---:|---:|
-| Femur | 12.2 | 5.5 |
-| Tibia | 0.3 | 0.2 |
-| Fibula | 1.4 | 0.4 |
-| Humerus | 4.5 | 3.8 |
-| Radius | 0.9 | 1.7 |
-| Ulna | 2.4 | 2.7 |
+| | Male L | Male R | Female L | Female R |
+|---|---:|---:|---:|---:|
+| Third metatarsal, game / source | 80.6 / 80.1 | 81.6 / 81.3 | 71.1 / 71.1 | 69.4 / 69.4 |
+| Third proximal phalanx, game / source | 26.4 / 25.8 | 24.6 / 24.5 | 18.5 / 18.7 | 19.5 / 19.2 |
+| Metatarsal / proximal phalanx, game / source | 3.049 / 3.110 | 3.310 / 3.315 | 3.843 / 3.793 | 3.568 / 3.619 |
 
-In Aitken's 324 paired adult limbs [3], 95% of the *radiographically measured* femoral and tibial differences were 9 mm or less. The male mesh femora merit a closer, landmark-based check. The table above measures each bone's longest vertex pair and is not an assessment of full leg length, hip/ankle position, or gait.
+The numbers remain different from Pietak's small-sample dry-bone ratios, even after changing from diameter to axis span, but neither our endpoints nor reference population match adequately. They do **not** establish a toe problem. Patil et al. [3] studied radiographs from 33 healthy male and 27 healthy female volunteers, ages 21–37. Their third proximal phalanx means were male **24.6 ± 1.77 mm** (observed 20.62–28.67) and female **22.6 ± 1.51 mm** (18.37–26.38). They measured between the middle of articular surfaces on standardized radiographs, while our numbers span a PCA axis on registered meshes. Their individual observed ranges are **not universal limits**, and the female subject is older than that sample. Likewise, their third-metatarsal reference means were male **65.88 ± 4.41 mm**, female **60.92 ± 2.99 mm**; the difference in endpoint method and population prevents a direct classification.
 
-## Recommended next step
+## Files and verification
 
-Before changing any meshes or scales, have the flagged femora and third toes measured with the same anatomical endpoints as the chosen reference on the original image data, preferably by a qualified anatomist or radiologist. In particular, compare the male femoral asymmetry and the short female third proximal toe phalanges against the underlying images. Those images and expert landmarks are not included here; the registered meshes alone cannot determine which finding is anatomical, a registration/segmentation effect, or a measurement-method difference.
+- [LEG_LANDMARK_ESTIMATES.csv](LEG_LANDMARK_ESTIMATES.csv): source and game endpoint estimates, search-window sensitivity, source-frame endpoint coordinates, and nearest-game-vertex errors.
+- [TOE_AXIS_ESTIMATES.csv](TOE_AXIS_ESTIMATES.csv): source/game axis spans and source extrema for each third metatarsal and proximal phalanx.
+- [LANDMARK_AUDIT.png](LANDMARK_AUDIT.png): all four sides and sexes, plotted for review.
+- [BONE_LENGTH_MEASUREMENTS.csv](BONE_LENGTH_MEASUREMENTS.csv): the original 176 mesh diameters and PCA spans for major limb bones and each hand and foot digit. These are **geometric measurements only**, not newly validated clinical lengths. The old [pelvis proxy](PELVIS_WIDTH_MEASUREMENTS.csv) is also not a verified bi-iliac measurement.
+- Reproduce the new files with `python3 tools/skeleton-source/openskeleton/16-measure-anatomical-proxies.py` (NumPy, SciPy, Matplotlib). The earlier geometry CSVs can be regenerated with `15-measure-bone-lengths.py`. No runtime assets are changed.
+- For clinical-level answers, an anatomist/radiologist must mark the original CT or appropriately positioned radiographs using the exact reference definitions, repeat the measurements, and check model-to-image correspondence. Obtaining the original `Metadata.mat` is needed to check further source-demographic fields.
 
-## Reproducibility and files
+## References
 
-- [All 176 bilateral limb measurements](BONE_LENGTH_MEASUREMENTS.csv): six major bones plus 19 hand and 19 foot bones on each side of each model. The first digit has no middle phalanx. Each row contains both OBJ and source-mesh diameters and PCA spans.
-- [Pelvic-width measurements](PELVIS_WIDTH_MEASUREMENTS.csv), for the registered source and game models.
-- Run `python3 tools/skeleton-source/openskeleton/15-measure-bone-lengths.py` from the repository root with NumPy and SciPy installed. It regenerates both CSV files without changing the skeletons. Measurements use convex-hull vertices and all source/OBJ vertices, not a visual estimate.
-- OpenSkeleton data and attribution: [source documentation](openskeleton/README.md), [attribution](ATTRIBUTION.md), and [dataset record](https://doi.org/10.5281/zenodo.22833546).
-
-## Medical and anthropometric references
-
-1. Pietak A, Ma S, Beck CW, Stringer MD. *Fundamental ratios and logarithmic periodicity in human limb bones*. Journal of Anatomy. 2013;222:526–537. [doi:10.1111/joa.12041](https://doi.org/10.1111/joa.12041). Sex-specific values are from its Asian Indian subset; maximum long-bone lengths were measured with an osteometric board and third-digit bones with calipers.
-2. Bogin B, Varela-Silva MI. *Leg Length, Body Proportion, and Health: A Review with a Note on Beauty*. International Journal of Environmental Research and Public Health. 2010;7:1047–1075. [doi:10.3390/ijerph7031047](https://doi.org/10.3390/ijerph7031047). Human sex-specific index means, not clinical thresholds.
-3. Aitken SA. *Normative Values for Femoral Length, Tibial Length, and the Femorotibial Ratio in Adults Using Standing Full-Length Radiography*. Osteology. 2021;1:86–91. [doi:10.3390/osteology1020009](https://doi.org/10.3390/osteology1020009). Clinical radiographic endpoints differ from this report's vertex-pair measurements.
-4. Gruss LT, Gruss R, Schmitt D. *Pelvic Breadth and Locomotor Kinematics in Human Evolution*. The Anatomical Record. 2017;300:739–751. [doi:10.1002/ar.23550](https://doi.org/10.1002/ar.23550). Living-subject caliper measurements; not a universal normative interval.
+1. Aitken SA. *Normative Values for Femoral Length, Tibial Length, and the Femorotibial Ratio in Adults Using Standing Full-Length Radiography*. Osteology. 2021;1:86–91. [doi:10.3390/osteology1020009](https://doi.org/10.3390/osteology1020009).
+2. Pietak A, Ma S, Beck CW, Stringer MD. *Fundamental ratios and logarithmic periodicity in human limb bones*. J Anat. 2013;222:526–537. [doi:10.1111/joa.12041](https://doi.org/10.1111/joa.12041).
+3. Patil S, Hanumantharaya GH, Desai SP, Nidoni M. *Radiological Biometric Study of Metatarsals and Phalanges*. J Clin Diagn Res. 2017;11:AC05–AC09. [doi:10.7860/JCDR/2017/27887.10589](https://doi.org/10.7860/JCDR/2017/27887.10589).
+4. Wollmann-Reynolds JS et al. *Measurement Error in Osteometric, Photographic, and Virtual Methodologies to Quantify the Torsional Profile of the Lower Limb*. Am J Biol Anthropol. 2025;188:e70154. [doi:10.1002/ajpa.70154](https://doi.org/10.1002/ajpa.70154). Defines distinct virtual maximum and bicondylar femoral lengths and reports method and observer variation; it does not validate our automated landmarks.
