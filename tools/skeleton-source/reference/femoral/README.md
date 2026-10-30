@@ -13,6 +13,7 @@ an anatomically defined articular region; this project adapts the data, but
 SHA-256:
 - template.mat: a24c08fd6aeac4b6a07cec015ccf1a94e101b65f2a8a80cb293f05a8d220c731
 - template_areas.mat: 965e40774cf23a2aab7f00784b8b189eeb616dbd4b4159dadf7df659ed4ea712
+- template_landmarks.mat: 06212af8a52e6a1247d332d4b6b97dff53058b6a97a321e268b24007daf55ec0
 
 ## Comparison against expert annotations
 
@@ -32,3 +33,13 @@ published cohort associated with the atlas, **not** an independent clinical
 validation, a measurement of accuracy on either OpenSkeleton subject, or proof
 of usable hip articulation. Their meshes were manually prepared and differ
 from the registered OpenSkeleton meshes, which have documented joint overlap.
+
+The same 19-femur, same-cohort comparison was repeated for the femoral medial
+and lateral epicondyles. The mean/median/max differences from the mean expert
+epicondylar **midpoint** were 1.924/1.657/5.181 mm; the direction differences
+for the corresponding **line** were 3.317/3.576/6.076 degrees. These refer to
+a simplified rigid atlas mapping followed by a local extrema search, not the
+published nonrigid A&A method. They do not measure accuracy on OpenSkeleton or
+validate this line as the dynamic axis of a person's knee. The knee's center
+and orientation vary during motion and the static CT meshes do not provide an
+individual's physiological neutral, active ROM, or cartilage/tendon constraints.

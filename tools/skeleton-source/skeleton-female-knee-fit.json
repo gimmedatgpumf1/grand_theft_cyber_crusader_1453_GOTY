@@ -1,0 +1,84 @@
+{
+  "subject": "N186416",
+  "method": "CT femoral atlas epicondylar labels, rigid fit and local extrema",
+  "clinical_validation": false,
+  "limitations": "Anatomical epicondylar line only; knee motion, neutral pose and limits not fitted.",
+  "knees": {
+    "L": {
+      "medial_epicondyle_mm": [
+        123.01499938964844,
+        137.43299865722656,
+        -1073.9100341796875
+      ],
+      "lateral_epicondyle_mm": [
+        185.75100708007812,
+        176.8070068359375,
+        -1063.8599853515625
+      ],
+      "axis_origin_mm": [
+        154.38300323486328,
+        157.12000274658203,
+        -1068.885009765625
+      ],
+      "axis_medial_direction": [
+        -0.8393107296221712,
+        -0.526763317418818,
+        -0.13445410578714287
+      ],
+      "axis_origin_m": [
+        0.10941457047839001,
+        0.5333549804687499,
+        -0.0013721899659048242
+      ],
+      "axis_medial_direction_game": [
+        -0.8393107296221712,
+        -0.13445410578714287,
+        0.526763317418818
+      ],
+      "width_mm": 74.7470578848328,
+      "candidate_counts": [
+        143,
+        161
+      ],
+      "registration_rms_mm": 3.767167845192662
+    },
+    "R": {
+      "medial_epicondyle_mm": [
+        -155.36599731445312,
+        101.80699920654297,
+        -1072.1099853515625
+      ],
+      "lateral_epicondyle_mm": [
+        -202.03599548339844,
+        159.18499755859375,
+        -1057.4000244140625
+      ],
+      "axis_origin_mm": [
+        -178.70099639892578,
+        130.49599838256836,
+        -1064.7550048828125
+      ],
+      "axis_medial_direction": [
+        0.6188813302068534,
+        -0.7608779373887496,
+        -0.19506579278909336
+      ],
+      "axis_origin_m": [
+        -0.22366942915539906,
+        0.5374849853515624,
+        0.025251814398108835
+      ],
+      "axis_medial_direction_game": [
+        0.6188813302068534,
+        -0.19506579278909336,
+        0.7608779373887496
+      ],
+      "width_mm": 75.4102537773218,
+      "candidate_counts": [
+        138,
+        151
+      ],
+      "registration_rms_mm": 4.444058350775693
+    }
+  }
+}

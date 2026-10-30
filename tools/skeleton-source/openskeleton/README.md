@@ -145,3 +145,26 @@ that warrants investigation but by itself does not prove bone intersection.
 Sphere residuals and repeatable subsampling do not establish correct hip
 seating; do not interpret these fits as proof that the hip joint or its range
 of motion is anatomically correct.
+
+
+## Femoral knee-axis estimates
+
+`08-fit-knees.py` maps the Fischer CT atlas's labelled medial and lateral
+femoral epicondyles to each subject's original femur and refines them against
+that surface. It records the femoral epicondylar line in
+`../skeleton-{male,female}{.knees,-knee-fit.json}`. NumPy and SciPy are needed:
+
+```sh
+python3 tools/skeleton-source/openskeleton/08-fit-knees.py
+python3 tests/openskeleton_knee_fit.py
+```
+
+The C room loads these axes and uses their centers and directions for a coarse
+shin pitch relative to the registered pose. Loading the fits does not alter
+that pose or change bone scale. These are **approximations**, not the complete
+knee joint: the source supplies no individual neutral angle, measured ROM,
+contact geometry, patellar gliding or flexion-dependent translations and
+rotations. The remaining coarse yaw/roll and pitch values are not biologically
+bounded. The per-structure solver and V-view do not yet use the knee fits.
+Reference-cohort errors and the CT atlas license are documented in
+`../reference/femoral/README.md`.

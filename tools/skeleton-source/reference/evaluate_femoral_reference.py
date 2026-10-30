@@ -1,4 +1,4 @@
-"""Compare atlas head estimates with 5 raters' repeated clinical landmarks.
+"""Compare atlas femoral estimates with 5 raters' repeated clinical landmarks.
 
 Inputs are separately obtained VSDFullBodyBoneModels MAT files (CC BY-NC-SA 4.0;
 not included in this repository), pinned at the commit in femoral/README.md.
@@ -14,6 +14,8 @@ from scipy.io import loadmat
 HERE = Path(__file__).resolve().parent
 source = Path(sys.argv[1])
 fit = runpy.run_path(str(HERE.parent / 'openskeleton/06-fit-hips.py'))
+knee = runpy.run_path(str(HERE.parent / 'openskeleton/08-fit-knees.py'))
+labels = loadmat(HERE / 'femoral/template_landmarks.mat', simplify_cells=True)['landmarks']
 template = loadmat(HERE / 'femoral/template.mat', simplify_cells=True)['template']
 areas = loadmat(HERE / 'femoral/template_areas.mat', simplify_cells=True)['areas']
 mask = next(row[1] for row in areas if row[0] == 'Head').astype(bool)
@@ -32,7 +34,7 @@ def manual_center(landmarks):
     return mean + solution[:3]
 
 
-errors = []
+errors, axis_errors, midpoint_errors = [], [], []
 for row in raters[0]:
     subject, side = row[-2:]
     bones = loadmat(source / f'Bones/{subject}.mat', simplify_cells=True)['B']
@@ -40,12 +42,27 @@ for row in raters[0]:
              if isinstance(bone.get('mesh'), dict) and 'vertices' in bone['mesh']}
     estimate = fit['fit_femoral_head'](bones['Femur_'+side], bones['Hip_'+side], side, vertices, head)
     references = []
+    epicondyle_references = [[], []]
     for rater in raters:
         matches = [r for r in rater if r[-2] == subject and r[-1] == side]
         if len(matches) != 1: raise ValueError(f'missing manual annotations: {subject} {side}')
-        references.extend(manual_center(measurement) for measurement in matches[0][:4])
+        for measurement in matches[0][:4]:
+            references.append(manual_center(measurement))
+            for i, landmark in enumerate(('Medial Epicondyle (MEC)', 'Lateral Epicondyle (LEC)')):
+                epicondyle_references[i].append(next(r[1] for r in measurement if r[0] == landmark))
     if len(references) != 20: raise ValueError('expected five raters with four repetitions each')
     error = float(np.linalg.norm(estimate['center'] - np.mean(references, axis=0)))
     errors.append(error)
-    print(f'{subject} {side}: {error:.3f} mm from mean expert sphere center')
-print(f'{len(errors)} femora: mean {np.mean(errors):.3f} mm, median {np.median(errors):.3f} mm, max {max(errors):.3f} mm')
+    knee_fit = knee['fit_epicondyles'](bones['Femur_'+side], vertices, labels, estimate)
+    observed = [np.mean(rows, axis=0) for rows in epicondyle_references]
+    predicted = [knee_fit['medial'], knee_fit['lateral']]
+    true_axis = fit['unit'](observed[0] - observed[1])
+    pred_axis = fit['unit'](predicted[0] - predicted[1])
+    axis_error = float(np.degrees(np.arccos(np.clip(true_axis @ pred_axis, -1, 1))))
+    midpoint_error = float(np.linalg.norm((predicted[0]+predicted[1]-observed[0]-observed[1])/2))
+    axis_errors.append(axis_error)
+    midpoint_errors.append(midpoint_error)
+    print(f'{subject} {side}: head {error:.3f} mm; epicondyle midpoint {midpoint_error:.3f} mm; axis {axis_error:.3f} degrees')
+for title, values, units in (('head center', errors, 'mm'), ('epicondyle midpoint', midpoint_errors, 'mm'),
+                             ('epicondylar axis direction', axis_errors, 'degrees')):
+    print(f'{len(values)} femora {title}: mean {np.mean(values):.3f} {units}, median {np.median(values):.3f} {units}, max {max(values):.3f} {units}')

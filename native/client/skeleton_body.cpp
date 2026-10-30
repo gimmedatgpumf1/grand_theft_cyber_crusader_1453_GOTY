@@ -136,6 +136,8 @@ bool SkeletonModel::load(const std::string& path, std::string& error) {
     sourceLinks_.clear();
     sourceRig_.reset();
     sourceBodies_.clear();
+    hasKneeAxes_ = false;
+    kneeAxes_ = {};
     ++sourcePoseRevision_;
     // OBJ source labels are nested inside the larger runtime `o` groups.
     // Record their exact local ranges without duplicating the mesh or changing
@@ -286,6 +288,63 @@ bool SkeletonModel::loadHipCenters(const std::string& path, std::string& error) 
     if (!present[0] || !present[1]) { error = "Incomplete skeleton hip fits in " + path; return false; }
     bones_[static_cast<std::size_t>(bone("femur_l"))].pivot = centers[0];
     bones_[static_cast<std::size_t>(bone("femur_r"))].pivot = centers[1];
+    ++sourcePoseRevision_;
+    return true;
+}
+
+bool SkeletonModel::loadKneeAxes(const std::string& path, std::string& error) {
+    std::ifstream input(path);
+    if (!input) { error = "Cannot open skeleton knee fits " + path; return false; }
+    std::array<SkeletonKneeAxis, 2> fits{};
+    std::array<bool, 2> present{};
+    std::string line;
+    while (std::getline(input, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream row(line);
+        std::string side, extra;
+        SkeletonKneeAxis fit;
+        row >> side >> fit.origin.x >> fit.origin.y >> fit.origin.z
+            >> fit.medialDirection.x >> fit.medialDirection.y >> fit.medialDirection.z >> fit.width;
+        if (!row || (row >> extra) || (side != "L" && side != "R") ||
+            !joint_detail::finite(fit.origin) || !joint_detail::finite(fit.medialDirection) ||
+            !std::isfinite(fit.width) || fit.width <= 0.045 || fit.width >= 0.11 ||
+            std::abs(length(fit.medialDirection)-1.0) > 1e-6) {
+            error = "Invalid skeleton knee fit in " + path; return false;
+        }
+        const int which = side == "L" ? 0 : 1;
+        const int femur = bone(which == 0 ? "femur_l" : "femur_r");
+        const int shin = bone(which == 0 ? "lower_leg_l" : "lower_leg_r");
+        if (present[which] || femur < 0 || shin < 0 || bones_[femur].points.empty()) {
+            error = "Missing or duplicate femur or tibia in " + path; return false;
+        }
+        const auto& points = bones_[femur].points;
+        const Vec3 low = minimum(points), high = maximum(points);
+        if (fit.origin.y < low.y-0.01 || fit.origin.y > low.y+0.06 ||
+            fit.origin.x < low.x-0.01 || fit.origin.x > high.x+0.01 ||
+            fit.origin.z < low.z-0.01 || fit.origin.z > high.z+0.01) {
+            error = "Knee fit is not near its distal femur in " + path; return false;
+        }
+        for (double sign : {-1.0, 1.0}) {
+            const Vec3 landmark = fit.origin + fit.medialDirection * (sign * fit.width * 0.5);
+            double nearest = 1e9;
+            for (const auto& point : points) nearest = std::min(nearest, length(point-landmark));
+            if (nearest > 0.005) { error = "Knee fit does not match femur surface in " + path; return false; }
+        }
+        fits[which] = fit;
+        present[which] = true;
+    }
+    if (!present[0] || !present[1]) { error = "Incomplete skeleton knee fits in " + path; return false; }
+    kneeAxes_ = fits;
+    hasKneeAxes_ = true;
+    for (int side = 0; side < 2; ++side) {
+        auto& shin = bones_[static_cast<std::size_t>(bone(side == 0 ? "lower_leg_l" : "lower_leg_r"))];
+        shin.pivot = fits[side].origin;
+        // Facing-forward convention: positive bend rotates the shin posteriorly
+        // on both sides. Actual physiological neutral and ROM are not known.
+        shin.fittedBendAxis = fits[side].medialDirection * (side == 0 ? -1.0 : 1.0);
+        shin.hasFittedBendAxis = true;
+    }
+    ++sourcePoseRevision_;
     return true;
 }
 
@@ -347,7 +406,13 @@ static std::vector<Transform> solvePose(const std::vector<SkeletonBone>& bones, 
     const std::function<Transform(std::size_t)> solve = [&](std::size_t index) -> Transform {
         if (solved[index]) return pose[index];
         const SkeletonBone& bone = bones[index];
-        const Transform swing = rotation(bone.pitch, bone.yaw, bone.roll);
+        Transform swing = rotation(bone.pitch, bone.yaw, bone.roll);
+        if (bone.hasFittedBendAxis) {
+            const auto hinge = joint_detail::rotate(bone.fittedBendAxis, bone.pitch);
+            Transform bend;
+            for (int i = 0; i < 9; ++i) bend.m[i] = hinge.rotation[i];
+            swing = compose(rotation(0, bone.yaw, 0), compose(bend, rotation(0, 0, bone.roll)));
+        }
         Transform local;
         local.m[0] = swing.m[0]; local.m[1] = swing.m[1]; local.m[2] = swing.m[2];
         local.m[3] = swing.m[3]; local.m[4] = swing.m[4]; local.m[5] = swing.m[5];

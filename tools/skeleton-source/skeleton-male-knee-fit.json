@@ -1,0 +1,84 @@
+{
+  "subject": "N197925",
+  "method": "CT femoral atlas epicondylar labels, rigid fit and local extrema",
+  "clinical_validation": false,
+  "limitations": "Anatomical epicondylar line only; knee motion, neutral pose and limits not fitted.",
+  "knees": {
+    "L": {
+      "medial_epicondyle_mm": [
+        41.98970031738281,
+        171.1750030517578,
+        -963.927978515625
+      ],
+      "lateral_epicondyle_mm": [
+        125.84700012207031,
+        187.38099670410156,
+        -963.822998046875
+      ],
+      "axis_origin_mm": [
+        83.91835021972656,
+        179.2779998779297,
+        -963.87548828125
+      ],
+      "axis_medial_direction": [
+        -0.9818324797644814,
+        -0.18974580593207552,
+        -0.0012291504043144554
+      ],
+      "axis_origin_m": [
+        0.13491355192297783,
+        0.5706545410156251,
+        -0.00788695692351482
+      ],
+      "axis_medial_direction_game": [
+        -0.9818324797644814,
+        -0.0012291504043144554,
+        0.18974580593207552
+      ],
+      "width_mm": 85.40896897686956,
+      "candidate_counts": [
+        132,
+        130
+      ],
+      "registration_rms_mm": 4.399204700669347
+    },
+    "R": {
+      "medial_epicondyle_mm": [
+        -36.28519821166992,
+        166.55599975585938,
+        -968.8709716796875
+      ],
+      "lateral_epicondyle_mm": [
+        -118.25199890136719,
+        187.1529998779297,
+        -961.5599975585938
+      ],
+      "axis_origin_mm": [
+        -77.26859855651855,
+        176.85449981689453,
+        -965.2154846191406
+      ],
+      "axis_medial_direction": [
+        0.9662401260854274,
+        -0.2428013272138399,
+        -0.08618314362806213
+      ],
+      "axis_origin_m": [
+        -0.02627339685326728,
+        0.5693145446777345,
+        -0.005463456862479649
+      ],
+      "axis_medial_direction_game": [
+        0.9662401260854274,
+        -0.08618314362806213,
+        0.2428013272138399
+      ],
+      "width_mm": 84.83067353223375,
+      "candidate_counts": [
+        134,
+        123
+      ],
+      "registration_rms_mm": 4.069048539422236
+    }
+  }
+}

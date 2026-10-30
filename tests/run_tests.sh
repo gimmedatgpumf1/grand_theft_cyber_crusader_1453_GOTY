@@ -8,6 +8,7 @@ python3 tests/openskeleton_source_pose.py female
 python3 tests/openskeleton_source_pose.py male
 python3 tests/openskeleton_extract.py
 python3 tests/openskeleton_hip_fit.py
+python3 tests/openskeleton_knee_fit.py
 python3 tests/openskeleton_mesh_indices.py
 python3 tests/skeleton_line_graph.py
 python3 tests/skeleton_mobility.py
@@ -48,6 +49,10 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_hip_fits.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-hip-fits
 ./build/bin/gtc-skeleton-hip-fits
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
+  tests/skeleton_knee_fits.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
+  native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-knee-fits
+./build/bin/gtc-skeleton-knee-fits
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative \
   tests/skeleton_source_rig.cpp native/client/skeleton_body.cpp native/client/raster.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-rig

@@ -84,7 +84,7 @@ def fit_femoral_head(femur, pelvis, side, template, head, offset=0):
         nearest_pelvis = float(cKDTree(pelvis).query(center)[0])
         results.append(dict(center=center, radius=radius, head_rms=error, registration_rms=surface_rms,
                             mapped=len(mapped), inliers=len(inliers), nearest_pelvis=nearest_pelvis,
-                            reflected=reflected))
+                            reflected=reflected, rotation=rotation, translation=translation, scale=scale))
     if not results: raise ValueError('no successful femoral atlas fit')
     best = min(results, key=lambda r: r['registration_rms'])
     if not (15 < best['radius'] < 35 and best['inliers'] >= 100 and best['head_rms'] < 1.0 and

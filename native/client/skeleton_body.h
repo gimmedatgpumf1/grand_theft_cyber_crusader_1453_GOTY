@@ -18,6 +18,8 @@ struct SkeletonBone {
     std::vector<Vec3> points;
     std::vector<std::array<int, 3>> triangles;
     double pitch = 0, yaw = 0, roll = 0;         // pose angles, radians
+    bool hasFittedBendAxis = false;               // axis is not a complete joint model
+    Vec3 fittedBendAxis;
 };
 
 // Ranges inside a coarse runtime mesh group for one labelled source structure.
@@ -36,6 +38,14 @@ struct SkeletonSourceLink {
     std::string kind, mobility;
 };
 
+// Femoral anatomical line through the epicondyles. A static shape-derived
+// estimate, not a knee motion model or individual range of motion.
+struct SkeletonKneeAxis {
+    Vec3 origin;
+    Vec3 medialDirection;
+    double width = 0;
+};
+
 // A loaded skeleton. Rest pose is metres, soles on y = 0, facing +z, and the
 // source scale is never touched. Both models are registered OpenSkeleton
 // CT-derived models. Their sources and the limits of their verification are
@@ -48,6 +58,9 @@ public:
     // Set the two femoral pivots from the source-fitted head estimates. This
     // only changes pivots; it does not calibrate joint axes or enforce ROM.
     bool loadHipCenters(const std::string& path, std::string& error);
+    bool loadKneeAxes(const std::string& path, std::string& error);
+    const std::array<SkeletonKneeAxis, 2>& kneeAxes() const { return kneeAxes_; }
+    bool hasKneeAxes() const { return hasKneeAxes_; }
     const std::vector<SkeletonSourceLink>& sourceLinks() const { return sourceLinks_; }
     const std::string& name() const { return name_; }
     double height() const { return height_; }
@@ -96,6 +109,8 @@ private:
     std::vector<SkeletonBone> bones_;
     std::vector<SkeletonSourceStructure> sourceStructures_;
     std::vector<SkeletonSourceLink> sourceLinks_;
+    std::array<SkeletonKneeAxis, 2> kneeAxes_{};
+    bool hasKneeAxes_ = false;
     mutable std::optional<AnatomicalKinematicTree> sourceRig_;
     std::vector<std::size_t> sourceBodies_;
     std::uint64_t sourcePoseRevision_ = 0;

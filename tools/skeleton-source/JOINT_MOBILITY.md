@@ -89,8 +89,8 @@ individual subject's measured rhythm.
 
 These are *reference-model* results, not tests of joint frames fitted to either
 OpenSkeleton subject. The separate subject-specific femoral-head estimates in
-`openskeleton/README.md` provide hip pivot positions only, not axes or motion
-limits. The room can consume a supplied calibrated tree, but no subject-specific
+`openskeleton/README.md` provide hip pivot positions and an approximate
+femoral epicondylar line for each knee, not calibrated individual motion limits. The room can consume a supplied calibrated tree, but no subject-specific
 joint rig is installed, and V-view remains static. The solver does not
 implement gliding, cartilage, contacts or closed loops.
 AAH's simple joint bounds are a model, not universal clinical hard limits.

@@ -1,0 +1,4 @@
+# Femoral epicondylar estimates in source-pose metres.
+# An anatomical axis estimate, not a fitted joint-motion constraint.
+L 0.134913552 0.570654541 -0.007886957 -0.981832480 -0.001229150 0.189745806 0.085408969
+R -0.026273397 0.569314545 -0.005463457 0.966240126 -0.086183144 0.242801327 0.084830674

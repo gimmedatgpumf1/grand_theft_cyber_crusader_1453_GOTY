@@ -12,8 +12,7 @@ faces for each subject. Each OBJ retains all 182 source structure names in
 independently animated bones. Each source structure is simplified separately
 into an overall budget near 180,000 triangles. No bones are mirrored, scaled
 or repositioned individually. A single coordinate conversion and translation
-places each body in the game. The female is held still; the male uses the
-existing group-based idle animation.
+places each body in the game. Both bodies retain the static registered pose.
 
 Both source files contain *registered* meshes, not necessarily the original CT
 patient pose. Our source-fidelity tests check names, face indices and the
