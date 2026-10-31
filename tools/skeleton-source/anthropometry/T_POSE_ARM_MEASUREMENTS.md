@@ -18,7 +18,18 @@ The difference is `bone proxy − formula`, divided by the formula for percentag
 
 The room's humeral-head-to-elbow axes are horizontal to numerical precision, and the elbow-to-radius proxy axes have lateral X alignment greater than 0.997; digit axes have alignment above 0.97. The posed arms are straight enough for this direct measurement, although digit pose, bone placement and landmark selection remain geometric rather than clinically validated.
 
-For transparency, joint-centre-to-middle-bone-tip is a **different** measurement: mean 72.49 cm male and 68.04 cm female. It should not be substituted for shoulder-to-hand length. The previous shoulder-width audit found the registered scapulae are not verified as positioned in a standard anatomical posture. In this T-pose the selected right male scapular point lies only about 0.31 cm farther outward in X than the humeral-head centre, versus 2.50 cm on the left; the asymmetry is another reason the shoulder landmark needs validation, not proof of an anatomical abnormality.
+## Humerus end to fingertip
+
+The shoulder-to-fingertip table above uses a scapular point, **not the end of the humerus**. The actual T-pose also gives these distinct measurements, in cm:
+
+| Skeleton | Shoulder-end humerus vertex to finger tip, left | Right | L/R average | Humeral-head centre to finger tip, L/R average |
+|---|---:|---:|---:|---:|
+| Male | 75.04 | 75.16 | 75.10 | 72.49 |
+| Female | 70.56 | 70.05 | 70.30 | 68.04 |
+
+For the humerus end, take the **most medial X vertex of the posed humerus**, at its shoulder end, and measure the 3D straight line to the same middle-finger bone tip. This is a geometric bony endpoint, not an identified skin acromion, and must not be presented as directly matching the ANSUR shoulder reference. Left/right endpoint coordinates and values are in the TSV. Joint-centre-to-fingertip is a different measurement again.
+
+The previous shoulder-width audit found the registered scapulae are not verified as positioned in a standard anatomical posture. In this T-pose the selected right male scapular point lies only about 0.31 cm farther outward in X than the humeral-head centre, versus 2.50 cm on the left; the asymmetry is another reason the shoulder landmark needs validation, not proof of an anatomical abnormality.
 
 ## Reproduce
 

@@ -68,6 +68,11 @@ def measure(sex,pose):
         finger_direction/=np.linalg.norm(finger_direction)
         fingertip=distal[np.argmax(distal@finger_direction)]
         head=positioned('Humerus',shoulders[side])
+        humerus=positioned('Humerus',mesh[f'Humerus_{side}'])
+        # On this horizontal T-pose, the medial extreme is at the shoulder
+        # end of the humeral head, not the distal elbow end. This is a geometric
+        # bone-surface endpoint, not a skin acromion.
+        humerus_end=humerus[np.argmin(sign*humerus[:,0])]
         elbow=positioned('Humerus',elbows[side])
         source_path=whole.arm_points(mesh,shoulders[side],elbows[side],side)
         wrist=positioned('Radius',source_path[2])
@@ -77,9 +82,10 @@ def measure(sex,pose):
         fore_dir=(wrist-elbow)/np.linalg.norm(wrist-elbow)
         if sign*upper_dir[0]<.999 or sign*fore_dir[0]<.99 or sign*finger_direction[0]<.9:
             raise ValueError(f'{sex} {side} is not an approximately extended lateral arm')
-        result[side]={'shoulder':shoulder,'tip':fingertip,'head':head,'elbow':elbow,'wrist':wrist,
+        result[side]={'shoulder':shoulder,'tip':fingertip,'head':head,'humerus_end':humerus_end,
+                      'elbow':elbow,'wrist':wrist,
                       'straight':distance(shoulder,fingertip),'horizontal':float(sign*delta[0]*100),
-                      'head_to_tip':distance(head,fingertip),
+                      'head_to_tip':distance(head,fingertip),'humerus_end_to_tip':distance(humerus_end,fingertip),
                       'upper_alignment':float(sign*upper_dir[0]),'fore_alignment':float(sign*fore_dir[0]),
                       'finger_alignment':float(sign*finger_direction[0])}
     return result
@@ -92,17 +98,19 @@ def generate(executable):
         for side in ('L','R','mean'):
             if side=='mean':
                 r={k:(result['L'][k]+result['R'][k])/2 for k in ('straight','horizontal','head_to_tip',
-                        'upper_alignment','fore_alignment','finger_alignment')}
+                        'humerus_end_to_tip','upper_alignment','fore_alignment','finger_alignment')}
             else:r=result[side]
             def coords(key):
                 return [f'{x:.8f}' for x in r[key]] if side!='mean' else ['NA']*3
-            sx,sy,sz=coords('shoulder'); tx,ty,tz=coords('tip')
+            sx,sy,sz=coords('shoulder'); tx,ty,tz=coords('tip'); hx,hy,hz=coords('humerus_end')
             rows.append(dict(subject=subject,sex=sex,height_cm=f'{height:.1f}',side=side,
                 shoulder_proxy_x_m=sx,shoulder_proxy_y_m=sy,shoulder_proxy_z_m=sz,
+                humerus_proximal_x_m=hx,humerus_proximal_y_m=hy,humerus_proximal_z_m=hz,
                 middle_bone_tip_x_m=tx,middle_bone_tip_y_m=ty,middle_bone_tip_z_m=tz,
                 shoulder_proxy_to_fingertip_3d_cm=f'{r["straight"]:.6f}',
                 shoulder_proxy_to_fingertip_horizontal_cm=f'{r["horizontal"]:.6f}',
                 joint_center_to_tip_3d_cm=f'{r["head_to_tip"]:.6f}',
+                proximal_humerus_to_tip_3d_cm=f'{r["humerus_end_to_tip"]:.6f}',
                 upper_axis_alignment=f'{r["upper_alignment"]:.8f}',forearm_axis_alignment=f'{r["fore_alignment"]:.8f}',
                 finger_axis_alignment=f'{r["finger_alignment"]:.8f}',
                 ansur_height_prediction_cm=f'{ref:.6f}',raw_unmatched_difference_cm=f'{r["straight"]-ref:.6f}',
