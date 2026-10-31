@@ -43,6 +43,7 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/body_proportion_curves.cpp -o build/bin/gtc-body-proportion-curves
 ./build/bin/gtc-body-proportion-curves
+python3 tests/pooled_height_fit.py
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/height_body_reference.cpp -o build/bin/gtc-height-body-reference
 ./build/bin/gtc-height-body-reference

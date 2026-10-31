@@ -1,5 +1,7 @@
 # Five body dimensions from height, and the two skeletons
 
+> **Historical analysis:** the runtime formulas, tabulated predictions and blends described below are superseded. The active pooled individual-record fits and their landmark limitations are documented in [POOLED_HEIGHT_MODELS.md](POOLED_HEIGHT_MODELS.md). Historical measurements and validation results below are not re-evaluations of the new model.
+
 ## Answer and limits
 
 **Correction:** the arm proxy and deviations previously listed here are withdrawn as reference comparisons: the proxy started at the humeral-head centre instead of the acromion and used unmatched elbow, wrist and finger landmarks. See `ARM_PATH_AUDIT.md` for the reproducible segment breakdown and `T_POSE_ARM_MEASUREMENTS.md` for the subsequent measurement in the actual T-pose.

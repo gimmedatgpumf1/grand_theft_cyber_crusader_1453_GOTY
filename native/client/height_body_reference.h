@@ -1,73 +1,29 @@
 #pragma once
 
-// Height-only research estimates of five differently defined surface landmarks.
-// This is not a skeletal scaling system or a diagnostic tool. See
-// tools/skeleton-source/anthropometry/WHOLE_BODY_HEIGHT_COMPARISON.md.
-#include "client/smooth_height_curve.h"
-#include <algorithm>
-#include <cmath>
+// Height-only visual estimates using unmatched paediatric/adult surface proxies.
+// These are not verified head or bone dimensions, or a diagnostic tool. See
+// tools/skeleton-source/anthropometry/POOLED_HEIGHT_MODELS.md.
+#include "client/pooled_height_models.h"
 #include <optional>
 
 namespace gtc::native {
 enum class BodyReferenceSex { male, female };
 struct HeightBodyReference {
-    double headCm;  // unverified Korean dataset's vertical-head dimension
-    double neckCm;  // vertical tragion-to-cervicale, derived ANSUR II
-    double torsoCm; // standing vertical cervicale-to-crotch
-    double armCm;   // acromion-stylion plus stylion-middle finger
-    double legCm;   // standing vertical trochanterion-to-floor
+    double headCm;  // head-circumference proxy, calibrated to Korean group mean
+    double neckCm;  // child head-circumference proxy / adult tragion-to-cervicale
+    double torsoCm; // child sitting-height proxy / adult cervicale-to-crotch
+    double armCm;   // child upper-arm proxy / adult acromion to middle finger
+    double legCm;   // child subischial proxy / adult trochanterion-to-floor
 };
 
-namespace height_body_detail {
-// Forward straight-line fit on its sample's observed range. Outside that range
-// use a value/slope/curvature-matched bounded fraction continuation.
-// This continuation is a modelling convenience, not extrapolated medical data.
-inline std::optional<double> line(double h, double a, double b, double lo, double hi) {
-    const double x=std::clamp(h,lo,hi), y=a+b*x;
-    if (!(y>0 && y<x)) return std::nullopt;
-    double v=y;
-    if (h!=x) return smoothBoundedContinuation(h,x,y,b,0);
-    return std::isfinite(v) && v>0 && v<h ? std::optional<double>(v) : std::nullopt;
-}
-// Connect a 39-week neonatal limb ratio to the adult fit continuously; the
-// interval is an unvalidated bridge, not a paediatric regression.
-inline std::optional<double> infantBridge(double h, double ratio, double adultStart,
-                                          std::optional<double> adultValue) {
-    if (!adultValue) return std::nullopt;
-    if (h<=50) return h*ratio;
-    if (h>=adultStart) return adultValue;
-    const double t=(h-50)/(adultStart-50), w=t*t*t*(t*(6*t-15)+10);
-    const double v=(1-w)*h*ratio+w*(*adultValue);
-    return std::isfinite(v) && v>0 && v<h ? std::optional<double>(v) : std::nullopt;
-}
-} // namespace height_body_detail
-
 inline std::optional<HeightBodyReference> estimateHeightBodyReference(BodyReferenceSex sex, double h) {
-    if (!std::isfinite(h) || h<=0 || (sex!=BodyReferenceSex::male && sex!=BodyReferenceSex::female))
-        return std::nullopt;
-    using height_body_detail::line;
+    if (sex!=BodyReferenceSex::male && sex!=BodyReferenceSex::female) return std::nullopt;
     const bool male=sex==BodyReferenceSex::male;
-    const auto head=male ? line(h,9.519390,0.079034,154.7,187.7) :
-                           line(h,11.177137,0.063486,142.3,172.6);
-    // Vertical difference: stature - tragion-to-vertex - cervicale height.
-    // OLS on paired adult ANSUR II, no fixed BMI or inferred 3D link.
-    const auto neck=male ? line(h,-2.1659706847214744,0.07369883290045212,149.1,199.3) :
-                           line(h,0.03761243523229783,0.06506005322941955,140.9,182.9);
-    const auto torso=male ? line(h,9.824626889078571,0.3263433653317256,149.1,199.3) :
-                            line(h,8.831677988700205,0.32241520461333356,140.9,182.9);
-    const auto armAdult=male ? line(h,-1.944431609432535,0.45885024218626663,149.1,199.3) :
-                               line(h,-3.3344315178830297,0.465454824499171,140.9,182.9);
-    const auto legAdult=male ? line(h,-16.99483649702122,0.6097644465657162,149.1,199.3) :
-                               line(h,-12.69145825107915,0.5970413778726937,140.9,182.9);
-    const auto arm=height_body_detail::infantBridge(h,male ? 0.4286 : 0.4281,
-                                                     male ? 149.1 : 140.9,armAdult);
-    // Neonatal study ends at the malleolus, not the floor. Add a separately
-    // extrapolated adult ankle-to-floor estimate at 50 cm; this is a design
-    // assumption, not an observed neonatal whole-leg measurement.
-    const double infantLegRatio=male ? 0.4102+2.291499801728912/50 :
-                                       0.4150+2.1843400961893407/50;
-    const auto leg=height_body_detail::infantBridge(h,infantLegRatio,
-                                                     male ? 149.1 : 140.9,legAdult);
+    const auto head=pooledHeightDimension(male,PooledHeightDimension::head,h);
+    const auto neck=pooledHeightDimension(male,PooledHeightDimension::neck,h);
+    const auto torso=pooledHeightDimension(male,PooledHeightDimension::torso,h);
+    const auto arm=pooledHeightDimension(male,PooledHeightDimension::arm,h);
+    const auto leg=pooledHeightDimension(male,PooledHeightDimension::leg,h);
     if (!head || !neck || !torso || !arm || !leg) return std::nullopt;
     return HeightBodyReference{*head,*neck,*torso,*arm,*leg};
 }

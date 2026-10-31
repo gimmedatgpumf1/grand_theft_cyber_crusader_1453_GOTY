@@ -1,5 +1,7 @@
 # Shoulder and hip-area widths of the existing skeletons
 
+> **Historical results:** the live comparison now uses pooled individual-record formulas; the previous model predictions and 50 cm descriptions below are not current runtime values. See [POOLED_HEIGHT_MODELS.md](POOLED_HEIGHT_MODELS.md).
+
 The limb-only comparison did not include shoulder or pelvic breadth. This separate audit records **both**, along with hip joint spacing, from the geometry and fitted joint centres the game actually loads. The values below are in the original registered source pose, before the test room applies its reference pose or ragdoll motion.
 
 | Measurement (cm) | Male N197925 | Female N186416 |

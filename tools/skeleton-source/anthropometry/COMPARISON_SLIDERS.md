@@ -130,44 +130,32 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-Pelvis and shoulder breadth now blend child and adult surface models across
-100–175 cm (female) or 100–190 cm (male), instead of forcing their differences
-into 15 cm. The same broader transition is used for the other NHANES surface
-estimates, although the comparison skeleton currently uses separate head,
-neck, torso, arm and leg references. This reduces the previous growth-rate
-spikes but changes estimates throughout those intervals and uses an extrapolated
-adult component below its sampled range. A natural cubic approximation of the
-child curve and a quintic infant bridge also remove the old curvature kinks.
-This is a modelling compromise, not a validated paediatric skeletal reference;
-see `CHILD_ADULT_TRANSITION.md`. A 50–250 cm sweep tests 1,092 axis-extreme
-blue-mesh samples per sex at 0.1 cm height steps, including their change of
-motion rate; this does not check every vertex. Selected pelvic and limb/shoulder triangle contacts are also audited at
-15 heights. The request and fitted shape remain continuous at the formula
-joins. However, the requested surface torso and leg distances generally **cannot both
-be represented by the chosen bony proxies with the intact adult pelvic ring**.
-The fit therefore changes the pelvic height to minimise their equally weighted
-squared deviations and displays actual fitted values rather than pretending
-that both targets were met. At 50 cm, male requested/fitted torso is
-23.30/about 21.1 cm and leg is 22.80/about 20.6 cm; female requested/fitted
-torso is 22.59/about 19.8 cm and leg is 22.93/about 20.1 cm. This is a limitation of applying
-surface references to these bone landmarks, not a child/adult formula jump.
-If other extreme multipliers make the pelvic ring impossible to place below
-C7, the conflicting requests are continuously blended toward source scaling.
-A sweep accepts all integer heights 1–1000 cm, but the default torso and leg
-proxies differ from their requested values throughout that sweep.
+The height targets use one pooled cubic for each sex and dimension, fitted to
+individual child and adult records. The six NHANES surfaces share recorded
+landmarks; the remaining five use explicitly converted child surface proxies
+and adult ANSUR surfaces. See `POOLED_HEIGHT_MODELS.md` for the substitutions,
+unobserved 50 cm extrapolation assumptions and data limitations. There is no
+age-group crossfade. A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh
+samples per sex at 0.1 cm height steps, including their motion rate; this does
+not check every vertex. Selected triangle contacts are audited at 15 heights.
+
+The requested surface torso and leg distances generally **cannot both be
+represented by the chosen bony proxies with the intact adult pelvic ring**.
+The fit projects those requests and displays fitted rather than requested
+values. If extreme multipliers make the pelvic ring impossible to place below
+C7, conflicting requests are blended toward source scaling. A sweep accepts
+integer heights 1–1000 cm, but those extrapolations are not measurements.
 
 This is still a rendering deformation outside the skull/jaw/C1 and pelvic
 assembly. It does **not** certify all joint contacts, preserve every bone,
 implement a new anatomical rig or guarantee collision-free motion. The blue
 figures are not simulated. The original white skeletons remain unchanged.
 
-The existing child/adult surface curves, neonatal bridges and bounded
-continuations are used. They are not a skeletal growth model: for example, a
-50 cm copy is a warped adult skeleton, **not** an infant skeleton. Unmatched
-landmarks, extrapolation, independent CT registrations and unverified Korean
-head-data provenance limit interpretation. See `SEVEN_DIMENSION_COMPARISON.md`,
-`CHILD_ADULT_TRANSITION.md`, and `HAND_FOOT_COMPARISON.md` for data and audit
-caveats. No new clinical validation is claimed.
+The pooled curves and bounded continuations are not a skeletal growth model:
+a 50 cm copy is a warped adult skeleton, **not** an infant skeleton. Unmatched
+landmarks, extrapolation and independent CT registrations limit interpretation.
+See `POOLED_HEIGHT_MODELS.md` and `HAND_FOOT_COMPARISON.md`. No new clinical
+validation is claimed.
 
 The original and room GPU geometry remain cached when a slider changes; only
 changed blue meshes are rebuilt and their batch revisions updated. The UI is

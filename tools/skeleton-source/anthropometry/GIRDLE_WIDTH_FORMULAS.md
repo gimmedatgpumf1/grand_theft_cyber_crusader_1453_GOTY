@@ -1,5 +1,7 @@
 # Height, shoulder breadth and hip/pelvic width: formulas and limitations
 
+> **Historical analysis:** the runtime formulas, tabulated predictions and blends described below are superseded. The active pooled individual-record fits and their landmark limitations are documented in [POOLED_HEIGHT_MODELS.md](POOLED_HEIGHT_MODELS.md). Historical measurements and validation results below are not re-evaluations of the new model.
+
 The earlier width audit omitted the formulas even though we already had height-driven **surface** breadth evaluators. It should have stated them. Those estimates have not been applied to the live skeleton. We also now have a published CT-based **hip joint-centre** formula, but its input is clinical leg length, not height. No corresponding height-only glenohumeral-centre formula has been established here.
 
 ## 1. Existing height-to-surface-breadth equations

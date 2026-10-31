@@ -30,7 +30,8 @@ int main() {
             }
         }
         auto profile=comparison.profile();
-        double peakSpeed=0, peakAcceleration=0;
+        double peakSpeed=0, peakAcceleration=0, peakHeight=0;
+        std::string peakPart;
         constexpr double step=0.1;
         for (int i=0;i<=2000;++i) {
             profile.height=50+i*step;
@@ -39,8 +40,12 @@ int main() {
                 const auto& part=*sample.part;
                 const Vec3 p=comparison.map(sample.source,part.armSide,part.cranial,part.girdle,part.humerus);
                 if (i) peakSpeed=std::max(peakSpeed,length(p-sample.previous)*100/step);
-                if (i>=2) peakAcceleration=std::max(peakAcceleration,
-                    length(p-sample.previous*2+sample.beforePrevious)*100/(step*step));
+                if (i>=2) {
+                    const double acceleration=length(p-sample.previous*2+sample.beforePrevious)*100/(step*step);
+                    if (acceleration>peakAcceleration) {
+                        peakAcceleration=acceleration; peakHeight=profile.height; peakPart=part.name;
+                    }
+                }
                 sample.beforePrevious=sample.previous; sample.previous=p;
             }
         }
@@ -48,8 +53,8 @@ int main() {
         // male cm per cm² on upper-arm and forearm samples. Check the actual
         // mesh response, not only continuity of the source formulas.
         assert(peakSpeed<1.25 && peakAcceleration<0.015);
-        std::printf("%s %zu sampled mesh vertices: peak speed %.4f, rate change %.4f\n",
-                    male?"male":"female",samples.size(),peakSpeed,peakAcceleration);
+        std::printf("%s %zu sampled mesh vertices: peak speed %.4f, rate change %.4f (%s at %.1f cm)\n",
+                    male?"male":"female",samples.size(),peakSpeed,peakAcceleration,peakPart.c_str(),peakHeight);
     }
     std::puts("All-body height-transition mesh sweep: PASS");
 }

@@ -1,5 +1,7 @@
 # Which body-part scale fits best, and what happens at 50 cm?
 
+> **Historical results:** the live comparison now uses pooled individual-record formulas; the previous model predictions and 50 cm descriptions below are not current runtime values. See [POOLED_HEIGHT_MODELS.md](POOLED_HEIGHT_MODELS.md).
+
 ## Selection for each measurement
 
 `BODY_PART_MODEL_SELECTION.tsv` gives the selected model **per source, sex, age group and dimension**, alongside training-set cross-validation MAE, runner-up gap, independent internal-holdout MAE, counts, supported stature range and an explicitly **untrusted** diagnostic at 50 cm. `BODY_PART_MODEL_CV.tsv` lists every candidate, and `BODY_PART_SELECTED_MODELS.tsv` contains the coefficients used by `BodyProportionCurves::selectedDimensionCm`. Group-level choices here are not one globally best biological formula; these samples differ in population, ages and measurement landmarks.

@@ -1,36 +1,8 @@
-# Height estimates without fixed cutoffs
+# Height-only pooled child and adult estimates
 
-`BodyProportionCurves::blendedNhanesDimensionCm(sex, dimension, heightCm)` accepts positive finite heights without an imposed anthropometric range for six NHANES III surface measurements: sitting height, height-minus-sitting, upper arm, upper leg, shoulder breadth and pelvis breadth. The matching NHANES child and adult models blend over 100–190 cm for males and 100–175 cm for females using the quintic smootherstep `w = 6t^5 - 15t^4 + 10t^3`, matching value, slope and curvature at the ends. `height_minus_sitting` is always exactly height minus sitting height. Positive and finite input checks are retained to prevent meaningless/non-finite arithmetic; this is not a clinical boundary.
-
-The old 15 cm blend caused growth-rate spikes. Widening it helped, but directly blending the child PCHIP still carried its changes in curvature into the visible skeleton. The transition now uses a natural cubic approximation of the selected child reference sampled every 10 cm over 100–175 cm (female) or 100–190 cm (male), precomputed on load. The selected models and their PCHIP knots are unchanged within the observed ranges; their extrapolated tails now use curvature-matched continuation. The approximation is for the blended profile, not new medical observations. Quintic blending matches value, slope and curvature at the adult join.
-
-Compared with the previous broad blend, the maximum absolute change in growth rate per cm of stature over that interval fell from 0.0240 to 0.0117 for female pelvis breadth, 0.0215 to 0.0079 for male pelvis breadth, 0.0199 to 0.0069 for female shoulder breadth and 0.0329 to 0.0081 for male shoulder breadth (sampled every 0.25 cm). Within the adult/child blend interval, the largest change in predicted values across all five surface dimensions and both sexes was about 0.21 cm (female sitting height). These blends combine disparate age-group models, not measurements of a single growing person; below the adult sample range the adult component is extrapolated. Height alone cannot establish age, and this interpolation is not a clinically validated skeletal growth trajectory.
-
-At 50 cm, illustrative neonatal anchors are connected to the smoothed child curve at 100 cm via quintic Hermite interpolation matching values, slopes and curvatures. These anchors are not measurements of one individual, not a conditional fit at exactly 50 cm, and do not identify age from height:
-
-| Measurement | Reference used to construct 50 cm anchor |
-|---|---|
-| Upper arm | Chellappan 39-week subgroup median individual limb/length ratios: male 19.00%, female 19.08%. [Study](https://indianpediatrics.net/epub012024/OA-00580.pdf), see `NEWBORN_SEGMENT_RESEARCH.md`. |
-| Upper leg | Abdel-Rahman pooled neonatal upper-leg mean 8.3 cm divided by pooled length mean 50.6 cm, an approximation, not a paired ratio mean. [Study](https://pmc.ncbi.nlm.nih.gov/articles/PMC5751918/). |
-| Shoulder | Pooled mean biacromial 12.4 cm and mean length 50.0 cm in 161 neonates; ratio of group means, not individual mean ratio. [Study](https://pmc.ncbi.nlm.nih.gov/articles/PMC9743354/). |
-| Pelvis | Pooled mean bi-iliac 7.74 cm and length 48.75 cm; ratio of group means. Population and endpoints may differ from NHANES bicristal breadth. [Study](https://link.springer.com/article/10.1007/BF02896728). |
-| Sitting height | **Proxy only:** Aziz term-neonate crown–rump/crown–heel sex-specific group means, male 34.2/50.9, female 33.7/50.4. Crown–rump with flexed hips is not the same measurement as sitting height. [Study](https://www.theprofesional.com/index.php/tpmj/article/download/5238/3566/12766). |
-
-Below 50 cm the anchor ratios continue proportionally. This is a design assumption, **not** a fetal/neonatal growth model. From 50–100 cm the bridge is a smooth interpolation between disparate samples; it is not validated on held-out infants. The neonatal reference cohort and child survey differ in population, age and measurement position. Short adult proportions cannot be inferred from stature alone. The same goes for the adult/child transition; height is not an age classifier.
-
-For every source model, including adult models, `dimensionCm` and `selectedDimensionCm` now evaluate beyond observed knots. They use a bounded continuation of the dimension/height fraction in log-height space, with a local correction matching value, slope and curvature at the endpoints. This avoids the unbounded raw quadratic/log extrapolations previously found to produce negative lengths at 50 cm. The continuation keeps ordinary numerical results between zero and height; interpolation still passes through sparse interior gaps. It is a **design extrapolation**, not a medically fitted or validated formula for very short or tall people. Likewise, `NewbornLimbProfile` permits any positive length but its newborn ratios are not evidence for a 2 m adult. At extreme floating-point magnitudes calculation can still fail because finite precision is limited.
-
-Example 2 m outputs (cm, approximate and **extrapolated**) from the blended NHANES estimator:
-
-| Dimension | Male | Female |
-|---|---:|---:|
-| Sitting height | 100.50 | 98.85 |
-| Height minus sitting | 99.50 | 101.15 |
-| Upper arm surface | 42.93 | 42.08 |
-| Upper leg surface | 49.99 | 49.93 |
-| Shoulder breadth | 44.56 | 42.30 |
-| Pelvis surface breadth | 31.47 | 30.89 |
-
-`blendedNhanesScale` divides by the corresponding estimate at a fixed reference height. It produces continuous surface multipliers, not calibrated bone, mesh, joint or collider scales. Tests cover 50–100 and the child/adult joins, adjacent floating-point values at joins, every 52 selected model at heights 20, 50, 100, 200, 250, and 500 cm, and the exact sitting complement. Passing those checks does not prove anatomical accuracy.
-
-**Integration limits:** the blue comparison skeleton uses the blended pelvis and shoulder surface estimates as skeletal proxies. The original white skeleton and its ragdoll do not use these estimates. Other body parts use separate references; this is not a clinically validated one-height skeletal growth model.
+The former spline, infant bridge and age-group blend were replaced. The
+active formulas fit single sex-specific cubics to pooled individual child and
+adult records, with no child/adult switch. See [POOLED_HEIGHT_MODELS.md](POOLED_HEIGHT_MODELS.md)
+for the sources, important unmatched-landmark proxies, fitted ranges, 50 cm
+extrapolation assumptions, generated coefficients and reproducibility. This is
+a visual model, not evidence that height determines age or skeletal anatomy.
