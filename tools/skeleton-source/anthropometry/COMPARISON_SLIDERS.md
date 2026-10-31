@@ -67,26 +67,36 @@ both originals and head–C1 intersections in the female original; the blue copi
 retain these, rather than hiding them by moving the original jaw or neck. In this
 static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 female
 head–C1 contacts; male head–C1 surfaces are 0.026 mm apart. Counts depend on the
-mesh and collision algorithm. This does not test containment or establish the
-correct biological placement, and **does not fix those pre-existing overlaps**.
+mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
+remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
+This does not test containment or establish the correct biological placement,
+and **does not fix those pre-existing overlaps**.
 
 The source T-pose is captured once. A continuous piecewise-linear vertical field
-maps the ordered floor, pelvis, mean hip, C7, jaw, mean C1 contact and skull
-landmarks to overlapping targets while preserving total height. The skull, jaw
-and C1 receive the same **uniform 3D scale and translation**; their shapes and
-relative positions are preserved instead of stretching the face or splitting
-the skull at a vertical-field knot. The shared skull-to-jaw height determines
-that scale, and the desired neck and overall height determine the C7 position.
-The actual mean of the left/right hip centres is solved after deformation. Width
-transitions continuously between pelvis and scapula, and the left and right arms
-share a length factor about their own fitted shoulder centres.
+maps the ordered floor, pelvis, mean hip, C7, lowest C1 point, mean C1 contact
+and skull landmarks while preserving total height. The skull, jaw and C1 receive
+the same **uniform 3D scale and translation**; their shapes and relative
+positions are preserved. The torso field joins that transform at the bottom of
+C1. The jaw may overlap C7 in height because it is anterior to C7: forcing the
+jaw above C7 was an incorrect constraint and caused the previous partial fit at
+50 cm. The shared skull-to-jaw height determines the cranial scale, and the
+desired neck and overall height determine the C7 position. The actual mean of
+the left/right hip centres is solved after deformation. Width transitions
+continuously between pelvis and scapula, and both arms share a length factor
+about their fitted shoulder centres.
 
-These constraints are not always compatible with all seven surface targets. At
-incompatible combinations, a binary search blends the four vertical targets
+At 50 cm both copies now match all seven nominal targets without a partial fit.
+The original child/adult formulas and their continuous blends are unchanged.
+The regression suite checks all seven against the source models in a 0.5 cm
+sweep from 50 to 1000 cm, measures the actual proxies at representative heights,
+and checks continuity around the curve boundaries. An integer sweep from 1 to
+1000 cm also accepted every height: default inputs fit exactly from 15 cm male
+and 8 cm female upward. Below those heights, independently extrapolated targets
+can become geometrically incompatible with the fixed total height and ordered
+skeletal landmarks. Extreme independent slider multipliers can likewise be
+incompatible. In those cases a binary search blends the four vertical targets
 toward uniform source scaling; the controls show **Partial fit** and the fitted
-values. For example, the 50 cm visual copies no longer meet the nominal head
-surface estimate: maintaining an intact adult skull/jaw and feasible proxy order
-has priority. This is a rendering deformation: outside the skull/jaw/C1 assembly,
+values. This is a rendering deformation: outside the skull/jaw/C1 assembly,
 individual bones can change shape, and the arm field is only anchored at the
 estimated shoulder centre. It does **not** certify joint contact, preserve all
 rigid bones, implement a new anatomical rig or guarantee collision-free motion.

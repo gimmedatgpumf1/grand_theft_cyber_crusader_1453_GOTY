@@ -54,18 +54,31 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
         'native/client/raster.cpp', 'native/client/hud.cpp', 'native/client/ui_layer.cpp',
         'build/obj/bullet/libbullet.a', '-o', str(exe)]
     subprocess.run(command, cwd=root, check=True)
-    subprocess.run([str(exe), str(temp)], cwd=root, check=True)
-    for sex in ('male', 'female'):
-        groups = {color: {name: mesh(temp/f'{sex}_{color}_{name}.obj')
-                          for name in ('Head', 'Jaw', 'C1')}
-                  for color in ('white', 'blue')}
-        scale = np.ptp(groups['blue']['Head'][0][:, 1])/np.ptp(groups['white']['Head'][0][:, 1])
-        for other in ('Jaw', 'C1'):
-            white_n, white_gap = contact(groups['white']['Head'][1], groups['white'][other][1])
-            blue_n, blue_gap = contact(groups['blue']['Head'][1], groups['blue'][other][1])
-            assert bool(white_n) == bool(blue_n), (sex, other, white_n, blue_n)
-            if not white_n:
-                assert abs(blue_gap-white_gap*scale) < 1e-7, (sex, other, white_gap, blue_gap)
-            print(f'{sex} Head/{other}: source {white_n} contacts, blue {blue_n} contacts; '
-                  f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
+    for height in (None, 50):
+        folder = temp/('default' if height is None else str(height))
+        folder.mkdir()
+        args = [str(exe), str(folder)]
+        if height is not None: args.append(str(height))
+        subprocess.run(args, cwd=root, check=True)
+        for sex in ('male', 'female'):
+            groups = {color: {name: mesh(folder/f'{sex}_{color}_{name}.obj')
+                              for name in ('Head', 'Jaw', 'C1', 'C2', 'C7')}
+                      for color in ('white', 'blue')}
+            scale = np.ptp(groups['blue']['Head'][0][:, 1])/np.ptp(groups['white']['Head'][0][:, 1])
+            for other in ('Jaw', 'C1'):
+                white_n, white_gap = contact(groups['white']['Head'][1], groups['white'][other][1])
+                blue_n, blue_gap = contact(groups['blue']['Head'][1], groups['blue'][other][1])
+                assert bool(white_n) == bool(blue_n), (height, sex, other, white_n, blue_n)
+                if not white_n:
+                    assert abs(blue_gap-white_gap*scale) < 1e-7, (height, sex, other, white_gap, blue_gap)
+                print(f'{sex} {height or "default"} Head/{other}: source {white_n}, blue {blue_n}; '
+                      f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
+            for first, second in (('Jaw', 'C2'), ('Jaw', 'C7'), ('Head', 'C7')):
+                white_n, _ = contact(groups['white'][first][1], groups['white'][second][1])
+                blue_n, blue_gap = contact(groups['blue'][first][1], groups['blue'][second][1])
+                assert not white_n and not blue_n, (height, sex, first, second, white_n, blue_n)
+                print(f'{sex} {height or "default"} {first}/{second}: blue gap {blue_gap*1000:.3f} mm')
+            white_n, _ = contact(groups['white']['C1'][1], groups['white']['C2'][1])
+            blue_n, _ = contact(groups['blue']['C1'][1], groups['blue']['C2'][1])
+            assert white_n and blue_n, (height, sex, 'C1/C2', white_n, blue_n)
 print('Cranial triangle-surface comparison: PASS (existing source overlaps remain)')

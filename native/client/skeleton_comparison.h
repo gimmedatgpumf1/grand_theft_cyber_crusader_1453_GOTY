@@ -21,7 +21,10 @@ namespace gtc::native {
 class SkeletonComparison {
 public:
     enum Dimension { Height, Head, Neck, Torso, Arm, Leg, Hip, Shoulder, Count };
-    struct Part { std::string name; std::vector<Vec3> points; std::vector<std::array<int,3>> faces; int armSide = 0; };
+    struct Part {
+        std::string name; std::vector<Vec3> points; std::vector<std::array<int,3>> faces;
+        int armSide = 0; bool cranial = false;
+    };
     struct Profile {
         double height = 0;
         std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
@@ -35,6 +38,7 @@ public:
             const auto& source = model.sourceStructures()[i];
             const auto& group = model.bones()[source.group];
             Part part; part.name=source.name;
+            part.cranial=part.name=="Head" || part.name=="Jaw" || part.name=="C1";
             if (part.name.rfind("Humerus_",0)==0 || part.name.rfind("Radius_",0)==0 ||
                 part.name.rfind("Ulna_",0)==0 || part.name.rfind("Hand",0)==0) {
                 if (part.name.size()>2 && part.name.substr(part.name.size()-2)=="_L") part.armSide=1;
@@ -68,9 +72,9 @@ public:
         auto hi=[](const Part* p,int axis) { double v=-1e30; for (Vec3 q:p->points) v=std::max(v,axis==0?q.x:q.y); return v; };
         floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
         top_=hi(head,1); jaw_=lo(jaw,1);
-        // The uniform cranial field must cover both complete meshes, including
-        // the mandible; otherwise a knot can stretch only half the face.
-        if (lo(head,1)<jaw_ || lo(atlas,1)<jaw_) { error="Unexpected cranial landmark order"; return false; }
+        // The atlas joins the common torso field at its lowest vertex. The
+        // jaw uses the cranial transform even if its front is below the C7.
+        cranialJoin_=lo(atlas,1);
         pelvis_=std::min(lo(pelvisL,1),lo(pelvisR,1));
         pelvisTop_=std::max(hi(pelvisL,1),hi(pelvisR,1));
         scapBottom_=std::min(lo(scapL,1),lo(scapR,1));
@@ -129,7 +133,8 @@ public:
         if (matches!=2) { error="Comparison neck landmarks unavailable"; return false; }
         neck_/=matches; neckZ_/=matches;
         if (!(floor_<pelvis_ && pelvis_<hip_ && hip_<c7_ && c7_<jaw_ && jaw_<neck_ && neck_<top_) ||
-            !(pelvisTop_<scapBottom_ && scapTop_<jaw_) || hipWidth_<=0 || shoulderWidth_<=0) {
+            !(pelvisTop_<scapBottom_ && scapTop_<cranialJoin_ && c7_<cranialJoin_ && cranialJoin_<neck_) ||
+            hipWidth_<=0 || shoulderWidth_<=0) {
             error="Comparison landmarks have an unexpected order"; return false;
         }
         profile_=Profile{}; profile_.height=(top_-floor_)*100;
@@ -159,19 +164,21 @@ public:
     }
     void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(curves_,error); }
 
-    // A continuous field, except for the separately anchored upper limbs.
-    // Above the jaw base, all three axes share one scale: the skull, jaw and
-    // C1 retain their original shape and relative placement as a single unit.
-    Vec3 map(Vec3 p, int armSide=0) const {
+    // The skull, jaw and C1 share a single 3D similarity transform. The torso
+    // field meets it at the bottom of C1; the jaw can lie lower than C7 because
+    // those are distinct anterior/posterior structures, not one vertical chain.
+    Vec3 map(Vec3 p, int armSide=0, bool cranial=false) const {
+        if (cranial) return {(p.x-centerX_)*headScale_, profile_.height/100-(top_-p.y)*headScale_,
+                             neckZ_*heightScale_+(p.z-neckZ_)*headScale_};
         const double sourceY=p.y;
         double scale=heightScale_;
         if (sourceY>=pelvis_ && sourceY<=pelvisTop_) scale=hipScale_;
         else if (sourceY>pelvisTop_ && sourceY<scapBottom_)
             scale=lerp(hipScale_,shoulderScale_,(sourceY-pelvisTop_)/(scapBottom_-pelvisTop_));
         else if (sourceY>=scapBottom_ && sourceY<=scapTop_) scale=shoulderScale_;
-        else if (sourceY>scapTop_ && sourceY<jaw_)
-            scale=lerp(shoulderScale_,headScale_,(sourceY-scapTop_)/(jaw_-scapTop_));
-        else if (sourceY>=jaw_) scale=headScale_;
+        else if (sourceY>scapTop_ && sourceY<cranialJoin_)
+            scale=lerp(shoulderScale_,headScale_,(sourceY-scapTop_)/(cranialJoin_-scapTop_));
+        else if (sourceY>=cranialJoin_) scale=headScale_;
         else if (sourceY<pelvis_ && sourceY>floor_)
             scale=lerp(heightScale_,hipScale_,(sourceY-floor_)/(pelvis_-floor_));
         double x=centerX_+(p.x-centerX_)*scale;
@@ -183,19 +190,18 @@ public:
             const double mappedAnchor=map(anchor,0).x+centerX_;
             x=mappedAnchor+(p.x-anchor.x)*armScale_;
         }
-        // Transition depth to the same scale as width and height before the
-        // mandible. Both cranial meshes therefore share ONE similarity transform.
+        // Match the cranial transform continuously at the C1 join.
         double depthScale=heightScale_;
-        if (sourceY>=jaw_) depthScale=headScale_;
+        if (sourceY>=cranialJoin_) depthScale=headScale_;
         else if (sourceY>scapTop_)
-            depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(jaw_-scapTop_));
+            depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(cranialJoin_-scapTop_));
         return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
     }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
-            for (Vec3 p:part.points) { p=map(p,part.armSide); p.x+=x; points.push_back(p); }
+            for (Vec3 p:part.points) { p=map(p,part.armSide,part.cranial); p.x+=x; points.push_back(p); }
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
         }
@@ -219,15 +225,17 @@ private:
         // fixed at h, which fixes the C1 contact height and therefore C7 as well.
         // Do not bend the skull to independently force incompatible landmarks.
         headScale_=head/(top_-jaw_);
-        const double jawTarget=h-head;
         const double contact=h-(top_-neck_)*headScale_;
+        const double join=h-(top_-cranialJoin_)*headScale_;
         const double c=contact-neck;
+        // No jaw-versus-C7 vertical ordering: the jaw is in front of C7.
+        // Only the actual spine-to-atlas chain must remain monotone.
         feasible_=headScale_>0 && c>leg+epsilon && c-torso>epsilon &&
-                  c-torso<leg-epsilon && c<jawTarget-epsilon &&
-                  jawTarget+epsilon<contact && contact<h-epsilon;
+                  c-torso<leg-epsilon && c<join-epsilon &&
+                  join+epsilon<contact && contact<h-epsilon;
         if (!feasible_) return false;
-        sourceY_={floor_,pelvis_,hip_,c7_,jaw_,neck_,top_};
-        targetY_={0,c-torso,leg,c,jawTarget,contact,h};
+        sourceY_={floor_,pelvis_,hip_,c7_,cranialJoin_,neck_,top_};
+        targetY_={0,c-torso,leg,c,join,contact,h};
         // The fitted hip centres straddle their mean knot: solve the mean of
         // their mapped positions, rather than mapping the original mean.
         double hipLow=targetY_[1]+epsilon, hipHigh=targetY_[3]-epsilon;
@@ -290,7 +298,7 @@ private:
     Profile profile_;
     std::vector<Part> parts_;
     std::array<double,Count> targets_{};
-    double floor_=0,top_=0,jaw_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
+    double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
     double heightScale_=1,hipScale_=1,shoulderScale_=1,headScale_=1,armScale_=1;
     std::array<double,7> sourceY_{}, targetY_{};

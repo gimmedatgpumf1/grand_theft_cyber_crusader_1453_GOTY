@@ -1,6 +1,7 @@
 // Export the actual neutral source and comparison surfaces for the FCL audit.
 #include "client/skeleton_room.h"
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <string>
@@ -11,15 +12,19 @@ static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
             m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
 }
 int main(int argc,char** argv) {
-    if (argc!=2) return 2;
+    if (argc!=2 && argc!=3) return 2;
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) return 1;
     std::filesystem::create_directories(argv[1]);
+    if (argc==3) for (bool male:{true,false}) {
+        auto profile=room.comparison(male).profile(); profile.height=std::atof(argv[2]);
+        if (!room.setComparison(male,profile,error)) return 1;
+    }
     for (bool male:{true,false}) {
         const auto& model=male?room.male():room.female();
         const auto& comparison=room.comparison(male);
         const auto matrices=model.sourceMatrices({},0);
-        for (const char* name:{"Head","Jaw","C1"}) {
+        for (const char* name:{"Head","Jaw","C1","C2","C7"}) {
             const int index=model.sourceStructure(name); if (index<0) return 1;
             const auto& part=model.sourceStructures()[index]; const auto& group=model.bones()[part.group];
             for (bool blue:{false,true}) {
@@ -28,7 +33,8 @@ int main(int argc,char** argv) {
                 std::ofstream file(path); if (!file) return 1;
                 file<<std::setprecision(12);
                 for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
-                    Vec3 p=transform(matrices[index],group.points[i]); if (blue) p=comparison.map(p);
+                    Vec3 p=transform(matrices[index],group.points[i]);
+                    if (blue) p=comparison.map(p,0,std::string(name)=="Head" || std::string(name)=="Jaw" || std::string(name)=="C1");
                     file<<"v "<<p.x<<' '<<p.y<<' '<<p.z<<'\n';
                 }
                 for (std::size_t i=part.firstTriangle;i<part.firstTriangle+part.triangleCount;++i) {
