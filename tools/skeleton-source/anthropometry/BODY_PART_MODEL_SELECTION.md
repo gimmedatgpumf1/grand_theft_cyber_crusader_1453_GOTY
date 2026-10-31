@@ -8,6 +8,8 @@ The candidates are linear, quadratic, logarithmic, power-law and the existing sh
 
 `height_minus_sitting` is derived, not separately fitted: its result equals `stature - selected sitting height` between knots as well. Counts and errors are individual paired observations, not estimates of normative ranges. Survey data are unweighted and ages are broadly grouped. Supported ranges are bounded by bin means and exclude interior gaps over 10 cm, even for linear/power models. Both the PCHIP evaluator and selected evaluator return no value outside that support; no extrapolated height is silently applied.
 
+An optional height-only, continuous child/adult transition for matching NHANES III surface dimensions is described in `CHILD_ADULT_TRANSITION.md`. It is not a skeleton scaler.
+
 ## 50 cm stress test: not an adult at a smaller scale
 
 **None of the 52 child/adult models is supported at 50 cm.** Applying a family selected on adult or older-child data to a baby is extrapolation across developmental and measurement regimes. The test reveals why guards are necessary: the female adult NHANES selected sitting-height model gives a diagnostic **−1.07 cm**, and its upper-leg model gives **−20.21 cm** at 50 cm. The male ANSUR adult hand model gives −2.20 cm. These numbers are exposed solely in the diagnostic column; `selectedDimensionCm` and `dimensionCm` reject 50 cm rather than returning them. PCHIP has no extrapolated diagnostic. The tests do not prove that all extrapolations are wrong or that all in-range values are anatomically correct.

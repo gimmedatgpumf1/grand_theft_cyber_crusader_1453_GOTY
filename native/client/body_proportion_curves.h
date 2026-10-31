@@ -121,6 +121,51 @@ public:
         return result;
     }
 
+    // Height-only transition between NHANES III child and adult *surface*
+    // models with matching landmarks. This is a modelling convention, not an
+    // inference of age from stature. All dimensions use the same weight, so
+    // no part abruptly changes age group. Both fits must be supported through
+    // the whole blend. No extrapolation or fallback across unsupported gaps.
+    std::optional<double> blendedNhanesDimensionCm(const std::string& sex,
+                                                  const std::string& dimension,
+                                                  double heightCm) const {
+        if (!std::isfinite(heightCm) || (sex!="male" && sex!="female")) return std::nullopt;
+        if (dimension!="sitting_height" && dimension!="height_minus_sitting" &&
+            dimension!="upper_arm_surface" && dimension!="upper_leg_surface" &&
+            dimension!="shoulder_breadth" && dimension!="pelvis_surface_breadth") return std::nullopt;
+        if (dimension=="height_minus_sitting") {
+            const auto sitting=blendedNhanesDimensionCm(sex,"sitting_height",heightCm);
+            if (!sitting || *sitting>=heightCm) return std::nullopt;
+            return heightCm-*sitting;
+        }
+        const Key child{"NHANES_III",sex,"under_18",dimension};
+        const Key adult{"NHANES_III",sex,"adult_18_plus",dimension};
+        // Deliberately inside the common supported ranges of all six NHANES
+        // measurements. Quintic smootherstep avoids a sudden change in
+        // value or slope at either endpoint.
+        const double low=sex=="male" ? 160.0 : 145.0;
+        const double high=sex=="male" ? 175.0 : 160.0;
+        if (heightCm<=low) return selectedDimensionCm(child,heightCm);
+        if (heightCm>=high) return selectedDimensionCm(adult,heightCm);
+        const auto c=selectedDimensionCm(child,heightCm), a=selectedDimensionCm(adult,heightCm);
+        if (!c || !a) return std::nullopt;
+        const double t=(heightCm-low)/(high-low);
+        const double weight=t*t*t*(10.0+t*(-15.0+6.0*t));
+        return *c+weight*(*a-*c);
+    }
+
+    // A dimensionless multiplier relative to a specified source stature.
+    // Surface ratios are not yet calibrated skeletal or collision scales.
+    std::optional<double> blendedNhanesScale(const std::string& sex,
+                                             const std::string& dimension,
+                                             double heightCm, double referenceHeightCm) const {
+        const auto target=blendedNhanesDimensionCm(sex,dimension,heightCm);
+        const auto reference=blendedNhanesDimensionCm(sex,dimension,referenceHeightCm);
+        if (!target || !reference || *reference<=0) return std::nullopt;
+        const double scale=*target / *reference;
+        return std::isfinite(scale) && scale>0 ? std::optional<double>(scale) : std::nullopt;
+    }
+
     // No clamping or extrapolation: nullopt means absent or unsupported.
     // A single knot is usable at that exact height only. Gaps >10 cm cannot
     // be interpolated. Distances are surface dimensions, not bone lengths.
