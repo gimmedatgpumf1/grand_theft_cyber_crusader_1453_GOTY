@@ -4,7 +4,7 @@ All values are centimetres. This is an exploratory audit, not a live skeleton-sc
 
 ## Matched-sex comparison
 
-Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm measurements run from the shoulder end of the humerus to the middle-finger bone tip in the actual T-pose; these endpoints do not match the biological reference. See `T_POSE_ARM_MEASUREMENTS.md`. Shoulder-width proxies and differences remain withdrawn; see `SHOULDER_POSE_AUDIT.md`.
+Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm measurements run from the shoulder end of the humerus to the middle-finger bone tip in the actual T-pose; these endpoints do not match the biological reference. See `T_POSE_ARM_MEASUREMENTS.md`. Standard shoulder-width proxies and differences remain withdrawn; see `SHOULDER_POSE_AUDIT.md`. The separately requested fingertip-span-minus-arms calculation measures an internal humerus-end gap instead; see `TPOSE_FINGERTIP_SPAN_GAP.md`.
 
 | Dimension | Male biological mean ± SD | Male formula | Male skeleton | Difference | Female biological mean ± SD | Female formula | Female skeleton | Difference |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
