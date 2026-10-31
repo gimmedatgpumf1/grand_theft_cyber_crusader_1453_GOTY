@@ -132,6 +132,28 @@ public:
         if (!sourceRig_ || sacrum<0) return false;
         return setSourcePose({{sourceBodies_[sacrum],{referencePelvisAngle_}}});
     }
+    // Approximate rotations about the SC/AC reference frames. Coordinates 0, 1,
+    // 2 are elevation/upward rotation, retraction, and axial rotation/tilt.
+    // Registration is a separate fixed fourth coordinate; limits are not a
+    // patient-specific prescription.
+    std::optional<double> referenceGirdleCoordinate(std::size_t link, std::size_t coordinate) const {
+        if (!sourceRig_ || link>=sourceLinks_.size() || coordinate>2) return std::nullopt;
+        const auto& e=sourceLinks_[link];
+        if (e.mobility!="sternoclavicular" && e.mobility!="acromioclavicular") return std::nullopt;
+        const auto a=sourceBodies_[e.first], b=sourceBodies_[e.second];
+        const auto child=sourceRig_->parent(b)==a ? b : sourceRig_->parent(a)==b ? a : 0;
+        const auto* joint=sourceRig_->joint(child);
+        if (!joint || joint->angles().size()!=4) return std::nullopt;
+        return joint->angles()[coordinate]*(180.0/3.14159265358979323846);
+    }
+    bool setReferenceGirdleCoordinate(std::size_t link, std::size_t coordinate, double degrees) {
+        if (!std::isfinite(degrees) || !referenceGirdleCoordinate(link,coordinate)) return false;
+        const auto& e=sourceLinks_[link]; const auto a=sourceBodies_[e.first], b=sourceBodies_[e.second];
+        const auto child=sourceRig_->parent(b)==a ? b : a; const auto* joint=sourceRig_->joint(child);
+        auto angles=joint->angles(); const auto& axis=joint->axes()[coordinate];
+        angles[coordinate]=std::clamp(degrees*(3.14159265358979323846/180.0),axis.minimum,axis.maximum);
+        return setSourcePose({{child,angles}});
+    }
     std::optional<double> referenceHipCoordinate(std::size_t link, std::size_t coordinate) const {
         if (!sourceRig_ || link>=sourceLinks_.size() || sourceLinks_[link].mobility!="hip_ball_socket" ||
             (coordinate!=1 && coordinate!=2)) return std::nullopt;

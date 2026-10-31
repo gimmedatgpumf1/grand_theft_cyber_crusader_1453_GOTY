@@ -30,7 +30,7 @@ public:
             if (event.key == 'v') return event.repeat ? Action::None : Action::ToggleLines;
             if ((event.key >= '0' && event.key <= '9') || event.key == 'q' || event.key == 'e' ||
                 event.key == 'f' || event.key == 'g' || event.key == 'h' || event.key == 'j' ||
-                event.key == 'k' || event.key == 'l' || event.key == 'z' || event.key == 'x' || event.key == 'n' || event.key == 'm' || event.key == 'u') return Action::BendJoints;
+                event.key == 'k' || event.key == 'l' || event.key == 'z' || event.key == 'x' || event.key == 'n' || event.key == 'm' || event.key == 'u' || event.key == 'i' || event.key == 'o') return Action::BendJoints;
             if (event.key == 'r') return event.repeat ? Action::None : Action::RestorePose;
             if (event.key == 'b') return event.repeat ? Action::None : Action::RestoreOriginal;
             if (event.key == kKeyEscape) { clear(); return Action::Release; }

@@ -71,9 +71,8 @@ inline std::pair<Vec3,double> composeAlignments(Vec3 first, double a, Vec3 secon
 // Match the illustrated straight, palm-forward T-pose while leaving source
 // geometry intact. Elbow flexion remains a separate, mirrored coordinate.
 inline ReferenceFrame mirroredElbowFrame(Vec3 shoulder, Vec3 elbow, Vec3 forearm,
-                                          Vec3 sourcePalm, bool left, double spineTurn=0) {
+                                          Vec3 sourcePalm, bool left, JointRigidTransform torso = {}) {
     const Vec3 arm=normalized(elbow-shoulder), fore=normalized(forearm-elbow);
-    const auto torso=joint_detail::rotate({0,0,1},spineTurn);
     const auto inverseTorso=joint_detail::inverse(torso);
     const Vec3 target=frameVector(inverseTorso,left ? Vec3{1,0,0} : Vec3{-1,0,0});
     Vec3 shoulderAxis=cross(arm,target);

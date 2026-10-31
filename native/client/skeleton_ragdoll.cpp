@@ -100,7 +100,8 @@ struct SkeletonRagdoll::Impl {
             auto hull=std::make_unique<btConvexHullShape>();
             for (const auto& p:vertices) hull->addPoint(p,false);
             if (vertices.size()>=4) hull->optimizeConvexHull();
-            hull->setMargin(0.001f); hull->recalcLocalAabb();
+            // Small contact cushion for projected finger constraints at impact.
+            hull->setMargin(part.name.rfind("Hand",0)==0 ? 0.004f : 0.001f); hull->recalcLocalAabb();
             btTransform child; child.setIdentity(); compound.addChildShape(child,hull.get());
             shapes.push_back(std::move(hull));
         };
@@ -186,7 +187,12 @@ struct SkeletonRagdoll::Impl {
             }
             compound->setMargin(0.001f); compound->recalculateLocalAabb();
             const auto extent=hi-lo;
-            const btScalar mass=std::clamp(extent.x()*extent.y()*extent.z()*500.0f,0.015f,6.0f);
+            btScalar mass=std::clamp(extent.x()*extent.y()*extent.z()*500.0f,0.015f,6.0f);
+            // Include a crude share of surrounding tissue in vertebral inertias:
+            // tiny isolated bone masses against a heavy skull destabilize the chain.
+            // This floor is a simulation approximation, not subject-specific mass.
+            if (part.name.size()>=2 && part.name.size()<=3 && (part.name[0]=='C' || part.name[0]=='T' || part.name[0]=='L') && part.name[1]>='0' && part.name[1]<='9')
+                mass=std::max(mass,btScalar(0.3));
             // Only fingers need direct convex shapes for CCD. Keep the other
             // bodies compound as before: converting every bone to a direct
             // hull makes Bullet's contacts substantially more expensive.
@@ -220,12 +226,13 @@ struct SkeletonRagdoll::Impl {
             for (const auto& link:model.sourceLinks())
                 if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { kind=link.mobility; break; }
             const auto& range=joint->axes()[0]; const auto q=joint->angles()[0];
-            if (kind=="hip_ball_socket" || kind=="shoulder_ball_socket") {
+            const bool girdle=kind=="sternoclavicular" || kind=="acromioclavicular";
+            if (kind=="hip_ball_socket" || kind=="shoulder_ball_socket" || girdle) {
                 // Align the first coordinate to the existing fitted axis. The other
                 // two are bounded approximations, not a patient-specific ROM model.
                 btVector3 x=axis.normalized();
                 btVector3 y=bodies[b]->getWorldTransform().getOrigin()-pivot;
-                if (kind=="hip_ball_socket" && joint->axes().size()>2) {
+                if ((kind=="hip_ball_socket" || girdle) && joint->axes().size()>2) {
                     const auto rot=joint_detail::rotate(joint->axes()[0].direction,q);
                     const Vec3 d=joint->axes()[1].direction;
                     y=jointWorld.getBasis()*v({rot.rotation[0]*d.x+rot.rotation[1]*d.y+rot.rotation[2]*d.z,
@@ -240,8 +247,10 @@ struct SkeletonRagdoll::Impl {
                 const btTransform frame(basis,pivot);
                 auto ball=std::make_unique<btGeneric6DofSpring2Constraint>(*bodies[a],*bodies[b],aInv*frame,bInv*frame);
                 ball->setLinearLowerLimit(btVector3(0,0,0)); ball->setLinearUpperLimit(btVector3(0,0,0));
+                // Local convergence budget; the global solver stays at 100.
+                if (girdle) ball->setOverrideNumSolverIterations(180);
                 btScalar yLow=-1.570796f,yHigh=1.570796f,zLow=yLow,zHigh=yHigh;
-                if (kind=="hip_ball_socket" && joint->axes().size()>2) {
+                if ((kind=="hip_ball_socket" || girdle) && joint->axes().size()>2) {
                     const auto& axes=joint->axes(); const auto& angles=joint->angles();
                     yLow=btScalar(axes[1].minimum-angles[1]); yHigh=btScalar(axes[1].maximum-angles[1]);
                     const auto first=joint_detail::rotate(axes[0].direction,angles[0]);
@@ -266,8 +275,11 @@ struct SkeletonRagdoll::Impl {
                 auto hinge=std::make_unique<btHingeConstraint>(*bodies[a],*bodies[b],aInv*frame,bInv*frame,true);
                 if (structures[si].name.rfind("Hand",0)==0 && kind!="wrist_condyloid") {
                     hinge->setParam(BT_CONSTRAINT_ERP,0.6f);
+                    hinge->setOverrideNumSolverIterations(180);
                     fingerJoints.push_back(hinge.get());
                 }
+                if (kind=="great_toe_mtp" || kind=="lesser_toe_mtp" || kind=="toe_ip_hinge") hinge->setOverrideNumSolverIterations(180);
+                if (kind=="patellofemoral_glide") { hinge->setOverrideNumSolverIterations(180); hinge->setParam(BT_CONSTRAINT_ERP,0.4f); }
                 hinge->setLimit(btScalar(range.minimum-q),btScalar(range.maximum-q),0.9f,0.3f,1.0f);
                 world->addConstraint(hinge.get(),true); constraints.push_back(std::move(hinge));
             }

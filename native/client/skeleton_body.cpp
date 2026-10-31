@@ -1,9 +1,9 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_finger_frame.h"
+#include "client/skeleton_shoulder_frame.h"
 #include "client/skeleton_leg_frame.h"
 #include "client/skeleton_spine_frame.h"
 #include "client/skeleton_toe_frame.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -34,11 +34,11 @@ Transform compose(const Transform& outer, const Transform& inner) {
     out.t = outer.apply(inner.t);
     return out;
 }
-
 // Ry * Rx * Rz: yaw the body, bend it forward, then lean it sideways. The two
 // products are done in that order and each inner sum runs over the *middle*
 // matrix's column index -- indexing it by the outer row instead collapses the
 // result to rank one, which flattens every bone onto a line.
+
 Transform rotation(double pitch, double yaw, double roll) {
     const double cp = std::cos(pitch), sp = std::sin(pitch);
     const double cy = std::cos(yaw), sy = std::sin(yaw);
@@ -86,8 +86,8 @@ Vec3 centroid(const std::vector<Vec3>& points) {
     for (const Vec3& point : points) sum += point;
     return sum / std::max<std::size_t>(1, points.size());
 }
-
 // Which skeleton group hangs from which. Anything not listed is a root.
+
 const char* parentOf(const std::string& name) {
     if (name == "spine_lumbar") return "pelvis";
     if (name == "spine_thoracic") return "spine_lumbar";
@@ -112,10 +112,10 @@ const char* parentOf(const std::string& name) {
     if (name == "foot_r") return "lower_leg_r";
     return "";
 }
-
 // A coarse fallback for group pivots, not a medically measured joint centre.
 // The C room replaces the two hip pivots with fitted femoral-head estimates;
 // the remaining pivots still need subject-specific anatomical calibration.
+
 Vec3 jointNear(const std::vector<Vec3>& points, Vec3 toward) {
     double closest = 1e9;
     for (const Vec3& point : points) closest = std::min(closest, length(point - toward));
@@ -125,7 +125,6 @@ Vec3 jointNear(const std::vector<Vec3>& points, Vec3 toward) {
     }
     return cap.empty() ? centroid(points) : centroid(cap);
 }
-
 } // namespace
 
 bool SkeletonModel::load(const std::string& path, std::string& error) {
@@ -297,7 +296,6 @@ bool SkeletonModel::loadHipCenters(const std::string& path, std::string& error) 
     ++sourcePoseRevision_;
     return true;
 }
-
 bool SkeletonModel::loadShoulderCenters(const std::string& path, std::string& error) {
     std::ifstream input(path);
     if (!input) { error = "Cannot open skeleton shoulder fits " + path; return false; }
@@ -331,7 +329,6 @@ bool SkeletonModel::loadShoulderCenters(const std::string& path, std::string& er
     ++sourcePoseRevision_;
     return true;
 }
-
 bool SkeletonModel::loadElbowAxes(const std::string& path, std::string& error) {
     std::ifstream input(path);
     if (!input) { error = "Cannot open skeleton elbow fits " + path; return false; }
@@ -365,7 +362,6 @@ bool SkeletonModel::loadElbowAxes(const std::string& path, std::string& error) {
     elbowAxes_=fits; hasElbowAxes_=true; ++sourcePoseRevision_;
     return true;
 }
-
 bool SkeletonModel::loadKneeAxes(const std::string& path, std::string& error) {
     std::ifstream input(path);
     if (!input) { error = "Cannot open skeleton knee fits " + path; return false; }
@@ -421,13 +417,11 @@ bool SkeletonModel::loadKneeAxes(const std::string& path, std::string& error) {
     ++sourcePoseRevision_;
     return true;
 }
-
 int SkeletonModel::sourceStructure(const std::string& name) const {
     for (std::size_t index = 0; index < sourceStructures_.size(); ++index)
         if (sourceStructures_[index].name == name) return static_cast<int>(index);
     return -1;
 }
-
 void SkeletonModel::poseIdle(double seconds, double phase) {
     const double t = seconds * 0.8 + phase;
     const auto set = [&](const char* name, double pitch, double yaw, double roll) {
@@ -454,7 +448,6 @@ void SkeletonModel::poseIdle(double seconds, double phase) {
         set(("lower_leg" + suffix).c_str(), 0.01 * std::sin(t * 0.6 + offset), 0.0, 0.0);
     }
 }
-
 void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw, int onlyBone) const {
     if (!dynamicSourcePose_.empty()) { drawDynamicSource(rasterizer,origin,yaw); return; }
     if (onlyBone >= 0) {
@@ -464,7 +457,6 @@ void SkeletonModel::draw(Rasterizer& rasterizer, const Camera& camera, Vec3 orig
     }
     drawBones(rasterizer, camera, origin, yaw, 0, bones_.size());
 }
-
 // The chain solve, shared by everything that needs the pose: drawing posed
 // vertices, or handing the backend one matrix per bone.
 static std::vector<Transform> solvePose(const std::vector<SkeletonBone>& bones, Vec3 origin, double yaw) {
@@ -500,7 +492,6 @@ static std::vector<Transform> solvePose(const std::vector<SkeletonBone>& bones, 
     for (std::size_t index = 0; index < bones.size(); ++index) solve(index);
     return pose;
 }
-
 std::vector<std::array<double, 16>> SkeletonModel::boneMatrices(Vec3 origin, double yaw) const {
     const std::vector<Transform> pose = solvePose(bones_, origin, yaw);
     std::vector<std::array<double, 16>> matrices(pose.size());
@@ -516,7 +507,6 @@ std::vector<std::array<double, 16>> SkeletonModel::boneMatrices(Vec3 origin, dou
     }
     return matrices;
 }
-
 void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& camera, int firstObjectId) const {
     Material boneMaterial;
     boneMaterial.color = colorHex("#e3d9bf");
@@ -528,7 +518,6 @@ void SkeletonModel::buildRestGeometry(Rasterizer& rasterizer, const Camera& came
         rasterizer.mesh(bone.points, bone.triangles, boneMaterial);
     }
 }
-
 bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
                                  const std::vector<std::size_t>& sourceBodies, std::string& error) {
     if (sourceStructures_.empty() || sourceBodies.size() != sourceStructures_.size() ||
@@ -557,7 +546,6 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     ++sourcePoseRevision_;
     return true;
 }
-
 bool SkeletonModel::installReferenceRig(std::string& error) {
     if (sourceLinks_.empty() || sourceStructures_.empty()) {
         error = "Cannot install a source rig without anatomical links"; return false;
@@ -604,7 +592,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
     constexpr double toRadians = 3.14159265358979323846 / 180.0;
-    double spineTurn=0; std::optional<NeckReferenceFrames> neckFrames;
+    double spineTurn=0; std::array<std::optional<ShoulderReferenceFrame>,2> shoulders; std::optional<NeckReferenceFrames> neckFrames;
     for (std::size_t head=0; head<queue.size(); ++head) {
         const auto parent = queue[head];
         for (const auto& link : sourceLinks_) {
@@ -721,12 +709,24 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     alignmentAxis={0,yaw<0 ? -1.0 : 1.0,0}; alignmentAngle=std::abs(yaw); alignToNeutral=true;
                 } else if (link.mobility == "sternoclavicular" || link.mobility == "acromioclavicular") {
                     axis = {0,0,side == 0 ? 1.0 : -1.0};
+                    if (link.mobility=="sternoclavicular") {
+                        shoulders[side]=sourceShoulderFrame(*this,side,spineTurn);
+                        if (!shoulders[side]) { error="Missing shoulder girdle frame"; return false; }
+                        alignmentAxis=shoulders[side]->axis; alignmentAngle=shoulders[side]->angle;
+                    } else {
+                        if (!shoulders[side]) { error="Missing clavicle parent frame"; return false; }
+                        alignmentAxis=shoulders[side]->scapularAxis; alignmentAngle=shoulders[side]->scapularAngle;
+                    }
+                    alignToNeutral=true;
                 } else if (link.mobility == "shoulder_ball_socket") {
                     // The primary shoulder control is abduction: align the
                     // actual upper-arm shaft toward its side, not a world X
                     // rotation that assumes the subject began in neutral.
                     const Vec3 worldTarget = side == 0 ? Vec3{1,0,0} : Vec3{-1,0,0};
-                    const Vec3 target=frameVector(joint_detail::rotate({0,0,1},-spineTurn),worldTarget);
+                    if (!shoulders[side]) { error="Missing shoulder parent frame"; return false; }
+                    const auto trunk=joint_detail::rotate({0,0,1},spineTurn);
+                    const auto parentRotation=joint_detail::compose(trunk,joint_detail::compose(shoulders[side]->correction,shoulders[side]->scapular));
+                    const Vec3 target=frameVector(joint_detail::inverse(parentRotation),worldTarget);
                     axis = cross(down,target);
                     current = (3.14159265358979323846/2) -
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
@@ -782,7 +782,10 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     forearmAxis=normalized(w->wrist-pivot);
                     const auto wrist=wristReferenceFrame(forearmAxis,w->hand,w->palm);
                     const Vec3 palm=frameVector(joint_detail::rotate(wrist.alignment,wrist.alignmentAngle),w->palm);
-                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0,spineTurn);
+                    if (!shoulders[side]) { error="Missing elbow parent frame"; return false; }
+                    const auto trunk=joint_detail::rotate({0,0,1},spineTurn);
+                    const auto parentRotation=joint_detail::compose(trunk,joint_detail::compose(shoulders[side]->correction,shoulders[side]->scapular));
+                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0,parentRotation);
                     axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
@@ -792,16 +795,18 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis = cross(up,guide);
                 }
                 if (length(axis) < 1e-8) { error = "Degenerate source joint axis for " + childName; return false; }
-                // Coordinates refer to anatomical neutral, but the supplied
-                // mesh is already in its subject's source pose. Make every
-                // joint's source coordinate the identity relative transform.
-                // Otherwise a nonzero parent bind angle incorrectly rotates
-                // the child's pivot and axis before any posing occurs.
+                // Keep the registered source pose as the identity transform.
                 current=std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
                 JointRigidTransform frame; frame.translation = pivot;
                 const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));
                 std::vector<JointRotationalAxis> axes{{axis,bounds->extension*toRadians,bounds->flexion*toRadians}};
                 bindAngles={current};
+                if (link.mobility=="sternoclavicular" || link.mobility=="acromioclavicular") {
+                    const double sign=side==0 ? 1.0 : -1.0;
+                    axes.push_back({{0,sign,0},-20*toRadians,20*toRadians}); bindAngles.push_back(0);
+                    const Vec3 axial=link.mobility=="sternoclavicular" ? shoulders[side]->clavicleAxis : Vec3{sign,0,0};
+                    axes.push_back({axial,-30*toRadians,30*toRadians}); bindAngles.push_back(0);
+                }
                 if (alignToNeutral && link.mobility!="hip_ball_socket") { axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0); }
                 if (length(toeYawAxis)>1e-8) { axes.push_back({toeYawAxis,-1.57079632679,1.57079632679}); bindAngles.push_back(0); }
                 if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
@@ -873,7 +878,7 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     auto angles = joint->angles();
     angles[0] = *bounded * radiansPerDegree;
     if (body<neutralAlignments_.size() && neutralAlignments_[body]>=0 && !disabledAlignments_[body] && angles.size()>1)
-        angles[relationship.mobility=="hip_ball_socket" ? 3 : 1]=neutralAlignments_[body];
+        angles[relationship.mobility=="hip_ball_socket" || relationship.mobility=="sternoclavicular" || relationship.mobility=="acromioclavicular" ? 3 : 1]=neutralAlignments_[body];
     std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};
     if (relationship.mobility == "elbow_hinge" || relationship.mobility == "wrist_condyloid") {
         // A paired forearm or palm must not split when one of its anatomical
@@ -919,7 +924,6 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     }
     return setSourcePose(updates);
 }
-
 std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, double yaw) const {
     std::vector<std::array<double, 16>> matrices;
     matrices.reserve(sourceStructures_.size()); if (!dynamicSourcePose_.empty()) return placedDynamicPose(origin,yaw);
@@ -941,7 +945,6 @@ std::vector<std::array<double, 16>> SkeletonModel::sourceMatrices(Vec3 origin, d
     }
     return matrices;
 }
-
 void SkeletonModel::buildSourceRestGeometry(Rasterizer& rasterizer, int firstObjectId) const {
     Material material;
     material.color = colorHex("#e3d9bf");
@@ -964,7 +967,6 @@ void SkeletonModel::buildSourceRestGeometry(Rasterizer& rasterizer, int firstObj
         rasterizer.mesh(points, triangles, material);
     }
 }
-
 void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3 origin, double yaw,
                               std::size_t begin, std::size_t end) const {
     const std::vector<Transform> pose = solvePose(bones_, origin, yaw);
@@ -995,5 +997,4 @@ void SkeletonModel::drawBones(Rasterizer& rasterizer, const Camera& camera, Vec3
         }
     }
 }
-
 } // namespace gtc::native

@@ -59,11 +59,11 @@ with tempfile.TemporaryDirectory(prefix="gtc-headless-wsi-") as temp:
     swap = swap.replace(fast_path, "// Test only: recreate even at the same fixed headless extent.")
     (vk / "vk_swapchain.cpp").write_text(swap)
     source = ["tests/skeleton_swapchain_vulkan.cpp", "native/client/skeleton_room.cpp",
-              "native/client/skeleton_body.cpp", "native/client/diagnostics.cpp", "native/client/raster.cpp",
+              "native/client/skeleton_body.cpp", "native/client/skeleton_ragdoll.cpp", "native/client/diagnostics.cpp", "native/client/raster.cpp",
               "native/client/hud.cpp", "native/client/ui_layer.cpp", str(vk / "vk_device.cpp"),
               "native/vulkan/vk_renderer.cpp", "native/vulkan/vk_upload.cpp", "native/vulkan/vk_batches.cpp",
               "native/vulkan/vk_targets.cpp", str(vk / "vk_swapchain.cpp")]
     output = Path(temp) / "test"
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++17", "-O2", "-pthread", "-Isrc", "-Inative",
-                    *source, "-ldl", "-o", str(output)], check=True)
+                    "-Inative/vendor/bullet/src", *source, "build/obj/bullet/libbullet.a", "-ldl", "-o", str(output)], check=True)
     subprocess.run([str(output)], check=True)

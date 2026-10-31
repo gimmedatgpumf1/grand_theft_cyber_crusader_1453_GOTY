@@ -97,6 +97,11 @@ int main() {
             app.room_.male().sourceStructures()[edge.second].name=="Humerus_L") break;
     }
     assert(shoulder<app.room_.male().sourceLinks().size());
+    // R now starts/stops physics; the second press restores the reference pose.
+    const auto resetPose=[&] {
+        app.handle(down('r')); assert(app.room_.ragdollActive());
+        app.handle(down('r')); assert(!app.room_.ragdollActive());
+    };
     const double maleBefore=*app.room_.male().referenceBend(shoulder);
     const double femaleBefore=*app.room_.female().referenceBend(shoulder);
     app.handle(down('q'));
@@ -107,12 +112,26 @@ int main() {
     app.handle(down(kKeyShift)); app.handle(down('q'));
     assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore-5)<1e-7);
     app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyShift});
-    app.handle(down('r'));
+    resetPose();
     assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)<1e-7);
     assert(std::abs(*app.room_.female().referenceBend(shoulder)-femaleBefore)<1e-7);
+    for (const auto [key,coordinate]: {std::pair<int,std::size_t>{'i',1},{'o',2}}) {
+        app.handle(down(key));
+        for (auto* model:{&app.room_.male(),&app.room_.female()}) {
+            int found=0;
+            for (std::size_t i=0;i<model->sourceLinks().size();++i) {
+                const auto& edge=model->sourceLinks()[i];
+                if (edge.mobility!="sternoclavicular" && edge.mobility!="acromioclavicular") continue;
+                assert(std::abs(*model->referenceGirdleCoordinate(i,coordinate)-5.0)<1e-7); ++found;
+            }
+            assert(found==4);
+        }
+        app.handle(down(kKeyShift)); app.handle(down(key)); app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyShift});
+        resetPose();
+    }
     app.handle(down('b')); // original CT pose remains directly available
     assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)>1);
-    app.handle(down('r'));
+    resetPose();
     assert(std::abs(*app.room_.male().referenceBend(shoulder)-maleBefore)<1e-7);
     std::size_t hip=0;
     for (;hip<app.room_.male().sourceLinks().size();++hip) {
@@ -123,7 +142,7 @@ int main() {
     const double rotation=*app.room_.male().referenceHipRotation(hip);
     app.handle(down('n'));
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation-5)<1e-7);
-    app.handle(down('r'));
+    resetPose();
     assert(std::abs(*app.room_.male().referenceHipRotation(hip)-rotation)<1e-7);
     const double abduction=*app.room_.male().referenceHipAbduction(hip);
     app.handle(down('u'));
@@ -139,12 +158,12 @@ int main() {
     const double forearm=*app.room_.male().referenceForearmRotation(elbow);
     app.handle(down('m'));
     assert(std::abs(*app.room_.male().referenceForearmRotation(elbow)-forearm-5)<1e-7);
-    app.handle(down('r'));
+    resetPose();
     assert(std::abs(*app.room_.male().referenceForearmRotation(elbow)-forearm)<1e-7);
     // Momentary modifiers independently drive MCP, PIP and DIP on both
     // actual models; releasing the modifiers leaves no selected joint mode.
     for (int stage=1;stage<=3;++stage) {
-        app.handle(down('r'));
+        resetPose();
         if (stage==1 || stage==3) app.handle(down(kKeyLeftControl));
         if (stage==2 || stage==3) app.handle(down(kKeyAlt));
         app.handle(down('2'));
@@ -168,7 +187,7 @@ int main() {
     }
     // The same momentary modifiers operate on MTP, PIP and DIP of each toe.
     for (int stage=1;stage<=3;++stage) {
-        app.handle(down('r'));
+        resetPose();
         std::map<std::pair<SkeletonModel*,std::string>,double> original;
         for (auto* body : {&app.room_.male(),&app.room_.female()}) for (const auto& edge:body->sourceLinks()) {
             const std::string& child=body->sourceStructures()[edge.second].name;
@@ -198,7 +217,7 @@ int main() {
         if (stage==1 || stage==3) app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyLeftControl});
         if (stage==2 || stage==3) app.handle(WindowEvent{WindowEvent::Type::KeyUp,kKeyAlt});
     }
-    app.handle(down('r'));
+    resetPose();
     assert(!net::waitReadable(peer,0)); // room joint input never reaches the game player
     app.handle(down('v')); assert(app.room_.lineView());
     WindowEvent repeatV = down('v'); repeatV.repeat = true; app.handle(repeatV);

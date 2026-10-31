@@ -79,6 +79,15 @@ static double maxGap(const SkeletonModel& model,const std::vector<Anchor>& list)
     for (const auto& a:list) gap=std::max(gap,length(point(m[a.a],a.pa)-point(m[a.b],a.pb)));
     return gap;
 }
+static double maxGirdleGap(const SkeletonModel& model,const std::vector<Anchor>& list) {
+    const auto m=model.sourceMatrices({},0); double gap=0;
+    for (const auto& a:list) {
+        const auto& name=model.sourceStructures()[a.b].name;
+        if (name.rfind("Clavicula_",0)==0 || name.rfind("Scapula_",0)==0)
+            gap=std::max(gap,length(point(m[a.a],a.pa)-point(m[a.b],a.pb)));
+    }
+    return gap;
+}
 
 struct HandAnchors { std::vector<Anchor> carpal, digits; };
 static HandAnchors handAnchors(const SkeletonModel& model, const std::string& side) {
@@ -155,7 +164,7 @@ int main() {
         for (std::size_t i=0;i<pair.first.size();++i) for (int j=0;j<16;++j)
             assert(std::abs(pair.first[i][j]-pair.second[i][j])<1e-5);
     int selfContacts=0, floorContacts=0;
-    double maxSeparation=0, maxForearm=0, maxCartilage=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
+    double maxSeparation=0, maxGirdle=0, maxForearm=0, maxCartilage=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
     for (int i=0;i<600;++i) {
         room.advanceRagdoll(1.0/120.0);
         for (int h=0;h<4;++h) {
@@ -170,8 +179,10 @@ int main() {
         handFloor[1]=std::min(handFloor[1],handLow(room.female())-femaleStart.first);
         const auto contacts=room.ragdoll()->contacts();
         selfContacts+=contacts.sameFigure; floorContacts+=contacts.floor;
+        // Fast impacts can separate joints between the old half-second samples.
+        maxSeparation=std::max({maxSeparation,maxGap(room.male(),maleAnchors),maxGap(room.female(),femaleAnchors)});
+        maxGirdle=std::max({maxGirdle,maxGirdleGap(room.male(),maleAnchors),maxGirdleGap(room.female(),femaleAnchors)});
         if ((i+1)%60==0) {
-            maxSeparation=std::max({maxSeparation,maxGap(room.male(),maleAnchors),maxGap(room.female(),femaleAnchors)});
             maxForearm=std::max({maxForearm,maxGap(room.male(),maleForearms),maxGap(room.female(),femaleForearms)});
             maxCartilage=std::max({maxCartilage,maxGap(room.male(),maleCartilage),maxGap(room.female(),femaleCartilage)});
             lowestMale=std::min(lowestMale,extent(room.male()).first);
@@ -180,7 +191,8 @@ int main() {
     }
     std::printf("contacts: floor %d, non-neighbour bones %d; max joint gap %.4f; penetration %.4f / %.4f m\n",
         floorContacts,selfContacts,maxSeparation,maleStart.first-lowestMale,femaleStart.first-lowestFemale);
-    std::printf("max forearm separation %.6f m; cartilage displacement %.4f m\n",maxForearm,maxCartilage);
+    std::printf("max girdle gap %.4f m; forearm separation %.6f m; cartilage displacement %.4f m\n",maxGirdle,maxForearm,maxCartilage);
+    assert(maxGirdle<0.01);
     for (int h=0;h<4;++h) {
         std::printf("hand %d: palm %.6f m, digit %.4f m, motion %.3f\n",h,palmGap[h],handGap[h],motion[h]);
         assert(palmGap[h]<0.0001 && handGap[h]<0.0001 && motion[h]>0.05);

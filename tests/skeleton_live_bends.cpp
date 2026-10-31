@@ -26,6 +26,7 @@ static void checkArmAlignment(SkeletonModel& model) {
         const auto& edge=model.sourceLinks()[i]; if (!model.referenceBend(i)) continue;
         if (edge.mobility=="intervertebral" && model.sourceStructures()[edge.first].name=="L5" &&
             model.sourceStructures()[edge.second].name=="Sacrum") assert(model.setReferenceBend(i,0));
+        if (edge.mobility=="sternoclavicular" || edge.mobility=="acromioclavicular") assert(model.setReferenceBend(i,0));
         if (edge.mobility=="shoulder_ball_socket") assert(model.setReferenceBend(i,90));
         if (edge.mobility=="elbow_hinge") assert(model.setReferenceBend(i,0));
     }

@@ -2,7 +2,7 @@
 
 ## Revert
 
-The clavicle/scapula straightening from commit `ffabe7b` has been reverted, including its shoulder alignment, arm compensation, and ragdoll hinge change. The test checks **every bone matrix in both room T-poses** against the saved export from `d26c7b3`; the ordinary original/source pose is checked too. Bone geometry and ribs were not changed by this investigation. Historical shoulder and arm measurement tables have been restored to that pose.
+The clavicle/scapula straightening from commit `ffabe7b` was reverted during this investigation. A later approximate SC/AC implementation changes the shoulders and arms; see `SHOULDER_GIRDLE_IMPLEMENTATION.md`. The test now checks every rib and the sternum against the `d26c7b3` export and checks the complete original/source pose. The ribs and sternum have not changed.
 
 ## How far forward are the cages?
 
