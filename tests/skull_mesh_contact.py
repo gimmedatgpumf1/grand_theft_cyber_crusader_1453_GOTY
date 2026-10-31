@@ -63,7 +63,9 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
         'native/client/raster.cpp', 'native/client/hud.cpp', 'native/client/ui_layer.cpp',
         'build/obj/bullet/libbullet.a', '-o', str(exe)]
     subprocess.run(command, cwd=root, check=True)
-    for height in (None, 50, 100, 170, 250):
+    # The pelvis interpolation now changes throughout 100–190 cm. Exercise
+    # actual triangle contacts across that range, not only at its endpoints.
+    for height in (None, 50, 100, 120, 135, 145, 150, 155, 160, 165, 170, 175, 180, 190, 250):
         folder = temp/('default' if height is None else str(height))
         folder.mkdir()
         args = [str(exe), str(folder)]

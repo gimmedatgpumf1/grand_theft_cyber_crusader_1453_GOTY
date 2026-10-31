@@ -130,9 +130,13 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-The original child/adult surface formulas and their continuous blends are
-unchanged. The request and fitted shape are continuous at the formula joins.
-However, the requested surface torso and leg distances generally **cannot both
+Pelvis breadth now blends the child and adult surface models across 100–175 cm
+(female) or 100–190 cm (male), rather than forcing their difference into 15 cm.
+This reduces a visible growth-rate spike but changes estimates throughout those
+intervals and uses an extrapolated adult component below its sampled range. It
+is a modelling compromise, not a validated paediatric skeletal reference; see
+`CHILD_ADULT_TRANSITION.md`. The request and fitted shape remain continuous at
+the formula joins. However, the requested surface torso and leg distances generally **cannot both
 be represented by the chosen bony proxies with the intact adult pelvic ring**.
 The fit therefore changes the pelvic height to minimise their equally weighted
 squared deviations and displays actual fitted values rather than pretending

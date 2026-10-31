@@ -314,8 +314,33 @@ int main() {
         p=room.comparison(male).profile();p.multiplier[SkeletonComparison::Head]=10;
         assert(room.setComparison(male,p,error)); assert(!room.comparison(male).exact());
         check(room,male); room.resetComparison(male);
+        // Check the displayed pelvic ring itself during the whole height drag,
+        // not merely that the curve is continuous at the formula boundaries.
+        {
+            p=room.comparison(male).profile();
+            const auto& parts=room.comparison(male).parts();
+            const auto it=std::find_if(parts.begin(),parts.end(),[](const auto& part){return part.name=="Pelvis_L";});
+            assert(it!=parts.end() && !it->points.empty());
+            const Vec3 sample=it->points.front(); Vec3 previousPoint{};
+            double previousWidth=0;
+            for (int step=0;step<=1000;++step) {
+                p.height=100+step*0.1; assert(room.setComparison(male,p,error));
+                const auto& copy=room.comparison(male);
+                const auto left=vertices(male?room.male():room.female(),copy,"Pelvis_L");
+                const auto right=vertices(male?room.male():room.female(),copy,"Pelvis_R");
+                const double width=extent(left,right,0), target=copy.targets()[SkeletonComparison::Hip];
+                assert(std::abs(width-target)<1e-8);
+                const Vec3 point=copy.map(sample);
+                if (step) {
+                    assert(width>=previousWidth && width-previousWidth<(male?0.029:0.035));
+                    assert(length(point-previousPoint)<0.002);
+                }
+                previousWidth=width; previousPoint=point;
+            }
+            room.resetComparison(male);
+        }
         // No visible jump at the child/adult and infant bridge boundaries.
-        for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.}) {
+        for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.,male?190.:175.}) {
             p=room.comparison(male).profile();p.height=boundary-0.00001;assert(room.setComparison(male,p,error));
             const std::array<Vec3,3> points{{{0.1,1.4,0.02},{0.1,1.6,0.02},{0.1,1.7,0.02}}};
             std::array<Vec3,3> before, cranialBefore;

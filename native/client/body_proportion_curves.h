@@ -127,9 +127,10 @@ public:
 
     // Height-only transition between NHANES III child and adult *surface*
     // models with matching landmarks. This is a modelling convention, not an
-    // inference of age from stature. All dimensions use the same weight, so
-    // no part abruptly changes age group. Outside the sampled ranges, smooth
-    // continuation is an unvalidated estimate rather than observed evidence.
+    // inference of age from stature. Each dimension varies continuously; the
+    // pelvis has a wider blend because its child and adult estimates differ
+    // considerably. Outside the sampled ranges, smooth continuation is an
+    // unvalidated estimate rather than observed evidence.
     std::optional<double> blendedNhanesDimensionCm(const std::string& sex,
                                                   const std::string& dimension,
                                                   double heightCm) const {
@@ -167,9 +168,16 @@ public:
             return (2*t3-3*t2+1)*50*infantRatio+(t3-2*t2+t)*50*infantRatio+
                    (-2*t3+3*t2)*(*end)+(t3-t2)*50*(*endSlope);
         }
-        // Adult/child blend remains inside the common supported ranges.
-        const double low=sex=="male" ? 160.0 : 145.0;
-        const double high=sex=="male" ? 175.0 : 160.0;
+        // The hip surface models differ by several centimetres at the same
+        // stature. A 15 cm crossfade forced that entire difference into the
+        // pelvic ring at near-adult heights. Spread the hip transition over a
+        // wider range; its low-height adult continuation is an interpolation
+        // assumption, not a measured paediatric pelvis or an age estimate.
+        // Other measurements retain their existing transition.
+        const bool pelvis=dimension=="pelvis_surface_breadth";
+        const double low=pelvis ? 100.0 : (sex=="male" ? 160.0 : 145.0);
+        const double high=pelvis ? (sex=="male" ? 190.0 : 175.0) :
+                                  (sex=="male" ? 175.0 : 160.0);
         if (heightCm<=low) return selectedDimensionCm(child,heightCm);
         if (heightCm>=high) return selectedDimensionCm(adult,heightCm);
         const auto c=selectedDimensionCm(child,heightCm), a=selectedDimensionCm(adult,heightCm);

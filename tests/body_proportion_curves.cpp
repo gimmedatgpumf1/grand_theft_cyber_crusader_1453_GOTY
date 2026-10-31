@@ -30,10 +30,11 @@ int main() {
     // Check every supported blended dimension at both transitions, including
     // adjacent representable heights and a 0.01 mm sweep across each blend.
     for (const std::string sex : {"male", "female"}) {
-        const double low=sex=="male" ? 160.0 : 145.0;
-        const double high=low+15.0;
         for (const std::string dim : {"sitting_height", "height_minus_sitting", "upper_arm_surface",
                                       "upper_leg_surface", "shoulder_breadth", "pelvis_surface_breadth"}) {
+            const bool pelvis=dim=="pelvis_surface_breadth";
+            const double low=pelvis ? 100.0 : (sex=="male" ? 160.0 : 145.0);
+            const double high=pelvis ? (sex=="male" ? 190.0 : 175.0) : low+15.0;
             const BodyProportionCurves::Key child{"NHANES_III",sex,"under_18",dim};
             const BodyProportionCurves::Key adult{"NHANES_III",sex,"adult_18_plus",dim};
             assert(curves.blendedNhanesDimensionCm(sex,dim,low)==curves.selectedDimensionCm(child,low));
@@ -50,7 +51,8 @@ int main() {
                 assert(std::abs((c-b)/eps-(b-a)/eps)<5e-4);
             }
             double last=*curves.blendedNhanesDimensionCm(sex,dim,low);
-            for (int i=1;i<=15000;++i) {
+            const int steps=static_cast<int>((high-low)*1000);
+            for (int i=1;i<=steps;++i) {
                 const double h=low+i*0.001;
                 const auto current=curves.blendedNhanesDimensionCm(sex,dim,h);
                 assert(current && *current>=last && *current-last<0.1);
@@ -69,9 +71,30 @@ int main() {
                 last=*value;
             }
         }
-        const auto s=curves.blendedNhanesDimensionCm(sex,"sitting_height",(low+high)/2);
-        const auto l=curves.blendedNhanesDimensionCm(sex,"height_minus_sitting",(low+high)/2);
-        assert(s && l && *s+*l==(low+high)/2);
+        const double middle=sex=="male" ? 167.5 : 152.5;
+        const auto s=curves.blendedNhanesDimensionCm(sex,"sitting_height",middle);
+        const auto l=curves.blendedNhanesDimensionCm(sex,"height_minus_sitting",middle);
+        assert(s && l && *s+*l==middle);
+        // The old 15 cm pelvis crossfade created a large artificial growth
+        // spike. Compare full-range rates, not just continuity at its endpoints.
+        const BodyProportionCurves::Key child{"NHANES_III",sex,"under_18","pelvis_surface_breadth"};
+        const BodyProportionCurves::Key adult{"NHANES_III",sex,"adult_18_plus","pelvis_surface_breadth"};
+        const double oldLow=sex=="male" ? 160.0 : 145.0, oldHigh=oldLow+15;
+        auto oldWidth=[&](double h) {
+            const double t=std::clamp((h-oldLow)/(oldHigh-oldLow),0.0,1.0);
+            const double w=t*t*t*(10+t*(-15+6*t));
+            return *curves.selectedDimensionCm(child,h)*(1-w)+*curves.selectedDimensionCm(adult,h)*w;
+        };
+        double oldPeak=0,newPeak=0;
+        for (double h=100.01;h<199.99;h+=0.01) {
+            const double delta=0.001;
+            const double oldSlope=(oldWidth(h+delta)-oldWidth(h-delta))/(2*delta);
+            const double newSlope=(*curves.blendedNhanesDimensionCm(sex,"pelvis_surface_breadth",h+delta)-
+                                   *curves.blendedNhanesDimensionCm(sex,"pelvis_surface_breadth",h-delta))/(2*delta);
+            assert(newSlope>=0);
+            oldPeak=std::max(oldPeak,oldSlope); newPeak=std::max(newPeak,newSlope);
+        }
+        assert(newPeak<0.70*oldPeak);
     }
     // Every selected source/sex/dimension continues at 2 m and beyond.
     std::ifstream models("tools/skeleton-source/anthropometry/BODY_PART_SELECTED_MODELS.tsv");
