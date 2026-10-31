@@ -53,12 +53,12 @@ def measure(sex):
     head=(d['Head'][:,1].max()-d['Jaw'][:,1].min())*100
     # Most posterior C7 is a bone-surface proxy for palpated cervicale.
     c7=d['C7'][np.argmin(d['C7'][:,2])]
-    # Detect approximate orbital rims and posterior jaw tips. Infer an
-    # approximate head pitch and re-level the jaw around the C1 centroid; the
-    # condyle is only an ear-level surrogate, not the missing tragion.
+    # Detect approximate orbital rims and jaw/skull contact midpoints. Infer
+    # an approximate head pitch and re-level the joints around the C1 centroid;
+    # the joint is an ear-level surrogate, not the missing tragion.
     orbital=NECK.orbital_points(sex)
-    condyles=NECK.jaw_condyles(d['Head'],d['Jaw'])
-    _,levels=NECK.relevel(orbital,condyles,d['C1'].mean(axis=0),c7)
+    jaw_joints,_=NECK.jaw_joint_proxies(d['Head'],d['Jaw'])
+    _,levels=NECK.relevel(orbital,jaw_joints,d['C1'].mean(axis=0),c7)
     neck_l=levels['L']; neck_r=levels['R']
     neck=(neck_l+neck_r)/2
     # Posterior-most C7 point and bottom-most pelvis mesh, vertical projection.

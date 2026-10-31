@@ -8,6 +8,7 @@ import importlib.util
 from pathlib import Path
 import numpy as np
 from scipy import ndimage
+from scipy.spatial import cKDTree
 
 HERE=Path(__file__).resolve().parent
 SPEC=importlib.util.spec_from_file_location('orbit_fit', HERE/'14-fit-orbits.py')
@@ -59,15 +60,32 @@ def jaw_condyles(head, jaw):
     return points
 
 
-def relevel(orbital,condyles,pivot,c7):
-    # Estimate sagittal pitch by setting the mean orbital-condylar line level.
-    # A condyle is not porion: level is an assumption, not a validated FH plane.
+def jaw_joint_proxies(head, jaw):
+    """Approximate contact midpoint and gap for each jaw/skull pair.
+
+    The closest skull vertex to the posterior condylar tip is a geometric
+    surface point, not a verified fossa or joint axis. Registered surfaces may
+    intersect, and absent cartilage makes this a surrogate rather than a fit.
+    """
+    condyles=jaw_condyles(head,jaw)
+    tree=cKDTree(head)
+    points={}; gaps={}
+    for side in ('L','R'):
+        distance,index=tree.query(condyles[side])
+        points[side]=(condyles[side]+head[index])/2
+        gaps[side]=float(distance)
+    return points,gaps
+
+
+def relevel(orbital,joints,pivot,c7):
+    # Estimate sagittal pitch by setting the mean orbital-joint line level.
+    # A jaw joint is not porion: this is not a validated FH plane.
     eye=(orbital['L']+orbital['R'])/2
-    cond=(condyles['L']+condyles['R'])/2
-    dy=eye[1]-cond[1]; dz=eye[2]-cond[2]
-    if dz<=0.01: raise ValueError('orbital/condylar geometry is implausible')
+    joint=(joints['L']+joints['R'])/2
+    dy=eye[1]-joint[1]; dz=eye[2]-joint[2]
+    if dz<=0.01: raise ValueError('orbital/jaw-joint geometry is implausible')
     angle=np.arctan2(dy,dz); c=np.cos(angle);s=np.sin(angle)
     def height(p):
         q=p-pivot
         return 100*(pivot[1]+c*q[1]-s*q[2]-c7[1])
-    return angle,{side:height(condyles[side]) for side in ('L','R')}
+    return angle,{side:height(joints[side]) for side in ('L','R')}
