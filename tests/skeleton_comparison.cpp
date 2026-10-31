@@ -12,16 +12,13 @@ static Vec3 transformed(const std::array<double,16>& m, Vec3 p) {
     return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
             m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
 }
-static std::vector<Vec3> vertices(const SkeletonModel& model,const SkeletonComparison& comp,const char* name) {
-    const int i=model.sourceStructure(name); assert(i>=0);
-    const auto& part=model.sourceStructures()[i]; const auto& group=model.bones()[part.group];
-    const auto matrix=model.sourceMatrices({},0)[i]; std::vector<Vec3> out;
-    int side=0; std::string n=name;
-    if (n.rfind("Humerus_",0)==0 || n.rfind("Hand",0)==0 || n.rfind("Radius_",0)==0 || n.rfind("Ulna_",0)==0)
-        side=n.substr(n.size()-2)=="_L"?1:-1;
-    for (std::size_t j=part.firstPoint;j<part.firstPoint+part.pointCount;++j)
-        out.push_back(comp.map(transformed(matrix,group.points[j]),side,n=="Head" || n=="Jaw" || n=="C1"));
-    return out;
+static std::vector<Vec3> vertices(const SkeletonModel&,const SkeletonComparison& comp,const char* name) {
+    for (const auto& part:comp.parts()) if (part.name==name) {
+        std::vector<Vec3> out; out.reserve(part.points.size());
+        for (Vec3 p:part.points) out.push_back(comp.map(p,part.armSide,part.cranial,part.girdle,part.humerus));
+        return out;
+    }
+    assert(false); return {};
 }
 static double extent(const std::vector<Vec3>& a,const std::vector<Vec3>& b,int axis) {
     double lo=1e30,hi=-1e30;
@@ -75,36 +72,98 @@ static void check(const SkeletonRoom& room, bool male) {
         }
     }
     assert(cranialError<1e-8*std::max(1.0,headScale));
-    // Both innominate bones and the sacrum must share a single uniform
-    // transform, including their source gaps and relative positions.
-    double sourceLeft=1e30, sourceRight=-1e30, pelvicBottom=1e30, pelvicTop=-1e30;
-    for (const char* name:{"Pelvis_L","Pelvis_R"}) {
-        const int id=model.sourceStructure(name); assert(id>=0);
-        const auto& part=model.sourceStructures()[id]; const auto& group=model.bones()[part.group];
-        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
-            const Vec3 p=transformed(matrices[id],group.points[i]);
-            sourceLeft=std::min(sourceLeft,p.x); sourceRight=std::max(sourceRight,p.x);
-            pelvicBottom=std::min(pelvicBottom,p.y); pelvicTop=std::max(pelvicTop,p.y);
+    // The averaged pelvic ring remains rigid under each slider profile.
+    const SkeletonComparison::Part *sacrum=nullptr, *sternum=nullptr, *pelvisL=nullptr, *pelvisR=nullptr;
+    for (const auto& part:c.parts()) {
+        if (part.name=="Sacrum") sacrum=&part;
+        if (part.name=="Sternum") sternum=&part;
+        if (part.name=="Pelvis_L") pelvisL=&part;
+        if (part.name=="Pelvis_R") pelvisR=&part;
+    }
+    assert(sacrum && sternum && pelvisL && pelvisR);
+    // The sacrum and sternum are axial structures and must be reflected too,
+    // rather than preserving off-centre source surfaces in the blue copy.
+    const double symmetryAxis=(c.hipCenters()[0].x+c.hipCenters()[1].x)*0.5;
+    for (const auto* axial:{sacrum,sternum}) {
+        bilateral::PointTree tree(axial->points);
+        for (Vec3 p:axial->points) {
+            Vec3 mirror{2*symmetryAxis-p.x,p.y,p.z};
+            assert(length(tree.nearest(mirror)-mirror)<1e-10);
+            const Vec3 a=c.map(p),b=c.map(mirror);
+            assert(length(Vec3{-a.x,a.y,a.z}-b)<1e-8*std::max(1.0,c.profile().height/100));
         }
     }
-    const double pelvicScale=c.targets()[SkeletonComparison::Hip]/(100*(sourceRight-sourceLeft));
+    const double pelvicScale=c.targets()[SkeletonComparison::Hip]/extent(pelvisL->points,pelvisR->points,0);
+    double pelvicBottom=1e30,pelvicTop=-1e30;
+    for (const auto* part:{pelvisL,pelvisR}) for (Vec3 p:part->points) {
+        pelvicBottom=std::min(pelvicBottom,p.y); pelvicTop=std::max(pelvicTop,p.y);
+    }
     for (double boundary:{pelvicBottom,pelvicTop}) {
         const Vec3 left=c.map({0.1,boundary-1e-8,0.02});
         const Vec3 right=c.map({0.1,boundary+1e-8,0.02});
         assert(length(right-left)<1e-5*std::max(1.0,pelvicScale));
     }
-    const int id=model.sourceStructure("Sacrum"); assert(id>=0);
-    const auto& sacrum=model.sourceStructures()[id]; const auto& group=model.bones()[sacrum.group];
-    const Vec3 pelvicReference=transformed(matrices[id],group.points[sacrum.firstPoint]);
+    const Vec3 pelvicReference=sacrum->points.front();
     const Vec3 pelvicMapped=c.map(pelvicReference);
-    for (const char* name:{"Pelvis_L","Pelvis_R","Sacrum"}) {
-        const int partId=model.sourceStructure(name); assert(partId>=0);
-        const auto& part=model.sourceStructures()[partId]; const auto& bone=model.bones()[part.group];
-        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
-            const Vec3 p=transformed(matrices[partId],bone.points[i]);
-            assert(length(c.map(p)-(pelvicMapped+(p-pelvicReference)*pelvicScale))<1e-8*std::max(1.0,pelvicScale));
+    for (const auto* part:{pelvisL,pelvisR,sacrum}) for (Vec3 p:part->points)
+        assert(length(c.map(p)-(pelvicMapped+(p-pelvicReference)*pelvicScale))<1e-8*std::max(1.0,pelvicScale));
+    // Check every actual paired part, not merely the source reference joints.
+    double leftFloor=1e30,rightFloor=1e30;
+    for (const auto& left:c.parts()) {
+        if (left.name.size()<2 || left.name.substr(left.name.size()-2)!="_L") continue;
+        const std::string name=left.name.substr(0,left.name.size()-2)+"_R";
+        const auto it=std::find_if(c.parts().begin(),c.parts().end(),[&](const auto& part){return part.name==name;});
+        assert(it!=c.parts().end() && left.points.size()==it->points.size() && left.faces.size()==it->faces.size());
+        for (std::size_t i=0;i<left.points.size();++i) {
+            const Vec3 a=c.map(left.points[i],left.armSide,left.cranial,left.girdle,left.humerus), b=c.map(it->points[i],it->armSide,it->cranial,it->girdle,it->humerus);
+            assert(length(Vec3{-a.x,a.y,a.z}-b)<1e-8*std::max(1.0,c.profile().height/100));
+            if (left.name.rfind("Foot",0)==0 || left.name.rfind("Cal_",0)==0 || left.name.rfind("Tal_",0)==0 ||
+                left.name.rfind("Nav_",0)==0 || left.name.rfind("Cub_",0)==0 || left.name.rfind("MedCun_",0)==0 ||
+                left.name.rfind("InterCun_",0)==0 || left.name.rfind("LatCun_",0)==0) {
+                leftFloor=std::min(leftFloor,a.y); rightFloor=std::min(rightFloor,b.y);
+            }
+        }
+        const int sourceIndex=model.sourceStructure(left.name); assert(sourceIndex>=0);
+        const auto& sourcePart=model.sourceStructures()[sourceIndex];
+        const auto& sourceBone=model.bones()[sourcePart.group];
+        assert(left.points.size()==sourcePart.pointCount);
+        for (std::size_t i=0;i<left.faces.size();++i) {
+            const auto& f=left.faces[i];
+            assert(f[0]==it->faces[i][0] && f[1]==it->faces[i][2] && f[2]==it->faces[i][1]);
+            const auto source=[&](int n) { return transformed(matrices[sourceIndex],sourceBone.points[sourcePart.firstPoint+n]); };
+            const Vec3 oldNormal=cross(source(f[1])-source(f[0]),source(f[2])-source(f[0]));
+            const Vec3 newNormal=cross(left.points[f[1]]-left.points[f[0]],left.points[f[2]]-left.points[f[0]]);
+            if (dot(oldNormal,oldNormal)>1e-24) assert(dot(oldNormal,newNormal)>0);
         }
     }
+    assert(std::abs(leftFloor)<1e-8 && std::abs(rightFloor)<1e-8);
+    // The common raw hip-to-sole length is the arithmetic mean of both
+    // original posed sides, not a copy of either one.
+    std::array<double,2> sourceSoles{1e30,1e30};
+    for (std::size_t index=0;index<model.sourceStructures().size();++index) {
+        const auto& part=model.sourceStructures()[index]; const auto& name=part.name;
+        if (name.size()<2) continue;
+        const std::string suffix=name.substr(name.size()-2);
+        if (suffix!="_L" && suffix!="_R") continue;
+        if (name.rfind("Foot",0)!=0 && name.rfind("Cal_",0)!=0 && name.rfind("Tal_",0)!=0 &&
+            name.rfind("Nav_",0)!=0 && name.rfind("Cub_",0)!=0 && name.rfind("MedCun_",0)!=0 &&
+            name.rfind("InterCun_",0)!=0 && name.rfind("LatCun_",0)!=0) continue;
+        const int side=suffix=="_L"?0:1; const auto& bone=model.bones()[part.group];
+        for (std::size_t j=part.firstPoint;j<part.firstPoint+part.pointCount;++j)
+            sourceSoles[side]=std::min(sourceSoles[side],transformed(matrices[index],bone.points[j]).y);
+    }
+    std::ifstream rawHips(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".hips");
+    std::array<double,2> rawHipY{}; std::string hipRow;
+    while (std::getline(rawHips,hipRow)) {
+        if (hipRow.empty() || hipRow[0]=='#') continue;
+        std::istringstream in(hipRow); char side; Vec3 p; double radius;
+        assert(in>>side>>p.x>>p.y>>p.z>>radius);
+        rawHipY[side=='L'?0:1]=transformed(matrices[model.sourceStructure(std::string("Femur_")+side)],p).y;
+    }
+    double rawSole=1e30;
+    for (const auto& part:c.parts()) for (Vec3 p:part.points) rawSole=std::min(rawSole,p.y);
+    const double expectedMean=((rawHipY[0]-sourceSoles[0])+(rawHipY[1]-sourceSoles[1]))*0.5;
+    assert(std::abs((c.hipCenters()[0].y-rawSole)-expectedMean)<1e-8);
     while (std::getline(audit,row)) {
         std::istringstream fields(row); std::vector<std::string> cols; std::string field;
         while (std::getline(fields,field,'\t')) cols.push_back(field);
@@ -117,18 +176,20 @@ static void check(const SkeletonRoom& room, bool male) {
     assert(count==2); neck/=count;
     close((neck-c7)*100,c.targets()[SkeletonComparison::Neck]);
     close((c7-std::min(lowY(pl),lowY(pr)))*100,c.targets()[SkeletonComparison::Torso]);
-    std::ifstream hips(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".hips");
-    while (std::getline(hips,row) && (row.empty() || row[0]=='#')) {}
-    hips.clear(); hips.seekg(0); double hipY=0, sourceHipY=0; std::array<double,2> fittedHip{};
-    while (hips.peek()=='#') std::getline(hips,row);
-    for (int side=0;side<2;++side) {
-        char ch; Vec3 q; double radius; assert(hips>>ch>>q.x>>q.y>>q.z>>radius);
-        const Vec3 hip=transformed(matrices[model.sourceStructure(std::string("Femur_")+ch)],q);
-        fittedHip[side]=c.map(hip).y; hipY+=fittedHip[side]; sourceHipY+=hip.y;
-    }
+    double hipY=0; const auto& hips=c.hipCenters();
+    const double sourceHipY=(hips[0].y+hips[1].y)*0.5;
+    const Vec3 hipL=c.map(hips[0]),hipR=c.map(hips[1]);
+    hipY=hipL.y+hipR.y;
     close(hipY*50,c.targets()[SkeletonComparison::Leg]);
-    assert(std::abs(fittedHip[0]-fittedHip[1])<1e-8*std::max(1.0,c.profile().height/100));
-    sourceHipY*=0.5;
+    assert(std::abs(hipL.y-hipR.y)<1e-8*std::max(1.0,c.profile().height/100));
+    assert(length(Vec3{-hipL.x,hipL.y,hipL.z}-hipR)<1e-8);
+    // The below-pelvis field must not taper the left/right positions or
+    // depth with height: a straight joint-centre line stays vertical.
+    const double low=rawSole+0.1*(pelvicBottom-rawSole);
+    const double high=pelvicBottom+0.5*(hips[0].y-pelvicBottom);
+    const Vec3 lower=c.map({hips[0].x,low,hips[0].z});
+    const Vec3 upper=c.map({hips[0].x,high,hips[0].z});
+    assert(std::abs(lower.x-upper.x)<1e-10 && std::abs(lower.z-upper.z)<1e-10);
     // The old piecewise-linear field made an abrupt bend through both pelvic
     // bones at this hip knot. Its vertical derivative must now be continuous.
     const double delta=1e-6;
@@ -170,14 +231,12 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
         const auto& matrices=originalMatrices[sex];
         for (const char* name:{"Head","Jaw","C1","Pelvis_L","Pelvis_R","Sacrum"}) {
             const int index=model.sourceStructure(name); assert(index>=0);
-            const auto& part=model.sourceStructures()[index]; const auto& group=model.bones()[part.group];
+            const auto& part=copy.parts()[static_cast<std::size_t>(index)];
             const std::uint32_t id=(sex==0?12000u:14000u)+static_cast<unsigned>(index);
             const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b) { return b.objectId==id; });
-            assert(batch!=scene.batches.end() && batch->vertices.size()==part.pointCount);
-            const std::string partName=name;
-            const bool cranial=partName=="Head" || partName=="Jaw" || partName=="C1";
-            for (std::size_t i=0;i<part.pointCount;++i) {
-                Vec3 expected=copy.map(transformed(matrices[index],group.points[part.firstPoint+i]),0,cranial);
+            assert(batch!=scene.batches.end() && batch->vertices.size()==part.points.size());
+            for (std::size_t i=0;i<part.points.size();++i) {
+                Vec3 expected=copy.map(part.points[i],part.armSide,part.cranial,part.girdle,part.humerus);
                 expected.x+=sex==0?-2.85:2.85;
                 const auto& v=batch->vertices[i];
                 assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);
@@ -221,6 +280,31 @@ int main() {
             assert(room.setComparison(male,p,error));
             assert(std::abs(room.comparison(male).targets()[SkeletonComparison::Leg]-before[SkeletonComparison::Leg])>0.01);
             assert(std::abs(room.comparison(male).targets()[SkeletonComparison::Torso]-before[SkeletonComparison::Torso])>0.01);
+            room.resetComparison(male);
+        }
+        for (double height:{50.,170.}) for (int d:{SkeletonComparison::Arm,SkeletonComparison::Hip,SkeletonComparison::Shoulder})
+            for (double multiplier:{0.5,1.5}) {
+                p=room.comparison(male).profile(); p.height=height; p.multiplier[d]=multiplier;
+                assert(room.setComparison(male,p,error)); check(room,male); room.resetComparison(male);
+            }
+        // The arm-shaft fallback and shoulder frame must remain continuous as
+        // the user drags the slider, including around very short arms.
+        {
+            p=room.comparison(male).profile(); p.height=50;
+            std::array<Vec3,3> previous{}; bool first=true;
+            for (int step=0;step<=1000;++step) {
+                p.multiplier[SkeletonComparison::Arm]=0.5+step*0.001;
+                assert(room.setComparison(male,p,error));
+                const auto& copy=room.comparison(male); int slot=0;
+                for (const char* name:{"Humerus_L","Radius_L","HandDistP3_L"}) {
+                    const auto it=std::find_if(copy.parts().begin(),copy.parts().end(),[&](const auto& part){return part.name==name;});
+                    assert(it!=copy.parts().end() && !it->points.empty());
+                    const Vec3 q=copy.map(it->points.front(),it->armSide,it->cranial,it->girdle,it->humerus);
+                    if (!first) assert(length(q-previous[slot])<0.001);
+                    previous[slot++]=q;
+                }
+                first=false;
+            }
             room.resetComparison(male);
         }
         const auto old=room.comparison(male).targets(); const auto rev=room.comparison(male).revision();

@@ -2,8 +2,9 @@
 
 The C test room now has a blue, static T-pose copy alongside each original:
 blue male, original male, original female, blue female from left to right.
-The copies use the originals' initial T-pose meshes but do not participate in
-the R ragdoll or the originals' subsequent joint changes. V still changes the
+The copies are constructed from both sides of the originals' initial T-pose
+meshes and do not participate in the R ragdoll or the originals' subsequent
+joint changes. V still changes the
 originals to the existing anatomical inspection shapes; the copies stay blue
 meshes. The physics and source geometry of the originals are not scaled.
 
@@ -43,8 +44,8 @@ until reset. The tested geometric proxies on the blue mesh are:
 | Hip width | leftmost-to-rightmost pelvis | NHANES surface hip breadth |
 | Shoulder | leftmost-to-rightmost scapula | NHANES biacromial breadth |
 
-The test reconstructs these points from actual source vertices and T-pose
-matrices and checks the values against the displayed fitted values. The leg proxy is not the
+The test reconstructs these points from the actual blue meshes and joint
+estimates and checks them against the displayed fitted values. The leg proxy is not the
 previous hip–knee–ankle chain length. The female femoral-head proxy is not the
 surface trochanterion; the C1 contact is not tragion; bone extremities do not
 include skin. Thus matching these numbers is a **visual approximation**, not a
@@ -68,36 +69,66 @@ static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 fem
 head–C1 contacts; male head–C1 surfaces are approximately 0.034 mm apart. Counts depend on the
 mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
 remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
-The audit also checks the pelvic ring, hips and sacrum/L5 at default and 50 cm.
-The registered source already has left pelvis/femur triangle intersections in
-both sexes and right pelvis/femur intersections in the female; they remain in
-the blue copies. This does not test containment or establish the correct
-biological placement, and **does not fix those pre-existing overlaps**.
+The audit also checks the pelvic ring, hips and sacrum/L5 at default, 50, 100, 170 and 250 cm.
+Source pelvis/femur intersections are no longer reproduced in the audited blue
+copies: the two symmetric pelvic halves, sacrum and femoral surfaces have small
+gaps without triangle crossings in those cases. The source sacrum and L5 still
+intersect, as do the blue copies. These tests do not establish containment or
+clinical correctness.
 
-The reference T-pose levels the two fitted hip centres instead of tilting the
-pelvis to make unequal legs reach the same floor. Previously the male hip-centre
-line was tilted about 7.07°; it is now level in both white and blue bodies.
-Because source bones are not rescaled, the straight male feet differ in height
-by about 20.6 mm and the female feet by about 2.3 mm. The room places the lower
-foot on the floor; the other can therefore hover. This is an observed source
-asymmetry and is not hidden by rotating the pelvis. The original source pose
-remains available with **B**.
+The white reference T-pose levels the two hip centres but preserves the
+individual source legs. Their bottoms differ by approximately 20.6 mm for the
+male and 2.3 mm for the female, so one white foot can hover. **B** restores the
+original source pose. White geometry, scale and ragdoll physics are unchanged.
 
-The source T-pose is captured once. The left and right pelvis and the sacrum
-now share **one uniform 3D scale and translation**, so the entire pelvic ring
-retains its source shape and internal relationships. The neighbouring fields
-meet that transform at the top and bottom of the ring; the femoral-head areas
-use the same field. The test checks every vertex of all three pelvic structures
-against the common similarity transform, including after slider changes. At
-50 cm the female left pelvis previously had up to 29.5 mm of non-affine
-residual; the common similarity transform removes that deformation.
+The blue copy instead starts with an arithmetic average of the two posed
+hip-to-floor lengths, and both blue feet touch the floor. For every paired
+structure, the right surface is reflected into the left frame. Because the two
+sides do not share a vertex correspondence, their centroids are averaged and a
+nearest-vertex displacement is smoothed across the left mesh before it is
+mirrored. Triangle orientation is guarded during this estimate, and a
+non-adjacent triangle-crossing guard protects the thin scapula. Below the
+pelvis the horizontal and depth scales stay constant rather than tapering with
+height, preserving straight vertical joint-centre lines. This is an
+approximate bilateral *mesh* mean, not a vertex-by-vertex anatomical mean or a
+population average. Both rendered sides have identical reflected triangles.
+The central sacrum and sternum are similarly averaged, clipped at the midline
+and mirrored with a welded seam. The skull, jaw and remaining central bones
+retain their source shapes, so exact whole-body surface symmetry is not claimed.
+
+The pelvic halves and sacrum then use one uniform 3D transform at each slider
+setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these
+two source meshes to avoid crossings or excessive gaps at selected surfaces;
+the sacrum fit includes a symmetric width adjustment, and pubic spacing uses
+the mean source-side measurement. The values are not biological reference data and
+need recalibration and triangle audits if the source meshes or poses change.
+In particular, the averaging/registration does **not** certify every joint or
+remove the source sacrum/L5, head/jaw or female head/C1 overlaps. The test
+checks the actual blue pair symmetry, feet, pelvic similarity and original
+white restore; the FCL audit checks selected actual triangles.
+
+The source-specific fits use FCL triangle distances on the posed, averaged
+surfaces. The symmetric sacrum search varied its width by up to 5% and its
+vertical/depth position by up to 12 mm, minimizing the gap to the innominates
+while retaining sacrum/L5 contact and penalizing movement. Hip, knee and scapula
+registrations similarly minimized their selected joint gaps and movement;
+they were not obtained from a population sample or clinical joint limits.
+The regression runs the pelvic and selected limb/shoulder triangle checks for
+both sexes at default, 50, 100, 170 and 250 cm and at the ends of the arm,
+hip and shoulder tracks at 50, 170 and 250 cm. It also compares disjoint
+triangle self-crossings in all 77 paired left templates and the two axial
+reconstructions against the original source meshes. A non-intersection result
+for these surfaces is not a containment or whole-body joint test.
 
 The skull, jaw and C1 also share a uniform transform. The torso field meets it
 at the bottom of C1. The jaw may overlap C7 in height because it is anterior
 to C7: forcing the jaw above C7 was an incorrect constraint. The common
 skull-to-jaw height determines the cranial scale, and the desired neck and
 overall height determine C7. Width transitions continuously between pelvis and
-scapula, and both arms share a length factor about their shoulder centres.
+scapula. The scapula, clavicle and upper arm use a common affine shoulder
+frame to avoid a vertical-field kink at their joint. The arm slider scales the
+upper-arm shaft beyond the protected shoulder head; forearms and hands share a
+length factor anchored at the averaged elbow contact.
 
 The original child/adult surface formulas and their continuous blends are
 unchanged. The request and fitted shape are continuous at the formula joins.
@@ -106,8 +137,8 @@ be represented by the chosen bony proxies with the intact adult pelvic ring**.
 The fit therefore changes the pelvic height to minimise their equally weighted
 squared deviations and displays actual fitted values rather than pretending
 that both targets were met. At 50 cm, male requested/fitted torso is
-23.30/21.11 cm and leg is 22.80/20.61 cm; female requested/fitted torso is
-22.59/19.79 cm and leg is 22.93/20.14 cm. This is a limitation of applying
+23.30/about 21.1 cm and leg is 22.80/about 20.6 cm; female requested/fitted
+torso is 22.59/about 19.8 cm and leg is 22.93/about 20.1 cm. This is a limitation of applying
 surface references to these bone landmarks, not a child/adult formula jump.
 If other extreme multipliers make the pelvic ring impossible to place below
 C7, the conflicting requests are continuously blended toward source scaling.

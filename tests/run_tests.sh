@@ -44,6 +44,9 @@ if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
 echo '[test] C++ simulation and signed geometry checks passed.'
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/skeleton_bilateral.cpp -o build/bin/gtc-skeleton-bilateral
+./build/bin/gtc-skeleton-bilateral
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-source-room
