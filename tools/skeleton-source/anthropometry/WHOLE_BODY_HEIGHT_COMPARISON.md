@@ -2,7 +2,7 @@
 
 ## Answer and limits
 
-**Correction:** the arm proxy and deviations previously listed here are withdrawn as reference comparisons: the proxy started at the humeral-head centre instead of the acromion and used unmatched elbow, wrist and finger landmarks. See `ARM_PATH_AUDIT.md` for the reproducible segment breakdown.
+**Correction:** the arm proxy and deviations previously listed here are withdrawn as reference comparisons: the proxy started at the humeral-head centre instead of the acromion and used unmatched elbow, wrist and finger landmarks. See `ARM_PATH_AUDIT.md` for the reproducible segment breakdown and `T_POSE_ARM_MEASUREMENTS.md` for the subsequent measurement in the actual T-pose.
 
 `native/client/height_body_reference.h` now exposes `estimateHeightBodyReference(sex, height_cm)`: one stature input and a sex preset return numerical estimates for head, neck, torso, full arm and full leg in centimetres. This is an **exploratory surface-reference profile**, not a completed one-height skeleton scaler. It does not yet move or scale bones, joint anchors, colliders, or ragdolls. Height alone cannot uniquely determine age, build or individual anatomy. Inputs outside observed cohorts are design extrapolations, not medical evidence.
 

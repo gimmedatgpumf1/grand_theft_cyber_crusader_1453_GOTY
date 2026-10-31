@@ -4,14 +4,14 @@ All values are centimetres. This is an exploratory audit, not a live skeleton-sc
 
 ## Matched-sex comparison
 
-Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm and shoulder proxies and differences are withdrawn; see `ARM_PATH_AUDIT.md` and `SHOULDER_POSE_AUDIT.md`.
+Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm measurements use the actual T-pose and include the whole hand to the middle-finger bone tip; see `T_POSE_ARM_MEASUREMENTS.md`. Shoulder-width proxies and differences remain withdrawn; see `SHOULDER_POSE_AUDIT.md`.
 
 | Dimension | Male biological mean ± SD | Male formula | Male skeleton | Difference | Female biological mean ± SD | Female formula | Female skeleton | Difference |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Head height | 22.30 ± 2.70 | 22.96 | 21.19 | -7.67% | 21.20 ± 2.50 | 21.98 | 20.73 | -5.71% |
 | Neck length | 10.41 ± 1.19 | 10.36 | 9.44 | -8.87% | 10.99 ± 1.20 | 11.11 | 11.41 | +2.73% |
 | Torso length | 65.59 ± 2.49 | 65.30 | 65.42 | +0.17% | 63.23 ± 2.42 | 63.71 | 64.93 | +1.92% |
-| Full arm length | 76.49 ± 2.50 | 76.06 | Not established | NA | 75.24 ± 2.58 | 75.89 | Not established | NA |
+| Full arm length | 76.49 ± 2.50 | 76.06 | 71.25 | -6.32% | 75.24 ± 2.58 | 75.89 | 66.91 | -11.83% |
 | Full leg length | 87.19 ± 3.04 | 86.67 | 87.14 | +0.55% | 88.07 ± 2.86 | 88.92 | 79.99 | -10.05% |
 | Hip width | 29.10 ± 2.73 | 28.43 | 27.36 | -3.76% | 29.51 ± 3.62 | 29.42 | 29.21 | -0.71% |
 | Shoulder width | 40.45 ± 2.12 | 40.09 | Not established | NA | 37.94 ± 2.13 | 38.18 | Not established | NA |
@@ -34,7 +34,7 @@ The width predictions are from the child/adult blended NHANES model at exactly e
 * **Head:** highest skull vertex minus lowest jaw vertex in the source pose. Prediction uses an **unverified third-party Korean height/head dataset**, not the Yeo clinical group and not a verified vertex–menton protocol. The Yeo SD above is a separate young-adult head-height reference, not SD of that formula.
 * **Neck:** vertical posterior C7 to the midpoint between the two closest C1–skull surface points on each side, averaging sides. The reference instead ends at the surface ear tragion; C1–skull contact is not tragion. Estimated contacts and coordinates are in `SKELETON_NECK_SKULL_CONTACT.tsv`; see `WHOLE_BODY_HEIGHT_COMPARISON.md`.
 * **Torso:** vertical posterior C7 to lowest pelvis mesh vertex; reference is standing surface cervicale to crotch. Different endpoints.
-* **Arm:** the previous result was an unvalidated mean of left/right geometric chains from the humeral-head centre, through the elbow and distal radius, to the middle finger bone tip. It does not start at the acromion or use matched wrist, elbow or fingertip landmarks. Its measured values and deviations have been withdrawn from this table. See `ARM_PATH_AUDIT.md` for a full segment-by-segment breakdown and both definitions.
+* **Arm:** mean of straight-line left/right distances in the actual room T-pose, from an upper-lateral scapula point to the end of the middle-finger bone, including the whole hand. The scapular point is not a verified acromion, and the fingertip excludes skin. The ANSUR reference is acromion–stylion plus skin hand length in a straight-arm, arms-down posture. These remain **unmatched raw comparisons**, not clinical deviations; see `T_POSE_ARM_MEASUREMENTS.md`. The old source-pose path and differences remain withdrawn; see `ARM_PATH_AUDIT.md`.
 * **Leg:** mean of left/right fitted hip-to-knee-to-fibula ankle chain plus vertical heel-bone distance. The reference is skin greater-trochanter landmark to floor, not hip joint to heel bone.
 * **Hip:** transverse X extent of the two pelvis meshes, versus surface bi-iliac breadth. The extrema are not verified iliac-crest landmarks. Hip joint centre spacing, a distinct measurement, is 16.68 cm male and 17.32 cm female.
 * **Shoulder:** the shoulder-width measurement is **not established**. The previously reported upper-scapula X spans (31.38/33.14 cm) are not verified biacromial breadths and are withdrawn, along with their percentage differences. The NHANES reference is measured between the lateral borders of the acromial processes while seated, with soft tissue compressed. The landmarks and comparable pose are not established for the assets; see `SHOULDER_POSE_AUDIT.md`. Shoulder joint-centre spacing is a different measurement: 28.53 cm male and 30.68 cm female.
@@ -46,6 +46,7 @@ Full methods, formula provenance and extrapolation caveats: `WHOLE_BODY_HEIGHT_C
 From the repository root, with NumPy, SciPy and a C++17 compiler:
 
 ```sh
+python3 tools/skeleton-source/openskeleton/38-measure-t-pose-arm.py
 python3 tools/skeleton-source/openskeleton/35-seven-dimensions.py
 python3 tests/seven_dimension_comparison.py
 ```

@@ -1,6 +1,6 @@
 # How the previous arm lengths were measured
 
-**Correction:** the old 72.67 cm male / 68.30 cm female numbers are lengths of a *bone-centre path*, not matched acromion-to-fingertip measurements. The previously reported −4.46% / −10.00% comparisons are withdrawn as biological arm-length deviations. The true standardized arm lengths have not been established. This does not mean the arms are definitely short or definitely normal.
+**Correction:** the old 72.67 cm male / 68.30 cm female numbers are lengths of a *bone-centre path*, not matched acromion-to-fingertip measurements. The previously reported −4.46% / −10.00% comparisons are withdrawn as biological arm-length deviations. The actual room T-pose has since been measured separately; see `T_POSE_ARM_MEASUREMENTS.md`. A clinically standardized arm length is still not established. This does not mean the arms are definitely short or definitely normal.
 
 ## Exact old method
 

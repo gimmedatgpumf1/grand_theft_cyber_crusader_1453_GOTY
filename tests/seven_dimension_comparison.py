@@ -18,7 +18,7 @@ for sex in ('male','female'):
         assert set(r['dimension'] for r in selected)==set(seven.NAMES)
         for row in selected:
             pred=float(row['formula_cm'])
-            if row['dimension'] in ('shoulder_width','arm'):
+            if row['dimension']=='shoulder_width':
                 assert row['measured_proxy_cm']==row['unmatched_difference_cm']==row['unmatched_difference_percent']=='NA'
             else:
                 proxy=float(row['measured_proxy_cm'])
