@@ -60,11 +60,11 @@ public:
             return nullptr;
         };
         const Part* head=named("Head"), *jaw=named("Jaw"), *atlas=named("C1");
-        const Part *pelvisL=named("Pelvis_L"), *pelvisR=named("Pelvis_R");
+        const Part *pelvisL=named("Pelvis_L"), *pelvisR=named("Pelvis_R"), *sacrum=named("Sacrum");
         const Part *scapL=named("Scapula_L"), *scapR=named("Scapula_R");
         const Part *humerusL=named("Humerus_L"), *humerusR=named("Humerus_R");
         const Part *fingerL=named("HandDistP3_L"), *fingerR=named("HandDistP3_R");
-        if (!head || !jaw || !atlas || !pelvisL || !pelvisR || !scapL || !scapR ||
+        if (!head || !jaw || !atlas || !pelvisL || !pelvisR || !sacrum || !scapL || !scapR ||
             !humerusL || !humerusR || !fingerL || !fingerR) {
             error="Comparison skeleton is missing a landmark structure"; return false;
         }
@@ -134,6 +134,8 @@ public:
         neck_/=matches; neckZ_/=matches;
         if (!(floor_<pelvis_ && pelvis_<hip_ && hip_<c7_ && c7_<jaw_ && jaw_<neck_ && neck_<top_) ||
             !(pelvisTop_<scapBottom_ && scapTop_<cranialJoin_ && c7_<cranialJoin_ && cranialJoin_<neck_) ||
+            !(lo(sacrum,1)>=pelvis_ && hi(sacrum,1)<=pelvisTop_ &&
+              hipY_[0]>=pelvis_ && hipY_[0]<=pelvisTop_ && hipY_[1]>=pelvis_ && hipY_[1]<=pelvisTop_) ||
             hipWidth_<=0 || shoulderWidth_<=0) {
             error="Comparison landmarks have an unexpected order"; return false;
         }
@@ -148,6 +150,7 @@ public:
     const Profile& profile() const { return profile_; }
     double initialHeight() const { return (top_-floor_)*100; }
     const std::array<double,Count>& targets() const { return targets_; }
+    const std::array<double,Count>& requestedTargets() const { return requestedTargets_; }
     bool feasible() const { return feasible_; }
     bool exact() const { return exact_; }
     std::uint64_t revision() const { return revision_; }
@@ -190,9 +193,15 @@ public:
             const double mappedAnchor=map(anchor,0).x+centerX_;
             x=mappedAnchor+(p.x-anchor.x)*armScale_;
         }
-        // Match the cranial transform continuously at the C1 join.
+        // The complete pelvic ring uses one uniform 3D scale. Join the
+        // surrounding body field continuously at its upper and lower bounds.
         double depthScale=heightScale_;
-        if (sourceY>=cranialJoin_) depthScale=headScale_;
+        if (sourceY>=pelvis_ && sourceY<=pelvisTop_) depthScale=hipScale_;
+        else if (sourceY<pelvis_ && sourceY>floor_)
+            depthScale=lerp(heightScale_,hipScale_,(sourceY-floor_)/(pelvis_-floor_));
+        else if (sourceY>pelvisTop_ && sourceY<scapBottom_)
+            depthScale=lerp(hipScale_,heightScale_,(sourceY-pelvisTop_)/(scapBottom_-pelvisTop_));
+        else if (sourceY>=cranialJoin_) depthScale=headScale_;
         else if (sourceY>scapTop_)
             depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(cranialJoin_-scapTop_));
         return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
@@ -215,58 +224,28 @@ private:
     static double lerp(double a,double b,double t) { return a+(b-a)*t; }
     double mapY(double y) const {
         std::size_t i=0; while (i+2<sourceY_.size() && y>sourceY_[i+1]) ++i;
-        const double width=sourceY_[i+1]-sourceY_[i];
-        const double t=(y-sourceY_[i])/width;
-        if ((i==1 || i==2) && y>=sourceY_[1] && y<=sourceY_[3]) {
-            // Do not put a hard bend through the pelvis at the fitted hip.
-            // The two monotone cubic segments still pass through every fitted
-            // landmark, and share a derivative at the hip.
-            const auto slope=[&](std::size_t j) {
-                return (targetY_[j+1]-targetY_[j])/(sourceY_[j+1]-sourceY_[j]);
-            };
-            const double a=slope(1), b=slope(2);
-            const double h1=sourceY_[2]-sourceY_[1], h2=sourceY_[3]-sourceY_[2];
-            const double w1=2*h2+h1, w2=h2+2*h1;
-            const double limit=2.1213203435596424; // sqrt(9/2), monotone Hermite bound
-            const double middle=std::min((w1+w2)/(w1/a+w2/b),limit*std::min(a,b));
-            const double before=std::min(slope(0),limit*a);
-            const double after=std::min(slope(3),limit*b);
-            const double left=i==1?before:middle, right=i==1?middle:after;
-            const double t2=t*t, t3=t2*t;
-            return (2*t3-3*t2+1)*targetY_[i]+(t3-2*t2+t)*width*left+
-                   (-2*t3+3*t2)*targetY_[i+1]+(t3-t2)*width*right;
-        }
-        return lerp(targetY_[i],targetY_[i+1],t);
+        return lerp(targetY_[i],targetY_[i+1],(y-sourceY_[i])/(sourceY_[i+1]-sourceY_[i]));
     }
     bool fitVertical() {
         const double h=profile_.height/100, head=targets_[Head]/100, neck=targets_[Neck]/100;
         const double torso=targets_[Torso]/100, leg=targets_[Leg]/100;
         const double epsilon=1e-6*h;
-        // Head and jaw must be a single uniformly scaled assembly. Its top is
-        // fixed at h, which fixes the C1 contact height and therefore C7 as well.
-        // Do not bend the skull to independently force incompatible landmarks.
         headScale_=head/(top_-jaw_);
+        hipScale_=targets_[Hip]/(hipWidth_*100);
         const double contact=h-(top_-neck_)*headScale_;
         const double join=h-(top_-cranialJoin_)*headScale_;
         const double c=contact-neck;
-        // No jaw-versus-C7 vertical ordering: the jaw is in front of C7.
-        // Only the actual spine-to-atlas chain must remain monotone.
-        feasible_=headScale_>0 && c>leg+epsilon && c-torso>epsilon &&
-                  c-torso<leg-epsilon && c<join-epsilon &&
-                  join+epsilon<contact && contact<h-epsilon;
+        const double ringHeight=(pelvisTop_-pelvis_)*hipScale_;
+        const double hipOffset=(hip_-pelvis_)*hipScale_;
+        feasible_=headScale_>0 && hipScale_>0 && c>ringHeight+2*epsilon &&
+                  c<join-epsilon && join+epsilon<contact && contact<h-epsilon;
         if (!feasible_) return false;
-        sourceY_={floor_,pelvis_,hip_,c7_,cranialJoin_,neck_,top_};
-        targetY_={0,c-torso,leg,c,join,contact,h};
-        // The fitted hip centres straddle their mean knot: solve the mean of
-        // their mapped positions, rather than mapping the original mean.
-        double hipLow=targetY_[1]+epsilon, hipHigh=targetY_[3]-epsilon;
-        auto mappedHip=[&](double y) { targetY_[2]=y; return (mapY(hipY_[0])+mapY(hipY_[1]))*0.5; };
-        if (mappedHip(hipLow)>leg || mappedHip(hipHigh)<leg) {
-            feasible_=false; return false;
-        }
-        for (int n=0;n<50;++n) { const double mid=(hipLow+hipHigh)*0.5;
-            if (mappedHip(mid)<leg) hipLow=mid; else hipHigh=mid; }
-        targetY_[2]=(hipLow+hipHigh)*0.5;
+        // A rigid pelvic ring fixes the separation of its lower edge and hip
+        // centres. Project the two requested landmarks onto that constraint;
+        // both controls continue to affect the result without bending the bone.
+        const double bottom=std::clamp(((c-torso)+(leg-hipOffset))*0.5,epsilon,c-ringHeight-epsilon);
+        sourceY_={floor_,pelvis_,pelvisTop_,c7_,cranialJoin_,neck_,top_};
+        targetY_={0,bottom,bottom+ringHeight,c,join,contact,h};
         return true;
     }
     bool update(const BodyProportionCurves& curves, std::string& error) {
@@ -274,24 +253,21 @@ private:
         const auto hip=curves.blendedNhanesDimensionCm(male_?"male":"female","pelvis_surface_breadth",profile_.height);
         const auto shoulder=curves.blendedNhanesDimensionCm(male_?"male":"female","shoulder_breadth",profile_.height);
         if (!body || !hip || !shoulder) { error="Height reference could not be evaluated"; return false; }
-        targets_={profile_.height,body->headCm,body->neckCm,body->torsoCm,body->armCm,body->legCm,*hip,*shoulder};
-        for (int i=1;i<Count;++i) targets_[i]*=profile_.multiplier[i];
+        requestedTargets_={profile_.height,body->headCm,body->neckCm,body->torsoCm,body->armCm,body->legCm,*hip,*shoulder};
+        for (int i=1;i<Count;++i) requestedTargets_[i]*=profile_.multiplier[i];
+        targets_=requestedTargets_;
         heightScale_=profile_.height/initialHeight();
-        hipScale_=targets_[Hip]/(hipWidth_*100); shoulderScale_=targets_[Shoulder]/(shoulderWidth_*100);
-        // Some surface predictions cannot simultaneously fit these different
-        // skeletal proxies at the selected stature. Keep stature continuous and
-        // blend toward the source proportions instead of inventing reversed bones.
-        exact_=fitVertical();
-        if (!exact_) {
-            const auto requested=targets_;
-            auto base=requested;
+        shoulderScale_=targets_[Shoulder]/(shoulderWidth_*100);
+        // If even the rigid ring cannot fit below C7, continuously blend the
+        // conflicting cranial and hip-width requests toward source scaling.
+        if (!fitVertical()) {
+            auto base=requestedTargets_;
             base[Head]=(top_-jaw_)*heightScale_*100;
             base[Neck]=(neck_-c7_)*heightScale_*100;
-            base[Torso]=(c7_-pelvis_)*heightScale_*100;
-            base[Leg]=(hip_-floor_)*heightScale_*100;
+            base[Hip]=hipWidth_*heightScale_*100;
             const auto blend=[&](double amount) {
-                for (int dimension:{Head,Neck,Torso,Leg})
-                    targets_[dimension]=lerp(base[dimension],requested[dimension],amount);
+                for (int dimension:{Head,Neck,Hip})
+                    targets_[dimension]=lerp(base[dimension],requestedTargets_[dimension],amount);
             };
             blend(0);
             if (!fitVertical()) { error="Unable to fit ordered skeleton landmarks"; return false; }
@@ -301,6 +277,12 @@ private:
             blend(low*(1-1e-8));
             if (!fitVertical()) { error="Unable to fit ordered skeleton landmarks"; return false; }
         }
+        targets_[Torso]=(targetY_[3]-targetY_[1])*100;
+        targets_[Leg]=((mapY(hipY_[0])+mapY(hipY_[1]))*0.5)*100;
+        exact_=true;
+        for (int dimension=1;dimension<Count;++dimension)
+            if (std::abs(targets_[dimension]-requestedTargets_[dimension])>1e-8*std::max(1.0,requestedTargets_[dimension]))
+                exact_=false;
         // Solve the average of the two endpoint chords after the shared field.
         const double desired=targets_[Arm]/100;
         auto armLength=[&](double value) {
@@ -318,7 +300,7 @@ private:
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_;
-    std::array<double,Count> targets_{};
+    std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
     double heightScale_=1,hipScale_=1,shoulderScale_=1,headScale_=1,armScale_=1;

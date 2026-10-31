@@ -44,10 +44,17 @@ public:
             std::snprintf(value,sizeof value,(v<10 || v>=1000)?"%.4g":"%.1f",v);
             drawTextPixels(frame,left+l.colWidth-68,y+2,value,colorHex("#e8f5ff"),20);
         }
-        const std::string text=l.compact ?
-            (std::string(c.exact()?"cm | ":"Partial fit | ")+(page_==0?"More sliders >":"First sliders >")) :
-            !status_.empty()?status_ : !c.exact()?"Partial fit: values are fitted cm.":
-            (l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   P: hide");
+        std::string text;
+        if (l.compact) text=std::string(c.exact()?"cm | ":"Adjusted | ")+(page_==0?"More sliders >":"First sliders >");
+        else if (!status_.empty()) text=status_;
+        else if (!c.exact() && l.wide) {
+            char message[128]; const auto& fitted=c.targets(); const auto& wanted=c.requestedTargets();
+            std::snprintf(message,sizeof message,"Fitted/requested cm: torso %.1f/%.1f  leg %.1f/%.1f",
+                          fitted[SkeletonComparison::Torso],wanted[SkeletonComparison::Torso],
+                          fitted[SkeletonComparison::Leg],wanted[SkeletonComparison::Leg]);
+            text=message;
+        } else if (!c.exact()) text="Bone fit: values adjusted.";
+        else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   P: hide";
         drawTextPixels(frame,l.x+10,l.y+l.h-24,text,colorHex("#c0d7e7"),20);
     }
 

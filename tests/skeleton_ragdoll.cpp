@@ -89,6 +89,17 @@ static double maxGirdleGap(const SkeletonModel& model,const std::vector<Anchor>&
     return gap;
 }
 
+// Both innominates and the sacrum form one fixed pelvic assembly in the
+// source rig and ragdoll, including during impacts and floor contact.
+static void checkPelvicAssembly(const SkeletonModel& model) {
+    const auto pose=model.sourceMatrices({},0);
+    const int sacrum=model.sourceStructure("Sacrum"); assert(sacrum>=0);
+    for (const char* name:{"Pelvis_L","Pelvis_R"}) {
+        const int pelvis=model.sourceStructure(name); assert(pelvis>=0);
+        for (int i=0;i<16;++i) assert(std::abs(pose[sacrum][i]-pose[pelvis][i])<1e-5);
+    }
+}
+
 struct HandAnchors { std::vector<Anchor> carpal, digits; };
 static HandAnchors handAnchors(const SkeletonModel& model, const std::string& side) {
     const auto pose=model.sourceMatrices({},0); const auto& rig=*model.sourceRig();
@@ -167,6 +178,7 @@ int main() {
     double maxSeparation=0, maxGirdle=0, maxForearm=0, maxCartilage=0, lowestMale=maleStart.first, lowestFemale=femaleStart.first;
     for (int i=0;i<600;++i) {
         room.advanceRagdoll(1.0/120.0);
+        checkPelvicAssembly(room.male()); checkPelvicAssembly(room.female());
         for (int h=0;h<4;++h) {
             const auto& model=h<2 ? room.male() : room.female();
             handGap[h]=std::max(handGap[h],maxGap(model,hands[h].digits));

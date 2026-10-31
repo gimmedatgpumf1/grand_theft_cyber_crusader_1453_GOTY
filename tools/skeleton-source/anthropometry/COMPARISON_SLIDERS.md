@@ -16,15 +16,15 @@ and shoulder sliders are multipliers of the appropriate sex-specific
 height-based surface estimates. Minus/plus adjusts them by 2 percentage points;
 the height buttons change the target by 1 cm. Tracks are convenient windows
 (40–230 cm for height, 50–150% for other dimensions), **not** minimum/maximum
-height cutoffs: buttons may go beyond them. Positive finite dimensions are required. When the surface targets cannot all
-fit the skeletal landmark order, the vertical dimensions are continuously
-blended toward the original body's proportions rather than reversing bones.
-The panel says **Partial fit** and displays the fitted proxy values, which then
-differ from the requested formula. If a fit cannot be produced at all, the
-previous shape is kept. Reset returns the original posed height and formula
-targets.
+height cutoffs: buttons may go beyond them. Positive finite dimensions are
+required. The listed values are the **fitted skeletal proxies**. When a rigid
+pelvic ring cannot meet both requested torso and leg proxies, both controls
+still move the copy; the fit is projected to the closest pair of achievable
+values with equal weight. On a wide panel the footer shows fitted/requested
+values for those dimensions. If a fit cannot be produced at all, the previous
+shape is kept. Reset restores the original posed height and formula requests.
 
-## What is matched
+## What is measured
 
 The default height is the *visible posed mesh* from floor to skull top, so each
 blue copy has the same visible height as its neighbouring original. This is
@@ -33,7 +33,7 @@ about **171.77 cm male** and **166.16 cm female**, not the recorded 170.0 and
 visible height. Changing height intentionally breaks the same-height comparison
 until reset. The tested geometric proxies on the blue mesh are:
 
-| Slider | Matched skeletal proxy | Surface formula being applied |
+| Slider | Fitted skeletal proxy | Surface formula being requested |
 |---|---|---|
 | Head | skull top to bottom of jaw, vertical | vertex–menton; Korean source provenance unverified |
 | Neck | posterior C7 to mean left/right C1–skull contact midpoint, vertical | C7–tragion, ANSUR-derived |
@@ -44,7 +44,7 @@ until reset. The tested geometric proxies on the blue mesh are:
 | Shoulder | leftmost-to-rightmost scapula | NHANES biacromial breadth |
 
 The test reconstructs these points from actual source vertices and T-pose
-matrices and checks the values against the targets. The leg proxy is not the
+matrices and checks the values against the displayed fitted values. The leg proxy is not the
 previous hip–knee–ankle chain length. The female femoral-head proxy is not the
 surface trochanterion; the C1 contact is not tragion; bone extremities do not
 include skin. Thus matching these numbers is a **visual approximation**, not a
@@ -75,44 +75,41 @@ both sexes and right pelvis/femur intersections in the female; they remain in
 the blue copies. This does not test containment or establish the correct
 biological placement, and **does not fix those pre-existing overlaps**.
 
-The source T-pose is captured once. A continuous monotone vertical field maps
-the ordered floor, pelvis, mean hip, C7, lowest C1 point, mean C1 contact and
-skull landmarks while preserving total height. Between the pelvis and C7,
-monotone cubic segments meet smoothly at the hip instead of placing a sharp
-slope change through the pelvic bones. The same field is applied to the pelvic
-ring, sacrum and neighbouring bones to avoid separating their surfaces. The skull, jaw and C1 receive
-the same **uniform 3D scale and translation**; their shapes and relative
-positions are preserved. The torso field joins that transform at the bottom of
-C1. The jaw may overlap C7 in height because it is anterior to C7: forcing the
-jaw above C7 was an incorrect constraint and caused the previous partial fit at
-50 cm. The shared skull-to-jaw height determines the cranial scale, and the
-desired neck and overall height determine the C7 position. The actual mean of
-the left/right hip centres is solved after deformation. Width transitions
-continuously between pelvis and scapula, and both arms share a length factor
-about their fitted shoulder centres.
+The source T-pose is captured once. The left and right pelvis and the sacrum
+now share **one uniform 3D scale and translation**, so the entire pelvic ring
+retains its source shape and internal relationships. The neighbouring fields
+meet that transform at the top and bottom of the ring; the femoral-head areas
+use the same field. The test checks every vertex of all three pelvic structures
+against the common similarity transform, including after slider changes. At
+50 cm the female left pelvis previously had up to 29.5 mm of non-affine
+residual; the common similarity transform removes that deformation.
 
-At 50 cm both copies now match all seven nominal targets without a partial fit.
-The original child/adult formulas and their continuous blends are unchanged.
-The regression suite checks all seven against the source models in a 0.5 cm
-sweep from 50 to 1000 cm, measures the actual proxies at representative heights,
-and checks continuity around the curve boundaries. An integer sweep from 1 to
-1000 cm also accepted every height: default inputs fit exactly from 15 cm male
-and 8 cm female upward. Below those heights, independently extrapolated targets
-can become geometrically incompatible with the fixed total height and ordered
-skeletal landmarks. Extreme independent slider multipliers can likewise be
-incompatible. In those cases a binary search blends the four vertical targets
-toward uniform source scaling; the controls show **Partial fit** and the fitted
-values. This is a rendering deformation: outside the skull/jaw/C1 assembly,
-individual bones can change shape. In particular, smoothing removes the sharp
-pelvic kink but cannot make the pelvis rigid while simultaneously enforcing
-incompatible bone-proxy distances; the arm field is only anchored at the
-estimated shoulder centre. For example, a best-affine fit to the female left
-pelvic mesh had a maximum vertex residual of about 18.3 mm at the default height
-before smoothing, and 12.7 mm afterwards; at 50 cm it decreased from 34.6 mm
-to 29.5 mm. These residuals quantify remaining non-affine warping, not anatomical
-accuracy. It does **not** certify joint contact, preserve all rigid bones,
-implement a new anatomical rig or guarantee collision-free motion.
-The blue figures are not simulated. The original white skeletons remain unchanged.
+The skull, jaw and C1 also share a uniform transform. The torso field meets it
+at the bottom of C1. The jaw may overlap C7 in height because it is anterior
+to C7: forcing the jaw above C7 was an incorrect constraint. The common
+skull-to-jaw height determines the cranial scale, and the desired neck and
+overall height determine C7. Width transitions continuously between pelvis and
+scapula, and both arms share a length factor about their shoulder centres.
+
+The original child/adult surface formulas and their continuous blends are
+unchanged. The request and fitted shape are continuous at the formula joins.
+However, the requested surface torso and leg distances generally **cannot both
+be represented by the chosen bony proxies with the intact adult pelvic ring**.
+The fit therefore changes the pelvic height to minimise their equally weighted
+squared deviations and displays actual fitted values rather than pretending
+that both targets were met. At 50 cm, male requested/fitted torso is
+23.30/21.20 cm and leg is 22.80/20.70 cm; female requested/fitted torso is
+22.59/19.78 cm and leg is 22.93/20.13 cm. This is a limitation of applying
+surface references to these bone landmarks, not a child/adult formula jump.
+If other extreme multipliers make the pelvic ring impossible to place below
+C7, the conflicting requests are continuously blended toward source scaling.
+A sweep accepts all integer heights 1–1000 cm, but the default torso and leg
+proxies differ from their requested values throughout that sweep.
+
+This is still a rendering deformation outside the skull/jaw/C1 and pelvic
+assembly. It does **not** certify all joint contacts, preserve every bone,
+implement a new anatomical rig or guarantee collision-free motion. The blue
+figures are not simulated. The original white skeletons remain unchanged.
 
 The existing child/adult surface curves, neonatal bridges and bounded
 continuations are used. They are not a skeletal growth model: for example, a

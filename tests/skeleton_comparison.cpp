@@ -75,6 +75,36 @@ static void check(const SkeletonRoom& room, bool male) {
         }
     }
     assert(cranialError<1e-8*std::max(1.0,headScale));
+    // Both innominate bones and the sacrum must share a single uniform
+    // transform, including their source gaps and relative positions.
+    double sourceLeft=1e30, sourceRight=-1e30, pelvicBottom=1e30, pelvicTop=-1e30;
+    for (const char* name:{"Pelvis_L","Pelvis_R"}) {
+        const int id=model.sourceStructure(name); assert(id>=0);
+        const auto& part=model.sourceStructures()[id]; const auto& group=model.bones()[part.group];
+        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
+            const Vec3 p=transformed(matrices[id],group.points[i]);
+            sourceLeft=std::min(sourceLeft,p.x); sourceRight=std::max(sourceRight,p.x);
+            pelvicBottom=std::min(pelvicBottom,p.y); pelvicTop=std::max(pelvicTop,p.y);
+        }
+    }
+    const double pelvicScale=c.targets()[SkeletonComparison::Hip]/(100*(sourceRight-sourceLeft));
+    for (double boundary:{pelvicBottom,pelvicTop}) {
+        const Vec3 left=c.map({0.1,boundary-1e-8,0.02});
+        const Vec3 right=c.map({0.1,boundary+1e-8,0.02});
+        assert(length(right-left)<1e-5*std::max(1.0,pelvicScale));
+    }
+    const int id=model.sourceStructure("Sacrum"); assert(id>=0);
+    const auto& sacrum=model.sourceStructures()[id]; const auto& group=model.bones()[sacrum.group];
+    const Vec3 pelvicReference=transformed(matrices[id],group.points[sacrum.firstPoint]);
+    const Vec3 pelvicMapped=c.map(pelvicReference);
+    for (const char* name:{"Pelvis_L","Pelvis_R","Sacrum"}) {
+        const int partId=model.sourceStructure(name); assert(partId>=0);
+        const auto& part=model.sourceStructures()[partId]; const auto& bone=model.bones()[part.group];
+        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
+            const Vec3 p=transformed(matrices[partId],bone.points[i]);
+            assert(length(c.map(p)-(pelvicMapped+(p-pelvicReference)*pelvicScale))<1e-8*std::max(1.0,pelvicScale));
+        }
+    }
     while (std::getline(audit,row)) {
         std::istringstream fields(row); std::vector<std::string> cols; std::string field;
         while (std::getline(fields,field,'\t')) cols.push_back(field);
@@ -137,14 +167,16 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
         const auto& model=sex==0?observedRoom->male():observedRoom->female();
         const auto& copy=observedRoom->comparison(sex==0);
         const auto& matrices=originalMatrices[sex];
-        for (const char* name:{"Head","Jaw","C1"}) {
+        for (const char* name:{"Head","Jaw","C1","Pelvis_L","Pelvis_R","Sacrum"}) {
             const int index=model.sourceStructure(name); assert(index>=0);
             const auto& part=model.sourceStructures()[index]; const auto& group=model.bones()[part.group];
             const std::uint32_t id=(sex==0?12000u:14000u)+static_cast<unsigned>(index);
             const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b) { return b.objectId==id; });
             assert(batch!=scene.batches.end() && batch->vertices.size()==part.pointCount);
+            const std::string partName=name;
+            const bool cranial=partName=="Head" || partName=="Jaw" || partName=="C1";
             for (std::size_t i=0;i<part.pointCount;++i) {
-                Vec3 expected=copy.map(transformed(matrices[index],group.points[part.firstPoint+i]),0,true);
+                Vec3 expected=copy.map(transformed(matrices[index],group.points[part.firstPoint+i]),0,cranial);
                 expected.x+=sex==0?-2.85:2.85;
                 const auto& v=batch->vertices[i];
                 assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);
@@ -158,19 +190,37 @@ int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
     const auto maleOriginal=room.male().sourceMatrices({},0), femaleOriginal=room.female().sourceMatrices({},0);
     observedRoom=&room; originalMatrices[0]=maleOriginal; originalMatrices[1]=femaleOriginal;
-    assert(room.comparison(true).exact() && room.comparison(false).exact());
     check(room,true); check(room,false);
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
         for (double h:{1.,5.,10.,50.,100.,140.,170.,200.,250.,400.,1000.}) {
             p.height=h; if (!room.setComparison(male,p,error)) { std::printf("height %g failed: %s\n",h,error.c_str()); std::abort(); }
-            if (h>=50) assert(room.comparison(male).exact());
             check(room,male);
         }
+        p=room.comparison(male).profile(); p.height=50;
+        assert(room.setComparison(male,p,error));
+        const auto& fitted50=room.comparison(male).targets();
+        const auto& requested50=room.comparison(male).requestedTargets();
+        assert(!room.comparison(male).exact());
+        for (int d:{SkeletonComparison::Head,SkeletonComparison::Neck,SkeletonComparison::Arm,
+                    SkeletonComparison::Hip,SkeletonComparison::Shoulder})
+            assert(std::abs(fitted50[d]-requested50[d])<1e-8);
+        close(fitted50[SkeletonComparison::Torso]-requested50[SkeletonComparison::Torso],
+              fitted50[SkeletonComparison::Leg]-requested50[SkeletonComparison::Leg],1e-8);
         room.resetComparison(male); close(room.comparison(male).profile().height,room.comparison(male).initialHeight());
         for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
             p=room.comparison(male).profile(); p.multiplier[d]=1.02;
             assert(room.setComparison(male,p,error)); check(room,male); room.resetComparison(male);
+        }
+        // Both controls must move the rigid pelvic assembly, even when the
+        // independently requested proxies cannot both be matched exactly.
+        for (int d:{SkeletonComparison::Torso,SkeletonComparison::Leg}) {
+            const auto before=room.comparison(male).targets();
+            p=room.comparison(male).profile(); p.multiplier[d]=1.1;
+            assert(room.setComparison(male,p,error));
+            assert(std::abs(room.comparison(male).targets()[SkeletonComparison::Leg]-before[SkeletonComparison::Leg])>0.01);
+            assert(std::abs(room.comparison(male).targets()[SkeletonComparison::Torso]-before[SkeletonComparison::Torso])>0.01);
+            room.resetComparison(male);
         }
         const auto old=room.comparison(male).targets(); const auto rev=room.comparison(male).revision();
         p=room.comparison(male).profile();p.height=-1;
@@ -205,30 +255,8 @@ int main() {
             if (!first) assert(length(point-previous)<0.001);
             previous=point; first=false;
         }
-        // At the genuine tiny-height feasibility boundary, the fallback must
-        // meet the exact solution continuously, including the cranial field.
-        p=room.comparison(male).profile(); p.height=1; assert(room.setComparison(male,p,error));
-        bool wasExact=room.comparison(male).exact(); int transitions=0;
-        for (double h=1.1;h<=20;h+=0.1) {
-            p.height=h; assert(room.setComparison(male,p,error));
-            const bool nowExact=room.comparison(male).exact();
-            if (nowExact!=wasExact) {
-                double low=h-0.1, high=h;
-                for (int i=0;i<25;++i) {
-                    p.height=(low+high)*0.5; assert(room.setComparison(male,p,error));
-                    if (room.comparison(male).exact()==wasExact) low=p.height; else high=p.height;
-                }
-                p.height=low; assert(room.setComparison(male,p,error));
-                const Vec3 before=room.comparison(male).map({0.1,1.7,0.1},0,true);
-                p.height=high; assert(room.setComparison(male,p,error));
-                assert(length(room.comparison(male).map({0.1,1.7,0.1},0,true)-before)<0.001);
-                ++transitions; p.height=h; assert(room.setComparison(male,p,error));
-            }
-            wasExact=nowExact;
-        }
-        assert(transitions>0);
-        // The fitted outputs equal the existing continuous reference models
-        // throughout the full 50–1000 cm sweep, not merely at sample points.
+        // Formula requests remain unchanged and continuous throughout the
+        // full 50–1000 cm sweep. Fitted skeletal proxies are reported separately.
         BodyProportionCurves curves;
         const std::string dir="tools/skeleton-source/anthropometry/";
         assert(curves.load(dir+"BODY_PART_CURVE_KNOTS.tsv",error));
@@ -236,12 +264,12 @@ int main() {
         const auto sex=male?BodyReferenceSex::male:BodyReferenceSex::female;
         for (double h=50;h<=1000;h+=0.5) {
             p=room.comparison(male).profile(); p.height=h;
-            assert(room.setComparison(male,p,error) && room.comparison(male).exact());
+            assert(room.setComparison(male,p,error));
             const auto ref=estimateHeightBodyReference(sex,h); assert(ref);
             const auto hip=curves.blendedNhanesDimensionCm(male?"male":"female","pelvis_surface_breadth",h);
             const auto shoulder=curves.blendedNhanesDimensionCm(male?"male":"female","shoulder_breadth",h);
             assert(hip && shoulder);
-            const auto& t=room.comparison(male).targets();
+            const auto& t=room.comparison(male).requestedTargets();
             const std::array<double,8> wanted{h,ref->headCm,ref->neckCm,ref->torsoCm,ref->armCm,ref->legCm,*hip,*shoulder};
             for (std::size_t i=0;i<t.size();++i) assert(std::abs(t[i]-wanted[i])<1e-8);
         }

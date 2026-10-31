@@ -84,6 +84,9 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
             assert white_n and blue_n, (height, sex, 'C1/C2', white_n, blue_n)
             # Compare the actual registered surfaces around the pelvic ring
             # and hips. Source intersections are recorded, not claimed fixed.
+            white_ring = np.concatenate([groups['white'][n][0] for n in ('Pelvis_L', 'Pelvis_R')])
+            blue_ring = np.concatenate([groups['blue'][n][0] for n in ('Pelvis_L', 'Pelvis_R')])
+            pelvic_scale = np.ptp(blue_ring[:, 0])/np.ptp(white_ring[:, 0])
             for first, second in (('Pelvis_L', 'Pelvis_R'), ('Pelvis_L', 'Sacrum'),
                                   ('Pelvis_R', 'Sacrum'), ('Pelvis_L', 'Femur_L'),
                                   ('Pelvis_R', 'Femur_R'), ('Sacrum', 'L5')):
@@ -92,6 +95,8 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
                 assert bool(white_n) == bool(blue_n), (height, sex, first, second, white_n, blue_n)
                 if not white_n:
                     assert blue_gap < max(0.003, 2*white_gap), (height, sex, first, second, blue_gap)
+                    if first.startswith('Pelvis_') and second in ('Pelvis_R', 'Sacrum'):
+                        assert abs(blue_gap-white_gap*pelvic_scale) < 1e-7, (height, sex, first, second)
                 print(f'{sex} {height or "default"} {first}/{second}: source {white_n}, blue {blue_n}; '
                       f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
 print('Cranial and pelvic triangle-surface comparison: PASS (existing source overlaps remain)')
