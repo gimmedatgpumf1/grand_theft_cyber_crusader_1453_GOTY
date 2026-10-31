@@ -12,6 +12,8 @@ The limb-only comparison did not include shoulder or pelvic breadth. This separa
 
 The joint values come from `skeleton-{male,female}.shoulders` (fitted humeral head centres) and `.hips` (fitted femoral head centres), which `SkeletonRoom::load` loads. The fits are automated geometric estimates and **not clinically validated**. Transverse means absolute left/right coordinate difference along the game's X axis; point-to-point includes the differences in Y and Z. The width of a posed or moving skeleton can differ as the shoulder girdles or pelvis rotate. The pelvis bone extent is the difference between the largest and smallest X coordinates of the two pelvis meshes; it is not a farthest-pair diagonal, but its extrema are **not verified iliac-crest landmarks**.
 
+The explicit height-to-surface equations, an independent cross-check and a published clinical-leg-length-to-hip-centre formula are documented in `GIRDLE_WIDTH_FORMULAS.md`.
+
 ## How these relate to the height curves
 
 The current blended NHANES surface evaluator gives the following *population curve estimates* at the recorded source cadaver lengths (male 170.0 cm, female 170.2 cm):
