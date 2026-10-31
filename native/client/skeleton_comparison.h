@@ -55,12 +55,12 @@ public:
             for (const auto& part:parts_) if (part.name==name) return &part;
             return nullptr;
         };
-        const Part* head=named("Head"), *jaw=named("Jaw");
+        const Part* head=named("Head"), *jaw=named("Jaw"), *atlas=named("C1");
         const Part *pelvisL=named("Pelvis_L"), *pelvisR=named("Pelvis_R");
         const Part *scapL=named("Scapula_L"), *scapR=named("Scapula_R");
         const Part *humerusL=named("Humerus_L"), *humerusR=named("Humerus_R");
         const Part *fingerL=named("HandDistP3_L"), *fingerR=named("HandDistP3_R");
-        if (!head || !jaw || !pelvisL || !pelvisR || !scapL || !scapR ||
+        if (!head || !jaw || !atlas || !pelvisL || !pelvisR || !scapL || !scapR ||
             !humerusL || !humerusR || !fingerL || !fingerR) {
             error="Comparison skeleton is missing a landmark structure"; return false;
         }
@@ -68,6 +68,9 @@ public:
         auto hi=[](const Part* p,int axis) { double v=-1e30; for (Vec3 q:p->points) v=std::max(v,axis==0?q.x:q.y); return v; };
         floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
         top_=hi(head,1); jaw_=lo(jaw,1);
+        // The uniform cranial field must cover both complete meshes, including
+        // the mandible; otherwise a knot can stretch only half the face.
+        if (lo(head,1)<jaw_ || lo(atlas,1)<jaw_) { error="Unexpected cranial landmark order"; return false; }
         pelvis_=std::min(lo(pelvisL,1),lo(pelvisR,1));
         pelvisTop_=std::max(hi(pelvisL,1),hi(pelvisR,1));
         scapBottom_=std::min(lo(scapL,1),lo(scapR,1));
@@ -107,7 +110,7 @@ public:
         // Published audit landmarks are in the registered source frame; apply
         // the exact T-pose matrices before using them as visual proxies.
         std::ifstream audit(directory+"anthropometry/SKELETON_NECK_SKULL_CONTACT.tsv");
-        std::string row; std::getline(audit,row); int matches=0; neck_=0;
+        std::string row; std::getline(audit,row); int matches=0; neck_=0; neckZ_=0;
         while (std::getline(audit,row)) {
             std::istringstream fields(row); std::vector<std::string> cols; std::string field;
             while (std::getline(fields,field,'\t')) cols.push_back(field);
@@ -119,12 +122,12 @@ public:
                 int ci=model.sourceStructure("C7"), ni=model.sourceStructure("C1");
                 if (ci<0 || ni<0) break;
                 c7_=transform(matrices[ci],c).y;
-                neckY_[matches]=transform(matrices[ni],n).y;
-                neck_+=neckY_[matches]; ++matches;
+                const Vec3 posedContact=transform(matrices[ni],n);
+                neck_+=posedContact.y; neckZ_+=posedContact.z; ++matches;
             } catch (...) { break; }
         }
         if (matches!=2) { error="Comparison neck landmarks unavailable"; return false; }
-        neck_/=matches;
+        neck_/=matches; neckZ_/=matches;
         if (!(floor_<pelvis_ && pelvis_<hip_ && hip_<c7_ && c7_<jaw_ && jaw_<neck_ && neck_<top_) ||
             !(pelvisTop_<scapBottom_ && scapTop_<jaw_) || hipWidth_<=0 || shoulderWidth_<=0) {
             error="Comparison landmarks have an unexpected order"; return false;
@@ -156,9 +159,9 @@ public:
     }
     void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(curves_,error); }
 
-    // Each point, including points shared by adjacent bones, is passed through
-    // the same continuous field. Upper-limb length changes are anchored at the
-    // fitted shoulder centre; they are visual, not a new articulated rig.
+    // A continuous field, except for the separately anchored upper limbs.
+    // Above the jaw base, all three axes share one scale: the skull, jaw and
+    // C1 retain their original shape and relative placement as a single unit.
     Vec3 map(Vec3 p, int armSide=0) const {
         const double sourceY=p.y;
         double scale=heightScale_;
@@ -167,7 +170,8 @@ public:
             scale=lerp(hipScale_,shoulderScale_,(sourceY-pelvisTop_)/(scapBottom_-pelvisTop_));
         else if (sourceY>=scapBottom_ && sourceY<=scapTop_) scale=shoulderScale_;
         else if (sourceY>scapTop_ && sourceY<jaw_)
-            scale=lerp(shoulderScale_,heightScale_,(sourceY-scapTop_)/(jaw_-scapTop_));
+            scale=lerp(shoulderScale_,headScale_,(sourceY-scapTop_)/(jaw_-scapTop_));
+        else if (sourceY>=jaw_) scale=headScale_;
         else if (sourceY<pelvis_ && sourceY>floor_)
             scale=lerp(heightScale_,hipScale_,(sourceY-floor_)/(pelvis_-floor_));
         double x=centerX_+(p.x-centerX_)*scale;
@@ -179,7 +183,13 @@ public:
             const double mappedAnchor=map(anchor,0).x+centerX_;
             x=mappedAnchor+(p.x-anchor.x)*armScale_;
         }
-        return {x-centerX_,mapY(sourceY),p.z*heightScale_};
+        // Transition depth to the same scale as width and height before the
+        // mandible. Both cranial meshes therefore share ONE similarity transform.
+        double depthScale=heightScale_;
+        if (sourceY>=jaw_) depthScale=headScale_;
+        else if (sourceY>scapTop_)
+            depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(jaw_-scapTop_));
+        return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
     }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
@@ -204,18 +214,22 @@ private:
     bool fitVertical() {
         const double h=profile_.height/100, head=targets_[Head]/100, neck=targets_[Neck]/100;
         const double torso=targets_[Torso]/100, leg=targets_[Leg]/100;
-        // Solve the overlapping landmarks without reversing their order.
         const double epsilon=1e-6*h;
-        const double lower=std::max({torso+epsilon,leg+epsilon,h-head-neck+epsilon});
-        const double upper=std::min({h-head-epsilon,h-neck-epsilon,leg+torso-epsilon});
-        feasible_=lower<upper && leg>epsilon && leg<h;
+        // Head and jaw must be a single uniformly scaled assembly. Its top is
+        // fixed at h, which fixes the C1 contact height and therefore C7 as well.
+        // Do not bend the skull to independently force incompatible landmarks.
+        headScale_=head/(top_-jaw_);
+        const double jawTarget=h-head;
+        const double contact=h-(top_-neck_)*headScale_;
+        const double c=contact-neck;
+        feasible_=headScale_>0 && c>leg+epsilon && c-torso>epsilon &&
+                  c-torso<leg-epsilon && c<jawTarget-epsilon &&
+                  jawTarget+epsilon<contact && contact<h-epsilon;
         if (!feasible_) return false;
-        const double margin=(upper-lower)*0.2;
-        const double c=std::clamp((c7_-floor_)*heightScale_,lower+margin,upper-margin);
         sourceY_={floor_,pelvis_,hip_,c7_,jaw_,neck_,top_};
-        targetY_={0,c-torso,leg,c,h-head,c+neck,h};
-        // Left/right hips can lie on opposite sides of the hip knot. Solve for
-        // their *mapped average*, rather than mapping their original mean.
+        targetY_={0,c-torso,leg,c,jawTarget,contact,h};
+        // The fitted hip centres straddle their mean knot: solve the mean of
+        // their mapped positions, rather than mapping the original mean.
         double hipLow=targetY_[1]+epsilon, hipHigh=targetY_[3]-epsilon;
         auto mappedHip=[&](double y) { targetY_[2]=y; return (mapY(hipY_[0])+mapY(hipY_[1]))*0.5; };
         if (mappedHip(hipLow)>leg || mappedHip(hipHigh)<leg) {
@@ -224,14 +238,6 @@ private:
         for (int n=0;n<50;++n) { const double mid=(hipLow+hipHigh)*0.5;
             if (mappedHip(mid)<leg) hipLow=mid; else hipHigh=mid; }
         targetY_[2]=(hipLow+hipHigh)*0.5;
-        double neckLow=targetY_[4]+epsilon, neckHigh=targetY_[6]-epsilon;
-        auto mappedNeck=[&](double y) { targetY_[5]=y; return (mapY(neckY_[0])+mapY(neckY_[1]))*0.5; };
-        if (mappedNeck(neckLow)>c+neck || mappedNeck(neckHigh)<c+neck) {
-            feasible_=false; return false;
-        }
-        for (int n=0;n<50;++n) { const double mid=(neckLow+neckHigh)*0.5;
-            if (mappedNeck(mid)<c+neck) neckLow=mid; else neckHigh=mid; }
-        targetY_[5]=(neckLow+neckHigh)*0.5;
         return true;
     }
     bool update(const BodyProportionCurves& curves, std::string& error) {
@@ -284,11 +290,11 @@ private:
     Profile profile_;
     std::vector<Part> parts_;
     std::array<double,Count> targets_{};
-    double floor_=0,top_=0,jaw_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0;
+    double floor_=0,top_=0,jaw_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
-    double heightScale_=1,hipScale_=1,shoulderScale_=1,armScale_=1;
+    double heightScale_=1,hipScale_=1,shoulderScale_=1,headScale_=1,armScale_=1;
     std::array<double,7> sourceY_{}, targetY_{};
-    std::array<double,2> hipY_{}, neckY_{};
+    std::array<double,2> hipY_{};
     std::array<Vec3,2> armAnchor_{},armStart_{},armEnd_{};
     std::uint64_t revision_=0;
 };

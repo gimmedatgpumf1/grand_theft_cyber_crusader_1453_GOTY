@@ -47,6 +47,33 @@ static void check(const SkeletonRoom& room, bool male) {
     std::ifstream audit("tools/skeleton-source/anthropometry/SKELETON_NECK_SKULL_CONTACT.tsv");
     std::string row; std::getline(audit,row); double c7=0, neck=0; int count=0;
     const auto matrices=model.sourceMatrices({},0);
+    // Every actual skull, jaw and C1 vertex must share the same similarity
+    // transform. This catches the former kink through the skull, vertical-only
+    // stretching of the jaw, and any shift of the jaw relative to the skull.
+    const int headId=model.sourceStructure("Head"), jawId=model.sourceStructure("Jaw");
+    const auto& sourceHead=model.sourceStructures()[headId];
+    const auto& sourceJaw=model.sourceStructures()[jawId];
+    const auto& headGroup=model.bones()[sourceHead.group];
+    const auto& jawGroup=model.bones()[sourceJaw.group];
+    double originalTop=-1e30, originalJaw=1e30;
+    for (std::size_t i=sourceHead.firstPoint;i<sourceHead.firstPoint+sourceHead.pointCount;++i)
+        originalTop=std::max(originalTop,transformed(matrices[headId],headGroup.points[i]).y);
+    for (std::size_t i=sourceJaw.firstPoint;i<sourceJaw.firstPoint+sourceJaw.pointCount;++i)
+        originalJaw=std::min(originalJaw,transformed(matrices[jawId],jawGroup.points[i]).y);
+    const double headScale=c.targets()[SkeletonComparison::Head]/(100*(originalTop-originalJaw));
+    const Vec3 reference=transformed(matrices[headId],headGroup.points[sourceHead.firstPoint]);
+    const Vec3 mappedReference=c.map(reference);
+    double cranialError=0;
+    for (const char* name:{"Head","Jaw","C1"}) {
+        const int id=model.sourceStructure(name); assert(id>=0);
+        const auto& part=model.sourceStructures()[id]; const auto& group=model.bones()[part.group];
+        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
+            const Vec3 point=transformed(matrices[id],group.points[i]);
+            const Vec3 expected=mappedReference+(point-reference)*headScale;
+            cranialError=std::max(cranialError,length(c.map(point)-expected));
+        }
+    }
+    assert(cranialError<1e-8*std::max(1.0,headScale));
     while (std::getline(audit,row)) {
         std::istringstream fields(row); std::vector<std::string> cols; std::string field;
         while (std::getline(fields,field,'\t')) cols.push_back(field);
@@ -79,6 +106,8 @@ static void check(const SkeletonRoom& room, bool male) {
                 c.profile().height,(highY(head)-lowY(jaw))*100,arms,extent(pl,pr,0),extent(sl,sr,0));
 }
 static int blue=0,ui=0,white=0; static std::uint64_t revision=0; static float sample=0; static double whiteX=0; static std::uint64_t blueStamp=0;
+static const SkeletonRoom* observedRoom=nullptr;
+static std::vector<std::array<double,16>> originalMatrices[2];
 static bool gpu(const GpuScene& scene,NativeFrame& frame) {
     blue=ui=white=0; revision=scene.revision;
     for (const auto& b:scene.batches) {
@@ -86,12 +115,34 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
         if (b.objectId>=12000 && b.objectId<15000) { ++blue; if (b.objectId==12000 && !b.vertices.empty()) { sample=b.vertices[0].y; blueStamp=b.revision; } }
         if (b.objectId>=8001 && b.objectId<10000) { ++white; if (b.objectId==9001) whiteX=b.modelMatrix[12]; }
     }
+    // The submitted indexed meshes must use the tested T-pose deformation,
+    // even after a slider, line-view or ragdoll update of the originals.
+    if (observedRoom) for (int sex=0;sex<2;++sex) {
+        const auto& model=sex==0?observedRoom->male():observedRoom->female();
+        const auto& copy=observedRoom->comparison(sex==0);
+        const auto& matrices=originalMatrices[sex];
+        for (const char* name:{"Head","Jaw","C1"}) {
+            const int index=model.sourceStructure(name); assert(index>=0);
+            const auto& part=model.sourceStructures()[index]; const auto& group=model.bones()[part.group];
+            const std::uint32_t id=(sex==0?12000u:14000u)+static_cast<unsigned>(index);
+            const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b) { return b.objectId==id; });
+            assert(batch!=scene.batches.end() && batch->vertices.size()==part.pointCount);
+            for (std::size_t i=0;i<part.pointCount;++i) {
+                Vec3 expected=copy.map(transformed(matrices[index],group.points[part.firstPoint+i]));
+                expected.x+=sex==0?-2.85:2.85;
+                const auto& v=batch->vertices[i];
+                assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);
+            }
+        }
+    }
     frame.presented=true; return true;
 }
 static WindowEvent mouse(WindowEvent::Type type,double x,double y) { WindowEvent e{type}; e.button=1;e.x=x;e.y=y;return e; }
 int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
     const auto maleOriginal=room.male().sourceMatrices({},0), femaleOriginal=room.female().sourceMatrices({},0);
+    observedRoom=&room; originalMatrices[0]=maleOriginal; originalMatrices[1]=femaleOriginal;
+    assert(room.comparison(true).exact() && room.comparison(false).exact());
     check(room,true); check(room,false);
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
@@ -113,10 +164,12 @@ int main() {
         // No visible jump at the child/adult and infant bridge boundaries.
         for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.}) {
             p=room.comparison(male).profile();p.height=boundary-0.00001;assert(room.setComparison(male,p,error));
-            Vec3 before=room.comparison(male).map({0.1,1.4,0.02});
+            const std::array<Vec3,3> points{{{0.1,1.4,0.02},{0.1,1.6,0.02},{0.1,1.7,0.02}}};
+            std::array<Vec3,3> before;
+            for (std::size_t i=0;i<points.size();++i) before[i]=room.comparison(male).map(points[i]);
             p.height=boundary+0.00001;assert(room.setComparison(male,p,error));
-            Vec3 after=room.comparison(male).map({0.1,1.4,0.02});
-            assert(length(after-before)<0.001);
+            for (std::size_t i=0;i<points.size();++i)
+                assert(length(room.comparison(male).map(points[i])-before[i])<0.001);
         }
         // Audit the extreme-height fallback, including its entry and exit.
         Vec3 previous{}; bool first=true;
@@ -126,6 +179,28 @@ int main() {
             if (!first) assert(length(point-previous)<0.001);
             previous=point; first=false;
         }
+        // Locate the partial-to-exact transition and inspect the skull on
+        // both sides of it, not only at the published curve knot heights.
+        p=room.comparison(male).profile(); p.height=20; assert(room.setComparison(male,p,error));
+        bool wasExact=room.comparison(male).exact(); int transitions=0;
+        for (double h=20.25;h<=105;h+=0.25) {
+            p.height=h; assert(room.setComparison(male,p,error));
+            const bool nowExact=room.comparison(male).exact();
+            if (nowExact!=wasExact) {
+                double low=h-0.25, high=h;
+                for (int i=0;i<25;++i) {
+                    p.height=(low+high)*0.5; assert(room.setComparison(male,p,error));
+                    if (room.comparison(male).exact()==wasExact) low=p.height; else high=p.height;
+                }
+                p.height=low; assert(room.setComparison(male,p,error));
+                const Vec3 before=room.comparison(male).map({0.1,1.7,0.1});
+                p.height=high; assert(room.setComparison(male,p,error));
+                assert(length(room.comparison(male).map({0.1,1.7,0.1})-before)<0.001);
+                ++transitions; p.height=h; assert(room.setComparison(male,p,error));
+            }
+            wasExact=nowExact;
+        }
+        assert(transitions>0);
         room.resetComparison(male);
     }
     // Captured cursor cannot drag; released cursor can drag/reset/select sex.

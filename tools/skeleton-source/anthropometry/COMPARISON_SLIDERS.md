@@ -53,20 +53,44 @@ subjects were abnormal. Hand and foot dimensions have no separate fitting yet.
 
 ## Method and limits
 
+The previous fit put a vertical-field knot through the skull. At the default
+male C1 contact, its local Y scale changed from **1.383 below** to **0.970
+above** the knot, while X and Z stayed at 1.0; it stretched the jaw and lower
+face differently from the cranium. The corrected default applies a uniform
+scale of about **1.088 male** and **1.045 female** to skull, jaw and C1.
+The regression test checks every vertex of all three structures against one
+shared similarity transform, including after slider changes.
+
+`tests/skull_mesh_contact.py` also compares the actual source and blue triangle
+surfaces with FCL. The registered T-pose already has head–jaw intersections in
+both originals and head–C1 intersections in the female original; the blue copies
+retain these, rather than hiding them by moving the original jaw or neck. In this
+static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 female
+head–C1 contacts; male head–C1 surfaces are 0.026 mm apart. Counts depend on the
+mesh and collision algorithm. This does not test containment or establish the
+correct biological placement, and **does not fix those pre-existing overlaps**.
+
 The source T-pose is captured once. A continuous piecewise-linear vertical field
 maps the ordered floor, pelvis, mean hip, C7, jaw, mean C1 contact and skull
-landmarks to the overlapping targets while preserving total height. The actual
-left/right hip and C1 means are solved after deformation, not assumed equal to
-the transform of their mean. Width transitions continuously between pelvis and
-scapula, and the left and right arms share a length factor about their own fitted
-shoulder centres. The original C7 location is kept near its scaled position,
-with an interior margin to keep the landmark order feasible. At incompatible
-target combinations a binary search finds the closest feasible blend of the four
-vertical targets toward uniform source scaling. This is a rendering
-deformation: individual bones can change shape, and the separate arm field is
-only anchored at the estimated shoulder centre. It does **not** certify joint
-contact, preserve all rigid bones, implement a new anatomical rig or guarantee
-collision-free motion. The blue figures are not simulated.
+landmarks to overlapping targets while preserving total height. The skull, jaw
+and C1 receive the same **uniform 3D scale and translation**; their shapes and
+relative positions are preserved instead of stretching the face or splitting
+the skull at a vertical-field knot. The shared skull-to-jaw height determines
+that scale, and the desired neck and overall height determine the C7 position.
+The actual mean of the left/right hip centres is solved after deformation. Width
+transitions continuously between pelvis and scapula, and the left and right arms
+share a length factor about their own fitted shoulder centres.
+
+These constraints are not always compatible with all seven surface targets. At
+incompatible combinations, a binary search blends the four vertical targets
+toward uniform source scaling; the controls show **Partial fit** and the fitted
+values. For example, the 50 cm visual copies no longer meet the nominal head
+surface estimate: maintaining an intact adult skull/jaw and feasible proxy order
+has priority. This is a rendering deformation: outside the skull/jaw/C1 assembly,
+individual bones can change shape, and the arm field is only anchored at the
+estimated shoulder centre. It does **not** certify joint contact, preserve all
+rigid bones, implement a new anatomical rig or guarantee collision-free motion.
+The blue figures are not simulated. The original white skeletons remain unchanged.
 
 The existing child/adult surface curves, neonatal bridges and bounded
 continuations are used. They are not a skeletal growth model: for example, a
