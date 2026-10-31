@@ -1,5 +1,7 @@
 # Body dimensions versus stature: measured human data
 
+For a direct comparison of static versus changing dimensions, child/adult height bins, additional head-age data and an explicitly flagged 100–250 cm model grid, see [HEIGHT_VARIATION_REPORT.md](HEIGHT_VARIATION_REPORT.md).
+
 This is research data, **not game-derived proportions**. It supplements, and does not replace, the skeletal bone-ratio TSV one directory above. Surface lengths include skin and soft tissue and cannot be substituted for osteometric bone lengths. These are population associations, not measurements of either CT subject, and are not clinical normal ranges.
 
 ## Deliverables
@@ -48,7 +50,7 @@ Sources: [official ANSUR II database and variable list](https://ph.health.mil/to
 
 ## Crown-to-chin head height: remaining gap
 
-We did **not** find reliable individual paired crown-to-chin/stature data for both sexes in these public datasets, nor a verified sex-specific forward regression suitable for this use. DINED defines head height as menton-to-vertex perpendicular to the Frankfort plane: [TU Delft measurement definitions](https://dined.io.tudelft.nl/en/database/tool). [Murakami and Otsuka (1957)](https://doi.org/10.3861/jshhe.23.55), a Japanese sample of 1,600 males and 1,600 females aged 4–21, reports mean head heights at age 21 of 23.4 cm male and 22.4 cm female, and adult mean stature/head-height indices of 7.1 and 6.9 respectively. The accessible English abstract does not fully specify the endpoint method, matching age-group denominators, raw pairs, dispersion or stature-conditional slope. These are separate group summaries, **not** a regression or paired data, and should not be spliced into the Army fits as though measured on the same people. Other papers measure auricular height rather than complete head height or predict stature from head measurements: algebraically inverting those regressions does not produce the desired conditional expectation.
+The ANSUR II and NHANES 2017–2018 public datasets do **not** contain paired crown-to-chin/stature data. A later head-age study and an exploratory Korean-language source are documented in [HEIGHT_VARIATION_REPORT.md](HEIGHT_VARIATION_REPORT.md); the latter lacks a verified primary data dictionary and cannot yet establish a clinical crown-to-chin regression. DINED defines head height as menton-to-vertex perpendicular to the Frankfort plane: [TU Delft measurement definitions](https://dined.io.tudelft.nl/en/database/tool). [Murakami and Otsuka (1957)](https://doi.org/10.3861/jshhe.23.55), a Japanese sample of 1,600 males and 1,600 females aged 4–21, reports mean head heights at age 21 of 23.4 cm male and 22.4 cm female, and adult mean stature/head-height indices of 7.1 and 6.9 respectively. The accessible English abstract does not fully specify the endpoint method, matching age-group denominators, raw pairs, dispersion or stature-conditional slope. These are separate group summaries, **not** a regression or paired data, and should not be spliced into the Army fits as though measured on the same people. Other papers measure auricular height rather than complete head height or predict stature from head measurements: algebraically inverting those regressions does not produce the desired conditional expectation.
 
 ## Limits of 1–2.5 m and clinical evidence
 
