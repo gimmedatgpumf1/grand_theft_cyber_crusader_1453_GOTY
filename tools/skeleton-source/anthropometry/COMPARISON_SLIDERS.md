@@ -130,7 +130,7 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-The height targets use one pooled quadratic for each sex and dimension, fitted to
+The height targets use one pooled quadratic or cubic for each sex and dimension, fitted to
 individual child and adult records. The six NHANES surfaces share recorded
 landmarks; the remaining five use explicitly converted child surface proxies
 and adult ANSUR surfaces. See `POOLED_HEIGHT_MODELS.md` for the substitutions,

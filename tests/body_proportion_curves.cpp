@@ -26,11 +26,11 @@ int main() {
                 assert(current>previous && current<h);
                 previous=current;
             }
-            // A single quadratic is used across the former child/adult joins,
-            // so its third finite difference vanishes.
+            // A single cubic is used across the former child/adult joins,
+            // so its fourth finite difference vanishes.
             for (double h:{60.,95.,140.,170.,185.,210.,235.}) {
                 const double d=2;
-                assert(std::abs(at(h+3*d)-3*at(h+2*d)+3*at(h+d)-at(h))<1e-9);
+                assert(std::abs(at(h+4*d)-4*at(h+3*d)+6*at(h+2*d)-4*at(h+d)+at(h))<1e-9);
             }
             for (double h:{50.,100.,145.,175.,190.,250.}) {
                 const double eps=1e-5;

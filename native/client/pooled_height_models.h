@@ -1,6 +1,7 @@
 #pragma once
 
-// Single pooled quadratic per sex and dimension, evaluated without age blending.
+// Single pooled cubic (or degree-elevated quadratic) per sex and dimension.
+// Coefficients are fitted jointly; there is no age-dependent formula blend.
 // Pooled surface proxies and their non-clinical limitations are documented in
 // tools/skeleton-source/anthropometry/POOLED_HEIGHT_MODELS.md.
 #include "client/pooled_height_coefficients.h"

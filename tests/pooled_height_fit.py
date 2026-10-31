@@ -35,6 +35,18 @@ for sex in (1,2):
         assert np.max(np.abs(full-changed_child)) > 1e-4
         assert np.max(np.abs(full-changed_adult)) > 1e-4
         assert stats['children'] > 1000 and stats['adults'] > 1000
+# Proxy calibration must exclude test adults; subject identifiers in each
+# source are never split across training and validation.
+army=fitter.checked('ANSUR_II_PAIRED_MM.csv')
+army=army[army.Age>=18]
+infants=fitter.checked('NHANES_III_INFANT_PAIRED_CM.csv')
+full,_,full_factor=fitter.input_frames(n,infants,army,'male',1,'arm',[])
+fold,_,fold_factor=fitter.input_frames(n,infants,army,'male',1,'arm',[0])
+assert abs(full_factor-fold_factor)>1e-7
+train=fitter.split(fold,[0],False)
+test=fitter.split(fold,[0],True)
+for left,right in zip(train,test):
+    assert not (set(left.id) & set(right.id))
 # Real infant pairs must change the estimate; a neonatal summary is a separate
 # soft observation, not fictitious replicated raw rows.
 infant=fitter.checked('NHANES_III_INFANT_PAIRED_CM.csv')
@@ -64,5 +76,15 @@ for audit in (holdout,replication):
     for tail in ('short','tall'):
         h=audit[audit.region==tail]
         assert len(h)>=18 and h.n.sum()>100
-        assert h.new_mae_cm.mean()<h.old_mae_cm.mean()
-print('Pooled individual-record, neonatal-anchor and tail holdout audit: PASS')
+nested=pd.read_csv(root/'tools/skeleton-source/anthropometry/POOLED_HEIGHT_NESTED_CV.tsv',sep='\t')
+assert set(nested.fold)==set(range(5))
+for tail in ('short','tall'):
+    h=nested[nested.region==tail]
+    assert h.new_mae_cm.mean()<h.old_mae_cm.mean()
+ratios=pd.read_csv(root/'tools/skeleton-source/anthropometry/POOLED_HEAD_RATIO_CV.tsv',sep='\t')
+assert len(ratios)==26 and all(ratios.age%5==ratios.fold)
+for _,g in ratios.groupby('sex'):
+    assert abs(g.new_ratio-g.observed_ratio).mean()<abs(g.old_ratio-g.observed_ratio).mean()
+# The independent head-size evidence can disagree with circumference-derived
+# proxies, so proxy residual improvement must never be treated as validation.
+print('Pooled fit, nested tail and held-out head ratio audits: PASS')

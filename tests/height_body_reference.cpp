@@ -17,7 +17,7 @@ int main() {
             }
             for (double h:{60.,95.,140.,170.,185.,210.,235.}) {
                 const double d=2;
-                assert(std::abs(at(h+3*d)-3*at(h+2*d)+3*at(h+d)-at(h))<1e-9);
+                assert(std::abs(at(h+4*d)-4*at(h+3*d)+6*at(h+2*d)-4*at(h+d)+at(h))<1e-9);
             }
             for (double h:{50.,100.,140.9,149.1,175.,190.,199.3,250.}) {
                 const double eps=1e-5;
@@ -37,6 +37,9 @@ int main() {
     const auto m=estimateHeightBodyReference(BodyReferenceSex::male,50);
     const auto f=estimateHeightBodyReference(BodyReferenceSex::female,50);
     assert(m && f && std::abs(m->headCm-f->headCm)>0.01 && std::abs(m->armCm-f->armCm)>0.01);
+    const auto adultM=estimateHeightBodyReference(BodyReferenceSex::male,170);
+    const auto adultF=estimateHeightBodyReference(BodyReferenceSex::female,170);
+    assert(adultM && adultF && std::abs(adultM->armCm-adultF->armCm)>0.01);
     assert(!estimateHeightBodyReference(BodyReferenceSex::male,0));
     assert(!estimateHeightBodyReference(BodyReferenceSex::male,std::numeric_limits<double>::quiet_NaN()));
 }
