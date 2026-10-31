@@ -22,7 +22,7 @@ The room's humeral-head-to-elbow axes are horizontal to numerical precision, and
 
 The humerus-end measurement in the table is distinct from starting at the fitted centre of the humeral head: the latter gives left/right mean distances of 72.49 cm male and 68.04 cm female. The shoulder-end humerus vertex is a geometric bony endpoint, not an identified skin acromion, and must not be presented as directly matching the ANSUR shoulder reference. Left/right endpoint coordinates and values are in the TSV.
 
-The previous shoulder-width audit found the registered scapulae are not verified as positioned in a standard anatomical posture. In this T-pose the selected right male scapular point lies only about 0.44 cm farther outward in X than the humeral-head centre, versus 2.40 cm on the left; the asymmetry is another reason the shoulder landmark needs validation, not proof of an anatomical abnormality.
+The previous shoulder-width audit found the registered scapulae are not verified as positioned in a standard anatomical posture. In this T-pose the selected right male scapular point lies only about 0.31 cm farther outward in X than the humeral-head centre, versus 2.50 cm on the left; the asymmetry is another reason the shoulder landmark needs validation, not proof of an anatomical abnormality.
 
 ## Reproduce
 

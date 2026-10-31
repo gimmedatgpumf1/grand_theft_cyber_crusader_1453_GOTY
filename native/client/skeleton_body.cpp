@@ -1,6 +1,5 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_finger_frame.h"
-#include "client/skeleton_girdle_frame.h"
 #include "client/skeleton_leg_frame.h"
 #include "client/skeleton_spine_frame.h"
 #include "client/skeleton_toe_frame.h"
@@ -605,7 +604,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
         return name.size() >= 2 && name.substr(name.size()-2) == "_L" ? 0 : 1;
     };
     constexpr double toRadians = 3.14159265358979323846 / 180.0;
-    double spineTurn=0; std::array<double,2> girdleTurn{}; std::optional<NeckReferenceFrames> neckFrames;
+    double spineTurn=0; std::optional<NeckReferenceFrames> neckFrames;
     for (std::size_t head=0; head<queue.size(); ++head) {
         const auto parent = queue[head];
         for (const auto& link : sourceLinks_) {
@@ -722,16 +721,12 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     alignmentAxis={0,yaw<0 ? -1.0 : 1.0,0}; alignmentAngle=std::abs(yaw); alignToNeutral=true;
                 } else if (link.mobility == "sternoclavicular" || link.mobility == "acromioclavicular") {
                     axis = {0,0,side == 0 ? 1.0 : -1.0};
-                    if (link.mobility=="sternoclavicular") {
-                        const auto turn=referenceGirdleTurn(*this,side,spineTurn); if (!turn) { error="Missing clavicle frame"; return false; }
-                        girdleTurn[side]=*turn; alignmentAxis={0,0,*turn<0 ? -1.0 : 1.0}; alignmentAngle=std::abs(*turn); alignToNeutral=true;
-                    }
                 } else if (link.mobility == "shoulder_ball_socket") {
                     // The primary shoulder control is abduction: align the
                     // actual upper-arm shaft toward its side, not a world X
                     // rotation that assumes the subject began in neutral.
                     const Vec3 worldTarget = side == 0 ? Vec3{1,0,0} : Vec3{-1,0,0};
-                    const Vec3 target=frameVector(joint_detail::rotate({0,0,1},-spineTurn-girdleTurn[side]),worldTarget);
+                    const Vec3 target=frameVector(joint_detail::rotate({0,0,1},-spineTurn),worldTarget);
                     axis = cross(down,target);
                     current = (3.14159265358979323846/2) -
                         std::acos(std::clamp(dot(down,target),-1.0,1.0));
@@ -787,7 +782,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     forearmAxis=normalized(w->wrist-pivot);
                     const auto wrist=wristReferenceFrame(forearmAxis,w->hand,w->palm);
                     const Vec3 palm=frameVector(joint_detail::rotate(wrist.alignment,wrist.alignmentAngle),w->palm);
-                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0,spineTurn+girdleTurn[side]);
+                    const auto frame=mirroredElbowFrame(bones_[h].pivot,pivot,w->wrist,palm,side==0,spineTurn);
                     axis=frame.flexion; alignmentAxis=frame.alignment; alignmentAngle=frame.alignmentAngle; alignToNeutral=true;
                 } else if (link.mobility == "elbow_hinge") {
                     current = std::atan2(length(axis),std::clamp(dot(up,down*-1.0),-1.0,1.0));
@@ -797,7 +792,11 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axis = cross(up,guide);
                 }
                 if (length(axis) < 1e-8) { error = "Degenerate source joint axis for " + childName; return false; }
-                // Make each source coordinate the identity relative transform.
+                // Coordinates refer to anatomical neutral, but the supplied
+                // mesh is already in its subject's source pose. Make every
+                // joint's source coordinate the identity relative transform.
+                // Otherwise a nonzero parent bind angle incorrectly rotates
+                // the child's pivot and axis before any posing occurs.
                 current=std::clamp(current,bounds->extension*toRadians,bounds->flexion*toRadians);
                 JointRigidTransform frame; frame.translation = pivot;
                 const auto parentFrame = joint_detail::compose(frame,joint_detail::rotate(normalized(axis),-current));

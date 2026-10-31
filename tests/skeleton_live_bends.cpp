@@ -26,8 +26,6 @@ static void checkArmAlignment(SkeletonModel& model) {
         const auto& edge=model.sourceLinks()[i]; if (!model.referenceBend(i)) continue;
         if (edge.mobility=="intervertebral" && model.sourceStructures()[edge.first].name=="L5" &&
             model.sourceStructures()[edge.second].name=="Sacrum") assert(model.setReferenceBend(i,0));
-        // The calibrated shoulder shaft assumes the girdle's reference pose.
-        if (edge.mobility=="sternoclavicular") assert(model.setReferenceBend(i,0));
         if (edge.mobility=="shoulder_ball_socket") assert(model.setReferenceBend(i,90));
         if (edge.mobility=="elbow_hinge") assert(model.setReferenceBend(i,0));
     }

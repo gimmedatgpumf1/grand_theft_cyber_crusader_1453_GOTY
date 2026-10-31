@@ -7,10 +7,12 @@
 #include <string>
 #include <utility>
 using namespace gtc::native;
-int main() {
+int main(int argc, char** argv) {
+    const bool source=argc==2 && std::string(argv[1])=="--source";
+    if (argc>2 || (argc==2 && !source)) { std::cerr << "usage: pose-export [--source]\n"; return 1; }
     SkeletonRoom room; std::string error;
-    if (!room.load(".",error) || !room.restoreReferencePose()) {
-        std::cerr << "Unable to load T-pose: " << error << '\n'; return 1;
+    if (!room.load(".",error) || !(source ? room.restoreOriginalPose() : room.restoreReferencePose())) {
+        std::cerr << "Unable to load requested pose: " << error << '\n'; return 1;
     }
     std::cout << std::setprecision(17);
     for (const auto& item : {std::pair<const char*,SkeletonModel*>{"male",&room.male()},

@@ -35,8 +35,8 @@ def compile_exporter(output):
                     '-Inative/vendor/bullet/src',*sources,'-o',str(output)],cwd=REPO,check=True)
 
 
-def matrices(executable):
-    text=subprocess.check_output([str(executable)],cwd=REPO,text=True)
+def matrices(executable, args=()):
+    text=subprocess.check_output([str(executable),*args],cwd=REPO,text=True)
     result={}
     for line in text.splitlines():
         t=line.split('\t')
