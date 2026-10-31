@@ -28,6 +28,19 @@ The two OBJ skeletons can be measured, but their bone-only geometry does not sup
 
 `raw difference = bony proxy − surface prediction`, percentage divides that by the prediction. These numbers are provided so the arithmetic is visible, **not** as matched biological deviations. Similar torso or leg values do not prove good fit; larger arm or leg differences do not prove abnormality. The head gap is particularly uncertain. No percentile, standard deviation score, normality classification or overall average is warranted. `WHOLE_BODY_SKELETON_PROXIES.tsv` has unrounded calculations and both sex formulas.
 
+## Direct neck-to-skull measurement
+
+The neck attaches to the skull at the two **atlanto-occipital (C1–skull) joints**. The following measures from an estimated midpoint of each C1–skull contact to the most posterior C7 vertex, in the **original registered source pose**. This directly addresses the skeleton's skull connection; unlike the jaw proxy above, no head re-levelling is applied.
+
+| Subject | L / R vertical cm | Mean vertical cm | L / R straight 3D cm | Mean straight 3D cm |
+|---|---|---:|---|---:|
+| male N197925 | 9.411 / 9.476 | 9.443 | 10.539 / 10.774 | 10.657 |
+| female N186416 | 11.706 / 11.123 | 11.414 | 13.516 / 12.967 | 13.242 |
+
+`34-measure-neck-skull-contact.py` uses the upper half of C1 vertices, splits at the C1 centroid into left/right with an 8 mm minimum lateral displacement, and finds the closest skull vertex for each candidate. The midpoint of the closest pair on each side is a geometric contact proxy. C1–skull surface gaps are L/R **1.34/0.36 mm male** and **1.72/0.47 mm female**. See `SKELETON_NECK_SKULL_CONTACT.tsv` for both actual surface points, the midpoint, C7 coordinates, gaps and side lengths. The triangulated meshes are simplified and registered, and nearest points do **not** prove those points are the true articular surfaces or joint centres. Bone pose and upper/lower landmark choices can materially change both lengths.
+
+**Do not compare these numbers directly to the ANSUR neck-link formula.** That reference ends at the surface tragion near the ear, not at the C1–skull joint, and is a vertical surface measure. A jaw–skull contact proxy for that ear-level reference is reported separately in the five-dimension table. A validated height-to-C1–skull/C7 reference with matching endpoints has not been established here, so this direct skeletal measurement has no claimed formula deviation.
+
 ## Exactly what was measured
 
 Measurements are from the **registered source pose** of the shipped `skeleton-{male,female}.obj` in metres, converted to cm. Recorded cadaver lengths (170.0/170.2 cm), rather than mesh vertical bounding-box heights, are the formula inputs. They are not guaranteed to equal living standing stature. Automated joint fits and mesh landmarks are not expert-validated; position and segmentation can affect results.
@@ -107,6 +120,8 @@ c++ -std=c++17 -O2 -I native tools/skeleton-source/openskeleton/31-height-profil
 /tmp/height-profile female 170.2
 python3 tools/skeleton-source/openskeleton/31-measure-whole-body.py
 python3 tests/neck_orbital_proxy.py
+python3 tools/skeleton-source/openskeleton/34-measure-neck-skull-contact.py
+python3 tests/neck_skull_contact.py
 python3 tools/skeleton-source/openskeleton/33-neck-pose-audit.py
 c++ -std=c++17 -O2 -Wall -Wextra -Werror -I native tests/height_body_reference.cpp -o /tmp/test-height-profile && /tmp/test-height-profile
 ```
