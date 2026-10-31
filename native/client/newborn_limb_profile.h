@@ -57,11 +57,12 @@ public:
         ratios_=ratios; loaded_=true; error.clear(); return true;
     }
 
-    // Recumbent crown-to-heel length; one-input approximation within a narrow
-    // 48–52 cm term-neonate design window. Height alone cannot establish age,
+    // Recumbent crown-to-heel length. A newborn's ratios can be evaluated at
+    // any positive length, but extrapolating away from term-newborn lengths
+    // is not a validated growth model. Length alone cannot establish age,
     // gestation, or health, and median ratios do not predict every individual.
     std::optional<Dimensions> estimate(double lengthCm) const {
-        if (!loaded_ || !std::isfinite(lengthCm) || lengthCm<48 || lengthCm>52) return std::nullopt;
+        if (!loaded_ || !std::isfinite(lengthCm) || lengthCm<=0) return std::nullopt;
         return Dimensions{lengthCm*ratios_[0],lengthCm*ratios_[1],lengthCm*ratios_[2],
                           lengthCm*ratios_[3],lengthCm*ratios_[4],lengthCm*ratios_[5],
                           lengthCm*ratios_[6],lengthCm*ratios_[7]};

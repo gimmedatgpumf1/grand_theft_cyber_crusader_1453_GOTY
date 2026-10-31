@@ -16,8 +16,8 @@ int main() {
     assert(std::abs(m->thighCm-8.825)<1e-10);
     assert(std::abs(m->lowerLegCm-9.785)<1e-10);
     assert(std::abs(m->footCm-7.98)<1e-10);
-    assert(!p.estimate(47.99) && !p.estimate(52.01));
-    assert(p.estimate(48.0) && p.estimate(52.0));
+    assert(p.estimate(20.0) && p.estimate(200.0));
+    assert(!p.estimate(0.0) && !p.estimate(-1.0));
     assert(!p.estimate(std::numeric_limits<double>::quiet_NaN()));
     assert(!p.estimate(std::numeric_limits<double>::infinity()));
     assert(!p.load("missing.tsv",NewbornLimbProfile::Sex::female,error));

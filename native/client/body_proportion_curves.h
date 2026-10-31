@@ -97,13 +97,14 @@ public:
         models_.swap(parsed); error.clear(); return true;
     }
 
-    // Selected families are only valid inside the same conservative intervals
-    // as the knots. The 50 cm stress case returns null unless an actual infant
-    // dataset supplies a separately supported age-specific model.
+    // Outside the observed knot range use a smooth, bounded continuation,
+    // not the selected family's unchecked extrapolation. Such results are
+    // estimates, not measurements or validated biological predictions.
     std::optional<double> selectedDimensionCm(const Key& key, double heightCm) const {
-        if (!dimensionCm(key,heightCm)) return std::nullopt;
+        if (!std::isfinite(heightCm) || heightCm<=0) return std::nullopt;
+        const auto curve=curves_.find(key);
         const auto it=models_.find(key);
-        if (it==models_.end()) return std::nullopt;
+        if (curve==curves_.end() || it==models_.end()) return std::nullopt;
         if (key.dimension=="height_minus_sitting") {
             Key sitting=key; sitting.dimension="sitting_height";
             const auto value=selectedDimensionCm(sitting,heightCm);
@@ -111,12 +112,15 @@ public:
             return heightCm-*value;
         }
         const auto& m=it->second;
+        const auto& knots=curve->second.knots;
         if (m.method=="pchip") return dimensionCm(key,heightCm);
-        const double z=heightCm-150.0; double result=0;
-        if (m.method=="linear") result=m.a+m.b*z;
-        else if (m.method=="quadratic") result=m.a+m.b*z+m.c*z*z;
-        else if (m.method=="log") result=m.a+m.b*std::log(heightCm/150.0);
-        else if (m.method=="power") result=m.a*std::pow(heightCm/150.0,m.b);
+        const double x=std::clamp(heightCm,knots.front().x,knots.back().x);
+        const double z=x-150.0; double result=0, slope=0;
+        if (m.method=="linear") { result=m.a+m.b*z; slope=m.b; }
+        else if (m.method=="quadratic") { result=m.a+m.b*z+m.c*z*z; slope=m.b+2*m.c*z; }
+        else if (m.method=="log") { result=m.a+m.b*std::log(x/150.0); slope=m.b/x; }
+        else if (m.method=="power") { result=m.a*std::pow(x/150.0,m.b); slope=m.b*result/x; }
+        if (x!=heightCm) return extendFraction(heightCm,x,result,slope);
         if (!std::isfinite(result) || result<=0 || result>=heightCm) return std::nullopt;
         return result;
     }
@@ -124,12 +128,12 @@ public:
     // Height-only transition between NHANES III child and adult *surface*
     // models with matching landmarks. This is a modelling convention, not an
     // inference of age from stature. All dimensions use the same weight, so
-    // no part abruptly changes age group. Both fits must be supported through
-    // the whole blend. No extrapolation or fallback across unsupported gaps.
+    // no part abruptly changes age group. Outside the sampled ranges, smooth
+    // continuation is an unvalidated estimate rather than observed evidence.
     std::optional<double> blendedNhanesDimensionCm(const std::string& sex,
                                                   const std::string& dimension,
                                                   double heightCm) const {
-        if (!std::isfinite(heightCm) || (sex!="male" && sex!="female")) return std::nullopt;
+        if (!std::isfinite(heightCm) || heightCm<=0 || (sex!="male" && sex!="female")) return std::nullopt;
         if (dimension!="sitting_height" && dimension!="height_minus_sitting" &&
             dimension!="upper_arm_surface" && dimension!="upper_leg_surface" &&
             dimension!="shoulder_breadth" && dimension!="pelvis_surface_breadth") return std::nullopt;
@@ -140,18 +144,37 @@ public:
         }
         const Key child{"NHANES_III",sex,"under_18",dimension};
         const Key adult{"NHANES_III",sex,"adult_18_plus",dimension};
-        // Deliberately inside the common supported ranges of all six NHANES
-        // measurements. Quintic smootherstep avoids a sudden change in
-        // value or slope at either endpoint.
+        if (models_.find(child)==models_.end() || models_.find(adult)==models_.end()) return std::nullopt;
+        // Neonatal surface anchors come from several studies, not one subject;
+        // crown-rump is only an approximation to sitting height. See the
+        // extrapolation report for definitions and limitations.
+        double infantRatio=0;
+        if (dimension=="sitting_height") infantRatio=sex=="male" ? 34.2/50.9 : 33.7/50.4;
+        else if (dimension=="upper_arm_surface") infantRatio=sex=="male" ? 0.1900 : 0.1908;
+        else if (dimension=="upper_leg_surface") infantRatio=8.3/50.6;
+        else if (dimension=="shoulder_breadth") infantRatio=12.4/50.0;
+        else if (dimension=="pelvis_surface_breadth") infantRatio=7.74/48.75;
+        const double infant=heightCm*infantRatio;
+        if (heightCm<=50) return infant;
+        if (heightCm<100) {
+            // A Hermite bridge matches both the neonatal value/slope at 50 cm
+            // and the child value/slope at 100 cm without treating unlike
+            // infant and older-child datasets as observations of one person.
+            const auto end=selectedDimensionCm(child,100);
+            const auto endSlope=selectedSlope(child,100);
+            if (!end || !endSlope) return std::nullopt;
+            const double t=(heightCm-50)/50, t2=t*t, t3=t2*t;
+            return (2*t3-3*t2+1)*50*infantRatio+(t3-2*t2+t)*50*infantRatio+
+                   (-2*t3+3*t2)*(*end)+(t3-t2)*50*(*endSlope);
+        }
+        // Adult/child blend remains inside the common supported ranges.
         const double low=sex=="male" ? 160.0 : 145.0;
         const double high=sex=="male" ? 175.0 : 160.0;
         if (heightCm<=low) return selectedDimensionCm(child,heightCm);
         if (heightCm>=high) return selectedDimensionCm(adult,heightCm);
         const auto c=selectedDimensionCm(child,heightCm), a=selectedDimensionCm(adult,heightCm);
         if (!c || !a) return std::nullopt;
-        const double t=(heightCm-low)/(high-low);
-        const double weight=t*t*t*(10.0+t*(-15.0+6.0*t));
-        return *c+weight*(*a-*c);
+        return mix(*c,*a,(heightCm-low)/(high-low));
     }
 
     // A dimensionless multiplier relative to a specified source stature.
@@ -166,9 +189,10 @@ public:
         return std::isfinite(scale) && scale>0 ? std::optional<double>(scale) : std::nullopt;
     }
 
-    // No clamping or extrapolation: nullopt means absent or unsupported.
-    // A single knot is usable at that exact height only. Gaps >10 cm cannot
-    // be interpolated. Distances are surface dimensions, not bone lengths.
+    // PCHIP interpolates across knots, even sparse gaps. Outside the measured
+    // range a slope-matched bounded-fraction continuation avoids hard height
+    // cutoffs. These are surface dimensions, not bone lengths, and neither
+    // sparse gaps nor extrapolation are validated by the underlying data.
     std::optional<double> dimensionCm(const Key& key, double heightCm) const {
         if (!std::isfinite(heightCm) || heightCm<=0) return std::nullopt;
         const auto found=curves_.find(key);
@@ -185,10 +209,13 @@ public:
         auto upper=std::lower_bound(v.begin(),v.end(),heightCm,
             [](const Knot& knot,double x){return knot.x<x;});
         if (upper!=v.end() && upper->x==heightCm) return upper->y;
-        if (upper==v.begin() || upper==v.end()) return std::nullopt;
+        if (upper==v.begin() || upper==v.end()) {
+            const std::size_t i=upper==v.begin() ? 0 : v.size()-1;
+            const double slope=v.size()==1 ? v[i].y/v[i].x : derivative(v,i);
+            return extendFraction(heightCm,v[i].x,v[i].y,slope);
+        }
         const std::size_t j=static_cast<std::size_t>(upper-v.begin()), i=j-1;
         const double h=v[j].x-v[i].x;
-        if (h>10.0) return std::nullopt;
         const double t=(heightCm-v[i].x)/h, t2=t*t, t3=t2*t;
         const double value=(2*t3-3*t2+1)*v[i].y+(t3-2*t2+t)*h*derivative(v,i)+
                            (-2*t3+3*t2)*v[j].y+(t3-t2)*h*derivative(v,j);
@@ -200,6 +227,48 @@ private:
     struct Model { std::string method; double a=0,b=0,c=0; };
     std::map<Key,Curve> curves_;
     std::map<Key,Model> models_;
+    // Analytic in-range derivative, used to join the infant bridge to the
+    // chosen child model without a slope kink at the join.
+    std::optional<double> selectedSlope(const Key& key,double x) const {
+        const auto curve=curves_.find(key); const auto model=models_.find(key);
+        if (curve==curves_.end() || model==models_.end()) return std::nullopt;
+        const auto& m=model->second; const auto& v=curve->second.knots;
+        if (x<v.front().x || x>v.back().x) return std::nullopt;
+        if (m.method=="linear") return m.b;
+        if (m.method=="quadratic") return m.b+2*m.c*(x-150);
+        if (m.method=="log") return m.b/x;
+        if (m.method=="power") return m.a*m.b*std::pow(x/150,m.b)/x;
+        if (v.size()==1) return v[0].y/v[0].x;
+        auto hi=std::lower_bound(v.begin(),v.end(),x,
+            [](const Knot& knot,double h){return knot.x<h;});
+        if (hi!=v.end() && hi->x==x) return derivative(v,static_cast<std::size_t>(hi-v.begin()));
+        if (hi==v.begin() || hi==v.end()) return std::nullopt;
+        const std::size_t j=static_cast<std::size_t>(hi-v.begin()), i=j-1;
+        const double h=v[j].x-v[i].x, t=(x-v[i].x)/h;
+        return ((6*t*t-6*t)*v[i].y+(3*t*t-4*t+1)*h*derivative(v,i)+
+                (-6*t*t+6*t)*v[j].y+(3*t*t-2*t)*h*derivative(v,j))/h;
+    }
+    static double mix(double first,double second,double t) {
+        const double weight=t*t*t*(10.0+t*(-15.0+6.0*t));
+        return first+weight*(second-first);
+    }
+    // Logistic continuation of dimension/height in log-height space. Its
+    // value and derivative match the fitted curve at the endpoint; the ratio
+    // stays between zero and one for ordinary finite inputs. This is a safe
+    // design extrapolation, not a claim about human biology at extremes.
+    static std::optional<double> extendFraction(double x,double x0,double y0,double slope) {
+        if (!std::isfinite(x) || !std::isfinite(x0) || !std::isfinite(y0) ||
+            !std::isfinite(slope) || x<=0 || x0<=0 || y0<=0 || y0>=x0) return std::nullopt;
+        const double r=y0/x0;
+        const double exponent=(x0*slope/y0-1)/(1-r);
+        // Subtract logs rather than divide, to avoid overflow for large x.
+        const double logit=std::log(r)-std::log1p(-r)+exponent*(std::log(x)-std::log(x0));
+        const double fraction=logit>=0 ? 1/(1+std::exp(-logit)) :
+                                         std::exp(logit)/(1+std::exp(logit));
+        const double result=x*fraction;
+        if (!std::isfinite(result) || result<=0 || result>=x) return std::nullopt;
+        return result;
+    }
     static void stripCR(std::string& line) { if (!line.empty() && line.back()=='\r') line.pop_back(); }
     static bool number(const std::string& text,double& value) {
         try { std::size_t end=0; value=std::stod(text,&end); return end==text.size() && std::isfinite(value); }
