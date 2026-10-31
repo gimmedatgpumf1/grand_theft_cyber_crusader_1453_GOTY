@@ -77,6 +77,9 @@ def generate():
                         str(HERE/'35-seven-dimensions.cpp'),'-o',str(binary)],check=True)
         for sex,subject,h in [('male','N197925',170.0),('female','N186416',170.2)]:
             dims=whole.measure(sex)
+            # The historical humeral-head-to-finger chain does not measure
+            # acromion-to-fingertip length. See ARM_PATH_AUDIT.md.
+            dims['arm']=(None,None,None)
             _,contacts=neck.measure(sex)
             # This is the user's requested C1–skull contact to C7, not the
             # surface reference and not the jaw-to-C7 surrogate.

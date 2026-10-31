@@ -2,6 +2,8 @@
 
 ## Answer and limits
 
+**Correction:** the arm proxy and deviations previously listed here are withdrawn as reference comparisons: the proxy started at the humeral-head centre instead of the acromion and used unmatched elbow, wrist and finger landmarks. See `ARM_PATH_AUDIT.md` for the reproducible segment breakdown.
+
 `native/client/height_body_reference.h` now exposes `estimateHeightBodyReference(sex, height_cm)`: one stature input and a sex preset return numerical estimates for head, neck, torso, full arm and full leg in centimetres. This is an **exploratory surface-reference profile**, not a completed one-height skeleton scaler. It does not yet move or scale bones, joint anchors, colliders, or ragdolls. Height alone cannot uniquely determine age, build or individual anatomy. Inputs outside observed cohorts are design extrapolations, not medical evidence.
 
 The two OBJ skeletons can be measured, but their bone-only geometry does not supply the same surface landmarks as the reference data. The following are **raw geometric discrepancies between unmatched measures**, not how far each person is from a medical mean or proof of abnormality. In particular, the head reference is from a dataset whose endpoint/protocol has not been verified, and the neck uses the jaw–skull connection as a stand-in for the ear landmark and an approximate **unverified head reorientation**; its raw differences are particularly uncertain. The neck, arm and leg use bilateral averages; left/right are in the TSV.
@@ -13,7 +15,7 @@ The two OBJ skeletons can be measured, but their bone-only geometry does not sup
 | Head | 21.19 | 22.96 | −1.76 (−7.7%) | 21.97; −3.5% |
 | Neck (jaw-joint proxy) | 11.90 | 10.36 | +1.54 (+14.8%) | 11.10; +7.2% |
 | Torso | 65.42 | 65.30 | +0.11 (+0.2%) | 63.64; +2.8% |
-| Full arm | 72.67 | 76.06 | −3.39 (−4.5%) | 75.79; −4.1% |
+| Full arm | Not established | 76.06 | NA | 75.79; NA |
 | Full leg | 87.14 | 86.67 | +0.47 (+0.5%) | 88.81; −1.9% |
 
 ### Female skeleton N186416, recorded cadaver length 170.2 cm
@@ -23,10 +25,10 @@ The two OBJ skeletons can be measured, but their bone-only geometry does not sup
 | Head | 20.73 | 21.98 | −1.26 (−5.7%) | 22.97; −9.8% |
 | Neck (jaw-joint proxy) | 13.70 | 11.11 | +2.59 (+23.3%) | 10.38; +32.0% |
 | Torso | 64.93 | 63.71 | +1.22 (+1.9%) | 65.37; −0.7% |
-| Full arm | 68.30 | 75.89 | −7.59 (−10.0%) | 76.15; −10.3% |
+| Full arm | Not established | 75.89 | NA | 76.15; NA |
 | Full leg | 79.99 | 88.92 | −8.93 (−10.0%) | 86.79; −7.8% |
 
-`raw difference = bony proxy − surface prediction`, percentage divides that by the prediction. These numbers are provided so the arithmetic is visible, **not** as matched biological deviations. Similar torso or leg values do not prove good fit; larger arm or leg differences do not prove abnormality. The head gap is particularly uncertain. No percentile, standard deviation score, normality classification or overall average is warranted. `WHOLE_BODY_SKELETON_PROXIES.tsv` has unrounded calculations and both sex formulas.
+`raw difference = bony proxy − surface prediction`, percentage divides that by the prediction. These numbers are provided so the arithmetic is visible, **not** as matched biological deviations. Similar torso or leg values do not prove good fit; larger leg differences do not prove abnormality. The head gap is particularly uncertain. No percentile, standard deviation score, normality classification or overall average is warranted. `WHOLE_BODY_SKELETON_PROXIES.tsv` has unrounded calculations and both sex formulas.
 
 ## Direct neck-to-skull measurement
 
@@ -55,7 +57,7 @@ Measurements are from the **registered source pose** of the shipped `skeleton-{m
 * **Head:** difference in Y between highest `Head` and lowest `Jaw` bone vertices. Not a verified vertex-to-menton anthropometric measurement; the jaw is in its registered pose and skin/hair are absent. Formula source uses an unverified "vertical head length" field, so even landmark correspondence is unknown.
 * **Neck:** see the dedicated method and uncertainty audit below. The old C1–C7 extent was **removed**, because it does not measure neck link. The replacement is an approximately re-levelled jaw–skull joint to C7 vertical proxy, **not a measurement of tragion or an exact neck link**.
 * **Torso:** Y of most posterior C7 vertex minus the lower Y extremum of the left/right pelvis bone meshes. This is neither palpated cervicale nor the standing skin crotch, and it depends on pose. The closest reference here is standing cervicale height minus crotch height.
-* **Arm:** per side, sum 3D distances between fitted humeral-head centre, fitted elbow centre, average distal 2% of radius vertices along its long PCA axis, centroids of metacarpal 3 and three third-finger phalanges, and an end vertex on the distal third phalanx. This deliberately follows the bent finger rather than treating a flexed hand-to-elbow straight chord as a fully extended arm. The chain is an approximation to an extended centreline, not an acromion-to-fingertip skin measure; the humeral head is not the acromion, and wrist/finger landmarks are geometric. Mean of sides.
+* **Arm:** per side, sum 3D distances between fitted humeral-head centre, fitted elbow centre, average distal 2% of radius vertices along its long PCA axis, centroids of metacarpal 3 and three third-finger phalanges, and an end vertex on the distal third phalanx. This historical path follows the bent finger, but does not establish the extended arm length; it is not an acromion-to-fingertip skin measure. The humeral head is not the acromion, and wrist/finger landmarks are geometric. Its total and biological differences have been withdrawn as a reference comparison. See `ARM_PATH_AUDIT.md`.
 * **Leg:** per side, sum fitted femoral head centre–fitted knee centre–distal fibula extremity plus the Y distance from the latter to the lowest calcaneus vertex. This does **not** begin at the greater trochanter, does not include plantar soft tissue, and includes a mixture of path lengths and a vertical heel-height proxy. It is not the same as upright trochanterion-to-floor height. Mean of sides. The extremity is selected along the fibula's PCA long axis away from the knee, not by a farthest-vertex diameter.
 
 The segment choices explain why even identical subjects would not be expected to produce zero discrepancy. For detailed independently remeasured bone spans, including their own endpoint limitations, see `SKELETON_BONE_CROSS_SEX_COMPARISON.md`.

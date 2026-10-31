@@ -46,6 +46,22 @@ def distances(points):
     return sum(np.linalg.norm(b-a) for a,b in zip(points,points[1:]))*100
 
 
+def arm_points(d, shoulder, elbow, side):
+    """Return the historical unvalidated bone-centre arm path in metres."""
+    radius=d[f'Radius_{side}']
+    axis=np.linalg.svd(radius-radius.mean(axis=0),full_matrices=False)[2][0]
+    projection=radius@axis
+    if abs(projection.max()-elbow@axis)<abs(projection.min()-elbow@axis): axis=-axis
+    projection=radius@axis
+    wrist=radius[projection>np.quantile(projection,.98)].mean(axis=0)
+    pts=[shoulder,elbow,wrist]+[d[f'Hand{part}3_{side}'].mean(axis=0)
+                               for part in ('Meta','ProxP','MidP','DistP')]
+    finger=d[f'HandDistP3_{side}']; direction=pts[-1]-pts[-2]
+    direction/=np.linalg.norm(direction)
+    pts.append(finger[np.argmax(finger@direction)])
+    return pts
+
+
 def measure(sex):
     d=mesh(sex); hip=joints(sex,'hips'); shoulder=joints(sex,'shoulders')
     elbow=joints(sex,'elbows'); knee=joints(sex,'knees')
@@ -66,18 +82,7 @@ def measure(sex):
     torso=(c7[1]-bottom)*100
     arms=[]; legs=[]
     for side in ('L','R'):
-        radius=d[f'Radius_{side}']
-        axis=np.linalg.svd(radius-radius.mean(axis=0),full_matrices=False)[2][0]
-        projection=radius@axis
-        if abs(projection.max()-elbow[side]@axis)<abs(projection.min()-elbow[side]@axis): axis=-axis
-        projection=radius@axis
-        wrist=radius[projection>np.quantile(projection,.98)].mean(axis=0)
-        pts=[shoulder[side],elbow[side],wrist]+[d[f'Hand{part}3_{side}'].mean(axis=0)
-                                                 for part in ('Meta','ProxP','MidP','DistP')]
-        finger=d[f'HandDistP3_{side}']; direction=pts[-1]-pts[-2]
-        direction/=np.linalg.norm(direction)
-        pts.append(finger[np.argmax(finger@direction)])
-        arms.append(distances(pts))
+        arms.append(distances(arm_points(d,shoulder[side],elbow[side],side)))
         fibula=d[f'Fibula_{side}']
         axis=np.linalg.svd(fibula-fibula.mean(axis=0),full_matrices=False)[2][0]
         projection=fibula@axis
@@ -137,8 +142,10 @@ def main():
                 for name,(value,left,right) in dimensions.items():
                     pred=predictions[name]
                     # All differences are unmatched comparisons, not clinical deviations.
-                    diff=f'{value-pred:.6f}'
-                    pct=f'{100*(value/pred-1):.4f}'
+                    # Historic arm path starts at the wrong anatomical point.
+                    # Keep it for auditing, not as an arm-reference discrepancy.
+                    diff=f'{value-pred:.6f}' if name!='arm' else 'NA'
+                    pct=f'{100*(value/pred-1):.4f}' if name!='arm' else 'NA'
                     output.append(dict(subject=subject,sex=sex,formula_sex=model,height_cm=f'{h:.1f}',
                                        dimension=name,proxy_cm=f'{value:.6f}',
                                        left_cm=f'{left:.6f}' if left is not None else 'NA',
