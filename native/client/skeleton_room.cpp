@@ -3,6 +3,7 @@
 #include "client/skeleton_rest_toes.h"
 #include "client/skeleton_toe_yaw.h"
 #include "client/threadpool.h"
+#include "client/ui_layer.h"
 
 #include <thread>
 
@@ -123,6 +124,11 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!maleLines_.bind(male_, error) || !femaleLines_.bind(female_, error)) return false;
     ready_ = true;
     if (!restoreReferencePose()) { ready_ = false; error = "Unable to pose skeletons"; return false; }
+    const std::string curves=directory+"anthropometry/";
+    if (!maleComparison_.loadCurves(curves,error) || !femaleComparison_.loadCurves(curves,error) ||
+        !maleComparison_.load(male_,true,directory,error) || !femaleComparison_.load(female_,false,directory,error)) {
+        ready_=false; return false;
+    }
     error_.clear();
     return true;
 }
@@ -252,6 +258,17 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.position = {std::sin(view.yaw) * 3.5, 1.15, std::cos(view.yaw) * 3.5};
         camera.worldSpaceGpu = view.gpu;
     }
+    const auto submit = [&](GpuScene& scene) {
+        const std::size_t worldCount=scene.batches.size();
+        frame.interfaceInFrame=false;
+        if (frame.uiLayer && !frame.uiLayer->empty()) {
+            appendUiBatches(*frame.uiLayer,camera,scene);
+            frame.interfaceInFrame=true;
+        }
+        const bool ok=renderGpuScene(scene,frame);
+        scene.batches.resize(worldCount);
+        if (!ok) frame.rgb.clear();
+    };
     if (lineView_) {
         // Build only when a pose changes; a static view remains cached on GPU.
         if (view.gpu) {
@@ -262,6 +279,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
                 femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
+                maleComparison_.draw(raster,-2.85,12000); femaleComparison_.draw(raster,2.85,14000);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -273,7 +291,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             lineScene_.covered = freecam == nullptr;
             frame.width = camera.width; frame.height = camera.height;
             frame.wantsBgra = true; frame.rgb.clear();
-            if (!renderGpuScene(lineScene_, frame)) frame.rgb.clear();
+            submit(lineScene_);
             frame.logicalUi();
             return;
         }
@@ -282,7 +300,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
+        maleComparison_.draw(raster,-2.85); femaleComparison_.draw(raster,2.85);
+        const UiLayer* ui=frame.uiLayer;
         frame = raster.finish();
+        if (ui) compositeUi(frame,*ui);
         frame.logicalUi();
         return;
     }
@@ -297,6 +318,22 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         scene_.covered = freecam == nullptr;
     };
     (void)seconds;
+    // A slider updates only the corresponding blue meshes. Keep the room and
+    // original bones in their existing GPU slots, with their pose matrices.
+    if (view.gpu && sceneReady_ && (blueMaleRevision_!=maleComparison_.revision() ||
+                                    blueFemaleRevision_!=femaleComparison_.revision())) {
+        Rasterizer changed(camera.width,camera.height,colorHex("#0d1210"),camera.focal(),true);
+        changed.setCamera(camera);
+        if (blueMaleRevision_!=maleComparison_.revision()) maleComparison_.draw(changed,-2.85,12000);
+        if (blueFemaleRevision_!=femaleComparison_.revision()) femaleComparison_.draw(changed,2.85,14000);
+        GpuScene updates=changed.takeGpuScene();
+        for (GpuBatch& update:updates.batches) {
+            const auto it=std::find_if(scene_.batches.begin(),scene_.batches.end(),
+                                       [&](const GpuBatch& batch) { return batch.objectId==update.objectId; });
+            if (it!=scene_.batches.end()) { update.revision=++blueBatchRevision_; *it=std::move(update); }
+        }
+        blueMaleRevision_=maleComparison_.revision(); blueFemaleRevision_=femaleComparison_.revision();
+    }
     const double pose = 0.0;
     const bool revisionsMatch = cachedMalePoseRevision_ == male_.sourcePoseRevision() &&
                                 cachedFemalePoseRevision_ == female_.sourcePoseRevision();
@@ -307,7 +344,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.height = camera.height;
         frame.wantsBgra = true;
         frame.rgb.clear();
-        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
+        submit(scene_);
         frame.logicalUi();
         return;
     }
@@ -330,11 +367,14 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             GpuScene parts = room.takeGpuScene();
             male_.buildSourceRestGeometry(room, maleBase);
             female_.buildSourceRestGeometry(room, femaleBase);
+            maleComparison_.draw(room,-2.85,12000);
+            femaleComparison_.draw(room,2.85,14000);
             std::vector<GpuScene> halves;
             halves.push_back(std::move(parts));
             halves.push_back(room.takeGpuScene());
             scene_ = mergeScenes(std::move(halves));
             scene_.revision = ++revision_;
+            blueMaleRevision_=maleComparison_.revision(); blueFemaleRevision_=femaleComparison_.revision();
             // Which batch belongs to which bone. Batches keep their identity
             // until the scene is rebuilt, so this is looked up once.
             boneBatches_.clear();
@@ -382,7 +422,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         frame.width = camera.width;
         frame.height = camera.height;
         frame.rgb.clear();
-        if (!renderGpuScene(scene_, frame)) frame.rgb.clear();
+        submit(scene_);
         frame.logicalUi();
         return;
     }
@@ -400,7 +440,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
+    maleComparison_.draw(room,-2.85); femaleComparison_.draw(room,2.85);
+    const UiLayer* ui=frame.uiLayer;
     frame = room.finish();
+    if (ui) compositeUi(frame,*ui);
     frame.logicalUi();
 }
 

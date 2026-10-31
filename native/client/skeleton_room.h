@@ -3,6 +3,7 @@
 #include "client/raster.h"
 #include "client/renderer.h"
 #include "client/skeleton_body.h"
+#include "client/skeleton_comparison.h"
 #include "client/skeleton_lines.h"
 #include "client/skeleton_ragdoll.h"
 
@@ -15,7 +16,8 @@ namespace gtc::native {
 
 // The test room: an empty box with a tiled floor and the two anatomical
 // skeletons in it, so animation and rigging work has somewhere to happen.
-// Both OpenSkeleton bodies use source-bone rigid transforms; neither body is scaled.
+// The original OpenSkeleton bodies use source-bone rigid transforms and are not scaled.
+// The two static blue comparison meshes are separately deformed visual proxies.
 class RoomFreecam;
 
 class SkeletonRoom {
@@ -27,6 +29,18 @@ public:
     const SkeletonModel& female() const { return female_; }
     SkeletonModel& male() { return male_; }
     SkeletonModel& female() { return female_; }
+    const SkeletonComparison& comparison(bool male) const { return male ? maleComparison_ : femaleComparison_; }
+    bool setComparison(bool male, const SkeletonComparison::Profile& profile, std::string& error) {
+        SkeletonComparison& copy=male ? maleComparison_ : femaleComparison_;
+        const auto revision=copy.revision();
+        if (!copy.setProfile(profile,error)) return false;
+        if (revision!=copy.revision()) lineSceneReady_=false;
+        return true;
+    }
+    void resetComparison(bool male) {
+        std::string error; (male ? maleComparison_ : femaleComparison_).reset(error);
+        lineSceneReady_=false;
+    }
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
     // Test-room controls act directly on named anatomical groups in both bodies.
@@ -45,6 +59,7 @@ private:
     std::unique_ptr<SkeletonRagdoll> ragdoll_;
     SkeletonModel male_;
     SkeletonModel female_;
+    SkeletonComparison maleComparison_, femaleComparison_;
     SkeletonLines maleLines_, femaleLines_;
     GpuScene lineScene_;
     bool ready_ = false;
@@ -58,6 +73,7 @@ private:
     // every frame is the cost this path exists to remove.
     GpuScene scene_;
     std::uint64_t revision_ = 0;
+    std::uint64_t blueMaleRevision_ = 0, blueFemaleRevision_ = 0, blueBatchRevision_ = 0;
     // Triangles in the cached scene. Printed by the room benchmark: if this
     // changes with the thread count, the split is losing or duplicating work.
     std::size_t sceneTriangles_ = 0;

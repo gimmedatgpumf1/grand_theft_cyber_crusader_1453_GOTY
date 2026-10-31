@@ -2,4 +2,5 @@
 #include "client/skeleton_room.h"
 #define small char
 #include "client/skeleton_toe_yaw.h"
+#include "client/skeleton_comparison_ui.h"
 int main() { return 0; }

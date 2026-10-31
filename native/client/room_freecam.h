@@ -68,7 +68,8 @@ public:
         Camera result;
         result.width = std::max(1, width);
         result.height = std::max(1, height);
-        result.fovDegrees = 50;
+        // Fit the four figures across the initial view at any ordinary aspect ratio.
+        result.fovDegrees = std::min(90.0, 2.0 * std::atan(4.25 * result.height / (5.6 * result.width)) * 180.0 / 3.141592653589793);
         result.position = position_;
         result.target = position_ + forward();
         result.worldSpaceGpu = gpu;
@@ -81,9 +82,9 @@ private:
         return {std::sin(yaw_) * horizontal, std::sin(pitch_), -std::cos(yaw_) * horizontal};
     }
 
-    Vec3 position_{0, 1.15, 3.5};
+    Vec3 position_{0, 1.15, 5.6};
     double yaw_ = 0;
-    double pitch_ = -std::atan2(0.20, 3.5);
+    double pitch_ = -std::atan2(0.20, 5.6);
     std::set<int> keys_;
 };
 

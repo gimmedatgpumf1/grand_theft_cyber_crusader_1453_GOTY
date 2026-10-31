@@ -89,6 +89,20 @@ int main() {
     const auto originalView = app.view_;
     app.handle(down('c'));
     assert(app.testRoom_ && app.captured_ && neutral(receive(peer)));
+    // Actual App routing: reveal controls, release the pointer, adjust the
+    // male copy, then click outside to resume camera capture.
+    app.handle(down('p')); assert(app.roomUi_.open_);
+    app.handle(down(kKeyEscape)); assert(!app.captured_);
+    const auto panel=app.roomUi_.layout(app.view_.width,app.view_.height);
+    const double startHeight=app.room_.comparison(true).profile().height;
+    WindowEvent slider{WindowEvent::Type::MouseDown}; slider.button=1;
+    slider.x=panel.x+panel.colWidth-90; slider.y=panel.y+60;
+    app.handle(slider); assert(!app.captured_);
+    assert(std::abs(app.room_.comparison(true).profile().height-startHeight-1)<1e-6);
+    WindowEvent outside{WindowEvent::Type::MouseDown}; outside.button=1; outside.x=0; outside.y=0;
+    app.handle(outside); assert(app.captured_);
+    app.handle(down('p')); assert(!app.roomUi_.open_);
+    app.room_.resetComparison(true);
     assert(!app.room_.lineView());
     std::size_t shoulder=0;
     for (;shoulder<app.room_.male().sourceLinks().size();++shoulder) {

@@ -118,6 +118,10 @@ python3 tests/openskeleton_elbow_collision.py
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/calibrated_coupling.cpp -o build/bin/gtc-calibrated-coupling
 ./build/bin/gtc-calibrated-coupling
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
+./build/bin/gtc-skeleton-comparison
 "${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.
@@ -153,6 +157,11 @@ GTC_FAKE_STAGED=1 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulk
   -ldl -o build/bin/gtc-vulkan-ui-check
 if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
   ./build/bin/gtc-vulkan-ui-check
+  "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+    tests/skeleton_comparison_vulkan.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,diagnostics,raster,hud,ui_layer}.cpp \
+    native/vulkan/{vk_device,vk_renderer,vk_upload,vk_batches,vk_targets,vk_swapchain}.cpp \
+    build/obj/bullet/libbullet.a -ldl -o build/bin/gtc-skeleton-comparison-vulkan
+  ./build/bin/gtc-skeleton-comparison-vulkan
   # Actual Vulkan rendering through the C room, with repeated target resizes.
   "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
     tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \

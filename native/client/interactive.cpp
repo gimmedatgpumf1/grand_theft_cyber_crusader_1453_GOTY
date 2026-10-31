@@ -3,6 +3,7 @@
 #include "client/client.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
+#include "client/skeleton_comparison_ui.h"
 #include "client/room_freecam.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
@@ -105,9 +106,19 @@ public:
             updateReticle();
             if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
-                // No readback except when explicitly taking a screenshot.
+                // Room controls are GPU batches, just like the normal HUD.
+                frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
+                layer_.clear(frame.width,frame.height); frame.ui=&layer_;
+                frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
+                roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
+                frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
                 frame.wantPixels = screenshot_;
                 room_.render(frame, view_, seconds, &roomCamera_);
+                frame.uiLayer=nullptr;
+                if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
+                    std::cerr << "Vulkan did not present the room interface on the device\n";
+                    return 1;
+                }
                 if (!window_.present(frame)) {
                     std::cerr << "Native window presentation failed\n";
                     return 1;
@@ -487,6 +498,7 @@ private:
     }
 
     void handleRoom(const WindowEvent& event) {
+        if (roomUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
         const RoomFreecam::Action action = roomCamera_.handle(event, captured_);
         if (action == RoomFreecam::Action::Exit) {
             testRoom_ = false;
@@ -518,6 +530,7 @@ private:
 
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
+            roomUi_.handle(event,captured_,view_.width,view_.height,room_);
             roomCamera_.clear();
             roomRestoreCapture_ = false;
             keys_.clear();
@@ -761,6 +774,7 @@ private:
 
     SkeletonRoom room_;
     RoomFreecam roomCamera_;
+    SkeletonComparisonUi roomUi_;
     bool testRoom_ = false;
     bool roomRestoreCapture_ = false;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
