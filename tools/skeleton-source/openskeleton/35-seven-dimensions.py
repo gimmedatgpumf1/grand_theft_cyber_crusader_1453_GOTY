@@ -82,8 +82,12 @@ def generate():
             # surface reference and not the jaw-to-C7 surrogate.
             dims['neck']=(np.mean([contacts[x]['vertical_cm'] for x in ('L','R')]),
                           contacts['L']['vertical_cm'],contacts['R']['vertical_cm'])
-            hip,shoulder=widths(whole.mesh(sex))
-            dims['hip_width']=(hip,None,None);dims['shoulder_width']=(shoulder,None,None)
+            hip,_=widths(whole.mesh(sex))
+            dims['hip_width']=(hip,None,None)
+            # Retracted as a shoulder measurement: extrema are not labelled
+            # acromia and the registered pose is not a standardized pose.
+            # Keep the geometric span in SHOULDER_POSE_AUDIT.tsv, not here.
+            dims['shoulder_width']=(None,None,None)
             for formula in ('male','female'):
                 text=subprocess.check_output([str(binary),formula,str(h)],cwd=whole.REPO,text=True)
                 predictions={k:float(v) for k,v in (line.split('\t') for line in text.splitlines())}
@@ -91,12 +95,12 @@ def generate():
                     value,left,right=dims[name]; pred=predictions[name]
                     n,mean,sd,source=bio[(formula,name)]
                     output.append({'subject':subject,'sex':sex,'height_cm':f'{h:.1f}','dimension':name,
-                        'measured_proxy_cm':f'{value:.6f}',
+                        'measured_proxy_cm':f'{value:.6f}' if value is not None else 'NA',
                         'left_cm':f'{left:.6f}' if left is not None else 'NA',
                         'right_cm':f'{right:.6f}' if right is not None else 'NA',
                         'formula_sex':formula,'formula_cm':f'{pred:.6f}',
-                        'unmatched_difference_cm':f'{value-pred:.6f}',
-                        'unmatched_difference_percent':f'{100*(value/pred-1):.4f}',
+                        'unmatched_difference_cm':f'{value-pred:.6f}' if value is not None else 'NA',
+                        'unmatched_difference_percent':f'{100*(value/pred-1):.4f}' if value is not None else 'NA',
                         'bio_sample_mean_cm':f'{mean:.6f}','bio_sample_sd_cm':f'{sd:.6f}',
                         'bio_sample_n':n,'bio_sd_source':source})
     path=OUT/'SEVEN_DIMENSION_COMPARISON.tsv'

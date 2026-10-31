@@ -17,9 +17,13 @@ for sex in ('male','female'):
         selected=[r for r in rows if r['sex']==sex and r['formula_sex']==model]
         assert set(r['dimension'] for r in selected)==set(seven.NAMES)
         for row in selected:
-            proxy=float(row['measured_proxy_cm']); pred=float(row['formula_cm'])
-            assert abs(proxy-pred-float(row['unmatched_difference_cm']))<2e-6
-            assert abs(100*(proxy/pred-1)-float(row['unmatched_difference_percent']))<1e-3
+            pred=float(row['formula_cm'])
+            if row['dimension']=='shoulder_width':
+                assert row['measured_proxy_cm']==row['unmatched_difference_cm']==row['unmatched_difference_percent']=='NA'
+            else:
+                proxy=float(row['measured_proxy_cm'])
+                assert abs(proxy-pred-float(row['unmatched_difference_cm']))<2e-6
+                assert abs(100*(proxy/pred-1)-float(row['unmatched_difference_percent']))<1e-3
             n,mean,sd,source=stats[(model,row['dimension'])]
             assert int(row['bio_sample_n'])==n and row['bio_sd_source']==source
             assert abs(float(row['bio_sample_mean_cm'])-mean)<1e-6
