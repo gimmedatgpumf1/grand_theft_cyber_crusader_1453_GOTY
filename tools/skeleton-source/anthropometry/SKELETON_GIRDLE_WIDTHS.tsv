@@ -1,0 +1,7 @@
+subject	sex	recorded_cadaver_length_cm	measure	transverse_cm	point_to_point_cm
+N197925	male	170.0	humeral_head_centres	28.5290	28.8101
+N197925	male	170.0	femoral_head_centres	16.6762	16.7049
+N197925	male	170.0	pelvis_bone_mesh_transverse_extent	27.3600	NA
+N186416	female	170.2	humeral_head_centres	30.6780	30.7645
+N186416	female	170.2	femoral_head_centres	17.3249	17.3495
+N186416	female	170.2	pelvis_bone_mesh_transverse_extent	29.2090	NA
