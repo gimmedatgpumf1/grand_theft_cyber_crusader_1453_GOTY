@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Remeasure OBJ proxies and compare arithmetically, NOT a clinical fit.
 
-Requires NumPy and a C++17 compiler. Registered pose and measurement choices
+Requires NumPy, SciPy and a C++17 compiler. Registered pose and measurement choices
 are explained in WHOLE_BODY_HEIGHT_COMPARISON.md. Run from any directory.
 """
 import csv
 import hashlib
+import importlib.util
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,6 +15,9 @@ import numpy as np
 SOURCE=Path(__file__).resolve().parents[1]
 REPO=SOURCE.parents[1]
 OUT=SOURCE/'anthropometry'
+SPEC=importlib.util.spec_from_file_location('neck_proxy', SOURCE/'openskeleton/32-neck-orbital-proxy.py')
+NECK=importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(NECK)
 
 
 def mesh(sex):
@@ -47,10 +51,14 @@ def measure(sex):
     elbow=joints(sex,'elbows'); knee=joints(sex,'knees')
     # Vertex/menton-like extrema in registered pose, not actual skin landmarks.
     head=(d['Head'][:,1].max()-d['Jaw'][:,1].min())*100
-    # C1-C7 vertical extent includes spinous processes; not a neck-link value.
-    neck=(d['C1'][:,1].max()-d['C7'][:,1].min())*100
-    # Posterior-most C7 point and bottom-most pelvis mesh, vertical projection.
+    # Most posterior C7 is a bone-surface proxy for palpated cervicale.
     c7=d['C7'][np.argmin(d['C7'][:,2])]
+    # Approximate lower orbital rim Y stands in for tragion Y ONLY when the
+    # skull is in the Frankfort plane. This assumption is not verified here.
+    orbital=NECK.orbital_heights(sex)
+    neck_l=100*(orbital['L']-c7[1]); neck_r=100*(orbital['R']-c7[1])
+    neck=(neck_l+neck_r)/2
+    # Posterior-most C7 point and bottom-most pelvis mesh, vertical projection.
     bottom=min(d['Pelvis_L'][:,1].min(),d['Pelvis_R'][:,1].min())
     torso=(c7[1]-bottom)*100
     arms=[]; legs=[]
@@ -77,23 +85,30 @@ def measure(sex):
         # measurement, even though the reference uses trochanterion height.
         heel_y=d[f'Cal_{side}'][:,1].min()
         legs.append(distances([hip[side],knee[side],ankle])+100*(ankle[1]-heel_y))
-    return {'head':(head,None,None),'neck':(neck,None,None),'torso':(torso,None,None),
+    return {'head':(head,None,None),'neck':(neck,neck_l,neck_r),'torso':(torso,None,None),
             'arm':(sum(arms)/2,*arms),'leg':(sum(legs)/2,*legs)}
 
 
 def verify_fits():
-    # Independently recompute the three adult forward fits from paired data.
+    # Independently recompute the four adult forward fits from paired data.
     rows=list(csv.DictReader((OUT/'ANSUR_II_PAIRED_MM.csv').open()))
     expected={
-        'male': {'torso':(9.824626889078571,.3263433653317256),
+        'male': {'neck':(-2.1659706847214744,.07369883290045212),
+                 'torso':(9.824626889078571,.3263433653317256),
                  'arm':(-1.944431609432535,.45885024218626663),
                  'leg':(-16.99483649702122,.6097644465657162)},
-        'female': {'torso':(8.831677988700205,.32241520461333356),
+        'female': {'neck':(.03761243523229783,.06506005322941955),
+                   'torso':(8.831677988700205,.32241520461333356),
                    'arm':(-3.3344315178830297,.465454824499171),
                    'leg':(-12.69145825107915,.5970413778726937)}}
     for sex in ('male','female'):
         rs=[r for r in rows if r['Gender'].lower()==sex and float(r['Age'])>=18]
         h=np.array([float(r['stature'])/10 for r in rs])
+        neck_y=np.array([(float(r['stature'])-float(r['tragiontopofhead'])-
+                          float(r['cervicaleheight']))/10 for r in rs])
+        slope,intercept=np.polyfit(h,neck_y,1)
+        if not np.allclose([intercept,slope],expected[sex]['neck'],rtol=0,atol=1e-10):
+            raise AssertionError(f'{sex} neck coefficients changed')
         for name,(one,two) in {'arm':('sleeveoutseam','handlength'),
                                'leg':('trochanterionheight',None),
                                'torso':('cervicaleheight','crotchheight')}.items():
@@ -118,9 +133,9 @@ def main():
                 predictions={k:float(v) for k,v in (line.split('\t') for line in text.splitlines())}
                 for name,(value,left,right) in dimensions.items():
                     pred=predictions[name]
-                    # No arithmetic for neck: source did not specify its landmarks.
-                    diff='NA' if name=='neck' else f'{value-pred:.6f}'
-                    pct='NA' if name=='neck' else f'{100*(value/pred-1):.4f}'
+                    # All differences are unmatched comparisons, not clinical deviations.
+                    diff=f'{value-pred:.6f}'
+                    pct=f'{100*(value/pred-1):.4f}'
                     output.append(dict(subject=subject,sex=sex,formula_sex=model,height_cm=f'{h:.1f}',
                                        dimension=name,proxy_cm=f'{value:.6f}',
                                        left_cm=f'{left:.6f}' if left is not None else 'NA',

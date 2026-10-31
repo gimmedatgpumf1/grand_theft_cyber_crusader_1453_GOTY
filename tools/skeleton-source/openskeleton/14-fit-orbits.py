@@ -78,10 +78,11 @@ def fit(vertices, faces):
     return sorted((p for _, p in sorted(regions, reverse=True)[:2]), key=lambda p: p[0])
 
 
-for sex in ('male', 'female'):
-    vertices, faces = load_head(BASE / f'skeleton-{sex}.obj')
-    centres = fit(vertices, faces)
-    path = BASE / f'skeleton-{sex}.orbits'
-    path.write_text('# Estimated orbital aperture centres (m), from the supplied Head mesh\n' +
-                    ''.join(f'{p[0]:.8f} {p[1]:.8f} {p[2]:.8f}\n' for p in centres))
-    print(path.name, centres)
+if __name__ == '__main__':
+    for sex in ('male', 'female'):
+        vertices, faces = load_head(BASE / f'skeleton-{sex}.obj')
+        centres = fit(vertices, faces)
+        path = BASE / f'skeleton-{sex}.orbits'
+        path.write_text('# Estimated orbital aperture centres (m), from the supplied Head mesh\n' +
+                        ''.join(f'{p[0]:.8f} {p[1]:.8f} {p[2]:.8f}\n' for p in centres))
+        print(path.name, centres)

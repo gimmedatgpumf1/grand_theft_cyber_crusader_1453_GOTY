@@ -11,7 +11,7 @@ namespace gtc::native {
 enum class BodyReferenceSex { male, female };
 struct HeightBodyReference {
     double headCm;  // unverified Korean dataset's vertical-head dimension
-    double neckCm;  // interpolated Fichera neck-link predictions at BMI 25
+    double neckCm;  // vertical tragion-to-cervicale, derived ANSUR II
     double torsoCm; // standing vertical cervicale-to-crotch
     double armCm;   // acromion-stylion plus stylion-middle finger
     double legCm;   // standing vertical trochanterion-to-floor
@@ -53,10 +53,10 @@ inline std::optional<HeightBodyReference> estimateHeightBodyReference(BodyRefere
     const bool male=sex==BodyReferenceSex::male;
     const auto head=male ? line(h,9.519390,0.079034,154.7,187.7) :
                            line(h,11.177137,0.063486,142.3,172.6);
-    // Approximated from rounded 5th/50th/95th percentile table; these are BMI 25
-    // fixed predictions, not a new sex-specific fit to the original data.
-    const auto neck=male ? line(h,11.2-(2.3/31)*178,2.3/31,163,194) :
-                           line(h,10.8-(1.9/28)*165,1.9/28,151,179);
+    // Vertical difference: stature - tragion-to-vertex - cervicale height.
+    // OLS on paired adult ANSUR II, no fixed BMI or inferred 3D link.
+    const auto neck=male ? line(h,-2.1659706847214744,0.07369883290045212,149.1,199.3) :
+                           line(h,0.03761243523229783,0.06506005322941955,140.9,182.9);
     const auto torso=male ? line(h,9.824626889078571,0.3263433653317256,149.1,199.3) :
                             line(h,8.831677988700205,0.32241520461333356,140.9,182.9);
     const auto armAdult=male ? line(h,-1.944431609432535,0.45885024218626663,149.1,199.3) :

@@ -9,6 +9,8 @@ int main() {
     const auto m=estimateHeightBodyReference(BodyReferenceSex::male,170);
     const auto f=estimateHeightBodyReference(BodyReferenceSex::female,170.2);
     assert(m && f);
+    assert(std::abs(m->neckCm-10.362830908355386)<1e-9);
+    assert(std::abs(f->neckCm-11.110833494879504)<1e-9);
     assert(std::abs(m->armCm-76.0601095622328)<1e-9);
     assert(std::abs(f->legCm-88.92498426285331)<1e-9);
     for (auto sex:{BodyReferenceSex::male,BodyReferenceSex::female}) {
