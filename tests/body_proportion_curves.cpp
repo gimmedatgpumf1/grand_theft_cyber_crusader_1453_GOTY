@@ -9,6 +9,16 @@
 
 int main() {
     using gtc::native::BodyProportionCurves;
+    // The interpolation must reproduce a straight line and remain smooth at
+    // every knot, including the shorter final female interval.
+    gtc::native::SmoothHeightCurve linear;
+    assert(linear.build(175,[](double h){return std::optional<double>(3+h*0.25);}));
+    for (double h=100;h<=175;h+=0.25) {
+        const auto v=linear.evaluate(h); assert(v);
+        assert(std::abs(v->value-(3+h*0.25))<1e-9);
+        assert(std::abs(v->slope-0.25)<1e-9 && std::abs(v->curvature)<1e-9);
+    }
+    assert(!linear.evaluate(99));
     BodyProportionCurves curves; std::string error;
     assert(curves.load("tools/skeleton-source/anthropometry/BODY_PART_CURVE_KNOTS.tsv",error));
     const BodyProportionCurves::Key sitting{"NHANES_III","male","under_18","sitting_height"};
@@ -47,6 +57,22 @@ int main() {
                 const double b=*curves.blendedNhanesDimensionCm(sex,dim,boundary);
                 const double c=*curves.blendedNhanesDimensionCm(sex,dim,boundary+eps);
                 assert(std::abs((c-b)/eps-(b-a)/eps)<5e-4);
+                // Unlike the old infant cubic bridge, the new joins also
+                // match curvature rather than changing acceleration abruptly.
+                const double d=0.01;
+                const auto at=[&](double h){return *curves.blendedNhanesDimensionCm(sex,dim,h);};
+                const double leftCurvature=(at(boundary)-2*at(boundary-d)+at(boundary-2*d))/(d*d);
+                const double rightCurvature=(at(boundary+2*d)-2*at(boundary+d)+at(boundary))/(d*d);
+                assert(std::abs(leftCurvature-rightCurvature)<0.001);
+            }
+            // Check C2 at the child smoothing knots too, including the
+            // weighted age-group transition rather than only its ends.
+            for (double knot=110;knot<high;knot+=10) {
+                const double d=0.01;
+                const auto at=[&](double h){return *curves.blendedNhanesDimensionCm(sex,dim,h);};
+                const double a=(at(knot)-2*at(knot-d)+at(knot-2*d))/(d*d);
+                const double b=(at(knot+2*d)-2*at(knot+d)+at(knot))/(d*d);
+                assert(std::abs(a-b)<0.001);
             }
             double last=*curves.blendedNhanesDimensionCm(sex,dim,low);
             const int steps=static_cast<int>((high-low)*1000);
@@ -61,6 +87,15 @@ int main() {
             for (double height : {20.0,50.0,100.0,200.0,250.0,500.0}) {
                 const auto extrapolated=curves.blendedNhanesDimensionCm(sex,dim,height);
                 assert(extrapolated && *extrapolated>0 && *extrapolated<height);
+            }
+            // No blocked height cutoffs and no backwards growth over the
+            // sampled 0.5–1000 cm range, including both extrapolated tails.
+            double previous=0;
+            for (int i=1;i<=2000;++i) {
+                const double h=i*0.5;
+                const auto current=curves.blendedNhanesDimensionCm(sex,dim,h);
+                assert(current && *current>previous && *current<h);
+                previous=*current;
             }
             last=*curves.blendedNhanesDimensionCm(sex,dim,50);
             for (int i=1;i<=5000;++i) {
@@ -97,6 +132,23 @@ int main() {
             const double limit=dim=="pelvis_surface_breadth" ? 0.70 :
                                dim=="sitting_height" ? 0.85 : 0.80;
             assert(newPeak<limit*oldPeak);
+            // Compare curvature against the previous broad blend of the raw
+            // PCHIP model. Bound changes in dimension as well as rate spikes.
+            const double high=sex=="male" ? 190.0 : 175.0;
+            auto prior=[&](double h) {
+                const double t=(h-100)/(high-100), w=t*t*t*(10+t*(-15+6*t));
+                return *curves.selectedDimensionCm(child,h)*(1-w)+*curves.selectedDimensionCm(adult,h)*w;
+            };
+            double oldCurvature=0,newCurvature=0,maxDifference=0;
+            constexpr double step=0.25;
+            for (double h=100+step;h<high;h+=step) {
+                const auto current=[&](double x){return *curves.blendedNhanesDimensionCm(sex,dim,x);};
+                oldCurvature=std::max(oldCurvature,std::abs(prior(h+step)-2*prior(h)+prior(h-step))/(step*step));
+                newCurvature=std::max(newCurvature,std::abs(current(h+step)-2*current(h)+current(h-step))/(step*step));
+                maxDifference=std::max(maxDifference,std::abs(current(h)-prior(h)));
+            }
+            if (dim!="upper_arm_surface" || sex=="female") assert(newCurvature<0.65*oldCurvature);
+            assert(maxDifference<0.30);
         }
     }
     // Every selected source/sex/dimension continues at 2 m and beyond.
@@ -133,6 +185,10 @@ int main() {
             assert(a && b && c);
             assert(std::abs(*c-*a)<0.001);
             assert(std::abs((*c-*b)/eps-(*b-*a)/eps)<0.001);
+            const double d=0.002;
+            const double leftCurvature=(*calc(edge)-2*(*calc(edge-d))+*calc(edge-2*d))/(d*d);
+            const double rightCurvature=(*calc(edge+2*d)-2*(*calc(edge+d))+*calc(edge))/(d*d);
+            assert(std::abs(leftCurvature-rightCurvature)<0.002);
         }
     }
     assert(!curves.blendedNhanesDimensionCm("other","upper_arm_surface",160));

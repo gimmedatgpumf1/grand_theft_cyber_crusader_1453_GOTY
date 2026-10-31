@@ -44,9 +44,10 @@ int main() {
                 sample.beforePrevious=sample.previous; sample.previous=p;
             }
         }
-        // Regression limits: the old 15 cm shoulder crossfade reached 0.115
-        // female / 0.063 male cm per cm² on upper-arm/forearm samples.
-        assert(peakSpeed<1.25 && peakAcceleration<0.05);
+        // The previous broad blend still reached 0.0275 female / 0.0430
+        // male cm per cm² on upper-arm and forearm samples. Check the actual
+        // mesh response, not only continuity of the source formulas.
+        assert(peakSpeed<1.25 && peakAcceleration<0.015);
         std::printf("%s %zu sampled mesh vertices: peak speed %.4f, rate change %.4f\n",
                     male?"male":"female",samples.size(),peakSpeed,peakAcceleration);
     }

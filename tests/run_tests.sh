@@ -38,6 +38,14 @@ export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
 COMPILER="${CXX:-g++}"
 COMMAND=("$COMPILER")
 if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
+# Exercise the actual height curves, including value, slope and curvature at
+# the formula joins and the full sampled extrapolation range.
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/body_proportion_curves.cpp -o build/bin/gtc-body-proportion-curves
+./build/bin/gtc-body-proportion-curves
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/height_body_reference.cpp -o build/bin/gtc-height-body-reference
+./build/bin/gtc-height-body-reference
 "${COMMAND[@]}" -std=c++17 -O1 -g -pthread -Wall -Wextra -Wpedantic -Isrc \
   tests/tests.cpp src/core/collision.cpp src/core/json.cpp src/core/pathfinding.cpp src/core/projectile.cpp src/core/world.cpp \
   src/net/platform.cpp src/net/websocket.cpp \

@@ -3,6 +3,7 @@
 // Height-only research estimates of five differently defined surface landmarks.
 // This is not a skeletal scaling system or a diagnostic tool. See
 // tools/skeleton-source/anthropometry/WHOLE_BODY_HEIGHT_COMPARISON.md.
+#include "client/smooth_height_curve.h"
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -19,18 +20,13 @@ struct HeightBodyReference {
 
 namespace height_body_detail {
 // Forward straight-line fit on its sample's observed range. Outside that range
-// use the value/slope-matched bounded dimension/stature fraction continuation.
+// use a value/slope/curvature-matched bounded fraction continuation.
 // This continuation is a modelling convenience, not extrapolated medical data.
 inline std::optional<double> line(double h, double a, double b, double lo, double hi) {
     const double x=std::clamp(h,lo,hi), y=a+b*x;
     if (!(y>0 && y<x)) return std::nullopt;
     double v=y;
-    if (h!=x) {
-        const double r=y/x, exponent=(x*b/y-1)/(1-r);
-        const double z=std::log(r)-std::log1p(-r)+exponent*(std::log(h)-std::log(x));
-        const double fraction=z>=0 ? 1/(1+std::exp(-z)) : std::exp(z)/(1+std::exp(z));
-        v=h*fraction;
-    }
+    if (h!=x) return smoothBoundedContinuation(h,x,y,b,0);
     return std::isfinite(v) && v>0 && v<h ? std::optional<double>(v) : std::nullopt;
 }
 // Connect a 39-week neonatal limb ratio to the adult fit continuously; the

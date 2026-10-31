@@ -27,6 +27,19 @@ int main() {
             assert(std::abs(l->torsoCm-r->torsoCm)<1e-3);
             assert(std::abs(l->armCm-r->armCm)<1e-3);
             assert(std::abs(l->legCm-r->legCm)<1e-3);
+            const double d=0.01;
+            const auto before2=estimateHeightBodyReference(sex,h-2*d);
+            const auto before=estimateHeightBodyReference(sex,h-d);
+            const auto centre=estimateHeightBodyReference(sex,h);
+            const auto after=estimateHeightBodyReference(sex,h+d);
+            const auto after2=estimateHeightBodyReference(sex,h+2*d);
+            assert(before2 && before && centre && after && after2);
+            for (auto field:{&HeightBodyReference::headCm,&HeightBodyReference::neckCm,
+                             &HeightBodyReference::torsoCm,&HeightBodyReference::armCm,&HeightBodyReference::legCm}) {
+                const double left=(centre.value().*field-2*(before.value().*field)+before2.value().*field)/(d*d);
+                const double right=(after2.value().*field-2*(after.value().*field)+centre.value().*field)/(d*d);
+                assert(std::abs(left-right)<0.001);
+            }
         }
     }
     const auto babyM=estimateHeightBodyReference(BodyReferenceSex::male,50);

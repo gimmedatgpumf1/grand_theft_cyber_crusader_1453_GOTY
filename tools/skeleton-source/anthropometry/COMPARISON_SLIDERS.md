@@ -136,11 +136,12 @@ into 15 cm. The same broader transition is used for the other NHANES surface
 estimates, although the comparison skeleton currently uses separate head,
 neck, torso, arm and leg references. This reduces the previous growth-rate
 spikes but changes estimates throughout those intervals and uses an extrapolated
-adult component below its sampled range. It is a modelling compromise, not a
-validated paediatric skeletal reference; see `CHILD_ADULT_TRANSITION.md`.
-A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh samples per sex at 0.1 cm
-height steps, including their change of motion rate; this does not check every
-vertex. Selected pelvic and limb/shoulder triangle contacts are also audited at
+adult component below its sampled range. A natural cubic approximation of the
+child curve and a quintic infant bridge also remove the old curvature kinks.
+This is a modelling compromise, not a validated paediatric skeletal reference;
+see `CHILD_ADULT_TRANSITION.md`. A 50–250 cm sweep tests 1,092 axis-extreme
+blue-mesh samples per sex at 0.1 cm height steps, including their change of
+motion rate; this does not check every vertex. Selected pelvic and limb/shoulder triangle contacts are also audited at
 15 heights. The request and fitted shape remain continuous at the formula
 joins. However, the requested surface torso and leg distances generally **cannot both
 be represented by the chosen bony proxies with the intact adult pelvic ring**.
