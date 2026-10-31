@@ -2,6 +2,8 @@
 
 The working checklist is [SCALING_DATA_CHECKLIST.md](SCALING_DATA_CHECKLIST.md). This research adds real pediatric head, torso, foot, pelvic/shoulder surface breadth and skeletal-length data; it does **not** change the skeleton runtime. Data are different people at different heights and/or ages, unless a source explicitly says otherwise. Age is not determined by height. Selected medical bone scans, historic ergonomic surveys and modern Army personnel are not interchangeable cohorts.
 
+Additional measured hand, foot and vertebral-body references are in [SMALL_BONE_CT_XRAY_REFERENCES.md](SMALL_BONE_CT_XRAY_REFERENCES.md). They are not paired with stature.
+
 ## 1. Paired sitting height, standing height and other measurements
 
 `NHANES_III_PAIRED_CM.csv`: **27,487** records from the CDC's 1988–1994 U.S. NHANES III examination with sex, age in months, height, sitting height where available, upper arm and leg, biacromial and biiliac surface breadth, head circumference (younger children), weight, measurement source flag and survey design variables. Retained records have a valid standing height and examination age ≥2 years. Not every measurement was taken on every person. `subischial_cm = BMPHT - BMPSITHT`; it is a standing-height-minus-seat-height proxy, not a direct measurement of femur, tibia or a joint-to-joint leg length. Sitting height includes the head.
