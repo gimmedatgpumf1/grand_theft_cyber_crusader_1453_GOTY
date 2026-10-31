@@ -7,6 +7,7 @@
 #include "client/skeleton_bilateral.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
+#include "client/male_comparison_formulas.h"
 
 #include <algorithm>
 #include <array>
@@ -415,11 +416,18 @@ private:
         return true;
     }
     bool update(const BodyProportionCurves& curves, std::string& error) {
-        const auto body=estimateHeightBodyReference(male_?BodyReferenceSex::male:BodyReferenceSex::female,profile_.height);
-        const auto hip=curves.blendedNhanesDimensionCm(male_?"male":"female","pelvis_surface_breadth",profile_.height);
-        const auto shoulder=curves.blendedNhanesDimensionCm(male_?"male":"female","shoulder_breadth",profile_.height);
-        if (!body || !hip || !shoulder) { error="Height reference could not be evaluated"; return false; }
-        requestedTargets_={profile_.height,body->headCm,body->neckCm,body->torsoCm,body->armCm,body->legCm,*hip,*shoulder};
+        if (male_) {
+            const auto values=maleComparisonFormulas(profile_.height);
+            if (!values) { error="Male formulas returned a non-positive or non-finite value"; return false; }
+            requestedTargets_={profile_.height,(*values)[0],(*values)[1],(*values)[2],
+                               (*values)[3],(*values)[4],(*values)[5],(*values)[6]};
+        } else {
+            const auto body=estimateHeightBodyReference(BodyReferenceSex::female,profile_.height);
+            const auto hip=curves.blendedNhanesDimensionCm("female","pelvis_surface_breadth",profile_.height);
+            const auto shoulder=curves.blendedNhanesDimensionCm("female","shoulder_breadth",profile_.height);
+            if (!body || !hip || !shoulder) { error="Height reference could not be evaluated"; return false; }
+            requestedTargets_={profile_.height,body->headCm,body->neckCm,body->torsoCm,body->armCm,body->legCm,*hip,*shoulder};
+        }
         for (int i=1;i<Count;++i) requestedTargets_[i]*=profile_.multiplier[i];
         targets_=requestedTargets_;
         heightScale_=profile_.height/initialHeight();

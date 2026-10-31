@@ -47,6 +47,9 @@ python3 tests/pooled_height_fit.py
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/height_body_reference.cpp -o build/bin/gtc-height-body-reference
 ./build/bin/gtc-height-body-reference
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/male_comparison_formulas.cpp -o build/bin/gtc-male-comparison-formulas
+./build/bin/gtc-male-comparison-formulas
 "${COMMAND[@]}" -std=c++17 -O1 -g -pthread -Wall -Wextra -Wpedantic -Isrc \
   tests/tests.cpp src/core/collision.cpp src/core/json.cpp src/core/pathfinding.cpp src/core/projectile.cpp src/core/world.cpp \
   src/net/platform.cpp src/net/websocket.cpp \

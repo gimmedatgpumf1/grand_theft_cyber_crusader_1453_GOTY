@@ -254,7 +254,22 @@ int main() {
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
         for (double h:{1.,5.,10.,50.,100.,140.,170.,200.,250.,400.,1000.}) {
-            p.height=h; if (!room.setComparison(male,p,error)) { std::printf("height %g failed: %s\n",h,error.c_str()); std::abort(); }
+            p.height=h;
+            const auto previous=room.comparison(male).profile();
+            if (male && (h<=10 || h==1000)) {
+                const auto oldTargets=room.comparison(male).targets();
+                const auto oldRequested=room.comparison(male).requestedTargets();
+                const auto oldRevision=room.comparison(male).revision();
+                const Vec3 oldPoint=room.comparison(male).map({0.1,1.4,0.02});
+                assert(!room.setComparison(male,p,error));
+                assert(!error.empty() && room.comparison(male).profile().height==previous.height);
+                assert(room.comparison(male).targets()==oldTargets);
+                assert(room.comparison(male).requestedTargets()==oldRequested);
+                assert(room.comparison(male).revision()==oldRevision);
+                assert(length(room.comparison(male).map({0.1,1.4,0.02})-oldPoint)<1e-12);
+                continue; // Requested equations are non-positive or incompatible here.
+            }
+            if (!room.setComparison(male,p,error)) { std::printf("height %g failed: %s\n",h,error.c_str()); std::abort(); }
             check(room,male);
         }
         p=room.comparison(male).profile(); p.height=50;
@@ -344,6 +359,7 @@ int main() {
         }
         // No visible jump at the child/adult and infant bridge boundaries.
         for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.,male?190.:175.}) {
+            if (male && boundary<12) continue; // The specified leg equation is negative there.
             p=room.comparison(male).profile();p.height=boundary-0.00001;assert(room.setComparison(male,p,error));
             const std::array<Vec3,3> points{{{0.1,1.4,0.02},{0.1,1.6,0.02},{0.1,1.7,0.02}}};
             std::array<Vec3,3> before, cranialBefore;
@@ -362,29 +378,45 @@ int main() {
         }
         // Audit the extreme-height fallback, including its entry and exit.
         Vec3 previous{}; bool first=true;
-        for (double h=1;h<=20;h+=0.1) {
+        for (double h=male?12.:1.;h<=20;h+=0.1) {
             p=room.comparison(male).profile(); p.height=h; assert(room.setComparison(male,p,error));
             const Vec3 point=room.comparison(male).map({0.1,1.4,0.02});
             if (!first) assert(length(point-previous)<0.001);
             previous=point; first=false;
         }
         // Formula requests remain unchanged and continuous throughout the
-        // full 50–1000 cm sweep. Fitted skeletal proxies are reported separately.
+        // 40–250 cm male and 50–1000 cm female sweeps. Fitted skeletal proxies
+        // are reported separately.
         BodyProportionCurves curves;
         const std::string dir="tools/skeleton-source/anthropometry/";
         assert(curves.load(dir+"BODY_PART_CURVE_KNOTS.tsv",error));
         assert(curves.loadSelectedModels(dir+"BODY_PART_SELECTED_MODELS.tsv",error));
         const auto sex=male?BodyReferenceSex::male:BodyReferenceSex::female;
-        for (double h=50;h<=1000;h+=0.5) {
+        for (double h=male?40.:50.;h<=(male?250.:1000.);h+=0.5) {
             p=room.comparison(male).profile(); p.height=h;
             assert(room.setComparison(male,p,error));
-            const auto ref=estimateHeightBodyReference(sex,h); assert(ref);
-            const auto hip=curves.blendedNhanesDimensionCm(male?"male":"female","pelvis_surface_breadth",h);
-            const auto shoulder=curves.blendedNhanesDimensionCm(male?"male":"female","shoulder_breadth",h);
-            assert(hip && shoulder);
+            std::array<double,8> wanted{};
+            if (male) {
+                // Verify the user's exact equations, not just our helper.
+                wanted={h,16.273*std::exp(.0018*h),.0193*h+7.4136,
+                        .3536*h+4.4647,.4515*h+1.4121,.5553*h-6.5708,
+                        7.6737*std::exp(.0075*h),10.719*std::exp(.0077*h)};
+            } else {
+                const auto ref=estimateHeightBodyReference(sex,h); assert(ref);
+                const auto hip=curves.blendedNhanesDimensionCm("female","pelvis_surface_breadth",h);
+                const auto shoulder=curves.blendedNhanesDimensionCm("female","shoulder_breadth",h);
+                assert(hip && shoulder);
+                wanted={h,ref->headCm,ref->neckCm,ref->torsoCm,ref->armCm,ref->legCm,*hip,*shoulder};
+            }
             const auto& t=room.comparison(male).requestedTargets();
-            const std::array<double,8> wanted{h,ref->headCm,ref->neckCm,ref->torsoCm,ref->armCm,ref->legCm,*hip,*shoulder};
             for (std::size_t i=0;i<t.size();++i) assert(std::abs(t[i]-wanted[i])<1e-8);
+        }
+        if (male) {
+            p=room.comparison(male).profile(); p.height=170;
+            p.multiplier[SkeletonComparison::Head]=1.23;
+            assert(room.setComparison(male,p,error));
+            assert(std::abs(room.comparison(male).requestedTargets()[SkeletonComparison::Head]
+                            -1.23*16.273*std::exp(.0018*170))<1e-8);
         }
         room.resetComparison(male);
     }
