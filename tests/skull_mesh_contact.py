@@ -103,12 +103,16 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
             # The blue ring is now bilateral rather than a uniform copy of
             # both source sides. Inspect its actual triangles instead of
             # asserting that the old source contacts must be reproduced.
+            # Ring gaps scale with the intact pelvic ring. As with the other
+            # joints below, scale the tolerance for very tall visual copies;
+            # still reject all intersecting triangles.
+            ring_limit=0.003*max(1.0,(height or (173 if sex=='male' else 166))/160)
             for first, second in (('Pelvis_L', 'Pelvis_R'), ('Pelvis_L', 'Sacrum'),
                                   ('Pelvis_R', 'Sacrum'), ('Pelvis_L', 'Femur_L'),
                                   ('Pelvis_R', 'Femur_R')):
                 white_n, white_gap = contact(groups['white'][first][1], groups['white'][second][1])
                 blue_n, blue_gap = contact(groups['blue'][first][1], groups['blue'][second][1])
-                assert not blue_n and blue_gap < 0.003, (height, sex, first, second, blue_n, blue_gap)
+                assert not blue_n and blue_gap < ring_limit, (height, sex, first, second, blue_n, blue_gap)
                 print(f'{sex} {height or "default"} {first}/{second}: source {white_n}, blue {blue_n}; '
                       f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
             # Selected joints have explicitly fitted surfaces. Check both

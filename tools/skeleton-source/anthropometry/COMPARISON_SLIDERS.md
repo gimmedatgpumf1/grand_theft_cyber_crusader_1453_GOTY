@@ -130,14 +130,15 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-The height targets use one pooled cubic for each sex and dimension, fitted to
+The height targets use one pooled quadratic for each sex and dimension, fitted to
 individual child and adult records. The six NHANES surfaces share recorded
 landmarks; the remaining five use explicitly converted child surface proxies
 and adult ANSUR surfaces. See `POOLED_HEIGHT_MODELS.md` for the substitutions,
 unobserved 50 cm extrapolation assumptions and data limitations. There is no
 age-group crossfade. A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh
-samples per sex at 0.1 cm height steps, including their motion rate; this does
-not check every vertex. Selected triangle contacts are audited at 15 heights.
+samples per sex at 0.1 cm height steps, including their motion rate; a second
+sweep checks every mesh vertex at 0.5 cm steps.
+Selected triangle contacts are audited at 15 heights.
 
 The requested surface torso and leg distances generally **cannot both be
 represented by the chosen bony proxies with the intact adult pelvic ring**.

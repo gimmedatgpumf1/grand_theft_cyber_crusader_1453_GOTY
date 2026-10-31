@@ -17,12 +17,16 @@ int main() {
             }
             for (double h:{60.,95.,140.,170.,185.,210.,235.}) {
                 const double d=2;
-                assert(std::abs(at(h-2*d)-4*at(h-d)+6*at(h)-4*at(h+d)+at(h+2*d))<1e-9);
+                assert(std::abs(at(h+3*d)-3*at(h+2*d)+3*at(h+d)-at(h))<1e-9);
             }
             for (double h:{50.,100.,140.9,149.1,175.,190.,199.3,250.}) {
                 const double eps=1e-5;
                 assert(std::abs(at(std::nextafter(h,0))-at(std::nextafter(h,INFINITY)))<1e-9);
                 assert(std::abs((at(h+eps)-at(h))/eps-(at(h)-at(h-eps))/eps)<1e-3);
+                const double d=0.01;
+                const double left=(at(h)-2*at(h-d)+at(h-2*d))/(d*d);
+                const double right=(at(h+2*d)-2*at(h+d)+at(h))/(d*d);
+                assert(std::abs(left-right)<0.001);
             }
             for (double h=50.25;h<250;h+=0.25) {
                 const double d=.25;

@@ -128,7 +128,7 @@ public:
         return result;
     }
 
-    // Historical API name retained for callers. This now evaluates one cubic
+    // Historical API name retained for callers. This now evaluates one quadratic
     // fitted jointly to individual child and adult NHANES records; no blend.
     std::optional<double> blendedNhanesDimensionCm(const std::string& sex,
                                                   const std::string& dimension,

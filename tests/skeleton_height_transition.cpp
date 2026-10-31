@@ -1,6 +1,7 @@
 // Audit motion of actual blue mesh vertices as the height control is dragged.
-// This samples six axis-extreme vertices per structure, not every triangle or
-// a proof of clinical validity. Units in the rate checks are cm per cm stature.
+// Sweep six axis-extreme vertices per structure at 0.1 cm, then every mesh
+// vertex at 0.5 cm. Neither sweep proves collision freedom or clinical validity.
+// Units in the rate checks are cm per cm stature.
 #include "client/skeleton_room.h"
 #include <algorithm>
 #include <cassert>
@@ -17,12 +18,14 @@ struct Sample {
 
 int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
-    for (bool male:{false,true}) {
+    for (bool male:{false,true}) for (bool allVertices:{false,true}) {
         const auto& comparison=room.comparison(male);
         std::vector<Sample> samples;
         for (const auto& part:comparison.parts()) {
             assert(!part.points.empty());
-            for (int axis=0;axis<3;++axis) for (int sign:{-1,1}) {
+            if (allVertices) {
+                for (const Vec3 p:part.points) samples.push_back({&part,p});
+            } else for (int axis=0;axis<3;++axis) for (int sign:{-1,1}) {
                 auto coordinate=[axis](Vec3 p) { return axis==0 ? p.x : axis==1 ? p.y : p.z; };
                 const auto extreme=std::max_element(part.points.begin(),part.points.end(),
                     [&](Vec3 a,Vec3 b) { return sign*coordinate(a)<sign*coordinate(b); });
@@ -32,8 +35,9 @@ int main() {
         auto profile=comparison.profile();
         double peakSpeed=0, peakAcceleration=0, peakHeight=0;
         std::string peakPart;
-        constexpr double step=0.1;
-        for (int i=0;i<=2000;++i) {
+        const double step=allVertices ? 0.5 : 0.1;
+        const int steps=static_cast<int>(200/step);
+        for (int i=0;i<=steps;++i) {
             profile.height=50+i*step;
             assert(room.setComparison(male,profile,error));
             for (auto& sample:samples) {
@@ -49,12 +53,12 @@ int main() {
                 sample.beforePrevious=sample.previous; sample.previous=p;
             }
         }
-        // The previous broad blend still reached 0.0275 female / 0.0430
-        // male cm per cm² on upper-arm and forearm samples. Check the actual
-        // mesh response, not only continuity of the source formulas.
-        assert(peakSpeed<1.25 && peakAcceleration<0.015);
-        std::printf("%s %zu sampled mesh vertices: peak speed %.4f, rate change %.4f (%s at %.1f cm)\n",
-                    male?"male":"female",samples.size(),peakSpeed,peakAcceleration,peakPart.c_str(),peakHeight);
+        // Check the actual mesh response, not just continuity of the source
+        // formulas. The previous spline/blend reached 0.0093/0.0104 cm/cm².
+        assert(peakSpeed<1.25 && peakAcceleration<0.005);
+        std::printf("%s %zu %s vertices, %.1f cm steps: peak speed %.4f, rate change %.4f (%s at %.1f cm)\n",
+                    male?"male":"female",samples.size(),allVertices?"all":"axis-extreme",step,
+                    peakSpeed,peakAcceleration,peakPart.c_str(),peakHeight);
     }
     std::puts("All-body height-transition mesh sweep: PASS");
 }

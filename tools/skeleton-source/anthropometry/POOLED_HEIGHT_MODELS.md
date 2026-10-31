@@ -1,6 +1,6 @@
 # Pooled height models used by the blue comparison
 
-Each sex and dimension now has **one cubic fitted simultaneously to individual
+Each sex and dimension now has **one quadratic fitted simultaneously to individual
 child and adult records**. There are no separate age-group curves, 5 cm bin
 means, child/adult crossfades, spline approximations or infant bridges in the
 active 50–250 cm calculation. The raw records and generated coefficients are
@@ -42,8 +42,8 @@ https://pubmed.ncbi.nlm.nih.gov/34292252/. All outputs are skin-surface
 proxies; even genuinely matching skin measurements are not bone dimensions.
 The requested and fitted skeletal torso/leg proxies can differ because the
 intact pelvic ring cannot in general match both simultaneously. At 50 cm,
-requested/fitted torso is 23.23/20.37 cm for male and 22.73/19.84 cm for
-female; requested/fitted leg is 20.44/17.58 cm for male and 20.84/17.95 cm
+requested/fitted torso is 23.23/20.25 cm for male and 22.73/19.75 cm for
+female; requested/fitted leg is 20.44/17.47 cm for male and 20.84/17.85 cm
 for female. These are geometric proxy measurements, not verified infant body
 dimensions. Skull, C1 and vertebrae retain source asymmetry; white source and
 ragdoll poses are untouched.
@@ -56,8 +56,9 @@ OPENBLAS_NUM_THREADS=1 python3 tools/skeleton-source/openskeleton/26-pooled-heig
 ```
 
 Remove `--check` to regenerate. The generator verifies both input SHA-256s. It
-uses bounded least squares on every valid paired record, with four Bernstein
-coefficients per curve over 50–250 cm. Positive coefficient increments (minimum
+uses bounded least squares on every valid paired record, with three quadratic
+Bernstein coefficients per curve over 50–250 cm. The generated C++ coefficients
+are the mathematically equivalent degree-elevated cubic representation. Positive coefficient increments (minimum
 slope 0.001) are a **mathematical shape constraint**, not a clinical limit.
 At 50 cm the first coefficient is constrained to within 10% of the mean
 dimension/height ratio in the shortest 10 cm of the available child sample.
@@ -73,22 +74,23 @@ For positive heights outside 50–250 cm, C2-matched continuations provide
 finite, bounded visual estimates, with no minimum or maximum height cutoffs.
 At the low end the fraction tends to the 50 cm fraction; at the high end a
 bounded positive asymptotic slope is used. This is not evidence for extreme
-heights. A single cubic is evaluated throughout 50–250 cm, **including outside
+heights. A single quadratic is evaluated throughout 50–250 cm, **including outside
 the actual raw data ranges**. Polynomial smoothness does not establish medical
 accuracy, symmetric anatomy or collision freedom.
 
-Over 100–190 cm the largest absolute polynomial curvature (cm/cm²) for
-the female/male targets is: shoulder 0.00199/0.00217, pelvis 0.00174/0.00150,
-head 0.00120/0.00124, neck 0.00060/0.00059, torso 0.00393/0.00311,
-arm 0.00393/0.00386 and leg 0.00481/0.00469. Curvature is linear in
-height for these cubics, so its maximum absolute value on that interval is at
-an endpoint; this is a curve statistic, not a measure of mesh correctness.
+Over 100–190 cm the absolute polynomial curvature (cm/cm²) for the
+female/male targets is: shoulder 0.00027/0.00011, pelvis 0.00046/0.00041,
+head 0.00063/0.00062, neck 0.00031/0.00030, torso 0.00045/0.00045,
+arm 0.00109/0.00158 and leg 0.00043/0.00043. A quadratic's curvature is
+constant; this statistic does not establish mesh correctness.
 
 A 0.1 cm sweep of 1,092 axis-extreme transformed blue vertices per sex over
-50–250 cm measured peak motion-rate changes of 0.0095 female and 0.0089 male
-cm/cm². The previous implementation measured 0.0093 and 0.0104 respectively;
-the new female maximum is slightly higher despite the pooled single curve.
-This is a sample, not all vertices or a perceptual guarantee. The selected-joint
-FCL audit passed at 15 heights per sex, while source Sacrum/L5 and some cranial
-contacts remain. See `COMPARISON_SLIDERS.md` for the rigid-ring projection and
+50–250 cm measured peak motion-rate changes of 0.0014 female and 0.0017 male
+cm/cm². The previous spline/blend measured 0.0093 and 0.0104 respectively.
+A second 0.5 cm sweep covered all 90,782 female and 90,703 male mesh vertices;
+the corresponding maxima were also 0.0014 and 0.0017 cm/cm². The sweeps do not
+prove collision freedom or guarantee perceived smoothness. The selected-joint
+FCL audit covers 15 heights per sex; at 250 cm the female pelvic halves are
+3.04 mm apart, with no triangle intersection. The ring-gap tolerance scales
+with stature for tall copies. Source Sacrum/L5 and some cranial contacts remain. See `COMPARISON_SLIDERS.md` for the rigid-ring projection and
 other geometric limits.
