@@ -51,6 +51,7 @@ def main():
         fits = {(r['sex'], r['dimension']): r for r in csv.DictReader(f, delimiter='\t')
                 if r['age_group'] == '18_to_under_21'}
     output = []
+    cross_output = []
     hashes = {}
     for sex, subject, stature in SUBJECTS:
         obj = ROOT / f'skeleton-{sex}.obj'
@@ -74,11 +75,34 @@ def main():
                     difference_percent=f'{100*(measured/predicted-1):.3f}',
                     fit_n=f['n'], fit_residual_sd_cm=f['residual_sd_cm'],
                     fit_stature_min_cm=f['stature_min_cm'], fit_stature_max_cm=f['stature_max_cm']))
+            mean_span = (spans[f'{bone}_L'] + spans[f'{bone}_R']) / 2
+            for formula_sex in ('male', 'female'):
+                f = fits[(formula_sex, bone.lower()+'_length')]
+                low, high = float(f['stature_min_cm']), float(f['stature_max_cm'])
+                if not low <= stature <= high:
+                    raise ValueError(f'{subject} outside the {formula_sex} {bone} stature range')
+                predicted = float(f['intercept_cm']) + float(f['slope_cm_per_cm']) * stature
+                if predicted <= 0:
+                    raise ValueError(f'Invalid {formula_sex} {bone} prediction')
+                cross_output.append(dict(subject=subject, skeleton_sex=sex,
+                    formula_sex=formula_sex, bone=bone,
+                    recorded_cadaver_length_cm=f'{stature:.1f}',
+                    mean_mesh_pca_span_cm=f'{mean_span:.4f}',
+                    svad_fitted_bone_length_cm=f'{predicted:.4f}',
+                    difference_cm=f'{mean_span-predicted:.4f}',
+                    difference_percent=f'{100*(mean_span/predicted-1):.3f}',
+                    fit_n=f['n'], fit_residual_sd_cm=f['residual_sd_cm'],
+                    fit_stature_min_cm=f['stature_min_cm'], fit_stature_max_cm=f['stature_max_cm']))
     out = OUT / 'SKELETON_BONE_CURVE_COMPARISON.tsv'
     with out.open('w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=output[0].keys(), delimiter='\t', lineterminator='\n')
         writer.writeheader(); writer.writerows(output)
     print(f'{len(output)} comparisons written to {out}')
+    cross_path = OUT / 'SKELETON_BONE_CROSS_SEX_COMPARISON.tsv'
+    with cross_path.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=cross_output[0].keys(), delimiter='\t', lineterminator='\n')
+        writer.writeheader(); writer.writerows(cross_output)
+    print(f'{len(cross_output)} bilateral/cross-sex comparisons written to {cross_path}')
     print('SHA256 male OBJ', hashes['male'])
     print('SHA256 female OBJ', hashes['female'])
     print('SHA256 SVAD fits', file_hash(fits_path))

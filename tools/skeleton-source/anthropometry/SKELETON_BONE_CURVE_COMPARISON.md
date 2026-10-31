@@ -4,6 +4,8 @@ The game loads `skeleton-male.obj` and `skeleton-female.obj` directly. This audi
 
 Statures used: the source metadata gives a **170.0 cm male** cadaver length and a **170.2 cm female** cadaver length. The female was 41; male age is unknown. A recorded cadaver length is not necessarily the upright game's actual posed height or the person's living standing height.
 
+For the **left/right-averaged** comparison using both male and female formulae, see `SKELETON_BONE_CROSS_SEX_COMPARISON.md`.
+
 ## Results
 
 Values are cm; L/R retain the source labels. `difference = 100 × (mesh span / fitted length − 1)`. A positive value means the **geometric mesh span** is longer than the study curve's predicted measurement at the listed cadaver length. It does not mean the original patient was clinically abnormal.
