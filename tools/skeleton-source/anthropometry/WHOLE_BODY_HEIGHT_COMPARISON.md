@@ -4,14 +4,14 @@
 
 `native/client/height_body_reference.h` now exposes `estimateHeightBodyReference(sex, height_cm)`: one stature input and a sex preset return numerical estimates for head, neck, torso, full arm and full leg in centimetres. This is an **exploratory surface-reference profile**, not a completed one-height skeleton scaler. It does not yet move or scale bones, joint anchors, colliders, or ragdolls. Height alone cannot uniquely determine age, build or individual anatomy. Inputs outside observed cohorts are design extrapolations, not medical evidence.
 
-The two OBJ skeletons can be measured, but their bone-only geometry does not supply the same surface landmarks as the reference data. The following are **raw geometric discrepancies between unmatched measures**, not how far each person is from a medical mean or proof of abnormality. In particular, the head reference is from a dataset whose endpoint/protocol has not been verified, and the neck uses an orbital-rim-height stand-in for the absent ear landmark, relying on an **unverified Frankfort-plane pose**; its raw differences are particularly uncertain. The neck, arm and leg use bilateral averages; left/right are in the TSV.
+The two OBJ skeletons can be measured, but their bone-only geometry does not supply the same surface landmarks as the reference data. The following are **raw geometric discrepancies between unmatched measures**, not how far each person is from a medical mean or proof of abnormality. In particular, the head reference is from a dataset whose endpoint/protocol has not been verified, and the neck uses a jaw-condyle stand-in for the absent ear landmark and an approximate **unverified head reorientation**; its raw differences are particularly uncertain. The neck, arm and leg use bilateral averages; left/right are in the TSV.
 
 ### Male skeleton N197925, recorded cadaver length 170.0 cm
 
 | Dimension | Measured skeletal proxy cm | Male height formula cm | Raw difference cm (%) | Female formula cm; raw difference |
 |---|---:|---:|---:|---:|
 | Head | 21.19 | 22.96 | −1.76 (−7.7%) | 21.97; −3.5% |
-| Neck (orbital-level proxy) | 13.88 | 10.36 | +3.52 (+34.0%) | 11.10; +25.1% |
+| Neck (jaw-level proxy) | 12.08 | 10.36 | +1.72 (+16.6%) | 11.10; +8.9% |
 | Torso | 65.42 | 65.30 | +0.11 (+0.2%) | 63.64; +2.8% |
 | Full arm | 72.67 | 76.06 | −3.39 (−4.5%) | 75.79; −4.1% |
 | Full leg | 87.14 | 86.67 | +0.47 (+0.5%) | 88.81; −1.9% |
@@ -21,7 +21,7 @@ The two OBJ skeletons can be measured, but their bone-only geometry does not sup
 | Dimension | Measured skeletal proxy cm | Female height formula cm | Raw difference cm (%) | Male formula cm; raw difference |
 |---|---:|---:|---:|---:|
 | Head | 20.73 | 21.98 | −1.26 (−5.7%) | 22.97; −9.8% |
-| Neck (orbital-level proxy) | 15.34 | 11.11 | +4.23 (+38.0%) | 10.38; +47.8% |
+| Neck (jaw-level proxy) | 13.69 | 11.11 | +2.58 (+23.2%) | 10.38; +31.9% |
 | Torso | 64.93 | 63.71 | +1.22 (+1.9%) | 65.37; −0.7% |
 | Full arm | 68.30 | 75.89 | −7.59 (−10.0%) | 76.15; −10.3% |
 | Full leg | 79.99 | 88.92 | −8.93 (−10.0%) | 86.79; −7.8% |
@@ -33,20 +33,31 @@ The two OBJ skeletons can be measured, but their bone-only geometry does not sup
 Measurements are from the **registered source pose** of the shipped `skeleton-{male,female}.obj` in metres, converted to cm. Recorded cadaver lengths (170.0/170.2 cm), rather than mesh vertical bounding-box heights, are the formula inputs. They are not guaranteed to equal living standing stature. Automated joint fits and mesh landmarks are not expert-validated; position and segmentation can affect results.
 
 * **Head:** difference in Y between highest `Head` and lowest `Jaw` bone vertices. Not a verified vertex-to-menton anthropometric measurement; the jaw is in its registered pose and skin/hair are absent. Formula source uses an unverified "vertical head length" field, so even landmark correspondence is unknown.
-* **Neck:** see the dedicated method and uncertainty audit below. The old C1–C7 extent was **removed**, because it does not measure neck link. The replacement is a bony orbital-level–C7 vertical proxy, **not a measurement of tragion or an exact neck link**.
+* **Neck:** see the dedicated method and uncertainty audit below. The old C1–C7 extent was **removed**, because it does not measure neck link. The replacement is an approximately re-levelled bony jaw-condyle–C7 vertical proxy, **not a measurement of tragion or an exact neck link**.
 * **Torso:** Y of most posterior C7 vertex minus the lower Y extremum of the left/right pelvis bone meshes. This is neither palpated cervicale nor the standing skin crotch, and it depends on pose. The closest reference here is standing cervicale height minus crotch height.
 * **Arm:** per side, sum 3D distances between fitted humeral-head centre, fitted elbow centre, average distal 2% of radius vertices along its long PCA axis, centroids of metacarpal 3 and three third-finger phalanges, and an end vertex on the distal third phalanx. This deliberately follows the bent finger rather than treating a flexed hand-to-elbow straight chord as a fully extended arm. The chain is an approximation to an extended centreline, not an acromion-to-fingertip skin measure; the humeral head is not the acromion, and wrist/finger landmarks are geometric. Mean of sides.
 * **Leg:** per side, sum fitted femoral head centre–fitted knee centre–distal fibula extremity plus the Y distance from the latter to the lowest calcaneus vertex. This does **not** begin at the greater trochanter, does not include plantar soft tissue, and includes a mixture of path lengths and a vertical heel-height proxy. It is not the same as upright trochanterion-to-floor height. Mean of sides. The extremity is selected along the fibula's PCA long axis away from the knee, not by a farthest-vertex diameter.
 
 The segment choices explain why even identical subjects would not be expected to produce zero discrepancy. For detailed independently remeasured bone spans, including their own endpoint limitations, see `SKELETON_BONE_CROSS_SEX_COMPARISON.md`.
 
-## Neck comparison: assumptions and uncertainty
+## Neck comparison: why the previous deviations were high
 
-The ANSUR neck reference is **vertical cervicale to tragion**, not C1–C7 bone height and not the three-dimensional C7–tragion chord. The supplied bone-only heads have no soft-tissue tragion, and an external ear-canal opening is not reliably identifiable on these simplified meshes. We therefore **do not claim a measured ear landmark**. In the anatomical Frankfort plane, the inferior orbital margin (orbitale) and porion lie on the same horizontal plane; tragion is near but not identical to porion. We use a detected lower orbital-aperture rim as a *rough level substitute* for tragion. This is valid only approximately if the registered skull is in the Frankfort plane, which has **not** been established for either model. There may be substantial systematic error from skull pitch, roll, bony rim vs soft-tissue tragion, pose differences, and the posterior C7 vertex vs palpated skin cervicale. No defensible total error bound is known. The large differences shown above **do not establish abnormal neck length or a biological deviation**.
+**The previous 34%/38% matched-sex numbers were an error and are withdrawn.** I equated the height of the eye socket in an arbitrary source pose with the height of the ear, without establishing that the head was in the Frankfort plane. The two are only at the same height in the specified head orientation; these registered skulls do not meet that demonstrated condition. Further, the original registered source is not guaranteed to be an anatomically assembled standing pose. Neither error proves the subjects have long necks.
 
-Reproduction: `32-neck-orbital-proxy.py` reuses the 600×600 anterior depth raster from `14-fit-orbits.py`. It takes the two largest detected orbital cavities at 22 mm recession, dilates each mask by 2 pixels, and uses the Y coordinate of the lowest ring pixel as a lower-rim geometric estimate. It does not anatomically validate orbitale. Positive X is the same side as the fitted left shoulder in these source meshes. The other endpoint is the most posterior vertex of group C7 (`min Z`), reused for torso. The vertical distance is the lower rim Y minus this vertex Y. **L/R cm:** male 13.745/14.019 (mean 13.882); female 15.677/14.997 (mean 15.337). The adult reference is a right-side surface-derived value, not a bilateral skeletal average.
+The relevant ANSUR D20 reference is *vertical cervicale to tragion* with the head in Frankfort alignment, not C1–C7 bone extent, or a 3D C7–ear chord. Neither the surface tragion nor a reliably identifiable ear-canal landmark is present in these skull meshes. To improve the geometric estimate without inventing a measured ear, we use a different nearby landmark: the posterior upper jaw condyle is immediately anterior to the ear canal ([anatomy](https://emedicine.medscape.com/article/1948907-overview)). A cephalometry reference describes the superior glenoid fossa near the condyle as a possible porion-level substitute ([source](https://plasticsurgerykey.com/cephalometry-and-cephalometric-analysis-3/)). **A condyle is not a tragion or glenoid fossa.**
 
-Sensitivity checks are diagnostics, **not** confidence intervals: changing the orbital recession threshold from 22 mm to 18–26 mm changes the bilateral mean by up to **0.40 cm male and 0.00 cm female**; using mean Y of the most posterior 5% of C7 vertices instead of the single posterior vertex changes it by **+0.25 cm male and −0.14 cm female**. The L/R orbital proxy differences are 0.27 cm male and 0.68 cm female. These experiments do not quantify the potentially larger errors due to unverified Frankfort alignment or absent ear/skin tissue. At an assumed 8 cm anteroposterior orbitale-to-porion separation, a 10° pitch would change the relative level by approximately **1.39 cm** (`8 sin 10°`), illustrating pose sensitivity rather than measuring the actual error. Rigorous comparison needs CT/scan landmarks or validated in-situ ear positions and a measured Frankfort alignment.
+Method: use the orbit detector in `32-neck-orbital-proxy.py` to find approximate lower orbital-rim points; select the highest-Y vertex from the posterior 15% of each lateral half of the `Jaw` as a condylion-like point. Take the mean of the two detected eye points and the two jaw points; estimate their sagittal line angle, then rotate the detected jaw points around the `C1` mesh centroid to level that line. The posterior-most `C7` vertex remains fixed. The resulting vertical distance is a **re-levelled condyle-to-C7 proxy**, not a direct neck-link measurement. The inferred orbital-to-condyle slopes are **13.0° male and 11.6° female**; these are not validated Frankfort angles, because the condyle is not porion. The female jaw has marked L/R differences, and the source jaw and skull are separately registered, so their anatomical relationship is not guaranteed. Positive X is the fitted left-shoulder side. This operation is only in the measurement script; it does not change the game skeleton.
+
+| Subject | Previous orbital-level proxy cm | Jaw-level in source pose cm | Re-levelled jaw-level cm | L/R re-levelled cm |
+|---|---:|---:|---:|---|
+| male N197925 | 13.882 | 12.550 | 12.080 | 12.053 / 12.108 |
+| female N186416 | 15.337 | 13.988 | 13.691 | 14.285 / 13.097 |
+
+The drop is an endpoint and pose-method correction, **not a change in the subjects or proof of the remaining difference**. The raw comparison table above uses these new bilateral means; sex-specific ANSUR predictions are unchanged. The remaining 16.6%/23.2% also remain **unmatched proxies**, not biological deviations, and cannot establish that either subject is abnormal. In ANSUR D20, measured tragion is on the right and soft tissue covers cervicale; we average two skeletal jaw landmarks with no tissue. Head position, jaw registration, condyle-versus-tragion offset and cervical pose remain unresolved.
+
+An independent diagnostic uses the source's dense, corresponding per-bone vertices (`33-neck-pose-audit.py`): after centering each C7, a least-squares rigid rotation maps female to male with XYZ angles **15.36°, −5.59°, 1.07°** (shape residual 3.13 mm). T1 and T2 have similar relative rotations; these are shape-and-pose fits, not diagnostic joint angles. Their posterior C7 tip Y relative to its own centroid is **+11.39 mm male and −7.57 mm female**, a **18.96 mm difference** in registered coordinates. This shows why comparing the raw tip heights between subjects is pose/shape-sensitive; it does not isolate their anatomical effects. Do not rotate the bones to force a reference match.
+
+Method sensitivity is not a confidence interval: changing the orbital recess threshold from 22 to 18–26 mm moves the re-levelled mean up to **0.17 cm male and 0.002 cm female**. Varying the posterior jaw subset from 5–30% moves it up to **0.01/0.07 cm**, respectively. These ignore the largest unknowns. As external context only, a [30-person CBCT landmark study](https://pmc.ncbi.nlm.nih.gov/articles/PMC11043836/) ages 12–19 reported first-trial mean porion and condylion vertical coordinates differing by 0.77 mm right and 0.13 mm left; these are differences of sample means, **not** individual errors or adult bounds, and neither is soft-tissue tragion. The true total error is unknown. A rigorous comparison requires validated CT/scan ear and C7 landmarks plus matched alignment; small residual differences must not be inferred from this proxy.
 
 ## Reproducible height equations
 
@@ -94,6 +105,7 @@ c++ -std=c++17 -O2 -I native tools/skeleton-source/openskeleton/31-height-profil
 /tmp/height-profile female 170.2
 python3 tools/skeleton-source/openskeleton/31-measure-whole-body.py
 python3 tests/neck_orbital_proxy.py
+python3 tools/skeleton-source/openskeleton/33-neck-pose-audit.py
 c++ -std=c++17 -O2 -Wall -Wextra -Werror -I native tests/height_body_reference.cpp -o /tmp/test-height-profile && /tmp/test-height-profile
 ```
 

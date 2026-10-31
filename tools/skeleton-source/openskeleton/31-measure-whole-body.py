@@ -53,10 +53,13 @@ def measure(sex):
     head=(d['Head'][:,1].max()-d['Jaw'][:,1].min())*100
     # Most posterior C7 is a bone-surface proxy for palpated cervicale.
     c7=d['C7'][np.argmin(d['C7'][:,2])]
-    # Approximate lower orbital rim Y stands in for tragion Y ONLY when the
-    # skull is in the Frankfort plane. This assumption is not verified here.
-    orbital=NECK.orbital_heights(sex)
-    neck_l=100*(orbital['L']-c7[1]); neck_r=100*(orbital['R']-c7[1])
+    # Detect approximate orbital rims and posterior jaw tips. Infer an
+    # approximate head pitch and re-level the jaw around the C1 centroid; the
+    # condyle is only an ear-level surrogate, not the missing tragion.
+    orbital=NECK.orbital_points(sex)
+    condyles=NECK.jaw_condyles(d['Head'],d['Jaw'])
+    _,levels=NECK.relevel(orbital,condyles,d['C1'].mean(axis=0),c7)
+    neck_l=levels['L']; neck_r=levels['R']
     neck=(neck_l+neck_r)/2
     # Posterior-most C7 point and bottom-most pelvis mesh, vertical projection.
     bottom=min(d['Pelvis_L'][:,1].min(),d['Pelvis_R'][:,1].min())
