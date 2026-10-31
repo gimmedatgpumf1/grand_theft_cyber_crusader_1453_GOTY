@@ -127,10 +127,10 @@ public:
 
     // Height-only transition between NHANES III child and adult *surface*
     // models with matching landmarks. This is a modelling convention, not an
-    // inference of age from stature. Each dimension varies continuously; the
-    // pelvis has a wider blend because its child and adult estimates differ
-    // considerably. Outside the sampled ranges, smooth continuation is an
-    // unvalidated estimate rather than observed evidence.
+    // inference of age from stature. All dimensions share a broad, smooth
+    // transition rather than concentrating the age-group differences into a
+    // short height interval. Outside the sampled ranges, smooth continuation
+    // is an unvalidated estimate rather than observed evidence.
     std::optional<double> blendedNhanesDimensionCm(const std::string& sex,
                                                   const std::string& dimension,
                                                   double heightCm) const {
@@ -168,16 +168,12 @@ public:
             return (2*t3-3*t2+1)*50*infantRatio+(t3-2*t2+t)*50*infantRatio+
                    (-2*t3+3*t2)*(*end)+(t3-t2)*50*(*endSlope);
         }
-        // The hip surface models differ by several centimetres at the same
-        // stature. A 15 cm crossfade forced that entire difference into the
-        // pelvic ring at near-adult heights. Spread the hip transition over a
-        // wider range; its low-height adult continuation is an interpolation
-        // assumption, not a measured paediatric pelvis or an age estimate.
-        // Other measurements retain their existing transition.
-        const bool pelvis=dimension=="pelvis_surface_breadth";
-        const double low=pelvis ? 100.0 : (sex=="male" ? 160.0 : 145.0);
-        const double high=pelvis ? (sex=="male" ? 190.0 : 175.0) :
-                                  (sex=="male" ? 175.0 : 160.0);
+        // The child and adult surfaces differ at the same stature. Squeezing
+        // that difference into 15 cm caused a visible change in growth rate,
+        // especially in the shoulder frame and arms. Spread the blend across
+        // the same broad range for all dimensions. Adult continuation at low
+        // height is an interpolation assumption, not an age estimate.
+        const double low=100.0, high=sex=="male" ? 190.0 : 175.0;
         if (heightCm<=low) return selectedDimensionCm(child,heightCm);
         if (heightCm>=high) return selectedDimensionCm(adult,heightCm);
         const auto c=selectedDimensionCm(child,heightCm), a=selectedDimensionCm(adult,heightCm);

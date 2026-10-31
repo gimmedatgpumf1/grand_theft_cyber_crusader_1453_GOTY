@@ -130,13 +130,19 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-Pelvis breadth now blends the child and adult surface models across 100–175 cm
-(female) or 100–190 cm (male), rather than forcing their difference into 15 cm.
-This reduces a visible growth-rate spike but changes estimates throughout those
-intervals and uses an extrapolated adult component below its sampled range. It
-is a modelling compromise, not a validated paediatric skeletal reference; see
-`CHILD_ADULT_TRANSITION.md`. The request and fitted shape remain continuous at
-the formula joins. However, the requested surface torso and leg distances generally **cannot both
+Pelvis and shoulder breadth now blend child and adult surface models across
+100–175 cm (female) or 100–190 cm (male), instead of forcing their differences
+into 15 cm. The same broader transition is used for the other NHANES surface
+estimates, although the comparison skeleton currently uses separate head,
+neck, torso, arm and leg references. This reduces the previous growth-rate
+spikes but changes estimates throughout those intervals and uses an extrapolated
+adult component below its sampled range. It is a modelling compromise, not a
+validated paediatric skeletal reference; see `CHILD_ADULT_TRANSITION.md`.
+A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh samples per sex at 0.1 cm
+height steps, including their change of motion rate; this does not check every
+vertex. Selected pelvic and limb/shoulder triangle contacts are also audited at
+15 heights. The request and fitted shape remain continuous at the formula
+joins. However, the requested surface torso and leg distances generally **cannot both
 be represented by the chosen bony proxies with the intact adult pelvic ring**.
 The fit therefore changes the pelvic height to minimise their equally weighted
 squared deviations and displays actual fitted values rather than pretending

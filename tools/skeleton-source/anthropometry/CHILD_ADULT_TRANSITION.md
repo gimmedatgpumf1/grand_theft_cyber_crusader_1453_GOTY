@@ -1,8 +1,17 @@
 # Height estimates without fixed cutoffs
 
-`BodyProportionCurves::blendedNhanesDimensionCm(sex, dimension, heightCm)` accepts positive finite heights without an imposed anthropometric range for six NHANES III surface measurements: sitting height, height-minus-sitting, upper arm, upper leg, shoulder breadth and pelvis breadth. Most matching NHANES child and adult models blend over 160–175 cm for males, 145–160 cm for females. For pelvis breadth the interval is wider: 100–190 cm for males and 100–175 cm for females. All use the quintic smootherstep `w = 6t^5 - 15t^4 + 10t^3`, matching value and slope at the ends. `height_minus_sitting` is always exactly height minus sitting height. Positive and finite input checks are retained to prevent meaningless/non-finite arithmetic; this is not a clinical boundary.
+`BodyProportionCurves::blendedNhanesDimensionCm(sex, dimension, heightCm)` accepts positive finite heights without an imposed anthropometric range for six NHANES III surface measurements: sitting height, height-minus-sitting, upper arm, upper leg, shoulder breadth and pelvis breadth. The matching NHANES child and adult models blend over 100–190 cm for males and 100–175 cm for females using the quintic smootherstep `w = 6t^5 - 15t^4 + 10t^3`, matching value and slope at the ends. `height_minus_sitting` is always exactly height minus sitting height. Positive and finite input checks are retained to prevent meaningless/non-finite arithmetic; this is not a clinical boundary.
 
-The former 15 cm pelvis blend squeezed a several-centimetre difference between same-height under-18 and adult surface estimates into a narrow interval. Although mathematically continuous, it produced an obvious artificial growth spurt in the blue pelvic ring. The wider pelvis interpolation reduces the maximum modelled width-growth rate across 100–200 cm from approximately 0.672 to 0.314 cm/cm for females and from 0.414 to 0.257 cm/cm for males. It changes the estimates throughout that wider range: for example, the female estimate at 145 cm rises from 22.86 to 26.37 cm, and the male estimate at 160 cm rises from 25.22 to 27.45 cm. These values are between disparate age-group models, not measurements of a single growing person. In particular, below the adult sample range the adult component is extrapolated. Height alone cannot establish age, and no claim of a clinically validated skeletal growth trajectory is implied.
+The former 15 cm child/adult blend squeezed differences between same-height under-18 and adult estimates into a narrow interval. Although mathematically continuous, it produced obvious artificial growth-rate spikes. The wider interpolation reduces peak rates over 100–200 cm (units cm/cm):
+
+| Dimension | Female before → after | Male before → after |
+|---|---:|---:|
+| Pelvis breadth | 0.672 → 0.314 | 0.414 → 0.257 |
+| Shoulder breadth | 0.475 → 0.298 | 0.436 → 0.318 |
+| Sitting height | 0.762 → 0.610 | 0.728 → 0.566 |
+| Upper arm surface | 0.375 → 0.288 | 0.366 → 0.259 |
+
+These wider blends change estimates throughout the transition interval. They combine disparate age-group models, not measurements of a single growing person; below the adult sample range the adult component is extrapolated. Height alone cannot establish age, and this interpolation is not a clinically validated skeletal growth trajectory.
 
 At 50 cm, illustrative neonatal anchors are smoothly connected to the child curve at 100 cm via cubic Hermite interpolation matching both values and endpoint slopes. These anchors are not measurements of one individual, not a conditional fit at exactly 50 cm, and do not identify age from height:
 

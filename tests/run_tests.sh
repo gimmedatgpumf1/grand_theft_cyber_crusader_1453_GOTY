@@ -132,6 +132,10 @@ python3 tests/openskeleton_elbow_collision.py
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
 ./build/bin/gtc-skeleton-comparison
+"${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_height_transition.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-height-transition
+./build/bin/gtc-skeleton-height-transition
 python3 tests/skull_mesh_contact.py
 "${COMMAND[@]}" -std=c++17 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
 ./build/bin/gtc-room-freecam
