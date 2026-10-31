@@ -39,7 +39,14 @@ The neck attaches to the skull at the two **atlanto-occipital (C1–skull) joint
 
 `34-measure-neck-skull-contact.py` uses the upper half of C1 vertices, splits at the C1 centroid into left/right with an 8 mm minimum lateral displacement, and finds the closest skull vertex for each candidate. The midpoint of the closest pair on each side is a geometric contact proxy. C1–skull surface gaps are L/R **1.34/0.36 mm male** and **1.72/0.47 mm female**. See `SKELETON_NECK_SKULL_CONTACT.tsv` for both actual surface points, the midpoint, C7 coordinates, gaps and side lengths. The triangulated meshes are simplified and registered, and nearest points do **not** prove those points are the true articular surfaces or joint centres. Bone pose and upper/lower landmark choices can materially change both lengths.
 
-**Do not compare these numbers directly to the ANSUR neck-link formula.** That reference ends at the surface tragion near the ear, not at the C1–skull joint, and is a vertical surface measure. A jaw–skull contact proxy for that ear-level reference is reported separately in the five-dimension table. A validated height-to-C1–skull/C7 reference with matching endpoints has not been established here, so this direct skeletal measurement has no claimed formula deviation.
+### Requested comparison with both sex formulas
+
+| Skeleton (stature) | Skull-contact proxy | Male formula | Raw difference | Female formula | Raw difference |
+|---|---:|---:|---:|---:|---:|
+| Male (170.0 cm) | 9.443 cm | 10.363 cm | −0.920 cm (−8.87%) | 11.098 cm | −1.655 cm (−14.91%) |
+| Female (170.2 cm) | 11.414 cm | 10.378 cm | +1.037 cm (+9.99%) | 11.111 cm | +0.303 cm (+2.73%) |
+
+The difference is **proxy minus prediction**; percent divides by the prediction. `SKELETON_NECK_SKULL_VS_SURFACE.tsv` contains both sex formulas and L/R values. These are **unmatched arithmetic comparisons**, not biological deviations: the ANSUR reference ends at the tragion near the ear, not the C1–skull joint, and is a vertical surface measurement in a standardized head position; this proxy is bone-to-bone in the source pose. A smaller number is not proof of a better anatomical fit. A validated height-to-C1–skull/C7 reference with matching endpoints has not been established. The jaw–skull proxy for the ear-level reference remains separately reported in the five-dimension table.
 
 ## Exactly what was measured
 

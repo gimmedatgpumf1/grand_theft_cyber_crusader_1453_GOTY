@@ -27,3 +27,18 @@ for sex in ('male','female'):
     means=[np.mean([v[k] for v in contacts.values()]) for k in ('vertical_cm','chord_cm')]
     assert np.allclose(means,expected[sex],atol=1e-6,rtol=0)
 print('bilateral skull-to-C7 contact proxy and TSV checks passed')
+
+comparisons=list(csv.DictReader((SOURCE/'anthropometry/SKELETON_NECK_SKULL_VS_SURFACE.tsv').open(),delimiter='\t'))
+assert len(comparisons)==4
+for sex,height in [('male',170.),('female',170.2)]:
+    _,contacts=neck.measure(sex)
+    for model,(a,b) in {'male':(-2.1659706847214744,.07369883290045212),
+                        'female':(.03761243523229783,.06506005322941955)}.items():
+        row=next(r for r in comparisons if r['sex']==sex and r['formula_sex']==model)
+        proxy=sum(contacts[x]['vertical_cm'] for x in ('L','R'))/2
+        prediction=a+b*height
+        assert abs(float(row['proxy_cm'])-proxy)<1e-6
+        assert abs(float(row['surface_prediction_cm'])-prediction)<1e-6
+        assert abs(float(row['unmatched_difference_cm'])-(proxy-prediction))<1e-6
+        assert abs(float(row['unmatched_difference_percent'])-100*(proxy/prediction-1))<.0001
+print('cross-sex unmatched arithmetic checks passed')

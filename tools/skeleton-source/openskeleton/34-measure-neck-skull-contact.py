@@ -2,10 +2,13 @@
 """Estimate the C1-to-skull contacts and measure them to posterior C7.
 
 This is a bone-to-bone geometric proxy in the original source pose, not the
-ANSUR C7-to-tragion surface measurement. NumPy and SciPy are required.
+ANSUR C7-to-tragion surface measurement. NumPy, SciPy and a C++17 compiler
+are required for the generated arithmetic comparison.
 """
 import csv
 import importlib.util
+import subprocess
+import tempfile
 from pathlib import Path
 import numpy as np
 from scipy.spatial import cKDTree
@@ -43,8 +46,10 @@ def measure(sex):
 
 def main():
     rows=[]
+    measured={}
     for sex,subject in [('male','N197925'),('female','N186416')]:
         lower,contacts=measure(sex)
+        measured[sex]=contacts
         for side in ('L','R'):
             c=contacts[side]
             row={'subject':subject,'sex':sex,'side':side}
@@ -59,6 +64,31 @@ def main():
     with path.open('w',newline='') as f:
         writer=csv.DictWriter(f,fieldnames=rows[0].keys(),delimiter='\t',lineterminator='\n')
         writer.writeheader(); writer.writerows(rows)
+    print('wrote',path)
+    # Surface neck link and skeletal contact are distinct; differences below
+    # are merely requested arithmetic, not a clinical deviation or fit.
+    comparisons=[]
+    with tempfile.TemporaryDirectory() as temp:
+        binary=Path(temp)/'profile'
+        subprocess.run(['c++','-std=c++17','-O2','-I',str(whole.REPO/'native'),
+                        str(HERE/'31-height-profile.cpp'),'-o',str(binary)],check=True)
+        for sex,subject,height in [('male','N197925',170.0),('female','N186416',170.2)]:
+            contact=measured[sex]
+            average=np.mean([contact[side]['vertical_cm'] for side in ('L','R')])
+            for model in ('male','female'):
+                text=subprocess.check_output([str(binary),model,str(height)],text=True)
+                predicted=float(dict(line.split('\t') for line in text.splitlines())['neck'])
+                comparisons.append({'subject':subject,'sex':sex,'formula_sex':model,
+                    'height_cm':f'{height:.1f}',
+                    'left_cm':f"{contact['L']['vertical_cm']:.6f}",
+                    'right_cm':f"{contact['R']['vertical_cm']:.6f}",
+                    'proxy_cm':f'{average:.6f}','surface_prediction_cm':f'{predicted:.6f}',
+                    'unmatched_difference_cm':f'{average-predicted:.6f}',
+                    'unmatched_difference_percent':f'{100*(average/predicted-1):.4f}'})
+    path=whole.OUT/'SKELETON_NECK_SKULL_VS_SURFACE.tsv'
+    with path.open('w',newline='') as f:
+        writer=csv.DictWriter(f,fieldnames=comparisons[0].keys(),delimiter='\t',lineterminator='\n')
+        writer.writeheader();writer.writerows(comparisons)
     print('wrote',path)
 
 
