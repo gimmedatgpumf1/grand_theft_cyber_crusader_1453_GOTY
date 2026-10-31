@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Regenerate the requested seven-dimension cross-sex research comparison.
+
+The bone and surface landmarks differ. The sample SDs describe real samples,
+not a normal range or z-score for the unvalidated skeleton proxies. Requires
+NumPy, SciPy and a C++17 compiler. Run from any directory.
+"""
+import csv
+import importlib.util
+import subprocess
+import tempfile
+from pathlib import Path
+import numpy as np
+
+HERE=Path(__file__).resolve().parent
+
+def load_module(name, filename):
+    spec=importlib.util.spec_from_file_location(name,HERE/filename)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+whole=load_module('whole','31-measure-whole-body.py')
+neck=load_module('skull_neck','34-measure-neck-skull-contact.py')
+OUT=whole.OUT
+NAMES=('head','neck','torso','arm','leg','hip_width','shoulder_width')
+
+
+def stats():
+    # SD is ordinary sample SD for adults with 165 <= stature < 175 cm.
+    # The exception is Yeo's published 20-24-year vertex-menton head-height
+    # group, whose stature distribution is not available and which is separate
+    # from the unverified Korean head-height formula dataset.
+    ans=list(csv.DictReader((OUT/'ANSUR_II_PAIRED_MM.csv').open()))
+    nh=list(csv.DictReader((OUT/'NHANES_III_PAIRED_CM.csv').open()))
+    head=list(csv.DictReader((OUT/'HEAD_AGE_STUDY_SUMMARY.tsv').open(),delimiter='\t'))
+    result={}
+    for sex,code in [('male','1'),('female','2')]:
+        d=[r for r in ans if r['Gender'].lower()==sex and float(r['Age'])>=18 and
+           1650<=float(r['stature'])<1750]
+        values={
+            'neck':[(float(r['stature'])-float(r['tragiontopofhead'])-float(r['cervicaleheight']))/10 for r in d],
+            'torso':[(float(r['cervicaleheight'])-float(r['crotchheight']))/10 for r in d],
+            'arm':[(float(r['sleeveoutseam'])+float(r['handlength']))/10 for r in d],
+            'leg':[float(r['trochanterionheight'])/10 for r in d]}
+        for name,v in values.items():
+            result[(sex,name)]=(len(v),float(np.mean(v)),float(np.std(v,ddof=1)),'ANSUR_II_165_to_175_cm')
+        nh_rows=[r for r in nh if r['HSSEX']==code and r['BMPHTFLG']=='0' and r['MXPAXTMR'] and
+                 float(r['MXPAXTMR'])>=216 and r['BMPHT'] and 165<=float(r['BMPHT'])<175]
+        for name,col in [('hip_width','BMPBIIL'),('shoulder_width','BMPBIAC')]:
+            v=np.array([float(r[col]) for r in nh_rows if r[col] and float(r[col])>0])
+            result[(sex,name)]=(len(v),float(v.mean()),float(v.std(ddof=1)),'NHANES_III_165_to_175_cm')
+        r=next(r for r in head if r['dimension']=='head_height_vertex_menton' and
+               r['sex'].lower()==sex and r['age_years']=='20-24')
+        result[(sex,'head')]=(int(r['n']),float(r['mean_mm'])/10,float(r['sd_mm'])/10,
+                              'Yeo_Korean_adults_20_to_24_all_heights')
+    return result
+
+
+def widths(bones):
+    # Upper, lateral scapular extrema are a geometric acromion-area proxy, not
+    # expert-labelled acromiale. Bone pelvis maximum X span is not skin breadth.
+    scap=[]
+    for side,sign in [('L',1),('R',-1)]:
+        v=bones[f'Scapula_{side}'];top=v[v[:,1]>=np.quantile(v[:,1],.75)]
+        scap.append(top[np.argmax(sign*top[:,0])])
+    shoulder=100*abs(scap[0][0]-scap[1][0])
+    pel=np.concatenate((bones['Pelvis_L'],bones['Pelvis_R']))
+    return float((pel[:,0].max()-pel[:,0].min())*100),float(shoulder)
+
+
+def generate():
+    whole.verify_fits()
+    bio=stats();output=[]
+    with tempfile.TemporaryDirectory() as td:
+        binary=Path(td)/'body-profile'
+        subprocess.run(['c++','-std=c++17','-O2','-Wall','-Wextra','-Werror','-I',str(whole.REPO/'native'),
+                        str(HERE/'35-seven-dimensions.cpp'),'-o',str(binary)],check=True)
+        for sex,subject,h in [('male','N197925',170.0),('female','N186416',170.2)]:
+            dims=whole.measure(sex)
+            _,contacts=neck.measure(sex)
+            # This is the user's requested C1–skull contact to C7, not the
+            # surface reference and not the jaw-to-C7 surrogate.
+            dims['neck']=(np.mean([contacts[x]['vertical_cm'] for x in ('L','R')]),
+                          contacts['L']['vertical_cm'],contacts['R']['vertical_cm'])
+            hip,shoulder=widths(whole.mesh(sex))
+            dims['hip_width']=(hip,None,None);dims['shoulder_width']=(shoulder,None,None)
+            for formula in ('male','female'):
+                text=subprocess.check_output([str(binary),formula,str(h)],cwd=whole.REPO,text=True)
+                predictions={k:float(v) for k,v in (line.split('\t') for line in text.splitlines())}
+                for name in NAMES:
+                    value,left,right=dims[name]; pred=predictions[name]
+                    n,mean,sd,source=bio[(formula,name)]
+                    output.append({'subject':subject,'sex':sex,'height_cm':f'{h:.1f}','dimension':name,
+                        'measured_proxy_cm':f'{value:.6f}',
+                        'left_cm':f'{left:.6f}' if left is not None else 'NA',
+                        'right_cm':f'{right:.6f}' if right is not None else 'NA',
+                        'formula_sex':formula,'formula_cm':f'{pred:.6f}',
+                        'unmatched_difference_cm':f'{value-pred:.6f}',
+                        'unmatched_difference_percent':f'{100*(value/pred-1):.4f}',
+                        'bio_sample_mean_cm':f'{mean:.6f}','bio_sample_sd_cm':f'{sd:.6f}',
+                        'bio_sample_n':n,'bio_sd_source':source})
+    path=OUT/'SEVEN_DIMENSION_COMPARISON.tsv'
+    with path.open('w',newline='') as f:
+        writer=csv.DictWriter(f,fieldnames=output[0].keys(),delimiter='\t',lineterminator='\n')
+        writer.writeheader();writer.writerows(output)
+    print('wrote',path)
+
+if __name__=='__main__':generate()
