@@ -215,7 +215,28 @@ private:
     static double lerp(double a,double b,double t) { return a+(b-a)*t; }
     double mapY(double y) const {
         std::size_t i=0; while (i+2<sourceY_.size() && y>sourceY_[i+1]) ++i;
-        return lerp(targetY_[i],targetY_[i+1],(y-sourceY_[i])/(sourceY_[i+1]-sourceY_[i]));
+        const double width=sourceY_[i+1]-sourceY_[i];
+        const double t=(y-sourceY_[i])/width;
+        if ((i==1 || i==2) && y>=sourceY_[1] && y<=sourceY_[3]) {
+            // Do not put a hard bend through the pelvis at the fitted hip.
+            // The two monotone cubic segments still pass through every fitted
+            // landmark, and share a derivative at the hip.
+            const auto slope=[&](std::size_t j) {
+                return (targetY_[j+1]-targetY_[j])/(sourceY_[j+1]-sourceY_[j]);
+            };
+            const double a=slope(1), b=slope(2);
+            const double h1=sourceY_[2]-sourceY_[1], h2=sourceY_[3]-sourceY_[2];
+            const double w1=2*h2+h1, w2=h2+2*h1;
+            const double limit=2.1213203435596424; // sqrt(9/2), monotone Hermite bound
+            const double middle=std::min((w1+w2)/(w1/a+w2/b),limit*std::min(a,b));
+            const double before=std::min(slope(0),limit*a);
+            const double after=std::min(slope(3),limit*b);
+            const double left=i==1?before:middle, right=i==1?middle:after;
+            const double t2=t*t, t3=t2*t;
+            return (2*t3-3*t2+1)*targetY_[i]+(t3-2*t2+t)*width*left+
+                   (-2*t3+3*t2)*targetY_[i+1]+(t3-t2)*width*right;
+        }
+        return lerp(targetY_[i],targetY_[i+1],t);
     }
     bool fitVertical() {
         const double h=profile_.height/100, head=targets_[Head]/100, neck=targets_[Neck]/100;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional FCL audit: compare actual skull/jaw/C1 source and blue surfaces.
+"""Optional FCL audit: compare cranial and pelvic source and blue surfaces.
 
 Triangle intersections are not clinical diagnoses or a containment test. The
 pre-existing source contacts are reported, not silently treated as fixed.
@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 
 if not importlib.util.find_spec('fcl') or not importlib.util.find_spec('numpy'):
-    print('Cranial source-surface audit: skipped (NumPy and python-fcl optional)')
+    print('Cranial and pelvic surface audit: skipped (NumPy and python-fcl optional)')
     raise SystemExit(0)
 import fcl
 import numpy as np
@@ -62,7 +62,8 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
         subprocess.run(args, cwd=root, check=True)
         for sex in ('male', 'female'):
             groups = {color: {name: mesh(folder/f'{sex}_{color}_{name}.obj')
-                              for name in ('Head', 'Jaw', 'C1', 'C2', 'C7')}
+                              for name in ('Head', 'Jaw', 'C1', 'C2', 'C7', 'Pelvis_L', 'Pelvis_R',
+                                           'Sacrum', 'Femur_L', 'Femur_R', 'L5')}
                       for color in ('white', 'blue')}
             scale = np.ptp(groups['blue']['Head'][0][:, 1])/np.ptp(groups['white']['Head'][0][:, 1])
             for other in ('Jaw', 'C1'):
@@ -81,4 +82,16 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
             white_n, _ = contact(groups['white']['C1'][1], groups['white']['C2'][1])
             blue_n, _ = contact(groups['blue']['C1'][1], groups['blue']['C2'][1])
             assert white_n and blue_n, (height, sex, 'C1/C2', white_n, blue_n)
-print('Cranial triangle-surface comparison: PASS (existing source overlaps remain)')
+            # Compare the actual registered surfaces around the pelvic ring
+            # and hips. Source intersections are recorded, not claimed fixed.
+            for first, second in (('Pelvis_L', 'Pelvis_R'), ('Pelvis_L', 'Sacrum'),
+                                  ('Pelvis_R', 'Sacrum'), ('Pelvis_L', 'Femur_L'),
+                                  ('Pelvis_R', 'Femur_R'), ('Sacrum', 'L5')):
+                white_n, white_gap = contact(groups['white'][first][1], groups['white'][second][1])
+                blue_n, blue_gap = contact(groups['blue'][first][1], groups['blue'][second][1])
+                assert bool(white_n) == bool(blue_n), (height, sex, first, second, white_n, blue_n)
+                if not white_n:
+                    assert blue_gap < max(0.003, 2*white_gap), (height, sex, first, second, blue_gap)
+                print(f'{sex} {height or "default"} {first}/{second}: source {white_n}, blue {blue_n}; '
+                      f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
+print('Cranial and pelvic triangle-surface comparison: PASS (existing source overlaps remain)')

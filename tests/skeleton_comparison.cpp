@@ -89,13 +89,28 @@ static void check(const SkeletonRoom& room, bool male) {
     close((c7-std::min(lowY(pl),lowY(pr)))*100,c.targets()[SkeletonComparison::Torso]);
     std::ifstream hips(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".hips");
     while (std::getline(hips,row) && (row.empty() || row[0]=='#')) {}
-    hips.clear(); hips.seekg(0); double hipY=0;
+    hips.clear(); hips.seekg(0); double hipY=0, sourceHipY=0;
     while (hips.peek()=='#') std::getline(hips,row);
     for (int side=0;side<2;++side) {
         char ch; Vec3 q; double radius; assert(hips>>ch>>q.x>>q.y>>q.z>>radius);
-        hipY+=c.map(transformed(matrices[model.sourceStructure(std::string("Femur_")+ch)],q)).y;
+        const Vec3 hip=transformed(matrices[model.sourceStructure(std::string("Femur_")+ch)],q);
+        hipY+=c.map(hip).y; sourceHipY+=hip.y;
     }
     close(hipY*50,c.targets()[SkeletonComparison::Leg]);
+    sourceHipY*=0.5;
+    // The old piecewise-linear field made an abrupt bend through both pelvic
+    // bones at this hip knot. Its vertical derivative must now be continuous.
+    const double delta=1e-6;
+    const auto y=[&](double at) { return c.map({0,at,0}).y; };
+    const double below=(y(sourceHipY)-y(sourceHipY-delta))/delta;
+    const double above=(y(sourceHipY+delta)-y(sourceHipY))/delta;
+    assert(below>0 && above>0 && std::abs(below-above)<1e-3*std::max({1.0,below,above}));
+    // No reversed vertical mapping around the pelvic region.
+    double previous=y(sourceHipY-0.15);
+    for (int i=1;i<=300;++i) {
+        const double next=y(sourceHipY-0.15+0.001*i);
+        assert(next>previous); previous=next;
+    }
     auto hl=vertices(model,c,"Humerus_L"), hr=vertices(model,c,"Humerus_R");
     auto fl=vertices(model,c,"HandDistP3_L"), fr=vertices(model,c,"HandDistP3_R");
     const double arms=50*(length(extreme(fl,1)-extreme(hl,-1))+length(extreme(fr,-1)-extreme(hr,1)));

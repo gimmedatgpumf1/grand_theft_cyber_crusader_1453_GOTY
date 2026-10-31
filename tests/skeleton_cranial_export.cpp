@@ -24,7 +24,7 @@ int main(int argc,char** argv) {
         const auto& model=male?room.male():room.female();
         const auto& comparison=room.comparison(male);
         const auto matrices=model.sourceMatrices({},0);
-        for (const char* name:{"Head","Jaw","C1","C2","C7"}) {
+        for (const char* name:{"Head","Jaw","C1","C2","C7","Pelvis_L","Pelvis_R","Sacrum","Femur_L","Femur_R","L5"}) {
             const int index=model.sourceStructure(name); if (index<0) return 1;
             const auto& part=model.sourceStructures()[index]; const auto& group=model.bones()[part.group];
             for (bool blue:{false,true}) {

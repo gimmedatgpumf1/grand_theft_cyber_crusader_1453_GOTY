@@ -69,12 +69,18 @@ static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 fem
 head–C1 contacts; male head–C1 surfaces are 0.026 mm apart. Counts depend on the
 mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
 remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
-This does not test containment or establish the correct biological placement,
-and **does not fix those pre-existing overlaps**.
+The audit also checks the pelvic ring, hips and sacrum/L5 at default and 50 cm.
+The registered source already has left pelvis/femur triangle intersections in
+both sexes and right pelvis/femur intersections in the female; they remain in
+the blue copies. This does not test containment or establish the correct
+biological placement, and **does not fix those pre-existing overlaps**.
 
-The source T-pose is captured once. A continuous piecewise-linear vertical field
-maps the ordered floor, pelvis, mean hip, C7, lowest C1 point, mean C1 contact
-and skull landmarks while preserving total height. The skull, jaw and C1 receive
+The source T-pose is captured once. A continuous monotone vertical field maps
+the ordered floor, pelvis, mean hip, C7, lowest C1 point, mean C1 contact and
+skull landmarks while preserving total height. Between the pelvis and C7,
+monotone cubic segments meet smoothly at the hip instead of placing a sharp
+slope change through the pelvic bones. The same field is applied to the pelvic
+ring, sacrum and neighbouring bones to avoid separating their surfaces. The skull, jaw and C1 receive
 the same **uniform 3D scale and translation**; their shapes and relative
 positions are preserved. The torso field joins that transform at the bottom of
 C1. The jaw may overlap C7 in height because it is anterior to C7: forcing the
@@ -97,9 +103,15 @@ skeletal landmarks. Extreme independent slider multipliers can likewise be
 incompatible. In those cases a binary search blends the four vertical targets
 toward uniform source scaling; the controls show **Partial fit** and the fitted
 values. This is a rendering deformation: outside the skull/jaw/C1 assembly,
-individual bones can change shape, and the arm field is only anchored at the
-estimated shoulder centre. It does **not** certify joint contact, preserve all
-rigid bones, implement a new anatomical rig or guarantee collision-free motion.
+individual bones can change shape. In particular, smoothing removes the sharp
+pelvic kink but cannot make the pelvis rigid while simultaneously enforcing
+incompatible bone-proxy distances; the arm field is only anchored at the
+estimated shoulder centre. For example, a best-affine fit to the female left
+pelvic mesh had a maximum vertex residual of about 18.3 mm at the default height
+before smoothing, and 12.7 mm afterwards; at 50 cm it decreased from 34.6 mm
+to 29.5 mm. These residuals quantify remaining non-affine warping, not anatomical
+accuracy. It does **not** certify joint contact, preserve all rigid bones,
+implement a new anatomical rig or guarantee collision-free motion.
 The blue figures are not simulated. The original white skeletons remain unchanged.
 
 The existing child/adult surface curves, neonatal bridges and bounded
