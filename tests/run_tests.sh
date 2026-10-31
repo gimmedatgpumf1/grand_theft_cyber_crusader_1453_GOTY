@@ -75,7 +75,9 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-finger-joints
 ./build/bin/gtc-skeleton-finger-joints
-"${COMMAND[@]}" -std=c++17 -fsyntax-only -Isrc -Inative tests/skeleton_windows_macros.cpp
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
+  tests/skeleton_windows_macros.cpp -o build/bin/gtc-skeleton-windows-macros
+./build/bin/gtc-skeleton-windows-macros
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-toe-joints

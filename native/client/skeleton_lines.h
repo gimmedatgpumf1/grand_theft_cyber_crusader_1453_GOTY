@@ -319,10 +319,10 @@ public:
                 return static_cast<int>(unit.size()-1);
             };
             for (const auto& triangle : triangles) {
-                const int a = triangle[0], b = triangle[1], c = triangle[2];
-                const int ab = midpoint(a,b), bc = midpoint(b,c), ca = midpoint(c,a);
+                const int a = triangle[0], b = triangle[1], vertexC = triangle[2];
+                const int ab = midpoint(a,b), bc = midpoint(b,vertexC), ca = midpoint(vertexC,a);
                 unitFaces.push_back({a,ab,ca}); unitFaces.push_back({ab,b,bc});
-                unitFaces.push_back({ca,bc,c}); unitFaces.push_back({ab,bc,ca});
+                unitFaces.push_back({ca,bc,vertexC}); unitFaces.push_back({ab,bc,ca});
             }
             for (const Joint& joint : joints_) {
                 const int start = static_cast<int>(points.size());

@@ -35,9 +35,10 @@ class PointTree {
         const double d=dot(p-q,p-q);
         if (d<distance) { distance=d; best=node.point; }
         const double delta=coord(p,node.axis)-coord(q,node.axis);
-        const int near=delta<0?node.left:node.right, far=delta<0?node.right:node.left;
-        search(near,p,best,distance);
-        if (delta*delta<distance) search(far,p,best,distance);
+        const int nearerChild=delta<0?node.left:node.right;
+        const int fartherChild=delta<0?node.right:node.left;
+        search(nearerChild,p,best,distance);
+        if (delta*delta<distance) search(fartherChild,p,best,distance);
     }
 public:
     explicit PointTree(const std::vector<Vec3>& points):points_(points),order_(points.size()) {

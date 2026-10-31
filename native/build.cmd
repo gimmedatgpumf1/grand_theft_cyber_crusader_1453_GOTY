@@ -16,6 +16,9 @@ if errorlevel 1 (
   echo [native] Visual Studio 2022 C++ tools were not found.
   exit /b 1
 )
+REM Check SDK/RPC macros before compiling the client headers.
+cl.exe /nologo /std:c++17 /EHsc /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /Zs "%ROOT%\tests\skeleton_windows_macros.cpp"
+if errorlevel 1 exit /b 1
 set "CCACHE_BIN="
 if exist "%ROOT%\tools\ccache\windows-x86_64\ccache.exe" set "CCACHE_BIN=%ROOT%\tools\ccache\windows-x86_64\ccache.exe"
 if not defined CCACHE_BIN (
