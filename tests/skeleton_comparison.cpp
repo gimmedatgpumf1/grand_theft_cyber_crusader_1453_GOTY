@@ -261,6 +261,9 @@ int main() {
         assert(room.setComparison(male,p,error));
         const auto& fitted50=room.comparison(male).targets();
         const auto& requested50=room.comparison(male).requestedTargets();
+        std::printf("%s 50 cm requested/fitted: torso %.2f/%.2f, leg %.2f/%.2f cm (surface-to-bone projection)\n",
+                    male?"male":"female",requested50[SkeletonComparison::Torso],fitted50[SkeletonComparison::Torso],
+                    requested50[SkeletonComparison::Leg],fitted50[SkeletonComparison::Leg]);
         assert(!room.comparison(male).exact());
         for (int d:{SkeletonComparison::Head,SkeletonComparison::Neck,SkeletonComparison::Arm,
                     SkeletonComparison::Hip,SkeletonComparison::Shoulder})
