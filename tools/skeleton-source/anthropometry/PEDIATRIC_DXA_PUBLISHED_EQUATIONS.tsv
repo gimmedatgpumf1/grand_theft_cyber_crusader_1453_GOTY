@@ -1,0 +1,13 @@
+sex	predicted_y	predictor_x	slope	intercept_cm	r_squared
+Male	stature	femur	3.196	31.774	0.901
+Female	stature	femur	3.348	25.847	0.921
+Male	humerus	radius	0.991	4.901	0.965
+Female	humerus	radius	0.974	5.468	0.956
+Male	femur	tibia	1.012	1.729	0.969
+Female	femur	tibia	0.999	2.436	0.934
+Male	femur	humerus	1.48	-3.637	0.905
+Female	femur	humerus	1.355	-0.008	0.874
+Male	tibia	radius	1.445	1.992	0.894
+Female	tibia	radius	1.299	5.443	0.867
+Male	tibia	humerus	1.417	-4.053	0.877
+Female	tibia	humerus	1.278	-0.291	0.832

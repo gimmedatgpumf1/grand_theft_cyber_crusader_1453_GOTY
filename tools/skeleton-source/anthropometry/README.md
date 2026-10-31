@@ -2,6 +2,8 @@
 
 For a direct comparison of static versus changing dimensions, child/adult height bins, additional head-age data and an explicitly flagged 100–250 cm model grid, see [HEIGHT_VARIATION_REPORT.md](HEIGHT_VARIATION_REPORT.md).
 
+The [scaling research checklist](SCALING_DATA_CHECKLIST.md) and [additional pediatric research](SCALING_DATA_RESEARCH.md) contain NHANES III, NIST AnthroKids head/foot measurements, and pediatric DXA bone-distance summaries.
+
 This is research data, **not game-derived proportions**. It supplements, and does not replace, the skeletal bone-ratio TSV one directory above. Surface lengths include skin and soft tissue and cannot be substituted for osteometric bone lengths. These are population associations, not measurements of either CT subject, and are not clinical normal ranges.
 
 ## Deliverables
