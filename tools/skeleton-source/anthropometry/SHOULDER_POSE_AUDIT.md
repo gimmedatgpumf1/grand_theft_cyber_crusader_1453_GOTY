@@ -30,7 +30,13 @@ The simplified meshes reproduce their registered-source extrema to about 1 mm, s
 
 For the last two rows, the already-selected scapular point is rotated in the X–Y plane around the medial clavicle centroid until the **clavicle proxy** has the named hypothetical angle. This simplistic manipulation does not move or fit a whole skeleton, is not a clinically validated motion, does not reconstruct seated posture, and is **not a replacement shoulder-width measurement**. It only demonstrates that the selected cross-body separation changes by several centimetres with plausible-looking changes to assumed pose. No actual patient shoulder width can be inferred from the example angles.
 
-A defensible measurement needs identifiable lateral acromial borders on both scapulae, a documented comparable anatomical pose and validation against paired CT/surface landmarks or expert annotation. Until then the comparison table shows shoulder measurement and difference as `NA`, while retaining the biological data and height-based reference estimates.
+A defensible biological comparison needs identifiable lateral acromial borders on both scapulae, a documented comparable anatomical pose and validation against paired CT/surface landmarks or expert annotation. At the user's request, the current comparison table does show the measured T-pose scapular X extrema and raw subtraction from the reference; those numbers are not verified biacromial values. See `TPOSE_SCAPULA_EXTREMA.md`.
+
+## What we can and cannot conclude about the cause
+
+The original registered-pose simplified-mesh X widths, 31.38/33.14 cm, and the room T-pose widths, 31.36/33.21 cm, are nearly the same. The room T-pose straightens and raises the arms and adjusts the spine, but its reference-pose routine does not specifically calibrate the sternoclavicular and acromioclavicular joints to a documented neutral shoulder-girdle pose. It therefore does not establish what the subjects' living shoulder breadth was. As shown above, mesh simplification accounts for only about 1 mm; different landmarks and joint/registration pose remain possible contributors, but their individual contributions are not known. The hypothetical rotation is a sensitivity exercise, not proof of the cause or of what the biological width would have been.
+
+Neither the mesh width nor the available metadata establishes that either person had a medical condition. Both assets have left and right clavicle meshes, but their existence alone does not diagnose or rule out a condition. The female subject is recorded as 41; the male subject's age and clinical history are not established. Original patient CT and expert-identified bony acromia, with a comparable standardized posture, would be needed to evaluate individual biological width; a clinical diagnosis would require appropriate medical history and examination as well.
 
 ## Reproduce
 
