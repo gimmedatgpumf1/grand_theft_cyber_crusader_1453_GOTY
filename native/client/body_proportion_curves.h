@@ -1,0 +1,131 @@
+#pragma once
+
+// Exploratory *surface landmark* dimensions from paired surveys, in cm.
+// This evaluates supplied data; it does not deform a skeleton, move joints,
+// rebuild collision geometry, or establish clinical normality. See
+// tools/skeleton-source/anthropometry/BODY_PART_CURVES.md before use.
+#include <algorithm>
+#include <cmath>
+#include <fstream>
+#include <map>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <vector>
+
+namespace gtc::native {
+
+class BodyProportionCurves {
+public:
+    struct Key {
+        std::string source, sex, ageGroup, dimension;
+        bool operator<(const Key& other) const {
+            return std::tie(source,sex,ageGroup,dimension) <
+                   std::tie(other.source,other.sex,other.ageGroup,other.dimension);
+        }
+    };
+    // Transactional load: invalid files never replace previously valid curves.
+    bool load(const std::string& path, std::string& error) {
+        std::ifstream input(path);
+        if (!input) { error="Cannot open body-part curves: "+path; return false; }
+        std::string line;
+        if (!std::getline(input,line)) { error="Empty body-part curves: "+path; return false; }
+        stripCR(line);
+        if (line!="source\tsex\tage_group\tdimension\tsource_column\tbin_start_cm\tn\theight_mean_cm\tdimension_mean_cm") {
+            error="Invalid body-part curve header: "+path; return false;
+        }
+        std::map<Key,Curve> parsed;
+        std::size_t lineNo=1;
+        while (std::getline(input,line)) {
+            ++lineNo; stripCR(line);
+            std::istringstream row(line); std::vector<std::string> cells; std::string cell;
+            while (std::getline(row,cell,'\t')) cells.push_back(cell);
+            double start=0, count=0, x=0, y=0;
+            if (cells.size()!=9 || cells[0].empty() || cells[1].empty() || cells[2].empty() ||
+                cells[3].empty() || cells[4].empty() || !number(cells[5],start) ||
+                !number(cells[6],count) || !number(cells[7],x) || !number(cells[8],y) ||
+                count<20 || std::floor(count)!=count || x<start || x>=start+5 || y<=0 || x<=0) {
+                error="Invalid body-part curve row "+std::to_string(lineNo); return false;
+            }
+            Key key{cells[0],cells[1],cells[2],cells[3]}; auto& curve=parsed[key];
+            if (!curve.column.empty() && curve.column!=cells[4]) {
+                error="Conflicting body-part measurement columns"; return false;
+            }
+            curve.column=cells[4]; curve.knots.push_back({x,y,start});
+        }
+        if (input.bad() || parsed.empty()) { error="Unable to read body-part curves: "+path; return false; }
+        for (auto& pair:parsed) {
+            auto& v=pair.second.knots;
+            std::sort(v.begin(),v.end(),[](const Knot& a,const Knot& b){return a.x<b.x;});
+            for (std::size_t i=1; i<v.size(); ++i) {
+                if (v[i].x<=v[i-1].x || v[i].start<=v[i-1].start) {
+                    error="Duplicate or unordered body-part curve bins"; return false;
+                }
+            }
+        }
+        curves_.swap(parsed); error.clear(); return true;
+    }
+
+    // No clamping or extrapolation: nullopt means absent or unsupported.
+    // A single knot is usable at that exact height only. Gaps >10 cm cannot
+    // be interpolated. Distances are surface dimensions, not bone lengths.
+    std::optional<double> dimensionCm(const Key& key, double heightCm) const {
+        if (!std::isfinite(heightCm) || heightCm<=0) return std::nullopt;
+        const auto found=curves_.find(key);
+        if (found==curves_.end()) return std::nullopt;
+        // This is defined as height minus sitting height, not an independent
+        // bone measurement; preserve that identity between interpolation knots.
+        if (key.dimension=="height_minus_sitting") {
+            Key sitting=key; sitting.dimension="sitting_height";
+            const auto value=dimensionCm(sitting,heightCm);
+            if (!value || *value>=heightCm) return std::nullopt;
+            return heightCm-*value;
+        }
+        const auto& v=found->second.knots;
+        auto upper=std::lower_bound(v.begin(),v.end(),heightCm,
+            [](const Knot& knot,double x){return knot.x<x;});
+        if (upper!=v.end() && upper->x==heightCm) return upper->y;
+        if (upper==v.begin() || upper==v.end()) return std::nullopt;
+        const std::size_t j=static_cast<std::size_t>(upper-v.begin()), i=j-1;
+        const double h=v[j].x-v[i].x;
+        if (h>10.0) return std::nullopt;
+        const double t=(heightCm-v[i].x)/h, t2=t*t, t3=t2*t;
+        const double value=(2*t3-3*t2+1)*v[i].y+(t3-2*t2+t)*h*derivative(v,i)+
+                           (-2*t3+3*t2)*v[j].y+(t3-t2)*h*derivative(v,j);
+        return std::isfinite(value) && value>0 ? std::optional<double>(value) : std::nullopt;
+    }
+private:
+    struct Knot { double x,y,start; };
+    struct Curve { std::string column; std::vector<Knot> knots; };
+    std::map<Key,Curve> curves_;
+    static void stripCR(std::string& line) { if (!line.empty() && line.back()=='\r') line.pop_back(); }
+    static bool number(const std::string& text,double& value) {
+        try { std::size_t end=0; value=std::stod(text,&end); return end==text.size() && std::isfinite(value); }
+        catch (...) { return false; }
+    }
+    static double secant(const Knot& a,const Knot& b) { return (b.y-a.y)/(b.x-a.x); }
+    static double endpoint(double h0,double h1,double m0,double m1) {
+        double d=((2*h0+h1)*m0-h0*m1)/(h0+h1);
+        if (d*m0<=0) return 0;
+        if (m0*m1<0 && std::abs(d)>3*std::abs(m0)) return 3*m0;
+        return d;
+    }
+    // Fritsch-Butland monotonicity-preserving cubic Hermite derivatives,
+    // matching scipy.interpolate.PchipInterpolator for the same knots.
+    static double derivative(const std::vector<Knot>& v,std::size_t i) {
+        const auto n=v.size();
+        if (n==2) return secant(v[0],v[1]);
+        if (i==0) return endpoint(v[1].x-v[0].x,v[2].x-v[1].x,
+                                  secant(v[0],v[1]),secant(v[1],v[2]));
+        if (i==n-1) return endpoint(v[n-1].x-v[n-2].x,v[n-2].x-v[n-3].x,
+                                    secant(v[n-2],v[n-1]),secant(v[n-3],v[n-2]));
+        const double left=secant(v[i-1],v[i]), right=secant(v[i],v[i+1]);
+        if (left*right<=0) return 0;
+        const double before=v[i].x-v[i-1].x, after=v[i+1].x-v[i].x;
+        const double w1=2*after+before, w2=after+2*before;
+        return (w1+w2)/(w1/left+w2/right);
+    }
+};
+
+} // namespace gtc::native
