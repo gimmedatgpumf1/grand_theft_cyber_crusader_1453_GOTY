@@ -14,7 +14,7 @@ Each biological mean ± SD is an observed sample statistic, **not** the formula 
 | Full arm length | 76.49 ± 2.50 | 76.06 | 75.10 | -1.26% | 75.24 ± 2.58 | 75.89 | 70.30 | -7.36% |
 | Full leg length | 87.19 ± 3.04 | 86.67 | 87.14 | +0.55% | 88.07 ± 2.86 | 88.92 | 79.99 | -10.05% |
 | Hip width | 29.10 ± 2.73 | 28.43 | 27.36 | -3.76% | 29.51 ± 3.62 | 29.42 | 29.21 | -0.71% |
-| Shoulder width (scapula X extent) | 40.45 ± 2.12 | 40.09 | 31.36 | -21.78% | 37.94 ± 2.13 | 38.18 | 33.21 | -13.02% |
+| Shoulder width (scapula X extent) | 40.45 ± 2.12 | 40.09 | 31.40 | -21.68% | 37.94 ± 2.13 | 38.18 | 33.22 | -12.99% |
 
 ## Biological standard deviations
 

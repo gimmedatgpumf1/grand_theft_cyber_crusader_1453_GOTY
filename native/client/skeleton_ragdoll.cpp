@@ -268,6 +268,8 @@ struct SkeletonRagdoll::Impl {
                     hinge->setParam(BT_CONSTRAINT_ERP,0.6f);
                     fingerJoints.push_back(hinge.get());
                 }
+                // The repositioned girdle otherwise separates under contact loads.
+                if (kind=="acromioclavicular") hinge->setParam(BT_CONSTRAINT_ERP,0.6f);
                 hinge->setLimit(btScalar(range.minimum-q),btScalar(range.maximum-q),0.9f,0.3f,1.0f);
                 world->addConstraint(hinge.get(),true); constraints.push_back(std::move(hinge));
             }
