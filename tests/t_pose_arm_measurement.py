@@ -40,6 +40,6 @@ with tempfile.TemporaryDirectory() as d:
         proximal=(measurements['L']['humerus_end_to_tip']+measurements['R']['humerus_end_to_tip'])/2
         assert abs(float(r['proximal_humerus_to_tip_3d_cm'])-proximal)<1e-6
         assert abs(float(r['ansur_height_prediction_cm'])-ref)<1e-6
-        assert abs(float(r['raw_unmatched_difference_cm'])-(value-ref))<1e-6
-        assert abs(float(r['raw_unmatched_difference_percent'])-100*(value/ref-1))<1e-4
+        assert abs(float(r['raw_humerus_vs_surface_difference_cm'])-(proximal-ref))<1e-6
+        assert abs(float(r['raw_humerus_vs_surface_difference_percent'])-100*(proximal/ref-1))<1e-4
 print('actual T-pose arm-to-fingertip measurement checks passed')

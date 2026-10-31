@@ -24,6 +24,11 @@ for sex in ('male','female'):
                 proxy=float(row['measured_proxy_cm'])
                 assert abs(proxy-pred-float(row['unmatched_difference_cm']))<2e-6
                 assert abs(100*(proxy/pred-1)-float(row['unmatched_difference_percent']))<1e-3
+                if row['dimension']=='arm':
+                    arm_rows=list(csv.DictReader((SRC/'anthropometry/T_POSE_ARM_MEASUREMENTS.tsv').open(),delimiter='\t'))
+                    for side,column in [('mean','measured_proxy_cm'),('L','left_cm'),('R','right_cm')]:
+                        arm=next(r for r in arm_rows if r['sex']==sex and r['side']==side)
+                        assert abs(float(row[column])-float(arm['proximal_humerus_to_tip_3d_cm']))<1e-6
             n,mean,sd,source=stats[(model,row['dimension'])]
             assert int(row['bio_sample_n'])==n and row['bio_sd_source']==source
             assert abs(float(row['bio_sample_mean_cm'])-mean)<1e-6

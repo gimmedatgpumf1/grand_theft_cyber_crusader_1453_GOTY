@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Measure shoulder-to-middle-finger-bone-tip in the actual room T-pose.
+"""Measure humerus-to-middle-finger-bone-tip in the actual room T-pose.
 
-Uses SkeletonRoom::restoreReferencePose() matrices, not a surrogate pose. The
-scapular shoulder point is an unvalidated acromion-area proxy, and the finger
-endpoint is bone, not skin. See T_POSE_ARM_MEASUREMENTS.md.
+Uses SkeletonRoom::restoreReferencePose() matrices, not a surrogate pose. Also
+records an unvalidated scapular shoulder proxy; the finger endpoint is bone,
+not skin. Neither endpoint matches ANSUR. See T_POSE_ARM_MEASUREMENTS.md.
 """
 import argparse
 import csv
@@ -113,8 +113,9 @@ def generate(executable):
                 proximal_humerus_to_tip_3d_cm=f'{r["humerus_end_to_tip"]:.6f}',
                 upper_axis_alignment=f'{r["upper_alignment"]:.8f}',forearm_axis_alignment=f'{r["fore_alignment"]:.8f}',
                 finger_axis_alignment=f'{r["finger_alignment"]:.8f}',
-                ansur_height_prediction_cm=f'{ref:.6f}',raw_unmatched_difference_cm=f'{r["straight"]-ref:.6f}',
-                raw_unmatched_difference_percent=f'{100*(r["straight"]/ref-1):.4f}',ansur_n=n))
+                ansur_height_prediction_cm=f'{ref:.6f}',
+                raw_humerus_vs_surface_difference_cm=f'{r["humerus_end_to_tip"]-ref:.6f}',
+                raw_humerus_vs_surface_difference_percent=f'{100*(r["humerus_end_to_tip"]/ref-1):.4f}',ansur_n=n))
     path=whole.OUT/'T_POSE_ARM_MEASUREMENTS.tsv'
     with path.open('w',newline='') as f:
         writer=csv.DictWriter(f,fieldnames=rows[0].keys(),delimiter='\t',lineterminator='\n')
