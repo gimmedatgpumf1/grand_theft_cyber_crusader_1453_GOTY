@@ -5,6 +5,10 @@
 #include <numeric>
 #include <unordered_map>
 #ifdef _WIN32
+// skeleton_room.h reaches net/platform.h through renderer.h. Load Winsock 2
+// before windows.h so the SDK cannot pull in the incompatible Winsock 1 API.
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #endif
 #ifndef near

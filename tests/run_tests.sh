@@ -78,6 +78,11 @@ echo '[test] C++ simulation and signed geometry checks passed.'
 "${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/skeleton_windows_macros.cpp -o build/bin/gtc-skeleton-windows-macros
 ./build/bin/gtc-skeleton-windows-macros
+# Simulate the Windows SDK's Winsock 1/2 include-order rule as well as its macros.
+"${COMMAND[@]}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -D_WIN32 -DNOMINMAX \
+  -Itests/windows_header_stubs -Isrc -Inative tests/skeleton_windows_macros.cpp \
+  -o build/bin/gtc-skeleton-windows-header-order
+./build/bin/gtc-skeleton-windows-header-order
 "${COMMAND[@]}" -std=c++17 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_ragdoll.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-toe-joints
