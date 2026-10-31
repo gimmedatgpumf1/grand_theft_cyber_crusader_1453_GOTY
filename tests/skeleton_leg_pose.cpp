@@ -68,13 +68,14 @@ static double footBottom(const SkeletonModel& model, const std::vector<std::arra
 static void check(SkeletonRoom& room,SkeletonModel& model,const char* name) {
     assert(room.restoreOriginalPose()); auto source=model.sourceMatrices({},0);
     assert(room.restoreReferencePose()); auto posed=model.sourceMatrices({},0);
-    double bottoms[2];
+    double bottoms[2]; Vec3 hipCenters[2];
     for (int side=0;side<2;++side) {
         const char letter=side==0 ? 'L' : 'R'; const std::string tag=std::string("_")+letter;
         const int femur=model.sourceStructure("Femur"+tag),tibia=model.sourceStructure("Tibia"+tag);
         const int heel=model.sourceStructure("Cal"+tag),met=model.sourceStructure("FootMeta3"+tag);
         const auto frame=sourceLegFrame(model,side); assert(frame);
         const Vec3 hip=point(posed[femur],frame->hip), knee=point(posed[femur],frame->knee);
+        hipCenters[side]=hip;
         const Vec3 kneeOnShin=point(posed[tibia],frame->knee), ankle=point(posed[tibia],frame->ankle);
         const Vec3 upper=normalized(knee-hip), lower=normalized(ankle-knee);
         assert(length(knee-kneeOnShin)<1e-7); // both pieces remain at the same joint
@@ -109,7 +110,14 @@ static void check(SkeletonRoom& room,SkeletonModel& model,const char* name) {
     }
     checkFootVolumes(model,posed,name);
     std::printf("%s ungrounded foot bottoms L/R: %.4f/%.4f m, difference %.1f mm\n",name,bottoms[0],bottoms[1],std::abs(bottoms[0]-bottoms[1])*1000);
-    assert(std::abs(bottoms[0]-bottoms[1])<0.003); // measured source asymmetry, no scaling
+    assert(std::abs(hipCenters[0].y-hipCenters[1].y)<1e-7);
+    const auto left=sourceLegFrame(model,0), right=sourceLegFrame(model,1); assert(left && right);
+    const auto soleOffset=[](const LegReferenceFrames& f) {
+        return f.soleHeight-length(f.knee-f.hip)-length(f.ankle-f.knee);
+    };
+    // Unequal source leg lengths leave one foot higher when the pelvis is
+    // level; the difference is measured, not hidden by tilting or scaling.
+    assert(std::abs(std::abs(bottoms[0]-bottoms[1])-std::abs(soleOffset(*left)-soleOffset(*right)))<0.003);
     // The actual left/right hip rotations mirror in the coronal plane.
     for (double angle : {-30.0,15.0,45.0}) {
         std::array<std::array<double,9>,2> delta{};

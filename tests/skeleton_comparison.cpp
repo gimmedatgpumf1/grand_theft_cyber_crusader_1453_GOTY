@@ -119,14 +119,15 @@ static void check(const SkeletonRoom& room, bool male) {
     close((c7-std::min(lowY(pl),lowY(pr)))*100,c.targets()[SkeletonComparison::Torso]);
     std::ifstream hips(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".hips");
     while (std::getline(hips,row) && (row.empty() || row[0]=='#')) {}
-    hips.clear(); hips.seekg(0); double hipY=0, sourceHipY=0;
+    hips.clear(); hips.seekg(0); double hipY=0, sourceHipY=0; std::array<double,2> fittedHip{};
     while (hips.peek()=='#') std::getline(hips,row);
     for (int side=0;side<2;++side) {
         char ch; Vec3 q; double radius; assert(hips>>ch>>q.x>>q.y>>q.z>>radius);
         const Vec3 hip=transformed(matrices[model.sourceStructure(std::string("Femur_")+ch)],q);
-        hipY+=c.map(hip).y; sourceHipY+=hip.y;
+        fittedHip[side]=c.map(hip).y; hipY+=fittedHip[side]; sourceHipY+=hip.y;
     }
     close(hipY*50,c.targets()[SkeletonComparison::Leg]);
+    assert(std::abs(fittedHip[0]-fittedHip[1])<1e-8*std::max(1.0,c.profile().height/100));
     sourceHipY*=0.5;
     // The old piecewise-linear field made an abrupt bend through both pelvic
     // bones at this hip knot. Its vertical derivative must now be continuous.

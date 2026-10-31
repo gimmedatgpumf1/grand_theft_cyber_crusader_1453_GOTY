@@ -278,7 +278,10 @@ struct SkeletonRagdoll::Impl {
                     hinge->setOverrideNumSolverIterations(180);
                     fingerJoints.push_back(hinge.get());
                 }
-                if (kind=="great_toe_mtp" || kind=="lesser_toe_mtp" || kind=="toe_ip_hinge") hinge->setOverrideNumSolverIterations(180);
+                if (kind=="great_toe_mtp" || kind=="lesser_toe_mtp") hinge->setOverrideNumSolverIterations(180);
+                // The level-pelvis pose changes the impact; the tiny IP joints
+                // need a slightly larger local budget to retain their anchors.
+                if (kind=="toe_ip_hinge") hinge->setOverrideNumSolverIterations(210);
                 if (kind=="patellofemoral_glide") { hinge->setOverrideNumSolverIterations(180); hinge->setParam(BT_CONSTRAINT_ERP,0.4f); }
                 hinge->setLimit(btScalar(range.minimum-q),btScalar(range.maximum-q),0.9f,0.3f,1.0f);
                 world->addConstraint(hinge.get(),true); constraints.push_back(std::move(hinge));

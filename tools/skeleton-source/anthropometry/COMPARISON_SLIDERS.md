@@ -28,7 +28,7 @@ shape is kept. Reset restores the original posed height and formula requests.
 
 The default height is the *visible posed mesh* from floor to skull top, so each
 blue copy has the same visible height as its neighbouring original. This is
-about **171.77 cm male** and **166.16 cm female**, not the recorded 170.0 and
+about **172.68 cm male** and **166.26 cm female**, not the recorded 170.0 and
 170.2 cm cadaver lengths. All seven formula targets are evaluated at that
 visible height. Changing height intentionally breaks the same-height comparison
 until reset. The tested geometric proxies on the blue mesh are:
@@ -56,8 +56,7 @@ subjects were abnormal. Hand and foot dimensions have no separate fitting yet.
 The previous fit put a vertical-field knot through the skull. At the default
 male C1 contact, its local Y scale changed from **1.383 below** to **0.970
 above** the knot, while X and Z stayed at 1.0; it stretched the jaw and lower
-face differently from the cranium. The corrected default applies a uniform
-scale of about **1.088 male** and **1.045 female** to skull, jaw and C1.
+face differently from the cranium. The corrected fit applies one uniform scale to skull, jaw and C1.
 The regression test checks every vertex of all three structures against one
 shared similarity transform, including after slider changes.
 
@@ -66,7 +65,7 @@ surfaces with FCL. The registered T-pose already has head–jaw intersections in
 both originals and head–C1 intersections in the female original; the blue copies
 retain these, rather than hiding them by moving the original jaw or neck. In this
 static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 female
-head–C1 contacts; male head–C1 surfaces are 0.026 mm apart. Counts depend on the
+head–C1 contacts; male head–C1 surfaces are approximately 0.034 mm apart. Counts depend on the
 mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
 remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
 The audit also checks the pelvic ring, hips and sacrum/L5 at default and 50 cm.
@@ -74,6 +73,15 @@ The registered source already has left pelvis/femur triangle intersections in
 both sexes and right pelvis/femur intersections in the female; they remain in
 the blue copies. This does not test containment or establish the correct
 biological placement, and **does not fix those pre-existing overlaps**.
+
+The reference T-pose levels the two fitted hip centres instead of tilting the
+pelvis to make unequal legs reach the same floor. Previously the male hip-centre
+line was tilted about 7.07°; it is now level in both white and blue bodies.
+Because source bones are not rescaled, the straight male feet differ in height
+by about 20.6 mm and the female feet by about 2.3 mm. The room places the lower
+foot on the floor; the other can therefore hover. This is an observed source
+asymmetry and is not hidden by rotating the pelvis. The original source pose
+remains available with **B**.
 
 The source T-pose is captured once. The left and right pelvis and the sacrum
 now share **one uniform 3D scale and translation**, so the entire pelvic ring
@@ -98,8 +106,8 @@ be represented by the chosen bony proxies with the intact adult pelvic ring**.
 The fit therefore changes the pelvic height to minimise their equally weighted
 squared deviations and displays actual fitted values rather than pretending
 that both targets were met. At 50 cm, male requested/fitted torso is
-23.30/21.20 cm and leg is 22.80/20.70 cm; female requested/fitted torso is
-22.59/19.78 cm and leg is 22.93/20.13 cm. This is a limitation of applying
+23.30/21.11 cm and leg is 22.80/20.61 cm; female requested/fitted torso is
+22.59/19.79 cm and leg is 22.93/20.14 cm. This is a limitation of applying
 surface references to these bone landmarks, not a child/adult formula jump.
 If other extreme multipliers make the pelvic ring impossible to place below
 C7, the conflicting requests are continuously blended toward source scaling.

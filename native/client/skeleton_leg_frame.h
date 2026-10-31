@@ -109,18 +109,15 @@ inline std::optional<LegReferenceFrames> sourceLegFrame(const SkeletonModel& mod
     return LegReferenceFrames{hip,knee,ankle,neutralHipAxis,neutralKneeAxis,ankleAlignment,soleNormal,solePoint,
                               neutralHipAngle,neutralKneeAngle,flatAngle,sole};
 }
-// Registered limbs can differ in length and hip height. Tilt the pelvis just
-// enough to place the two straight legs on the same level, then counter-rotate
-// the trunk and hip frames; no bone is moved away from its joint or rescaled.
+// Level the measured femoral-head centres, not the soles. Balancing the feet
+// by tilting the whole pelvis made the male pelvis lean more than seven degrees.
+// The source limbs can have unequal lengths; do not rotate the pelvic ring to
+// disguise that difference or scale the original bones.
 inline std::optional<double> levelPelvisAngle(const SkeletonModel& model) {
     const auto left=sourceLegFrame(model,0), right=sourceLegFrame(model,1);
     if (!left || !right) return std::nullopt;
-    const auto offset=[](const LegReferenceFrames& f) {
-        return f.soleHeight-length(f.knee-f.hip)-length(f.ankle-f.knee);
-    };
     const double dx=left->hip.x-right->hip.x, dy=left->hip.y-right->hip.y;
-    const double span=std::hypot(dx,dy);
-    if (span<1e-8) return std::nullopt;
-    return std::asin(std::clamp((offset(*right)-offset(*left))/span,-1.0,1.0))-std::atan2(dy,dx);
+    if (std::hypot(dx,dy)<1e-8) return std::nullopt;
+    return -std::atan2(dy,dx);
 }
 } // namespace gtc::native
