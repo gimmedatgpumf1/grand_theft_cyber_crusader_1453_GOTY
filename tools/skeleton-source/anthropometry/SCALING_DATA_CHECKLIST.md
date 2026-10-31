@@ -13,6 +13,7 @@ This tracks *data and evidence*, not a claim that runtime scaling has been imple
 - [x] Pediatric DXA sex-specific age-group stature/radius/femur/tibia and acromion-to-epicondyle summaries, published bone ratios and forward bone-to-bone equations (`PEDIATRIC_DXA_*`). These are summary data, not paired individuals, and ulna remains open.
 - [ ] Pediatric pelvis width, hip joint centres, femur and tibia geometry/angles, by sex and height. [Carman et al.](https://www.nature.com/articles/s41598-023-38783-6) describes 333 pediatric CT datasets, age 4–18; [SimTK](https://simtk.org/projects/paed_ssm) reportedly hosts measured data. An independent fetch script reports an account gate; authenticated download and reuse conditions remain unverified.
 - [x] Direct adult sex-specific hand-bone, toe-bone and thoracolumbar vertebral summaries ([SMALL_BONE_CT_XRAY_REFERENCES.md](SMALL_BONE_CT_XRAY_REFERENCES.md)); these do not supply stature-linked scaling.
+- [x] Paired same-side adult humerus/radius/femur/tibia and pelvic breadth by estimated sex, femur length and broad source location ([GOLDMAN_RESEARCH.md](GOLDMAN_RESEARCH.md)); **not** paired with actual stature.
 - [ ] Individual vertebrae, ribs, scapula, clavicle, metacarpals and phalanges versus stature/age/sex. Do not mistake external lengths or inverse-stature forensic equations for direct bone predictions.
 - [ ] Better documented extreme-stature measurements. Keep children, clinical cases, exceptionally short/tall adults and dysplasia separate; do not treat a clinical condition as generic for a height.
 
