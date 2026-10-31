@@ -4,6 +4,8 @@ This tracks *data and evidence*, not a claim that runtime scaling has been imple
 
 ## Priority 1 — proportions and growth
 
+- [x] Compare five forward model families per major surface dimension with training-only cross-validation and test 50 cm against infant reference evidence ([BODY_PART_MODEL_SELECTION.md](BODY_PART_MODEL_SELECTION.md)); unsupported sizes fail closed, and true infant body-part scaling is still missing.
+
 - [x] Nonlinear, sex/age-stratified major surface-part curve evaluator and internal linear/power comparison ([BODY_PART_CURVES.md](BODY_PART_CURVES.md)); research evaluator only, not live skeleton scaling.
 
 - [x] Adult male/female paired body dimensions and stature: ANSUR II (`ANSUR_II_PAIRED_MM.csv`), plus NHANES 2017–18 paired upper-arm/upper-leg lengths.

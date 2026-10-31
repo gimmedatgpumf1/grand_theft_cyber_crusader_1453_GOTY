@@ -1,0 +1,14 @@
+source	population	metric	unit	n_cohort_or_pma_bin	body_length_mean_cm	mean_or_median	value_cm	std_cm	p05_cm	p95_cm	interpretation
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	recumbent_length	cm	1681	50.6	mean	50.6	4.9			study_mean_not_conditioned_on_50cm
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	upper_arm_surface	cm	1681	50.6	mean	9.5	1.2			study_mean_not_conditioned_on_50cm
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	forearm_ulnar_surface	cm	1681	50.6	mean	7.7	1.0			study_mean_not_conditioned_on_50cm
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	upper_leg_surface	cm	1681	50.6	mean	8.3	1.4			study_mean_not_conditioned_on_50cm
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	lower_leg_tibial_surface	cm	1681	50.6	mean	8.2	1.2			study_mean_not_conditioned_on_50cm
+Abdel-Rahman_2017_PMC5751918_development	US_0_to_90_days_preterm_and_term_pooled	head_circumference	cm	1681	50.6	mean	35.1	3.0			circumference_not_head_height
+Abdel-Rahman_2017_PMC5794488_S1	US_40_weeks_postmenstrual_age_pooled	upper_arm_surface	cm	228		fitted_median	9.417236		7.8	11.0	PMA_conditional_not_length_conditional
+Abdel-Rahman_2017_PMC5794488_S2	US_40_weeks_postmenstrual_age_pooled	forearm_ulnar_surface	cm	228		fitted_median	7.622182		6.6	8.8	PMA_conditional_not_length_conditional
+Abdel-Rahman_2017_PMC5794488_S3	US_40_weeks_postmenstrual_age_pooled	upper_leg_surface	cm	228		fitted_median	8.114769		6.4	9.8	PMA_conditional_not_length_conditional
+Abdel-Rahman_2017_PMC5794488_S4	US_40_weeks_postmenstrual_age_pooled	lower_leg_tibial_surface	cm	228		fitted_median	8.027707		6.6	9.7	PMA_conditional_not_length_conditional
+Aziz_term_neonates	Pakistan_term_male	crown_rump_length	cm	504	50.9	mean	34.2	1.6			mean_not_conditioned_on_50cm
+Aziz_term_neonates	Pakistan_term_female	crown_rump_length	cm	524	50.4	mean	33.7	1.5			mean_not_conditioned_on_50cm
+Marchant_2010	Tanzania_first_day_pooled	foot_heel_to_hallux	cm	529		mean	7.8	0.4			no_paired_length_summary_different_endpoint

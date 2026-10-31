@@ -18,6 +18,14 @@ int main() {
     const BodyProportionCurves::Key leg{"NHANES_III","male","under_18","height_minus_sitting"};
     auto legValue=curves.dimensionCm(leg,100.0);
     assert(legValue && std::abs(*value+*legValue-100.0)<1e-10);
+    assert(curves.loadSelectedModels("tools/skeleton-source/anthropometry/BODY_PART_SELECTED_MODELS.tsv",error));
+    const auto selected=curves.selectedDimensionCm(sitting,100.0);
+    const auto selectedLeg=curves.selectedDimensionCm(leg,100.0);
+    assert(selected && selectedLeg && std::abs(*selected+*selectedLeg-100.0)<1e-10);
+    assert(!curves.selectedDimensionCm(sitting,50.0));
+    assert(!curves.selectedDimensionCm(sitting,250.0));
+    assert(!curves.loadSelectedModels("does-not-exist.tsv",error));
+    assert(curves.selectedDimensionCm(sitting,100.0));
     assert(!curves.load("does-not-exist.tsv",error));
     assert(curves.dimensionCm(sitting,100.0)); // failed reload leaves current curves intact
 }
