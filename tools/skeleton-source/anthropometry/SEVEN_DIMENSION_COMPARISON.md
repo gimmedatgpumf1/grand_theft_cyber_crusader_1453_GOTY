@@ -4,7 +4,7 @@ All values are centimetres. This is an exploratory audit, not a live skeleton-sc
 
 ## Matched-sex comparison
 
-Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm measurements run from the shoulder end of the humerus to the middle-finger bone tip in the actual T-pose; these endpoints do not match the biological reference. See `T_POSE_ARM_MEASUREMENTS.md`. Standard shoulder-width proxies and differences remain withdrawn; see `SHOULDER_POSE_AUDIT.md`. The separately requested fingertip-span-minus-arms calculation measures an internal humerus-end gap instead; see `TPOSE_FINGERTIP_SPAN_GAP.md`.
+Each biological mean ± SD is an observed sample statistic, **not** the formula prediction. Formula inputs are 170.0 cm for the male and 170.2 cm for the female skeleton. Difference is skeletal proxy minus matching-sex prediction, divided by that prediction. Arm measurements run from the shoulder end of the humerus to the middle-finger bone tip in the actual T-pose; these endpoints do not match the biological reference. See `T_POSE_ARM_MEASUREMENTS.md`. Shoulder width below is the requested T-pose scapula X extent, not validated acromion breadth; see `TPOSE_SCAPULA_EXTREMA.md`. The separately requested fingertip-span-minus-arms calculation measures an internal humerus-end gap instead; see `TPOSE_FINGERTIP_SPAN_GAP.md`.
 
 | Dimension | Male biological mean ± SD | Male formula | Male skeleton | Difference | Female biological mean ± SD | Female formula | Female skeleton | Difference |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -14,7 +14,7 @@ Each biological mean ± SD is an observed sample statistic, **not** the formula 
 | Full arm length | 76.49 ± 2.50 | 76.06 | 75.10 | -1.26% | 75.24 ± 2.58 | 75.89 | 70.30 | -7.36% |
 | Full leg length | 87.19 ± 3.04 | 86.67 | 87.14 | +0.55% | 88.07 ± 2.86 | 88.92 | 79.99 | -10.05% |
 | Hip width | 29.10 ± 2.73 | 28.43 | 27.36 | -3.76% | 29.51 ± 3.62 | 29.42 | 29.21 | -0.71% |
-| Shoulder width | 40.45 ± 2.12 | 40.09 | Not established | NA | 37.94 ± 2.13 | 38.18 | Not established | NA |
+| Shoulder width (scapula X extent) | 40.45 ± 2.12 | 40.09 | 31.36 | -21.78% | 37.94 ± 2.13 | 38.18 | 33.21 | -13.02% |
 
 ## Biological standard deviations
 
@@ -37,7 +37,7 @@ The width predictions are from the child/adult blended NHANES model at exactly e
 * **Arm:** mean of straight-line left/right distances in the actual room T-pose, from the medial shoulder end of the humerus to the end of the middle-finger bone, including the whole hand. The ANSUR reference is acromion–stylion plus skin hand length in a straight-arm, arms-down posture. The acromion is a point on the scapula, not the humerus; the skin fingertip also differs from bone. These remain **unmatched raw comparisons**, not clinical deviations; see `T_POSE_ARM_MEASUREMENTS.md`. The old source-pose path and differences remain withdrawn; see `ARM_PATH_AUDIT.md`.
 * **Leg:** mean of left/right fitted hip-to-knee-to-fibula ankle chain plus vertical heel-bone distance. The reference is skin greater-trochanter landmark to floor, not hip joint to heel bone.
 * **Hip:** transverse X extent of the two pelvis meshes, versus surface bi-iliac breadth. The extrema are not verified iliac-crest landmarks. Hip joint centre spacing, a distinct measurement, is 16.68 cm male and 17.32 cm female.
-* **Shoulder:** the shoulder-width measurement is **not established**. The previously reported upper-scapula X spans (31.38/33.14 cm) are not verified biacromial breadths and are withdrawn, along with their percentage differences. The NHANES reference is measured between the lateral borders of the acromial processes while seated, with soft tissue compressed. The landmarks and comparable pose are not established for the assets; see `SHOULDER_POSE_AUDIT.md`. Shoulder joint-centre spacing is a different measurement: 28.53 cm male and 30.68 cm female.
+* **Shoulder:** the requested width is the leftmost-to-rightmost **scapula X extent in the actual T-pose**. These directly measured extremes are not verified acromial landmarks. NHANES measures the acromial processes while seated, so the raw arithmetic differences are **not clinical deviations**. See `TPOSE_SCAPULA_EXTREMA.md` for point coordinates and 3D distances. Previous values from the original registered pose are superseded. Shoulder joint-centre spacing is a different measurement.
 
 Full methods, formula provenance and extrapolation caveats: `WHOLE_BODY_HEIGHT_COMPARISON.md`, `GIRDLE_WIDTH_FORMULAS.md`, and `SKELETON_GIRDLE_WIDTHS.md`. Arm and leg formulas are research approximations; no joint, collision or physics scaling is implemented.
 
@@ -47,6 +47,7 @@ From the repository root, with NumPy, SciPy and a C++17 compiler:
 
 ```sh
 python3 tools/skeleton-source/openskeleton/38-measure-t-pose-arm.py
+python3 tools/skeleton-source/openskeleton/40-measure-scapula-span.py
 python3 tools/skeleton-source/openskeleton/35-seven-dimensions.py
 python3 tests/seven_dimension_comparison.py
 ```

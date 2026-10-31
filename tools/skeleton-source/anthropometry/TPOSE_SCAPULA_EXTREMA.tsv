@@ -1,0 +1,3 @@
+subject	sex	height_cm	min_x_bone	max_x_bone	minimum_x_m	minimum_y_m	minimum_z_m	maximum_x_m	maximum_y_m	maximum_z_m	scapula_x_width_cm	selected_points_3d_cm	nhanes_prediction_cm	unmatched_x_difference_cm	unmatched_x_difference_percent	bio_sample_mean_cm	bio_sample_sd_cm	bio_sample_n	bio_source
+N197925	male	170.0	Scapula_R	Scapula_L	-0.09879442	1.55982163	-0.00858000	0.21479820	1.54100116	0.02644000	31.359262	31.610274	40.093051	-8.733789	-21.7838	40.445207	2.117117	3557	NHANES_III_165_to_175_cm
+N186416	female	170.2	Scapula_R	Scapula_L	-0.19264708	1.49381182	0.00727000	0.13944737	1.50207249	-0.00437000	33.209445	33.240104	38.181832	-4.972388	-13.0229	37.940935	2.129177	2118	NHANES_III_165_to_175_cm

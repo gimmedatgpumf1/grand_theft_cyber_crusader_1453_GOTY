@@ -93,10 +93,13 @@ def generate():
                           contacts['L']['vertical_cm'],contacts['R']['vertical_cm'])
             hip,_=widths(whole.mesh(sex))
             dims['hip_width']=(hip,None,None)
-            # Retracted as a shoulder measurement: extrema are not labelled
-            # acromia and the registered pose is not a standardized pose.
-            # Keep the geometric span in SHOULDER_POSE_AUDIT.tsv, not here.
-            dims['shoulder_width']=(None,None,None)
+            # Requested geometric T-pose scapular X extent; this is NOT a
+            # validated acromion-to-acromion biological measurement. Rerun
+            # 40 before 35 after any rig or source mesh changes.
+            scap_rows=list(csv.DictReader((OUT/'TPOSE_SCAPULA_EXTREMA.tsv').open(),delimiter='\t'))
+            scap=next(r for r in scap_rows if r['sex']==sex)
+            if abs(float(scap['height_cm'])-h)>1e-9: raise ValueError('wrong scapula audit subject height')
+            dims['shoulder_width']=(float(scap['scapula_x_width_cm']),None,None)
             for formula in ('male','female'):
                 text=subprocess.check_output([str(binary),formula,str(h)],cwd=whole.REPO,text=True)
                 predictions={k:float(v) for k,v in (line.split('\t') for line in text.splitlines())}
