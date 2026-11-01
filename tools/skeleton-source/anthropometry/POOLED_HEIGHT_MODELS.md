@@ -1,5 +1,10 @@
 # Height fits with extra weight at the measured extremes
 
+> Historical runtime models: these include mixed-population data and proxies,
+> including Korean-calibrated head conversions. They are not fitted from the
+> measured-only replacement exports. See `MEASURED_HEIGHT_DATA.md` for their
+> limited coverage and source/landmark caveats.
+
 These pooled reference models remain in use for the female blue comparison
 and other reference APIs. The male blue comparison now uses King's supplied
 equations instead; see `COMPARISON_SLIDERS.md`. The male coefficients documented
