@@ -50,9 +50,10 @@ by the authors or PIPER.
   three** positive measurements are excluded. Other records, duplicate value
   triples, and potential source anomalies are retained. Repeated value triples
   are different source subject IDs, not generated duplicates.
-- No claim of linearity, fitted formula, or extrapolation is made. The older
-  `MALE_HEIGHT_DATA.tsv` and `FEMALE_HEIGHT_DATA.tsv` are separate historical
-  files, still containing the previously disclosed proxies.
+- No claim of linearity, fitted formula, or extrapolation is made here. The
+  separate `MALE_HEIGHT_DATA.tsv` and `FEMALE_HEIGHT_DATA.tsv` contain estimated
+  head values from King's circumference formulas and other historical proxies;
+  see `WHOLE_BODY_HEAD_DATA.md`.
 
 ## Reproduction
 
