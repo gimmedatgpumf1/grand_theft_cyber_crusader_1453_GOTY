@@ -20,12 +20,14 @@ static FaceKey canonical(FaceKey f) {
     const FaceKey a={f[1],f[2],f[0]}, b={f[2],f[0],f[1]};
     return std::min({f,a,b});
 }
-static void mirroredTriangles(const SkeletonComparison& copy,const SkeletonComparison::Part& part,bool mapped) {
-    const double axis=mapped?0:(copy.hipCenters()[0].x+copy.hipCenters()[1].x)*0.5;
+static void mirroredTriangles(const SkeletonComparison& copy,const SkeletonComparison::Part& part,
+                              SkullMidplane plane,bool mapped) {
+    if (mapped) plane.origin=copy.map(plane.origin,0,true);
     std::vector<PointKey> vertices; vertices.reserve(part.points.size());
     for (Vec3 p:part.points) {
         if (mapped) p=copy.map(p,part.armSide,part.cranial,part.girdle,part.humerus);
-        vertices.push_back({std::llround((p.x-axis)*1e8),std::llround(p.y*1e8),std::llround(p.z*1e8)});
+        p=plane.local(p);
+        vertices.push_back({std::llround(p.x*1e8),std::llround(p.y*1e8),std::llround(p.z*1e8)});
     }
     std::map<FaceKey,int> faces;
     for (auto f:part.faces) {
@@ -45,9 +47,34 @@ static void checkSkull(SkeletonRoom& room,bool male) {
     const auto& model=male?room.male():room.female();
     const auto& copy=room.comparison(male);
     const auto matrices=model.sourceMatrices({},0);
-    const double axis=(copy.hipCenters()[0].x+copy.hipCenters()[1].x)*0.5;
+    const int headId=model.sourceStructure("Head"); assert(headId>=0);
+    const SkullMidplane plane=skullMidplane(male,matrices[headId]);
+    const SkullMidplane aligned{plane.origin,{1,0,0},{0,1,0},{0,0,1}};
     SkeletonModel source; std::string error;
     assert(source.load(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".obj",error));
+    // Check the skull-only plane against the original skull and independent
+    // eye landmarks, rather than comparing it with a body or hip midline.
+    const std::array<double,16> identity={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    const SkullMidplane rawPlane=skullMidplane(male,identity);
+    const int rawHeadId=source.sourceStructure("Head"); assert(rawHeadId>=0);
+    const auto& head=source.sourceStructures()[static_cast<std::size_t>(rawHeadId)];
+    const auto& headGroup=source.bones()[head.group];
+    std::vector<Vec3> skull(headGroup.points.begin()+head.firstPoint,
+                            headGroup.points.begin()+head.firstPoint+head.pointCount);
+    Vec3 centroid{}; for (Vec3 p:skull) centroid+=p; centroid=centroid/static_cast<double>(skull.size());
+    bilateral::PointTree tree(skull); double fittedError=0,axisError=0;
+    for (std::size_t i=0;i<skull.size();i+=3) {
+        const Vec3 p=skull[i];
+        const Vec3 reflected=p-rawPlane.normal*(2*dot(p-rawPlane.origin,rawPlane.normal));
+        const Vec3 axisReflected{2*centroid.x-p.x,p.y,p.z};
+        const Vec3 fittedDelta=tree.nearest(reflected)-reflected, axisDelta=tree.nearest(axisReflected)-axisReflected;
+        fittedError+=std::min(dot(fittedDelta,fittedDelta),0.006*0.006);
+        axisError+=std::min(dot(axisDelta,axisDelta),0.006*0.006);
+    }
+    assert(fittedError<axisError*0.75);
+    const auto& eyes=*model.orbitalCenters();
+    assert(std::abs(dot((eyes[0]+eyes[1])*0.5-rawPlane.origin,rawPlane.normal))<0.003);
+    assert(std::abs(dot(normalized(eyes[1]-eyes[0]),rawPlane.normal))>std::cos(5.0*3.141592653589793/180));
     for (const char* name:{"Head","Jaw"}) {
         const int id=model.sourceStructure(name), rawId=source.sourceStructure(name);
         assert(id>=0 && rawId>=0);
@@ -59,8 +86,8 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         for (std::size_t i=0;i<s.pointCount;++i) {
             const Vec3 p=group.points[s.firstPoint+i], q=rawGroup.points[raw.firstPoint+i];
             assert(p.x==q.x && p.y==q.y && p.z==q.z);
-            Vec3 posed=transform(matrices[id],p); original.push_back(posed);
-            posed.x=2*axis-posed.x; opposite.push_back(posed);
+            Vec3 posed=plane.local(transform(matrices[id],p)); original.push_back(posed);
+            posed.x=-posed.x; opposite.push_back(posed);
         }
         for (std::size_t i=0;i<s.triangleCount;++i) {
             auto f=group.triangles[s.firstTriangle+i], rf=rawGroup.triangles[raw.firstTriangle+i];
@@ -71,22 +98,18 @@ static void checkSkull(SkeletonRoom& room,bool male) {
             triangles.push_back(f);
         }
         auto averaged=original;
-        assert(bilateral::average(averaged,opposite,triangles));
-        // Pure recentering plus mirroring would simply discard one side. A
-        // nonzero shape displacement proves the other side contributed too.
-        double centroid=0, maxDisplacement=0;
-        for (Vec3 p:original) centroid+=p.x;
-        centroid/=original.size();
-        for (std::size_t i=0;i<original.size();++i) {
-            Vec3 recentered=original[i]; recentered.x+=axis-centroid;
-            maxDisplacement=std::max(maxDisplacement,length(averaged[i]-recentered));
-        }
+        assert(bilateral::average(averaged,opposite,triangles,false,false));
+        // Mirroring only one side would discard the other. Verify that both
+        // contribute a real shape change about the skull-derived plane.
+        double maxDisplacement=0;
+        for (std::size_t i=0;i<original.size();++i)
+            maxDisplacement=std::max(maxDisplacement,length(averaged[i]-original[i]));
         assert(maxDisplacement>1e-5);
-        assert(bilateral::mirrorAxial(averaged,triangles,axis));
+        assert(bilateral::mirrorAxial(averaged,triangles,0));
         const auto& result=copy.parts()[static_cast<std::size_t>(id)];
         assert(result.points.size()==averaged.size() && result.faces==triangles);
-        for (std::size_t i=0;i<averaged.size();++i) assert(length(result.points[i]-averaged[i])<1e-12);
-        mirroredTriangles(copy,result,false); mirroredTriangles(copy,result,true);
+        for (std::size_t i=0;i<averaged.size();++i) assert(length(result.points[i]-(plane.origin+averaged[i]))<1e-12);
+        mirroredTriangles(copy,result,aligned,false); mirroredTriangles(copy,result,aligned,true);
         std::printf("%s %s: source unchanged; averaged, mirrored %zu triangles (max shape shift %.3f mm)\n",
                     male?"male":"female",name,result.faces.size(),maxDisplacement*1000);
     }
@@ -94,7 +117,7 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         auto profile=copy.profile(); profile.height=height; profile.multiplier[SkeletonComparison::Head]=headMultiplier;
         assert(room.setComparison(male,profile,error));
         for (const auto& part:copy.parts()) if (part.name=="Head" || part.name=="Jaw")
-            mirroredTriangles(copy,part,true);
+            mirroredTriangles(copy,part,aligned,true);
     }
     room.resetComparison(male);
 }

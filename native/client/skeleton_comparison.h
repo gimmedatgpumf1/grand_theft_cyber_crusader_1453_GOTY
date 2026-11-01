@@ -5,6 +5,7 @@
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
 #include "client/skeleton_bilateral.h"
+#include "client/skull_midplane.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
@@ -143,18 +144,26 @@ public:
             for (auto& part:parts_) if (part.name==name) return &part;
             return nullptr;
         };
-        // Average each skull surface with its reflection before welding the
-        // mirrored halves. The white source model remains untouched. The jaw
-        // stays a separate surface and shares the skull's later transform.
+        // Fit and reflect the skull in its own anatomical frame, not the
+        // pelvis frame. Both skull and jaw use the same skull-derived plane;
+        // no independent centroid shift separates the jaw from the skull.
+        const int headId=model.sourceStructure("Head");
+        if (headId<0) { error="Comparison skull structure is missing"; return false; }
+        const SkullMidplane skullPlane=skullMidplane(male,matrices[static_cast<std::size_t>(headId)]);
         for (const char* name:{"Head","Jaw"}) {
             Part* part=mutablePart(name);
             if (!part) { error="Comparison skull structure is missing"; return false; }
             std::vector<Vec3> opposite; opposite.reserve(part->points.size());
-            for (Vec3 p:part->points) { p.x=2*axis-p.x; opposite.push_back(p); }
-            if (!bilateral::average(part->points,opposite,part->faces) ||
-                !bilateral::mirrorAxial(part->points,part->faces,axis)) {
+            for (Vec3& p:part->points) {
+                p=skullPlane.local(p); Vec3 reflected=p; reflected.x=-reflected.x; opposite.push_back(reflected);
+            }
+            if (!bilateral::average(part->points,opposite,part->faces,false,false) ||
+                !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison skull could not be averaged"; return false;
             }
+            // Keep the skull-derived center fixed and orient the resulting
+            // symmetric head upright; do not use any pelvis landmark here.
+            for (Vec3& p:part->points) p=skullPlane.origin+p;
         }
         // The axial sternum is also centered and mirrored.
         if (Part* sternum=mutablePart("Sternum")) {

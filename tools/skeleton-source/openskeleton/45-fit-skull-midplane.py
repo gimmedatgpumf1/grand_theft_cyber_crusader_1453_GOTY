@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Fit each Head mesh alone to its reflected surface; no body or hip landmarks.
+
+Requires NumPy, SciPy, trimesh and rtree. The fitted plane is an estimate,
+not an anatomical truth. A coarse area-weighted vertex fit is refined against
+closest points on the actual triangles using uniform surface samples. A 6 mm
+robust cap limits outliers, and a separate sample checks the result. Runtime
+uses the recorded source-coordinate plane in native/client/skull_midplane.h,
+transformed rigidly with the head. Use --check to verify the constants.
+"""
+import argparse
+from pathlib import Path
+import re
+
+import numpy as np
+import trimesh
+from scipy.optimize import minimize
+from scipy.spatial import cKDTree
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def head(path):
+    vertices, faces, active = [], [], False
+    with path.open() as source:
+        for line in source:
+            if line.startswith('g '):
+                if active:
+                    break
+                active = line.split()[1] == 'Head'
+            elif active and line.startswith('v '):
+                vertices.append([float(x) for x in line.split()[1:4]])
+            elif active and line.startswith('f '):
+                faces.append([int(x.split('/')[0])-1 for x in line.split()[1:4]])
+    vertices, faces = np.asarray(vertices), np.asarray(faces)
+    if not len(vertices) or not len(faces) or faces.min() < 0 or faces.max() >= len(vertices):
+        raise ValueError(f'Unexpected Head mesh layout in {path}')
+    return vertices, faces
+
+
+def fit(sex):
+    base = ROOT/'tools/skeleton-source'
+    vertices, faces = head(base/f'skeleton-{sex}.obj')
+    center = vertices.mean(axis=0)
+    relative = vertices-center
+    triangles = relative[faces]
+    areas = np.linalg.norm(np.cross(triangles[:, 1]-triangles[:, 0],
+                                    triangles[:, 2]-triangles[:, 0]), axis=1)/2
+    weights = np.zeros(len(vertices))
+    np.add.at(weights, faces.reshape(-1), np.repeat(areas/3, 3))
+    weights /= weights.sum()
+    sample = relative[np.random.default_rng(456).choice(len(vertices), 10000, p=weights)]
+    tree = cKDTree(relative)
+
+    def distances(params, sample):
+        normal = np.array([1., params[0], params[1]])
+        normal /= np.linalg.norm(normal)
+        reflected = sample-2*(sample@normal-params[2])[:, None]*normal
+        return tree.query(reflected, workers=1)[0]
+
+    def objective(params):
+        return np.mean(np.minimum(distances(params, sample)**2, 0.006**2))
+
+    starts = ([0,0,0], [.05,0,0], [-.05,0,0], [0,.05,0], [0,-.05,0])
+    solutions = [minimize(objective, start, method='Powell',
+                          bounds=[(-.25,.25),(-.25,.25),(-.02,.02)],
+                          options={'xtol':1e-6,'ftol':1e-9,'maxiter':200}) for start in starts]
+    best = min(solutions, key=lambda result: result.fun)
+    if not best.success:
+        raise RuntimeError(f'{sex}: skull plane optimization failed: {best.message}')
+    mesh = trimesh.Trimesh(vertices=relative, faces=faces, process=False)
+
+    def sample_surface(seed, count):
+        rng = np.random.default_rng(seed)
+        selected = rng.choice(len(faces), count, p=mesh.area_faces/mesh.area)
+        uv = rng.random((count, 2))
+        a = np.sqrt(uv[:, 0])
+        return ((1-a)[:, None]*mesh.triangles[selected, 0] +
+                (a*(1-uv[:, 1]))[:, None]*mesh.triangles[selected, 1] +
+                (a*uv[:, 1])[:, None]*mesh.triangles[selected, 2])
+
+    training, heldout_points = sample_surface(456, 8000), sample_surface(789, 4000)
+
+    def surface_distances(params, points):
+        n = np.array([1., params[0], params[1]])
+        n /= np.linalg.norm(n)
+        reflected = points-2*(points@n-params[2])[:, None]*n
+        return trimesh.proximity.closest_point(mesh, reflected)[1]
+
+    refined = minimize(lambda t: np.mean(np.minimum(surface_distances(t, training)**2, 0.006**2)),
+                       best.x, method='Powell', bounds=[(-.25,.25),(-.25,.25),(-.02,.02)],
+                       options={'xtol':2e-6,'ftol':1e-8,'maxiter':80})
+    if not refined.success:
+        raise RuntimeError(f'{sex}: skull surface fit failed: {refined.message}')
+    normal = np.array([1., refined.x[0], refined.x[1]])
+    normal /= np.linalg.norm(normal)
+    origin = center+refined.x[2]*normal
+    heldout = surface_distances(refined.x, heldout_points)
+    baseline = surface_distances([0,0,0], heldout_points)
+    # Check the face independently: these approximate orbit centres do not
+    # participate in the skull-surface fit.
+    eyes = np.loadtxt(base/f'skeleton-{sex}.orbits')
+    eye_offset = abs(((eyes-origin)@normal).mean())
+    eye_line = (eyes[1]-eyes[0])/np.linalg.norm(eyes[1]-eyes[0])
+    eye_angle = np.degrees(np.arccos(np.clip(abs(normal@eye_line), 0, 1)))
+    if np.mean(heldout) >= np.mean(baseline) or eye_offset > .003 or eye_angle > 5:
+        raise ValueError(f'{sex}: plane fit or independent orbit check failed')
+    print(f'{sex}: held-out mean reflection distance {np.mean(baseline)*1000:.3f} -> '
+          f'{np.mean(heldout)*1000:.3f} mm; orbit midpoint offset {eye_offset*1000:.3f} mm; '
+          f'orbit-axis angle {eye_angle:.3f} degrees')
+    print('  origin:', ' '.join(f'{x:.12f}' for x in origin))
+    print('  normal:', ' '.join(f'{x:.12f}' for x in normal))
+    return origin, normal
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--check', action='store_true', help='compare the fitted planes to the runtime constants')
+    args = parser.parse_args()
+    fits = [fit(sex) for sex in ('male','female')]
+    if args.check:
+        text = (ROOT/'native/client/skull_midplane.h').read_text()
+        values = [np.array([float(n) for n in s.split(',')])
+                  for s in re.findall(r'Vec3\{([^{}]+)\}', text)[:4]]
+        if len(values) != 4:
+            raise ValueError('Unable to read runtime plane constants')
+        for i, (origin, normal) in enumerate(fits):
+            # Plane origin may slide within the plane; only normal separation matters.
+            offset = abs((values[i]-origin)@normal)
+            angle = np.arccos(np.clip(values[i+2]@normal, -1, 1))
+            if offset > 0.0001 or angle > np.radians(.05):
+                raise ValueError(f'runtime plane {i} differs from fitted skull by {offset} m, {angle} rad')
+        print('Skull-only plane constants: PASS')
+
+
+if __name__ == '__main__':
+    main()

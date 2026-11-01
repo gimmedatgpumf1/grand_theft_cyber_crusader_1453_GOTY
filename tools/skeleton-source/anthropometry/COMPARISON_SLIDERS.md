@@ -111,8 +111,8 @@ surfaces with FCL. The registered T-pose already has head–jaw intersections in
 both originals and head–C1 intersections in the female original. Averaging the
 blue skull and jaw changes those surfaces but does not fix the existing
 intersections. At default height FCL reports 96/94 source/blue male head–jaw
-contacts, 65/80 female head–jaw contacts, and 112/122 female head–C1 contacts.
-The male head–C1 gap is approximately 0.034 mm in the source and 0.387 mm in
+contacts, 65/30 female head–jaw contacts, and 112/127 female head–C1 contacts.
+The male head–C1 gap is approximately 0.034 mm in the source and 0.394 mm in
 the blue copy. Counts depend on the mesh and collision algorithm. The test also
 checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
 jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
@@ -139,13 +139,24 @@ pelvis the horizontal and depth scales stay constant rather than tapering with
 height, preserving straight vertical joint-centre lines. This is an
 approximate bilateral *mesh* mean, not a vertex-by-vertex anatomical mean or a
 population average. Both rendered sides have identical reflected triangles.
-The central sacrum, sternum, skull and jaw are similarly averaged against their
-own reflections, clipped at the midline and mirrored with a welded seam. The
-skull and jaw are separate surfaces and retain their shared cranial transform
-with C1. Their triangle meshes are exactly mirrored; the mean itself is an
-approximation based on nearest surface vertices and smoothed displacement,
-not a known anatomical point-by-point correspondence. Remaining central bones
-retain their source shapes, so exact whole-body symmetry is not yet claimed.
+The central sacrum and sternum are averaged, clipped and mirrored with a welded
+seam. The skull uses a separate midplane fitted **only to its own source mesh**;
+hip and other body landmarks do not determine it. The same skull-derived plane
+is used for the jaw, with no separate jaw-centroid alignment. The plane follows
+the head's rigid T-pose transform before both surfaces are averaged and
+mirrored. The result is turned upright about the skull's own fitted center,
+without re-centering it to a hip landmark. The skull, jaw and C1 retain their
+shared cranial scale transform.
+`45-fit-skull-midplane.py` fits reflected skull surfaces against the actual
+triangles, with a robust cap, and checks the estimated orbit centres
+independently. On held-out surface samples the mean reflection-to-surface
+error is 1.04 mm male and 1.11 mm female; the estimated orbit midpoint is
+0.38 mm and 1.06 mm from the fitted plane respectively. This is a geometric
+estimate, not proof of an ideal anatomical midline. The skull and
+jaw triangle meshes are exactly mirrored about that plane; their surface mean
+is approximate because opposite sides lack known vertex correspondences and
+the displacements are smoothed. Remaining central bones retain their source
+shapes, so exact whole-body symmetry is not yet claimed.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these

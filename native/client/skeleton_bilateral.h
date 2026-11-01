@@ -88,11 +88,14 @@ inline std::vector<std::pair<int,int>> selfIntersections(
 }
 
 inline bool average(std::vector<Vec3>& left,const std::vector<Vec3>& reflectedRight,
-                    const std::vector<std::array<int,3>>& faces, bool checkSelf=false) {
+                    const std::vector<std::array<int,3>>& faces, bool checkSelf=false,
+                    bool alignCentroids=true) {
     if (left.empty() || reflectedRight.empty()) return false;
     Vec3 a{},b{}; for (Vec3 p:left) a+=p; for (Vec3 p:reflectedRight) b+=p;
     a=a/static_cast<double>(left.size()); b=b/static_cast<double>(reflectedRight.size());
-    const Vec3 offset=b-a;
+    // Paired separate bones need registration; a single axial mesh reflected
+    // about its own fitted plane must not be re-centered by its sampling density.
+    const Vec3 offset=alignCentroids ? b-a : Vec3{};
     std::vector<Vec3> aligned; aligned.reserve(reflectedRight.size());
     for (Vec3 p:reflectedRight) aligned.push_back(p-offset);
     PointTree tree(aligned);
