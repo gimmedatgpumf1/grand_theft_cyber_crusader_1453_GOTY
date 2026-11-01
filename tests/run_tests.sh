@@ -165,6 +165,11 @@ fi
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
 ./build/bin/gtc-skeleton-comparison
+# Enumerate and check every paired blue bone at default and slider extremes.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/bone_symmetry_checklist.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-bone-symmetry-checklist
+./build/bin/gtc-bone-symmetry-checklist
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_height_transition.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-height-transition
