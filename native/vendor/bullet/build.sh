@@ -5,10 +5,6 @@ cd "$root"
 out=build/obj/bullet
 mkdir -p "$out"
 export CXX="${CXX:-g++}"
-if ! "$CXX" -std=c++23 -fsyntax-only tests/cpp23_mode.cpp; then
-  echo '[build] A compiler supporting C++23 mode is required.' >&2
-  exit 1
-fi
 # Rebuild when the compiler or language mode changes, not just when sources do.
 config="$(command -v "$CXX")|$("$CXX" --version | head -n 1)|c++23|-O2 -DNDEBUG -pthread"
 stamp="$out/build-config.txt"

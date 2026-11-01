@@ -101,19 +101,15 @@ with Visual Studio 18.12 later in November; the build needs that stable release.
 3. Or skip these manual steps and double-click **`run.cmd`**; it performs both builds, starts the
    server, waits for the port, and opens `gtc-native-client.exe` automatically.
 
-The script initializes the Visual Studio environment through `vcvars64.bat` (finding a
-stable Visual Studio 2026 installation through `vswhere`), checks for C++23 mode,
-and verifies that the C++ standard library compiles.
-This matters because merely having `cl.exe` on PATH does not configure its standard headers or
-libraries. Output goes to `build/bin/gtc1453.exe`; objects go to `build/obj/`.
+The script initializes the Visual Studio environment through `vcvars64.bat` when available,
+so the compiler has its standard headers and libraries. The compiler reports unsupported
+options and build errors directly. Output goes to `build/bin/gtc1453.exe`; objects go to `build/obj/`.
 Each source is compiled to its own object so ccache can cache real compilation units.
 `ccache.exe` is preferred at `tools/ccache/windows-x86_64/ccache.exe` when supplied, then on PATH.
 Without it, the build still works and prints a warning; no Windows ccache binary is claimed here.
 
-If the preflight reports that `cmath` or the C++ standard library is unavailable, open
-**Visual Studio Installer → Modify → Desktop development with C++** and enable the two
-components listed above. No repository headers named `cmath`, `map`, or `string` are needed;
-those are supplied by MSVC.
+The standard library headers such as `cmath`, `map`, and `string` are supplied by the
+Visual Studio C++ toolset, not by the repository.
 
 ## One-click Linux build
 

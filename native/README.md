@@ -20,7 +20,7 @@ Windows with stable Visual Studio 2026, MSVC 14.52 or newer, and the **Desktop d
 native\build.cmd
 ```
 
-`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find stable Visual Studio 2026 and requires `/std:c++23` (MSVC 14.52 or newer). As of November 1, 2026, Microsoft expects that toolset in the stable channel later in November. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
+`native/build.ps1` is the PowerShell wrapper. The command initializes the Visual Studio environment when available and uses `/std:c++23`; the compiler reports unsupported options and errors directly. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
 
 ## Native multiplayer client and smoke test
 

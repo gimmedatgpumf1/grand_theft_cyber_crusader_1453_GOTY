@@ -53,7 +53,7 @@ def main():
     script, sources, objects, problems = windows_scripts()
     failures.extend(problems)
 
-    # Keep every build on C++23 and fail if MSVC silently ignores the flag.
+    # Keep every build on C++23; the compiler reports unsupported options.
     for path, flag in [('build.sh', '-std=c++23'),
                        ('native/build.sh', '-std=c++23'),
                        ('native/vendor/bullet/build.sh', '-std=c++23'),
@@ -63,12 +63,10 @@ def main():
         text = (ROOT / path).read_text(errors='replace')
         if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|20|latest|23preview)', text):
             failures.append(f'{path} must use {flag}, not another C++ mode')
-        if path.endswith('.cmd') and '/Zc:cmath' not in text:
-            failures.append(f'{path} must enable MSVC C++23 constexpr cmath')
-    for path in ['build.cmd', 'native/build.cmd', 'native/vendor/bullet/build.cmd']:
-        if 'tests\\cpp23_mode.cpp' not in (ROOT / path).read_text(errors='replace'):
-            failures.append(f'{path} must check the C++23 language mode')
-
+        if path.endswith('.cmd') and ('/Zc:cmath' not in text or '/options:strict' not in text):
+            failures.append(f'{path} must pass C++23 options directly to the compiler')
+        if 'cpp23_mode.cpp' in text or re.search(r'where\s+cl\.exe', text, re.IGNORECASE):
+            failures.append(f'{path} must not preflight the compiler or its version')
     for source in sorted(sources):
         if not (ROOT / source).exists():
             failures.append(f'build.cmd compiles a file that is not there: {source}')

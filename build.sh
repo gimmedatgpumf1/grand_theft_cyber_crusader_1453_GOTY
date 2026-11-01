@@ -14,14 +14,6 @@ if [ -f "$SEED" ] && [ -z "$(find "$CCACHE_DIR" -mindepth 1 -maxdepth 1 -print -
 fi
 
 COMPILER="${CXX:-g++}"
-if ! command -v "$COMPILER" >/dev/null 2>&1; then
-  echo "[build] C++ compiler not found: $COMPILER. Install a C++23-capable compiler or set CXX." >&2
-  exit 1
-fi
-if ! "$COMPILER" -std=c++23 -fsyntax-only tests/cpp23_mode.cpp; then
-  echo '[build] A compiler supporting C++23 mode is required.' >&2
-  exit 1
-fi
 CCACHE_BIN="${CCACHE:-}"
 if [ -z "$CCACHE_BIN" ] && [ -x "$ROOT/tools/ccache/linux-x86_64/ccache" ]; then
   CCACHE_BIN="$ROOT/tools/ccache/linux-x86_64/ccache"

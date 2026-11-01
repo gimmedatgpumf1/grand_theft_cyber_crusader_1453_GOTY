@@ -38,11 +38,6 @@ export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
 COMPILER="${CXX:-g++}"
 COMMAND=("$COMPILER")
 if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
-"${COMMAND[@]}" -std=c++23 -fsyntax-only tests/cpp23_mode.cpp
-if "${COMMAND[@]}" -std=c++20 -fsyntax-only tests/cpp23_mode.cpp >/dev/null 2>&1; then
-  echo '[test] C++23 mode check incorrectly accepted C++20.' >&2
-  exit 1
-fi
 # Exercise the actual height curves, including value, slope and curvature at
 # the formula joins and the full sampled extrapolation range.
 "${COMMAND[@]}" -std=c++23 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
