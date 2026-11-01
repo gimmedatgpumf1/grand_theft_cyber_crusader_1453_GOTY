@@ -314,7 +314,9 @@ public:
     bool exact() const { return exact_; }
     std::uint64_t revision() const { return revision_; }
     bool setProfile(const Profile& profile, std::string& error) {
-        if (!std::isfinite(profile.height) || profile.height<=0) return false;
+        if (!std::isfinite(profile.height) || profile.height<50.0) {
+            error="Height must be at least 50 cm"; return false;
+        }
         for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) return false;
         if (profile.height==profile_.height && profile.multiplier==profile_.multiplier) { error.clear(); return true; }
         const auto previous=profile_; const auto previousRevision=revision_; profile_=profile;

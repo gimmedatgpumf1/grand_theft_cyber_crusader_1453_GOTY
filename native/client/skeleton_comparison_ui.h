@@ -34,7 +34,7 @@ public:
             const int left=l.x+col*l.colWidth, y=l.y+59+row*27;
             drawTextPixels(frame,left+10,y+2,names[i],colorHex("#e6edf2"),20);
             const auto& p=c.profile();
-            const double fraction=i==0 ? (p.height-40)/190 : (p.multiplier[i]-0.5);
+            const double fraction=i==0 ? (p.height-50)/180 : (p.multiplier[i]-0.5);
             const int start=left+130, width=l.colWidth-230;
             frame.blendRectangle(start,y+10,width,4,colorHex("#63839c"),0.8);
             const int x=start+static_cast<int>(std::clamp(fraction,0.0,1.0)*width);
@@ -113,13 +113,13 @@ private:
     void change(SkeletonRoom& room,const Layout& l,int row,double x,int step) {
         auto profile=room.comparison(male_).profile();
         if (step) {
-            if (row==0) profile.height+=step;
+            if (row==0) profile.height=std::max(50.0,profile.height+step);
             else profile.multiplier[row]+=step*0.02;
         } else {
             const int column=l.wide ? row/4 : 0;
             const double start=l.x+column*l.colWidth+130;
             const double fraction=std::clamp((x-start)/(l.colWidth-230),0.0,1.0);
-            if (row==0) profile.height=40+190*fraction;
+            if (row==0) profile.height=50+180*fraction;
             else profile.multiplier[row]=0.5+fraction;
         }
         std::string error;

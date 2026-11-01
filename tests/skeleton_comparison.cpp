@@ -253,10 +253,10 @@ int main() {
     check(room,true); check(room,false);
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
-        for (double h:{1.,5.,10.,50.,100.,140.,170.,200.,250.,400.,1000.}) {
+        for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1000.}) {
             p.height=h;
             const auto previous=room.comparison(male).profile();
-            if (h<=10 || h==1000) {
+            if (h<50 || h==1000) {
                 const auto oldTargets=room.comparison(male).targets();
                 const auto oldRequested=room.comparison(male).requestedTargets();
                 const auto oldRevision=room.comparison(male).revision();
@@ -267,7 +267,7 @@ int main() {
                 assert(room.comparison(male).requestedTargets()==oldRequested);
                 assert(room.comparison(male).revision()==oldRevision);
                 assert(length(room.comparison(male).map({0.1,1.4,0.02})-oldPoint)<1e-12);
-                continue; // Requested equations are non-positive or incompatible here.
+                continue; // Below the height limit or incompatible geometry.
             }
             if (!room.setComparison(male,p,error)) { std::printf("height %g failed: %s\n",h,error.c_str()); std::abort(); }
             check(room,male);
@@ -362,7 +362,7 @@ int main() {
         }
         // No visible jump at the child/adult and infant bridge boundaries.
         for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.,male?190.:175.}) {
-            if (boundary<13) continue; // One or both specified leg equations are non-positive.
+            if (boundary<=50) continue; // Both samples must be within the height limit.
             p=room.comparison(male).profile();p.height=boundary-0.00001;assert(room.setComparison(male,p,error));
             const std::array<Vec3,3> points{{{0.1,1.4,0.02},{0.1,1.6,0.02},{0.1,1.7,0.02}}};
             std::array<Vec3,3> before, cranialBefore;
@@ -379,16 +379,8 @@ int main() {
             for (int dimension=0;dimension<SkeletonComparison::Count;++dimension)
                 assert(std::abs(room.comparison(male).targets()[dimension]-targetsBefore[dimension])<0.001);
         }
-        // Audit the extreme-height fallback, including its entry and exit.
-        Vec3 previous{}; bool first=true;
-        for (double h=male?12.:12.3;h<=20;h+=0.1) {
-            p=room.comparison(male).profile(); p.height=h; assert(room.setComparison(male,p,error));
-            const Vec3 point=room.comparison(male).map({0.1,1.4,0.02});
-            if (!first) assert(length(point-previous)<0.001);
-            previous=point; first=false;
-        }
         // Check all seven supplied equations independently over the full range.
-        for (double h=40.;h<=250.;h+=0.5) {
+        for (double h=50.;h<=250.;h+=0.5) {
             p=room.comparison(male).profile(); p.height=h;
             assert(room.setComparison(male,p,error));
             const std::array<double,8> wanted=male
@@ -425,6 +417,13 @@ int main() {
     double femaleBefore=room.comparison(false).profile().height;
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
     close(room.comparison(false).profile().height,femaleBefore+1);
+    // Neither the track nor repeated minus clicks can go below 50 cm.
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+130,y+60),false,w,h,room));
+    assert(control.handle(mouse(WindowEvent::Type::MouseUp,x+130,y+60),false,w,h,room));
+    close(room.comparison(false).profile().height,50.,1e-10);
+    for (int i=0;i<3;++i)
+        assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+110,y+60),false,w,h,room));
+    close(room.comparison(false).profile().height,50.,1e-10);
     assert(!control.handle(mouse(WindowEvent::Type::MouseDown,0,0),false,w,h,room));
     room.resetComparison(false);
     // At a compact window size the second set of four controls remains reachable.

@@ -16,9 +16,9 @@ four sliders. Values shown are centimetres. Head, neck, torso, arm, leg, hip
 and shoulder sliders are multipliers of the appropriate sex-specific
 height-based surface estimates. Minus/plus adjusts them by 2 percentage points;
 the height buttons change the target by 1 cm. Tracks are convenient windows
-(40–230 cm for height, 50–150% for other dimensions), **not** minimum/maximum
-height cutoffs: buttons may go beyond them. Positive finite dimensions are
-required. The listed values are the **fitted skeletal proxies**. When a rigid
+(50–230 cm for height, 50–150% for other dimensions). Height cannot be set
+below 50 cm; the plus button can go above the track. Positive finite dimensions
+are required. The listed values are the **fitted skeletal proxies**. When a rigid
 pelvic ring cannot meet both requested torso and leg proxies, both controls
 still move the copy; the fit is projected to the closest pair of achievable
 values with equal weight. On a wide panel the footer shows fitted/requested
@@ -42,7 +42,7 @@ These are used directly as requested targets before applying the sliders. The
 male and female leg equations become non-positive at or below approximately
 11.83 and 12.25 cm respectively, and the exponentials eventually overflow or
 produce widths incompatible with the pose: such inputs cannot be displayed and
-the prior shape is preserved. There is no additional stature cutoff. For
+the prior shape is preserved. The minimum stature is 50 cm. For
 example at 170 cm the rigid ring projects the requested torso/leg values of
 64.58/87.83 cm to approximately 63.70/86.96 cm. At 50 cm it projects
 22.14/21.19 cm to approximately 17.33/16.38 cm. The other five targets match
