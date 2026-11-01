@@ -14,7 +14,8 @@ static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
 }
 int main(int argc,char** argv) {
     if (argc<2 || argc>6) return 2;
-    const bool all=argc>=3 && std::string(argv[2])=="--all";
+    const bool ribs=argc>=3 && std::string(argv[2])=="--ribs";
+    const bool all=argc>=3 && (std::string(argv[2])=="--all" || ribs);
     if ((argc==4 && !all) || (argc==5 && all) || (argc==6 && !all)) return 2;
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) return 1;
@@ -33,7 +34,14 @@ int main(int argc,char** argv) {
         const auto& comparison=room.comparison(male);
         const auto matrices=model.sourceMatrices({},0);
         std::vector<std::string> names;
-        if (all) {
+        if (ribs) {
+            names.push_back("Sternum");
+            for (int n=1;n<=12;++n) {
+                names.push_back("T"+std::to_string(n));
+                names.push_back("Rib"+std::to_string(n)+"_L");
+                names.push_back("Rib"+std::to_string(n)+"_R");
+            }
+        } else if (all) {
             for (const auto& source:model.sourceStructures()) {
                 const auto& name=source.name;
                 const auto vertebrae=vertebraNames();

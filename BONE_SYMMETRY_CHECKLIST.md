@@ -28,12 +28,49 @@ animated pose or ragdoll remains symmetric.
 ## Other paired blue bones
 
 - [x] Shoulder girdle: scapulae and clavicles (2 pairs).
-- [x] Ribs: rib pairs 1–12 (12 pairs).
+- [x] Ribs: rib pairs 1–12 (12 pairs). The blue pairs were already averaged
+  and mirrored; the separate rib audit below confirms each pair.
 - [x] Pelvic halves / innominates (1 pair).
 
 Together with the limbs, the source provides **77 pairs per sex**, and all 77
 are mirrored in the blue comparison. The current pair averaging is a geometric
 approximation; mirrored geometry alone does not prove the average looks right.
+
+## Rib-by-rib audit
+
+Each rib is paired with its opposite-side rib; a single curved rib is not
+reflected onto itself. All twelve blue pairs were already mirrored about the
+body midplane. No rib geometry was changed during this audit, and both white
+source ribs remain untouched. The table gives an approximate, bidirectional,
+area-weighted mean distance between the posed white rib and its reflected
+opposite, in millimetres; it includes position differences as well as shape.
+It is not an anatomical landmark measurement.
+
+| Rib pair | Male source distance (mm) | Female source distance (mm) | Blue pair |
+|---|---:|---:|---|
+| 1 | 4.476 | 7.202 | symmetric |
+| 2 | 5.532 | 7.411 | symmetric |
+| 3 | 5.016 | 5.527 | symmetric |
+| 4 | 5.723 | 7.030 | symmetric |
+| 5 | 5.830 | 6.687 | symmetric |
+| 6 | 5.278 | 4.669 | symmetric |
+| 7 | 5.316 | 2.510 | symmetric |
+| 8 | 8.140 | 3.595 | symmetric |
+| 9 | 8.791 | 4.719 | symmetric |
+| 10 | 6.749 | 6.292 | symmetric |
+| 11 | 4.132 | 7.384 | symmetric |
+| 12 | 3.436 | 11.000 | symmetric |
+
+`tests/rib_symmetry.cpp` checks every blue vertex and triangle winding at 52
+profiles per sex, including 50/170/250 cm and individual and combined slider
+endpoints. The largest reflected-vertex difference was below 0.000000001 mm.
+`tests/rib_mesh_contact.py` finds adjacent blue ribs clear at those three
+heights and selected 170 cm single-slider extremes. It also finds existing
+rib–vertebra surface intersections: 10/24 same-level pairs for male and
+14/24 for female at each of the three heights tested. Male source rib 8's
+left template has one disjoint triangle self-crossing, which is also mirrored
+onto the right blue rib. The audit does not assess cartilage, anatomical joint
+fit or visual quality.
 
 ## Central blue bones
 
