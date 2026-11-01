@@ -55,7 +55,7 @@ public:
                           fitted[SkeletonComparison::Torso],wanted[SkeletonComparison::Torso],
                           fitted[SkeletonComparison::Leg],wanted[SkeletonComparison::Leg]);
             text=message;
-        } else if (!c.exact()) text="Bone fit: values adjusted.";
+        } else if (!c.exact()) text="Fitted values (cm).";
         else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   P: hide";
         drawTextPixels(frame,l.x+10,l.y+l.h-24,text,colorHex("#c0d7e7"),20);
     }
@@ -141,23 +141,8 @@ private:
             profile.multiplier[row]=std::clamp(value,limits->minimum,limits->maximum)/limits->center;
         }
         std::string error;
-        if (room.setComparison(male_,profile,error)) { status_.clear(); return; }
-        // A mathematical ±1 SD endpoint can be physically impossible (for
-        // example, a negative-length arm or a rigid pelvis that won't fit).
-        // Move to the nearest reachable point instead of making a click or drag
-        // appear broken. The model still enforces all size bounds.
-        const auto original=comparison.profile();
-        double low=0,high=1;
-        for (int iteration=0;iteration<24;++iteration) {
-            const double amount=(low+high)*0.5;
-            auto trial=original;
-            trial.height=original.height+(profile.height-original.height)*amount;
-            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d)
-                trial.multiplier[d]=original.multiplier[d]+(profile.multiplier[d]-original.multiplier[d])*amount;
-            if (room.setComparison(male_,trial,error)) low=amount; else high=amount;
-        }
-        if (low==0) room.setComparison(male_,original,error);
-        status_="Bone fit limits range.";
+        if (!room.setComparison(male_,profile,error)) status_="Cannot fit; shape unchanged.";
+        else status_.clear();
     }
     bool male_=true,open_=false;
     int dragging_=-1, page_=0;

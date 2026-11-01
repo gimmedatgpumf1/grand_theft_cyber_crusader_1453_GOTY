@@ -256,7 +256,7 @@ int main() {
         for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1000.}) {
             p.height=h;
             const auto previous=room.comparison(male).profile();
-            if (h<50 || h==400 || h==1000) {
+            if (h<50 || h==1000) {
                 const auto oldTargets=room.comparison(male).targets();
                 const auto oldRequested=room.comparison(male).requestedTargets();
                 const auto oldRevision=room.comparison(male).revision();
@@ -401,9 +401,9 @@ int main() {
                         -1.02*head)<1e-8);
         room.resetComparison(male);
     }
-    // The requested AND fitted dimensions stay inside the sex-specific bounds,
-    // even for programmatic requests far outside the UI track. Unfit shapes must
-    // be rejected without changing the last valid profile or geometry.
+    // Requested dimensions stay inside the sex-specific bounds even for
+    // programmatic requests far outside the UI track. The rigid bone fit may
+    // differ; any genuinely unfit shape must leave the previous state intact.
     for (bool male:{true,false}) for (double height:{50.,100.,170.,250.}) {
         auto p=room.comparison(male).profile(); p.height=height;
         assert(room.setComparison(male,p,error));
@@ -422,13 +422,33 @@ int main() {
                     for (int j=SkeletonComparison::Head;j<SkeletonComparison::Count;++j) {
                         const auto bound=c.dimensionLimits(j,height); assert(bound);
                         assert(c.requestedTargets()[j]>=bound->minimum-1e-8 && c.requestedTargets()[j]<=bound->maximum+1e-8);
-                        assert(c.targets()[j]>=bound->minimum-1e-8 && c.targets()[j]<=bound->maximum+1e-8);
                     }
                 } else {
                     assert(!error.empty() && c.profile().height==old.height && c.profile().multiplier==old.multiplier);
                     assert(c.targets()==oldTargets && c.requestedTargets()==oldRequested && c.revision()==oldRevision);
                 }
                 p=old; assert(room.setComparison(male,p,error));
+            }
+        }
+        room.resetComparison(male);
+    }
+    // All combinations of the seven slider endpoints must remain reachable,
+    // including when other body parts have already been changed.
+    for (bool male:{true,false}) for (double height:{50.,75.,100.,140.,170.,200.,250.}) {
+        for (int mask=0;mask<128;++mask) {
+            auto p=room.comparison(male).profile(); p.height=height;
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto bound=room.comparison(male).dimensionLimits(d,height); assert(bound);
+                p.multiplier[d]=((mask>>(d-1))&1 ? bound->maximum : bound->minimum)/bound->center;
+            }
+            if (!room.setComparison(male,p,error)) {
+                std::fprintf(stderr,"%s %.1f cm slider mask %d: %s\n",male?"male":"female",height,mask,error.c_str());
+                std::abort();
+            }
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto bound=room.comparison(male).dimensionLimits(d,height); assert(bound);
+                const double want=(mask>>(d-1))&1 ? bound->maximum : bound->minimum;
+                close(room.comparison(male).requestedTargets()[d],want,1e-8);
             }
         }
         room.resetComparison(male);
@@ -479,11 +499,37 @@ int main() {
     const double armCenter=room.comparison(true).requestedTargets()[SkeletonComparison::Arm];
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+600,y+60),false,w,h,room));
     assert(control.handle(mouse(WindowEvent::Type::MouseUp,x+600,y+60),false,w,h,room));
-    // Zero/negative arms cannot fit: dragging to that endpoint should still
-    // move toward it, rather than leave the slider stuck at its old position.
+    // Dragging to the minimum must reach the requested end of the range.
+    const auto armLimits=room.comparison(true).dimensionLimits(SkeletonComparison::Arm,50); assert(armLimits);
     assert(room.comparison(true).requestedTargets()[SkeletonComparison::Arm] < armCenter);
-    assert(room.comparison(true).requestedTargets()[SkeletonComparison::Arm] > 0);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Arm],armLimits->minimum,1e-8);
     room.resetComparison(true);
+    // Exercise real pointer input after changing several other sliders. Each
+    // drag reaches its chosen SD endpoint without a hidden bone-fit restriction.
+    for (bool male:{true,false}) for (double height:{50.,170.,250.}) {
+        assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+(male?20:120),y+32),false,w,h,room));
+        room.resetComparison(male);
+        auto profile=room.comparison(male).profile(); profile.height=height;
+        assert(room.setComparison(male,profile,error));
+        for (int pass=0;pass<2;++pass) for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+            const auto before=room.comparison(male).requestedTargets();
+            const double fittedBefore=room.comparison(male).targets()[d];
+            const auto limits=room.comparison(male).dimensionLimits(d,height); assert(limits);
+            const int sx=x+(d/4)*470+(pass?370:130), sy=y+59+(d%4)*27+1;
+            assert(control.handle(mouse(WindowEvent::Type::MouseDown,sx,sy),false,w,h,room));
+            assert(control.handle(mouse(WindowEvent::Type::MouseUp,sx,sy),false,w,h,room));
+            const auto& after=room.comparison(male).requestedTargets();
+            close(after[d],pass?limits->maximum:limits->minimum,1e-8);
+            if (std::abs(before[d]-after[d])>1e-8 &&
+                std::abs(room.comparison(male).targets()[d]-fittedBefore)<1e-8) {
+                std::fprintf(stderr,"%s %.1f cm dimension %d did not move on pass %d\n",male?"male":"female",height,d,pass);
+                std::abort();
+            }
+            for (int j=SkeletonComparison::Head;j<SkeletonComparison::Count;++j)
+                if (j!=d) close(after[j],before[j],1e-8);
+        }
+        room.resetComparison(male);
+    }
     // At a compact window size the second set of four controls remains reachable.
     SkeletonComparisonUi compact; constexpr int sw=320, sh=240, sx=8, sy=33;
     assert(compact.handle(WindowEvent{WindowEvent::Type::KeyDown,'p'},true,sw,sh,room));

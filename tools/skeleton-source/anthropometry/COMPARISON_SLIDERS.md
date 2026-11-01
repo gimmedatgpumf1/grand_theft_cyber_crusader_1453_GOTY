@@ -29,10 +29,11 @@ or zero dimensions cannot be rendered. The listed values are **fitted skeletal
 proxies**. When a rigid pelvic ring cannot meet both requested torso and leg
 proxies, both controls still move the copy; the fit is projected to the closest
 pair of achievable values with equal weight. On a wide panel the footer shows
-fitted/requested values. Both requested and fitted dimensions stay within the
-bounds, and physically impossible settings are limited by the bone fit. Reset
-restores the original posed height and formula requests. Height changes keep
-the current SD offsets where feasible.
+fitted/requested values. The ±1 SD bounds apply to requested slider values;
+the fitted skeletal torso or leg can fall outside them when the intact pelvic
+ring cannot satisfy both requests. Fitted values do not impose an additional
+slider restriction. Reset restores the original posed height and formula
+requests. Height changes keep the current SD offsets where feasible.
 
 To regenerate the SDs (sample SD, `n-1` denominator) from the original rows:
 

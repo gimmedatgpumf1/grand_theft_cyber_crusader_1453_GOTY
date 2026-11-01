@@ -475,15 +475,6 @@ private:
         }
         targets_[Torso]=(targetY_[3]-targetY_[1])*100;
         targets_[Leg]=((mapY(hipY_[0])+mapY(hipY_[1]))*0.5)*100;
-        // Projection or geometric fallback must not put a displayed body part
-        // outside its limit even when its requested target was within range.
-        for (int dimension=Head;dimension<Count;++dimension) {
-            const auto bounds=dimensionLimits(dimension,profile_.height);
-            if (!bounds || targets_[dimension]<bounds->minimum-1e-8 ||
-                targets_[dimension]>bounds->maximum+1e-8) {
-                error="Bone fit exceeds size limits"; feasible_=false; return false;
-            }
-        }
         exact_=true;
         for (int dimension=1;dimension<Count;++dimension)
             if (std::abs(targets_[dimension]-requestedTargets_[dimension])>1e-8*std::max(1.0,requestedTargets_[dimension]))
