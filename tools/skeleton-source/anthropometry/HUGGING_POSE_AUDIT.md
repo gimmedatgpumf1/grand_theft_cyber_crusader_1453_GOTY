@@ -23,4 +23,4 @@ python3 tools/skeleton-source/openskeleton/42-audit-hugging-pose.py
 python3 tests/hugging_pose_audit.py
 ```
 
-The script builds the real room exporter and uses registered source geometry and runtime matrices; the test also checks the archived rejected experiment. NumPy, SciPy, C++23 and vendored Bullet are required. Neither the audit nor the archived experiment modifies the game pose.
+The script builds the real room exporter and uses registered source geometry and runtime matrices; the test also checks the archived rejected experiment. NumPy, SciPy, C++20 and vendored Bullet are required. Neither the audit nor the archived experiment modifies the game pose.

@@ -3,7 +3,7 @@
 
 The bone and surface landmarks differ. The sample SDs describe real samples,
 not a normal range or z-score for the unvalidated skeleton proxies. Requires
-NumPy, SciPy and a C++23 compiler. Run from any directory.
+NumPy, SciPy and a C++20 compiler. Run from any directory.
 """
 import csv
 import importlib.util
@@ -73,7 +73,7 @@ def generate():
     bio=stats();output=[]
     with tempfile.TemporaryDirectory() as td:
         binary=Path(td)/'body-profile'
-        subprocess.run(['c++','-std=c++23','-O2','-Wall','-Wextra','-Werror','-I',str(whole.REPO/'native'),
+        subprocess.run(['c++','-std=c++20','-O2','-Wall','-Wextra','-Werror','-I',str(whole.REPO/'native'),
                         str(HERE/'35-seven-dimensions.cpp'),'-o',str(binary)],check=True)
         for sex,subject,h in [('male','N197925',170.0),('female','N186416',170.2)]:
             dims=whole.measure(sex)

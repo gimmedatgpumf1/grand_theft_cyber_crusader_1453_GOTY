@@ -22,9 +22,9 @@ for %%S in (native\human.cpp native\io.cpp native\hair.cpp native\fit.cpp native
   set "OBJECT=%ROOT%\build\obj\native\%%~nS.obj"
   set "OBJECTS=!OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
@@ -38,9 +38,9 @@ for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.
   set "OBJECT=%ROOT%\build\obj\native-client\%%~nS.obj"
   set "CLIENT_OBJECTS=!CLIENT_OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
@@ -50,9 +50,9 @@ if errorlevel 1 exit /b 1
 cl.exe /nologo "%ROOT%\build\obj\native-client\smoke.obj" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-native-smoke.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
 REM The counter is drawn on the host into pixels, so it is checked as pixels.
-cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\interface_check.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
+cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\interface_check.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
-cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
+cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
 echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe

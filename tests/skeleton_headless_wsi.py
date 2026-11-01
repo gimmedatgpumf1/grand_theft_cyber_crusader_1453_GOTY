@@ -64,6 +64,6 @@ with tempfile.TemporaryDirectory(prefix="gtc-headless-wsi-") as temp:
               "native/vulkan/vk_renderer.cpp", "native/vulkan/vk_upload.cpp", "native/vulkan/vk_batches.cpp",
               "native/vulkan/vk_targets.cpp", str(vk / "vk_swapchain.cpp")]
     output = Path(temp) / "test"
-    subprocess.run([os.environ.get("CXX", "g++"), "-std=c++23", "-O2", "-pthread", "-Isrc", "-Inative",
+    subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O2", "-pthread", "-Isrc", "-Inative",
                     "-Inative/vendor/bullet/src", *source, "build/obj/bullet/libbullet.a", "-ldl", "-o", str(output)], check=True)
     subprocess.run([str(output)], check=True)

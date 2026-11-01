@@ -53,19 +53,19 @@ def main():
     script, sources, objects, problems = windows_scripts()
     failures.extend(problems)
 
-    # Keep every build on C++23; the compiler reports unsupported options.
-    for path, flag in [('build.sh', '-std=c++23'),
-                       ('native/build.sh', '-std=c++23'),
-                       ('native/vendor/bullet/build.sh', '-std=c++23'),
-                       ('build.cmd', '/std:c++23'),
-                       ('native/build.cmd', '/std:c++23'),
-                       ('native/vendor/bullet/build.cmd', '/std:c++23')]:
+    # Keep every build on C++20; the compiler reports unsupported options.
+    for path, flag in [('build.sh', '-std=c++20'),
+                       ('native/build.sh', '-std=c++20'),
+                       ('native/vendor/bullet/build.sh', '-std=c++20'),
+                       ('build.cmd', '/std:c++20'),
+                       ('native/build.cmd', '/std:c++20'),
+                       ('native/vendor/bullet/build.cmd', '/std:c++20')]:
         text = (ROOT / path).read_text(errors='replace')
-        if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|20|latest|23preview)', text):
+        if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|23|latest)', text):
             failures.append(f'{path} must use {flag}, not another C++ mode')
-        if path.endswith('.cmd') and ('/Zc:cmath' not in text or '/options:strict' not in text):
-            failures.append(f'{path} must pass C++23 options directly to the compiler')
-        if 'cpp23_mode.cpp' in text or re.search(r'where\s+cl\.exe', text, re.IGNORECASE):
+        if path.endswith('.cmd') and '/options:strict' not in text:
+            failures.append(f'{path} must pass C++20 options directly to the compiler')
+        if re.search(r'cpp(?:20|23)_mode\.cpp|where\s+cl\.exe', text, re.IGNORECASE):
             failures.append(f'{path} must not preflight the compiler or its version')
     for source in sorted(sources):
         if not (ROOT / source).exists():
@@ -139,7 +139,7 @@ def narrowing_failures(sources):
             continue
         if source.endswith('window_win32.cpp'):
             continue  # needs windows.h, which is not on this machine
-        result = subprocess.run([compiler, '-std=c++23', '-fsyntax-only', '-Werror=narrowing',
+        result = subprocess.run([compiler, '-std=c++20', '-fsyntax-only', '-Werror=narrowing',
                                  '-Isrc', '-Inative', '-Inative/vendor/bullet/src', source],
                                 cwd=ROOT, capture_output=True, text=True)
         if result.returncode != 0:
@@ -160,7 +160,7 @@ def windows_interface_keyword_failures():
     compiler = shutil.which('g++') or shutil.which('c++')
     if compiler is None:
         return []
-    result = subprocess.run([compiler, '-std=c++23', '-Dinterface=struct', '-fsyntax-only',
+    result = subprocess.run([compiler, '-std=c++20', '-Dinterface=struct', '-fsyntax-only',
                              '-Isrc', '-Inative', 'native/client/ui_layer.cpp',
                              'native/vulkan/vk_renderer.cpp'],
                             cwd=ROOT, capture_output=True, text=True)

@@ -35,7 +35,7 @@ if [ "${#SOURCES[@]}" -eq 0 ]; then
   echo '[build] No sources found.' >&2
   exit 1
 fi
-FLAGS=(-std=c++23 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
+FLAGS=(-std=c++20 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
 OBJECTS=()
 for SOURCE in "${SOURCES[@]}"; do
   RELATIVE="${SOURCE#src/}"

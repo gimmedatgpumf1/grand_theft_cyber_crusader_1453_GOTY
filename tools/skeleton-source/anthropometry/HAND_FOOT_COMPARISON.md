@@ -24,4 +24,4 @@ The female skeleton's projected bony foot length is **4.63 cm shorter** than its
 
 ## Reproduce
 
-`python3 tools/skeleton-source/openskeleton/43-measure-hands-feet.py` builds the real pose exporter and writes `HAND_FOOT_COMPARISON.tsv`; `python3 tests/hand_foot_comparison.py` checks the saved values against freshly generated room transforms and paired ANSUR records. NumPy, SciPy, a C++23 compiler and vendored Bullet are needed. The TSV includes L/R, means, cap sensitivity, subject-height fits and coefficients, source sample sizes, and unmatched raw differences.
+`python3 tools/skeleton-source/openskeleton/43-measure-hands-feet.py` builds the real pose exporter and writes `HAND_FOOT_COMPARISON.tsv`; `python3 tests/hand_foot_comparison.py` checks the saved values against freshly generated room transforms and paired ANSUR records. NumPy, SciPy, a C++20 compiler and vendored Bullet are needed. The TSV includes L/R, means, cap sensitivity, subject-height fits and coefficients, source sample sizes, and unmatched raw differences.

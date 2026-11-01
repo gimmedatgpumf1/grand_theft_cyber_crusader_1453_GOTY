@@ -126,7 +126,7 @@ All rows above are partially or wholly extrapolated/bridged; the numbers are sho
 From the repository root:
 
 ```sh
-c++ -std=c++23 -O2 -I native tools/skeleton-source/openskeleton/31-height-profile.cpp -o /tmp/height-profile
+c++ -std=c++20 -O2 -I native tools/skeleton-source/openskeleton/31-height-profile.cpp -o /tmp/height-profile
 /tmp/height-profile male 170
 /tmp/height-profile female 170.2
 python3 tools/skeleton-source/openskeleton/31-measure-whole-body.py
@@ -134,7 +134,7 @@ python3 tests/neck_orbital_proxy.py
 python3 tools/skeleton-source/openskeleton/34-measure-neck-skull-contact.py
 python3 tests/neck_skull_contact.py
 python3 tools/skeleton-source/openskeleton/33-neck-pose-audit.py
-c++ -std=c++23 -O2 -Wall -Wextra -Werror -I native tests/height_body_reference.cpp -o /tmp/test-height-profile && /tmp/test-height-profile
+c++ -std=c++20 -O2 -Wall -Wextra -Werror -I native tests/height_body_reference.cpp -o /tmp/test-height-profile && /tmp/test-height-profile
 ```
 
-The measurement script requires NumPy, SciPy and a C++23 compiler. It refits the ANSUR coefficients to check them, compiles the same C++ profile, remeasures both OBJs/joint files and regenerates `WHOLE_BODY_SKELETON_PROXIES.tsv`. The test sweeps 50–250 cm at 0.001-cm increments for numerical continuity and monotonicity; this verifies the maths, **not anatomical accuracy**.
+The measurement script requires NumPy, SciPy and a C++20 compiler. It refits the ANSUR coefficients to check them, compiles the same C++ profile, remeasures both OBJs/joint files and regenerates `WHOLE_BODY_SKELETON_PROXIES.tsv`. The test sweeps 50–250 cm at 0.001-cm increments for numerical continuity and monotonicity; this verifies the maths, **not anatomical accuracy**.

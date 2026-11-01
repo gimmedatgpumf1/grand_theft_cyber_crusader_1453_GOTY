@@ -31,7 +31,7 @@ def compile_exporter(output):
              'native/client/skeleton_room.cpp','native/client/skeleton_body.cpp',
              'native/client/skeleton_ragdoll.cpp','native/client/raster.cpp',
              'native/client/hud.cpp','native/client/ui_layer.cpp','build/obj/bullet/libbullet.a']
-    subprocess.run(['c++','-std=c++23','-O2','-pthread','-Isrc','-Inative',
+    subprocess.run(['c++','-std=c++20','-O2','-pthread','-Isrc','-Inative',
                     '-Inative/vendor/bullet/src',*sources,'-o',str(output)],cwd=REPO,check=True)
 
 

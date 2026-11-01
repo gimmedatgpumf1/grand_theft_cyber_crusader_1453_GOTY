@@ -19,4 +19,4 @@ python3 tests/tpose_scapula_extrema.py
 python3 tools/skeleton-source/openskeleton/35-seven-dimensions.py
 ```
 
-Requires NumPy, SciPy, a C++23 compiler and the repository's vendored Bullet. The tool rebuilds the T-pose exporter and NHANES formula evaluator in a temporary directory. The seven-dimension comparison reads this TSV; regenerate it after mesh or rig changes.
+Requires NumPy, SciPy, a C++20 compiler and the repository's vendored Bullet. The tool rebuilds the T-pose exporter and NHANES formula evaluator in a temporary directory. The seven-dimension comparison reads this TSV; regenerate it after mesh or rig changes.

@@ -1,6 +1,6 @@
 # Prebuilt server
 
-`linux-x86_64/gtc1453` is a prebuilt server binary for Linux x86-64 with glibc. It serves the browser UI and WebSocket multiplayer on port 1453. Prebuilt snapshots may lag the source; rebuild to use the current C++23 build settings.
+`linux-x86_64/gtc1453` is a prebuilt server binary for Linux x86-64 with glibc. It serves the browser UI and WebSocket multiplayer on port 1453. Prebuilt snapshots may lag the source; rebuild to use the current C++20 build settings.
 
 ```sh
 ./prebuilt/linux-x86_64/gtc1453

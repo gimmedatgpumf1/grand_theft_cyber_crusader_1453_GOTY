@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
     temp = Path(temp)
     exe = temp/'export'
     command = shlex.split(os.environ.get('CXX', 'g++')) + [
-        '-std=c++23', '-O2', '-pthread', '-Isrc', '-Inative', '-Inative/vendor/bullet/src',
+        '-std=c++20', '-O2', '-pthread', '-Isrc', '-Inative', '-Inative/vendor/bullet/src',
         'tests/skeleton_cranial_export.cpp', 'native/client/skeleton_room.cpp',
         'native/client/skeleton_body.cpp', 'native/client/skeleton_ragdoll.cpp',
         'native/client/raster.cpp', 'native/client/hud.cpp', 'native/client/ui_layer.cpp',

@@ -34,10 +34,10 @@ for /r "%ROOT%\src" %%F in (*.cpp) do (
   set "OBJECT=%ROOT%\build\obj\%%~nF.obj"
   set "OBJECTS=!OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
+    "!CCACHE_BIN!" cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
       /I"%ROOT%\src" /c "%%F" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /options:strict /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
+    cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX ^
       /I"%ROOT%\src" /c "%%F" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1

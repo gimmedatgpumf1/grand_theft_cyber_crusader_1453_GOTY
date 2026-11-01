@@ -53,4 +53,4 @@ python3 tools/skeleton-source/openskeleton/41-audit-rib-breathing.py
 python3 tests/rib_breathing_audit.py
 ```
 
-Requires NumPy, SciPy, C++23 and vendored Bullet. The first script builds the runtime pose exporter, verifies restored matrices against `TPOSE_BASELINE_d26c7b3.tsv.gz` (SHA-256 `e523557fa618536f6ce31c6a6b4173afcdb926e5bef81df43fe841d8e94e153b`), exports the registered-source pose and writes both TSVs. No clinical reconstruction, respiratory animation, or bone scaling is performed.
+Requires NumPy, SciPy, C++20 and vendored Bullet. The first script builds the runtime pose exporter, verifies restored matrices against `TPOSE_BASELINE_d26c7b3.tsv.gz` (SHA-256 `e523557fa618536f6ce31c6a6b4173afcdb926e5bef81df43fe841d8e94e153b`), exports the registered-source pose and writes both TSVs. No clinical reconstruction, respiratory animation, or bone scaling is performed.

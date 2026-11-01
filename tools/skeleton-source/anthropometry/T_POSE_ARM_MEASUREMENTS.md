@@ -26,7 +26,7 @@ The previous shoulder-width audit found the registered scapulae are not verified
 
 ## Reproduce
 
-With NumPy, SciPy, a C++23 compiler and the repository's vendored Bullet sources:
+With NumPy, SciPy, a C++20 compiler and the repository's vendored Bullet sources:
 
 ```sh
 python3 tools/skeleton-source/openskeleton/38-measure-t-pose-arm.py

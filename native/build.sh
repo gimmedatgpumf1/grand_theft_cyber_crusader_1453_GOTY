@@ -14,7 +14,7 @@ elif [ -z "$CCACHE_BIN" ] && command -v ccache >/dev/null 2>&1; then
   CCACHE_BIN="$(command -v ccache)"
 fi
 if [ -n "$CCACHE_BIN" ] && ! "$CCACHE_BIN" --version >/dev/null 2>&1; then CCACHE_BIN=""; fi
-FLAGS=(-std=c++23 -O3 -Wall -Wextra -Wpedantic -Isrc -Inative)
+FLAGS=(-std=c++20 -O3 -Wall -Wextra -Wpedantic -Isrc -Inative)
 SOURCES=(native/human.cpp native/io.cpp native/hair.cpp native/fit.cpp native/render.cpp native/main.cpp src/core/json.cpp)
 OBJECTS=()
 for SOURCE in "${SOURCES[@]}"; do
@@ -58,9 +58,9 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-native-smoke"
 # The counter is drawn on the host into pixels, so it can be checked as pixels:
 # the box, the border, every glyph block, both byte orders, four window sizes.
-"$COMPILER" -pthread -std=c++23 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
+"$COMPILER" -pthread -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
   "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-interface-check"
-"$COMPILER" -pthread -std=c++23 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
+"$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
   "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
