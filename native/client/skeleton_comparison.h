@@ -5,6 +5,7 @@
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
 #include "client/skeleton_bilateral.h"
+#include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
@@ -153,17 +154,14 @@ public:
         for (const char* name:{"Head","Jaw"}) {
             Part* part=mutablePart(name);
             if (!part) { error="Comparison skull structure is missing"; return false; }
-            std::vector<Vec3> opposite; opposite.reserve(part->points.size());
-            for (Vec3& p:part->points) {
-                p=skullPlane.local(p); Vec3 reflected=p; reflected.x=-reflected.x; opposite.push_back(reflected);
-            }
-            if (!bilateral::average(part->points,opposite,part->faces,false,false) ||
+            for (Vec3& p:part->points) p=skullPlane.local(p);
+            if (!bilateral::surfaceAverage(part->points,part->faces) ||
                 !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison skull could not be averaged"; return false;
             }
-            // Keep the skull-derived center fixed and orient the resulting
-            // symmetric head upright; do not use any pelvis landmark here.
-            for (Vec3& p:part->points) p=skullPlane.origin+p;
+            // Undo the complete local-frame transform, retaining the scanned
+            // skull's pose instead of forcing its plane onto a world axis.
+            for (Vec3& p:part->points) p=skullPlane.world(p);
         }
         // The axial sternum is also centered and mirrored.
         if (Part* sternum=mutablePart("Sternum")) {

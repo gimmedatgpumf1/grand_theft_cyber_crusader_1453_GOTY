@@ -88,14 +88,13 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
             for other in ('Jaw', 'C1'):
                 white_n, white_gap = contact(groups['white']['Head'][1], groups['white'][other][1])
                 blue_n, blue_gap = contact(groups['blue']['Head'][1], groups['blue'][other][1])
-                # Averaging the skull and jaw changes their surfaces; their
-                # original gap is no longer expected to be identical. Do not
-                # introduce an overlap where the white surfaces had none, and
-                # keep a separated joint within 2 mm at source scale.
+                # The averaged surfaces need not keep a source intersection,
+                # but must remain close and may not introduce an overlap where
+                # the source had none.
                 if not white_n:
-                    assert not blue_n and blue_gap < 0.002*scale, (height, sex, other, white_gap, blue_gap)
-                else:
-                    assert blue_n, (height, sex, other, white_n, blue_n)
+                    assert not blue_n, (height, sex, other, white_gap, blue_gap)
+                if not blue_n:
+                    assert blue_gap < 0.002*scale, (height, sex, other, white_gap, blue_gap)
                 head_span = np.ptp(groups['blue']['Head'][0][:, 1])
                 key = (sex, other)
                 if height is None:

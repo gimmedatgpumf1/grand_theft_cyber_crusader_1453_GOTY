@@ -11,6 +11,7 @@ struct SkullMidplane {
         const Vec3 d=p-origin;
         return {dot(d,normal),dot(d,up),dot(d,forward)};
     }
+    Vec3 world(Vec3 p) const { return origin+normal*p.x+up*p.y+forward*p.z; }
 };
 inline SkullMidplane skullMidplane(bool male,const std::array<double,16>& m) {
     const Vec3 origin=male ? Vec3{0.010350176239,1.712216810588,0.046862083866}
@@ -22,9 +23,14 @@ inline SkullMidplane skullMidplane(bool male,const std::array<double,16>& m) {
                     m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
                     m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
     };
+    // Construct the whole frame in scan coordinates, then carry all three
+    // axes through the head's actual pose. Recomputing an 'up' vector from
+    // the world would discard the rotation around the plane normal.
+    const Vec3 scanNormal=normalized(normal);
+    const Vec3 scanUp=normalized(Vec3{0,1,0}-scanNormal*scanNormal.y);
     const Vec3 posedOrigin=point(origin);
-    const Vec3 posedNormal=normalized(point(origin+normal)-posedOrigin);
-    const Vec3 up=normalized(Vec3{0,1,0}-posedNormal*posedNormal.y);
-    return {posedOrigin,posedNormal,up,cross(posedNormal,up)};
+    const Vec3 posedNormal=normalized(point(origin+scanNormal)-posedOrigin);
+    const Vec3 posedUp=normalized(point(origin+scanUp)-posedOrigin);
+    return {posedOrigin,posedNormal,posedUp,normalized(cross(posedNormal,posedUp))};
 }
 } // namespace gtc::native
