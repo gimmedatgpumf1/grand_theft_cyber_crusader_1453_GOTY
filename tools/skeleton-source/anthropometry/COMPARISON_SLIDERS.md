@@ -30,7 +30,7 @@ height `h` and each result in cm:
 
 | Head | Neck | Torso | Arm | Leg | Hip | Shoulder |
 |---|---|---|---|---|---|---|
-| `16.273*exp(0.0018*h)` | `0.0193*h+7.4136` | `0.3536*h+4.4647` | `0.4515*h+1.4121` | `0.5553*h-6.5708` | `7.6737*exp(0.0075*h)` | `10.719*exp(0.0077*h)` |
+| `3.3158*h^0.3663` | `0.0193*h+7.4136` | `0.3536*h+4.4647` | `0.4515*h+1.4121` | `0.5553*h-6.5708` | `7.6737*exp(0.0075*h)` | `10.719*exp(0.0077*h)` |
 
 These are used directly as requested targets before applying the sliders. The
 female copy still uses the previous pooled formulas. The leg equation becomes
@@ -38,9 +38,10 @@ non-positive below about 11.83 cm, and the exponentials eventually overflow or
 produce widths incompatible with the pose: such inputs cannot be displayed and
 the prior shape is preserved. There is no additional stature cutoff. For
 example at 170 cm the rigid ring projects the requested torso/leg values of
-64.58/87.83 cm to approximately 63.57/86.82 cm. At 50 cm it projects
-22.14/21.19 cm to approximately 16.32/15.37 cm. The other five targets match
-at these two heights; all are visual skeletal proxies, not clinical validation.
+64.58/87.83 cm to approximately 63.69/86.94 cm. At 50 cm it projects
+22.14/21.19 cm to approximately 17.72/16.77 cm. The other five targets match
+at these two heights; the head target is approximately 21.76 cm at 170 cm and
+13.90 cm at 50 cm. All are visual skeletal proxies, not clinical validation.
 
 ## What is measured
 

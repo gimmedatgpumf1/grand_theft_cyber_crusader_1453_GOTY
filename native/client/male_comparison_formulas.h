@@ -10,7 +10,7 @@ namespace gtc::native {
 inline std::optional<std::array<double,7>> maleComparisonFormulas(double height) {
     if (!std::isfinite(height) || height<=0) return std::nullopt;
     const std::array<double,7> result{
-        16.273*std::exp(0.0018*height),
+        3.3158*std::pow(height,0.3663),
         0.0193*height+7.4136,
         0.3536*height+4.4647,
         0.4515*height+1.4121,
