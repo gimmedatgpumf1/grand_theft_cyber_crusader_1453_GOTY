@@ -8,6 +8,7 @@
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
+#include "client/female_comparison_formulas.h"
 
 #include <algorithm>
 #include <array>
@@ -296,7 +297,7 @@ public:
             error="Comparison landmarks have an unexpected order"; return false;
         }
         profile_=Profile{}; profile_.height=initialHeight_;
-        return update(curves_,error);
+        return update(error);
     }
 
     bool loadCurves(const std::string& directory, std::string& error) {
@@ -317,13 +318,13 @@ public:
         for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) return false;
         if (profile.height==profile_.height && profile.multiplier==profile_.multiplier) { error.clear(); return true; }
         const auto previous=profile_; const auto previousRevision=revision_; profile_=profile;
-        if (!update(curves_,error)) {
+        if (!update(error)) {
             const std::string reason=error; profile_=previous; std::string ignored;
-            update(curves_,ignored); revision_=previousRevision; error=reason; return false;
+            update(ignored); revision_=previousRevision; error=reason; return false;
         }
         return true;
     }
-    void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(curves_,error); }
+    void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(error); }
 
     // The skull, jaw and C1 share a single 3D similarity transform. The torso
     // field meets it at the bottom of C1; the jaw can lie lower than C7 because
@@ -415,18 +416,17 @@ private:
         targetY_={0,bottom,bottom+ringHeight,c,join,contact,h};
         return true;
     }
-    bool update(const BodyProportionCurves& curves, std::string& error) {
+    bool update(std::string& error) {
         if (male_) {
             const auto values=maleComparisonFormulas(profile_.height);
             if (!values) { error="Male formulas returned a non-positive or non-finite value"; return false; }
             requestedTargets_={profile_.height,(*values)[0],(*values)[1],(*values)[2],
                                (*values)[3],(*values)[4],(*values)[5],(*values)[6]};
         } else {
-            const auto body=estimateHeightBodyReference(BodyReferenceSex::female,profile_.height);
-            const auto hip=curves.blendedNhanesDimensionCm("female","pelvis_surface_breadth",profile_.height);
-            const auto shoulder=curves.blendedNhanesDimensionCm("female","shoulder_breadth",profile_.height);
-            if (!body || !hip || !shoulder) { error="Height reference could not be evaluated"; return false; }
-            requestedTargets_={profile_.height,body->headCm,body->neckCm,body->torsoCm,body->armCm,body->legCm,*hip,*shoulder};
+            const auto values=femaleComparisonFormulas(profile_.height);
+            if (!values) { error="Female formulas returned a non-positive or non-finite value"; return false; }
+            requestedTargets_={profile_.height,(*values)[0],(*values)[1],(*values)[2],
+                               (*values)[3],(*values)[4],(*values)[5],(*values)[6]};
         }
         for (int i=1;i<Count;++i) requestedTargets_[i]*=profile_.multiplier[i];
         targets_=requestedTargets_;

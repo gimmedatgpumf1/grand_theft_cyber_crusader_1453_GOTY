@@ -25,23 +25,32 @@ values with equal weight. On a wide panel the footer shows fitted/requested
 values for those dimensions. If a fit cannot be produced at all, the previous
 shape is kept. Reset restores the original posed height and formula requests.
 
-The male blue copy now requests the seven equations supplied by King, with
-height `h` and each result in cm:
+The blue copies request the seven sex-specific equations supplied by King, with
+height `h` and each result in cm. Male:
 
 | Head | Neck | Torso | Arm | Leg | Hip | Shoulder |
 |---|---|---|---|---|---|---|
 | `0.0561*h+12.179` | `0.0193*h+7.4136` | `0.3536*h+4.4647` | `0.4515*h+1.4121` | `0.5553*h-6.5708` | `7.6737*exp(0.0075*h)` | `10.719*exp(0.0077*h)` |
 
+Female:
+
+| Head | Neck | Torso | Arm | Leg | Hip | Shoulder |
+|---|---|---|---|---|---|---|
+| `0.0568*h+11.832` | `0.0213*h+7.1832` | `0.3446*h+4.5758` | `0.4734*h-1.3187` | `0.568*h-6.9588` | `6.7179*exp(0.0089*h)` | `10.87*exp(0.0075*h)` |
+
 These are used directly as requested targets before applying the sliders. The
-female copy still uses the previous pooled formulas. The leg equation becomes
-non-positive below about 11.83 cm, and the exponentials eventually overflow or
+male and female leg equations become non-positive at or below approximately
+11.83 and 12.25 cm respectively, and the exponentials eventually overflow or
 produce widths incompatible with the pose: such inputs cannot be displayed and
 the prior shape is preserved. There is no additional stature cutoff. For
 example at 170 cm the rigid ring projects the requested torso/leg values of
 64.58/87.83 cm to approximately 63.70/86.96 cm. At 50 cm it projects
 22.14/21.19 cm to approximately 17.33/16.38 cm. The other five targets match
 at these two heights; the head target is approximately 21.72 cm at 170 cm and
-14.98 cm at 50 cm. All are visual skeletal proxies, not clinical validation.
+14.98 cm at 50 cm. For the female copy at 170 cm, requested torso/leg values
+63.16/89.60 cm are fitted as 62.09/88.54 cm; at 50 cm, 21.81/21.44 cm are
+fitted as 17.07/16.70 cm. The other five female targets match at these heights.
+All are visual skeletal proxies, not clinical validation.
 
 ## What is measured
 
@@ -54,7 +63,7 @@ until reset. The tested geometric proxies on the blue mesh are:
 
 | Slider | Fitted skeletal proxy | Surface dimension represented in the source data |
 |---|---|---|
-| Head | skull top to bottom of jaw, vertical | vertex–menton; Korean source provenance unverified |
+| Head | skull top to bottom of jaw, vertical | vertex–menton; user-supplied target |
 | Neck | posterior C7 to mean left/right C1–skull contact midpoint, vertical | C7–tragion, ANSUR-derived |
 | Torso | lowest pelvis to posterior C7, vertical | cervicale–crotch, ANSUR-derived |
 | Arm | mean left/right 3D chord, medial humerus extremum to middle distal finger extremum | acromion–stylion plus stylion–middle fingertip |
@@ -148,29 +157,25 @@ frame to avoid a vertical-field kink at their joint. The arm slider scales the
 upper-arm shaft beyond the protected shoulder head; forearms and hands share a
 length factor anchored at the averaged elbow contact.
 
-The height targets use one pooled quadratic or cubic for each sex and dimension, fitted to
-individual child and adult records. The six NHANES surfaces share recorded
-landmarks; the remaining five use explicitly converted child surface proxies
-and adult ANSUR surfaces. See `POOLED_HEIGHT_MODELS.md` for the substitutions,
-sparse infant measurements, weighted neonatal summaries and unmatched-data
-limitations. There is no age-group crossfade. A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh
-samples per sex at 0.1 cm height steps, including their motion rate; a second
-sweep checks every mesh vertex at 0.5 cm steps.
+The height targets use the sex-specific equations above without an age-group
+crossfade. A 50–250 cm sweep tests 1,092 axis-extreme blue-mesh samples per sex
+at 0.1 cm height steps, including their motion rate; a second sweep checks
+every mesh vertex at 0.5 cm steps.
 Selected triangle contacts are audited at 15 heights.
 
 The requested surface torso and leg distances generally **cannot both be
 represented by the chosen bony proxies with the intact adult pelvic ring**.
 The fit projects those requests and displays fitted rather than requested
 values. If extreme multipliers make the pelvic ring impossible to place below
-C7, conflicting requests are blended toward source scaling. A sweep accepts
-integer heights 1–1000 cm, but those extrapolations are not measurements.
+C7, conflicting requests are blended toward source scaling. Invalid or incompatible extreme inputs preserve the previous shape; any
+extrapolations are not measurements.
 
 This is still a rendering deformation outside the skull/jaw/C1 and pelvic
 assembly. It does **not** certify all joint contacts, preserve every bone,
 implement a new anatomical rig or guarantee collision-free motion. The blue
 figures are not simulated. The original white skeletons remain unchanged.
 
-The pooled curves and bounded continuations are not a skeletal growth model:
+These formulas and visual deformations are not a skeletal growth model:
 a 50 cm copy is a warped adult skeleton, **not** an infant skeleton. Unmatched
 landmarks, extrapolation and independent CT registrations limit interpretation.
 See `POOLED_HEIGHT_MODELS.md` and `HAND_FOOT_COMPARISON.md`. No new clinical

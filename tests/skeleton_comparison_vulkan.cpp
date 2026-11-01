@@ -46,13 +46,15 @@ int main() {
     assert(frame.interfaceInFrame && contributions.size()==4);
     for (int n:contributions) assert(n>30);
     std::printf("Vulkan comparison: male blue %d, female blue %d, UI %d, text %d changed pixels\n",contributions[0],contributions[1],contributions[2],contributions[3]);
-    const auto before=picture;
-    auto p=room.comparison(true).profile();p.multiplier[SkeletonComparison::Head]=1.12;
-    assert(room.setComparison(true,p,error));room.render(frame,view,0,&camera);
-    int changed=0;for (std::size_t i=0;i<picture.size();i+=4) {
-        int d=0;for (int c=0;c<3;++c)d+=std::abs(int(picture[i+c])-int(before[i+c]));if(d>24)++changed;
+    for (bool male:{true,false}) {
+        const auto before=picture;
+        auto p=room.comparison(male).profile();p.multiplier[SkeletonComparison::Head]=1.12;
+        assert(room.setComparison(male,p,error));room.render(frame,view,0,&camera);
+        int changed=0;for (std::size_t i=0;i<picture.size();i+=4) {
+            int d=0;for (int c=0;c<3;++c)d+=std::abs(int(picture[i+c])-int(before[i+c]));if(d>24)++changed;
+        }
+        std::printf("Vulkan %s head slider: %d changed pixels\n",male?"male":"female",changed);assert(changed>20);
     }
-    std::printf("Vulkan head slider: %d changed pixels\n",changed);assert(changed>20);
     room.toggleLineView();room.render(frame,view,0,&camera);
     assert(frame.interfaceInFrame && contributions.size()==4 && contributions[0]>30 && contributions[1]>30 && contributions[2]>30 && contributions[3]>30);
     setGpuRenderer(nullptr);shutdownVulkan();std::puts("Vulkan comparison and GPU UI: PASS");

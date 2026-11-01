@@ -54,13 +54,14 @@ int main() {
             }
         }
         // Check the actual mesh response, not just continuity of the source
-        // formulas. The supplied male exponential shoulder/hip equations have
-        // positive curvature, especially at 250 cm; unlike a quadratic fit,
-        // that curvature cannot be removed without changing those equations.
-        assert(peakSpeed<1.25 && peakAcceleration<(male?0.006:0.005));
+        // formulas. Both sets of supplied exponential shoulder/hip equations
+        // have positive curvature, especially at 250 cm; it cannot be removed
+        // without changing the requested equations.
         std::printf("%s %zu %s vertices, %.1f cm steps: peak speed %.4f, rate change %.4f (%s at %.1f cm)\n",
                     male?"male":"female",samples.size(),allVertices?"all":"axis-extreme",step,
                     peakSpeed,peakAcceleration,peakPart.c_str(),peakHeight);
+        std::fflush(stdout);
+        assert(peakSpeed<1.25 && peakAcceleration<0.006);
     }
     std::puts("All-body height-transition mesh sweep: PASS");
 }

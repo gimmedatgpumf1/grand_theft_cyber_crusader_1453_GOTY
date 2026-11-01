@@ -1,9 +1,9 @@
 # Height fits with extra weight at the measured extremes
 
-These pooled reference models remain in use for the female blue comparison
-and other reference APIs. The male blue comparison now uses King's supplied
-equations instead; see `COMPARISON_SLIDERS.md`. The male coefficients documented
-here are historical pooled-reference coefficients, not its active targets.
+These pooled reference models remain in use by reference APIs. Both blue
+comparison skeletons now use King's supplied sex-specific equations instead;
+see `COMPARISON_SLIDERS.md`. The coefficients documented here are historical
+pooled-reference coefficients, not the active blue comparison targets.
 
 Each sex and dimension uses **one quadratic or cubic** fitted through combined
 individual child and adult observations. Infant upper-arm records and neonatal
