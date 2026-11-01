@@ -12,18 +12,33 @@ Press **P** to open or hide the comparison controls. Press **Esc** to release
 the cursor, drag a track or click its minus/plus buttons, and click outside the
 panel to resume looking. Select male or female; **Reset** affects that copy.
 For a very short/narrow window the footer switches between the two groups of
-four sliders. Values shown are centimetres. Head, neck, torso, arm, leg, hip
-and shoulder sliders are multipliers of the appropriate sex-specific
-height-based surface estimates. Minus/plus adjusts them by 2 percentage points;
-the height buttons change the target by 1 cm. Tracks are convenient windows
-(50–230 cm for height, 50–150% for other dimensions). Height cannot be set
-below 50 cm; the plus button can go above the track. Positive finite dimensions
-are required. The listed values are the **fitted skeletal proxies**. When a rigid
-pelvic ring cannot meet both requested torso and leg proxies, both controls
-still move the copy; the fit is projected to the closest pair of achievable
-values with equal weight. On a wide panel the footer shows fitted/requested
-values for those dimensions. If a fit cannot be produced at all, the previous
-shape is kept. Reset restores the original posed height and formula requests.
+four sliders. Values shown are centimetres. Each size slider is centered on
+the sex-specific formula at the current height and ranges from that value
+minus 3 sample SD to plus 3 sample SD. The SDs are calculated separately for
+male and female from **all nonblank values** of each whole-body TSV column;
+see `BODY_SIZE_STANDARD_DEVIATIONS.tsv`. These are pooled over all heights,
+not SDs conditional on height. The head column contains circumference-based
+estimates and some other columns include historical proxies, so the ranges are
+not validated biological percentiles. Source cohorts are mixed US populations,
+not verified Indo-European. See `WHOLE_BODY_HEAD_DATA.md`.
+
+Minus/plus adjusts size by 0.1 SD and height by 1 cm. Height cannot be set
+below 50 cm; the plus button can go above the track's 230 cm upper end. If
+the formula value minus 3 SD is non-positive, the slider has a small positive floor: negative
+or zero dimensions cannot be rendered. The listed values are **fitted skeletal
+proxies**. When a rigid pelvic ring cannot meet both requested torso and leg
+proxies, both controls still move the copy; the fit is projected to the closest
+pair of achievable values with equal weight. On a wide panel the footer shows
+fitted/requested values. Both requested and fitted dimensions stay within the
+bounds, and physically impossible settings are limited by the bone fit. Reset
+restores the original posed height and formula requests. Height changes keep
+the current SD offsets where feasible.
+
+To regenerate the SDs (sample SD, `n-1` denominator) from the original rows:
+
+```sh
+python3 tools/skeleton-source/openskeleton/29-comparison-sd.py
+```
 
 The blue copies request the seven sex-specific equations supplied by King, with
 height `h` and each result in cm. Male:

@@ -9,6 +9,7 @@
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
 #include "client/female_comparison_formulas.h"
+#include "client/comparison_standard_deviations.h"
 
 #include <algorithm>
 #include <array>
@@ -310,6 +311,17 @@ public:
     double initialHeight() const { return initialHeight_; }
     const std::array<double,Count>& targets() const { return targets_; }
     const std::array<double,Count>& requestedTargets() const { return requestedTargets_; }
+    struct DimensionLimits { double center, sd, minimum, maximum; };
+    std::optional<DimensionLimits> dimensionLimits(int dimension, double height) const {
+        if (dimension<=Height || dimension>=Count || !std::isfinite(height) || height<50.) return std::nullopt;
+        const auto values=male_ ? maleComparisonFormulas(height) : femaleComparisonFormulas(height);
+        if (!values) return std::nullopt;
+        const double center=(*values)[dimension-1];
+        const double sd=(male_ ? maleComparisonSdCm : femaleComparisonSdCm)[dimension-1];
+        // The formula minus 3 SD can be negative, especially at 50 cm. A mesh
+        // cannot have zero or negative dimensions; this is a geometric floor.
+        return DimensionLimits{center,sd,std::max(0.001,center-3*sd),center+3*sd};
+    }
     bool feasible() const { return feasible_; }
     bool exact() const { return exact_; }
     std::uint64_t revision() const { return revision_; }
@@ -317,9 +329,17 @@ public:
         if (!std::isfinite(profile.height) || profile.height<50.0) {
             error="Height must be at least 50 cm"; return false;
         }
-        for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) return false;
-        if (profile.height==profile_.height && profile.multiplier==profile_.multiplier) { error.clear(); return true; }
-        const auto previous=profile_; const auto previousRevision=revision_; profile_=profile;
+        for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) {
+            error="Dimensions must be positive and finite"; return false;
+        }
+        Profile limited=profile;
+        for (int d=Head;d<Count;++d) {
+            const auto bounds=dimensionLimits(d,profile.height);
+            if (!bounds || !std::isfinite(bounds->maximum)) { error="Size limits unavailable"; return false; }
+            limited.multiplier[d]=std::clamp(bounds->center*profile.multiplier[d],bounds->minimum,bounds->maximum)/bounds->center;
+        }
+        if (limited.height==profile_.height && limited.multiplier==profile_.multiplier) { error.clear(); return true; }
+        const auto previous=profile_; const auto previousRevision=revision_; profile_=limited;
         if (!update(error)) {
             const std::string reason=error; profile_=previous; std::string ignored;
             update(ignored); revision_=previousRevision; error=reason; return false;
@@ -455,6 +475,15 @@ private:
         }
         targets_[Torso]=(targetY_[3]-targetY_[1])*100;
         targets_[Leg]=((mapY(hipY_[0])+mapY(hipY_[1]))*0.5)*100;
+        // Projection or geometric fallback must not put a displayed body part
+        // outside its limit even when its requested target was within range.
+        for (int dimension=Head;dimension<Count;++dimension) {
+            const auto bounds=dimensionLimits(dimension,profile_.height);
+            if (!bounds || targets_[dimension]<bounds->minimum-1e-8 ||
+                targets_[dimension]>bounds->maximum+1e-8) {
+                error="Bone fit exceeds size limits"; feasible_=false; return false;
+            }
+        }
         exact_=true;
         for (int dimension=1;dimension<Count;++dimension)
             if (std::abs(targets_[dimension]-requestedTargets_[dimension])>1e-8*std::max(1.0,requestedTargets_[dimension]))

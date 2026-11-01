@@ -21,7 +21,7 @@ public:
             return;
         }
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.83);
-        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: VISUAL PROXY",colorHex("#9dceff"),20);
+        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-3 SD",colorHex("#9dceff"),20);
         if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   P: hide   click outside: look",colorHex("#c2cfda"),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
@@ -34,7 +34,9 @@ public:
             const int left=l.x+col*l.colWidth, y=l.y+59+row*27;
             drawTextPixels(frame,left+10,y+2,names[i],colorHex("#e6edf2"),20);
             const auto& p=c.profile();
-            const double fraction=i==0 ? (p.height-50)/180 : (p.multiplier[i]-0.5);
+            const auto limits=c.dimensionLimits(i,p.height);
+            const double fraction=i==0 ? (p.height-50)/180 : limits
+                ? (c.requestedTargets()[i]-limits->minimum)/(limits->maximum-limits->minimum) : 0;
             const int start=left+130, width=l.colWidth-230;
             frame.blendRectangle(start,y+10,width,4,colorHex("#63839c"),0.8);
             const int x=start+static_cast<int>(std::clamp(fraction,0.0,1.0)*width);
@@ -111,20 +113,51 @@ private:
         drawTextPixels(f,x+4,y+2,text,colorHex("#e0effb"),20);
     }
     void change(SkeletonRoom& room,const Layout& l,int row,double x,int step) {
-        auto profile=room.comparison(male_).profile();
-        if (step) {
-            if (row==0) profile.height=std::max(50.0,profile.height+step);
-            else profile.multiplier[row]+=step*0.02;
-        } else {
+        const auto& comparison=room.comparison(male_);
+        auto profile=comparison.profile();
+        const double oldHeight=profile.height;
+        double fraction=0;
+        if (!step) {
             const int column=l.wide ? row/4 : 0;
             const double start=l.x+column*l.colWidth+130;
-            const double fraction=std::clamp((x-start)/(l.colWidth-230),0.0,1.0);
-            if (row==0) profile.height=50+180*fraction;
-            else profile.multiplier[row]=0.5+fraction;
+            fraction=std::clamp((x-start)/(l.colWidth-230),0.0,1.0);
+        }
+        if (row==0) {
+            profile.height=step ? std::max(50.0,profile.height+step) : 50+180*fraction;
+            // Keep each existing offset in SD units when height changes.
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto before=comparison.dimensionLimits(d,oldHeight);
+                const auto after=comparison.dimensionLimits(d,profile.height);
+                if (!before || !after) { status_="Cannot fit; shape unchanged."; return; }
+                const double offset=before->center*(profile.multiplier[d]-1.0);
+                profile.multiplier[d]=std::clamp(after->center+offset,after->minimum,after->maximum)/after->center;
+            }
+        } else {
+            const auto limits=comparison.dimensionLimits(row,profile.height);
+            if (!limits) { status_="Cannot fit; shape unchanged."; return; }
+            const double current=limits->center*profile.multiplier[row];
+            const double value=step ? current+step*0.1*limits->sd
+                                    : limits->minimum+fraction*(limits->maximum-limits->minimum);
+            profile.multiplier[row]=std::clamp(value,limits->minimum,limits->maximum)/limits->center;
         }
         std::string error;
-        if (!room.setComparison(male_,profile,error)) status_="Cannot fit; shape unchanged.";
-        else status_.clear();
+        if (room.setComparison(male_,profile,error)) { status_.clear(); return; }
+        // A mathematical ±3 SD endpoint can be physically impossible (for
+        // example, a negative-length arm or a rigid pelvis that won't fit).
+        // Move to the nearest reachable point instead of making a click or drag
+        // appear broken. The model still enforces all size bounds.
+        const auto original=comparison.profile();
+        double low=0,high=1;
+        for (int iteration=0;iteration<24;++iteration) {
+            const double amount=(low+high)*0.5;
+            auto trial=original;
+            trial.height=original.height+(profile.height-original.height)*amount;
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d)
+                trial.multiplier[d]=original.multiplier[d]+(profile.multiplier[d]-original.multiplier[d])*amount;
+            if (room.setComparison(male_,trial,error)) low=amount; else high=amount;
+        }
+        if (low==0) room.setComparison(male_,original,error);
+        status_="Bone fit limits range.";
     }
     bool male_=true,open_=false;
     int dragging_=-1, page_=0;
