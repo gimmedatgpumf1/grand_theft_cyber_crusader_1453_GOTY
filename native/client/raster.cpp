@@ -162,6 +162,11 @@ Color colorHex(const char* value) {
     return linear({channel(1), channel(3), channel(5)});
 }
 
+Color colorHex(std::uint32_t rgb) {
+    return linear({((rgb >> 16) & 255U) / 255.0, ((rgb >> 8) & 255U) / 255.0,
+                   (rgb & 255U) / 255.0});
+}
+
 const Texture& loadTexture(const std::string& path) {
     static std::map<std::string, Texture> cache;
     auto found = cache.find(path);

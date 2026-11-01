@@ -12,15 +12,15 @@ namespace gtc::native {
 
 // A strip of picture: dark, half strength, no border. A 2003 interface was not
 // a black box, it was a tint you could still see the game through.
-constexpr const char* kPanelColour = "#05090b";
+constexpr char kPanelColour[] = "#05090b";
 // A strip the game shows through, and a panel that has to be read. The frame
 // rate can afford to be faint; a list of keys over a pale floor cannot.
 constexpr double kPanelOpacity = 0.5;
 constexpr double kMenuPanelOpacity = 0.72;
 // Near-white for anything that has to be read, desaturated green-grey for the
 // labels underneath it.
-constexpr const char* kInkColour = "#f2f7ea";
-constexpr const char* kMutedColour = "#a9bdb1";
+constexpr char kInkColour[] = "#f2f7ea";
+constexpr char kMutedColour[] = "#a9bdb1";
 
 // A filled rectangle in pixels, whatever transform the frame happens to carry.
 // Every piece of the interface is positioned against the window, not against the
@@ -29,7 +29,7 @@ inline void fillPanel(NativeFrame& frame, int x, int y, int width, int height, d
     const double scale = frame.uiScale, offsetX = frame.uiOffsetX, offsetY = frame.uiOffsetY;
     frame.uiScale = 1.0;
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
-    frame.blendRectangle(x, y, width, height, colorHex(kPanelColour), opacity);
+    frame.blendRectangle(x, y, width, height, colorHex(hexRgb(kPanelColour)), opacity);
     frame.uiScale = scale;
     frame.uiOffsetX = offsetX;
     frame.uiOffsetY = offsetY;

@@ -73,7 +73,7 @@ void drawNeedsPanel(NativeFrame& frame, const NeedsPanelLayout& layout, const Ne
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
 
     const int values[kNeedsRowCount] = {status.bladder, status.bowel, status.health};
-    const Color track = colorHex("#1b2a24");
+    const Color track = colorHex(hexRgb("#1b2a24"));
     for (int index = 0; index < kNeedsRowCount; ++index) {
         const int value = std::clamp(values[index], 0, 100);
         const int top = layout.rowTop[index];
@@ -81,7 +81,7 @@ void drawNeedsPanel(NativeFrame& frame, const NeedsPanelLayout& layout, const Ne
         // three rows of mixed heights would look like three unrelated widgets.
         const int textTop = top + (layout.rowHeight - textHeightPixels(layout.textHeight)) / 2;
         drawTextPixels(frame, layout.left + paddingFor(layout.textHeight), textTop, kLabels[index],
-                       colorHex(kMutedColour), layout.textHeight);
+                       colorHex(hexRgb(kMutedColour)), layout.textHeight);
 
         const int barTop = top + (layout.rowHeight - layout.barHeight) / 2;
         frame.rectangle(layout.barLeft, barTop, layout.barWidth, layout.barHeight, track);
@@ -92,7 +92,7 @@ void drawNeedsPanel(NativeFrame& frame, const NeedsPanelLayout& layout, const Ne
 
         const std::string text = percent(value);
         drawTextPixels(frame, layout.valueRight - textWidthPixels(text, layout.textHeight), textTop, text,
-                       colorHex(kInkColour), layout.textHeight);
+                       colorHex(hexRgb(kInkColour)), layout.textHeight);
     }
 
     frame.uiScale = scale;

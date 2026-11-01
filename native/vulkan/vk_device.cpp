@@ -878,6 +878,7 @@ void Renderer::stop() {
     getInstanceProcAddr_ = nullptr;
     ready_ = false;
     geometryStamps_.clear();
+    nextGeometryStamps_.clear();
     geometryScene_ = nullptr;
     uploadedValid_ = false;
     frames_ = 0;

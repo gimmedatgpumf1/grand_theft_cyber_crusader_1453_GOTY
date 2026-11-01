@@ -172,7 +172,9 @@ bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::fu
 
 bool Renderer::updateGeometry(const GpuScene& scene) {
     findRuns(scene);
-    std::vector<GeometryStamp> next;
+    // Retain this scratch allocation across unchanged and changing frames.
+    auto& next = nextGeometryStamps_;
+    next.clear();
     next.reserve(scene.batches.size());
     for (std::size_t i = 0; i < scene.batches.size(); ++i) {
         const auto& batch = scene.batches[i];
@@ -194,7 +196,7 @@ bool Renderer::updateGeometry(const GpuScene& scene) {
         return false;
     if (!uploadedValid_) dirtyBatch_ = 0;
     if (!uploadVertices(scene)) return false;
-    geometryStamps_ = std::move(next);
+    geometryStamps_.swap(next);
     geometryScene_ = &scene;
     uploadedValid_ = true;
     return true;

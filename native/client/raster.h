@@ -23,6 +23,21 @@ struct Color {
 Color operator+(Color a, Color b);
 Color operator*(Color a, double b);
 Color colorHex(const char* value);
+Color colorHex(std::uint32_t rgb);
+// Parse fixed #RRGGBB colours during compilation. Dynamic strings still use
+// colorHex(const char*); both paths share the same linear-colour conversion.
+consteval std::uint32_t hexRgb(const char (&text)[8]) {
+    const auto digit=[](char c) consteval -> std::uint32_t {
+        if (c >= '0' && c <= '9') return static_cast<std::uint32_t>(c-'0');
+        if (c >= 'a' && c <= 'f') return static_cast<std::uint32_t>(c-'a'+10);
+        if (c >= 'A' && c <= 'F') return static_cast<std::uint32_t>(c-'A'+10);
+        throw "Invalid hexadecimal colour";
+    };
+    if (text[0]!='#' || text[7]!='\0') throw "Expected #RRGGBB";
+    std::uint32_t rgb=0;
+    for (int i=1;i<7;++i) rgb=(rgb<<4)|digit(text[i]);
+    return rgb;
+}
 Color mix(Color a, Color b, double amount);
 
 struct Texture {

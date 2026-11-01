@@ -588,6 +588,7 @@ private:
         }
     };
     std::vector<GeometryStamp> geometryStamps_;
+    std::vector<GeometryStamp> nextGeometryStamps_;
     const GpuScene* geometryScene_ = nullptr;
     std::size_t dirtyBatch_ = 0;
     bool uploadedValid_ = false;

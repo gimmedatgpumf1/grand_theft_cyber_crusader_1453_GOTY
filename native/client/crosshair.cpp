@@ -33,7 +33,7 @@ void drawCrosshair(NativeFrame& frame, const ViewState& view) {
     frame.uiScale = 1.0;
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
 
-    const Color shadow = colorHex("#020604"), ink = colorHex("#d7ff54");
+    const Color shadow = colorHex(hexRgb("#020604")), ink = colorHex(hexRgb("#d7ff54"));
     const int x = centreX - unit / 2, y = centreY - unit / 2;
     // Two passes, outline then ink: a reticle that is one colour vanishes over
     // the pale chequerboard floor and over the near-black ceiling.

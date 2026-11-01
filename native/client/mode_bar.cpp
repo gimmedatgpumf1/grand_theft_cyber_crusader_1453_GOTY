@@ -83,7 +83,7 @@ void drawModeBar(NativeFrame& frame, ViewMode mode, int hovered) {
 
     fillPanel(frame, layout.left, layout.top, layout.width, layout.height, kPanelOpacity);
 
-    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour);
+    const Color ink = colorHex(hexRgb(kInkColour)), muted = colorHex(hexRgb(kMutedColour));
     const int active = indexOf(mode);
     const int gap = keyGap(layout.textHeight);
     for (int index = 0; index < 3; ++index) {

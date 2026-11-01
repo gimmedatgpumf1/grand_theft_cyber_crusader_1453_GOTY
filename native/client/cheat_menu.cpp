@@ -141,7 +141,7 @@ void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int
 
     fillPanel(frame, layout.left, layout.top, layout.width, layout.height, kMenuPanelOpacity);
 
-    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour);
+    const Color ink = colorHex(hexRgb(kInkColour)), muted = colorHex(hexRgb(kMutedColour));
     const auto centredAt = [&](const std::string& text, int top, int height, Color colour) {
         const int width = textWidthPixels(text, height);
         drawTextPixels(frame, layout.left + (layout.width - width) / 2, top, text, colour, height);
@@ -159,7 +159,7 @@ void drawCheatMenu(NativeFrame& frame, int bladderPercent, int bowelPercent, int
     // of the two things on it you are about to press.
     if (hovered >= 0 && hovered <= kCheatMenuClose) {
         const CheatMenuRect box = cheatMenuRect(layout, hovered);
-        fillBand(frame, box.left, box.top, box.width, box.height, colorHex(kInkColour), 0.14);
+        fillBand(frame, box.left, box.top, box.width, box.height, colorHex(hexRgb(kInkColour)), 0.14);
     }
 
     for (int index = 0; index < kRowCount; ++index) {

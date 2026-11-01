@@ -17,7 +17,7 @@ constexpr const char* kAction = "[E] Interact";
 void shadowedText(NativeFrame& frame, int left, int top, const std::string& text, int textHeight,
                   const Color& ink) {
     const int offset = std::max(1, textHeight / 12);
-    const Color shadow = colorHex("#020604");
+    const Color shadow = colorHex(hexRgb("#020604"));
     for (int dy = -offset; dy <= offset; dy += offset) {
         for (int dx = -offset; dx <= offset; dx += offset) {
             if (dx == 0 && dy == 0) continue;
@@ -53,10 +53,10 @@ void drawTargetPrompt(NativeFrame& frame, const TargetPromptLayout& layout, cons
     frame.uiScale = 1.0;
     frame.uiOffsetX = frame.uiOffsetY = 0.0;
 
-    shadowedText(frame, layout.firstLeft, layout.firstTop, kAction, layout.textHeight, colorHex(kMutedColour));
+    shadowedText(frame, layout.firstLeft, layout.firstTop, kAction, layout.textHeight, colorHex(hexRgb(kMutedColour)));
     const std::string label(name);
     const int left = frame.width / 2 - textWidthPixels(label, layout.textHeight) / 2;
-    shadowedText(frame, left, layout.secondTop, label, layout.textHeight, colorHex(kInkColour));
+    shadowedText(frame, left, layout.secondTop, label, layout.textHeight, colorHex(hexRgb(kInkColour)));
 
     frame.uiScale = scale;
     frame.uiOffsetX = offsetX;

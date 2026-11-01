@@ -38,6 +38,10 @@ export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
 COMPILER="${CXX:-g++}"
 COMMAND=("$COMPILER")
 if command -v ccache >/dev/null 2>&1; then COMMAND=(ccache "$COMPILER"); fi
+# Fixed UI colours must decode exactly like dynamic strings.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
+  tests/color_hex.cpp native/client/{raster,hud,ui_layer}.cpp -o build/bin/gtc-color-hex
+./build/bin/gtc-color-hex
 # Exercise the actual height curves, including value, slope and curvature at
 # the formula joins and the full sampled extrapolation range.
 "${COMMAND[@]}" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
