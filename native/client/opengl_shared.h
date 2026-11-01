@@ -66,6 +66,7 @@ struct Api {
     void (GTC_GL_CALL *blendFunc)(Enum, Enum) = nullptr;
     void (GTC_GL_CALL *pixelStorei)(Enum, Int) = nullptr;
     void (GTC_GL_CALL *readPixels)(Int, Int, Sizei, Sizei, Enum, Enum, void*) = nullptr;
+    void (GTC_GL_CALL *finish)() = nullptr;
     Enum (GTC_GL_CALL *getError)() = nullptr;
     const UByte* (GTC_GL_CALL *getString)(Enum) = nullptr;
     void (GTC_GL_CALL *color3f)(Float, Float, Float) = nullptr;
@@ -117,6 +118,11 @@ public:
     bool render(const GpuScene& scene, NativeFrame& frame);
     bool present(const NativeFrame& frame);
     bool capture(int width, int height, const std::string& path);
+    // Blocks until the device has finished what was submitted.
+    void awaitGpu();
+    // Blocks and brings the finished frame back into host memory, which is what
+    // a Vulkan readback costs. For measuring, not for presenting.
+    bool readBack(int width, int height, NativeFrame& frame);
     std::string name() const;
 
 private:

@@ -1,9 +1,12 @@
 #include "client/window.h"
 #include "client/opengl_shared.h"
+#include "vulkan/vk_renderer.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 
 namespace gtc::native {
@@ -142,6 +145,7 @@ struct Api {
     int (*freeColormap)(Display*, Colormap) = nullptr;
     int (*selectInput)(Display*, Window, long) = nullptr;
     int (*mapWindow)(Display*, Window) = nullptr;
+    int (*resizeWindow)(Display*, Window, unsigned int, unsigned int) = nullptr;
     int (*storeName)(Display*, Window, const char*) = nullptr;
     GC (*createGC)(Display*, Drawable, unsigned long, void*) = nullptr;
     int (*freeGC)(Display*, GC) = nullptr;
@@ -200,6 +204,7 @@ struct NativeWindow::Impl {
     GlxApi glx;
     Display* display = nullptr;
     Window window = 0;
+    XlibSurfaceTarget surfaceTarget{};
     GC gc = nullptr;
     Visual* visual = nullptr;
     int depth = 0;
@@ -209,6 +214,7 @@ struct NativeWindow::Impl {
     OpenGlRenderer renderer;
     Atom wmDelete = 0;
     bool gpu = false;
+    bool vulkan = false;
     bool open = false;
     bool captured = false;
     double lastX = kDefaultWindowWidth * 0.5;
@@ -236,6 +242,7 @@ struct NativeWindow::Impl {
         GTC_LOAD_X11(freeColormap, "XFreeColormap");
         GTC_LOAD_X11(selectInput, "XSelectInput");
         GTC_LOAD_X11(mapWindow, "XMapWindow");
+        GTC_LOAD_X11(resizeWindow, "XResizeWindow");
         GTC_LOAD_X11(storeName, "XStoreName");
         GTC_LOAD_X11(createGC, "XCreateGC");
         GTC_LOAD_X11(freeGC, "XFreeGC");
@@ -329,12 +336,17 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     return activeGpu->renderer.render(scene, frame);
 }
 
+// Vulkan first: it needs no window and no GL context, and it is the path that
+// carries the frame. The benchmark's OpenGL window asks for that backend by
+// name; nothing else does.
+bool wantVulkan(bool preferOpenGl) { return !preferOpenGl; }
+
 } // namespace
 
 NativeWindow::NativeWindow() = default;
 NativeWindow::~NativeWindow() { close(); }
 
-bool NativeWindow::open(const std::string& title, std::string& error) {
+bool NativeWindow::open(const std::string& title, std::string& error, bool preferOpenGl) {
     close();
     impl_ = new Impl;
     if (!impl_->load()) {
@@ -399,6 +411,23 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     impl_->api.flush(impl_->display);
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
+    if (wantVulkan(preferOpenGl)) {
+        impl_->surfaceTarget = {impl_->display, impl_->window};
+        setVulkanSurfaceTarget(&impl_->surfaceTarget, 2);
+    }
+    if (wantVulkan(preferOpenGl) && vulkanAvailable()) {
+        impl_->vulkan = true;
+        impl_->gpu = true;
+        activeGpu = impl_;
+        setGpuRenderer(&renderVulkanScene);
+        const std::string gpuTitle = title + " - Vulkan";
+        impl_->api.storeName(impl_->display, impl_->window, gpuTitle.c_str());
+        // The title and the map request still have to reach the server; the
+        // OpenGL path below would normally flush them.
+        impl_->api.flush(impl_->display);
+        std::fprintf(stderr, "[native] drawing with Vulkan\n");
+        return true;
+    }
     if (impl_->context && impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) {
         impl_->gpu = impl_->renderer.load([this](const char* name) {
             return dlsym(impl_->glLibrary, name);
@@ -421,6 +450,7 @@ void NativeWindow::close() {
         if (activeGpu == impl_) {
             setGpuRenderer(nullptr);
             activeGpu = nullptr;
+            if (impl_->vulkan) shutdownVulkan();
         }
         impl_->shutdown();
         delete impl_;
@@ -501,10 +531,40 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
     return impl_->open;
 }
 
+bool NativeWindow::renderScene(const GpuScene& scene, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu) return false;
+    if (impl_->vulkan) return renderVulkanScene(scene, frame);
+    return impl_->renderer.render(scene, frame);
+}
+
+const char* NativeWindow::backend() const {
+    if (!impl_) return "none";
+    if (impl_->vulkan) return "vulkan";
+    if (impl_->gpu) return "opengl";
+    return "software";
+}
+
+
+void NativeWindow::awaitGpu() {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return;
+    impl_->renderer.awaitGpu();
+}
+
+bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return false;
+    return impl_->renderer.readBack(width, height, frame);
+}
+
 bool NativeWindow::present(const NativeFrame& frame) {
-    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
+    // A presented frame never became host pixels: the device already showed it.
+    if (frame.presented) return true;
+    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
+    // A backend may hand over window-order pixels; this path wants RGB, so the
+    // picture is converted once here if that is all there is.
+    if (frame.rgb.empty()) const_cast<NativeFrame&>(frame).syncToRgb();
+    if (frame.rgb.empty()) return false;
     if (frame.width != impl_->width || frame.height != impl_->height) return true; // Resize is applied next frame.
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) return false;
         if (!impl_->renderer.present(frame)) return false;
         impl_->glx.swapBuffers(impl_->display, impl_->window);
@@ -532,7 +592,7 @@ bool NativeWindow::present(const NativeFrame& frame) {
 
 bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
     if (!impl_ || !impl_->open) return false;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!impl_->glx.makeCurrent(impl_->display, impl_->window, impl_->context)) return false;
         return impl_->renderer.capture(impl_->width, impl_->height, path);
     }
@@ -551,6 +611,15 @@ void NativeWindow::captureMouse(bool capture) {
         impl_->api.ungrabPointer(impl_->display, 0);
     }
     impl_->api.flush(impl_->display);
+}
+
+void NativeWindow::resize(int width, int height) {
+    if (!impl_ || !impl_->display || !impl_->window || !impl_->api.resizeWindow) return;
+    impl_->api.resizeWindow(impl_->display, impl_->window, static_cast<unsigned>(std::max(1, width)),
+                            static_cast<unsigned>(std::max(1, height)));
+    if (impl_->api.flush) impl_->api.flush(impl_->display);
+    impl_->width = std::max(1, width);
+    impl_->height = std::max(1, height);
 }
 
 void NativeWindow::size(int& width, int& height) const {

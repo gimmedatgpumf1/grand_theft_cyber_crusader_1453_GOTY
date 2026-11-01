@@ -1,0 +1,259 @@
+# Joint movement reference for the OpenSkeleton graph
+
+The table below classifies **every one of the 209 relationships** in
+`04-line-graph.py`; `openskeleton/joint_mobility.py` assigns the class from the
+actual source labels, including each finger and toe on both sides. The graph
+is not an exhaustive list of every human articulation: the source does not
+separately label the individual skull bones, teeth, hyoid or ear ossicles,
+and several real joints contain multiple surfaces and coupled motions. These are
+biological descriptions; the runtime approximation and its gaps are described below.
+Individual joint centres and axes are not supplied by OpenSkeleton. Movement
+ranges vary with person, position, loading and measurement. The figures below
+are approximate clinical reference values measured from anatomical neutral,
+not a guarantee, an injury threshold, or Euler-angle limits relative to the
+registered cadaver pose. Combined rotations are coupled, not independent boxes.
+
+| Class | Allowed and restricted motion |
+| --- | --- |
+| Temporomandibular | Hinges and glides for opening/closing, protrusion/retraction and side-to-side; not a free ball joint. |
+| Atlanto-occipital | Primarily nodding flexion/extension, small lateral bending; limited axial rotation. |
+| Atlanto-axial | Predominantly axial rotation; limited flexion/extension, not a free ball joint. |
+| Intervertebral | Small coupled bending and rotation at each level, not free rotation; total cervical reference flexion/extension ~45° each, side bending ~45° each, rotation ~80° each; thoracolumbar total flexion ~90°, extension ~30°, side bending/rotation ~30° each. These totals cannot be applied to each vertebra. |
+| Sacroiliac / pubic symphysis | Very limited coupled motion/glide; neither is a freely rotating ball joint. |
+| Costovertebral / costal cartilage | Small coupled rib rotations/glides and elastic cartilage motion with breathing, not unrestricted motion; cartilage links are inferred, not scanned bone joints. |
+| Sternoclavicular / acromioclavicular | Sternoclavicular saddle movement combines elevation/depression, protraction/retraction and axial rotation; acromioclavicular small glides/rotations. Scapular movement is coordinated; it is not a simple rigid rotation of the entire shoulder girdle. |
+| Shoulder ball-and-socket | Flexion/extension, abduction/adduction, and internal/external rotation. Whole-shoulder clinical reference ~180° flexion/abduction, 40–60° extension, 70° internal and 90° external rotation; full elevation includes scapular movement, not 180° at the glenohumeral joint alone. |
+| Elbow hinge | Flexion/extension, roughly 0–140/150° flexion; side-to-side movement is strongly restricted. Pronation/supination belongs to the radioulnar joints, not the elbow hinge. |
+| Radioulnar pivot | Coupled forearm pronation/supination ~80–90° each; radius rotates relative to ulna, not a free hinge between shafts. The V-view forearm plane merges both and cannot show this internal rotation. |
+| Wrist condyloid | Flexion ~80°, extension ~70°, radial deviation ~20°, ulnar deviation ~30°; no independent unrestricted axial rotation. |
+| Carpal glide | Small coupled intercarpal/carpometacarpal glides; 2–5 palm members are merged in V view and cannot move independently there. |
+| Thumb CMC saddle | Flexion/extension, abduction/adduction and coupled opposition/reposition; not a simple single-axis hinge. |
+| Thumb MCP | Primarily flexion/extension, approximately 0–50° flexion, with limited side motion; not a ball joint. |
+| Finger MCP condyloid | Flexion about 90°, extension about 30–45°, abduction about 20°; spreading is constrained when flexed. No unrestricted axial spin. |
+| Finger PIP / DIP hinges | Mainly flexion/extension, PIP ~0–100°, DIP flexion ~90° (some extension up to ~20°); not side-bending or free twisting. |
+| Thumb IP hinge | Primarily flexion/extension, approximately 0–80° flexion, with variable extension. |
+| Hip ball-and-socket | Flexion ~120°, extension ~20°, abduction ~45°, adduction ~30°, internal/external rotation ~45° each; more constrained than shoulder and coupled by posture. |
+| Knee modified hinge | Primarily flexion/extension, ~0–135° flexion; some coupled axial rotation when flexed, very limited in full extension. Patella glides with knee movement and is not an independently rotating ball. |
+| Tibiofibular | Limited coupled glides; distal syndesmosis is not a free hinge. Tibia and fibula form one rigid V-view plane. |
+| Ankle hinge | Primarily dorsiflexion ~20° and plantarflexion ~50°; inversion/eversion is mainly through adjacent foot joints rather than a free ankle ball. |
+| Tarsal glide | Limited coupled intertarsal/tarsometatarsal motion including subtalar inversion/eversion; not independent ball joints. The V-view foot volume merges these members. |
+| Great-toe MTP | Flexion ~45°, extension ~70°, limited abduction/adduction; not unrestricted spin. |
+| Lesser-toe MTP | Flexion/extension ~40° each and limited abduction/adduction; not unrestricted spin. |
+| Toe IP hinge | Primarily flexion/extension; not free side-to-side movement or twisting. |
+| Sesamoid glide | Small constrained movement within tendon/under the metatarsal head, not an independent ball joint. |
+
+Sources: [OpenStax synovial joints](https://openstax.org/books/anatomy-and-physiology-2e/pages/9-4-synovial-joints),
+[movements](https://openstax.org/books/anatomy-and-physiology-2e/pages/9-5-types-of-body-movements),
+[selected joints, knee and shoulder](https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints),
+[Physiopedia reference ranges](https://www.physio-pedia.com/Range_of_Motion_Normative_Values),
+[AAOS-based hip goniometry](https://goniometer.io/hip-range-of-motion),
+[Hand Surgery Primer active hand ranges](https://learn.handsurgeryprimer.org/taxonomy/term/303),
+[Kenhub MTP joints](https://www.kenhub.com/en/library/anatomy/metatarsophalangeal-mtp-joints).
+
+Shoulder elevation is coupled to scapular and clavicular motion; the relative
+contributions vary through the motion, so a fixed 2:1 ratio is an approximation.
+See [McGraw Hill normative ranges](https://fadavispt.mhmedical.com/content.aspx?bookid=1964&sectionid=147190212),
+[scapular motion study](https://www.jstage.jst.go.jp/article/jpfsm/7/1/7_65/_pdf/-char/en),
+and [goniometry references including toes](https://highered.mheducation.com/sites/0071474013/student_view0/chapter8/goniometry.html).
+
+## Model and coordinate-system research
+
+The [AAH OpenSim arm and hand model](https://github.com/nishbo/ms_arm_and_hand)
+is MIT-licensed and offers articulated shoulder, forearm and finger reference
+frames and coordinated mechanisms. It is not automatically fitted to either
+OpenSkeleton subject, and its documentation says it is an inverse-kinematics
+model without dynamic properties; it also fixes some carpal joints. It cannot
+by itself meet the all-joints requirement. The
+[ISB-style knee reference-frame study](https://pmc.ncbi.nlm.nih.gov/articles/PMC2866785/)
+uses bone-specific condyle fitting, not a nearest-centroid pivot.
+
+The source graph and labels alone do not provide the joint axes, neutral joint
+frames, secondary constraints, bone contacts, cartilage or ligaments needed to
+turn those classes into subject-specific motion. In particular, a tree of
+independent hinge rotations does not preserve the multiple articulations in
+the wrist, foot, thoracic cage or pelvis. Neither the runtime graph nor the
+coarse renderer mesh groups currently solve those constraints.
+
+## Reference-model solver (not yet a subject rig)
+
+`native/client/skeleton_joint.h` implements bounded ordered rotations between
+two **supplied, calibrated** joint frames. A reproducible OpenSim 4.6 fixture
+exercises all 32 joints of the AAH bilateral finger/thumb reference models,
+including both thumb CMC stages, against 160 independently computed parent–child
+transforms and 50 full finger/thumb-chain poses. It clamps the AAH
+model's own coordinate ranges and rejects non-finite values. Source and license are in `reference/AAH_LICENSE.txt`.
+`native/client/skeleton_coupling.h` evaluates precomputed piecewise-cubic
+coordinate couplings. A further fixture verifies all 26 AAH bilateral
+shoulder-girdle and wrist couplers at 234 OpenSim-generated sample values,
+including endpoint extrapolation. It does not claim the AAH rhythm is an
+individual subject's measured rhythm.
+
+These are *reference-model* results, not tests of joint frames fitted to either
+OpenSkeleton subject. The separate subject-specific femoral-head estimates in
+`openskeleton/README.md` provide hip pivot positions and an approximate
+femoral epicondylar line for each knee, not calibrated individual motion limits. The room now installs an estimated rig on both subjects, but it does not
+implement gliding, cartilage, contacts or closed loops.
+AAH's simple joint bounds are a model, not universal clinical hard limits.
+
+Subject fitting must not use a geometry ICP score as a substitute for checking
+joint frames. As an exploratory example, rigid ICP of the reference right
+index proximal/middle phalanges to the male model yielded surface RMS errors
+of 2.28 and 1.58 mm, but the transferred PIP parent and child reference centres
+differed by **35.57 mm**. That demonstrates an end-orientation ambiguity, not
+a clinically usable calibration. The [PIP CT and motion study](https://pmc.ncbi.nlm.nih.gov/articles/PMC3835607/)
+found a moving finite helical axis, showing even a fixed hinge is an
+approximation. Do not ship a guessed joint frame as medically validated.
+
+
+## Open-chain solver and source-mesh frame path
+
+`native/client/skeleton_kinematic_tree.h` composes supplied bounded joints in a
+parent-ordered open chain, captures a bind pose without scaling mesh geometry,
+and applies a complete mapping to the 182 independent source batches. The room
+caches the scene and updates only matrices after a pose revision. Tests compare
+the tree with the same 50 OpenSim-calculated AAH whole-finger poses and use a
+synthetic hinge to verify both source bodies through the Vulkan frame path.
+The synthetic hinge is a plumbing test, not a subject fit. The current room
+also installs an approximate source rig; closed-loop anatomical constraints,
+bone collisions, cartilage and individual fitted ranges remain unsolved.
+
+## Current room implementation and limitations
+
+The room installs a source-bone tree for both subjects and retains the original
+unscaled source pose as bind pose. The room starts in a T-pose: shoulders at
+90° abduction, elbows and knees straight, ankles and wrists straightened,
+fingers extended, palms facing forward, feet aimed forward, and toes resting
+near the sole instead of held artificially straight. Each
+hip-to-knee and knee-to-ankle line is aligned vertically, with both feet
+parallel and approximately hip-width apart. Hip flexion/extension, axial rotation
+and abduction/adduction are independent bounded controls (`G`, `N`, `U`);
+Shift reverses each control. Abduction is +45° and adduction −30° in the
+AAOS-based population reference, not an individual measurement.
+The source trunk is rotated laterally at the sacrum/L5 link so C7 is above
+the sacrum; the source's front-to-back spinal curves remain intact. Head yaw
+is aligned using the centres of the two orbital apertures measured from each
+skull mesh, rather than the jaw-to-skull centroid or jaw hinge axis. The skull
+rotates until the eye-centre line is horizontal and its normal faces forward;
+no additional nod is introduced. The jaw remains a
+child of the skull and opens about an estimated bilateral condylar hinge;
+its opening coordinate stays independent of skull movement. These are geometric reference-pose
+alignments, not measurements of individual neutral joint angles. Each whole
+body is translated down to the floor. Heel, medial sesamoid and lateral
+metatarsal support points define each sole; the pelvis is levelled against
+both feet while hip and trunk compensation preserves straight legs and spine.
+`R` starts gravity-driven ragdolls for both subjects; pressing it again restores the
+T-pose. `B` stops the simulation and returns the original source pose. Bullet 3.25
+uses bone-derived convex collision proxies and a shared floor/world, not exact
+CT-surface collision. Rib proxies are split along the source-derived arc instead
+of filling the space inside each curved rib. Fixed tree structures share rigid
+bodies; each radius/ulna pair also shares a compound body, as in the existing
+grouped forearm model, so individual radioulnar rotation is not simulated.
+Linked carpal groups in each palm likewise share a rigid compound body rather
+than simulating individual carpal glides. Thumb and finger bones remain separate
+hinged bodies with their own collision proxies and bounded angular motion. A
+post-substep correction keeps their hinge anchors together during impacts by
+moving the physics bodies as well as their visible meshes. This correction can
+temporarily push a finger proxy into the floor or another collider during hard
+contact; Bullet resolves contacts in subsequent steps. This is stabilization,
+not a model of hand ligaments or clinically validated hand dynamics.
+Subject-specific rib/sternum and neighbouring-rib links inferred from the
+anatomical graph are retained as limited-displacement positional constraints;
+their attachment locations are approximate, because the source has no cartilage.
+Other joints use fitted pivots and bounded hinges, with approximate three-axis
+hip and shoulder constraints. Neighbouring or initially overlapping proxies
+are filtered to avoid joint-contact conflicts; other bones and the two figures
+can collide. This is a game-physics approximation, not a validated biomechanical
+simulation.
+Meshes use rigid bone matrices; V-view vertices are associated
+with explicitly named source structures or declared anatomical groups and are
+rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
+bounded ±80° axial rotation (`M`); the grouped rotation is a simplified visual
+approximation, not separate anatomical pronation of radius around ulna.
+The simplified palm, foot, rib cage and shoulder surfaces deform between their
+source owners; they are not complete anatomical tissue simulations. Both wrist
+carpal roots now share a pivot and bend together, so the unified palm and
+individual fingers follow the wrist instead of splitting into two subtrees.
+
+The first coordinate in `skeleton_rom.h` is a simple population reference in
+degrees. For the shoulder it is an *approximate abduction* coordinate, not
+flexion: 0° approximates anatomical neutral and 90° the lateral upper arm;
+120° is a commonly cited approximate glenohumeral contribution, distinct from
+180° for the whole shoulder. The shoulder rotation plane is inferred from the
+source pose, not a measured scapular plane, and the scapular rhythm is not
+implemented. See [shoulder biomechanics](https://musculoskeletalkey.com/structure-and-function-of-the-shoulder-complex/).
+The glenohumeral centre is estimated from a sphere fitted to humeral surface
+vertices near the explicitly linked scapula; this is not expert-validated.
+See `openskeleton/10-fit-shoulders.py` and the subject-specific fit JSON files.
+
+Elbow pivots are estimated from capitellar and trochlear surfaces. Elbow
+flexion uses the same mirrored movement in each subject's T-pose frame, with
+an explicit neutral alignment from the registered pose. Radius and ulna share
+that frame. The elbow V-view balls use the estimated pivots. These are geometric
+estimates, not measured individual functional axes. See
+`openskeleton/12-fit-elbows.py` and `tests/skeleton_t_pose.cpp`. The real
+[elbow axis varies with flexion](https://pmc.ncbi.nlm.nih.gov/articles/PMC8848841/).
+
+Each patella rotates relative to the femur by 70% of the change in knee flexion
+from the registered pose. This approximates a finding in eight cadaver knees
+([Amis et al.](https://onlinelibrary.wiley.com/doi/10.1002/jor.20268)); the
+subjects' patellar translations and other rotations are unknown. At straight
+knees no tested femur–tibia, femur–patella, patella–tibia or tibia–fibula
+surface pair intersects. Before coupling, the female right patella and tibia
+intersected at straight extension. See `openskeleton/13-audit-knee-straight.py`.
+The fixed-axis knee approximation still has known intersections at other
+angles (see `09-audit-knee-motion.py`).
+
+Finger axes use the principal shaft directions of the actual phalanges and
+metacarpals. The straight-arm pose first aligns the measured elbow–wrist and
+palm directions, then extends the finger shafts parallel to the arm and positions
+the thumb above the index finger. The thumb's 35° metacarpal-to-finger reference
+is a pose choice, not an individual clinical measurement. Each joint's positive bend is oriented toward its palm after its
+parent fingers have straightened; all MCP, PIP/IP and DIP joints are checked
+independently in mesh and V view. The extended hand pose aligns the measured
+bone shafts; it does not depend only on setting arbitrary angles to zero.
+A fixed source-to-neutral alignment is kept separate from flexion so the
+original CT pose can be restored. Interactive flexion clamps to the cited range.
+The same palm-relative convention is mirrored for left and right; it does not
+replace either subject's source bone geometry.
+Toe reference directions use the actual neighbouring joint locations, rather
+than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
+DIP reference alignment is separate from bounded toe flexion; positive flexion
+moves toward the sole. The resting pose uses each toe's source vertices and
+joint pivots to select bounded flexion toward the heel's support plane. A
+separate source-to-reference yaw aligns each toe with the foot in the ground
+plane, without turning plantar flexion into an abduction control. The large
+toe's source shaft is also aligned; for the smaller, nearly round phalanges,
+the relative bone centres provide a more stable direction than PCA. If
+straightening the source phalanges would put a toe below the sole, its source
+joint frames are retained and the bounded hinges are flexed instead. Resting IP
+flexion is capped at 20° (the controls still allow the full range). These are
+geometric pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
+mesh and V view, and the source pose is restorable.
+Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
+foot direction relative to the shin. Hip flexion lifts the thigh forward and
+hip axial rotation has a separate approximate ±45° range. Hip abduction is
+bounded from −30° adduction to +45° abduction. These directions
+are tested on both sides of both subjects in `tests/skeleton_t_pose.cpp`.
+Other pivots use sampled closest surfaces only after the anatomical graph has
+selected the relationship. Neck flexion and most other source angles are assumed zero.
+The values and frames are population and geometry-based approximations, not
+measurements of the individual subjects' functional axes or clinical limits.
+
+Extra single-axis approximations include jaw rotation without translation,
+atlanto-occipital nodding, atlanto-axial rotation, shoulder-girdle elevation,
+thumb CMC and segmental spine movement. Published total cervical flexion-extension
+ranges are divided symmetrically only as an approximation; real flexion and
+extension are not necessarily symmetric. See [cervical segmental ranges](https://musculoskeletalkey.com/cervical-spine-10/),
+[atlanto-occipital and atlanto-axial cadaver review](https://squareonephysio.com.au/wp-content/uploads/2021/08/Bogduk-2000-Biomechanics-Cervical-Spine.pdf),
+[AC joint motion](https://www.kenhub.com/en/library/anatomy/acromioclavicular-ac-joint),
+and [SC motion](https://www.kenhub.com/en/library/anatomy/sternoclavicular-joint).
+The lesser toe PIP range is 0–35° and DIP is −30–60° ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/));
+great toe IP flexion is about 50° ([reference](https://physical-therapy.us/range-of-motion-rom/)).
+
+This remains a **partial** implementation: a single-axis tree cannot represent
+all three-dimensional ball-joint motion, pronation/supination with both
+radioulnar articulations, translation, coordinated scapular rhythm, closed loops,
+ligament constraints, cartilage, collision-free motion, or subject-specific
+neutral and limits. Some source links are redundant in the spanning tree and
+some small bones intentionally grouped. It should not be described as every
+joint working or medically validated.

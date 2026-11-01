@@ -1,0 +1,398 @@
+# Verification
+
+## Current models: source registered pose, not anatomically certified
+
+Each model has 182 source names. Rig-group assignments, OBJ face ranges and
+vertex proximity to the corresponding source structure are checked by
+`python3 tests/openskeleton_source_pose.py female` and
+`python3 tests/openskeleton_source_pose.py male`. No per-bone repositioning or mirroring
+is applied; the output is simplified and has one global coordinate transform.
+The original source's vertical bone spans are 179.577 cm (male) and 174.183 cm
+(female); the simplified source-pose OBJs span 179.579 cm and 174.241 cm,
+respectively. The per-bone maximum axis-span changes caused by simplification
+are 2.802 mm and 2.673 mm. These are skeletal bounding spans, not a clinical
+stature measurement. The source is converted from millimetres to metres; no
+stature normalization is applied. The rejected T-pose rotated the feet and
+lowered the vertical bounding heights to about 171 cm and 166 cm despite using
+rigid, unscaled per-bone transforms. It has been removed.
+
+This is the dataset's registered geometry, not necessarily the original patient
+pose. The source labels and registration have not been independently validated
+against medical anatomy.
+
+`node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj --sex female --scanned`
+currently reports **8 failures** on this asymmetric pose: foot-length checks and
+left/right mirror checks. Those include pose-dependent metrics and are retained
+as diagnostics, not silently reclassified as a pass. They do not establish the
+cause or correctness of individual joints. The room retains the source pose for both subjects.
+
+### Upright spine and toes
+
+In the source pose, C7 is approximately 47.1 mm (male) and 21.4 mm (female)
+to one side of the sacrum. The reference pose uses a single source-derived
+rotation at the sacrum/L5 link to put their centres above one another; the
+remaining cervical, thoracic and lumbar centres are each within 10 mm of that
+vertical line on these two models. Separate source-derived cervical and head
+rotations place C2 above C7 and the head within 2 mm of C1 laterally, while
+retaining the source spine's front-to-back curvature. Eye-socket centres are
+estimated from the two recessed orbital apertures in the anterior depth map of
+each source skull (`openskeleton/14-fit-orbits.py`). Skull rotation makes the
+line between these centres horizontal and its normal point forward. The source
+centre-line yaw is about −4.1° (male) and −2.7° (female), before posing. These
+landmarks are geometric estimates, not expert clinical annotations. The jaw is
+parented to the skull and rotates around its separately estimated condylar axis. This is a geometric
+straightening, not a clinical diagnosis or individual spinal alignment measurement. The original
+source pose remains restorable; no bone is scaled or mirrored.
+
+In the registered source, the maximum angle between proximal-to-distal toe
+centres and the heel-to-third-metatarsal direction is 31.34° (male) and 18.46°
+(female); with the toes resting toward the sole, the respective maxima are
+15.01° and 14.80° (including downward slope). In the horizontal plane each
+proximal-to-middle and middle-to-distal centre-line is within 1° of the foot's
+forward direction. Each distal toe reaches within 0.2 mm of the heel support
+plane, and all toe phalanges remain above it. The earlier pose forced the right
+female little toe's proximal bone below the sole when lowering its tip; keeping
+its original joint frames avoids that without scaling or moving the bones away
+from their joints. These are geometric direction measurements, not clinical joint angles.
+`tests/skeleton_toe_joints.cpp` verifies every MTP and IP joint (28 per body),
+toe-tip support, every phalanx above the sole, horizontal alignment, flexion
+toward the sole, range limits, neighbour
+isolation, V-view geometry and source restoration. Headless Vulkan tests also
+exercise the big toe and all three joints of a lesser toe in mesh and V view;
+the feet are raised for the individual plantar-flexion render checks.
+
+### Straight-leg T-pose
+
+A [T-pose reference](https://geturna.com/en/guides/t-pose-blender) has a
+forward-facing body, straight legs slightly apart and arms horizontal; an
+[anatomical standing reference](https://bio.libretexts.org/Courses/Lemoore_College/Human_Anatomy_Laboratory_Manual_(Hartline)/01%3A_Introduction_to_Anatomy_and_Anatomical_Terms/1.02%3A_Anatomical_Position)
+also specifies straight legs, forward-facing palms and feet flat. The user’s
+palms-forward hand position is retained.
+
+`tests/skeleton_leg_pose.cpp` measures the fitted hip, knee and estimated
+ankle centres before posing. Source thigh/shin deviations from vertical are
+4.89°/4.35° and 4.71°/3.09° (male left/right), and 9.13°/11.48° and
+16.99°/28.16° (female left/right). The reference pose aligns both measured
+joint-centre lines vertically on all four legs, with forward-parallel feet.
+A small pelvis roll balances the measured source leg-length difference;
+counter-rotation retains the upright spine and vertical legs. The heel,
+medial sesamoid and lateral metatarsal support points are level in both feet;
+the actual lowest-bone height differs by at most 1.5 mm between feet. No
+source bone is scaled or detached to remove asymmetry.
+The tests exercise bilateral abduction/adduction, limits, movement direction,
+reflection, joint-centre continuity and exact source-pose recovery. The source
+hip centre and knee axis are geometric fits, not clinical measurements.
+
+### Mirrored reference motion
+
+`tests/skeleton_t_pose.cpp` checks the jaw follows the skull and remains attached
+at the estimated hinge while opening. It checks mirrored elbow, grouped-forearm and hip
+rotation matrices at several angles on both subjects, verifies palms face forward,
+and checks bilateral knee, ankle, wrist and toe movement directions. The knee
+and ankle axes remain individual estimates from each CT geometry, not exact
+mirrored bone copies. `tests/skeleton_finger_joints.cpp` checks 28 separate
+finger joints per model in mesh and V view, including flexion, permitted
+extension, limits, neighbouring-digit isolation and original-pose recovery.
+The original CT bone meshes are not mirrored or rescaled.
+
+The source angles are measured before posing, using principal directions of each
+labelled bone. `tests/skeleton_source_hand_angles.cpp` prints all 28 joint-pair
+shaft deviations per subject in both poses. In the registered source, maximum
+MCP/PIP-or-thumb-IP/DIP shaft deviations are 38.03°/98.69°/47.95° (male)
+and 45.75°/81.26°/55.40° (female). Wrist centre-line deviations from the
+elbow–wrist direction are 29.76°/26.26° (male L/R) and 12.62°/16.84°
+(female L/R). These geometric 3D angles are not clinical goniometer readings.
+The reference tests check the elbow-to-wrist line and every phalanx shaft against
+the extended arm, rather than assuming source bones began at zero.
+
+A headless SwiftShader Vulkan test exercised both skeletons through the room's
+mesh and V-view paths, including all three index finger stages and grouped
+forearm rotation. This confirms visible motion in software Vulkan; it does not
+establish clinical validity or frame rate on the player's GPU.
+
+### Femoral-head fit and source hip overlap
+
+A CT atlas labels the femoral-head region used to fit a sphere directly to each
+subject's original femur. This estimates each hip pivot but is not Fischer's
+full A&A method and has not been clinically validated. Mean radial residuals
+are 0.37–0.59 mm and subsampling changed centers by at most 0.28 mm; neither
+measures accuracy against expert annotations for these subjects. A comparison
+against six manually marked head points on 19 separate femoral surfaces from
+the atlas authors' published CT cohort found a mean 0.607 mm center difference
+from the average of 20 expert fits (median 0.513 mm, maximum 1.488 mm). That
+same-cohort comparison is not independent clinical validation. The C room consumes the four
+centers without rescaling or changing the rest meshes. V-view hip balls share
+their centers (but their display radii cover other connections). See
+`openskeleton/README.md` for provenance and reproduction.
+
+Correction: the initial point-in-solid hip audit used the MATLAB 1-based face
+indices as zero-based indices. Its previous counts (254/541, 330/670, 419/836,
+370/773) were invalid. With the index conversion fixed, the same limited test
+finds 1/541 male left, 0/670 male right, 0/836 female left and 15/773 female
+right femoral vertices within 3 mm of the pelvic surface inside the pelvis.
+Both Embree and triangle-ray implementations gave these same counts. This does
+not measure complete mesh intersection volume or cartilage, so even zero counts
+do not prove correct hip assembly. Fitted centers alone do not establish valid
+hip articulation or joint limits.
+
+## Historical verification (earlier assets and poses)
+
+The following measurements describe earlier builds, **not the currently shipped
+female skeleton**. They are preserved as historical notes only.
+
+## Historical Z-Anatomy male — earlier verification
+
+Source: Z-Anatomy `SkeletalSystem100.fbx` (CC BY-SA 4.0, derived from
+BodyParts3D), assembled through its node transforms, filtered to the 177
+skeletal objects, 99 of them mirrored to complete the body, grouped into 28 rig
+parts, each bone simplified on its own.
+
+| check | result |
+| --- | --- |
+| source objects kept | 177 skeletal of 1,851 meshes (rest is muscle attachment geometry) |
+| bones in the shipped file | 272 (177 + 99 mirrored, 1 already had a right twin) |
+| height | source crown 170.55 cm, lowest bone 0.71 cm → **169.58 cm of bone** |
+| shipped height | 1.6958 m, lowest vertex at y = 0.0002 m |
+| mesh | 97,227 vertices, 195,242 triangles, 28 parts |
+| femur | 26.87% / 26.77% of stature (band 25.5–27.5%) |
+| tibia + fibula | 22.29% / 22.27% (band 21.0–24.2%) |
+| humerus | 18.77% / 18.80% (band 17.6–19.6%) |
+| radius + ulna | 15.90% / 15.79% (band 14.2–16.2%) |
+| hand | 10.79% / 10.71% (band 10.0–11.8%) |
+| foot | 13.49% / 13.49% (band 14.0–16.2%) — **8.7 mm short** |
+| mirror error | worst pair 1.8 mm (femur), most pairs under 1 mm |
+
+Two honest notes:
+
+* The foot is short by 8.7 mm against the population band. It is continuous —
+  calcaneus, talus, navicular, cuneiforms, metatarsals and every phalanx meet —
+  so it is the source individual's build, not a break in the mesh.
+* The right side is a mirror of the left. The FBX stores only the left half of
+  paired bones. Symmetry error is therefore near zero by construction, and real
+  left/right asymmetry is not represented.
+
+The scan's own proportions do not match the old body that used to be shipped
+here (that one had a 22.1 cm foot and a 30.6 cm humerus). Those numbers came
+from decimating BodyParts3D through a different pipeline; this one is the
+curated atlas at full resolution.
+
+## Historical pre-OpenSkeleton female — earlier verification
+
+She is still the mesh from `open-anatomy-3d` (`anatomy-female.glb`), unchanged,
+because no female alternative has been found. Current measurement:
+
+| check | result |
+| --- | --- |
+| height | 1.6081 m |
+| femur | 25.24% / 25.20% (band 25.5–27.5%) — 4.4 mm and 4.9 mm short |
+| tibia + fibula | 25.51% / 25.51% (21.0–24.2%) — 33 mm long |
+| humerus | 15.52% / 15.92% (17.6–19.6%) — 33.4 mm and 26.9 mm short |
+| radius + ulna | 17.13% / 16.02% (14.2–16.2%) — 15 mm long on the left only |
+| foot | 11.00% / 11.10% (14.0–16.2%) — 48 mm short |
+| mirror error | **scapula 17.8 mm, humerus 13.6 mm**, ribs 6.2 mm, clavicle 4.1 mm, femur 3.2 mm |
+| verdict | **12 FAILED** |
+
+### Why
+
+Upstream does not have a female skeleton. `pipeline/f_build.mjs` builds her by
+taking the **male** BodyParts3D skeleton and pushing it through a
+thin-plate-spline warp fitted to female surface landmarks:
+
+```js
+for (const p of maleParts) { ... warpPoint(tps, p.pos[i], ...) ... }
+```
+
+A TPS warp is a smooth global deformation. That is why her long bones land at
+the wrong fractions of stature and why her left and right scapulae no longer
+match: the landmark set that drives the warp is not symmetric. The only female
+scan data inside her is the pelvic region (`VH_F_femur_*`,
+`VH_F_ilium_compact_bone_*`, `VH_F_lumbar_vertebra_5`), which is why the pelvis
+is the one part that looks right.
+
+Her import was faithful — `verify.mjs` confirms 7,560 of 7,560 vertices are
+present verbatim with 0 moved, and the height is preserved to 2 mm. Faithful
+copying of a deformed source is still a deformed body.
+
+## A real female source has been found
+
+The Visible Human Female — the NLM cadaver dataset, a 59-year-old woman — has a
+full-body CT in a reachable mirror,
+https://github.com/COMODO-research/Comodo_VisibleHuman: 1,727 slices of
+670 x 673 at 0.7227 x 0.7227 x 1.0 mm, CC BY 4.0. Her bones segment out of it,
+and so do his: the same repository holds the Visible Human Male at 1,873 slices
+of 552 x 520 at 0.9375 x 0.9375 x 1.0 mm.
+
+Her first build downsampled the volume to 1.4 x 1.4 x 2.0 mm before
+thresholding. That build was rejected, correctly: the cartilage gap at a joint
+is one to two millimetres, so at 2.0 mm slice spacing the partial-volume average
+weld it shut. Her arm came out as one 20,675-voxel blob, her feet as 65 fused
+fragments between them, and 96.8 million voxels failed to reach any label.
+
+The rebuild does not downsample. See the next section.
+
+## Why the atlas cannot fix her
+
+Z-Anatomy's models **are** BodyParts3D (its readme says "models derived from
+'BodyParts3D'"). BodyParts3D's own database description says it is "a
+three-dimensional whole-body model for an adult human **male**". The lineage is
+male-only from top to bottom, so a different file from the same family cannot
+supply a female — only a different dataset can, and the Visible Human Female is
+the one that does.
+
+## Consequence
+
+The male is a trustworthy anatomical reference and is ready for rigging at
+1.696 m.
+
+The female is not female anatomy yet and must not be rigged as if she were. Her
+own bones now segment at native resolution, and what is missing is a way to cut
+the joints her scan fused — her hands rest on her iliac crests, so the arm and
+the pelvis are one component. Until that is cut, the shipped
+`skeleton-female.obj` remains the warped male mesh and the test room says so on
+screen: `FEMALE 160.8 CM // WARPED MALE, NOT A SCAN`.
+
+## The female, from her own scan — shipped and passing
+
+`skeleton-female.obj` is no longer a warped male. It is the Visible Human Female
+segmented from her own CT at native resolution, and both bodies are checked
+before the build:
+
+```sh
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-male.obj
+node tools/skeleton-source/verify-obj.mjs tools/skeleton-source/skeleton-female.obj \
+    --sex female --scanned
+```
+
+| | female |
+| --- | --- |
+| source | Visible Human Female CT, 1,727 slices at 0.7227 mm in-plane, 1.0 mm slices |
+| threshold | 1600 HU for separation, regrown at 1200 HU within its own neighbourhood |
+| components | 401 |
+| bones in each foot | **19 islands, 26 bones** |
+| rig parts | 28 |
+| individual bones | 374 |
+| mesh | 61,700 vertices, 122,382 triangles |
+| stature | **1.712 m**, soles at y = 0.000, never scaled |
+| hip height | 51.2% of stature |
+| knee height | 27.0% of stature |
+| mirror error, long bones | 3.1 mm femur, 7.2 mm shin, 6.9 mm humerus, 7.7 mm forearm |
+| shells under 12 mm | **0** (was 187; 75 of them under 8 mm) |
+| result | **PASSED** |
+
+### Why her first scan build was covered in white specks
+
+The first scanned build passed the verifier and still looked broken on screen,
+because the defect was sub-centimetre and the verifier measures lengths. Three
+separate faults were behind it, and all three had to be fixed:
+
+- **The threshold.** A 1600 HU mask separates two bones, but it keeps only the
+  densest part of each one. The pelvis, the scapulae and the sternum are two to
+  four millimetres thick, so what survived was their cortical rim, and the rim
+  of a curved plate is a scatter of shards. Every piece is now regrown to its
+  real extent at 1200 HU -- above soft tissue, below cortical peak -- inside a
+  two-voxel neighbourhood, so the separation decided at 1600 still stands.
+- **The holes.** A cortical shell thresholded at any level is full of pinholes,
+  and marching cubes then draws a torn surface that reads as debris. Closing
+  with a 1.5 mm ball measured on the real voxel size (1.0 x 0.7227 x 0.7227 mm)
+  took the largest hip-band shell from 74 open boundary edges to **0** while
+  *reducing* its triangle count.
+- **The crumbs.** Islands under a 12 mm diagonal are not bone. Nothing in a
+  skeleton is smaller: the smallest named bone here, a distal phalanx, is over
+  twenty millimetres. Calcified costal cartilage also survives every threshold
+  and hangs in the intercostal spaces as flat ribbons, so small, thin islands are
+  dropped from the ribs alone -- the patella is a cortex shell too, and dropping
+  one side's flakes and not the other's breaks the mirror.
+
+### The male was rebuilt at higher detail
+
+His first build spent 18,699 triangles on the whole body, which left a rib with
+58 and a phalanx with 12. A rib at 58 triangles is a faceted shard, and next to
+the 130,000-triangle scanned female those shards read as debris floating beside
+the body. `prepare-zanatomy.mjs` now has a `DETAIL` multiplier and a
+40-triangle floor per bone shell; the male is 97,227 vertices and 195,242
+triangles and his ribs are solid surfaces. The measurements in the table above
+did not change -- nothing about his skeleton was altered, only how finely it is
+tessellated.
+
+
+### What the two checks mean now
+
+The verifier used to apply one set of bands to both bodies. It no longer can,
+because the two bodies are different people rather than one model and one warp:
+
+- **`--sex`** selects the series. Adult female long bones are proportionally
+  shorter than adult male ones for the same height, so judging her against the
+  male bands would fail a correct body.
+- **`--scanned`** changes what a miss means. A miss is now only a fault when the
+  part also disagrees with its own reflection: a real person's left and right
+  differ, a deformed body's do not agree with each other. On her, every
+  out-of-band part is bilateral -- humerus 10.8 mm, forearm 9.8 mm, femur
+  4.5 mm -- so they are reported as `individual`.
+- **pose-dependent pairs** -- clavicle, scapula, rib, hand -- are not compared
+  between sides for a scanned body. She was scanned lying down with her arms
+  folded across her abdomen, and that moves a shoulder by centimetres and puts
+  her two hands a centimetre apart in height without anything being wrong. Her
+  hands are still measured for length; only the side comparison is skipped.
+- **joint heights** were added. They do not depend on sex, on pose or on
+  stature: the hip is at 52% of a skeleton's height and the knee at 27%. That is
+  what catches a body that has been stretched or squeezed even when every long
+  bone happens to land inside its band.
+
+
+## Historical earlier OpenSkeleton female export and pose (not current)
+
+The shipped `skeleton-female.obj` is no longer the Visible Human Female cadaver.
+She is subject `N186416` of **OpenSkeleton** (Duquesne et al., Ghent University,
+CC BY 4.0): 170.2 cm, 78.0 kg, BMI 26.9, aged 41, from a post-mortem CT with
+thin slices. The dataset labels **182 bones individually** — every carpal, every
+metacarpal, every tarsal, every metatarsal and every phalanx — which is what
+lets a rig have working fingers and toes. Imported by `openskeleton/03-import.py`
+from her own `skelly-out.npz`; nothing is scaled and no bone is borrowed from the
+male.
+
+| | female |
+| --- | --- |
+| source | OpenSkeleton, subject `N186416`, CC BY 4.0 |
+| bones | 182 → 27 rig parts, 90,118 vertices, 179,824 triangles |
+| stature | 1.66209 m as built (metadata `cadaver_length` 1702 mm) |
+| hand | 27 bones each — 8 carpals, 5 metacarpals, 14 phalanges; the thumb has no middle phalanx, which is anatomy |
+| foot | 28 bones each — 7 tarsals, 5 metatarsals, 14 phalanges, 2 sesamoids |
+| verifier | **PASSED** (`--sex female --scanned`) |
+
+### What the verifier measures on her
+
+```
+femur (left)             25.20%       24.2-28      ok
+tibia+fibula (left)      22.39%       19-22.7      ok
+humerus (left)           19.07%     17.2-20.9      ok
+radius+ulna (left)       15.08%     13.7-17.3      ok
+hand (left)              10.62%      9.4-12.4      ok
+foot length (left)       12.41%     13.5-16.9      individual  (-18.2 mm)
+hip height               50.35%     49.5-55.5      ok
+knee height              26.06%       23-30.5      ok
+mirror error, every pair          0.1-0.4 mm  ok
+```
+
+The foot row is reported, not hidden: a defleshed foot is 15-20 mm shorter than
+the living foot the band is drawn from, because the heel pad and the toe pads are
+gone. Her own foot bones are individually right — calcaneus 73.1 mm, first
+metatarsal 63.0 mm, and heel-to-ball is 0.78 of the foot, which is the human
+ratio. Nothing was rescaled to make the row pass.
+
+### What the import has to fix, and why
+
+The dataset registers each bone into a mean template, so the bones arrive the
+right size but in the wrong arrangement. Four corrections are pose corrections,
+not shape edits:
+
+| correction | what it fixes |
+| --- | --- |
+| A-pose re-pose | her arms were folded across her abdomen |
+| digit straightening | fingers and toes curled; a curled chain measures 144 mm instead of 176 |
+| foot levelling | the ankle was pointed, and the foot rolled so the big toe stood 44 mm above the little one |
+| shoulder seating | shoulders were shrugged 43.7°, leaving her neckless beside the male |
+| right side mirrored | her own left side, mirrored, because registration put her two femurs 66 mm apart |
+
+Mirroring is exact to 0.1 mm, and the body is centred on the plane of its own
+left/right pairs rather than on the pelvis mean — the sacrum is a single midline
+bone, so averaging it in with the two hips shipped the body 6.35 mm off centre.

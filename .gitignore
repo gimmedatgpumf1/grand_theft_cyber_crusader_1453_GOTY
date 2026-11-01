@@ -17,3 +17,6 @@ Thumbs.db
 # Python development caches
 __pycache__/
 *.pyc
+
+# Node dependencies fetched by the asset tools
+node_modules/

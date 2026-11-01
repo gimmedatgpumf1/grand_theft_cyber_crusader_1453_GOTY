@@ -1,0 +1,5 @@
+subject	sex	formula_sex	height_cm	left_cm	right_cm	proxy_cm	surface_prediction_cm	unmatched_difference_cm	unmatched_difference_percent
+N197925	male	male	170.0	9.410500	9.476000	9.443250	10.362831	-0.919581	-8.8738
+N197925	male	female	170.0	9.410500	9.476000	9.443250	11.097821	-1.654571	-14.9090
+N186416	female	male	170.2	11.705500	11.123000	11.414250	10.377571	1.036679	9.9896
+N186416	female	female	170.2	11.705500	11.123000	11.414250	11.110833	0.303417	2.7308

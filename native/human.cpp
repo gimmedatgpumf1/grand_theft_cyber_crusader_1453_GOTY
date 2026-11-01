@@ -447,6 +447,26 @@ bool HumanModel::loadMorphs(const std::string& root, std::string& error) {
     return true;
 }
 
+bool HumanModel::loadMorphSpecs(const std::string& root) {
+    bool ok = false;
+    const gtc::JsonValue definitions = gtc::JsonValue::parse(readText(root + "/tools/human-morphs.json", ok), ok);
+    if (!ok || definitions.array().empty()) return false;
+    specs.clear();
+    positive.clear();
+    negative.clear();
+    for (const auto& definition : definitions.array()) {
+        MorphSpec spec;
+        spec.key = definition.stringAt("key");
+        spec.tab = definition.stringAt("tab");
+        spec.minimum = static_cast<int>(definition.numberAt("min", -100));
+        spec.maximum = static_cast<int>(definition.numberAt("max", 100));
+        specs.push_back(spec);
+    }
+    positive.resize(specs.size());
+    negative.resize(specs.size());
+    return !specs.empty();
+}
+
 bool HumanModel::loadLandmarks(const std::string& root, std::string& error) {
     std::ifstream input(root + "/tools/human-source/portrait-fitting/canonical_face_model.obj");
     if (!input) {

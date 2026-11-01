@@ -1,6 +1,9 @@
 #include "client/raster.h"
 
+#include "client/ui_layer.h"
+
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -97,7 +100,7 @@ struct Glyph {
     std::vector<unsigned char> coverage;
 };
 
-const Glyph& cachedGlyph(char character, int pixelHeight) {
+Glyph& cachedGlyph(char character, int pixelHeight) {
     const unsigned key = (static_cast<unsigned>(pixelHeight) << 8) | static_cast<unsigned char>(character);
     static std::map<unsigned, Glyph> cache;
     const auto found = cache.find(key);
@@ -110,15 +113,25 @@ const Glyph& cachedGlyph(char character, int pixelHeight) {
     glyph.height = std::max(0, y1 - y0);
     glyph.xOffset = x0;
     glyph.yOffset = y0;
-    glyph.coverage.resize(static_cast<std::size_t>(glyph.width) * glyph.height);
-    if (!glyph.coverage.empty()) {
-        stbtt_MakeCodepointBitmap(&font().info, glyph.coverage.data(), glyph.width, glyph.height,
-                                  glyph.width, fontScale, fontScale, character);
-    }
     int advance = 0, bearing = 0;
     stbtt_GetCodepointHMetrics(&font().info, character, &advance, &bearing);
     glyph.advance = advance * fontScale;
     return cache.emplace(key, std::move(glyph)).first->second;
+}
+
+// The CPU reference renderer requests bitmaps explicitly. UI layout only asks
+// for metrics and never enters this function in the Vulkan frame path.
+std::size_t glyphRasterizations = 0;
+const Glyph& rasterGlyph(char character, int pixelHeight) {
+    Glyph& glyph = cachedGlyph(character, pixelHeight);
+    if (glyph.coverage.empty() && glyph.width > 0 && glyph.height > 0) {
+        glyph.coverage.resize(static_cast<std::size_t>(glyph.width) * glyph.height);
+        const float scale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+        stbtt_MakeCodepointBitmap(&font().info, glyph.coverage.data(), glyph.width, glyph.height,
+                                  glyph.width, scale, scale, character);
+        ++glyphRasterizations;
+    }
+    return glyph;
 }
 
 unsigned char srgbChannel(double value) {
@@ -129,6 +142,133 @@ unsigned char srgbChannel(double value) {
 
 } // namespace
 
+// The glyph loop, in pixels: `penX` is the left edge of the text and `baseline`
+// the line it sits on. Both callers below want exactly this and differ only in
+// how they turn their coordinates into those two numbers.
+void paintText(NativeFrame& frame, double penX, double baseline, const std::string& text, Color color,
+               int pixelHeight) {
+    // Glyphs go into whatever this frame is made of. A frame that came back from
+    // the device in window order is written in window order, so the presenter has
+    // nothing left to convert.
+    // A frame that is having its interface described rather than drawn: the text
+    // becomes one quad a glyph, and the device samples the atlas.
+    if (frame.ui != nullptr) {
+        const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
+        double pen = penX;
+        for (char character : text) {
+            UiQuad quad;
+            if (uiGlyphQuad(quad, character, pixelHeight, static_cast<int>(std::lround(pen)),
+                            static_cast<int>(std::lround(baseline)))) {
+                quad.red = red;
+                quad.green = green;
+                quad.blue = blue;
+                quad.opacity = 1.0f;
+                frame.ui->add(quad);
+            }
+            pen += cachedGlyph(character, pixelHeight).advance;
+        }
+        return;
+    }
+    if (frame.canvasIsBgra()) frame.makeOverlayWritable();
+    const bool bgraCanvas = frame.canvasIsBgra();
+    {
+        const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
+        // The canvas and the frame's size are read once, outside the glyph loop.
+        // Inside it they were a call and a member load per pixel -- and because
+        // the writes go through a pointer the compiler cannot prove does not
+        // alias the frame, it could not keep either of them in a register.
+        unsigned char* const canvas = bgraCanvas ? frame.canvasBgra() : frame.rgb.data();
+        unsigned char* const mask = frame.alpha.empty() ? nullptr : frame.alpha.data();
+        const int frameWidth = frame.width, frameHeight = frame.height;
+        for (char character : text) {
+            const Glyph& glyph = rasterGlyph(character, pixelHeight);
+            const int left = static_cast<int>(std::lround(penX)) + glyph.xOffset;
+            const int top = static_cast<int>(std::lround(baseline)) + glyph.yOffset;
+            for (int row = 0; row < glyph.height; ++row) for (int column = 0; column < glyph.width; ++column) {
+                const int px = left + column, py = top + row;
+                if (px < 0 || py < 0 || px >= frameWidth || py >= frameHeight) continue;
+                const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
+                if (!coverage) continue;
+                const std::size_t pixel = static_cast<std::size_t>(py) * frameWidth + px;
+                if (bgraCanvas) {
+                    unsigned char* out = canvas + pixel * 4;
+                    out[0] = static_cast<unsigned char>((blue * coverage + out[0] * (255 - coverage)) / 255);
+                    out[1] = static_cast<unsigned char>((green * coverage + out[1] * (255 - coverage)) / 255);
+                    out[2] = static_cast<unsigned char>((red * coverage + out[2] * (255 - coverage)) / 255);
+                    continue;
+                }
+                const std::size_t offset = pixel * 3;
+                if (mask == nullptr) {
+                    canvas[offset] = static_cast<unsigned char>((red * coverage + canvas[offset] * (255 - coverage)) / 255);
+                    canvas[offset + 1] = static_cast<unsigned char>((green * coverage + canvas[offset + 1] * (255 - coverage)) / 255);
+                    canvas[offset + 2] = static_cast<unsigned char>((blue * coverage + canvas[offset + 2] * (255 - coverage)) / 255);
+                } else {
+                    const int sourceAlpha = static_cast<int>(coverage);
+                    const int oldAlpha = mask[pixel];
+                    const int weight = sourceAlpha * 255 + oldAlpha * (255 - sourceAlpha);
+                    if (!weight) continue;
+                    canvas[offset] = static_cast<unsigned char>((red * sourceAlpha * 255 + canvas[offset] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    canvas[offset + 1] = static_cast<unsigned char>((green * sourceAlpha * 255 + canvas[offset + 1] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    canvas[offset + 2] = static_cast<unsigned char>((blue * sourceAlpha * 255 + canvas[offset + 2] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
+                    mask[pixel] = static_cast<unsigned char>((weight + 127) / 255);
+                }
+            }
+            penX += glyph.advance;
+        }
+    }
+}
+
+// How tall a line of this face actually is, in pixels, and how wide a string is.
+// Both are needed before the text is drawn: the counter is centred, and a box
+// that is centred on a guessed width is not centred.
+int textHeightPixels(int pixelHeight) {
+    if (!font().ready) return 0;
+    const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+    int ascent = 0, descent = 0, gap = 0;
+    stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+    return static_cast<int>(std::lround((ascent - descent) * fontScale));
+}
+
+int textWidthPixels(const std::string& text, int pixelHeight) {
+    if (!font().ready) return 0;
+    double width = 0.0;
+    for (char character : text) width += cachedGlyph(character, pixelHeight).advance;
+    return static_cast<int>(std::lround(width));
+}
+
+// Text at a size in pixels rather than in HUD scale steps, laid out from its top
+// left corner. The window loop and the headless capture both use this for the
+// frame-rate box.
+bool glyphCoverage(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset,
+                   const unsigned char** coverage) {
+    if (!font().ready || pixelHeight <= 0) return false;
+    const Glyph& glyph = rasterGlyph(character, pixelHeight);
+    width = glyph.width;
+    height = glyph.height;
+    xOffset = glyph.xOffset;
+    yOffset = glyph.yOffset;
+    *coverage = glyph.coverage.empty() ? nullptr : glyph.coverage.data();
+    return !glyph.coverage.empty();
+}
+
+bool glyphMetrics(char character, int pixelHeight, int& width, int& height, int& xOffset, int& yOffset) {
+    if (!font().ready || pixelHeight <= 0) return false;
+    const Glyph& glyph = cachedGlyph(character, pixelHeight);
+    width = glyph.width; height = glyph.height;
+    xOffset = glyph.xOffset; yOffset = glyph.yOffset;
+    return width > 0 && height > 0;
+}
+
+std::size_t glyphRasterizationCount() { return glyphRasterizations; }
+
+void drawTextPixels(NativeFrame& frame, int x, int y, const std::string& text, Color color, int pixelHeight) {
+    if (!font().ready || pixelHeight <= 0) return;
+    const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
+    int ascent = 0, descent = 0, gap = 0;
+    stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
+    paintText(frame, x, y + ascent * fontScale, text, color, pixelHeight);
+}
+
 void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color color, int scale) {
     scale = std::max(3, scale);
     if (font().ready) {
@@ -136,39 +276,12 @@ void drawText(NativeFrame& frame, int x, int y, const std::string& text, Color c
         const float fontScale = stbtt_ScaleForPixelHeight(&font().info, static_cast<float>(pixelHeight));
         int ascent = 0, descent = 0, gap = 0;
         stbtt_GetFontVMetrics(&font().info, &ascent, &descent, &gap);
-        double penX = frame.uiOffsetX + x * frame.uiScale;
-        const double baseline = frame.uiOffsetY + y * frame.uiScale + ascent * fontScale;
-        const unsigned char red = srgbChannel(color.r), green = srgbChannel(color.g), blue = srgbChannel(color.b);
-        for (char character : text) {
-            const Glyph& glyph = cachedGlyph(character, pixelHeight);
-            const int left = static_cast<int>(std::lround(penX)) + glyph.xOffset;
-            const int top = static_cast<int>(std::lround(baseline)) + glyph.yOffset;
-            for (int row = 0; row < glyph.height; ++row) for (int column = 0; column < glyph.width; ++column) {
-                const int px = left + column, py = top + row;
-                if (px < 0 || py < 0 || px >= frame.width || py >= frame.height) continue;
-                const unsigned coverage = glyph.coverage[static_cast<std::size_t>(row) * glyph.width + column];
-                if (!coverage) continue;
-                const std::size_t pixel = static_cast<std::size_t>(py) * frame.width + px;
-                const std::size_t offset = pixel * 3;
-                if (frame.alpha.empty()) {
-                    frame.rgb[offset] = static_cast<unsigned char>((red * coverage + frame.rgb[offset] * (255 - coverage)) / 255);
-                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * coverage + frame.rgb[offset + 1] * (255 - coverage)) / 255);
-                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * coverage + frame.rgb[offset + 2] * (255 - coverage)) / 255);
-                } else {
-                    const int sourceAlpha = static_cast<int>(coverage);
-                    const int oldAlpha = frame.alpha[pixel];
-                    const int weight = sourceAlpha * 255 + oldAlpha * (255 - sourceAlpha);
-                    if (!weight) continue;
-                    frame.rgb[offset] = static_cast<unsigned char>((red * sourceAlpha * 255 + frame.rgb[offset] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.rgb[offset + 1] = static_cast<unsigned char>((green * sourceAlpha * 255 + frame.rgb[offset + 1] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.rgb[offset + 2] = static_cast<unsigned char>((blue * sourceAlpha * 255 + frame.rgb[offset + 2] * oldAlpha * (255 - sourceAlpha) + weight / 2) / weight);
-                    frame.alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
-                }
-            }
-            penX += glyph.advance;
-        }
+        paintText(frame, frame.uiOffsetX + x * frame.uiScale,
+                  frame.uiOffsetY + y * frame.uiScale + ascent * fontScale, text, color, pixelHeight);
         return;
     }
+    // No face on disk: the blocky fallback, which every machine can draw.
+    if (frame.canvasIsBgra()) frame.makeOverlayWritable();
     for (char character : text) {
         const auto rows = glyph(character);
         for (int row = 0; row < 7; ++row) for (int column = 0; column < 5; ++column) {

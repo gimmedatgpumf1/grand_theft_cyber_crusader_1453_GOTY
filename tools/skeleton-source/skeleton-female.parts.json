@@ -1,0 +1,1776 @@
+{
+ "stature": 1.7418319091796874,
+ "parts": [
+  {
+   "name": "skull",
+   "vertices": 11953,
+   "triangles": 23995,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.13008973842550564,
+     1.5789600036754183,
+     -0.07140219028423966
+    ],
+    "high": [
+     0.020148394577356094,
+     1.741877634587795,
+     0.13147975856111643
+    ]
+   }
+  },
+  {
+   "name": "mandible",
+   "vertices": 1731,
+   "triangles": 3458,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.10126076376067601,
+     1.534605425178246,
+     0.035375079341567146
+    ],
+    "high": [
+     0.006106842621765198,
+     1.6266096609328977,
+     0.12402621616715877
+    ]
+   }
+  },
+  {
+   "name": "spine_cervical",
+   "vertices": 4229,
+   "triangles": 8514,
+   "bones": 7,
+   "bbox": {
+    "low": [
+     -0.0839540436277215,
+     1.4739591184625271,
+     -0.027152322999085547
+    ],
+    "high": [
+     -0.006382030781880934,
+     1.5985433516067469,
+     0.05028778200554408
+    ]
+   }
+  },
+  {
+   "name": "spine_thoracic",
+   "vertices": 7992,
+   "triangles": 15984,
+   "bones": 12,
+   "bbox": {
+    "low": [
+     -0.08263001490721496,
+     1.1838565296067634,
+     -0.06730154510463253
+    ],
+    "high": [
+     -0.008992494800312426,
+     1.4924567845072576,
+     0.02232268718546545
+    ]
+   }
+  },
+  {
+   "name": "spine_lumbar",
+   "vertices": 3920,
+   "triangles": 7840,
+   "bones": 5,
+   "bbox": {
+    "low": [
+     -0.06979092341473085,
+     1.0152920237195513,
+     -0.06353955931152053
+    ],
+    "high": [
+     0.019006637032573867,
+     1.1954500613845505,
+     0.04124243034114922
+    ]
+   }
+  },
+  {
+   "name": "ribs_l",
+   "vertices": 2820,
+   "triangles": 5592,
+   "bones": 12,
+   "bbox": {
+    "low": [
+     -0.031283236976386186,
+     1.1194846685210962,
+     -0.07251095632558768
+    ],
+    "high": [
+     0.10270089608092953,
+     1.4874241352081299,
+     0.08662068302647617
+    ]
+   }
+  },
+  {
+   "name": "ribs_r",
+   "vertices": 2820,
+   "triangles": 5592,
+   "bones": 12,
+   "bbox": {
+    "low": [
+     -0.17093833431601232,
+     1.1016640565402087,
+     -0.07507098657091354
+    ],
+    "high": [
+     -0.05360033468689368,
+     1.4814864321622627,
+     0.08937467911542592
+    ]
+   }
+  },
+  {
+   "name": "sternum",
+   "vertices": 1171,
+   "triangles": 2333,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.06616662179416015,
+     1.2755615366725843,
+     0.04174471237343545
+    ],
+    "high": [
+     -0.013857601163807184,
+     1.416245364672933,
+     0.08381714528632495
+    ]
+   }
+  },
+  {
+   "name": "scapula_l",
+   "vertices": 2528,
+   "triangles": 5052,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     0.015485694795100008,
+     1.3614482073956617,
+     -0.07206106922095247
+    ],
+    "high": [
+     0.1173788630083339,
+     1.517226851426542,
+     0.036021392415820114
+    ]
+   }
+  },
+  {
+   "name": "scapula_r",
+   "vertices": 2528,
+   "triangles": 5052,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.21403647004031084,
+     1.3380216114955608,
+     -0.07578951926335432
+    ],
+    "high": [
+     -0.1253066727795868,
+     1.5007621451923177,
+     0.03547787301333707
+    ]
+   }
+  },
+  {
+   "name": "clavicle_l",
+   "vertices": 650,
+   "triangles": 1296,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.0239600061086848,
+     1.4092388438902164,
+     -0.0003537888109248598
+    ],
+    "high": [
+     0.08788112443399061,
+     1.5136831737855352,
+     0.05657375993343039
+    ]
+   }
+  },
+  {
+   "name": "clavicle_r",
+   "vertices": 650,
+   "triangles": 1296,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.17843605709707877,
+     1.4037451501723326,
+     0.0001623465834537527
+    ],
+    "high": [
+     -0.05761080354632725,
+     1.499486582153602,
+     0.054983204556365524
+    ]
+   }
+  },
+  {
+   "name": "pelvis",
+   "vertices": 9078,
+   "triangles": 18220,
+   "bones": 3,
+   "bbox": {
+    "low": [
+     -0.17420852202999682,
+     0.8324691698846914,
+     -0.07479808973399116
+    ],
+    "high": [
+     0.11788302357531558,
+     1.0405730970500349,
+     0.0791897511288887
+    ]
+   }
+  },
+  {
+   "name": "humerus_l",
+   "vertices": 1642,
+   "triangles": 3280,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     0.08873790673152958,
+     1.2086981987406045,
+     -0.0056127434703967015
+    ],
+    "high": [
+     0.22848339068127035,
+     1.5065381205782564,
+     0.07125097626602496
+    ]
+   }
+  },
+  {
+   "name": "humerus_r",
+   "vertices": 1642,
+   "triangles": 3280,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.21541415791867732,
+     1.2594866005079401,
+     0.008080498911716399
+    ],
+    "high": [
+     -0.1085377058693083,
+     1.4906873582742657,
+     0.2500940110890863
+    ]
+   }
+  },
+  {
+   "name": "forearm_l",
+   "vertices": 2141,
+   "triangles": 4274,
+   "bones": 2,
+   "bbox": {
+    "low": [
+     0.007030294564212006,
+     1.1979587366937596,
+     0.03715113990339872
+    ],
+    "high": [
+     0.2243926993184374,
+     1.2888162562251226,
+     0.1712698774230941
+    ]
+   }
+  },
+  {
+   "name": "forearm_r",
+   "vertices": 2141,
+   "triangles": 4274,
+   "bones": 2,
+   "bbox": {
+    "low": [
+     -0.13308535399279714,
+     1.2566783797897283,
+     0.13052087463878598
+    ],
+    "high": [
+     0.09527058411828293,
+     1.331067475297046,
+     0.254062704238309
+    ]
+   }
+  },
+  {
+   "name": "hand_l",
+   "vertices": 2904,
+   "triangles": 5700,
+   "bones": 27,
+   "bbox": {
+    "low": [
+     -0.12105741730942186,
+     1.2256805897014518,
+     0.11907828152413633
+    ],
+    "high": [
+     0.0207265155863849,
+     1.2976083470128714,
+     0.18879150523196989
+    ]
+   }
+  },
+  {
+   "name": "hand_r",
+   "vertices": 2904,
+   "triangles": 5700,
+   "bones": 27,
+   "bbox": {
+    "low": [
+     0.08589976061684283,
+     1.2921468691445712,
+     0.07523467234754597
+    ],
+    "high": [
+     0.19878568530144033,
+     1.363145493583086,
+     0.1672530816137447
+    ]
+   }
+  },
+  {
+   "name": "femur_l",
+   "vertices": 2635,
+   "triangles": 5266,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     0.03727931013729932,
+     0.5036758443994187,
+     -0.03510114226290412
+    ],
+    "high": [
+     0.14479988358240695,
+     0.91672557436722,
+     0.04784074637545556
+    ]
+   }
+  },
+  {
+   "name": "femur_r",
+   "vertices": 2635,
+   "triangles": 5266,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.261303710597744,
+     0.5065366477683911,
+     -0.04255751711105524
+    ],
+    "high": [
+     -0.09418173692452038,
+     0.9143442503040706,
+     0.05802384770568831
+    ]
+   }
+  },
+  {
+   "name": "patella_l",
+   "vertices": 479,
+   "triangles": 954,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     0.12056431128857859,
+     0.5067743830199876,
+     0.01755189136036475
+    ],
+    "high": [
+     0.15171669984808062,
+     0.5468761163998934,
+     0.04550835159338881
+    ]
+   }
+  },
+  {
+   "name": "patella_r",
+   "vertices": 479,
+   "triangles": 954,
+   "bones": 1,
+   "bbox": {
+    "low": [
+     -0.2672520926222994,
+     0.500238237693044,
+     0.026519816368818283
+    ],
+    "high": [
+     -0.2396241146324043,
+     0.5400422394061667,
+     0.06016694180187181
+    ]
+   }
+  },
+  {
+   "name": "lower_leg_l",
+   "vertices": 4898,
+   "triangles": 9788,
+   "bones": 2,
+   "bbox": {
+    "low": [
+     0.06814951716277312,
+     0.15894136816840856,
+     -0.11807619797435462
+    ],
+    "high": [
+     0.1473729554899794,
+     0.5130020861593206,
+     0.021227494951556482
+    ]
+   }
+  },
+  {
+   "name": "lower_leg_r",
+   "vertices": 4898,
+   "triangles": 9788,
+   "bones": 2,
+   "bbox": {
+    "low": [
+     -0.24761132418266082,
+     0.19249908611524727,
+     -0.13458729345126652
+    ],
+    "high": [
+     -0.08853033012755895,
+     0.5195730723081272,
+     0.045184858538049356
+    ]
+   }
+  },
+  {
+   "name": "foot_l",
+   "vertices": 4325,
+   "triangles": 8538,
+   "bones": 28,
+   "bbox": {
+    "low": [
+     0.03397812078965065,
+     -0.0005274690917691365,
+     -0.1338072838278707
+    ],
+    "high": [
+     0.12609388597701154,
+     0.1787074564118507,
+     -0.013695180416107178
+    ]
+   }
+  },
+  {
+   "name": "foot_r",
+   "vertices": 4325,
+   "triangles": 8538,
+   "bones": 28,
+   "bbox": {
+    "low": [
+     -0.1803425816033245,
+     0.03525148778380653,
+     -0.14395482291237374
+    ],
+    "high": [
+     -0.03957877704045519,
+     0.21461126459934315,
+     -0.06857826356764303
+    ]
+   }
+  }
+ ],
+ "bones": 182,
+ "source_bones": [
+  {
+   "name": "Head",
+   "part": "skull",
+   "first_vertex": 1,
+   "vertices": 11953,
+   "triangles": 23995
+  },
+  {
+   "name": "Jaw",
+   "part": "mandible",
+   "first_vertex": 11954,
+   "vertices": 1731,
+   "triangles": 3458
+  },
+  {
+   "name": "C1",
+   "part": "spine_cervical",
+   "first_vertex": 13685,
+   "vertices": 667,
+   "triangles": 1342
+  },
+  {
+   "name": "C2",
+   "part": "spine_cervical",
+   "first_vertex": 14352,
+   "vertices": 677,
+   "triangles": 1362
+  },
+  {
+   "name": "C3",
+   "part": "spine_cervical",
+   "first_vertex": 15029,
+   "vertices": 577,
+   "triangles": 1162
+  },
+  {
+   "name": "C4",
+   "part": "spine_cervical",
+   "first_vertex": 15606,
+   "vertices": 577,
+   "triangles": 1162
+  },
+  {
+   "name": "C5",
+   "part": "spine_cervical",
+   "first_vertex": 16183,
+   "vertices": 577,
+   "triangles": 1162
+  },
+  {
+   "name": "C6",
+   "part": "spine_cervical",
+   "first_vertex": 16760,
+   "vertices": 577,
+   "triangles": 1162
+  },
+  {
+   "name": "C7",
+   "part": "spine_cervical",
+   "first_vertex": 17337,
+   "vertices": 577,
+   "triangles": 1162
+  },
+  {
+   "name": "T1",
+   "part": "spine_thoracic",
+   "first_vertex": 17914,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T10",
+   "part": "spine_thoracic",
+   "first_vertex": 18580,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T11",
+   "part": "spine_thoracic",
+   "first_vertex": 19246,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T12",
+   "part": "spine_thoracic",
+   "first_vertex": 19912,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T2",
+   "part": "spine_thoracic",
+   "first_vertex": 20578,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T3",
+   "part": "spine_thoracic",
+   "first_vertex": 21244,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T4",
+   "part": "spine_thoracic",
+   "first_vertex": 21910,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T5",
+   "part": "spine_thoracic",
+   "first_vertex": 22576,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T6",
+   "part": "spine_thoracic",
+   "first_vertex": 23242,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T7",
+   "part": "spine_thoracic",
+   "first_vertex": 23908,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T8",
+   "part": "spine_thoracic",
+   "first_vertex": 24574,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "T9",
+   "part": "spine_thoracic",
+   "first_vertex": 25240,
+   "vertices": 666,
+   "triangles": 1332
+  },
+  {
+   "name": "L1",
+   "part": "spine_lumbar",
+   "first_vertex": 25906,
+   "vertices": 784,
+   "triangles": 1568
+  },
+  {
+   "name": "L2",
+   "part": "spine_lumbar",
+   "first_vertex": 26690,
+   "vertices": 784,
+   "triangles": 1568
+  },
+  {
+   "name": "L3",
+   "part": "spine_lumbar",
+   "first_vertex": 27474,
+   "vertices": 784,
+   "triangles": 1568
+  },
+  {
+   "name": "L4",
+   "part": "spine_lumbar",
+   "first_vertex": 28258,
+   "vertices": 784,
+   "triangles": 1568
+  },
+  {
+   "name": "L5",
+   "part": "spine_lumbar",
+   "first_vertex": 29042,
+   "vertices": 784,
+   "triangles": 1568
+  },
+  {
+   "name": "Rib10_L",
+   "part": "ribs_l",
+   "first_vertex": 29826,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib11_L",
+   "part": "ribs_l",
+   "first_vertex": 30061,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib12_L",
+   "part": "ribs_l",
+   "first_vertex": 30296,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib1_L",
+   "part": "ribs_l",
+   "first_vertex": 30531,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib2_L",
+   "part": "ribs_l",
+   "first_vertex": 30766,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib3_L",
+   "part": "ribs_l",
+   "first_vertex": 31001,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib4_L",
+   "part": "ribs_l",
+   "first_vertex": 31236,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib5_L",
+   "part": "ribs_l",
+   "first_vertex": 31471,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib6_L",
+   "part": "ribs_l",
+   "first_vertex": 31706,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib7_L",
+   "part": "ribs_l",
+   "first_vertex": 31941,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib8_L",
+   "part": "ribs_l",
+   "first_vertex": 32176,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib9_L",
+   "part": "ribs_l",
+   "first_vertex": 32411,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib10_R",
+   "part": "ribs_r",
+   "first_vertex": 32646,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib11_R",
+   "part": "ribs_r",
+   "first_vertex": 32881,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib12_R",
+   "part": "ribs_r",
+   "first_vertex": 33116,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib1_R",
+   "part": "ribs_r",
+   "first_vertex": 33351,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib2_R",
+   "part": "ribs_r",
+   "first_vertex": 33586,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib3_R",
+   "part": "ribs_r",
+   "first_vertex": 33821,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib4_R",
+   "part": "ribs_r",
+   "first_vertex": 34056,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib5_R",
+   "part": "ribs_r",
+   "first_vertex": 34291,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib6_R",
+   "part": "ribs_r",
+   "first_vertex": 34526,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib7_R",
+   "part": "ribs_r",
+   "first_vertex": 34761,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib8_R",
+   "part": "ribs_r",
+   "first_vertex": 34996,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Rib9_R",
+   "part": "ribs_r",
+   "first_vertex": 35231,
+   "vertices": 235,
+   "triangles": 466
+  },
+  {
+   "name": "Sternum",
+   "part": "sternum",
+   "first_vertex": 35466,
+   "vertices": 1171,
+   "triangles": 2333
+  },
+  {
+   "name": "Scapula_L",
+   "part": "scapula_l",
+   "first_vertex": 36637,
+   "vertices": 2528,
+   "triangles": 5052
+  },
+  {
+   "name": "Scapula_R",
+   "part": "scapula_r",
+   "first_vertex": 39165,
+   "vertices": 2528,
+   "triangles": 5052
+  },
+  {
+   "name": "Clavicula_L",
+   "part": "clavicle_l",
+   "first_vertex": 41693,
+   "vertices": 650,
+   "triangles": 1296
+  },
+  {
+   "name": "Clavicula_R",
+   "part": "clavicle_r",
+   "first_vertex": 42343,
+   "vertices": 650,
+   "triangles": 1296
+  },
+  {
+   "name": "Pelvis_L",
+   "part": "pelvis",
+   "first_vertex": 42993,
+   "vertices": 3242,
+   "triangles": 6484
+  },
+  {
+   "name": "Pelvis_R",
+   "part": "pelvis",
+   "first_vertex": 46235,
+   "vertices": 3242,
+   "triangles": 6484
+  },
+  {
+   "name": "Sacrum",
+   "part": "pelvis",
+   "first_vertex": 49477,
+   "vertices": 2594,
+   "triangles": 5252
+  },
+  {
+   "name": "Humerus_L",
+   "part": "humerus_l",
+   "first_vertex": 52071,
+   "vertices": 1642,
+   "triangles": 3280
+  },
+  {
+   "name": "Humerus_R",
+   "part": "humerus_r",
+   "first_vertex": 53713,
+   "vertices": 1642,
+   "triangles": 3280
+  },
+  {
+   "name": "Radius_L",
+   "part": "forearm_l",
+   "first_vertex": 55355,
+   "vertices": 1069,
+   "triangles": 2134
+  },
+  {
+   "name": "Ulna_L",
+   "part": "forearm_l",
+   "first_vertex": 56424,
+   "vertices": 1072,
+   "triangles": 2140
+  },
+  {
+   "name": "Radius_R",
+   "part": "forearm_r",
+   "first_vertex": 57496,
+   "vertices": 1069,
+   "triangles": 2134
+  },
+  {
+   "name": "Ulna_R",
+   "part": "forearm_r",
+   "first_vertex": 58565,
+   "vertices": 1072,
+   "triangles": 2140
+  },
+  {
+   "name": "HandCapitatum_L",
+   "part": "hand_l",
+   "first_vertex": 59637,
+   "vertices": 78,
+   "triangles": 152
+  },
+  {
+   "name": "HandDistP1_L",
+   "part": "hand_l",
+   "first_vertex": 59715,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP2_L",
+   "part": "hand_l",
+   "first_vertex": 59768,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP3_L",
+   "part": "hand_l",
+   "first_vertex": 59821,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP4_L",
+   "part": "hand_l",
+   "first_vertex": 59874,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP5_L",
+   "part": "hand_l",
+   "first_vertex": 59927,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandHamata_L",
+   "part": "hand_l",
+   "first_vertex": 59980,
+   "vertices": 76,
+   "triangles": 148
+  },
+  {
+   "name": "HandLuna_L",
+   "part": "hand_l",
+   "first_vertex": 60056,
+   "vertices": 45,
+   "triangles": 86
+  },
+  {
+   "name": "HandMeta1_L",
+   "part": "hand_l",
+   "first_vertex": 60101,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta2_L",
+   "part": "hand_l",
+   "first_vertex": 60312,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta3_L",
+   "part": "hand_l",
+   "first_vertex": 60523,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta4_L",
+   "part": "hand_l",
+   "first_vertex": 60734,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta5_L",
+   "part": "hand_l",
+   "first_vertex": 60945,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMidP2_L",
+   "part": "hand_l",
+   "first_vertex": 61156,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP3_L",
+   "part": "hand_l",
+   "first_vertex": 61268,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP4_L",
+   "part": "hand_l",
+   "first_vertex": 61380,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP5_L",
+   "part": "hand_l",
+   "first_vertex": 61492,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandPisiform_L",
+   "part": "hand_l",
+   "first_vertex": 61604,
+   "vertices": 138,
+   "triangles": 272
+  },
+  {
+   "name": "HandProxP1_L",
+   "part": "hand_l",
+   "first_vertex": 61742,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP2_L",
+   "part": "hand_l",
+   "first_vertex": 61854,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP3_L",
+   "part": "hand_l",
+   "first_vertex": 61966,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP4_L",
+   "part": "hand_l",
+   "first_vertex": 62078,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP5_L",
+   "part": "hand_l",
+   "first_vertex": 62190,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandScaphoid_L",
+   "part": "hand_l",
+   "first_vertex": 62302,
+   "vertices": 90,
+   "triangles": 176
+  },
+  {
+   "name": "HandTrapezium_L",
+   "part": "hand_l",
+   "first_vertex": 62392,
+   "vertices": 51,
+   "triangles": 98
+  },
+  {
+   "name": "HandTrapezoideum_L",
+   "part": "hand_l",
+   "first_vertex": 62443,
+   "vertices": 58,
+   "triangles": 112
+  },
+  {
+   "name": "HandTriquetrum_L",
+   "part": "hand_l",
+   "first_vertex": 62501,
+   "vertices": 40,
+   "triangles": 76
+  },
+  {
+   "name": "HandCapitatum_R",
+   "part": "hand_r",
+   "first_vertex": 62541,
+   "vertices": 78,
+   "triangles": 152
+  },
+  {
+   "name": "HandDistP1_R",
+   "part": "hand_r",
+   "first_vertex": 62619,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP2_R",
+   "part": "hand_r",
+   "first_vertex": 62672,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP3_R",
+   "part": "hand_r",
+   "first_vertex": 62725,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP4_R",
+   "part": "hand_r",
+   "first_vertex": 62778,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandDistP5_R",
+   "part": "hand_r",
+   "first_vertex": 62831,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "HandHamata_R",
+   "part": "hand_r",
+   "first_vertex": 62884,
+   "vertices": 76,
+   "triangles": 148
+  },
+  {
+   "name": "HandLuna_R",
+   "part": "hand_r",
+   "first_vertex": 62960,
+   "vertices": 45,
+   "triangles": 86
+  },
+  {
+   "name": "HandMeta1_R",
+   "part": "hand_r",
+   "first_vertex": 63005,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta2_R",
+   "part": "hand_r",
+   "first_vertex": 63216,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta3_R",
+   "part": "hand_r",
+   "first_vertex": 63427,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta4_R",
+   "part": "hand_r",
+   "first_vertex": 63638,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMeta5_R",
+   "part": "hand_r",
+   "first_vertex": 63849,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "HandMidP2_R",
+   "part": "hand_r",
+   "first_vertex": 64060,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP3_R",
+   "part": "hand_r",
+   "first_vertex": 64172,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP4_R",
+   "part": "hand_r",
+   "first_vertex": 64284,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandMidP5_R",
+   "part": "hand_r",
+   "first_vertex": 64396,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandPisiform_R",
+   "part": "hand_r",
+   "first_vertex": 64508,
+   "vertices": 138,
+   "triangles": 272
+  },
+  {
+   "name": "HandProxP1_R",
+   "part": "hand_r",
+   "first_vertex": 64646,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP2_R",
+   "part": "hand_r",
+   "first_vertex": 64758,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP3_R",
+   "part": "hand_r",
+   "first_vertex": 64870,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP4_R",
+   "part": "hand_r",
+   "first_vertex": 64982,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandProxP5_R",
+   "part": "hand_r",
+   "first_vertex": 65094,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "HandScaphoid_R",
+   "part": "hand_r",
+   "first_vertex": 65206,
+   "vertices": 90,
+   "triangles": 176
+  },
+  {
+   "name": "HandTrapezium_R",
+   "part": "hand_r",
+   "first_vertex": 65296,
+   "vertices": 51,
+   "triangles": 98
+  },
+  {
+   "name": "HandTrapezoideum_R",
+   "part": "hand_r",
+   "first_vertex": 65347,
+   "vertices": 58,
+   "triangles": 112
+  },
+  {
+   "name": "HandTriquetrum_R",
+   "part": "hand_r",
+   "first_vertex": 65405,
+   "vertices": 40,
+   "triangles": 76
+  },
+  {
+   "name": "Femur_L",
+   "part": "femur_l",
+   "first_vertex": 65445,
+   "vertices": 2635,
+   "triangles": 5266
+  },
+  {
+   "name": "Femur_R",
+   "part": "femur_r",
+   "first_vertex": 68080,
+   "vertices": 2635,
+   "triangles": 5266
+  },
+  {
+   "name": "Patella_L",
+   "part": "patella_l",
+   "first_vertex": 70715,
+   "vertices": 479,
+   "triangles": 954
+  },
+  {
+   "name": "Patella_R",
+   "part": "patella_r",
+   "first_vertex": 71194,
+   "vertices": 479,
+   "triangles": 954
+  },
+  {
+   "name": "Fibula_L",
+   "part": "lower_leg_l",
+   "first_vertex": 71673,
+   "vertices": 2150,
+   "triangles": 4296
+  },
+  {
+   "name": "Tibia_L",
+   "part": "lower_leg_l",
+   "first_vertex": 73823,
+   "vertices": 2748,
+   "triangles": 5492
+  },
+  {
+   "name": "Fibula_R",
+   "part": "lower_leg_r",
+   "first_vertex": 76571,
+   "vertices": 2150,
+   "triangles": 4296
+  },
+  {
+   "name": "Tibia_R",
+   "part": "lower_leg_r",
+   "first_vertex": 78721,
+   "vertices": 2748,
+   "triangles": 5492
+  },
+  {
+   "name": "Cal_L",
+   "part": "foot_l",
+   "first_vertex": 81469,
+   "vertices": 723,
+   "triangles": 1442
+  },
+  {
+   "name": "Cub_L",
+   "part": "foot_l",
+   "first_vertex": 82192,
+   "vertices": 165,
+   "triangles": 326
+  },
+  {
+   "name": "FootDistP1_L",
+   "part": "foot_l",
+   "first_vertex": 82357,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP2_L",
+   "part": "foot_l",
+   "first_vertex": 82410,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP3_L",
+   "part": "foot_l",
+   "first_vertex": 82463,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP4_L",
+   "part": "foot_l",
+   "first_vertex": 82516,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP5_L",
+   "part": "foot_l",
+   "first_vertex": 82569,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootMeta1_L",
+   "part": "foot_l",
+   "first_vertex": 82622,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta2_L",
+   "part": "foot_l",
+   "first_vertex": 82833,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta3_L",
+   "part": "foot_l",
+   "first_vertex": 83044,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta4_L",
+   "part": "foot_l",
+   "first_vertex": 83255,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta5_L",
+   "part": "foot_l",
+   "first_vertex": 83466,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMidP2_L",
+   "part": "foot_l",
+   "first_vertex": 83677,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP3_L",
+   "part": "foot_l",
+   "first_vertex": 83789,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP4_L",
+   "part": "foot_l",
+   "first_vertex": 83901,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP5_L",
+   "part": "foot_l",
+   "first_vertex": 84013,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP1_L",
+   "part": "foot_l",
+   "first_vertex": 84125,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP2_L",
+   "part": "foot_l",
+   "first_vertex": 84237,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP3_L",
+   "part": "foot_l",
+   "first_vertex": 84349,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP4_L",
+   "part": "foot_l",
+   "first_vertex": 84461,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP5_L",
+   "part": "foot_l",
+   "first_vertex": 84573,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootSesaLat_L",
+   "part": "foot_l",
+   "first_vertex": 84685,
+   "vertices": 33,
+   "triangles": 62
+  },
+  {
+   "name": "FootSesaMed_L",
+   "part": "foot_l",
+   "first_vertex": 84718,
+   "vertices": 33,
+   "triangles": 62
+  },
+  {
+   "name": "InterCun_L",
+   "part": "foot_l",
+   "first_vertex": 84751,
+   "vertices": 138,
+   "triangles": 272
+  },
+  {
+   "name": "LatCun_L",
+   "part": "foot_l",
+   "first_vertex": 84889,
+   "vertices": 100,
+   "triangles": 196
+  },
+  {
+   "name": "MedCun_L",
+   "part": "foot_l",
+   "first_vertex": 84989,
+   "vertices": 133,
+   "triangles": 262
+  },
+  {
+   "name": "Nav_L",
+   "part": "foot_l",
+   "first_vertex": 85122,
+   "vertices": 166,
+   "triangles": 328
+  },
+  {
+   "name": "Tal_L",
+   "part": "foot_l",
+   "first_vertex": 85288,
+   "vertices": 506,
+   "triangles": 1008
+  },
+  {
+   "name": "Cal_R",
+   "part": "foot_r",
+   "first_vertex": 85794,
+   "vertices": 723,
+   "triangles": 1442
+  },
+  {
+   "name": "Cub_R",
+   "part": "foot_r",
+   "first_vertex": 86517,
+   "vertices": 165,
+   "triangles": 326
+  },
+  {
+   "name": "FootDistP1_R",
+   "part": "foot_r",
+   "first_vertex": 86682,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP2_R",
+   "part": "foot_r",
+   "first_vertex": 86735,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP3_R",
+   "part": "foot_r",
+   "first_vertex": 86788,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP4_R",
+   "part": "foot_r",
+   "first_vertex": 86841,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootDistP5_R",
+   "part": "foot_r",
+   "first_vertex": 86894,
+   "vertices": 53,
+   "triangles": 102
+  },
+  {
+   "name": "FootMeta1_R",
+   "part": "foot_r",
+   "first_vertex": 86947,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta2_R",
+   "part": "foot_r",
+   "first_vertex": 87158,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta3_R",
+   "part": "foot_r",
+   "first_vertex": 87369,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta4_R",
+   "part": "foot_r",
+   "first_vertex": 87580,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMeta5_R",
+   "part": "foot_r",
+   "first_vertex": 87791,
+   "vertices": 211,
+   "triangles": 418
+  },
+  {
+   "name": "FootMidP2_R",
+   "part": "foot_r",
+   "first_vertex": 88002,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP3_R",
+   "part": "foot_r",
+   "first_vertex": 88114,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP4_R",
+   "part": "foot_r",
+   "first_vertex": 88226,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootMidP5_R",
+   "part": "foot_r",
+   "first_vertex": 88338,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP1_R",
+   "part": "foot_r",
+   "first_vertex": 88450,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP2_R",
+   "part": "foot_r",
+   "first_vertex": 88562,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP3_R",
+   "part": "foot_r",
+   "first_vertex": 88674,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP4_R",
+   "part": "foot_r",
+   "first_vertex": 88786,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootProxP5_R",
+   "part": "foot_r",
+   "first_vertex": 88898,
+   "vertices": 112,
+   "triangles": 220
+  },
+  {
+   "name": "FootSesaLat_R",
+   "part": "foot_r",
+   "first_vertex": 89010,
+   "vertices": 33,
+   "triangles": 62
+  },
+  {
+   "name": "FootSesaMed_R",
+   "part": "foot_r",
+   "first_vertex": 89043,
+   "vertices": 33,
+   "triangles": 62
+  },
+  {
+   "name": "InterCun_R",
+   "part": "foot_r",
+   "first_vertex": 89076,
+   "vertices": 138,
+   "triangles": 272
+  },
+  {
+   "name": "LatCun_R",
+   "part": "foot_r",
+   "first_vertex": 89214,
+   "vertices": 100,
+   "triangles": 196
+  },
+  {
+   "name": "MedCun_R",
+   "part": "foot_r",
+   "first_vertex": 89314,
+   "vertices": 133,
+   "triangles": 262
+  },
+  {
+   "name": "Nav_R",
+   "part": "foot_r",
+   "first_vertex": 89447,
+   "vertices": 166,
+   "triangles": 328
+  },
+  {
+   "name": "Tal_R",
+   "part": "foot_r",
+   "first_vertex": 89613,
+   "vertices": 506,
+   "triangles": 1008
+  }
+ ],
+ "global_translation_m": [
+  -0.044968432756473276,
+  1.602239990234375,
+  0.1557478127806772
+ ],
+ "pose": "source registered pose",
+ "subject": "N186416",
+ "source": "OpenSkeleton (NMDID) CC BY 4.0"
+}

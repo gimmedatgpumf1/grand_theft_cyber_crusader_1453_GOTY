@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXPECTED_BRANCH="arena/ec6d62e2-grand-theft-cyber-crusader-145"
+EXPECTED_BRANCH="arena/1ea56266-grand-theft-cyber-crusader-145"
 TARGET="${1:-native}"
 MESSAGE="${2:-Agent build checkpoint}"
 cd "$ROOT"

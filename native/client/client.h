@@ -3,6 +3,13 @@
 #include "core/types.h"
 #include "net/platform.h"
 
+// These two structs are shared by the simulator, the renderer and the test
+// harness, so their vectors are named with an explicit namespace. An
+// unqualified `Vec2` resolves differently depending on which header is
+// included first (`gtc::Vec2` is two floats, `gtc::native::Vec2` two doubles),
+// and that silently gave the same struct two different layouts in different
+// translation units - a class of bug that ends in a stack smash, not a warning.
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -13,8 +20,8 @@ struct ClientWorld {
     float width = 18.0F;
     float depth = 14.0F;
     float interactionRange = 1.8F;
-    Vec2 toilet;
-    Vec2 toiletFront;
+    gtc::Vec2 toilet;
+    gtc::Vec2 toiletFront;
     std::vector<Obstacle> obstacles;
 };
 
@@ -23,7 +30,7 @@ struct ClientState {
     std::uint64_t time = 0;
     double gameTime = 8.0 * 60.0 * 60.0;
     std::uint32_t day = 1;
-    Vec2 wind;
+    gtc::Vec2 wind;
     std::uint32_t toiletUser = 0;
     std::vector<Character> characters;
     std::vector<Puddle> puddles;
@@ -50,12 +57,12 @@ public:
     bool receive(std::string& error, int timeoutMilliseconds = -1);
 
     bool sendJoin(const std::string& name);
-    bool sendInput(Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk = false,
+    bool sendInput(gtc::Vec2 move, bool sprint, bool piss, float yaw, float pitch, bool slowWalk = false,
                    bool crouch = false, bool grab = false, bool jump = false, bool block = false,
-                   Vec2 aimTarget = {}, float aimHeight = 0.0F, bool hasAimTarget = false);
-    bool sendPath(Vec2 destination, bool sprint = false, bool advanced = false);
+                   gtc::Vec2 aimTarget = {}, float aimHeight = 0.0F, bool hasAimTarget = false);
+    bool sendPath(gtc::Vec2 destination, bool sprint = false, bool advanced = false);
     bool sendAttack(std::uint32_t targetId, bool advanced = false);
-    bool sendAttackAt(Vec2 target, float height);
+    bool sendAttackAt(gtc::Vec2 target, float height);
     bool sendToggleZip();
     bool sendToilet(const std::string& action);
     bool sendCheat(const std::string& need, float delta);

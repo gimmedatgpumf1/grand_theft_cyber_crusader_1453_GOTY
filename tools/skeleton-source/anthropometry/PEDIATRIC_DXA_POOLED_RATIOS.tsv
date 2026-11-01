@@ -1,0 +1,9 @@
+sex	dimension	n	ratio_mean	ratio_sd
+Male	acromion_lateral_epicondyle	170	0.183	0.008
+Male	radius_head_styloid	170	0.152	0.008
+Male	femur_trochanter_lateral_epicondyle	170	0.24600000000000002	0.011000000000000001
+Male	tibia_condyle_malleolus	170	0.23199999999999998	0.011000000000000001
+Female	acromion_lateral_epicondyle	243	0.183	0.008
+Female	radius_head_styloid	243	0.151	0.008
+Female	femur_trochanter_lateral_epicondyle	243	0.248	0.008
+Female	tibia_condyle_malleolus	243	0.23199999999999998	0.01

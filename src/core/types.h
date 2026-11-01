@@ -27,13 +27,14 @@ inline constexpr float kToiletSeatHeight = 0.381F;
 inline constexpr float kToiletWaterHeight = kToiletRimHeight - 0.133F;
 inline constexpr float kToiletTankHeight = 0.743F;
 // Anatomical emitter measured from the posed CC0 male mesh: the organ pivots
-// 0.8118 m above the soles and 0.1209 m forward, and the meatus sits 34.2 mm
-// out along the shaft. The renderer rotates that shaft onto the aim direction,
-// so droplets must spawn at pivot + (shaft + skin clearance) * aim, never at
-// the old hip offset 50 mm behind and below the visible hole.
+// 0.8118 m above the soles and 0.1209 m forward, and the urethral opening on
+// the underside of the glans sits 46.1 mm out along the shaft. The renderer
+// rotates that shaft onto the aim direction, so droplets must spawn at
+// pivot + (shaft + skin clearance) * aim, never at a hip offset or the dorsal
+// apex 12 mm higher.
 inline constexpr float kPissEmitterPivotHeight = 0.8118F;
 inline constexpr float kPissEmitterPivotForward = 0.1209F;
-inline constexpr float kPissEmitterShaft = 0.0357F;
+inline constexpr float kPissEmitterShaft = 0.0461F;
 inline constexpr float kPissSpeed = 9.0F;
 inline constexpr float kBulletSpeed = 32.0F;
 inline constexpr float kProjectileGravity = 9.81F;

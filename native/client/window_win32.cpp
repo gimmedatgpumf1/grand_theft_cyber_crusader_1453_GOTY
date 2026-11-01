@@ -1,5 +1,7 @@
 #include "client/window.h"
 #include "client/opengl_shared.h"
+#include "client/diagnostics.h"
+#include "vulkan/vk_renderer.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -8,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace gtc::native {
 
@@ -16,6 +19,7 @@ struct NativeWindow::Impl {
     HDC gpuDevice = nullptr;
     HGLRC gpuContext = nullptr;
     bool gpu = false;
+    bool vulkan = false;
     bool open = false;
     bool captured = false;
     double lastX = kDefaultWindowWidth * 0.5;
@@ -24,6 +28,7 @@ struct NativeWindow::Impl {
     std::vector<unsigned char> bgra;
     OpenGlRenderer renderer;
     HMODULE openGl = nullptr;
+    HDC presentDevice = nullptr;
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
 
@@ -182,6 +187,12 @@ namespace {
 
 NativeWindow::Impl* activeGpu = nullptr;
 
+// Vulkan is tried before WGL: it needs no device context and no GL context, and
+// it is the path that carries the frame. Vulkan or nothing, then -- the one
+// exception is the benchmark's OpenGL window, which asks for that backend by
+// name and says so on the console.
+bool wantVulkan(bool preferOpenGl) { return !preferOpenGl; }
+
 bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
     if (!activeGpu || !activeGpu->gpu) return false;
     if (!wglMakeCurrent(activeGpu->gpuDevice, activeGpu->gpuContext)) return false;
@@ -193,7 +204,7 @@ bool renderGpu(const GpuScene& scene, NativeFrame& frame) {
 NativeWindow::NativeWindow() = default;
 NativeWindow::~NativeWindow() { close(); }
 
-bool NativeWindow::open(const std::string& title, std::string& error) {
+bool NativeWindow::open(const std::string& title, std::string& error, bool preferOpenGl) {
     close();
     impl_ = new Impl;
     const HINSTANCE instance = GetModuleHandle(nullptr);
@@ -222,12 +233,43 @@ bool NativeWindow::open(const std::string& title, std::string& error) {
     }
     impl_->bgra.resize(static_cast<std::size_t>(kDefaultWindowWidth) * kDefaultWindowHeight * 4U);
     impl_->open = true;
-    if (impl_->initializeGpu()) {
+    trace("window: created");
+    const bool vulkan = wantVulkan(preferOpenGl);
+    if (vulkan) {
+        trace("window: trying vulkan");
+    } else {
+        trace("window: opengl asked for by name");
+        std::fflush(stdout);
+        std::fprintf(stderr, "window: this window is the OpenGL backend, because the caller asked for it\n");
+        std::fflush(stderr);
+    }
+    // Offered before the device is created, because the surface extensions have
+    // to be requested at instance creation.
+    if (vulkan) setVulkanSurfaceTarget(impl_->window, 1);
+    if (vulkan) {
+        // Vulkan or nothing. A quiet slide onto the other backend is how a
+        // backend sits broken for weeks without anybody noticing.
+        if (!vulkanAvailable()) {
+            std::fflush(stdout);
+            std::fprintf(stderr, "window: Vulkan will not start on this machine; there is no other GPU backend\n");
+            std::fflush(stderr);
+            std::abort();
+        }
+        trace("window: vulkan ready");
+        impl_->vulkan = true;
+        impl_->gpu = true;
+        activeGpu = impl_;
+        setGpuRenderer(&renderVulkanScene);
+        const std::string gpuTitle = title + " - Vulkan";
+        SetWindowTextA(impl_->window, gpuTitle.c_str());
+    } else if (impl_->initializeGpu()) {
+        trace("window: opengl ready");
         activeGpu = impl_;
         setGpuRenderer(&renderGpu);
         const std::string gpuTitle = title + " - " + impl_->renderer.name();
         SetWindowTextA(impl_->window, gpuTitle.c_str());
     }
+    trace("window: shown");
     ShowWindow(impl_->window, SW_SHOW);
     UpdateWindow(impl_->window);
     return true;
@@ -238,8 +280,11 @@ void NativeWindow::close() {
         if (activeGpu == impl_) {
             setGpuRenderer(nullptr);
             activeGpu = nullptr;
+            if (impl_->vulkan) shutdownVulkan();
         }
         impl_->shutdownGpu();
+        if (impl_->presentDevice && impl_->window) ReleaseDC(impl_->window, impl_->presentDevice);
+        impl_->presentDevice = nullptr;
         if (impl_->window) DestroyWindow(impl_->window);
         delete impl_;
         impl_ = nullptr;
@@ -260,44 +305,102 @@ bool NativeWindow::poll(std::vector<WindowEvent>& events) {
     return impl_->open;
 }
 
+bool NativeWindow::renderScene(const GpuScene& scene, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu) return false;
+    if (impl_->vulkan) return renderVulkanScene(scene, frame);
+    if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
+    return impl_->renderer.render(scene, frame);
+}
+
+const char* NativeWindow::backend() const {
+    if (!impl_) return "none";
+    if (impl_->vulkan) return "vulkan";
+    if (impl_->gpu) return "opengl";
+    return "software";
+}
+
+
+void NativeWindow::awaitGpu() {
+    if (!impl_) return;
+    if (impl_->vulkan) {
+        // The Vulkan path already waits for its fence inside the frame.
+        return;
+    }
+    if (impl_->gpu) {
+        if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return;
+        impl_->renderer.awaitGpu();
+    }
+}
+
+bool NativeWindow::readBack(int width, int height, const GpuScene&, NativeFrame& frame) {
+    if (!impl_ || !impl_->gpu || impl_->vulkan) return false;
+    if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
+    return impl_->renderer.readBack(width, height, frame);
+}
+
 bool NativeWindow::present(const NativeFrame& frame) {
-    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0 || frame.rgb.empty()) return false;
+    if (!impl_ || !impl_->open || frame.width <= 0 || frame.height <= 0) return false;
+    // A swapchain frame was handed to the compositor by the device itself. There
+    // are no host pixels, and there is nothing left to do here.
+    if (frame.presented) return true;
+    // One blit, no repack: everything that reaches the screen on this backend
+    // goes through here, whether the pixels came out of the Vulkan readback
+    // already in window order or from the software path, which had to be
+    // reordered first.
+    const auto blit = [this](const unsigned char* pixels, int frameWidth, int frameHeight) {
+        BITMAPINFO bitmap{};
+        bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bitmap.bmiHeader.biWidth = frameWidth;
+        bitmap.bmiHeader.biHeight = -frameHeight;
+        bitmap.bmiHeader.biPlanes = 1;
+        bitmap.bmiHeader.biBitCount = 32;
+        bitmap.bmiHeader.biCompression = BI_RGB;
+        // One device context for the life of the window: GetDC/ReleaseDC every
+        // frame is a round trip through the window manager for no reason.
+        if (!impl_->presentDevice) impl_->presentDevice = GetDC(impl_->window);
+        if (!impl_->presentDevice) return false;
+        int result = 0;
+        if (frameWidth == impl_->width && frameHeight == impl_->height) {
+            // The common case: the frame is already the size of the client
+            // area, so there is nothing to stretch and the cheapest blit wins.
+            // HALFTONE is only worth its cost when pixels are resampled.
+            result = SetDIBitsToDevice(impl_->presentDevice, 0, 0, frameWidth, frameHeight, 0, 0, 0,
+                                       frameHeight, pixels, &bitmap, DIB_RGB_COLORS);
+        } else {
+            SetStretchBltMode(impl_->presentDevice, HALFTONE);
+            result = StretchDIBits(impl_->presentDevice, 0, 0, impl_->width, impl_->height, 0, 0, frameWidth,
+                                   frameHeight, pixels, &bitmap, DIB_RGB_COLORS, SRCCOPY);
+        }
+        return result != 0;
+    };
     RECT client{};
     GetClientRect(impl_->window, &client);
     impl_->width = std::max(1, static_cast<int>(client.right - client.left));
     impl_->height = std::max(1, static_cast<int>(client.bottom - client.top));
-    const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
+        if (frame.rgb.empty()) return false;
         if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
         if (frame.width != impl_->width || frame.height != impl_->height) return true;
         if (!impl_->renderer.present(frame)) return false;
         return SwapBuffers(impl_->gpuDevice) != 0;
     }
-    impl_->bgra.resize(count * 4);
-    for (std::size_t i = 0; i < count; ++i) {
-        impl_->bgra[i * 4] = frame.rgb[i * 3 + 2];
-        impl_->bgra[i * 4 + 1] = frame.rgb[i * 3 + 1];
-        impl_->bgra[i * 4 + 2] = frame.rgb[i * 3];
-        impl_->bgra[i * 4 + 3] = 255;
-    }
-    BITMAPINFO bitmap{};
-    bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap.bmiHeader.biWidth = frame.width;
-    bitmap.bmiHeader.biHeight = -frame.height;
-    bitmap.bmiHeader.biPlanes = 1;
-    bitmap.bmiHeader.biBitCount = 32;
-    bitmap.bmiHeader.biCompression = BI_RGB;
-    const HDC device = GetDC(impl_->window);
-    SetStretchBltMode(device, HALFTONE);
-    const int result = StretchDIBits(device, 0, 0, impl_->width, impl_->height, 0, 0, frame.width, frame.height,
-                                     impl_->bgra.data(), &bitmap, DIB_RGB_COLORS, SRCCOPY);
-    ReleaseDC(impl_->window, device);
-    return result != 0;
+    // A frame that arrived in window order costs one blit and nothing else.
+    const std::size_t count = static_cast<std::size_t>(frame.width) * frame.height;
+    // Straight out of the backend's mapping: no copy between the readback and
+    // the screen.
+    if (frame.direct) return blit(frame.direct, frame.width, frame.height);
+    if (frame.bgra.size() >= count * 4) return blit(frame.bgra.data(), frame.width, frame.height);
+    if (frame.rgb.empty()) return false;
+    // Reordered across cores: at 1568x929 this is 1.45 M pixels every frame, and
+    // doing it on one thread was part of why a finished frame still took
+    // milliseconds to appear.
+    rgbToBgra(frame, impl_->bgra);
+    return blit(impl_->bgra.data(), frame.width, frame.height);
 }
 
 bool NativeWindow::save(const NativeFrame& frame, const std::string& path) {
     if (!impl_ || !impl_->open) return false;
-    if (impl_->gpu) {
+    if (impl_->gpu && !impl_->vulkan) {
         if (!wglMakeCurrent(impl_->gpuDevice, impl_->gpuContext)) return false;
         return impl_->renderer.capture(impl_->width, impl_->height, path);
     }
@@ -314,6 +417,21 @@ void NativeWindow::captureMouse(bool capture) {
     } else {
         ReleaseCapture();
         ShowCursor(true);
+    }
+}
+
+void NativeWindow::resize(int width, int height) {
+    if (!impl_ || !impl_->window) return;
+    RECT rect{0, 0, std::max(1, width), std::max(1, height)};
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    SetWindowPos(impl_->window, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
+                 SWP_NOMOVE | SWP_NOZORDER);
+    // The client area follows from the window size, and WM_SIZE has already been
+    // through the message queue by the time this returns.
+    RECT client{};
+    if (GetClientRect(impl_->window, &client)) {
+        impl_->width = std::max(1, static_cast<int>(client.right));
+        impl_->height = std::max(1, static_cast<int>(client.bottom));
     }
 }
 

@@ -2,38 +2,41 @@
 
 #include "client/client.h"
 #include "client/renderer.h"
+#include "client/skeleton_room.h"
+#include "client/skeleton_comparison_ui.h"
+#include "client/room_freecam.h"
 #include "client/view_controls.h"
+#include "client/diagnostics.h"
+#include "client/cheat_menu.h"
+#include "client/crosshair.h"
+#include "client/fps_counter.h"
+#include "client/mode_bar.h"
+#include "client/interaction_wheel.h"
+#include "client/overlay_panel.h"
+#include "client/status_panel.h"
+#include "client/target_prompt.h"
+#include "client/ui_layer.h"
 #include "client/window.h"
 #include "core/projectile.h"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace gtc::native {
 namespace {
 
-enum class Overlay { None, Wheel, Cheats, Creator, Help };
-
-struct CreatorEntry {
-    std::string label;
-    int minimum = 0;
-    int maximum = 100;
-    int Appearance::* integer = nullptr;
-    bool Appearance::* boolean = nullptr;
-    int morph = -1;
-};
-
-void circle(NativeFrame& frame, int cx, int cy, int radius, Color color) {
-    for (int y = -radius; y <= radius; ++y) {
-        const int half = static_cast<int>(std::sqrt(std::max(0, radius * radius - y * y)));
-        frame.rectangle(cx - half, cy + y, half * 2 + 1, 1, color);
-    }
-}
+// The character creator used to live here and opened on C. It is gone: the
+// test room took the key, and the next creator will be built fresh rather than
+// grown back out of this switchboard.
+enum class Overlay { None, Wheel, Cheats, Help };
 
 class App {
 public:
@@ -49,13 +52,21 @@ public:
             std::cerr << error << '\n';
             return 1;
         }
-        buildCreator();
+        std::string roomError;
+        if (!room_.load(options_.root, roomError)) std::cerr << "Test room unavailable: " << roomError << '\n';
         if (!window_.open("GRAND THEFT CYBER CRUSADER 1453 - Native", error)) {
             std::cerr << error << '\n';
             return 1;
         }
         window_.size(view_.width, view_.height);
         view_.gpu = window_.gpu();
+        if (std::string(window_.backend()) != "vulkan") {
+            std::cerr << "The interactive client requires Vulkan presentation\n";
+            return 1;
+        }
+        // Which backend is actually carrying the frame is the first thing worth
+        // knowing when a frame is slow; guessing it wastes an evening.
+        tracef("window: backend=%s size=%dx%d", window_.backend(), view_.width, view_.height);
         mouseX_ = view_.width * 0.5;
         mouseY_ = view_.height * 0.5;
         view_.yaw = 3.14159265F;
@@ -75,15 +86,17 @@ public:
                 std::cerr << error << '\n';
                 return 1;
             }
-            trackBodyTurn();
-            std::vector<WindowEvent> events;
-            if (!window_.poll(events)) break;
+            if (testRoom_) bodyTrackReady_ = false;
+            else trackBodyTurn();
+            events_.clear();
+            if (!window_.poll(events_)) break;
             window_.size(view_.width, view_.height);
-            for (const WindowEvent& event : events) {
+            for (const WindowEvent& event : events_) {
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
-            updateGod(dt);
+            if (testRoom_) { roomCamera_.move(dt); room_.advanceRagdoll(dt); }
+            else updateGod(dt);
             if (now - inputTime >= std::chrono::milliseconds(50)) {
                 sendInput();
                 inputTime = now;
@@ -91,14 +104,65 @@ public:
             updatePresentation();
             updateHighlight();
             updateReticle();
-            const auto renderStart = Clock::now();
+            if (testRoom_ && room_.ready()) {
+                const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+                // Room controls are GPU batches, just like the normal HUD.
+                frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
+                layer_.clear(frame.width,frame.height); frame.ui=&layer_;
+                frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
+                roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
+                frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
+                frame.wantPixels = screenshot_;
+                room_.render(frame, view_, seconds, &roomCamera_);
+                frame.uiLayer=nullptr;
+                if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
+                    std::cerr << "Vulkan did not present the room interface on the device\n";
+                    return 1;
+                }
+                if (!window_.present(frame)) {
+                    std::cerr << "Native window presentation failed\n";
+                    return 1;
+                }
+                if (screenshot_) {
+                    std::filesystem::create_directories("build/native-client");
+                    if (!window_.save(frame, "build/native-client/window.png")) {
+                        std::cerr << "Native screenshot capture failed\n";
+                        return 1;
+                    }
+                    screenshot_ = false;
+                }
+                continue;
+            }
+            // The UI is geometry submitted with the world, never a CPU overlay.
+            frame.width = std::max(1, view_.width);
+            frame.height = std::max(1, view_.height);
+            layer_.clear(frame.width, frame.height);
+            frame.ui = &layer_;
+            drawInterface(frame);
+            frame.ui = nullptr;
+            frame.uiLayer = &layer_;
+            frame.wantPixels = false;
+            frame.wantsBgra = false;
+            frame.interfaceInFrame = false;
+            // A screenshot is the one thing a presented frame cannot serve: it
+            // needs the pixels, so this frame comes back to the host on purpose.
+            if (screenshot_) {
+                frame.wantPixels = true;
+                frame.wantsBgra = false;
+            }
             if (!renderer_.render(client_.world(), visualState(), client_.playerId(), view_, frame, error)) {
-                std::cerr << error << '\n';
+                // A frame that will not draw is the end of the run. Falling back
+                // to the software rasterizer hid a broken backend behind a slow
+                // one; the failure is the thing worth seeing.
+                std::fflush(stdout);
+                std::cerr << "frame failed: " << error << '\n';
+                std::abort();
+            }
+            frame.uiLayer = nullptr;
+            if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
+                std::cerr << "Vulkan did not present the interface on the device\n";
                 return 1;
             }
-            const double renderMs = std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count();
-            view_.frameMilliseconds = view_.frameMilliseconds > 0 ? view_.frameMilliseconds * 0.9 + renderMs * 0.1 : renderMs;
-            drawOverlay(frame);
             if (!window_.present(frame)) {
                 std::cerr << "Native window presentation failed\n";
                 return 1;
@@ -115,37 +179,35 @@ public:
         return 0;
     }
 
-    int review(const std::string& output) {
-        std::string error;
-        if (!client_.connect(options_.host, options_.port, error) || !client_.sendJoin(options_.name) ||
-            !renderer_.load(options_.root, error) || !client_.receive(error)) {
-            std::cerr << error << '\n';
-            return 1;
-        }
-        buildCreator();
-        if (const Character* citizen = local()) draft_ = citizen->appearance;
-        view_.yaw = 3.14159265F;
-        view_.pitch = -0.18F;
-        NativeFrame base;
-        if (!renderer_.render(client_.world(), client_.state(), client_.playerId(), view_, base, error) ||
-            !base.save(output + "/base.png")) {
-            std::cerr << error << '\n';
-            return 1;
-        }
-        const std::pair<Overlay, const char*> captures[] = {{Overlay::Wheel, "wheel"},
-            {Overlay::Cheats, "cheats"}, {Overlay::Creator, "creator"}, {Overlay::Help, "help"}};
-        for (const auto& [overlay, name] : captures) {
-            overlay_ = overlay;
-            NativeFrame frame = base;
-            drawOverlay(frame);
-            if (!frame.save(output + "/" + name + ".png")) return 1;
-        }
-        std::cout << "native UI review: " << output << " (640x480 landscape)\n";
-        return 0;
-    }
-
 private:
     const Character* local() const { return client_.state().character(client_.playerId()); }
+
+    // The whole interface, in one place, drawn into a frame or described as
+    // quads for a device depending on what `frame.ui` says.
+    void drawInterface(NativeFrame& frame) {
+        drawCrosshair(frame, view_);
+        if (overlay_ == Overlay::None && view_.highlightToilet) {
+            // Laid out when the window changes size, not every frame: the prompt
+            // is two measured lines of type, and measuring them at 300 frames a
+            // second is a font query nobody needs.
+            if (promptWidth_ != frame.width || promptHeight_ != frame.height) {
+                prompt_ = layoutTargetPrompt(frame.width, frame.height, frame.height / 2);
+                promptWidth_ = frame.width;
+                promptHeight_ = frame.height;
+            }
+            drawTargetPrompt(frame, prompt_, "Toilet");
+        }
+        drawOpenOverlay(frame);
+        drawModeBar(frame, view_.mode, pointerBlock());
+        if (const Character* citizen = local()) {
+            const NeedsStatus status{static_cast<int>(std::lround(citizen->needs.bladder)),
+                                     static_cast<int>(std::lround(citizen->needs.bowel)),
+                                     static_cast<int>(std::lround(citizen->health))};
+            const ModeBarLayout bar = layoutModeBar(frame.width, frame.height);
+            drawNeedsPanel(frame, layoutNeedsPanel(frame.width, frame.height, bar.top, bar.width), status);
+        }
+        drawFpsCounter(frame, view_.fps);
+    }
 
     const ClientState& visualState() const {
         return presentationReady_ ? presentation_ : client_.state();
@@ -262,22 +324,64 @@ private:
         keys_.clear();
         window_.captureMouse(false);
         captured_ = false;
-        if (overlay == Overlay::Creator) {
-            if (const Character* citizen = local()) draft_ = citizen->appearance;
-            selected_ = 0;
-            scroll_ = 0;
+    }
+
+    // Every open overlay draws something. The switch below has no `default`, so
+    // adding a case to the enum and forgetting it here is a compiler warning and
+    // not a screen that has gone deaf for no visible reason -- which is exactly
+    // what happened when the old panels were deleted and these three states were
+    // left behind.
+    void drawOpenOverlay(NativeFrame& frame) {
+        switch (overlay_) {
+            case Overlay::None:
+                return;
+            case Overlay::Wheel: {
+                // The pointer is the mouse: while the circle is open the mouse is
+                // not captured, so these are real window pixels and the sector
+                // under them is the sector a click would take.
+                const InteractionWheelLayout layout = layoutInteractionWheel(frame.width, frame.height);
+                drawInteractionWheel(frame, layout, static_cast<int>(std::lround(mouseX_)),
+                                     static_cast<int>(std::lround(mouseY_)));
+                return;
+            }
+            case Overlay::Cheats: {
+                const Character* citizen = local();
+                const int bladder = citizen ? static_cast<int>(std::lround(citizen->needs.bladder)) : 0;
+                const int bowel = citizen ? static_cast<int>(std::lround(citizen->needs.bowel)) : 0;
+                drawCheatMenu(frame, bladder, bowel, pointerCheat());
+                return;
+            }
+            case Overlay::Help:
+                drawManual(frame);
+                return;
         }
+    }
+
+    // The one definition of "I am pointing at the throne": the light in the
+    // world, the words under the reticle and the E key all ask this, so they
+    // cannot disagree. Standing range is not enough -- E fires on the same
+    // condition the highlight draws on, which is what the King asked for.
+    bool toiletPointed() const {
+        const Character* citizen = local();
+        if (citizen == nullptr) return false;
+        if (distance(citizen->position, client_.world().toiletFront) > client_.world().interactionRange) return false;
+        if (client_.state().toiletUser != 0 && client_.state().toiletUser != citizen->id) return false;
+        const double x = captured_ ? view_.width * 0.5 : mouseX_;
+        const double y = captured_ ? view_.height * 0.5 : mouseY_;
+        return toiletHit(x, y);
     }
 
     void interact() {
         const Character* citizen = local();
         if (!citizen) return;
+        // Standing up needs no aim: you are already on the thing you are using,
+        // and making people find it with the reticle behind them is punishment.
         if (citizen->toiletAction != ToiletAction::None) {
             client_.sendToilet("stand");
-        } else if (distance(citizen->position, client_.world().toiletFront) <= client_.world().interactionRange &&
-                   (client_.state().toiletUser == 0 || client_.state().toiletUser == citizen->id)) {
-            openOverlay(Overlay::Wheel);
+            return;
         }
+        if (!toiletPointed()) return;
+        openOverlay(Overlay::Wheel);
     }
 
     void toiletChoice(int choice) {
@@ -307,8 +411,7 @@ private:
         if (point.z <= 0.05) return false;
         const double sx = view_.width * 0.5 + camera.focal() * point.x / point.z;
         const double sy = view_.height * 0.5 - camera.focal() * point.y / point.z;
-        const double scale = std::min(view_.width / 640.0, view_.height / 480.0);
-        return std::hypot(sx - x, sy - y) <= 75 * scale;
+        return pointerOnTarget(view_.width, view_.height, sx, sy, x, y);
     }
 
     std::uint32_t characterAt(double x, double y) const {
@@ -360,15 +463,76 @@ private:
         view_.reticleY = static_cast<float>(view_.height * 0.5 - camera.focal() * point.y / point.z);
     }
 
-    void updateHighlight() {
-        const Character* citizen = local();
-        view_.highlightToilet = citizen &&
-            distance(citizen->position, client_.world().toiletFront) <= client_.world().interactionRange &&
-            toiletHit(captured_ ? view_.width * 0.5 : mouseX_, captured_ ? view_.height * 0.5 : mouseY_);
+    void updateHighlight() { view_.highlightToilet = overlay_ == Overlay::None && toiletPointed(); }
+
+    // The pointer, for the pieces that answer to it. When the mouse is captured it
+    // is pinned to the middle of the frame, which is where the reticle is.
+    std::pair<int, int> pointer() const {
+        if (captured_) return {static_cast<int>(view_.width * 0.5), static_cast<int>(view_.height * 0.5)};
+        return {static_cast<int>(std::lround(mouseX_)), static_cast<int>(std::lround(mouseY_))};
+    }
+
+    int pointerBlock() const {
+        if (overlay_ != Overlay::None || captured_) return -1;
+        const auto at = pointer();
+        return modeBarAt(layoutModeBar(view_.width, view_.height), at.first, at.second);
+    }
+
+    int pointerCheat() const {
+        if (overlay_ != Overlay::Cheats) return -1;
+        const auto at = pointer();
+        return cheatMenuAt(layoutCheatMenu(view_.width, view_.height), at.first, at.second);
+    }
+
+    void enterRoom() {
+        if (!room_.ready()) return;
+        endOrbit();
+        roomRestoreCapture_ = captured_;
+        keys_.clear();
+        roomCamera_.clear();
+        leftDown_ = rightDown_ = false;
+        testRoom_ = true;
+        window_.captureMouse(true);
+        captured_ = true;
+        sendInput();
+    }
+
+    void handleRoom(const WindowEvent& event) {
+        if (roomUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
+        const RoomFreecam::Action action = roomCamera_.handle(event, captured_);
+        if (action == RoomFreecam::Action::Exit) {
+            testRoom_ = false;
+            roomCamera_.clear();
+            keys_.clear();
+            window_.captureMouse(roomRestoreCapture_);
+            captured_ = roomRestoreCapture_;
+            roomRestoreCapture_ = false;
+            sendInput();
+        } else if (action == RoomFreecam::Action::Capture) {
+            window_.captureMouse(true);
+            captured_ = true;
+        } else if (action == RoomFreecam::Action::Release) {
+            window_.captureMouse(false);
+            captured_ = false;
+        } else if (action == RoomFreecam::Action::ToggleLines) {
+            room_.toggleLineView();
+        } else if (action == RoomFreecam::Action::Screenshot) {
+            screenshot_ = true;
+        } else if (action == RoomFreecam::Action::BendJoints) {
+            room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0,
+                                       roomCamera_.fingerJoint());
+        } else if (action == RoomFreecam::Action::RestorePose) {
+            if (!room_.toggleRagdoll()) std::cerr << "Unable to start skeleton ragdolls\n";
+        } else if (action == RoomFreecam::Action::RestoreOriginal) {
+            room_.restoreOriginalPose();
+        }
     }
 
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
+            roomUi_.handle(event,captured_,view_.width,view_.height,room_);
+            roomCamera_.clear();
+            roomRestoreCapture_ = false;
             keys_.clear();
             endOrbit();
             leftDown_ = rightDown_ = false;
@@ -377,6 +541,7 @@ private:
             restoreMouseCapture_ = false;
             return;
         }
+        if (testRoom_) { handleRoom(event); return; }
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
@@ -404,16 +569,42 @@ private:
                 return;
             }
             if (event.button != 1 && event.button != 3) return;
-            if (overlay_ == Overlay::Wheel && event.button == 1) {
-                const double scale = std::min(1.0, std::min(view_.width / 640.0, view_.height / 480.0));
-                const double x = (event.x - (view_.width - 640 * scale) * 0.5) / scale;
-                const double y = (event.y - (view_.height - 480 * scale)) / scale;
-                if (std::hypot(x - 150, y - 240) < 88) toiletChoice(1);
-                else if (std::hypot(x - 320, y - 240) < 88) toiletChoice(2);
-                else if (std::hypot(x - 490, y - 240) < 88) toiletChoice(3);
+            if (overlay_ == Overlay::Wheel) {
+                // The same layout that drew the wheel answers the click: a hit on
+                // an option takes it, a hit in the middle cancels, and a click on
+                // the panel around them does nothing, so a stray click cannot
+                // choose something by accident.
+                const InteractionWheelLayout layout = layoutInteractionWheel(view_.width, view_.height);
+                const int hit = interactionWheelHit(layout, static_cast<int>(std::lround(event.x)),
+                                                    static_cast<int>(std::lround(event.y)));
+                if (event.button != 1) return;
+                if (hit >= 0) toiletChoice(hit + 1);
+                else if (hit == kWheelCancel) closeOverlay();
+                return;
+            }
+            if (overlay_ == Overlay::Cheats) {
+                if (event.button != 1) return;
+                const CheatMenuLayout menu = layoutCheatMenu(view_.width, view_.height);
+                const int entry = cheatMenuAt(menu, static_cast<int>(std::lround(event.x)),
+                                              static_cast<int>(std::lround(event.y)));
+                if (entry == kCheatMenuClose) closeOverlay();
+                else if (entry >= 0) cheat('1' + entry);
                 return;
             }
             if (overlay_ != Overlay::None) return;
+            // A click on the mode strip switches mode and goes no further: it must
+            // not also become a walk order behind the strip, which is what a
+            // clickable-but-transparent control would do in god mode.
+            if (event.button == 1) {
+                const int mode = modeBarAt(layoutModeBar(view_.width, view_.height), 
+                                           static_cast<int>(std::lround(event.x)),
+                                           static_cast<int>(std::lround(event.y)));
+                if (mode >= 0) {
+                    setMode(mode == 0 ? ViewMode::ThirdPerson
+                                      : (mode == 1 ? ViewMode::God : ViewMode::FirstPerson));
+                    return;
+                }
+            }
             const bool doubled = doubleClick(event.button == 3, event.x, event.y);
             if (view_.mode == ViewMode::God) {
                 if (event.button == 3) {
@@ -473,10 +664,6 @@ private:
             if (!event.repeat) cheat(event.key);
             return;
         }
-        if (overlay_ == Overlay::Creator) {
-            if (!event.repeat || (event.key != kKeyEnter && event.key != 'c' && event.key != kKeyEscape)) creatorKey(event.key);
-            return;
-        }
         if (overlay_ == Overlay::Help) {
             if (event.key == 'h' || event.key == kKeyEscape) closeOverlay();
             return;
@@ -494,7 +681,7 @@ private:
         else if (event.key == 't') { if (!event.repeat) client_.sendToggleZip(); }
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
-        else if (event.key == 'c') openOverlay(Overlay::Creator);
+        else if (event.key == 'c') { if (!event.repeat) enterRoom(); }
         else if (event.key == 'h') openOverlay(Overlay::Help);
         else {
             keys_.insert(event.key);
@@ -550,8 +737,9 @@ private:
         const ViewState control = controlView();
         float yaw = local() ? local()->yaw : control.yaw;
         view_.aiming = false;
-        crouch = overlay_ == Overlay::None && keys_.count(kKeyAlt) != 0;
-        if (overlay_ == Overlay::None && view_.mode != ViewMode::God) {
+        const bool gameControls = !testRoom_ && overlay_ == Overlay::None;
+        crouch = gameControls && keys_.count(kKeyAlt) != 0;
+        if (gameControls && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
             const double right = (keys_.count('d') ? 1 : 0) - (keys_.count('a') ? 1 : 0);
             move = {static_cast<float>(std::sin(control.yaw) * forward - std::cos(control.yaw) * right),
@@ -567,7 +755,8 @@ private:
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
         float aimHeight = 0.0F;
-        const bool hasAimTarget = ranged && view_.mode != ViewMode::God && crosshairTarget(control, aimTarget, aimHeight);
+        const bool hasAimTarget = !testRoom_ && ranged && view_.mode != ViewMode::God &&
+            crosshairTarget(control, aimTarget, aimHeight);
         client_.sendInput(move, sprint, piss, yaw, control.pitch, slowWalk_, crouch, grab, jump, block,
                           aimTarget, aimHeight, hasAimTarget);
     }
@@ -583,115 +772,11 @@ private:
         view_.godZ = std::clamp(view_.godZ, -7.0F, 7.0F);
     }
 
-    void buildCreator() {
-        auto integer = [&](const std::string& label, int min, int max, int Appearance::* field) {
-            creator_.push_back({label, min, max, field, nullptr, -1});
-        };
-        auto boolean = [&](const std::string& label, bool Appearance::* field) {
-            creator_.push_back({label, 0, 1, nullptr, field, -1});
-        };
-        boolean("MALE", &Appearance::male);
-        integer("SKIN", 0, 5, &Appearance::skin);
-        integer("HAIR", 0, 15, &Appearance::hair);
-        integer("HAIR COLOR", 0, 8, &Appearance::hairColor);
-        integer("SHIRT", 0, 6, &Appearance::shirt);
-        integer("PANTS", 0, 3, &Appearance::pants);
-        integer("BEARD", 0, 2, &Appearance::beard);
-        integer("EYE COLOR", 0, 5, &Appearance::eyeColor);
-        integer("MAKEUP", 0, 4, &Appearance::makeup);
-        integer("LIP COLOR", 0, 4, &Appearance::lipColor);
-        integer("TIE", 0, 5, &Appearance::tie);
-        boolean("COAT", &Appearance::coat);
-        boolean("GLASSES", &Appearance::sunglasses);
-        boolean("SUIT", &Appearance::suit);
-        boolean("DRESS", &Appearance::dress);
-        boolean("BERET", &Appearance::beret);
-        boolean("EARRINGS", &Appearance::earrings);
-        boolean("NECKLACE", &Appearance::necklace);
-        boolean("FUR", &Appearance::fur);
-        for (std::size_t i = 0; i < renderer_.morphSpecs(true).size(); ++i) {
-            const MorphSpec& spec = renderer_.morphSpecs(true)[i];
-            creator_.push_back({spec.key, spec.minimum, spec.maximum, nullptr, nullptr, static_cast<int>(i)});
-        }
-    }
-
-    int creatorValue(const CreatorEntry& entry) const {
-        if (entry.morph >= 0) return draft_.morphs[entry.morph];
-        if (entry.boolean) return draft_.*entry.boolean ? 1 : 0;
-        return draft_.*(entry.integer);
-    }
-
-    void creatorKey(int key) {
-        if (key == 'c' || key == kKeyEscape) {
-            closeOverlay();
-            return;
-        }
-        if (key == kKeyEnter) {
-            client_.sendCustomize(draft_);
-            return;
-        }
-        if (key == kKeyUp) selected_ = std::max(0, selected_ - 1);
-        if (key == kKeyDown) selected_ = std::min(static_cast<int>(creator_.size()) - 1, selected_ + 1);
-        if (key == kKeyPageUp) selected_ = std::max(0, selected_ - 10);
-        if (key == kKeyPageDown) selected_ = std::min(static_cast<int>(creator_.size()) - 1, selected_ + 10);
-        if (key == kKeyLeft || key == kKeyRight) {
-            CreatorEntry& entry = creator_[selected_];
-            const int direction = key == kKeyRight ? 1 : -1;
-            const int value = std::clamp(creatorValue(entry) + direction * (entry.morph >= 0 ? 5 : 1),
-                                         entry.minimum, entry.maximum);
-            if (entry.morph >= 0) draft_.morphs[entry.morph] = value;
-            else if (entry.boolean) draft_.*entry.boolean = value != 0;
-            else draft_.*(entry.integer) = value;
-        }
-        if (selected_ < scroll_) scroll_ = selected_;
-        if (selected_ >= scroll_ + 10) scroll_ = selected_ - 9;
-    }
-
-    void drawOverlay(NativeFrame& frame) {
-        if (overlay_ == Overlay::None) return;
-        const Color panel = colorHex("#101713"), text = colorHex("#d7ff54"), muted = colorHex("#b4c5ba");
-        if (overlay_ == Overlay::Wheel) {
-            frame.rectangle(35, 60, 570, 360, panel);
-            drawText(frame, 230, 80, "TOILET CHOICE", text);
-            circle(frame, 150, 240, 85, colorHex("#334c42"));
-            circle(frame, 320, 240, 85, colorHex("#4b4030"));
-            circle(frame, 490, 240, 85, colorHex("#303f50"));
-            drawText(frame, 122, 230, "1 SIT", text);
-            drawText(frame, 286, 230, "2 SHIT", text);
-            drawText(frame, 456, 230, "3 PISS", text);
-            drawText(frame, 410, 285, local() && local()->appearance.male ? "STANDING" : "SEATED", muted);
-            drawText(frame, 215, 380, "E STAND / ESC CLOSE", muted);
-        } else if (overlay_ == Overlay::Cheats) {
-            frame.rectangle(60, 100, 520, 280, panel);
-            drawText(frame, 220, 120, "F1 NEED CHEATS", text);
-            drawText(frame, 90, 180, "1 BLADDER +25 2 -25", muted);
-            drawText(frame, 90, 230, "3 EMPTY       4 FILL", muted);
-            drawText(frame, 90, 280, "5 BOWEL +25  6 -25", muted);
-            drawText(frame, 90, 330, "7 EMPTY       8 FILL", muted);
-        } else if (overlay_ == Overlay::Help) {
-            frame.rectangle(30, 20, 580, 430, panel);
-            drawText(frame, 230, 35, "FIELD MANUAL", text);
-            const char* lines[] = {"1 TPS 2 GOD 3 FPS", "WASD MOVE SHIFT SPRINT", "SPACE JUMP CTRL GRAB ALT",
-                "ALT+CTRL PRONE 2 KM/H", "T ZIP / UNZIP MALE", "UNZIPPED + LMB PEE",
-                "RMB AIM RANGED / BLOCK MELEE", "MMB ORBIT TPS / RELEASE RESETS", "GOD RMB GO SHIFT RUN ALT CROUCH",
-                "GOD 2X RMB ADV PATH", "GOD LMB ATTACK / 2X ADV", "E TOILET C CREATOR F1 CHEATS",
-                "F12 PNG H CLOSES MANUAL"};
-            for (int i = 0; i < 13; ++i) drawText(frame, 55, 82 + i * 27, lines[i], muted);
-        } else if (overlay_ == Overlay::Creator) {
-            frame.rectangle(0, 20, 640, 440, panel);
-            drawText(frame, 20, 28, "C CREATOR ENTER APPLY", text);
-            for (int row = 0; row < 10 && scroll_ + row < static_cast<int>(creator_.size()); ++row) {
-                const int index = scroll_ + row;
-                const int y = 80 + row * 32;
-                if (index == selected_) frame.rectangle(8, y - 4, 624, 28, colorHex("#29382e"));
-                drawText(frame, 15, y, creator_[index].label.substr(0, 24), index == selected_ ? text : muted);
-                drawText(frame, 550, y, std::to_string(creatorValue(creator_[index])), text);
-            }
-            drawText(frame, 24, 405, "ARROWS EDIT PGUP PGDN", muted);
-            drawText(frame, 24, 433, "ENTER SERVER CUSTOMIZE", muted);
-        }
-    }
-
+    SkeletonRoom room_;
+    RoomFreecam roomCamera_;
+    SkeletonComparisonUi roomUi_;
+    bool testRoom_ = false;
+    bool roomRestoreCapture_ = false;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
     std::uint64_t presentationVersion_ = 0;
     std::chrono::steady_clock::time_point snapshotAt_{};
@@ -703,6 +788,12 @@ private:
     NativeWindow window_;
     ViewState view_;
     Overlay overlay_ = Overlay::None;
+    // Reused every frame: a vector built inside the loop is an allocation per
+    // frame for the sake of a handful of events.
+    std::vector<WindowEvent> events_;
+    UiLayer layer_;
+    TargetPromptLayout prompt_{};
+    int promptWidth_ = 0, promptHeight_ = 0;
     std::set<int> keys_;
     bool captured_ = false;
     bool restoreMouseCapture_ = false;
@@ -717,10 +808,6 @@ private:
     bool slowWalk_ = false;
     bool screenshot_ = false;
     double mouseX_ = kDefaultWindowWidth * 0.5, mouseY_ = kDefaultWindowHeight * 0.5;
-    std::vector<CreatorEntry> creator_;
-    Appearance draft_;
-    int selected_ = 0;
-    int scroll_ = 0;
 };
 
 } // namespace
@@ -728,11 +815,6 @@ private:
 int runInteractive(const InteractiveOptions& options) {
     App app(options);
     return app.run();
-}
-
-int runInteractiveReview(const InteractiveOptions& options, const std::string& output) {
-    App app(options);
-    return app.review(output);
 }
 
 } // namespace gtc::native

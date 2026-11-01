@@ -1,8 +1,13 @@
 #include "client/raster.h"
 
+#include "client/ui_layer.h"
+#include "client/threadpool.h"
+
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -112,9 +117,35 @@ bool sameMaterial(const Material& a, const Material& b) {
 
 GpuRenderer activeGpuRenderer = nullptr;
 
+// Reused across frames by whichever thread draws, so the software path stops
+// reallocating a few megabytes of queue storage every single frame.
+thread_local std::vector<RasterTriangle> pendingScratch;
+thread_local std::vector<Material> materialScratch;
+
 } // namespace
 
 void setGpuRenderer(GpuRenderer renderer) { activeGpuRenderer = renderer; }
+
+void rgbToBgra(const NativeFrame& frame, std::vector<unsigned char>& out) {
+    const std::size_t count = static_cast<std::size_t>(std::max(0, frame.width)) *
+        static_cast<std::size_t>(std::max(0, frame.height));
+    out.resize(count * 4);
+    if (count == 0 || frame.rgb.size() < count * 3) return;
+    const auto convert = [&](std::size_t begin, std::size_t end) {
+        const unsigned char* source = frame.rgb.data() + begin * 3;
+        unsigned char* target = out.data() + begin * 4;
+        for (std::size_t index = begin; index < end; ++index, source += 3, target += 4) {
+            target[0] = source[2];
+            target[1] = source[1];
+            target[2] = source[0];
+            target[3] = 255;
+        }
+    };
+    // Below about a quarter of a megapixel the split costs more than it saves.
+    FramePool& pool = framePool();
+    const std::size_t chunks = std::min<std::size_t>(pool.size(), std::max<std::size_t>(1, count / 131072));
+    pool.ranges(chunks, count, convert);
+}
 
 bool renderGpuScene(const GpuScene& scene, NativeFrame& frame) {
     return activeGpuRenderer && activeGpuRenderer(scene, frame);
@@ -145,7 +176,24 @@ const Texture& loadTexture(const std::string& path) {
     return cache.emplace(path, std::move(texture)).first->second;
 }
 
+void NativeFrame::syncToRgb() {
+    if (!rgb.empty()) return;
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    const unsigned char* source = direct ? direct : bgra.data();
+    if (!source) return;
+    if (!direct && bgra.size() < count * 4) return;
+    rgb.resize(count * 3);
+    for (std::size_t index = 0; index < count; ++index) {
+        const unsigned char* in = source + index * 4;
+        unsigned char* out = rgb.data() + index * 3;
+        out[0] = in[2];
+        out[1] = in[1];
+        out[2] = in[0];
+    }
+}
+
 bool NativeFrame::save(const std::string& path) const {
+    const_cast<NativeFrame*>(this)->syncToRgb();
     std::error_code error;
     const std::filesystem::path destination(path);
     if (destination.has_parent_path()) std::filesystem::create_directories(destination.parent_path(), error);
@@ -158,7 +206,33 @@ void NativeFrame::logicalUi(int logicalWidth, int logicalHeight) {
     uiOffsetY = 0.0;
 }
 
+void NativeFrame::makeOverlayWritable() {
+    // A frame that arrived as a mapping is drawn on where it lies. Copying it
+    // first cost 5.8 MB a frame at 1568x929 -- over the host, on the bus, one
+    // memcpy -- so the overlay could be written into a second buffer and then
+    // handed to the window anyway.
+    if (direct != nullptr) return;
+}
+
+double rectangleMilliseconds = 0.0;
+long rectanglePixels = 0;
+
 void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
+    if (ui != nullptr) {
+        const int red = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
+        const int green = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
+        const int blue = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
+        ui->rectangle(uiOffsetX + x * uiScale, uiOffsetY + y * uiScale, w * uiScale, h * uiScale, red, green,
+                      blue, 1.0);
+        return;
+    }
+    const auto rectangleStart = std::chrono::steady_clock::now();
+    // A frame that arrived in window order is drawn on where it lies: converting
+    // it to rgb and back is two passes over a million pixels for nothing.
+    if (canvasIsBgra()) makeOverlayWritable();
+    else syncToRgb();
+    const bool bgra = canvasIsBgra();
+    unsigned char* pixels = bgra ? canvasBgra() : rgb.data();
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
@@ -166,19 +240,58 @@ void NativeFrame::rectangle(int x, int y, int w, int h, Color color) {
     const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
     const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
-    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
-        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
-            const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
-            const std::size_t offset = pixel * 3;
-            rgb[offset] = static_cast<unsigned char>(r);
-            rgb[offset + 1] = static_cast<unsigned char>(g);
-            rgb[offset + 2] = static_cast<unsigned char>(b);
-            if (!alpha.empty()) alpha[pixel] = 255;
+    const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
+    const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
+    if (firstColumn >= lastColumn) return;
+    // The panels are most of the screen: six hundred thousand pixels a frame,
+    // filled one at a time through a bounds check and a stride multiply. A row
+    // of one colour is a move, so each row is written as words here.
+    if (bgra) {
+        // Window order is blue, green, red, and the fourth byte says opaque:
+        // the pixel being written is a colour, not a hole.
+        const std::uint32_t word = (static_cast<std::uint32_t>(r) << 16) |
+                                   (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b) |
+                                   0xFF000000U;
+        for (int py = firstRow; py < lastRow; ++py) {
+            std::fill_n(reinterpret_cast<std::uint32_t*>(pixels) + static_cast<std::size_t>(py) * width +
+                            firstColumn,
+                        static_cast<std::size_t>(lastColumn - firstColumn), word);
+        }
+    } else {
+        for (int py = firstRow; py < lastRow; ++py) {
+            unsigned char* out = pixels + (static_cast<std::size_t>(py) * width + firstColumn) * 3U;
+            for (int px = firstColumn; px < lastColumn; ++px, out += 3) {
+                out[0] = static_cast<unsigned char>(r);
+                out[1] = static_cast<unsigned char>(g);
+                out[2] = static_cast<unsigned char>(b);
+            }
         }
     }
+    if (!alpha.empty()) {
+        for (int py = firstRow; py < lastRow; ++py) {
+            std::fill_n(alpha.begin() + static_cast<std::size_t>(py) * width + firstColumn,
+                        static_cast<std::size_t>(lastColumn - firstColumn), static_cast<unsigned char>(255));
+        }
+    }
+    rectanglePixels += static_cast<long>(lastRow - firstRow) * (lastColumn - firstColumn);
+    rectangleMilliseconds += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - rectangleStart).count();
 }
 
 void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double opacity) {
+    if (ui != nullptr) {
+        const int red = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
+        const int green = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
+        const int blue = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
+        ui->rectangle(uiOffsetX + x * uiScale, uiOffsetY + y * uiScale, w * uiScale, h * uiScale, red, green,
+                      blue, opacity);
+        return;
+    }
+    if (canvasIsBgra()) makeOverlayWritable();
+    else syncToRgb();
+    const bool bgra = canvasIsBgra();
+    unsigned char* pixels = bgra ? canvasBgra() : rgb.data();
+    const std::size_t stride = bgra ? 4U : 3U;
     const int r = static_cast<int>(std::clamp(toSrgb(color.r), 0.0, 1.0) * 255);
     const int g = static_cast<int>(std::clamp(toSrgb(color.g), 0.0, 1.0) * 255);
     const int b = static_cast<int>(std::clamp(toSrgb(color.b), 0.0, 1.0) * 255);
@@ -187,21 +300,54 @@ void NativeFrame::blendRectangle(int x, int y, int w, int h, Color color, double
     const int top = static_cast<int>(std::lround(uiOffsetY + y * uiScale));
     const int right = static_cast<int>(std::lround(uiOffsetX + (x + w) * uiScale));
     const int bottom = static_cast<int>(std::lround(uiOffsetY + (y + h) * uiScale));
-    for (int py = std::max(0, top); py < std::min(height, bottom); ++py) {
-        for (int px = std::max(0, left); px < std::min(width, right); ++px) {
+    const int firstRow = std::max(0, top), lastRow = std::min(height, bottom);
+    const int firstColumn = std::max(0, left), lastColumn = std::min(width, right);
+    if (firstColumn < lastColumn && this->alpha.empty()) {
+        // Two panels of translucent colour are nine hundred thousand blended
+        // pixels a frame, a third of the street's host time. The colour and the
+        // opacity are fixed for the call, so the blend is a byte-to-byte table
+        // that is built once: no multiply, no divide, one store a channel.
+        unsigned char red_[256], green_[256], blue_[256];
+        for (int value = 0; value < 256; ++value) {
+            red_[value] = static_cast<unsigned char>((r * alpha + value * (255 - alpha)) / 255);
+            green_[value] = static_cast<unsigned char>((g * alpha + value * (255 - alpha)) / 255);
+            blue_[value] = static_cast<unsigned char>((b * alpha + value * (255 - alpha)) / 255);
+        }
+        // The stride is the frame's, not four: an rgb canvas is three bytes a
+        // pixel, and walking it four at a time wrote the panel diagonally across
+        // the picture instead of into the rectangle that was asked for.
+        for (int py = firstRow; py < lastRow; ++py) {
+            unsigned char* out = pixels + static_cast<std::size_t>(py) * width * stride + firstColumn * stride;
+            for (int px = firstColumn; px < lastColumn; ++px, out += stride) {
+                out[0] = bgra ? blue_[out[0]] : red_[out[0]];
+                out[1] = green_[out[1]];
+                out[2] = bgra ? red_[out[2]] : blue_[out[2]];
+            }
+        }
+        return;
+    }
+    for (int py = firstRow; py < lastRow; ++py) {
+        for (int px = firstColumn; px < lastColumn; ++px) {
             const std::size_t pixel = static_cast<std::size_t>(py) * width + px;
-            const std::size_t offset = pixel * 3;
+            unsigned char* out = pixels + pixel * stride;
             if (this->alpha.empty()) {
-                rgb[offset] = static_cast<unsigned char>((r * alpha + rgb[offset] * (255 - alpha)) / 255);
-                rgb[offset + 1] = static_cast<unsigned char>((g * alpha + rgb[offset + 1] * (255 - alpha)) / 255);
-                rgb[offset + 2] = static_cast<unsigned char>((b * alpha + rgb[offset + 2] * (255 - alpha)) / 255);
+                if (bgra) {
+                    out[0] = static_cast<unsigned char>((b * alpha + out[0] * (255 - alpha)) / 255);
+                    out[1] = static_cast<unsigned char>((g * alpha + out[1] * (255 - alpha)) / 255);
+                    out[2] = static_cast<unsigned char>((r * alpha + out[2] * (255 - alpha)) / 255);
+                } else {
+                    out[0] = static_cast<unsigned char>((r * alpha + out[0] * (255 - alpha)) / 255);
+                    out[1] = static_cast<unsigned char>((g * alpha + out[1] * (255 - alpha)) / 255);
+                    out[2] = static_cast<unsigned char>((b * alpha + out[2] * (255 - alpha)) / 255);
+                }
             } else {
                 const int oldAlpha = this->alpha[pixel];
                 const int weight = alpha * 255 + oldAlpha * (255 - alpha);
                 if (!weight) continue;
-                rgb[offset] = static_cast<unsigned char>((r * alpha * 255 + rgb[offset] * oldAlpha * (255 - alpha) + weight / 2) / weight);
-                rgb[offset + 1] = static_cast<unsigned char>((g * alpha * 255 + rgb[offset + 1] * oldAlpha * (255 - alpha) + weight / 2) / weight);
-                rgb[offset + 2] = static_cast<unsigned char>((b * alpha * 255 + rgb[offset + 2] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                const int red = bgra ? 2 : 0, blue = bgra ? 0 : 2;
+                out[red] = static_cast<unsigned char>((r * alpha * 255 + out[red] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                out[1] = static_cast<unsigned char>((g * alpha * 255 + out[1] * oldAlpha * (255 - alpha) + weight / 2) / weight);
+                out[blue] = static_cast<unsigned char>((b * alpha * 255 + out[blue] * oldAlpha * (255 - alpha) + weight / 2) / weight);
                 this->alpha[pixel] = static_cast<unsigned char>((weight + 127) / 255);
             }
         }
@@ -232,6 +378,11 @@ Vec3 Camera::view(Vec3 point) const {
     return {dot(relative, right), dot(relative, vertical), dot(relative, forward)};
 }
 
+Vec3 Camera::world(Vec3 viewPoint) const {
+    basis();
+    return position + right * viewPoint.x + vertical * viewPoint.y + forward * viewPoint.z;
+}
+
 Vec3 Camera::viewDirection(Vec3 direction) const {
     basis();
     return {dot(direction, right), dot(direction, vertical), dot(direction, forward)};
@@ -254,20 +405,49 @@ RenderVertex cameraVertex(const Camera& camera, Vec3 point, Vec3 normal, Vec3 so
     return {camera.view(point), camera.viewDirection(normal), source, uv};
 }
 
-Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu, GpuScene recycled)
-    : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)) {
-    for (GpuBatch& batch : scene_.batches) batch.vertices.clear();
+Rasterizer::Rasterizer(int width, int height, Color background, double focal, bool gpu, GpuScene recycled,
+                       RasterBuffer* reusable)
+    : width_(width), height_(height), focal_(focal), gpu_(gpu), scene_(std::move(recycled)),
+      reusable_(gpu ? nullptr : reusable) {
+    for (GpuBatch& batch : scene_.batches) {
+        batch.vertices.clear();
+        batch.indices.clear();
+    }
     scene_.width = width;
     scene_.height = height;
     scene_.focal = focal;
     scene_.background = background;
-    if (!gpu_) {
-        depth_.resize(static_cast<std::size_t>(width) * height, 1e100);
-        pixels_.resize(static_cast<std::size_t>(width) * height, background);
+    if (gpu_) return;
+    if (pendingScratch.capacity()) pending_.swap(pendingScratch);
+    if (materialScratch.capacity()) materials_.swap(materialScratch);
+    if (reusable_) {
+        depth_.swap(reusable_->depth);
+        pixels_.swap(reusable_->pixels);
     }
+    const std::size_t count = static_cast<std::size_t>(width) * height;
+    depth_.resize(count);
+    pixels_.resize(count);
+    std::fill(depth_.begin(), depth_.end(), 1e100);
+    std::fill(pixels_.begin(), pixels_.end(), background);
+}
+
+Rasterizer::~Rasterizer() {
+    // Hand the queue's storage back for the next frame.
+    if (pending_.capacity() > pendingScratch.capacity()) {
+        pending_.clear();
+        pendingScratch.swap(pending_);
+    }
+    if (materials_.capacity() > materialScratch.capacity()) {
+        materials_.clear();
+        materialScratch.swap(materials_);
+    }
+    if (!reusable_) return;
+    reusable_->depth.swap(depth_);
+    reusable_->pixels.swap(pixels_);
 }
 
 void Rasterizer::setCamera(const Camera& camera) {
+    camera_ = camera;
     if (gpu_) scene_.viewMatrix = camera.viewMatrix();
 }
 
@@ -277,11 +457,144 @@ void Rasterizer::setObject(std::uint32_t id, Vec2 pivot, float yaw) {
     objectYaw_ = yaw;
 }
 
+// Shared by both triangle entry points: picks the batch this material belongs
+// to, creating it if this is the first triangle to use it.
+std::size_t Rasterizer::prepareBatch(const Material& material) {
+    std::size_t index = activeBatch_;
+    bool reuse = index < scene_.batches.size();
+    const bool sameObjectAndMaterial = reuse && activeMaterial_ == &material && activeObject_ == objectId_;
+    if (reuse && !sameObjectAndMaterial) {
+        const GpuBatch& candidate = scene_.batches[index];
+        reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+    }
+    if (!reuse) {
+        auto found = std::find_if(scene_.batches.begin(), scene_.batches.end(), [&](const GpuBatch& candidate) {
+            return candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
+        });
+        if (found == scene_.batches.end()) {
+            scene_.batches.push_back({});
+            GpuBatch& created = scene_.batches.back();
+            created.material = material;
+            created.objectId = objectId_;
+            created.pivotX = static_cast<float>(objectPivot_.x);
+            created.pivotZ = static_cast<float>(objectPivot_.y);
+            created.yaw = objectYaw_;
+            created.vertices.reserve(12288);
+            index = scene_.batches.size() - 1;
+        } else {
+            index = static_cast<std::size_t>(std::distance(scene_.batches.begin(), found));
+        }
+    }
+    activeBatch_ = index;
+    activeMaterial_ = &material;
+    activeObject_ = objectId_;
+    GpuBatch& batch = scene_.batches[index];
+    if (!sameObjectAndMaterial || batch.pivotX != static_cast<float>(objectPivot_.x) ||
+        batch.pivotZ != static_cast<float>(objectPivot_.y) || batch.yaw != objectYaw_) {
+        batch.pivotX = static_cast<float>(objectPivot_.x);
+        batch.pivotZ = static_cast<float>(objectPivot_.y);
+        batch.yaw = objectYaw_;
+    }
+    return index;
+}
+
+void Rasterizer::worldTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
+                               const Material& material) {
+    if (!gpu_) {
+        // The software path needs unit normals: its flat-shading test compares
+        // dot products with 1.0 to decide whether a triangle can be shaded once.
+        const Vec3 unit = normalized(normal);
+        triangle({cameraVertex(camera_, a, unit, a), cameraVertex(camera_, b, unit, b),
+                  cameraVertex(camera_, c, unit, c)}, material);
+        return;
+    }
+    GpuBatch& batch = scene_.batches[prepareBatch(material)];
+    const std::size_t base = batch.vertices.size();
+    batch.vertices.resize(base + 3);
+    GpuVertex* out = batch.vertices.data() + base;
+    const Vec3* points[3] = {&a, &b, &c};
+    for (int corner = 0; corner < 3; ++corner, ++out) {
+        const Vec3& point = *points[corner];
+        out->x = static_cast<float>(point.x);
+        out->y = static_cast<float>(point.y);
+        out->z = static_cast<float>(point.z);
+        out->nx = static_cast<float>(normal.x);
+        out->ny = static_cast<float>(normal.y);
+        out->nz = static_cast<float>(normal.z);
+        out->u = 0.0F;
+        out->v = 0.0F;
+    }
+}
+
+namespace {
+// The face normal a triangle implies, and the bounds check every emitter here
+// needs: a scanned mesh is data, and data can be wrong.
+bool usableFace(const std::array<int, 3>& face, std::size_t points) {
+    return face[0] >= 0 && face[1] >= 0 && face[2] >= 0 &&
+        static_cast<std::size_t>(face[0]) < points && static_cast<std::size_t>(face[1]) < points &&
+        static_cast<std::size_t>(face[2]) < points;
+}
+} // namespace
+
+void Rasterizer::mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+                      const Material& material) {
+    if (!gpu_) {
+        for (const std::array<int, 3>& face : faces) {
+            if (!usableFace(face, points.size())) continue;
+            const Vec3& a = points[static_cast<std::size_t>(face[0])];
+            const Vec3& b = points[static_cast<std::size_t>(face[1])];
+            const Vec3& c = points[static_cast<std::size_t>(face[2])];
+            worldTriangle(a, b, c, cross(b - a, c - a), material);
+        }
+        return;
+    }
+    GpuBatch& batch = scene_.batches[prepareBatch(material)];
+    // A batch is either indexed or unrolled, never both: drawing an indexed
+    // batch ignores vertices no index names, and drawing an unrolled one ignores
+    // the indices. A batch that already holds unrolled triangles keeps taking
+    // them, and this mesh is unrolled to match.
+    if (!batch.vertices.empty() && batch.indices.empty()) {
+        for (const std::array<int, 3>& face : faces) {
+            if (!usableFace(face, points.size())) continue;
+            const Vec3& a = points[static_cast<std::size_t>(face[0])];
+            const Vec3& b = points[static_cast<std::size_t>(face[1])];
+            const Vec3& c = points[static_cast<std::size_t>(face[2])];
+            worldTriangle(a, b, c, cross(b - a, c - a), material);
+        }
+        return;
+    }
+    const std::uint32_t base = static_cast<std::uint32_t>(batch.vertices.size());
+    batch.vertices.reserve(batch.vertices.size() + points.size());
+    for (const Vec3& point : points) {
+        GpuVertex vertex;
+        vertex.x = static_cast<float>(point.x);
+        vertex.y = static_cast<float>(point.y);
+        vertex.z = static_cast<float>(point.z);
+        // The normal of an indexed batch is derived per fragment from the
+        // triangle that carries it, which is the face normal this used to hold
+        // three copies of and now holds none of.
+        batch.vertices.push_back(vertex);
+    }
+    batch.indices.reserve(batch.indices.size() + faces.size() * 3);
+    for (const std::array<int, 3>& face : faces) {
+        if (!usableFace(face, points.size())) continue;
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[0]));
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[1]));
+        batch.indices.push_back(base + static_cast<std::uint32_t>(face[2]));
+    }
+    activeMaterial_ = &material;
+    activeObject_ = objectId_;
+}
+
 void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Material& material) {
     if (gpu_) {
         std::size_t index = activeBatch_;
         bool reuse = index < scene_.batches.size();
-        if (reuse) {
+        // Fast path first: the same material object, on the same batch, is the
+        // overwhelmingly common case inside a body and needs no comparison.
+        const bool sameObjectAndMaterial = reuse && activeMaterial_ == &material &&
+            activeObject_ == objectId_;
+        if (reuse && !sameObjectAndMaterial) {
             const GpuBatch& candidate = scene_.batches[index];
             reuse = candidate.objectId == objectId_ && sameMaterial(candidate.material, material);
         }
@@ -305,17 +618,48 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         }
         activeBatch_ = index;
         GpuBatch& batch = scene_.batches[index];
-        batch.pivotX = static_cast<float>(objectPivot_.x);
-        batch.pivotZ = static_cast<float>(objectPivot_.y);
-        batch.yaw = objectYaw_;
-        for (const RenderVertex& vertex : input) {
-            batch.vertices.push_back({static_cast<float>(vertex.view.x), static_cast<float>(vertex.view.y),
-                static_cast<float>(vertex.view.z), static_cast<float>(vertex.normal.x),
-                static_cast<float>(vertex.normal.y), static_cast<float>(vertex.normal.z),
-                static_cast<float>(vertex.uv.x), static_cast<float>(vertex.uv.y)});
+        if (!sameObjectAndMaterial || batch.pivotX != static_cast<float>(objectPivot_.x) ||
+            batch.pivotZ != static_cast<float>(objectPivot_.y) || batch.yaw != objectYaw_) {
+            batch.pivotX = static_cast<float>(objectPivot_.x);
+            batch.pivotZ = static_cast<float>(objectPivot_.y);
+            batch.yaw = objectYaw_;
+        }
+        activeMaterial_ = &material;
+        activeObject_ = objectId_;
+        // Three vertices appended in one go rather than three separate growth
+        // checks and iterator updates: this runs 195,000 times per body.
+        const std::size_t base = batch.vertices.size();
+        batch.vertices.resize(base + 3);
+        GpuVertex* out = batch.vertices.data() + base;
+        for (int corner = 0; corner < 3; ++corner, ++out) {
+            const RenderVertex& vertex = input[corner];
+            out->x = static_cast<float>(vertex.view.x);
+            out->y = static_cast<float>(vertex.view.y);
+            out->z = static_cast<float>(vertex.view.z);
+            out->nx = static_cast<float>(vertex.normal.x);
+            out->ny = static_cast<float>(vertex.normal.y);
+            out->nz = static_cast<float>(vertex.normal.z);
+            out->u = static_cast<float>(vertex.uv.x);
+            out->v = static_cast<float>(vertex.uv.y);
         }
         return;
     }
+    // Queued, not drawn: finish() splits the frame into horizontal bands and
+    // draws them on separate cores. Each band owns its rows, so no lock is
+    // needed and no pixel is written by two threads.
+    std::uint32_t index = static_cast<std::uint32_t>(materials_.size());
+    for (std::uint32_t candidate = 0; candidate < materials_.size(); ++candidate) {
+        if (sameMaterial(materials_[candidate], material)) {
+            index = candidate;
+            break;
+        }
+    }
+    if (index == materials_.size()) materials_.push_back(material);
+    pending_.push_back({input, index});
+}
+
+void Rasterizer::rasterize(const std::array<RenderVertex, 3>& input, const Material& material,
+                             int yBegin, int yEnd) {
     constexpr double near = 0.035;
     std::array<RenderVertex, 4> polygon;
     std::size_t polygonSize = 0;
@@ -349,9 +693,12 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
         const double inverseArea = 1.0 / area;
         const int minX = std::max(0, static_cast<int>(std::floor(std::min({p[0].x, p[1].x, p[2].x}))));
         const int maxX = std::min(width_ - 1, static_cast<int>(std::ceil(std::max({p[0].x, p[1].x, p[2].x}))));
-        const int minY = std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y}))));
-        const int maxY = std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y}))));
-        if (minX > maxX || minY > maxY) continue;
+        // The band this thread owns: a triangle that spans several bands is
+        // drawn once per band, each time only over that band's rows.
+        const int minY = std::max(yBegin, std::max(0, static_cast<int>(std::floor(std::min({p[0].y, p[1].y, p[2].y})))));
+        const int maxY = std::min(yEnd - 1, std::min(height_ - 1, static_cast<int>(std::ceil(std::max({p[0].y, p[1].y, p[2].y})))));
+        if (minX > maxX || minY > maxY || yBegin >= yEnd) continue;
+        const Vec3 centroidView = (p[0].view + p[1].view + p[2].view) / 3.0;
         Vec3 tangent{1, 0, 0}, bitangent{0, 1, 0};
         if (material.kind == Material::Kind::Skin && material.normalYoung) {
             const Vec3 e1 = p[1].view - p[0].view, e2 = p[2].view - p[0].view;
@@ -363,11 +710,17 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                 bitangent = normalized((e2 * du1 - e1 * du2) / denominator);
             }
         }
+        // Any triangle whose three normals agree shades identically across its
+        // whole area, so the per-pixel normal interpolation, renormalisation and
+        // two dot products can be folded into one value here. Walls, floor and
+        // the box furniture are all of that kind, and they cover most pixels.
+        const bool flatShaded = std::abs(dot(p[0].normal, p[1].normal) - 1.0) < 1e-6 &&
+            std::abs(dot(p[0].normal, p[2].normal) - 1.0) < 1e-6;
         double constantDiffuse = 0.0;
-        const bool constantLighting = material.constantLighting && material.specular <= 0.0;
+        const bool constantLighting = (material.constantLighting || flatShaded) && material.specular <= 0.0;
         if (constantLighting) {
             Vec3 normal = p[0].normal;
-            if (dot(normal, p[0].view) > 0) normal = normal * -1.0;
+            if (dot(normal, centroidView) > 0) normal = normal * -1.0;
             constantDiffuse = 0.38 + 0.78 * std::max(0.0, dot(normal, key)) +
                               0.24 * std::max(0.0, dot(normal, fill));
         }
@@ -416,10 +769,13 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
                         base = tile ? material.second : material.color;
                     }
                 } else if (material.kind == Material::Kind::Skin) {
-                    Color detail;
-                    if (material.texture) {
+                    // An authored surface may carry no atlas at all; in that
+                    // case the skin tone is the whole colour, not a white
+                    // detail map sampled out of an empty texture.
+                    Color detail{1, 1, 1};
+                    if (material.texture && !material.texture->pixels.empty()) {
                         detail = linear(sample(material.texture, uv.x, uv.y));
-                    } else {
+                    } else if (material.young && !material.young->pixels.empty()) {
                         detail = mix(linear(sample(material.young, uv.x, uv.y)),
                                      linear(sample(material.old, uv.x, uv.y)), ageBlend * 0.94);
                     }
@@ -460,7 +816,45 @@ void Rasterizer::triangle(const std::array<RenderVertex, 3>& input, const Materi
     }
 }
 
-NativeFrame Rasterizer::finish() const {
+void Rasterizer::drain(Rasterizer& target) {
+    // Order matters for equal-depth ties, so the queued triangles are replayed
+    // in the order they were submitted.
+    for (const RasterTriangle& triangle : pending_) {
+        target.rasterize(triangle.vertices, materials_[triangle.material], 0, target.height_);
+    }
+    pending_.clear();
+    materials_.clear();
+}
+
+void Rasterizer::flush() {
+    if (pending_.empty()) return;
+    // How many bands: one per worker, but never more bands than rows.
+    std::size_t bands = std::max<std::size_t>(1, std::min<std::size_t>(frameThreads(),
+        static_cast<std::size_t>(std::max(1, height_))));
+    if (bands == 1 || pending_.size() < 256) {
+        for (const RasterTriangle& triangle : pending_) {
+            rasterize(triangle.vertices, materials_[triangle.material], 0, height_);
+        }
+        pending_.clear();
+        materials_.clear();
+        return;
+    }
+    const auto drawBand = [&](std::size_t beginIndex, std::size_t endIndex) {
+        for (std::size_t index = beginIndex; index < endIndex; ++index) {
+            const int begin = height_ * static_cast<int>(index) / static_cast<int>(bands);
+            const int end = height_ * static_cast<int>(index + 1) / static_cast<int>(bands);
+            for (const RasterTriangle& triangle : pending_) {
+                rasterize(triangle.vertices, materials_[triangle.material], begin, end);
+            }
+        }
+    };
+    FramePool& pool = framePool();
+    pool.ranges(bands, bands, drawBand);
+    pending_.clear();
+    materials_.clear();
+}
+
+NativeFrame Rasterizer::finish() {
     NativeFrame frame;
     frame.width = width_;
     frame.height = height_;
@@ -469,6 +863,10 @@ NativeFrame Rasterizer::finish() const {
         frame.rgb.clear();
         return frame;
     }
+    static const bool profileRaster = std::getenv("GTC_RASTER_PROFILE") != nullptr;
+    const auto rasterStart = std::chrono::steady_clock::now();
+    flush();
+    const auto rasterDone = std::chrono::steady_clock::now();
     frame.rgb.resize(pixels_.size() * 3);
     constexpr int size = 4096;
     constexpr double range = 4.0;
@@ -486,6 +884,11 @@ NativeFrame Rasterizer::finish() const {
         if (value >= range) return static_cast<unsigned char>(255);
         return output[static_cast<int>(value * ((size - 1) / range) + 0.5)];
     };
+    // Every presented frame needs a coverage mask: the OpenGL presenter blends
+    // the software image over the scene with it, and an empty mask there is not
+    // a warning, it is a hard failure. The software path is fully opaque, so the
+    // mask is simply solid.
+    frame.alpha.assign(pixels_.size(), 255);
     const auto convert = [&](std::size_t begin, std::size_t end) {
         for (std::size_t i = begin; i < end; ++i) {
             frame.rgb[i * 3] = encode(pixels_[i].r);
@@ -501,7 +904,27 @@ NativeFrame Rasterizer::finish() const {
     } else {
         convert(0, pixels_.size());
     }
+    if (profileRaster) {
+        const auto ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        std::printf("  [cpu] triangles %.2f ms, encode %.2f ms\n",
+                    ms(rasterStart, rasterDone), ms(rasterDone, std::chrono::steady_clock::now()));
+    }
     return frame;
+}
+
+GpuScene mergeScenes(std::vector<GpuScene> scenes) {
+    GpuScene merged;
+    if (scenes.empty()) return merged;
+    merged = std::move(scenes.front());
+    for (std::size_t index = 1; index < scenes.size(); ++index) {
+        for (GpuBatch& batch : scenes[index].batches) {
+            if (batch.vertices.empty()) continue;
+            merged.batches.push_back(std::move(batch));
+        }
+    }
+    return merged;
 }
 
 void drawBox(Rasterizer& rasterizer, const Camera& camera, Vec3 center, Vec3 size,

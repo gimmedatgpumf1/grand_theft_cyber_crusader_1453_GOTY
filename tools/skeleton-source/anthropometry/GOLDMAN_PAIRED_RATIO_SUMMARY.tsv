@@ -1,0 +1,57 @@
+sex	side	ratio	quality	n	mean	sd	p05	median	p95
+male	L	humerus / radius	all	800	1.299462	0.051018	1.214836	1.300631	1.384296
+male	L	humerus / radius	review_flag_excluded	798	1.299470	0.050900	1.214937	1.300631	1.384330
+male	L	radius / humerus	all	800	0.770739	0.030391	0.722389	0.768858	0.823157
+male	L	radius / humerus	review_flag_excluded	798	0.770729	0.030319	0.722371	0.768858	0.823088
+male	L	femur / tibia	all	867	1.209851	0.040880	1.145982	1.207447	1.280594
+male	L	femur / tibia	review_flag_excluded	863	1.209620	0.040264	1.145958	1.207447	1.277002
+male	L	tibia / femur	all	867	0.827484	0.027774	0.780888	0.828194	0.872614
+male	L	tibia / femur	review_flag_excluded	863	0.827617	0.027434	0.783084	0.828194	0.872632
+male	L	humerus / femur	all	832	0.713240	0.022580	0.679929	0.712069	0.750598
+male	L	humerus / femur	review_flag_excluded	830	0.713274	0.022551	0.680199	0.712069	0.750599
+male	L	(humerus + radius) / (femur + tibia)	all	718	0.691461	0.019127	0.661086	0.690701	0.723107
+male	L	(humerus + radius) / (femur + tibia)	review_flag_excluded	713	0.691446	0.019120	0.661076	0.690715	0.723126
+male	L	bi-iliac breadth / femur	all	869	0.605249	0.040310	0.539863	0.606205	0.672953
+male	L	bi-iliac breadth / femur	review_flag_excluded	869	0.605249	0.040310	0.539863	0.606205	0.672953
+male	R	humerus / radius	all	815	1.306171	0.052425	1.221257	1.307359	1.392923
+male	R	humerus / radius	review_flag_excluded	813	1.306157	0.052399	1.221227	1.307359	1.392944
+male	R	radius / humerus	all	815	0.766831	0.030849	0.717915	0.764901	0.818829
+male	R	radius / humerus	review_flag_excluded	813	0.766838	0.030834	0.717904	0.764901	0.818848
+male	R	femur / tibia	all	853	1.207854	0.042922	1.140461	1.206284	1.276058
+male	R	femur / tibia	review_flag_excluded	850	1.207326	0.040978	1.140460	1.206177	1.274972
+male	R	tibia / femur	all	853	0.828934	0.028827	0.783663	0.828992	0.876839
+male	R	tibia / femur	review_flag_excluded	850	0.829226	0.028042	0.784331	0.829066	0.876839
+male	R	humerus / femur	all	829	0.722144	0.023413	0.687963	0.721519	0.759445
+male	R	humerus / femur	review_flag_excluded	827	0.722160	0.023294	0.688453	0.721519	0.759007
+male	R	(humerus + radius) / (femur + tibia)	all	718	0.697758	0.018409	0.669854	0.697064	0.729756
+male	R	(humerus + radius) / (femur + tibia)	review_flag_excluded	713	0.697618	0.018134	0.669756	0.697023	0.729195
+male	R	bi-iliac breadth / femur	all	863	0.606548	0.040640	0.539993	0.606870	0.676984
+male	R	bi-iliac breadth / femur	review_flag_excluded	863	0.606548	0.040640	0.539993	0.606870	0.676984
+female	L	humerus / radius	all	430	1.319317	0.056305	1.242737	1.312702	1.413135
+female	L	humerus / radius	review_flag_excluded	428	1.320080	0.053836	1.243284	1.312702	1.413208
+female	L	radius / humerus	all	430	0.759375	0.033243	0.707647	0.761788	0.804676
+female	L	radius / humerus	review_flag_excluded	428	0.758774	0.030615	0.707610	0.761788	0.804322
+female	L	femur / tibia	all	468	1.213772	0.037975	1.157093	1.210410	1.278003
+female	L	femur / tibia	review_flag_excluded	464	1.214123	0.037651	1.157778	1.210526	1.278073
+female	L	tibia / femur	all	468	0.824676	0.025596	0.782471	0.826166	0.864235
+female	L	tibia / femur	review_flag_excluded	464	0.824422	0.025323	0.782428	0.826087	0.863723
+female	L	humerus / femur	all	447	0.708284	0.022270	0.674543	0.708738	0.745512
+female	L	humerus / femur	review_flag_excluded	443	0.708397	0.020009	0.674810	0.708389	0.745045
+female	L	(humerus + radius) / (femur + tibia)	all	373	0.682647	0.018800	0.653166	0.682418	0.711922
+female	L	(humerus + radius) / (femur + tibia)	review_flag_excluded	368	0.682801	0.017823	0.653730	0.682366	0.711264
+female	L	bi-iliac breadth / femur	all	482	0.634425	0.046971	0.546224	0.639057	0.703657
+female	L	bi-iliac breadth / femur	review_flag_excluded	481	0.634230	0.046824	0.546067	0.638554	0.702774
+female	R	humerus / radius	all	454	1.327293	0.053869	1.246615	1.321903	1.419297
+female	R	humerus / radius	review_flag_excluded	452	1.327450	0.053549	1.246669	1.321903	1.419405
+female	R	radius / humerus	all	454	0.754644	0.030451	0.704574	0.756485	0.802172
+female	R	radius / humerus	review_flag_excluded	452	0.754539	0.030228	0.704520	0.756485	0.802137
+female	R	femur / tibia	all	488	1.213522	0.047893	1.153919	1.209655	1.279212
+female	R	femur / tibia	review_flag_excluded	484	1.213134	0.039600	1.154251	1.209716	1.278219
+female	R	tibia / femur	all	488	0.825265	0.031391	0.781732	0.826682	0.866612
+female	R	tibia / femur	review_flag_excluded	484	0.825179	0.026665	0.782338	0.826640	0.866363
+female	R	humerus / femur	all	470	0.721714	0.020597	0.687605	0.721983	0.757061
+female	R	humerus / femur	review_flag_excluded	466	0.721776	0.020343	0.687916	0.721957	0.757148
+female	R	(humerus + radius) / (femur + tibia)	all	415	0.693481	0.017965	0.664804	0.693367	0.722371
+female	R	(humerus + radius) / (femur + tibia)	review_flag_excluded	410	0.693208	0.016955	0.665555	0.693300	0.720915
+female	R	bi-iliac breadth / femur	all	494	0.635896	0.047126	0.552578	0.641207	0.708541
+female	R	bi-iliac breadth / femur	review_flag_excluded	493	0.635801	0.047127	0.552566	0.641192	0.708571

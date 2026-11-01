@@ -25,7 +25,6 @@ struct ViewState {
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
     double fps = 0.0;
-    double frameMilliseconds = 0.0;
     bool gpu = false;
     bool highlightToilet = false;
     bool slowWalk = false;
@@ -36,6 +35,10 @@ struct ViewState {
 
 class WorldRenderer {
 public:
+    // The harness runs its anatomical camera checks against the imported scan,
+    // whose topology those checks are written for. Everything else -- the game
+    // itself -- draws the authored block body. Set before load().
+    void loadImportedBody(bool enabled) { importedBody_ = enabled; }
     bool load(const std::string& root, std::string& error);
     bool render(const ClientWorld& world, const ClientState& state, std::uint32_t localId,
                 const ViewState& view, NativeFrame& frame, std::string& error) const;
@@ -46,6 +49,7 @@ public:
 private:
     std::string root_;
     bool ready_ = false;
+    bool importedBody_ = false;
     HumanModel male_;
     HumanModel female_;
     HairLibrary maleHair_;
@@ -62,6 +66,9 @@ private:
     mutable std::uint32_t gpuLocalId_ = 0;
     mutable int gpuMode_ = -1;
     mutable bool gpuHighlight_ = false;
+    mutable RasterBuffer buffer_;
+    mutable RasterBuffer decalBuffer_;
+    mutable RasterBuffer particleBuffer_;
 };
 
 double headAngleForGaze(double gazeAngle);
