@@ -112,8 +112,8 @@ both originals and head–C1 intersections in the female original. Averaging the
 blue skull and jaw changes those surfaces but does not fix the existing
 intersections. At default height FCL reports 96/94 source/blue male head–jaw
 contacts, 65/0 female head–jaw contacts, and 112/124 female head–C1 contacts.
-The female blue head–jaw gap is approximately 0.034 mm; the male head–C1 gap
-is approximately 0.034 mm in the source and 0.464 mm in the blue copy. Counts
+The female blue head–jaw gap is approximately 0.035 mm; the male head–C1 gap
+is approximately 0.034 mm in the source and 0.466 mm in the blue copy. Counts
 depend on the mesh and collision algorithm. The test also
 checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
 jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
@@ -148,23 +148,28 @@ three-axis skull frame follows the head's rigid T-pose rotation. The surfaces
 are averaged and mirrored in that frame, then returned through its inverse;
 they are not forced upright or re-centred on the hips. The skull, jaw and C1
 retain their shared cranial scale transform.
-`45-fit-skull-midplane.py` fits each Head's reflected outer surface to its own
-outer triangles, with a robust cap, and checks estimated orbit centres
-independently. Both samples and nearest-surface targets come only from a
-geometrically selected outward-visible triangle subset: outward-facing faces
-with clear outward-normal and radial rays. The source meshes are not watertight;
-this conservative test may omit exterior concavities or misclassify faces near
-openings, so it is not a guaranteed anatomical segmentation. On held-out
-selected-surface samples the mean reflection distance is 1.023 mm male and
-1.083 mm female; the estimated orbit midpoint is 0.769 mm and 1.749 mm from the
-plane respectively. This is a geometric estimate, not an ideal anatomical
-midline.
+`45-fit-skull-midplane.py` first voxelizes each Head's selected outer surface at
+1.5 mm isotropic resolution. It searches for the best reflection-plane match
+against the 3D voxel distance field, varying two plane angles and the plane's
+offset with multiple initial guesses. The initial search direction is the
+scan's approximate left/right axis; it does not use hips or body landmarks.
+The robust, smoothed squared-distance objective drops from 6.532 to 2.876 mm²
+for the male and from 10.942 to 2.891 mm² for the female. Estimated orbit
+centres are independent diagnostics, not inputs to the fit.
+
+Only the geometrically selected outward-visible triangle subset is voxelized:
+outward-facing faces with clear outward-normal and radial rays. Unreferenced
+vertices are removed before voxelization so internal triangles cannot add
+voxels. The source meshes are not watertight; this conservative selection may
+omit exterior concavities or misclassify faces near openings. It is not a
+guaranteed anatomical segmentation, and the voxel fit is not proof of an ideal
+anatomical midline.
 
 The skull and jaw triangle meshes are mirrored about that plane. Head vertices
 on selected outer triangles are averaged against the reflected selected outer
 triangles, not the inner walls; other Head vertices and Jaw use their full
-opposite surfaces. No global smoothing is used; only local displacement that
-would reverse a face is reduced. The masks are stored per source Head triangle
+opposite surfaces. No global smoothing is used; local displacement that would
+reverse a face or introduce a disjoint self-intersection is reduced. The masks are stored per source Head triangle
 and regenerated and checked by the fitting script (which requires NumPy,
 SciPy, trimesh, rtree and embreex). Nearest points are not guaranteed to be
 anatomically corresponding landmarks. Remaining central bones retain their

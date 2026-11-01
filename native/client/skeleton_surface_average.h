@@ -4,6 +4,7 @@
 // correspondence is unknown, so this is a geometric estimate, not an
 // anatomical correspondence. Face orientation is protected after averaging.
 #include "client/skeleton_body.h"
+#include "client/skeleton_bilateral.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -116,7 +117,7 @@ public:
 };
 
 inline bool surfaceAverage(std::vector<Vec3>& points,const std::vector<std::array<int,3>>& faces,
-                           const std::vector<bool>* exterior=nullptr) {
+                           const std::vector<bool>* exterior=nullptr, bool checkSelf=false) {
     if (points.empty() || faces.empty() || (exterior && exterior->size()!=faces.size())) return false;
     for (const auto& f:faces) for (int i:f)
         if (i<0 || static_cast<std::size_t>(i)>=points.size()) return false;
@@ -138,8 +139,10 @@ inline bool surfaceAverage(std::vector<Vec3>& points,const std::vector<std::arra
         delta.push_back((closest-points[i])*0.5);
     }
     // A nearest surface point is not guaranteed to be an anatomical landmark.
-    // Limit only displacements that would reverse a face; otherwise retain the
-    // exact half-way point, without smoothing away the other side's details.
+    // Reduce local displacements that would reverse a face or introduce a
+    // disjoint self-intersection. Otherwise retain the exact half-way point,
+    // without smoothing away the other side's details.
+    const auto baseline=checkSelf ? selfIntersections(points,faces) : std::vector<std::pair<int,int>>{};
     bool valid=false;
     for (int pass=0;pass<32 && !valid;++pass) {
         valid=true; std::vector<bool> bad(points.size());
@@ -149,6 +152,16 @@ inline bool surfaceAverage(std::vector<Vec3>& points,const std::vector<std::arra
             const Vec3 a=points[f[0]]+delta[f[0]],b=points[f[1]]+delta[f[1]],c=points[f[2]]+delta[f[2]];
             if (dot(n,cross(b-a,c-a))<=0) {
                 valid=false; for (int i:f) bad[static_cast<std::size_t>(i)]=true;
+            }
+        }
+        if (checkSelf) {
+            std::vector<Vec3> candidate; candidate.reserve(points.size());
+            for (std::size_t i=0;i<points.size();++i) candidate.push_back(points[i]+delta[i]);
+            for (const auto& pair:selfIntersections(candidate,faces)) {
+                if (std::binary_search(baseline.begin(),baseline.end(),pair)) continue;
+                valid=false;
+                for (int v:faces[pair.first]) bad[static_cast<std::size_t>(v)]=true;
+                for (int v:faces[pair.second]) bad[static_cast<std::size_t>(v)]=true;
             }
         }
         if (!valid) for (std::size_t i=0;i<delta.size();++i) if (bad[i]) delta[i]=delta[i]*0.5;

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Fit each Head mesh alone to its reflected surface; no body or hip landmarks.
+"""Register each skull's voxelized outside to its mirror, independently.
 
-Requires NumPy, SciPy, trimesh, rtree and embreex. The fitted plane is an
-estimate, not an anatomical truth. Only outward-visible source triangles are
-used for BOTH samples and nearest-surface queries; enclosed interior surfaces
-are excluded. The non-watertight skull makes the classification conservative,
-not a guaranteed anatomical segmentation. A coarse fit is refined against the
-selected triangles using uniform surface samples. A 6 mm robust cap limits
-outliers, and a separate sample checks the result. Runtime uses the recorded
-source-coordinate plane in native/client/skull_midplane.h, transformed rigidly
-with the head. Use --check to verify the constants.
+Requires NumPy, SciPy, trimesh and embreex. The source meshes are not
+watertight: the outward-visible triangle selection is a conservative geometric
+estimate, not a guaranteed anatomical segmentation. We voxelize only that
+selection, then optimize a plane with two rotation parameters and an offset
+against a 3D distance field of occupied surface voxels. No hip/body landmarks
+or interior triangles are used as fit samples or targets. The resulting plane
+is recorded in native/client/skull_midplane.h; the blue mesh is subsequently
+averaged with its reflected opposite surface and mirrored about that plane.
 """
 import argparse
 from pathlib import Path
@@ -18,10 +17,10 @@ import re
 import numpy as np
 import trimesh
 from skull_exterior import exterior_faces
-from scipy.optimize import minimize
-from scipy.spatial import cKDTree
+from skull_voxel_fit import voxel_surface, register_voxels
 
 ROOT = Path(__file__).resolve().parents[3]
+PITCH = .0015  # 1.5 mm isotropic source-space voxels
 
 
 def head(path):
@@ -58,78 +57,20 @@ def fit(sex, write_mask=False, check_mask=False):
         if stored != mask_text:
             raise ValueError(f'{sex}: skull exterior mask differs from source geometry')
     faces = all_faces[exterior]
-    exterior_area = original.area_faces[exterior]
-    center = np.average(original.triangles_center[exterior], axis=0, weights=exterior_area)
-    relative = vertices-center
-    triangles = relative[faces]
-    areas = np.linalg.norm(np.cross(triangles[:, 1]-triangles[:, 0],
-                                    triangles[:, 2]-triangles[:, 0]), axis=1)/2
-    # Neither the sample nor its nearest-neighbour target includes vertices
-    # used only by interior triangles.
-    weights = np.zeros(len(vertices))
-    np.add.at(weights, faces.reshape(-1), np.repeat(areas/3, 3))
-    weights /= weights.sum()
-    sample = relative[np.random.default_rng(456).choice(len(vertices), 10000, p=weights)]
-    tree = cKDTree(relative[np.unique(faces)])
-    print(f'{sex}: {len(faces)}/{len(all_faces)} exterior-visible triangles; '
-          f'{exterior_area.sum()/original.area:.1%} of total triangle area')
-
-    def distances(params, sample):
-        normal = np.array([1., params[0], params[1]])
-        normal /= np.linalg.norm(normal)
-        reflected = sample-2*(sample@normal-params[2])[:, None]*normal
-        return tree.query(reflected, workers=1)[0]
-
-    def objective(params):
-        return np.mean(np.minimum(distances(params, sample)**2, 0.006**2))
-
-    starts = ([0,0,0], [.05,0,0], [-.05,0,0], [0,.05,0], [0,-.05,0])
-    solutions = [minimize(objective, start, method='Powell',
-                          bounds=[(-.25,.25),(-.25,.25),(-.02,.02)],
-                          options={'xtol':1e-6,'ftol':1e-9,'maxiter':200}) for start in starts]
-    best = min(solutions, key=lambda result: result.fun)
-    if not best.success:
-        raise RuntimeError(f'{sex}: skull plane optimization failed: {best.message}')
-    mesh = trimesh.Trimesh(vertices=relative, faces=faces, process=False)
-
-    def sample_surface(seed, count):
-        rng = np.random.default_rng(seed)
-        selected = rng.choice(len(faces), count, p=mesh.area_faces/mesh.area)
-        uv = rng.random((count, 2))
-        a = np.sqrt(uv[:, 0])
-        return ((1-a)[:, None]*mesh.triangles[selected, 0] +
-                (a*(1-uv[:, 1]))[:, None]*mesh.triangles[selected, 1] +
-                (a*uv[:, 1])[:, None]*mesh.triangles[selected, 2])
-
-    training, heldout_points = sample_surface(456, 8000), sample_surface(789, 4000)
-
-    def surface_distances(params, points):
-        n = np.array([1., params[0], params[1]])
-        n /= np.linalg.norm(n)
-        reflected = points-2*(points@n-params[2])[:, None]*n
-        return trimesh.proximity.closest_point(mesh, reflected)[1]
-
-    refined = minimize(lambda t: np.mean(np.minimum(surface_distances(t, training)**2, 0.006**2)),
-                       best.x, method='Powell', bounds=[(-.25,.25),(-.25,.25),(-.02,.02)],
-                       options={'xtol':2e-6,'ftol':1e-8,'maxiter':80})
-    if not refined.success:
-        raise RuntimeError(f'{sex}: skull surface fit failed: {refined.message}')
-    normal = np.array([1., refined.x[0], refined.x[1]])
-    normal /= np.linalg.norm(normal)
-    origin = center+refined.x[2]*normal
-    heldout = surface_distances(refined.x, heldout_points)
-    baseline = surface_distances([0,0,0], heldout_points)
-    # Check the face independently: these approximate orbit centres do not
-    # participate in the skull-surface fit.
+    surface = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    occupied, grid_origin = voxel_surface(surface, PITCH)
+    origin, normal, baseline, fitted = register_voxels(occupied, grid_origin, PITCH)
+    if fitted >= baseline:
+        raise ValueError(f'{sex}: voxel registration did not improve mirror match')
+    # Approximate orbit landmarks are independent diagnostics, not fit inputs.
     eyes = np.loadtxt(base/f'skeleton-{sex}.orbits')
     eye_offset = abs(((eyes-origin)@normal).mean())
     eye_line = (eyes[1]-eyes[0])/np.linalg.norm(eyes[1]-eyes[0])
     eye_angle = np.degrees(np.arccos(np.clip(abs(normal@eye_line), 0, 1)))
-    if np.mean(heldout) >= np.mean(baseline) or eye_offset > .003 or eye_angle > 5:
-        raise ValueError(f'{sex}: plane fit or independent orbit check failed')
-    print(f'{sex}: held-out mean reflection distance {np.mean(baseline)*1000:.3f} -> '
-          f'{np.mean(heldout)*1000:.3f} mm; orbit midpoint offset {eye_offset*1000:.3f} mm; '
-          f'orbit-axis angle {eye_angle:.3f} degrees')
+    print(f'{sex}: {len(faces)}/{len(all_faces)} outward-visible triangles; '
+          f'{occupied.sum()} occupied {PITCH*1000:.1f} mm surface voxels')
+    print(f'{sex}: voxel mirror objective {baseline*1e6:.3f} -> {fitted*1e6:.3f} mm²; '
+          f'orbit midpoint offset {eye_offset*1000:.3f} mm; orbit-axis angle {eye_angle:.3f} degrees')
     print('  origin:', ' '.join(f'{x:.12f}' for x in origin))
     print('  normal:', ' '.join(f'{x:.12f}' for x in normal))
     return origin, normal
@@ -148,12 +89,11 @@ def main():
         if len(values) != 4:
             raise ValueError('Unable to read runtime plane constants')
         for i, (origin, normal) in enumerate(fits):
-            # Plane origin may slide within the plane; only normal separation matters.
             offset = abs((values[i]-origin)@normal)
             angle = np.arccos(np.clip(values[i+2]@normal, -1, 1))
             if offset > 0.0001 or angle > np.radians(.05):
-                raise ValueError(f'runtime plane {i} differs from fitted skull by {offset} m, {angle} rad')
-        print('Skull-only plane constants: PASS')
+                raise ValueError(f'runtime plane {i} differs from voxel fit by {offset} m, {angle} rad')
+        print('3D voxel skull plane constants: PASS')
 
 
 if __name__ == '__main__':

@@ -151,6 +151,7 @@ python3 tests/openskeleton_elbow_collision.py
 # Refit the skull-only planes when the optional scientific tools are installed.
 if python3 -c 'import numpy, scipy, trimesh, rtree, embreex' >/dev/null 2>&1; then
   OPENBLAS_NUM_THREADS=1 python3 tests/skull_exterior.py
+  OPENBLAS_NUM_THREADS=1 python3 tests/skull_voxel_fit.py
   OPENBLAS_NUM_THREADS=1 python3 tools/skeleton-source/openskeleton/45-fit-skull-midplane.py --check
 else
   echo 'Exterior skull plane fit: skipped (NumPy, SciPy, trimesh, rtree and embreex optional)'

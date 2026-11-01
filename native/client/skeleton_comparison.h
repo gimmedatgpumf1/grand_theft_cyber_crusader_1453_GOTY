@@ -170,7 +170,7 @@ public:
             Part* part=mutablePart(name);
             if (!part) { error="Comparison skull structure is missing"; return false; }
             for (Vec3& p:part->points) p=skullPlane.local(p);
-            if (!bilateral::surfaceAverage(part->points,part->faces,part->name=="Head" ? &outside : nullptr) ||
+            if (!bilateral::surfaceAverage(part->points,part->faces,part->name=="Head" ? &outside : nullptr,true) ||
                 !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison skull could not be averaged"; return false;
             }

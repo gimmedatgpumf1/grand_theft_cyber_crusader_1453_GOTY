@@ -117,17 +117,8 @@ static void checkSkull(SkeletonRoom& room,bool male) {
     assert(outside.size()==head.triangleCount);
     std::vector<Vec3> skull(headGroup.points.begin()+head.firstPoint,
                             headGroup.points.begin()+head.firstPoint+head.pointCount);
-    Vec3 centroid{}; for (Vec3 p:skull) centroid+=p; centroid=centroid/static_cast<double>(skull.size());
-    bilateral::PointTree tree(skull); double fittedError=0,axisError=0;
-    for (std::size_t i=0;i<skull.size();i+=3) {
-        const Vec3 p=skull[i];
-        const Vec3 reflected=p-rawPlane.normal*(2*dot(p-rawPlane.origin,rawPlane.normal));
-        const Vec3 axisReflected{2*centroid.x-p.x,p.y,p.z};
-        const Vec3 fittedDelta=tree.nearest(reflected)-reflected, axisDelta=tree.nearest(axisReflected)-axisReflected;
-        fittedError+=std::min(dot(fittedDelta,fittedDelta),0.006*0.006);
-        axisError+=std::min(dot(axisDelta,axisDelta),0.006*0.006);
-    }
-    assert(fittedError<axisError*0.75);
+    // The offline voxel regression checks the fit itself against selected
+    // outer surface voxels; these independent eye estimates are diagnostic.
     const auto& eyes=*model.orbitalCenters();
     assert(std::abs(dot((eyes[0]+eyes[1])*0.5-rawPlane.origin,rawPlane.normal))<0.003);
     assert(std::abs(dot(normalized(eyes[1]-eyes[0]),rawPlane.normal))>std::cos(5.0*3.141592653589793/180));
@@ -145,8 +136,8 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         for (int& v:f) v-=static_cast<int>(head.firstPoint);
         headFaces.push_back(f);
     }
-    assert(bilateral::surfaceAverage(unrotated,headFaces,&outside));
-    assert(bilateral::surfaceAverage(rotated,headFaces,&outside));
+    assert(bilateral::surfaceAverage(unrotated,headFaces,&outside,true));
+    assert(bilateral::surfaceAverage(rotated,headFaces,&outside,true));
     for (std::size_t i=0;i<unrotated.size();++i) assert(length(unrotated[i]-rotated[i])<1e-9);
     for (const char* name:{"Head","Jaw"}) {
         const int id=model.sourceStructure(name), rawId=source.sourceStructure(name);
@@ -172,7 +163,7 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         }
         const bool isHead=std::string(name)=="Head";
         auto averaged=original;
-        assert(bilateral::surfaceAverage(averaged,triangles,isHead ? &outside : nullptr));
+        assert(bilateral::surfaceAverage(averaged,triangles,isHead ? &outside : nullptr,true));
         // Verify the two-sided result against the actual opposite triangle
         // surfaces, and that the face-orientation guard changes only a small
         // minority of the exact half-way displacements.
