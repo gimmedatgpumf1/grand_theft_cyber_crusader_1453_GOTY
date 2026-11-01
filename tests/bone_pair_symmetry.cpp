@@ -1,5 +1,5 @@
-// Audit every rib pair separately in both comparison skeletons. The ribs are
-// paired left/right bones; a single curved rib is not reflected onto itself.
+// Audit every rib, scapula and clavicle pair separately in both comparison
+// skeletons. Paired bones are reflected across the body, not onto themselves.
 #include "client/skeleton_room.h"
 #include <algorithm>
 #include <array>
@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 using namespace gtc::native;
+static const std::array<std::string,14> pairs={"Rib1","Rib2","Rib3","Rib4","Rib5","Rib6",
+    "Rib7","Rib8","Rib9","Rib10","Rib11","Rib12","Scapula","Clavicula"};
 
 struct Surface { std::vector<Vec3> points; std::vector<std::array<int,3>> faces; };
 static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
@@ -64,9 +66,9 @@ static void unchanged(const SkeletonModel& model,const SkeletonModel& raw,const 
         assert(x.triangles[a.firstTriangle+k][v]-int(a.firstPoint)==
                y.triangles[b.firstTriangle+k][v]-int(b.firstPoint));
 }
-static void audit(const SkeletonComparison& comparison,const SkeletonModel& model,std::array<double,12>& worst) {
-    for (int n=1;n<=12;++n) {
-        const std::string base="Rib"+std::to_string(n);
+static void audit(const SkeletonComparison& comparison,const SkeletonModel& model,std::array<double,14>& worst) {
+    for (std::size_t n=0;n<pairs.size();++n) {
+        const std::string& base=pairs[n];
         const int il=model.sourceStructure(base+"_L"),ir=model.sourceStructure(base+"_R");
         assert(il>=0 && ir>=0);
         const auto& left=comparison.parts()[il]; const auto& right=comparison.parts()[ir];
@@ -75,13 +77,13 @@ static void audit(const SkeletonComparison& comparison,const SkeletonModel& mode
         assert(left.points.size()==right.points.size() && left.faces.size()==right.faces.size());
         for (std::size_t i=0;i<left.points.size();++i) {
             const Vec3 l=comparison.mapPart(left.points[i],left),r=comparison.mapPart(right.points[i],right);
-            worst[n-1]=std::max(worst[n-1],length(Vec3{-l.x,l.y,l.z}-r));
+            worst[n]=std::max(worst[n],length(Vec3{-l.x,l.y,l.z}-r));
         }
         for (std::size_t i=0;i<left.faces.size();++i) {
             const auto l=left.faces[i],r=right.faces[i];
             assert(l[0]==r[0] && l[1]==r[2] && l[2]==r[1]);
         }
-        assert(worst[n-1]<1e-8*std::max(1.0,comparison.profile().height/100));
+        assert(worst[n]<1e-8*std::max(1.0,comparison.profile().height/100));
     }
 }
 int main() {
@@ -90,15 +92,15 @@ int main() {
         const std::string sex=male?"male":"female"; const auto& model=male?room.male():room.female();
         const auto matrices=model.sourceMatrices({},0); SkeletonModel raw;
         assert(raw.load("tools/skeleton-source/skeleton-"+sex+".obj",error));
-        const double axis=hipAxis(model,matrices,sex); std::array<double,12> asym{},worst{};
-        for (int n=1;n<=12;++n) {
-            const std::string base="Rib"+std::to_string(n);
+        const double axis=hipAxis(model,matrices,sex); std::array<double,14> asym{},worst{};
+        for (std::size_t n=0;n<pairs.size();++n) {
+            const std::string& base=pairs[n];
             unchanged(model,raw,base+"_L"); unchanged(model,raw,base+"_R");
             const int il=model.sourceStructure(base+"_L"),ir=model.sourceStructure(base+"_R");
             assert(il>=0 && ir>=0);
             Surface left=source(model,il,matrices[il]),right=source(model,ir,matrices[ir]);
             for (Vec3& p:right.points) p.x=2*axis-p.x;
-            asym[n-1]=(distance(left,right)+distance(right,left))*0.5;
+            asym[n]=(distance(left,right)+distance(right,left))*0.5;
         }
         int profiles=0;
         const auto check=[&](SkeletonComparison::Profile profile) {
@@ -123,13 +125,13 @@ int main() {
             }
         }
         assert(profiles==52);
-        for (int n=1;n<=12;++n) {
-            const std::string base="Rib"+std::to_string(n);
+        for (std::size_t n=0;n<pairs.size();++n) {
+            const std::string& base=pairs[n];
             unchanged(model,raw,base+"_L"); unchanged(model,raw,base+"_R");
-            std::printf("%s rib %d: source reflected mean distance %.3f mm; blue max mirror error %.6g mm\n",
-                        sex.c_str(),n,asym[n-1]*1000,worst[n-1]*1000);
+            std::printf("%s %s: source reflected mean distance %.3f mm; blue max mirror error %.6g mm\n",
+                        sex.c_str(),base.c_str(),asym[n]*1000,worst[n]*1000);
         }
         room.resetComparison(male);
     }
-    std::puts("Every rib pair: PASS (both sexes, original preservation and 52 profiles)");
+    std::puts("Every rib and shoulder-girdle pair: PASS (both sexes, original preservation and 52 profiles)");
 }

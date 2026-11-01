@@ -167,11 +167,11 @@ fi
   tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-vertebra-symmetry
 ./build/bin/gtc-vertebra-symmetry
-# Check each left/right rib pair and preservation of the source rib meshes.
+# Check each rib and shoulder-girdle pair and preserve the source meshes.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/rib_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
-  build/obj/bullet/libbullet.a -o build/bin/gtc-rib-symmetry
-./build/bin/gtc-rib-symmetry
+  tests/bone_pair_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-bone-pair-symmetry
+./build/bin/gtc-bone-pair-symmetry
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
@@ -188,6 +188,7 @@ fi
 python3 tests/skull_mesh_contact.py
 python3 tests/vertebra_mesh_contact.py
 python3 tests/rib_mesh_contact.py
+python3 tests/shoulder_girdle_mesh_contact.py
 "${COMMAND[@]}" -std=c++20 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.

@@ -15,7 +15,8 @@ static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
 int main(int argc,char** argv) {
     if (argc<2 || argc>6) return 2;
     const bool ribs=argc>=3 && std::string(argv[2])=="--ribs";
-    const bool all=argc>=3 && (std::string(argv[2])=="--all" || ribs);
+    const bool shoulders=argc>=3 && std::string(argv[2])=="--shoulders";
+    const bool all=argc>=3 && (std::string(argv[2])=="--all" || ribs || shoulders);
     if ((argc==4 && !all) || (argc==5 && all) || (argc==6 && !all)) return 2;
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) return 1;
@@ -23,9 +24,20 @@ int main(int argc,char** argv) {
     if ((argc>=3 && !all) || (all && argc>=4)) for (bool male:{true,false}) {
         auto profile=room.comparison(male).profile(); profile.height=std::atof(argv[all?3:2]);
         if (argc==5 || argc==6) {
-            const int dimension=std::atoi(argv[all?4:3]);
-            if (dimension<=SkeletonComparison::Height || dimension>=SkeletonComparison::Count) return 2;
-            profile.multiplier[dimension]=std::atof(argv[all?5:4]);
+            const std::string selection=argv[all?4:3];
+            if (shoulders && selection=="combined") {
+                const std::string endpoint=argv[5];
+                if (endpoint!="lower" && endpoint!="upper") return 2;
+                for (int dimension=SkeletonComparison::Head;dimension<SkeletonComparison::Count;++dimension) {
+                    const auto bounds=room.comparison(male).dimensionLimits(dimension,profile.height);
+                    if (!bounds) return 1;
+                    profile.multiplier[dimension]=(endpoint=="upper"?bounds->maximum:bounds->minimum)/bounds->center;
+                }
+            } else {
+                const int dimension=std::atoi(selection.c_str());
+                if (dimension<=SkeletonComparison::Height || dimension>=SkeletonComparison::Count) return 2;
+                profile.multiplier[dimension]=std::atof(argv[all?5:4]);
+            }
         }
         if (!room.setComparison(male,profile,error)) { std::fprintf(stderr,"%s\n",error.c_str()); return 1; }
     }
@@ -34,7 +46,13 @@ int main(int argc,char** argv) {
         const auto& comparison=room.comparison(male);
         const auto matrices=model.sourceMatrices({},0);
         std::vector<std::string> names;
-        if (ribs) {
+        if (shoulders) {
+            names.push_back("Sternum");
+            for (const std::string& side:{"_L","_R"}) {
+                for (const std::string& part:{"Scapula","Clavicula","Humerus"}) names.push_back(part+side);
+                for (int n=1;n<=12;++n) names.push_back("Rib"+std::to_string(n)+side);
+            }
+        } else if (ribs) {
             names.push_back("Sternum");
             for (int n=1;n<=12;++n) {
                 names.push_back("T"+std::to_string(n));

@@ -27,7 +27,8 @@ animated pose or ragdoll remains symmetric.
 
 ## Other paired blue bones
 
-- [x] Shoulder girdle: scapulae and clavicles (2 pairs).
+- [x] Shoulder girdle: scapulae and clavicles (2 pairs). Both blue pairs were
+  already averaged and mirrored; the separate audit below confirms each pair.
 - [x] Ribs: rib pairs 1–12 (12 pairs). The blue pairs were already averaged
   and mirrored; the separate rib audit below confirms each pair.
 - [x] Pelvic halves / innominates (1 pair).
@@ -35,6 +36,35 @@ animated pose or ragdoll remains symmetric.
 Together with the limbs, the source provides **77 pairs per sex**, and all 77
 are mirrored in the blue comparison. The current pair averaging is a geometric
 approximation; mirrored geometry alone does not prove the average looks right.
+
+## Scapula and clavicle audit
+
+Each scapula or clavicle is paired with its opposite-side counterpart, not
+reflected onto itself. Both blue pairs were already averaged and mirrored about
+the body midplane; neither geometry was changed in this audit. The original
+white meshes remain untouched. Source asymmetry is an
+approximate, bidirectional, area-weighted mean distance between one posed
+white bone and its reflected opposite; it includes position and shape differences
+and is not an anatomical landmark measurement.
+
+| Pair | Male source distance (mm) | Female source distance (mm) | Blue pair |
+|---|---:|---:|---|
+| Scapulae | 6.157 | 4.707 | symmetric |
+| Clavicles | 7.146 | 4.121 | symmetric |
+
+`tests/bone_pair_symmetry.cpp` checks every vertex and triangle winding at 52
+profiles per sex, including 50/170/250 cm and individual and combined slider
+endpoints. Largest reflected-vertex error was below 0.000000001 mm. The separate
+`tests/shoulder_girdle_mesh_contact.py` checks both sides at those heights,
+single-slider extremes at 170 cm and combined extremes at all three heights.
+In those tests, the scapulae and clavicles
+are clear of same-side rib surfaces, and the selected clavicle/sternum,
+clavicle/scapula and scapula/humerus surfaces do not intersect. At the three
+heights the maximum gaps for those three pairs were, respectively, 2.498,
+1.804 and 2.537 mm (male), and 3.676, 3.460 and 2.337 mm (female). No
+additional disjoint self-crossings were detected relative to the left source
+templates at those heights. These tests do not validate cartilage, anatomy,
+articulated motion or visual quality.
 
 ## Rib-by-rib audit
 
@@ -61,7 +91,7 @@ It is not an anatomical landmark measurement.
 | 11 | 4.132 | 7.384 | symmetric |
 | 12 | 3.436 | 11.000 | symmetric |
 
-`tests/rib_symmetry.cpp` checks every blue vertex and triangle winding at 52
+`tests/bone_pair_symmetry.cpp` checks every blue vertex and triangle winding at 52
 profiles per sex, including 50/170/250 cm and individual and combined slider
 endpoints. The largest reflected-vertex difference was below 0.000000001 mm.
 `tests/rib_mesh_contact.py` finds adjacent blue ribs clear at those three
