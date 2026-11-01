@@ -145,7 +145,7 @@ public:
             for (auto& part:parts_) if (part.name==name) return &part;
             return nullptr;
         };
-        // Fit and reflect the skull in its own anatomical frame, not the
+        // Reflect the skull in its own fitted geometric frame, not the
         // pelvis frame. Both skull and jaw use the same skull-derived plane;
         // no independent centroid shift separates the jaw from the skull.
         const int headId=model.sourceStructure("Head");

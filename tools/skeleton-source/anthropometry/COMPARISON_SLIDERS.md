@@ -110,10 +110,10 @@ shared similarity transform, including after slider changes.
 surfaces with FCL. The registered T-pose already has head–jaw intersections in
 both originals and head–C1 intersections in the female original. Averaging the
 blue skull and jaw changes those surfaces but does not fix the existing
-intersections. At default height FCL reports 96/94 source/blue male head–jaw
-contacts, 65/0 female head–jaw contacts, and 112/124 female head–C1 contacts.
-The female blue head–jaw gap is approximately 0.035 mm; the male head–C1 gap
-is approximately 0.034 mm in the source and 0.466 mm in the blue copy. Counts
+intersections. At default height FCL reports 96/106 source/blue male head–jaw
+contacts, 65/36 female head–jaw contacts, and 112/126 female head–C1 contacts.
+The male head–C1 gap is approximately 0.034 mm in the source and 0.296 mm in
+the blue copy. Counts
 depend on the mesh and collision algorithm. The test also
 checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
 jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
@@ -165,15 +165,22 @@ omit exterior concavities or misclassify faces near openings. It is not a
 guaranteed anatomical segmentation, and the voxel fit is not proof of an ideal
 anatomical midline.
 
-The skull and jaw triangle meshes are mirrored about that plane. Head vertices
-on selected outer triangles are averaged against the reflected selected outer
+After the voxel fit, the skull and jaw meshes are averaged and mirrored about
+the plane. Instead of relying only on the nearest opposite point from each
+vertex, the averaging also projects reflected vertices back onto the template
+triangles, distributing their area-weighted midpoint contributions using
+barycentric coordinates. This lets details on the opposite side contribute even
+where the retained side has fewer vertices. The match also uses interpolated
+surface normals, reducing matches to nearby, oppositely facing walls. Head
+vertices on selected outer triangles match the reflected selected outer
 triangles, not the inner walls; other Head vertices and Jaw use their full
 opposite surfaces. No global smoothing is used; local displacement that would
-reverse a face or introduce a disjoint self-intersection is reduced. The masks are stored per source Head triangle
-and regenerated and checked by the fitting script (which requires NumPy,
-SciPy, trimesh, rtree and embreex). Nearest points are not guaranteed to be
-anatomically corresponding landmarks. Remaining central bones retain their
-source shapes, so exact whole-body symmetry is not yet claimed.
+reverse a face or introduce a disjoint self-intersection is reduced. The masks
+are stored per source Head triangle and regenerated and checked by the fitting
+script (which requires NumPy, SciPy, trimesh, rtree and embreex). These are
+geometric correspondences, not proven anatomical landmarks or a clinical
+reconstruction. Remaining central bones retain their source shapes, so exact
+whole-body symmetry is not yet claimed.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these
