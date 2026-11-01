@@ -110,10 +110,10 @@ shared similarity transform, including after slider changes.
 surfaces with FCL. The registered T-pose already has head–jaw intersections in
 both originals and head–C1 intersections in the female original. Averaging the
 blue skull and jaw changes those surfaces but does not fix the existing
-intersections. At default height FCL reports 96/90 source/blue male head–jaw
-contacts, 65/0 female head–jaw contacts, and 112/130 female head–C1 contacts.
-The female blue head–jaw gap is approximately 0.004 mm; the male head–C1 gap
-is approximately 0.034 mm in the source and 0.475 mm in the blue copy. Counts
+intersections. At default height FCL reports 96/94 source/blue male head–jaw
+contacts, 65/0 female head–jaw contacts, and 112/124 female head–C1 contacts.
+The female blue head–jaw gap is approximately 0.034 mm; the male head–C1 gap
+is approximately 0.034 mm in the source and 0.464 mm in the blue copy. Counts
 depend on the mesh and collision algorithm. The test also
 checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
 jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
@@ -148,18 +148,27 @@ three-axis skull frame follows the head's rigid T-pose rotation. The surfaces
 are averaged and mirrored in that frame, then returned through its inverse;
 they are not forced upright or re-centred on the hips. The skull, jaw and C1
 retain their shared cranial scale transform.
-`45-fit-skull-midplane.py` fits reflected skull surfaces against the actual
-triangles, with a robust cap, and checks the estimated orbit centres
-independently. On held-out surface samples the mean reflection-to-surface
-error is 1.04 mm male and 1.11 mm female; the estimated orbit midpoint is
-0.38 mm and 1.06 mm from the fitted plane respectively. This is a geometric
-estimate, not proof of an ideal anatomical midline. The skull and jaw triangle
-meshes are mirrored about that plane. Each source vertex is averaged with the
-nearest point on the opposite triangle surface, without global smoothing; only
-local displacement that would reverse a face is reduced. This is still an
-approximation because nearest points are not guaranteed to be anatomically
-corresponding landmarks. Remaining central bones retain their source shapes,
-so exact whole-body symmetry is not yet claimed.
+`45-fit-skull-midplane.py` fits each Head's reflected outer surface to its own
+outer triangles, with a robust cap, and checks estimated orbit centres
+independently. Both samples and nearest-surface targets come only from a
+geometrically selected outward-visible triangle subset: outward-facing faces
+with clear outward-normal and radial rays. The source meshes are not watertight;
+this conservative test may omit exterior concavities or misclassify faces near
+openings, so it is not a guaranteed anatomical segmentation. On held-out
+selected-surface samples the mean reflection distance is 1.023 mm male and
+1.083 mm female; the estimated orbit midpoint is 0.769 mm and 1.749 mm from the
+plane respectively. This is a geometric estimate, not an ideal anatomical
+midline.
+
+The skull and jaw triangle meshes are mirrored about that plane. Head vertices
+on selected outer triangles are averaged against the reflected selected outer
+triangles, not the inner walls; other Head vertices and Jaw use their full
+opposite surfaces. No global smoothing is used; only local displacement that
+would reverse a face is reduced. The masks are stored per source Head triangle
+and regenerated and checked by the fitting script (which requires NumPy,
+SciPy, trimesh, rtree and embreex). Nearest points are not guaranteed to be
+anatomically corresponding landmarks. Remaining central bones retain their
+source shapes, so exact whole-body symmetry is not yet claimed.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these

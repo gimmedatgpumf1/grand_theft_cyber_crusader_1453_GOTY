@@ -115,15 +115,28 @@ public:
     }
 };
 
-inline bool surfaceAverage(std::vector<Vec3>& points,const std::vector<std::array<int,3>>& faces) {
-    if (points.empty() || faces.empty()) return false;
+inline bool surfaceAverage(std::vector<Vec3>& points,const std::vector<std::array<int,3>>& faces,
+                           const std::vector<bool>* exterior=nullptr) {
+    if (points.empty() || faces.empty() || (exterior && exterior->size()!=faces.size())) return false;
     for (const auto& f:faces) for (int i:f)
         if (i<0 || static_cast<std::size_t>(i)>=points.size()) return false;
+    std::vector<std::array<int,3>> outside;
+    std::vector<bool> outsideVertex(points.size());
+    if (exterior) {
+        for (std::size_t i=0;i<faces.size();++i) if ((*exterior)[i]) {
+            outside.push_back(faces[i]);
+            for (int v:faces[i]) outsideVertex[static_cast<std::size_t>(v)]=true;
+        }
+        if (outside.empty()) return false;
+    }
     std::vector<Vec3> reflected=points;
     for (Vec3& p:reflected) p.x=-p.x;
-    const TriangleSurfaceTree surface(reflected,faces);
+    const TriangleSurfaceTree surface(reflected,faces), outsideSurface(reflected,outside);
     std::vector<Vec3> delta; delta.reserve(points.size());
-    for (Vec3 p:points) delta.push_back((surface.nearest(p)-p)*0.5);
+    for (std::size_t i=0;i<points.size();++i) {
+        const Vec3 closest=exterior && outsideVertex[i] ? outsideSurface.nearest(points[i]) : surface.nearest(points[i]);
+        delta.push_back((closest-points[i])*0.5);
+    }
     // A nearest surface point is not guaranteed to be an anatomical landmark.
     // Limit only displacements that would reverse a face; otherwise retain the
     // exact half-way point, without smoothing away the other side's details.

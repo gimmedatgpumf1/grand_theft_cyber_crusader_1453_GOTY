@@ -151,11 +151,26 @@ public:
         const int headId=model.sourceStructure("Head");
         if (headId<0) { error="Comparison skull structure is missing"; return false; }
         const SkullMidplane skullPlane=skullMidplane(male,matrices[static_cast<std::size_t>(headId)]);
+        // The offline skull-only fit also identifies outward-visible Head
+        // triangles. Exterior vertices must match that surface, not the
+        // interior wall through thin cranial bone.
+        std::ifstream outsideFile(directory+"skeleton-"+sex+".skull-exterior");
+        std::vector<bool> outside; std::string maskLine;
+        while (std::getline(outsideFile,maskLine)) {
+            if (!maskLine.empty() && maskLine[0]=='#') continue;
+            for (char bit:maskLine) {
+                if (bit=='0' || bit=='1') outside.push_back(bit=='1');
+                else if (bit!='\r' && bit!=' ' && bit!='\t') {
+                    error="Invalid skull exterior mask"; return false;
+                }
+            }
+        }
+        if (!outsideFile.eof()) { error="Skull exterior mask unavailable"; return false; }
         for (const char* name:{"Head","Jaw"}) {
             Part* part=mutablePart(name);
             if (!part) { error="Comparison skull structure is missing"; return false; }
             for (Vec3& p:part->points) p=skullPlane.local(p);
-            if (!bilateral::surfaceAverage(part->points,part->faces) ||
+            if (!bilateral::surfaceAverage(part->points,part->faces,part->name=="Head" ? &outside : nullptr) ||
                 !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison skull could not be averaged"; return false;
             }

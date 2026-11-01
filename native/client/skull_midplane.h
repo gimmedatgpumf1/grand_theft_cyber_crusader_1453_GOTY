@@ -3,8 +3,9 @@
 #include "client/skeleton_body.h"
 
 namespace gtc::native {
-// Plane fitted to each source Head mesh alone, before any body pose. See
-// 45-fit-skull-midplane.py for the surface-reflection fit and its limitations.
+// Plane fitted to outward-visible source Head triangles alone, before any
+// body pose. This geometric selection is conservative, not an anatomical
+// segmentation; see 45-fit-skull-midplane.py for details and limitations.
 struct SkullMidplane {
     Vec3 origin, normal, up, forward;
     Vec3 local(Vec3 p) const {
@@ -14,10 +15,10 @@ struct SkullMidplane {
     Vec3 world(Vec3 p) const { return origin+normal*p.x+up*p.y+forward*p.z; }
 };
 inline SkullMidplane skullMidplane(bool male,const std::array<double,16>& m) {
-    const Vec3 origin=male ? Vec3{0.010350176239,1.712216810588,0.046862083866}
-                           : Vec3{-0.052859128301,1.656864116111,0.032299743336};
-    const Vec3 normal=male ? Vec3{0.996695817502,-0.026225488909,-0.076874385236}
-                           : Vec3{0.985715246282,0.144752347015,-0.086094200039};
+    const Vec3 origin=male ? Vec3{0.009724651574,1.713671923386,0.038890553648}
+                           : Vec3{-0.054193083472,1.660251465821,0.025364096919};
+    const Vec3 normal=male ? Vec3{0.997126286943,-0.023187023971,-0.072121632024}
+                           : Vec3{0.985046191514,0.152846486767,-0.079510704099};
     const auto point=[&](Vec3 p) {
         return Vec3{m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],
                     m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],

@@ -108,6 +108,13 @@ static void checkSkull(SkeletonRoom& room,bool male) {
     const int rawHeadId=source.sourceStructure("Head"); assert(rawHeadId>=0);
     const auto& head=source.sourceStructures()[static_cast<std::size_t>(rawHeadId)];
     const auto& headGroup=source.bones()[head.group];
+    std::ifstream maskFile(std::string("tools/skeleton-source/skeleton-")+(male?"male":"female")+".skull-exterior");
+    assert(maskFile); std::string line; std::vector<bool> outside;
+    while (std::getline(maskFile,line)) {
+        if (!line.empty() && line[0]=='#') continue;
+        for (char bit:line) { assert(bit=='0' || bit=='1' || bit=='\r'); if (bit!='\r') outside.push_back(bit=='1'); }
+    }
+    assert(outside.size()==head.triangleCount);
     std::vector<Vec3> skull(headGroup.points.begin()+head.firstPoint,
                             headGroup.points.begin()+head.firstPoint+head.pointCount);
     Vec3 centroid{}; for (Vec3 p:skull) centroid+=p; centroid=centroid/static_cast<double>(skull.size());
@@ -138,8 +145,8 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         for (int& v:f) v-=static_cast<int>(head.firstPoint);
         headFaces.push_back(f);
     }
-    assert(bilateral::surfaceAverage(unrotated,headFaces));
-    assert(bilateral::surfaceAverage(rotated,headFaces));
+    assert(bilateral::surfaceAverage(unrotated,headFaces,&outside));
+    assert(bilateral::surfaceAverage(rotated,headFaces,&outside));
     for (std::size_t i=0;i<unrotated.size();++i) assert(length(unrotated[i]-rotated[i])<1e-9);
     for (const char* name:{"Head","Jaw"}) {
         const int id=model.sourceStructure(name), rawId=source.sourceStructure(name);
@@ -163,17 +170,26 @@ static void checkSkull(SkeletonRoom& room,bool male) {
             }
             triangles.push_back(f);
         }
+        const bool isHead=std::string(name)=="Head";
         auto averaged=original;
-        assert(bilateral::surfaceAverage(averaged,triangles));
+        assert(bilateral::surfaceAverage(averaged,triangles,isHead ? &outside : nullptr));
         // Verify the two-sided result against the actual opposite triangle
         // surfaces, and that the face-orientation guard changes only a small
         // minority of the exact half-way displacements.
         bilateral::TriangleSurfaceTree reflectedSurface(opposite,triangles);
+        std::vector<std::array<int,3>> exteriorTriangles;
+        std::vector<bool> exteriorVertex(original.size());
+        if (isHead) for (std::size_t i=0;i<triangles.size();++i) if (outside[i]) {
+            exteriorTriangles.push_back(triangles[i]);
+            for (int v:triangles[i]) exteriorVertex[static_cast<std::size_t>(v)]=true;
+        }
+        bilateral::TriangleSurfaceTree exteriorSurface(opposite,exteriorTriangles);
         for (std::size_t sample=0;sample<32;++sample) {
-            const Vec3 p=original[sample*original.size()/32];
-            const Vec3 nearest=reflectedSurface.nearest(p);
+            const std::size_t index=sample*original.size()/32;
+            const Vec3 p=original[index]; const bool useExterior=isHead && exteriorVertex[index];
+            const Vec3 nearest=useExterior ? exteriorSurface.nearest(p) : reflectedSurface.nearest(p);
             double brute=1e100;
-            for (auto face:triangles) {
+            for (auto face:useExterior ? exteriorTriangles : triangles) {
                 const Vec3 q=bruteTriangle(p,opposite[face[0]],opposite[face[1]],opposite[face[2]]);
                 brute=std::min(brute,dot(p-q,p-q));
             }
@@ -182,7 +198,9 @@ static void checkSkull(SkeletonRoom& room,bool male) {
         double maxDisplacement=0; std::size_t exact=0;
         for (std::size_t i=0;i<original.size();++i) {
             maxDisplacement=std::max(maxDisplacement,length(averaged[i]-original[i]));
-            const Vec3 halfway=(original[i]+reflectedSurface.nearest(original[i]))*0.5;
+            const Vec3 nearest=isHead && exteriorVertex[i] ? exteriorSurface.nearest(original[i])
+                                                            : reflectedSurface.nearest(original[i]);
+            const Vec3 halfway=(original[i]+nearest)*0.5;
             if (length(averaged[i]-halfway)<1e-10) ++exact;
         }
         assert(maxDisplacement>1e-5 && exact>original.size()*95/100);
