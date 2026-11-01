@@ -43,7 +43,7 @@ Full methods, formula provenance and extrapolation caveats: `WHOLE_BODY_HEIGHT_C
 
 ## Reproduce
 
-From the repository root, with NumPy, SciPy and a C++17 compiler:
+From the repository root, with NumPy, SciPy and a C++23 compiler:
 
 ```sh
 python3 tools/skeleton-source/openskeleton/38-measure-t-pose-arm.py

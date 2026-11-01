@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Remeasure OBJ proxies and compare arithmetically, NOT a clinical fit.
 
-Requires NumPy, SciPy and a C++17 compiler. Registered pose and measurement choices
+Requires NumPy, SciPy and a C++23 compiler. Registered pose and measurement choices
 are explained in WHOLE_BODY_HEIGHT_COMPARISON.md. Run from any directory.
 """
 import csv
@@ -132,7 +132,7 @@ def main():
     output=[]
     with tempfile.TemporaryDirectory() as td:
         binary=Path(td)/'profile'
-        subprocess.run(['c++','-std=c++17','-O2','-I',str(REPO/'native'),
+        subprocess.run(['c++','-std=c++23','-O2','-I',str(REPO/'native'),
                         str(SOURCE/'openskeleton/31-height-profile.cpp'),'-o',str(binary)],check=True)
         for sex,subject,h in [('male','N197925',170.0),('female','N186416',170.2)]:
             dimensions=measure(sex)

@@ -2,7 +2,7 @@
 """Estimate the C1-to-skull contacts and measure them to posterior C7.
 
 This is a bone-to-bone geometric proxy in the original source pose, not the
-ANSUR C7-to-tragion surface measurement. NumPy, SciPy and a C++17 compiler
+ANSUR C7-to-tragion surface measurement. NumPy, SciPy and a C++23 compiler
 are required for the generated arithmetic comparison.
 """
 import csv
@@ -70,7 +70,7 @@ def main():
     comparisons=[]
     with tempfile.TemporaryDirectory() as temp:
         binary=Path(temp)/'profile'
-        subprocess.run(['c++','-std=c++17','-O2','-I',str(whole.REPO/'native'),
+        subprocess.run(['c++','-std=c++23','-O2','-I',str(whole.REPO/'native'),
                         str(HERE/'31-height-profile.cpp'),'-o',str(binary)],check=True)
         for sex,subject,height in [('male','N197925',170.0),('female','N186416',170.2)]:
             contact=measured[sex]

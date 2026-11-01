@@ -13,11 +13,17 @@ call "%ROOT%\tools\vcvars2022.cmd" "%ROOT%"
 if errorlevel 1 exit /b 1
 where cl.exe >nul 2>nul
 if errorlevel 1 (
-  echo [native] Visual Studio 2022 C++ tools were not found.
+  echo [native] Visual Studio 2026 C++ tools were not found.
+  exit /b 1
+)
+REM Require MSVC's real C++23 option; older compilers must not ignore it.
+cl.exe /nologo /WX /std:c++23 /Zc:__cplusplus /Zc:cmath /Zs "%ROOT%\tests\cpp23_mode.cpp"
+if errorlevel 1 (
+  echo [native] C++23 requires stable MSVC 14.52 or newer with /std:c++23 support.
   exit /b 1
 )
 REM Check SDK/RPC macros before compiling the client headers.
-cl.exe /nologo /std:c++17 /EHsc /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /Zs "%ROOT%\tests\skeleton_windows_macros.cpp"
+cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /Zs "%ROOT%\tests\skeleton_windows_macros.cpp"
 if errorlevel 1 exit /b 1
 set "CCACHE_BIN="
 if exist "%ROOT%\tools\ccache\windows-x86_64\ccache.exe" set "CCACHE_BIN=%ROOT%\tools\ccache\windows-x86_64\ccache.exe"
@@ -30,9 +36,9 @@ for %%S in (native\human.cpp native\io.cpp native\hair.cpp native\fit.cpp native
   set "OBJECT=%ROOT%\build\obj\native\%%~nS.obj"
   set "OBJECTS=!OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
@@ -46,9 +52,9 @@ for %%S in (native\client\client.cpp native\client\raster.cpp native\client\hud.
   set "OBJECT=%ROOT%\build\obj\native-client\%%~nS.obj"
   set "CLIENT_OBJECTS=!CLIENT_OBJECTS! "!OBJECT!""
   if defined CCACHE_BIN (
-    "!CCACHE_BIN!" cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    "!CCACHE_BIN!" cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   ) else (
-    cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
+    cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\native\vendor\bullet\src" /c "%%S" /Fo"!OBJECT!"
   )
   if errorlevel 1 exit /b 1
 )
@@ -58,9 +64,9 @@ if errorlevel 1 exit /b 1
 cl.exe /nologo "%ROOT%\build\obj\native-client\smoke.obj" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-native-smoke.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
 REM The counter is drawn on the host into pixels, so it is checked as pixels.
-cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\interface_check.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
+cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\interface_check.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
-cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
+cl.exe /nologo /std:c++23 /Zc:__cplusplus /Zc:cmath /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! "%ROOT%\build\obj\bullet\bullet.lib" /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
 echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe

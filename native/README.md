@@ -1,6 +1,6 @@
 # Native C++ runtime and portrait fitter
 
-The native path is C++17 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
+The native path is C++23 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
 
 - `gtc-native-client` connects to the authoritative server and renders its replicated world in a resizable landscape window that opens at **640×480**.
 - `gtc-native-smoke` runs two real networked citizens through replication, customization, movement, pathfinding, and toilet-action checks.
@@ -14,13 +14,13 @@ Linux (ccache is selected through the repository's content-hash configuration):
 ./native/build.sh
 ```
 
-Windows with Visual Studio 2022 and the **Desktop development with C++** workload:
+Windows with stable Visual Studio 2026, MSVC 14.52 or newer, and the **Desktop development with C++** workload:
 
 ```cmd
 native\build.cmd
 ```
 
-`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find MSVC v143. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
+`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find stable Visual Studio 2026 and requires `/std:c++23` (MSVC 14.52 or newer). As of November 1, 2026, Microsoft expects that toolset in the stable channel later in November. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
 
 ## Native multiplayer client and smoke test
 

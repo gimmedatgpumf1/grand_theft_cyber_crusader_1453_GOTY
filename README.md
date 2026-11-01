@@ -89,8 +89,11 @@ native PNG output without a display. See [`native/README.md`](native/README.md) 
 
 ## One-click Windows build
 
-Requirements: Visual Studio 2022 with **Desktop development with C++**, including the
-**MSVC v143 C++ x64/x86 build tools** and a **Windows 10 or 11 SDK**.
+Requirements: stable Visual Studio 2026 with **Desktop development with C++**,
+**MSVC 14.52 or newer** and a **Windows 10 or 11 SDK**. The build requires the
+standard `/std:c++23` option and does not fall back to another language mode.
+As of November 1, 2026, Microsoft says 14.52 is expected in the stable channel
+with Visual Studio 18.12 later in November; the build needs that stable release.
 
 1. Double-click **`build.cmd`** (or run **`build.ps1`**) for the authoritative server.
 2. Double-click **`native\\build.cmd`** (or **`native\\build.ps1`**) for the native client,
@@ -98,8 +101,9 @@ Requirements: Visual Studio 2022 with **Desktop development with C++**, includin
 3. Or skip these manual steps and double-click **`run.cmd`**; it performs both builds, starts the
    server, waits for the port, and opens `gtc-native-client.exe` automatically.
 
-The script always initializes the Visual Studio environment through `vcvars64.bat` (finding
-VS2022 through `vswhere` when necessary), then verifies that the C++ standard library compiles.
+The script initializes the Visual Studio environment through `vcvars64.bat` (finding a
+stable Visual Studio 2026 installation through `vswhere`), checks for C++23 mode,
+and verifies that the C++ standard library compiles.
 This matters because merely having `cl.exe` on PATH does not configure its standard headers or
 libraries. Output goes to `build/bin/gtc1453.exe`; objects go to `build/obj/`.
 Each source is compiled to its own object so ccache can cache real compilation units.
@@ -113,7 +117,9 @@ those are supplied by MSVC.
 
 ## One-click Linux build
 
-Requirements: a C++17 compiler (`g++` preferred, `clang++` fallback) and Bash.
+Requirements: a compiler supporting `-std=c++23` and Bash. The default is
+`g++`; set `CXX` explicitly to use another compiler. There is no fallback to
+an older C++ mode. C++23 feature availability varies by compiler version.
 
 ```bash
 ./build.sh          # authoritative server
@@ -191,7 +197,7 @@ check compares incremental and forced full uploads; it does not validate Windows
 ## Native C++ runtime and portrait fitter
 
 The native-only path is in [`native/`](native/README.md). Build `./native/build.sh` (or
-`native\\build.cmd` with Visual Studio 2022). `gtc-native-client` is the interactive/headless
+`native\\build.cmd` with stable Visual Studio 2026). `gtc-native-client` is the interactive/headless
 multiplayer client; `gtc-native-smoke` is the two-player network test. For portrait work,
 `./build/bin/gtc-native-fit --iterations 8` performs direct numeric universal-morph/camera fitting
 and writes separate **480×640**
@@ -213,7 +219,7 @@ native/
 web/          Legacy browser checkpoint and reusable local generic asset files
 tools/convert-human.py Offline human-pack generator
 tools/human-source/ CC0 MakeHuman source geometry, targets and weights
-build.cmd     VS2022 auto-detection and one-click MSVC build
+build.cmd     stable VS2026 auto-detection and one-click MSVC build
 build.ps1     PowerShell entry point for the same Windows build
 build.sh      One-click cached Linux build
 prebuilt/     Committed Linux x86-64 server binary

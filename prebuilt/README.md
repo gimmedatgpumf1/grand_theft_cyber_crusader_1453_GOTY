@@ -1,6 +1,6 @@
 # Prebuilt server
 
-`linux-x86_64/gtc1453` is the current C++17 server binary for Linux x86-64 with glibc. It serves the browser UI and WebSocket multiplayer on port 1453.
+`linux-x86_64/gtc1453` is a prebuilt server binary for Linux x86-64 with glibc. It serves the browser UI and WebSocket multiplayer on port 1453. Prebuilt snapshots may lag the source; rebuild to use the current C++23 build settings.
 
 ```sh
 ./prebuilt/linux-x86_64/gtc1453
@@ -17,7 +17,7 @@ Windows builds remain a local MSVC compile through `build.cmd`/`build.ps1`; no u
 
 ## Native fitter
 
-`linux-x86_64/gtc-native-fit` is the offline C++17 480×640 portrait fitter/software renderer.
+`linux-x86_64/gtc-native-fit` is the offline 480×640 portrait fitter/software renderer.
 It does not serve the game or require a browser. Run it from the repository root, for example:
 
 ```sh

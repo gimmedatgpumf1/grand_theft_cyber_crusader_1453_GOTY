@@ -39,7 +39,7 @@ def measure(sex,matrices):
 
 
 def compile_formula(exe):
-    subprocess.run(['c++','-std=c++17','-O2','-I',str(tpose.REPO/'native'),
+    subprocess.run(['c++','-std=c++23','-O2','-I',str(tpose.REPO/'native'),
                     str(HERE/'35-seven-dimensions.cpp'),'-o',str(exe)],cwd=tpose.REPO,check=True)
 
 

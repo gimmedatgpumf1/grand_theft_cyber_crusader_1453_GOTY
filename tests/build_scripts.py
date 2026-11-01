@@ -53,6 +53,22 @@ def main():
     script, sources, objects, problems = windows_scripts()
     failures.extend(problems)
 
+    # Keep every build on C++23 and fail if MSVC silently ignores the flag.
+    for path, flag in [('build.sh', '-std=c++23'),
+                       ('native/build.sh', '-std=c++23'),
+                       ('native/vendor/bullet/build.sh', '-std=c++23'),
+                       ('build.cmd', '/std:c++23'),
+                       ('native/build.cmd', '/std:c++23'),
+                       ('native/vendor/bullet/build.cmd', '/std:c++23')]:
+        text = (ROOT / path).read_text(errors='replace')
+        if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|20|latest|23preview)', text):
+            failures.append(f'{path} must use {flag}, not another C++ mode')
+        if path.endswith('.cmd') and '/Zc:cmath' not in text:
+            failures.append(f'{path} must enable MSVC C++23 constexpr cmath')
+    for path in ['build.cmd', 'native/build.cmd', 'native/vendor/bullet/build.cmd']:
+        if 'tests\\cpp23_mode.cpp' not in (ROOT / path).read_text(errors='replace'):
+            failures.append(f'{path} must check the C++23 language mode')
+
     for source in sorted(sources):
         if not (ROOT / source).exists():
             failures.append(f'build.cmd compiles a file that is not there: {source}')
@@ -125,7 +141,7 @@ def narrowing_failures(sources):
             continue
         if source.endswith('window_win32.cpp'):
             continue  # needs windows.h, which is not on this machine
-        result = subprocess.run([compiler, '-std=c++17', '-fsyntax-only', '-Werror=narrowing',
+        result = subprocess.run([compiler, '-std=c++23', '-fsyntax-only', '-Werror=narrowing',
                                  '-Isrc', '-Inative', '-Inative/vendor/bullet/src', source],
                                 cwd=ROOT, capture_output=True, text=True)
         if result.returncode != 0:
@@ -146,7 +162,7 @@ def windows_interface_keyword_failures():
     compiler = shutil.which('g++') or shutil.which('c++')
     if compiler is None:
         return []
-    result = subprocess.run([compiler, '-std=c++17', '-Dinterface=struct', '-fsyntax-only',
+    result = subprocess.run([compiler, '-std=c++23', '-Dinterface=struct', '-fsyntax-only',
                              '-Isrc', '-Inative', 'native/client/ui_layer.cpp',
                              'native/vulkan/vk_renderer.cpp'],
                             cwd=ROOT, capture_output=True, text=True)

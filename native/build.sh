@@ -8,7 +8,12 @@ export CCACHE_DIR="$ROOT/.cache/ccache"
 export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
 COMPILER="${CXX:-g++}"
 if ! command -v "$COMPILER" >/dev/null 2>&1; then
-  if command -v clang++ >/dev/null 2>&1; then COMPILER=clang++; else echo 'No C++ compiler found.' >&2; exit 1; fi
+  echo "[build] C++ compiler not found: $COMPILER. Install a C++23-capable compiler or set CXX." >&2
+  exit 1
+fi
+if ! "$COMPILER" -std=c++23 -fsyntax-only tests/cpp23_mode.cpp; then
+  echo '[build] A compiler supporting C++23 mode is required.' >&2
+  exit 1
 fi
 CCACHE_BIN="${CCACHE:-}"
 if [ -z "$CCACHE_BIN" ] && [ -x "$ROOT/tools/ccache/linux-x86_64/ccache" ]; then
@@ -17,7 +22,7 @@ elif [ -z "$CCACHE_BIN" ] && command -v ccache >/dev/null 2>&1; then
   CCACHE_BIN="$(command -v ccache)"
 fi
 if [ -n "$CCACHE_BIN" ] && ! "$CCACHE_BIN" --version >/dev/null 2>&1; then CCACHE_BIN=""; fi
-FLAGS=(-std=c++17 -O3 -Wall -Wextra -Wpedantic -Isrc -Inative)
+FLAGS=(-std=c++23 -O3 -Wall -Wextra -Wpedantic -Isrc -Inative)
 SOURCES=(native/human.cpp native/io.cpp native/hair.cpp native/fit.cpp native/render.cpp native/main.cpp src/core/json.cpp)
 OBJECTS=()
 for SOURCE in "${SOURCES[@]}"; do
@@ -61,9 +66,9 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-native-smoke"
 # The counter is drawn on the host into pixels, so it can be checked as pixels:
 # the box, the border, every glyph block, both byte orders, four window sizes.
-"$COMPILER" -pthread -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
+"$COMPILER" -pthread -std=c++23 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
   "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-interface-check"
-"$COMPILER" -pthread -std=c++17 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
+"$COMPILER" -pthread -std=c++23 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
   "${CLIENT_COMMON[@]}" "$ROOT/build/obj/bullet/libbullet.a" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"

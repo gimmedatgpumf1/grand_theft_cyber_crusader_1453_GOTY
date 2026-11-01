@@ -193,10 +193,10 @@ To reproduce full-resolution source triangle audits, install NumPy and
 `python-fcl`, then from the repository root:
 
 ```sh
-c++ -std=c++17 -O2 -pthread -Isrc -Inative tests/skeleton_arm_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-arm-pose
+c++ -std=c++23 -O2 -pthread -Isrc -Inative tests/skeleton_arm_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-arm-pose
 python3 tools/skeleton-source/openskeleton/11-audit-arm-pose.py
 python3 tools/skeleton-source/openskeleton/13-audit-knee-straight.py
-c++ -std=c++17 -O2 -pthread -Isrc -Inative tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-elbow-sweep
+c++ -std=c++23 -O2 -pthread -Isrc -Inative tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-elbow-sweep
 python3 tests/openskeleton_elbow_collision.py
 ```
 

@@ -15,12 +15,12 @@ fi
 
 COMPILER="${CXX:-g++}"
 if ! command -v "$COMPILER" >/dev/null 2>&1; then
-  if command -v clang++ >/dev/null 2>&1; then
-    COMPILER=clang++
-  else
-    echo 'No C++ compiler found. Install g++ or clang++.' >&2
-    exit 1
-  fi
+  echo "[build] C++ compiler not found: $COMPILER. Install a C++23-capable compiler or set CXX." >&2
+  exit 1
+fi
+if ! "$COMPILER" -std=c++23 -fsyntax-only tests/cpp23_mode.cpp; then
+  echo '[build] A compiler supporting C++23 mode is required.' >&2
+  exit 1
 fi
 CCACHE_BIN="${CCACHE:-}"
 if [ -z "$CCACHE_BIN" ] && [ -x "$ROOT/tools/ccache/linux-x86_64/ccache" ]; then
@@ -43,7 +43,7 @@ if [ "${#SOURCES[@]}" -eq 0 ]; then
   echo '[build] No sources found.' >&2
   exit 1
 fi
-FLAGS=(-std=c++17 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
+FLAGS=(-std=c++23 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
 OBJECTS=()
 for SOURCE in "${SOURCES[@]}"; do
   RELATIVE="${SOURCE#src/}"
