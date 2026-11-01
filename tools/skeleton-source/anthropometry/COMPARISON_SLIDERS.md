@@ -14,7 +14,7 @@ panel to resume looking. Select male or female; **Reset** affects that copy.
 For a very short/narrow window the footer switches between the two groups of
 four sliders. Values shown are centimetres. Each size slider is centered on
 the sex-specific formula at the current height and ranges from that value
-minus 1 sample SD to plus 1 sample SD. The SDs are calculated separately for
+minus 1.5 sample SD to plus 1.5 sample SD. The SDs are calculated separately for
 male and female from **all nonblank values** of each whole-body TSV column;
 see `BODY_SIZE_STANDARD_DEVIATIONS.tsv`. These are pooled over all heights,
 not SDs conditional on height. The head column contains circumference-based
@@ -24,16 +24,17 @@ not verified Indo-European. See `WHOLE_BODY_HEAD_DATA.md`.
 
 Minus/plus adjusts size by 0.1 SD and height by 1 cm. Height cannot be set
 below 50 cm; the plus button can go above the track's 230 cm upper end. If
-the formula value minus 1 SD is non-positive, the slider has a small positive floor: negative
-or zero dimensions cannot be rendered. The listed values are **fitted skeletal
+the formula value minus 1.5 SD is non-positive, the slider has a small positive
+floor: negative or zero dimensions cannot be rendered. The listed values are **fitted skeletal
 proxies**. When a rigid pelvic ring cannot meet both requested torso and leg
 proxies, both controls still move the copy; the fit is projected to the closest
 pair of achievable values with equal weight. On a wide panel the footer shows
-fitted/requested values. The ±1 SD bounds apply to requested slider values;
+fitted/requested values. The ±1.5 SD bounds apply to requested slider values;
 the fitted skeletal torso or leg can fall outside them when the intact pelvic
-ring cannot satisfy both requests. Fitted values do not impose an additional
-slider restriction. Reset restores the original posed height and formula
-requests. Height changes keep the current SD offsets where feasible.
+ring cannot satisfy both requests. At very short arm requests, the arm's fixed
+endpoint offsets can also make the fitted chord longer than requested. Fitted
+values do not impose an additional slider restriction. Reset restores the
+original posed height and formula requests. Height changes keep the current SD offsets where feasible.
 
 To regenerate the SDs (sample SD, `n-1` denominator) from the original rows:
 

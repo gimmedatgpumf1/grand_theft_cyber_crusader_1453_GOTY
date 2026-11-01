@@ -253,10 +253,10 @@ int main() {
     check(room,true); check(room,false);
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
-        for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1000.}) {
+        for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1e308}) {
             p.height=h;
             const auto previous=room.comparison(male).profile();
-            if (h<50 || h==1000) {
+            if (h<50 || h==1e308) {
                 const auto oldTargets=room.comparison(male).targets();
                 const auto oldRequested=room.comparison(male).requestedTargets();
                 const auto oldRevision=room.comparison(male).revision();
@@ -411,8 +411,8 @@ int main() {
             for (double multiplier:{1e-6,1e6}) {
                 const auto& c=room.comparison(male);
                 const auto limits=c.dimensionLimits(d,height); assert(limits);
-                close(limits->minimum,std::max(0.001,limits->center-limits->sd),1e-10);
-                close(limits->maximum,limits->center+limits->sd,1e-10);
+                close(limits->minimum,std::max(0.001,limits->center-1.5*limits->sd),1e-10);
+                close(limits->maximum,limits->center+1.5*limits->sd,1e-10);
                 const auto old=c.profile(); const auto oldTargets=c.targets();
                 const auto oldRequested=c.requestedTargets(); const auto oldRevision=c.revision();
                 p=old; p.multiplier[d]=multiplier;
@@ -492,7 +492,7 @@ int main() {
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
     close(room.comparison(true).profile().height,171,1e-7);
     const auto movedBounds=room.comparison(true).dimensionLimits(SkeletonComparison::Head,171); assert(movedBounds);
-    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head]-movedBounds->center,movedBounds->sd,1e-7);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head]-movedBounds->center,1.5*movedBounds->sd,1e-7);
     room.resetComparison(true);
     auto shortProfile=room.comparison(true).profile(); shortProfile.height=50;
     assert(room.setComparison(true,shortProfile,error));
@@ -503,6 +503,10 @@ int main() {
     const auto armLimits=room.comparison(true).dimensionLimits(SkeletonComparison::Arm,50); assert(armLimits);
     assert(room.comparison(true).requestedTargets()[SkeletonComparison::Arm] < armCenter);
     close(room.comparison(true).requestedTargets()[SkeletonComparison::Arm],armLimits->minimum,1e-8);
+    // The almost-zero request is shorter than this pose's fixed endpoint
+    // offsets. The slider remains reachable and reports the fitted chord.
+    assert(room.comparison(true).targets()[SkeletonComparison::Arm] > armLimits->minimum);
+    assert(!room.comparison(true).exact());
     room.resetComparison(true);
     // Exercise real pointer input after changing several other sliders. Each
     // drag reaches its chosen SD endpoint without a hidden bone-fit restriction.

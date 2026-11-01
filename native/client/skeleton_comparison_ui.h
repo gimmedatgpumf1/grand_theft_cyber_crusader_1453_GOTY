@@ -21,7 +21,7 @@ public:
             return;
         }
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.83);
-        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1 SD",colorHex("#9dceff"),20);
+        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex("#9dceff"),20);
         if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   P: hide   click outside: look",colorHex("#c2cfda"),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");

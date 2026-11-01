@@ -318,9 +318,9 @@ public:
         if (!values) return std::nullopt;
         const double center=(*values)[dimension-1];
         const double sd=(male_ ? maleComparisonSdCm : femaleComparisonSdCm)[dimension-1];
-        // The formula minus 1 SD can be negative, especially at 50 cm. A mesh
+        // The formula minus 1.5 SD can be negative, especially at 50 cm. A mesh
         // cannot have zero or negative dimensions; this is a geometric floor.
-        return DimensionLimits{center,sd,std::max(0.001,center-sd),center+sd};
+        return DimensionLimits{center,sd,std::max(0.001,center-1.5*sd),center+1.5*sd};
     }
     bool feasible() const { return feasible_; }
     bool exact() const { return exact_; }
@@ -484,7 +484,7 @@ private:
         shoulderYTarget_=mapY(shoulderY);
         shoulderVertical_=(mapY(shoulderY+epsilon)-mapY(shoulderY-epsilon))/(2*epsilon);
         // Solve the average of the two endpoint chords after the shared field.
-        const double desired=targets_[Arm]/100;
+        double desired=targets_[Arm]/100;
         auto armLength=[&](double value) {
             armScale_=value; double sum=0;
             for (int side=0;side<2;++side) sum+=length(map(armEnd_[side],side==0?1:-1)-map(armStart_[side],side==0?1:-1,false,false,true));
@@ -500,7 +500,14 @@ private:
             // before solving the distal scale; keep a continuous elbow frame.
             upperArmScale_=a;
             const double shortest=armLength(a);
-            if (shortest>=desired) { error="Arm target is incompatible with the pose"; feasible_=false; return false; }
+            // A positive requested length may still be shorter than the fixed
+            // vertical/depth offset between the endpoints. Keep the request and
+            // fit the closest possible chord instead of blocking the slider.
+            if (shortest>=desired) {
+                desired=shortest+1e-10;
+                targets_[Arm]=desired*100;
+                exact_=false;
+            }
             // The reserve tends to zero at the entry to this fallback, so
             // neither the upper arm nor the forearm jumps at the boundary.
             const double reserve=std::min(0.05*(fixedUpperMinimum-desired),0.5*(desired-shortest));
