@@ -398,7 +398,7 @@ int main() {
             std::array<double,8> wanted{};
             if (male) {
                 // Verify the user's exact equations, not just our helper.
-                wanted={h,3.3158*std::pow(h,.3663),.0193*h+7.4136,
+                wanted={h,0.0561*h+12.179,.0193*h+7.4136,
                         .3536*h+4.4647,.4515*h+1.4121,.5553*h-6.5708,
                         7.6737*std::exp(.0075*h),10.719*std::exp(.0077*h)};
             } else {
@@ -416,7 +416,7 @@ int main() {
             p.multiplier[SkeletonComparison::Head]=1.23;
             assert(room.setComparison(male,p,error));
             assert(std::abs(room.comparison(male).requestedTargets()[SkeletonComparison::Head]
-                            -1.23*3.3158*std::pow(170.,.3663))<1e-8);
+                            -1.23*(0.0561*170.+12.179))<1e-8);
         }
         room.resetComparison(male);
     }
