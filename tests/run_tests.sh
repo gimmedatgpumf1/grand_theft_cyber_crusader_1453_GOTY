@@ -153,6 +153,7 @@ if python3 -c 'import numpy, scipy, trimesh, rtree, embreex' >/dev/null 2>&1; th
   OPENBLAS_NUM_THREADS=1 python3 tests/skull_exterior.py
   OPENBLAS_NUM_THREADS=1 python3 tests/skull_voxel_fit.py
   OPENBLAS_NUM_THREADS=1 python3 tools/skeleton-source/openskeleton/45-fit-skull-midplane.py --check
+  OPENBLAS_NUM_THREADS=1 python3 tools/skeleton-source/openskeleton/46-fit-vertebra-midplanes.py --check
 else
   echo 'Exterior skull plane fit: skipped (NumPy, SciPy, trimesh, rtree and embreex optional)'
 fi
@@ -161,6 +162,11 @@ fi
   tests/skull_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skull-symmetry
 ./build/bin/gtc-skull-symmetry
+# Check each original and mirrored vertebra with the actual slider mapping.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-vertebra-symmetry
+./build/bin/gtc-vertebra-symmetry
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
@@ -175,6 +181,7 @@ fi
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-height-transition
 ./build/bin/gtc-skeleton-height-transition
 python3 tests/skull_mesh_contact.py
+python3 tests/vertebra_mesh_contact.py
 "${COMMAND[@]}" -std=c++20 -O2 -Isrc -Inative tests/room_freecam.cpp -o build/bin/gtc-room-freecam
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.

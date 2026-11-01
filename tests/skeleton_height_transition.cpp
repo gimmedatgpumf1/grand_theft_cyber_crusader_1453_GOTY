@@ -42,7 +42,7 @@ int main() {
             assert(room.setComparison(male,profile,error));
             for (auto& sample:samples) {
                 const auto& part=*sample.part;
-                const Vec3 p=comparison.map(sample.source,part.armSide,part.cranial,part.girdle,part.humerus);
+                const Vec3 p=comparison.mapPart(sample.source,part);
                 if (i) peakSpeed=std::max(peakSpeed,length(p-sample.previous)*100/step);
                 if (i>=2) {
                     const double acceleration=length(p-sample.previous*2+sample.beforePrevious)*100/(step*step);

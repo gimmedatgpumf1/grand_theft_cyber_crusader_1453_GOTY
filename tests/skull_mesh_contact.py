@@ -177,10 +177,10 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
     subprocess.run([str(exe),str(all_folder),'--all'],cwd=root,check=True)
     for sex in ('male','female'):
         files=sorted(all_folder.glob(f'{sex}_blue_*.obj'))
-        assert len(files)==81, (sex,len(files))
+        assert len(files)==105, (sex,len(files))
         for path in files:
             source=all_folder/path.name.replace('_blue_','_white_',1)
             old=self_crossings(mesh(source)); new=self_crossings(mesh(path))
             assert len(new)<=len(old), (sex,path.name,'new self-intersection',len(old),len(new))
-    print('Bilateral source-surface self-intersection audit: PASS (81 parts per sex)')
+    print('Bilateral source-surface self-intersection audit: PASS (105 parts per sex)')
 print('Cranial and pelvic triangle-surface comparison: PASS (source Sacrum/L5 overlaps remain)')

@@ -15,7 +15,7 @@ static Vec3 transformed(const std::array<double,16>& m, Vec3 p) {
 static std::vector<Vec3> vertices(const SkeletonModel&,const SkeletonComparison& comp,const char* name) {
     for (const auto& part:comp.parts()) if (part.name==name) {
         std::vector<Vec3> out; out.reserve(part.points.size());
-        for (Vec3 p:part.points) out.push_back(comp.map(p,part.armSide,part.cranial,part.girdle,part.humerus));
+        for (Vec3 p:part.points) out.push_back(comp.mapPart(p,part));
         return out;
     }
     assert(false); return {};
@@ -230,7 +230,7 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
             const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b) { return b.objectId==id; });
             assert(batch!=scene.batches.end() && batch->vertices.size()==part.points.size());
             for (std::size_t i=0;i<part.points.size();++i) {
-                Vec3 expected=copy.map(part.points[i],part.armSide,part.cranial,part.girdle,part.humerus);
+                Vec3 expected=copy.mapPart(part.points[i],part);
                 expected.x+=sex==0?-2.85:2.85;
                 const auto& v=batch->vertices[i];
                 assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);

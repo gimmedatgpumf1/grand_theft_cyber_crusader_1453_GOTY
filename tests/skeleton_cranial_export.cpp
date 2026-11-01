@@ -13,17 +13,18 @@ static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
             m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
 }
 int main(int argc,char** argv) {
-    if (argc!=2 && argc!=3 && argc!=5) return 2;
-    const bool all=argc==3 && std::string(argv[2])=="--all";
+    if (argc<2 || argc>6) return 2;
+    const bool all=argc>=3 && std::string(argv[2])=="--all";
+    if ((argc==4 && !all) || (argc==5 && all) || (argc==6 && !all)) return 2;
     SkeletonRoom room; std::string error;
     if (!room.load(".",error)) return 1;
     std::filesystem::create_directories(argv[1]);
-    if (argc>=3 && !all) for (bool male:{true,false}) {
-        auto profile=room.comparison(male).profile(); profile.height=std::atof(argv[2]);
-        if (argc==5) {
-            const int dimension=std::atoi(argv[3]);
+    if ((argc>=3 && !all) || (all && argc>=4)) for (bool male:{true,false}) {
+        auto profile=room.comparison(male).profile(); profile.height=std::atof(argv[all?3:2]);
+        if (argc==5 || argc==6) {
+            const int dimension=std::atoi(argv[all?4:3]);
             if (dimension<=SkeletonComparison::Height || dimension>=SkeletonComparison::Count) return 2;
-            profile.multiplier[dimension]=std::atof(argv[4]);
+            profile.multiplier[dimension]=std::atof(argv[all?5:4]);
         }
         if (!room.setComparison(male,profile,error)) { std::fprintf(stderr,"%s\n",error.c_str()); return 1; }
     }
@@ -35,7 +36,9 @@ int main(int argc,char** argv) {
         if (all) {
             for (const auto& source:model.sourceStructures()) {
                 const auto& name=source.name;
+                const auto vertebrae=vertebraNames();
                 if (name=="Head" || name=="Jaw" || name=="Sacrum" || name=="Sternum" ||
+                    std::find(vertebrae.begin(),vertebrae.end(),name)!=vertebrae.end() ||
                     (name.size()>2 && name.substr(name.size()-2)=="_L")) names.push_back(name);
             }
         } else names={"Head","Jaw","C1","C2","C7","Pelvis_L","Pelvis_R","Sacrum","Sternum",
@@ -52,7 +55,7 @@ int main(int argc,char** argv) {
                 if (blue) {
                     const auto& actual=comparison.parts()[static_cast<std::size_t>(index)];
                     for (Vec3 p:actual.points) {
-                        p=comparison.map(p,actual.armSide,actual.cranial,actual.girdle,actual.humerus);
+                        p=comparison.mapPart(p,actual);
                         file<<"v "<<p.x<<' '<<p.y<<' '<<p.z<<'\n';
                     }
                     for (const auto& face:actual.faces)

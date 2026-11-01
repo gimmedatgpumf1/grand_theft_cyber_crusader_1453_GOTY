@@ -7,6 +7,7 @@
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
+#include "client/vertebra_midplane.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
@@ -30,6 +31,9 @@ public:
     struct Part {
         std::string name; std::vector<Vec3> points; std::vector<std::array<int,3>> faces;
         int armSide = 0; bool cranial = false; bool girdle = false; bool humerus = false;
+        bool vertebra = false; Vec3 vertebraAnchor{},vertebraNormal{},vertebraUp{},vertebraForward{};
+        Vec3 mappedAnchor{},mappedNormal{},mappedUp{},mappedForward{},jointClearance{},mappedClearance{};
+        double mappedNormalScale=1;
     };
     struct Profile {
         double height = 0;
@@ -145,6 +149,48 @@ public:
             for (auto& part:parts_) if (part.name==name) return &part;
             return nullptr;
         };
+        // Each vertebra has its own source-space 3D reflection plane. Carry
+        // that complete frame through its posed bone matrix, average both
+        // surfaces, then mirror only the blue mesh. No source bone moves.
+        std::map<std::string,VertebraPlane> vertebraPlanes;
+        if (!loadVertebraPlanes(directory+"skeleton-"+sex+".vertebra-planes",vertebraPlanes)) {
+            error="Comparison vertebra planes unavailable or invalid"; return false;
+        }
+        for (const auto& name:vertebraNames()) {
+            Part* part=mutablePart(name); const int id=model.sourceStructure(name);
+            if (!part || id<0) { error="Comparison vertebra is missing"; return false; }
+            const SkullMidplane plane=posedVertebraPlane(vertebraPlanes.at(name),matrices[static_cast<std::size_t>(id)]);
+            part->vertebra=true; part->vertebraAnchor=plane.origin;
+            part->vertebraNormal=plane.normal; part->vertebraUp=plane.up; part->vertebraForward=plane.forward;
+            for (Vec3& p:part->points) p=plane.local(p);
+            if (!bilateral::surfaceAverage(part->points,part->faces,nullptr,true) ||
+                !bilateral::mirrorAxial(part->points,part->faces,0)) {
+                error="Comparison vertebra could not be averaged: "+name; return false;
+            }
+            for (Vec3& p:part->points) p=plane.world(p);
+            // Small source-specific joint clearances, measured against the
+            // posed triangle surfaces after averaging. A rigid translation
+            // preserves the individual vertebra's fitted mirror symmetry.
+            Vec3 clearance{};
+            if (male && name=="C1") clearance.y=-0.0004;
+            if (male && name=="T6") clearance.z=0.0002;
+            if (!male && name=="T2") clearance.y=-0.0006;
+            if (!male && name=="L1") clearance.x=-0.0002;
+            if (!male && name=="L3") clearance.x=0.0002;
+            for (Vec3& p:part->points) p+=clearance;
+            part->vertebraAnchor+=clearance;
+            // Additional millimetre-scale, source-specific joint registrations
+            // are applied after body scaling so each bone stays symmetric.
+            if (male && name=="T5") part->jointClearance.y=0.0006;
+            if (male && name=="T8") part->jointClearance.y=-0.0002;
+            if (!male && (name=="T1" || name=="T3" || name=="T4" || name=="T5" ||
+                          name=="T6" || name=="T7" || name=="T8")) part->jointClearance.y=0.0014;
+            if (!male && name=="C5") part->jointClearance.y=0.0002;
+            if (!male && name=="L1") part->jointClearance={-0.0015,0,-0.0023};
+            if (!male && name=="L2") part->jointClearance={-0.0010,0,-0.0018};
+            if (!male && name=="L3") part->jointClearance={-0.0005,0,-0.0010};
+            if (!male && name=="L4") part->jointClearance.z=-0.0007;
+        }
         // Reflect the skull in its own fitted geometric frame, not the
         // pelvis frame. Both skull and jaw use the same skull-derived plane;
         // no independent centroid shift separates the jaw from the skull.
@@ -431,11 +477,25 @@ public:
             depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(cranialJoin_-scapTop_));
         return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
     }
+    Vec3 mapPart(Vec3 p,const Part& part) const {
+        if (!part.vertebra || part.cranial)
+            return map(p,part.armSide,part.cranial,part.girdle,part.humerus);
+        // Map the retained half through the original body field, then reflect
+        // it in the cached mapped 3D plane. This retains the field's actual
+        // nonlinear shape at knots without shearing the two sides differently.
+        const double side=dot(p-part.vertebraAnchor,part.vertebraNormal);
+        const Vec3 retained=side<0 ? p-part.vertebraNormal*(2*side) : p;
+        const Vec3 result=map(retained)+part.mappedClearance;
+        // Keep the mapped tangential position, and use the fitted normal scale
+        // for signed distance so no point crosses at a nonlinear field knot.
+        const double distance=dot(result-part.mappedAnchor,part.mappedNormal);
+        return result+part.mappedNormal*(side*part.mappedNormalScale-distance);
+    }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
-            for (Vec3 p:part.points) { p=map(p,part.armSide,part.cranial,part.girdle,part.humerus); p.x+=x; points.push_back(p); }
+            for (Vec3 p:part.points) { p=mapPart(p,part); p.x+=x; points.push_back(p); }
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
         }
@@ -557,7 +617,47 @@ private:
         while (armLength(b)<desired && b<1e150) b*=2;
         if (armLength(a)>desired || armLength(b)<desired) { error="Arm target is incompatible with the pose"; feasible_=false; return false; }
         for (int n=0;n<50;++n) { double mid=(a+b)*0.5; if (armLength(mid)<desired) a=mid; else b=mid; }
-        armScale_=(a+b)*0.5; ++revision_; error.clear(); return true;
+        armScale_=(a+b)*0.5;
+        // Approximate the existing body field over each entire vertebra,
+        // including bones crossing a field knot, with a local least-squares
+        // affine map. Remove the component of its normal axis parallel to the
+        // mapped plane: this preserves reflection without forcing a uniform
+        // scale or slicing a vertebra at a field boundary.
+        for (auto& part:parts_) if (part.vertebra && !part.cranial) {
+            double qq[3][3]{}; Vec3 tq[3]{},qsum{},tsum{};
+            for (Vec3 p:part.points) {
+                const Vec3 d=p-part.vertebraAnchor;
+                const Vec3 q{dot(d,part.vertebraNormal),dot(d,part.vertebraUp),dot(d,part.vertebraForward)};
+                const Vec3 t=map(p); const double v[3]={q.x,q.y,q.z};
+                qsum+=q; tsum+=t;
+                for (int i=0;i<3;++i) { tq[i]+=t*v[i]; for (int j=0;j<3;++j) qq[i][j]+=v[i]*v[j]; }
+            }
+            const double count=static_cast<double>(part.points.size());
+            const Vec3 qm=qsum/count,tm=tsum/count; const double mv[3]={qm.x,qm.y,qm.z};
+            for (int i=0;i<3;++i) {
+                tq[i]=tq[i]/count-tm*mv[i];
+                for (int j=0;j<3;++j) qq[i][j]=qq[i][j]/count-mv[i]*mv[j];
+            }
+            const Vec3 c0{qq[0][0],qq[1][0],qq[2][0]},c1{qq[0][1],qq[1][1],qq[2][1]},c2{qq[0][2],qq[1][2],qq[2][2]};
+            const double det=dot(c0,cross(c1,c2));
+            if (std::abs(det)<1e-30) { error="Invalid vertebra scaling frame"; return false; }
+            const Vec3 rows[3]={cross(c1,c2)/det,cross(c2,c0)/det,cross(c0,c1)/det};
+            const auto column=[&](int j) {
+                const double v[3]={j==0?rows[0].x:j==1?rows[0].y:rows[0].z,
+                                   j==0?rows[1].x:j==1?rows[1].y:rows[1].z,
+                                   j==0?rows[2].x:j==1?rows[2].y:rows[2].z};
+                return tq[0]*v[0]+tq[1]*v[1]+tq[2]*v[2];
+            };
+            const Vec3 jn=column(0),ju=column(1),jv=column(2),crossPlane=cross(ju,jv);
+            if (length(crossPlane)<1e-15) { error="Invalid vertebra scaling frame"; return false; }
+            const Vec3 normal=normalized(crossPlane); const double normalScale=dot(jn,normal);
+            if (!(normalScale>0)) { error="Invalid vertebra normal scale"; return false; }
+            part.mappedNormal=normal; part.mappedNormalScale=normalScale;
+            part.mappedUp=ju; part.mappedForward=jv;
+            part.mappedClearance=part.jointClearance*(profile_.height/defaultHeight());
+            part.mappedAnchor=tm-normal*(normalScale*qm.x)-ju*qm.y-jv*qm.z+part.mappedClearance;
+        }
+        ++revision_; error.clear(); return true;
     }
     bool male_=false, feasible_=false, exact_=false;
     BodyProportionCurves curves_;

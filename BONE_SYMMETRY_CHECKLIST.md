@@ -42,16 +42,14 @@ approximation; mirrored geometry alone does not prove the average looks right.
   cranial transform. Head–jaw intersections remain in the blue meshes.
 - [x] Sternum: averaged and mirrored about the body midplane.
 - [x] Sacrum: averaged and mirrored about the body midplane.
-- [ ] Cervical vertebrae C1–C7: source shapes retained; individual bone
-  symmetry has not yet been reconstructed and verified.
-- [ ] Thoracic vertebrae T1–T12: source shapes retained; individual bone
-  symmetry has not yet been reconstructed and verified.
-- [ ] Lumbar vertebrae L1–L5: source shapes retained; individual bone
-  symmetry has not yet been reconstructed and verified.
+- [x] Cervical vertebrae C1–C7: each fitted, averaged and mirrored about its own 3D plane.
+- [x] Thoracic vertebrae T1–T12: each fitted, averaged and mirrored about its own 3D plane.
+- [x] Lumbar vertebrae L1–L5: each fitted, averaged and mirrored about its own 3D plane.
 
-The skull plane is independently fitted and can be tilted relative to the body
-midplane. The completed items therefore do not establish symmetry of the
-**entire** assembled skeleton about one common plane.
+Each of the 24 vertebrae is symmetric individually. Their independently fitted
+planes and positions preserve the source spine's pose, so they need not coincide
+with one another or with the independently fitted skull plane. This does not
+establish symmetry of the **entire** assembled skeleton about one common plane.
 
 ## Verification and remaining work
 
@@ -66,7 +64,13 @@ midplane. The completed items therefore do not establish symmetry of the
 - [x] `tests/skeleton_comparison.cpp` checks the axial sternum and sacrum,
   paired meshes and mapped slider profiles. The FCL audit separately tests
   selected contacts and disjoint self-crossings, not all possible joints.
-- [ ] Complete and test the 24 central vertebral meshes.
+- [x] `tests/vertebra_symmetry.cpp` checks every vertex and triangle of all 24
+  vertebrae, both sexes, across 50/170/250 cm at individual and combined slider
+  endpoints; it also verifies the original white meshes remain unchanged.
+- [x] `tests/vertebra_mesh_contact.py` audits all 23 adjacent vertebra pairs at
+  50/170/250 cm and selected single-slider extremes at 170 cm. Pairs that were
+  clear in the prior blue at all three reference heights remain clear in those
+  tests; overlaps present in the prior blue or source meshes still remain.
 - [ ] Review the visual quality and anatomical plausibility of the averages,
   including the skull and jaw, with the result visible in the application.
 - [ ] Audit assembled alignment and joints across the whole body and during

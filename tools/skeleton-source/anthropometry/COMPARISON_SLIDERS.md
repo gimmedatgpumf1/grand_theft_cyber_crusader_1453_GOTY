@@ -111,8 +111,8 @@ surfaces with FCL. The registered T-pose already has head–jaw intersections in
 both originals and head–C1 intersections in the female original. Averaging the
 blue skull and jaw changes those surfaces but does not fix the existing
 intersections. At default height FCL reports 96/106 source/blue male head–jaw
-contacts, 65/36 female head–jaw contacts, and 112/126 female head–C1 contacts.
-The male head–C1 gap is approximately 0.034 mm in the source and 0.296 mm in
+contacts, 65/36 female head–jaw contacts, and 112/114 female head–C1 contacts.
+The male head–C1 gap is approximately 0.034 mm in the source and 0.261 mm in
 the blue copy. Counts
 depend on the mesh and collision algorithm. The test also
 checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
@@ -179,8 +179,20 @@ reverse a face or introduce a disjoint self-intersection is reduced. The masks
 are stored per source Head triangle and regenerated and checked by the fitting
 script (which requires NumPy, SciPy, trimesh, rtree and embreex). These are
 geometric correspondences, not proven anatomical landmarks or a clinical
-reconstruction. Remaining central bones retain their source shapes, so exact
-whole-body symmetry is not yet claimed.
+reconstruction.
+
+Each C1–C7, T1–T12 and L1–L5 source mesh is also fitted independently to its
+own reflected surface voxels at 1 mm resolution (`46-fit-vertebra-midplanes.py`).
+Unlike the skull fit, this uses the whole vertebral surface. The blue copy is
+averaged and mirrored in its fitted 3D frame, then returned to its posed
+position. C1 retains the shared skull/jaw scale. For the other vertebrae, a
+cached profile-dependent plane approximates the surrounding body field; the
+retained half follows that field and the other is reflected, with the normal
+distance controlled to prevent crossing the symmetry plane. Some small,
+source-specific rigid offsets preserve selected adjacent-joint clearances.
+This is a geometric estimate, not a clinical reconstruction. Individual planes
+and positions can differ, so the entire assembled spine/body is not claimed to
+be symmetric about one shared plane.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these
@@ -202,9 +214,12 @@ they were not obtained from a population sample or clinical joint limits.
 The regression runs the pelvic and selected limb/shoulder triangle checks for
 both sexes at default, 50, 100, 170 and 250 cm and at the ends of the arm,
 hip and shoulder tracks at 50, 170 and 250 cm. It also compares disjoint
-triangle self-crossings in all 77 paired left templates and the two axial
-reconstructions against the original source meshes. A non-intersection result
-for these surfaces is not a containment or whole-body joint test.
+triangle self-crossings in all 77 paired left templates and 28 axial
+reconstructions against the original source meshes. A separate FCL audit checks
+all 23 adjacent vertebra pairs at 50, 170 and 250 cm, plus selected individual
+slider extremes at 170 cm; previously overlapping pairs can still overlap.
+A non-intersection result for these surfaces is not a containment or whole-body
+joint test.
 
 The skull, jaw and C1 also share a uniform transform. The torso field meets it
 at the bottom of C1. The jaw may overlap C7 in height because it is anterior
