@@ -34,7 +34,8 @@ the fitted skeletal torso or leg can fall outside them when the intact pelvic
 ring cannot satisfy both requests. At very short arm requests, the arm's fixed
 endpoint offsets can also make the fitted chord longer than requested. Fitted
 values do not impose an additional slider restriction. Reset restores the
-original posed height and formula requests. Height changes keep the current SD offsets where feasible.
+default height and formula requests for the selected sex. Height changes keep
+the current SD offsets where feasible.
 
 To regenerate the SDs (sample SD, `n-1` denominator) from the original rows:
 
@@ -71,12 +72,12 @@ All are visual skeletal proxies, not clinical validation.
 
 ## What is measured
 
-The default height is the *visible posed mesh* from floor to skull top, so each
-blue copy has the same visible height as its neighbouring original. This is
-about **172.68 cm male** and **166.26 cm female**, not the recorded 170.0 and
-170.2 cm cadaver lengths. All seven formula targets are evaluated at that
-visible height. Changing height intentionally breaks the same-height comparison
-until reset. The tested geometric proxies on the blue mesh are:
+The blue copies default to **172.2 cm male** and **159.4 cm female**, measured
+from floor to skull top. All seven formula targets are evaluated at the selected
+height. Reset returns each copy to its sex-specific default. The unscaled
+originals have visible posed heights of approximately 172.68 cm male and
+166.26 cm female, distinct from their recorded cadaver lengths of 170.0 and
+170.2 cm. The tested geometric proxies on the blue mesh are:
 
 | Slider | Fitted skeletal proxy | Surface dimension represented in the source data |
 |---|---|---|

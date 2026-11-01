@@ -297,7 +297,7 @@ public:
             hipWidth_<=0 || shoulderWidth_<=0) {
             error="Comparison landmarks have an unexpected order"; return false;
         }
-        profile_=Profile{}; profile_.height=initialHeight_;
+        profile_=Profile{}; profile_.height=defaultHeight();
         return update(error);
     }
 
@@ -309,6 +309,7 @@ public:
     const std::vector<Part>& parts() const { return parts_; }
     const std::array<Vec3,2>& hipCenters() const { return hipCenters_; }
     double initialHeight() const { return initialHeight_; }
+    double defaultHeight() const { return male_ ? 172.2 : 159.4; }
     const std::array<double,Count>& targets() const { return targets_; }
     const std::array<double,Count>& requestedTargets() const { return requestedTargets_; }
     struct DimensionLimits { double center, sd, minimum, maximum; };
@@ -346,7 +347,7 @@ public:
         }
         return true;
     }
-    void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(error); }
+    void reset(std::string& error) { profile_=Profile{}; profile_.height=defaultHeight(); update(error); }
 
     // The skull, jaw and C1 share a single 3D similarity transform. The torso
     // field meets it at the bottom of C1; the jaw can lie lower than C7 because

@@ -250,7 +250,16 @@ int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
     const auto maleOriginal=room.male().sourceMatrices({},0), femaleOriginal=room.female().sourceMatrices({},0);
     observedRoom=&room; originalMatrices[0]=maleOriginal; originalMatrices[1]=femaleOriginal;
-    check(room,true); check(room,false);
+    for (bool male:{true,false}) {
+        const auto& copy=room.comparison(male);
+        const double height=male?172.2:159.4;
+        close(copy.profile().height,height,1e-10);
+        const auto formulas=male?maleComparisonFormulas(height):femaleComparisonFormulas(height);
+        assert(formulas);
+        for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d)
+            close(copy.requestedTargets()[d],(*formulas)[d-1],1e-10);
+        check(room,male); // Also measures the actual floor-to-skull geometry.
+    }
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
         for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1e308}) {
@@ -285,7 +294,17 @@ int main() {
             assert(std::abs(fitted50[d]-requested50[d])<1e-8);
         close(fitted50[SkeletonComparison::Torso]-requested50[SkeletonComparison::Torso],
               fitted50[SkeletonComparison::Leg]-requested50[SkeletonComparison::Leg],1e-8);
-        room.resetComparison(male); close(room.comparison(male).profile().height,room.comparison(male).initialHeight());
+        room.resetComparison(male);
+        const auto& reset=room.comparison(male);
+        const double defaultHeight=male?172.2:159.4;
+        close(reset.profile().height,defaultHeight,1e-10);
+        const auto defaults=male?maleComparisonFormulas(defaultHeight):femaleComparisonFormulas(defaultHeight);
+        assert(defaults);
+        for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+            close(reset.profile().multiplier[d],1.0,1e-10);
+            close(reset.requestedTargets()[d],(*defaults)[d-1],1e-10);
+        }
+        check(room,male);
         for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
             p=room.comparison(male).profile(); p.multiplier[d]=1.02;
             assert(room.setComparison(male,p,error)); check(room,male); room.resetComparison(male);
@@ -459,12 +478,13 @@ int main() {
     auto e=mouse(WindowEvent::Type::MouseDown,x+200,y+60);
     assert(!control.handle(e,true,w,h,room));
     assert(control.handle(e,false,w,h,room));
-    assert(room.comparison(true).profile().height!=room.comparison(true).initialHeight());
+    assert(room.comparison(true).profile().height!=172.2);
     auto move=mouse(WindowEvent::Type::MouseMove,x+250,y+60);
     assert(control.handle(move,false,w,h,room));
     auto up=mouse(WindowEvent::Type::MouseUp,x+600,y-20); assert(control.handle(up,false,w,h,room));
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+880,y+32),false,w,h,room));
-    close(room.comparison(true).profile().height,room.comparison(true).initialHeight());
+    close(room.comparison(true).profile().height,172.2,1e-10);
+    close(room.comparison(false).profile().height,159.4,1e-10);
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+120,y+32),false,w,h,room));
     double femaleBefore=room.comparison(false).profile().height;
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
@@ -477,7 +497,10 @@ int main() {
         assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+110,y+60),false,w,h,room));
     close(room.comparison(false).profile().height,50.,1e-10);
     assert(!control.handle(mouse(WindowEvent::Type::MouseDown,0,0),false,w,h,room));
-    room.resetComparison(false);
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+880,y+32),false,w,h,room));
+    close(room.comparison(false).profile().height,159.4,1e-10);
+    close(room.comparison(true).profile().height,172.2,1e-10);
+    check(room,false);
     // The track spans the calculated SD limits, plus cannot pass the end, and
     // changing height preserves the chosen offset in centimetres/SD units.
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+20,y+32),false,w,h,room));
