@@ -256,7 +256,7 @@ int main() {
         for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1000.}) {
             p.height=h;
             const auto previous=room.comparison(male).profile();
-            if (h<50 || h==1000) {
+            if (h<50 || h==400 || h==1000) {
                 const auto oldTargets=room.comparison(male).targets();
                 const auto oldRequested=room.comparison(male).requestedTargets();
                 const auto oldRevision=room.comparison(male).revision();
@@ -394,11 +394,11 @@ int main() {
             for (std::size_t i=0;i<t.size();++i) assert(std::abs(t[i]-wanted[i])<1e-8);
         }
         p=room.comparison(male).profile(); p.height=170;
-        p.multiplier[SkeletonComparison::Head]=1.23;
+        p.multiplier[SkeletonComparison::Head]=1.02;
         assert(room.setComparison(male,p,error));
         const double head=male ? 0.0561*170.+12.179 : 0.0568*170.+11.832;
         assert(std::abs(room.comparison(male).requestedTargets()[SkeletonComparison::Head]
-                        -1.23*head)<1e-8);
+                        -1.02*head)<1e-8);
         room.resetComparison(male);
     }
     // The requested AND fitted dimensions stay inside the sex-specific bounds,
@@ -411,6 +411,8 @@ int main() {
             for (double multiplier:{1e-6,1e6}) {
                 const auto& c=room.comparison(male);
                 const auto limits=c.dimensionLimits(d,height); assert(limits);
+                close(limits->minimum,std::max(0.001,limits->center-limits->sd),1e-10);
+                close(limits->maximum,limits->center+limits->sd,1e-10);
                 const auto old=c.profile(); const auto oldTargets=c.targets();
                 const auto oldRequested=c.requestedTargets(); const auto oldRevision=c.revision();
                 p=old; p.multiplier[d]=multiplier;
@@ -470,7 +472,7 @@ int main() {
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
     close(room.comparison(true).profile().height,171,1e-7);
     const auto movedBounds=room.comparison(true).dimensionLimits(SkeletonComparison::Head,171); assert(movedBounds);
-    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head]-movedBounds->center,3*movedBounds->sd,1e-7);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head]-movedBounds->center,movedBounds->sd,1e-7);
     room.resetComparison(true);
     auto shortProfile=room.comparison(true).profile(); shortProfile.height=50;
     assert(room.setComparison(true,shortProfile,error));

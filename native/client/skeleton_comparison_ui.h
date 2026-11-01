@@ -21,7 +21,7 @@ public:
             return;
         }
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.83);
-        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-3 SD",colorHex("#9dceff"),20);
+        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1 SD",colorHex("#9dceff"),20);
         if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   P: hide   click outside: look",colorHex("#c2cfda"),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
@@ -142,7 +142,7 @@ private:
         }
         std::string error;
         if (room.setComparison(male_,profile,error)) { status_.clear(); return; }
-        // A mathematical ±3 SD endpoint can be physically impossible (for
+        // A mathematical ±1 SD endpoint can be physically impossible (for
         // example, a negative-length arm or a rigid pelvis that won't fit).
         // Move to the nearest reachable point instead of making a click or drag
         // appear broken. The model still enforces all size bounds.

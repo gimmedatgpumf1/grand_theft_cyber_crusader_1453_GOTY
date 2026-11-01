@@ -318,9 +318,9 @@ public:
         if (!values) return std::nullopt;
         const double center=(*values)[dimension-1];
         const double sd=(male_ ? maleComparisonSdCm : femaleComparisonSdCm)[dimension-1];
-        // The formula minus 3 SD can be negative, especially at 50 cm. A mesh
+        // The formula minus 1 SD can be negative, especially at 50 cm. A mesh
         // cannot have zero or negative dimensions; this is a geometric floor.
-        return DimensionLimits{center,sd,std::max(0.001,center-3*sd),center+3*sd};
+        return DimensionLimits{center,sd,std::max(0.001,center-sd),center+sd};
     }
     bool feasible() const { return feasible_; }
     bool exact() const { return exact_; }
