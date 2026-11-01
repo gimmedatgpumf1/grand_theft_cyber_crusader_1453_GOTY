@@ -143,8 +143,20 @@ public:
             for (auto& part:parts_) if (part.name==name) return &part;
             return nullptr;
         };
-        // The axial sternum is also centered and mirrored; the skull and jaw
-        // deliberately retain their common source geometry and contacts.
+        // Average each skull surface with its reflection before welding the
+        // mirrored halves. The white source model remains untouched. The jaw
+        // stays a separate surface and shares the skull's later transform.
+        for (const char* name:{"Head","Jaw"}) {
+            Part* part=mutablePart(name);
+            if (!part) { error="Comparison skull structure is missing"; return false; }
+            std::vector<Vec3> opposite; opposite.reserve(part->points.size());
+            for (Vec3 p:part->points) { p.x=2*axis-p.x; opposite.push_back(p); }
+            if (!bilateral::average(part->points,opposite,part->faces) ||
+                !bilateral::mirrorAxial(part->points,part->faces,axis)) {
+                error="Comparison skull could not be averaged"; return false;
+            }
+        }
+        // The axial sternum is also centered and mirrored.
         if (Part* sternum=mutablePart("Sternum")) {
             std::vector<Vec3> opposite; opposite.reserve(sternum->points.size());
             for (Vec3 p:sternum->points) { p.x=2*axis-p.x; opposite.push_back(p); }

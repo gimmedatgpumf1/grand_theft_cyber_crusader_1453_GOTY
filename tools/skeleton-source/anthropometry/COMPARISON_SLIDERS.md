@@ -108,12 +108,14 @@ shared similarity transform, including after slider changes.
 
 `tests/skull_mesh_contact.py` also compares the actual source and blue triangle
 surfaces with FCL. The registered T-pose already has head–jaw intersections in
-both originals and head–C1 intersections in the female original; the blue copies
-retain these, rather than hiding them by moving the original jaw or neck. In this
-static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 female
-head–C1 contacts; male head–C1 surfaces are approximately 0.034 mm apart. Counts depend on the
-mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
-remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
+both originals and head–C1 intersections in the female original. Averaging the
+blue skull and jaw changes those surfaces but does not fix the existing
+intersections. At default height FCL reports 96/94 source/blue male head–jaw
+contacts, 65/80 female head–jaw contacts, and 112/122 female head–C1 contacts.
+The male head–C1 gap is approximately 0.034 mm in the source and 0.387 mm in
+the blue copy. Counts depend on the mesh and collision algorithm. The test also
+checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
+jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
 The audit also checks the pelvic ring, hips and sacrum/L5 at default, 50, 100, 170 and 250 cm.
 Source pelvis/femur intersections are no longer reproduced in the audited blue
 copies: the two symmetric pelvic halves, sacrum and femoral surfaces have small
@@ -137,9 +139,13 @@ pelvis the horizontal and depth scales stay constant rather than tapering with
 height, preserving straight vertical joint-centre lines. This is an
 approximate bilateral *mesh* mean, not a vertex-by-vertex anatomical mean or a
 population average. Both rendered sides have identical reflected triangles.
-The central sacrum and sternum are similarly averaged, clipped at the midline
-and mirrored with a welded seam. The skull, jaw and remaining central bones
-retain their source shapes, so exact whole-body surface symmetry is not claimed.
+The central sacrum, sternum, skull and jaw are similarly averaged against their
+own reflections, clipped at the midline and mirrored with a welded seam. The
+skull and jaw are separate surfaces and retain their shared cranial transform
+with C1. Their triangle meshes are exactly mirrored; the mean itself is an
+approximation based on nearest surface vertices and smoothed displacement,
+not a known anatomical point-by-point correspondence. Remaining central bones
+retain their source shapes, so exact whole-body symmetry is not yet claimed.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these

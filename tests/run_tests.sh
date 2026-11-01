@@ -148,6 +148,11 @@ python3 tests/openskeleton_elbow_collision.py
 "${COMMAND[@]}" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
   tests/calibrated_coupling.cpp -o build/bin/gtc-calibrated-coupling
 ./build/bin/gtc-calibrated-coupling
+# Verify averaged skull/jaw triangles and preserve the white source geometry.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skull_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-skull-symmetry
+./build/bin/gtc-skull-symmetry
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison

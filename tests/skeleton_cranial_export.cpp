@@ -35,7 +35,7 @@ int main(int argc,char** argv) {
         if (all) {
             for (const auto& source:model.sourceStructures()) {
                 const auto& name=source.name;
-                if (name=="Sacrum" || name=="Sternum" ||
+                if (name=="Head" || name=="Jaw" || name=="Sacrum" || name=="Sternum" ||
                     (name.size()>2 && name.substr(name.size()-2)=="_L")) names.push_back(name);
             }
         } else names={"Head","Jaw","C1","C2","C7","Pelvis_L","Pelvis_R","Sacrum","Sternum",

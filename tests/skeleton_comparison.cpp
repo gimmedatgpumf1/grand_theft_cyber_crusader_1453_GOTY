@@ -47,25 +47,19 @@ static void check(const SkeletonRoom& room, bool male) {
     // Every actual skull, jaw and C1 vertex must share the same similarity
     // transform. This catches the former kink through the skull, vertical-only
     // stretching of the jaw, and any shift of the jaw relative to the skull.
-    const int headId=model.sourceStructure("Head"), jawId=model.sourceStructure("Jaw");
-    const auto& sourceHead=model.sourceStructures()[headId];
-    const auto& sourceJaw=model.sourceStructures()[jawId];
-    const auto& headGroup=model.bones()[sourceHead.group];
-    const auto& jawGroup=model.bones()[sourceJaw.group];
-    double originalTop=-1e30, originalJaw=1e30;
-    for (std::size_t i=sourceHead.firstPoint;i<sourceHead.firstPoint+sourceHead.pointCount;++i)
-        originalTop=std::max(originalTop,transformed(matrices[headId],headGroup.points[i]).y);
-    for (std::size_t i=sourceJaw.firstPoint;i<sourceJaw.firstPoint+sourceJaw.pointCount;++i)
-        originalJaw=std::min(originalJaw,transformed(matrices[jawId],jawGroup.points[i]).y);
-    const double headScale=c.targets()[SkeletonComparison::Head]/(100*(originalTop-originalJaw));
-    const Vec3 reference=transformed(matrices[headId],headGroup.points[sourceHead.firstPoint]);
-    const Vec3 mappedReference=c.map(reference,0,true);
+    const SkeletonComparison::Part *rawHead=nullptr, *rawJaw=nullptr;
+    for (const auto& part:c.parts()) {
+        if (part.name=="Head") rawHead=&part;
+        if (part.name=="Jaw") rawJaw=&part;
+    }
+    assert(rawHead && rawJaw);
+    const double headScale=c.targets()[SkeletonComparison::Head]/(100*(highY(rawHead->points)-lowY(rawJaw->points)));
+    const Vec3 reference=rawHead->points.front(), mappedReference=c.map(reference,0,true);
     double cranialError=0;
     for (const char* name:{"Head","Jaw","C1"}) {
-        const int id=model.sourceStructure(name); assert(id>=0);
-        const auto& part=model.sourceStructures()[id]; const auto& group=model.bones()[part.group];
-        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
-            const Vec3 point=transformed(matrices[id],group.points[i]);
+        const auto it=std::find_if(c.parts().begin(),c.parts().end(),[&](const auto& p){return p.name==name;});
+        assert(it!=c.parts().end());
+        for (const Vec3 point:it->points) {
             const Vec3 expected=mappedReference+(point-reference)*headScale;
             cranialError=std::max(cranialError,length(c.map(point,0,true)-expected));
             if (std::string(name)=="C1") assert(length(c.map(point)-c.map(point,0,true))<1e-8);
