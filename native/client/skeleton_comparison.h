@@ -8,7 +8,6 @@
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/vertebra_midplane.h"
-#include "client/skeleton_toe_skin.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
@@ -67,22 +66,6 @@ public:
                 part.faces.push_back(face);
             }
             parts_.push_back(std::move(part));
-        }
-        // The first skin surfaces are anchored to the actual left toe chains;
-        // their right counterparts are mirrored from the same geometry.
-        for (int digit=0;digit<5;++digit) {
-            const std::string number=std::to_string(digit+1);
-            const std::array<std::string,3> names={"FootProxP"+number+"_L",
-                digit==0 ? "" : "FootMidP"+number+"_L","FootDistP"+number+"_L"};
-            for (int joint=0;joint<3;++joint) {
-                toeParts_[digit][joint]=-1;
-                if (names[joint].empty()) continue;
-                const int index=model.sourceStructure(names[joint]);
-                if (index<0 || parts_[static_cast<std::size_t>(index)].points.empty()) {
-                    error="Comparison toe bone is missing: "+names[joint]; return false;
-                }
-                toeParts_[digit][joint]=index;
-            }
         }
         double originalFloor=1e30,originalTop=-1e30;
         for (const auto& part:parts_) for (Vec3 p:part.points) {
@@ -549,25 +532,6 @@ public:
         const double distance=dot(result-part.mappedAnchor,part.mappedNormal);
         return result+part.mappedNormal*(side*part.mappedNormalScale-distance);
     }
-    ToeSurfaceMesh toeSurface() const {
-        std::array<ToeBoneBounds,5> bounds;
-        for (int digit=0;digit<5;++digit) {
-            auto& b=bounds[digit];
-            b.low=b.distalLow={1e30,1e30,1e30}; b.high=b.distalHigh={-1e30,-1e30,-1e30};
-            const auto expand=[](Vec3 p,Vec3& lo,Vec3& hi) {
-                lo.x=std::min(lo.x,p.x); lo.y=std::min(lo.y,p.y); lo.z=std::min(lo.z,p.z);
-                hi.x=std::max(hi.x,p.x); hi.y=std::max(hi.y,p.y); hi.z=std::max(hi.z,p.z);
-            };
-            for (int joint=0;joint<3;++joint) if (toeParts_[digit][joint]>=0) {
-                const Part& part=parts_[static_cast<std::size_t>(toeParts_[digit][joint])];
-                for (Vec3 p:part.points) {
-                    p=mapPart(p,part); b.points.push_back(p); expand(p,b.low,b.high);
-                    if (joint==2) expand(p,b.distalLow,b.distalHigh);
-                }
-            }
-        }
-        return comparisonToeSurface(bounds,profile_.height/defaultHeight());
-    }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         for (std::size_t i=0; i<parts_.size(); ++i) {
@@ -576,13 +540,6 @@ public:
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
         }
-        ToeSurfaceMesh toes=toeSurface();
-        for (Vec3& p:toes.skin) p.x+=x;
-        for (Vec3& p:toes.nails) p.x+=x;
-        Material skin; skin.color=colorHex("#bf8e76"); skin.specular=0.06;
-        Material nail; nail.color=colorHex("#d8b1a0"); nail.specular=0.08;
-        rasterizer.setObject(idBase+300,{},0); rasterizer.mesh(toes.skin,toes.skinFaces,skin);
-        rasterizer.setObject(idBase+301,{},0); rasterizer.mesh(toes.nails,toes.nailFaces,nail);
     }
 
 private:
@@ -744,7 +701,6 @@ private:
         ++revision_; error.clear(); return true;
     }
     bool male_=false, feasible_=false, exact_=false;
-    std::array<std::array<int,3>,5> toeParts_{};
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_;

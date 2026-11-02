@@ -8,24 +8,6 @@ joint changes. V still changes the
 originals to the existing anatomical inspection shapes; the copies stay blue
 meshes. The physics and source geometry of the originals are not scaled.
 
-## First body surfaces: toes
-
-Each blue comparison now has five separately shaped, low-poly skin toes and
-nail plates on each foot. They are built from its mapped toe phalanges, mirrored
-about the same upright plane, and rebuilt with the comparison slider revision.
-These are static comparison surfaces; the foot, leg and rest of the body have
-not been built yet, and these toes do not articulate with the R ragdoll. The
-colour and soft-tissue thickness are artistic estimates, not CT skin data.
-
-At the source floor, the male fifth and female third distal phalanges already
-touch y=0. Their soles share that point: there is no tissue clearance there
-without moving the skeleton, changing height, or lowering the floor. The other
-sampled toe bones are enclosed without detected surface intersections. FCL
-checks at 50, 170 and 250 cm, individual and combined slider endpoints, and
-mesh topology/reflection tests do not establish anatomical accuracy or visual
-quality. Existing skeletal joint intersections remain; the source white
-skeletons are unchanged. Physical GPU and visual review are still required.
-
 Press **P** to open or hide the comparison controls. Press **Esc** to release
 the cursor, drag a track or click its minus/plus buttons, and click outside the
 panel to resume looking. Select male or female; **Reset** affects that copy.

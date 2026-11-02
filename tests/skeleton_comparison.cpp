@@ -208,7 +208,6 @@ static void check(const SkeletonRoom& room, bool male) {
                 c.profile().height,(highY(head)-lowY(jaw))*100,arms,extent(pl,pr,0),extent(sl,sr,0));
 }
 static int blue=0,ui=0,white=0; static std::uint64_t revision=0; static float sample=0; static double whiteX=0; static std::uint64_t blueStamp=0;
-static std::array<std::uint64_t,4> toeStamps{};
 static const SkeletonRoom* observedRoom=nullptr;
 static std::vector<std::array<double,16>> originalMatrices[2];
 static bool gpu(const GpuScene& scene,NativeFrame& frame) {
@@ -224,19 +223,6 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
         const auto& model=sex==0?observedRoom->male():observedRoom->female();
         const auto& copy=observedRoom->comparison(sex==0);
         const auto& matrices=originalMatrices[sex];
-        const auto toes=copy.toeSurface();
-        for (int nail=0;nail<2;++nail) {
-            const auto id=(sex==0?12300u:14300u)+static_cast<unsigned>(nail);
-            const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b){return b.objectId==id;});
-            const auto& vertices=nail?toes.nails:toes.skin;
-            assert(batch!=scene.batches.end() && batch->vertices.size()==vertices.size());
-            toeStamps[sex*2+nail]=batch->revision;
-            for (std::size_t i=0;i<vertices.size();++i) {
-                Vec3 expected=vertices[i]; expected.x+=sex==0?-2.85:2.85;
-                const auto& v=batch->vertices[i];
-                assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);
-            }
-        }
         for (const char* name:{"Head","Jaw","C1","Pelvis_L","Pelvis_R","Sacrum"}) {
             const int index=model.sourceStructure(name); assert(index>=0);
             const auto& part=copy.parts()[static_cast<std::size_t>(index)];
@@ -580,23 +566,16 @@ int main() {
     bool glyph=false; for (const auto& quad:layer.quads()) if (quad.texture) glyph=true;
     assert(glyph); // the shipped atlas only contains 20-48 px glyphs
     frame.ui=nullptr;frame.uiLayer=&layer;
-    setGpuRenderer(gpu); room.render(frame,view,0); assert(blue==368 && white==364 && ui>0 && frame.interfaceInFrame);
-    const auto first=revision, originalBlueStamp=blueStamp; const auto originalToeStamps=toeStamps; const float orig=sample;
-    room.render(frame,view,0); assert(revision==first && sample==orig && toeStamps==originalToeStamps && ui>0);
+    setGpuRenderer(gpu); room.render(frame,view,0); assert(blue==364 && white==364 && ui>0 && frame.interfaceInFrame);
+    const auto first=revision, originalBlueStamp=blueStamp; const float orig=sample;
+    room.render(frame,view,0); assert(revision==first && sample==orig && ui>0);
     auto p=room.comparison(true).profile();p.multiplier[SkeletonComparison::Head]=1.02;
     assert(room.setComparison(true,p,error)); room.render(frame,view,0);
-    assert(revision==first && blueStamp!=originalBlueStamp && blue==368 && white==364 && ui>0 && std::abs(whiteX)>0.5);
-    assert(toeStamps[0]!=originalToeStamps[0] && toeStamps[1]!=originalToeStamps[1]);
-    assert(toeStamps[2]==originalToeStamps[2] && toeStamps[3]==originalToeStamps[3]);
-    const auto maleUpdated=toeStamps;
-    auto femaleProfile=room.comparison(false).profile(); femaleProfile.height=170;
-    assert(room.setComparison(false,femaleProfile,error)); room.render(frame,view,0);
-    assert(toeStamps[0]==maleUpdated[0] && toeStamps[1]==maleUpdated[1]);
-    assert(toeStamps[2]!=maleUpdated[2] && toeStamps[3]!=maleUpdated[3]);
+    assert(revision==first && blueStamp!=originalBlueStamp && blue==364 && white==364 && ui>0 && std::abs(whiteX)>0.5);
     const float blueBeforeRagdoll=sample; assert(room.toggleRagdoll()); room.advanceRagdoll(0.05);
     room.render(frame,view,0); assert(sample==blueBeforeRagdoll && room.ragdollActive());
     assert(room.toggleRagdoll());
-    room.toggleLineView();room.render(frame,view,0);assert(blue==368 && ui>0);
+    room.toggleLineView();room.render(frame,view,0);assert(blue==364 && ui>0);
     setGpuRenderer(nullptr);
     // Both supported software scene paths contain actual blue pixels too.
     view.gpu=false; view.width=320; view.height=240; RoomFreecam camera;

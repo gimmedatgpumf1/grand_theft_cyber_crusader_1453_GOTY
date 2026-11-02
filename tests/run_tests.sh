@@ -177,11 +177,6 @@ fi
   tests/whole_skeleton_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-whole-skeleton-symmetry
 ./build/bin/gtc-whole-skeleton-symmetry
-# The estimated toe skin and nails stay mirrored, closed and nondegenerate at slider endpoints.
-"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/toe_surface.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
-  build/obj/bullet/libbullet.a -o build/bin/gtc-toe-surface
-./build/bin/gtc-toe-surface
 # A symmetric central bone must not duplicate an off-axis coccyx into two tips.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/coccyx_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
