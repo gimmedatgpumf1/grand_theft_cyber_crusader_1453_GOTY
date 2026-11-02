@@ -1,0 +1,120 @@
+#version 450
+
+// Work-in-progress Vulkan rigid-body solver. Not connected to the game yet.
+// Joint batches must be graph-coloured: no two joints in one dispatch may
+// reference the same body. Insert a compute-write -> compute-read/write barrier
+// between dispatches. Coordinates are metres, seconds, and radians.
+layout(local_size_x = 64) in;
+
+struct Body {
+    vec4 positionMass;    // world centre, inverse mass
+    vec4 rotation;        // local-to-world quaternion, xyzw
+    vec4 linearVelocity;
+    vec4 angularVelocity;
+    vec4 inverseInertia;  // diagonal local-space inverse inertia
+    vec4 previousPosition; // w is set when a floor contact is resolved
+    vec4 previousRotation;
+    uvec4 samples;        // first floor support point, number of support points
+};
+struct Joint {
+    uvec4 bodies;         // x = parent body, y = child body
+    vec4 parentAnchor;    // body-local anchor
+    vec4 childAnchor;
+};
+layout(std430, set=0, binding=0) buffer Bodies { Body body[]; } bodies;
+layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
+layout(std430, set=0, binding=2) readonly buffer Samples { vec4 point[]; } samples;
+layout(push_constant) uniform Step {
+    uint phase;           // 0 predict, 1 joint batch, 2 floor, 3 velocities
+    uint first;           // first joint in this batch
+    uint count;           // number of bodies or joints in this dispatch
+    float dt;
+    vec4 gravityFloor;    // gravity xyz and floor height
+} step;
+
+vec4 qmul(vec4 a, vec4 b) {
+    return vec4(a.w*b.xyz+b.w*a.xyz+cross(a.xyz,b.xyz), a.w*b.w-dot(a.xyz,b.xyz));
+}
+vec3 rotate(vec4 q, vec3 v) {
+    return v + 2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);
+}
+vec3 invInertia(Body b, vec3 worldVector) {
+    vec4 inverseQ=vec4(-b.rotation.xyz,b.rotation.w);
+    return rotate(b.rotation,rotate(inverseQ,worldVector)*b.inverseInertia.xyz);
+}
+void rotateBy(inout Body b, vec3 delta) {
+    b.rotation=normalize(b.rotation+0.5*qmul(vec4(delta,0.0),b.rotation));
+}
+
+// Corrects the separation of the two calibrated anchors. A coloured batch
+// makes each body writable by just one invocation, without float atomics.
+void solveJoint(uint index) {
+    Joint j=joints.joint[index];
+    Body a=bodies.body[j.bodies.x], b=bodies.body[j.bodies.y];
+    for (int k=0;k<3;++k) {
+        vec3 n=vec3(k==0 ? 1.0 : 0.0,k==1 ? 1.0 : 0.0,k==2 ? 1.0 : 0.0);
+        vec3 ra=rotate(a.rotation,j.parentAnchor.xyz);
+        vec3 rb=rotate(b.rotation,j.childAnchor.xyz);
+        float error=dot((b.positionMass.xyz+rb)-(a.positionMass.xyz+ra),n);
+        vec3 aa=cross(ra,n), ab=cross(rb,n);
+        vec3 ia=invInertia(a,aa), ib=invInertia(b,ab);
+        float effective=a.positionMass.w+b.positionMass.w+dot(aa,ia)+dot(ab,ib);
+        if (effective<=1e-12) continue;
+        float impulse=error/effective;
+        a.positionMass.xyz+=n*(impulse*a.positionMass.w);
+        b.positionMass.xyz-=n*(impulse*b.positionMass.w);
+        rotateBy(a,ia*impulse);
+        rotateBy(b,-ib*impulse);
+    }
+    bodies.body[j.bodies.x]=a;
+    bodies.body[j.bodies.y]=b;
+}
+
+// Floor support points are local to their rigid body. A body owns all its
+// support points, so this phase is also one writer per body.
+void solveFloor(uint index) {
+    Body b=bodies.body[index];
+    if (b.positionMass.w<=0.0) return;
+    float lowest=step.gravityFloor.w;
+    vec3 arm=vec3(0.0);
+    for (uint i=0u;i<b.samples.y;++i) {
+        vec3 r=rotate(b.rotation,samples.point[b.samples.x+i].xyz);
+        float y=b.positionMass.y+r.y;
+        if (y<lowest) { lowest=y; arm=r; }
+    }
+    if (lowest<step.gravityFloor.w) {
+        vec3 n=vec3(0.0,1.0,0.0);
+        vec3 torque=cross(arm,n), angular=invInertia(b,torque);
+        float effective=b.positionMass.w+dot(torque,angular);
+        if (effective>1e-12) {
+            float impulse=(step.gravityFloor.w-lowest)/effective;
+            b.positionMass.xyz+=n*(impulse*b.positionMass.w);
+            rotateBy(b,angular*impulse);
+            b.previousPosition.w=1.0;
+        }
+    }
+    bodies.body[index]=b;
+}
+
+void main() {
+    uint index=gl_GlobalInvocationID.x;
+    if (index>=step.count) return;
+    if (step.phase==1u) { solveJoint(step.first+index); return; }
+    if (step.phase==2u) { solveFloor(index); return; }
+    Body b=bodies.body[index];
+    if (b.positionMass.w<=0.0) return;
+    if (step.phase==0u) {
+        b.previousPosition=vec4(b.positionMass.xyz,0.0);
+        b.previousRotation=b.rotation;
+        b.linearVelocity.xyz+=step.gravityFloor.xyz*step.dt;
+        b.positionMass.xyz+=b.linearVelocity.xyz*step.dt;
+        rotateBy(b,b.angularVelocity.xyz*step.dt);
+    } else if (step.phase==3u) {
+        b.linearVelocity.xyz=(b.positionMass.xyz-b.previousPosition.xyz)/step.dt;
+        vec4 dq=qmul(b.rotation,vec4(-b.previousRotation.xyz,b.previousRotation.w));
+        if (dq.w<0.0) dq=-dq;
+        b.angularVelocity.xyz=2.0*dq.xyz/step.dt;
+        if (b.previousPosition.w>0.0) b.linearVelocity.xz*=0.9;
+    }
+    bodies.body[index]=b;
+}

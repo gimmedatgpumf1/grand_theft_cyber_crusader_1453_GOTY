@@ -1,0 +1,65 @@
+#pragma once
+
+// Host-side layouts for the unfinished Vulkan rigid-body solver. These are not
+// yet connected to the room or renderer. Keep in step with rigid_solver.comp.
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace gtc::native::gpu_physics {
+
+struct alignas(16) Body {
+    std::array<float,4> positionMass{};
+    std::array<float,4> rotation{0,0,0,1};
+    std::array<float,4> linearVelocity{};
+    std::array<float,4> angularVelocity{};
+    std::array<float,4> inverseInertia{};
+    std::array<float,4> previousPosition{};
+    std::array<float,4> previousRotation{0,0,0,1};
+    std::array<std::uint32_t,4> samples{};
+};
+struct alignas(16) Joint {
+    std::array<std::uint32_t,4> bodies{};
+    std::array<float,4> parentAnchor{};
+    std::array<float,4> childAnchor{};
+};
+struct alignas(16) Step {
+    std::uint32_t phase=0, first=0, count=0;
+    float dt=0;
+    std::array<float,4> gravityFloor{0,-9.81f,0,0};
+};
+static_assert(sizeof(Body)==128 && sizeof(Joint)==48 && sizeof(Step)==32);
+static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
+
+struct JointBatch { std::uint32_t first=0, count=0; };
+
+// Colour once when the rig is built. Every constraint in one colour has
+// disjoint endpoints, so its GPU invocations can update both bodies in parallel
+// without races or floating-point atomic extensions. Returned batches index the
+// reordered joint vector and must execute in order with a barrier between them.
+inline bool colourJoints(std::size_t bodyCount, const std::vector<Joint>& input,
+                         std::vector<Joint>& ordered, std::vector<JointBatch>& batches) {
+    std::vector<std::vector<Joint>> colours;
+    std::vector<std::vector<bool>> occupied;
+    for (const Joint& joint:input) {
+        const auto a=joint.bodies[0], b=joint.bodies[1];
+        if (a>=bodyCount || b>=bodyCount || a==b) { ordered.clear(); batches.clear(); return false; }
+        std::size_t colour=0;
+        while (colour<colours.size() && (occupied[colour][a] || occupied[colour][b])) ++colour;
+        if (colour==colours.size()) {
+            colours.emplace_back();
+            occupied.emplace_back(bodyCount,false);
+        }
+        colours[colour].push_back(joint);
+        occupied[colour][a]=occupied[colour][b]=true;
+    }
+    ordered.clear(); batches.clear(); ordered.reserve(input.size());
+    for (const auto& colour:colours) {
+        batches.push_back({static_cast<std::uint32_t>(ordered.size()),static_cast<std::uint32_t>(colour.size())});
+        ordered.insert(ordered.end(),colour.begin(),colour.end());
+    }
+    return true;
+}
+
+} // namespace gtc::native::gpu_physics
