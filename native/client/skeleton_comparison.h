@@ -252,9 +252,28 @@ public:
         if (!meanPelvis || !meanSacrum) { error="Comparison pelvic ring is missing"; return false; }
         std::vector<Vec3> reflectedSacrum; reflectedSacrum.reserve(meanSacrum->points.size());
         for (Vec3 p:meanSacrum->points) { p.x=2*axis-p.x; reflectedSacrum.push_back(p); }
-        if (!bilateral::average(meanSacrum->points,reflectedSacrum,meanSacrum->faces) ||
-            !bilateral::mirrorAxial(meanSacrum->points,meanSacrum->faces,axis)) {
+        if (!bilateral::average(meanSacrum->points,reflectedSacrum,meanSacrum->faces)) {
             error="Comparison sacrum could not be averaged"; return false;
+        }
+        if (male) {
+            // The male source coccyx tip sits to one side of the body plane.
+            // Center that tip before clipping and reflection; otherwise the
+            // retained off-axis tip is duplicated into two tails. Fade the
+            // small X correction smoothly into the lower sacrum, leaving its
+            // upper joints and the original source mesh untouched.
+            const auto low=std::min_element(meanSacrum->points.begin(),meanSacrum->points.end(),
+                                            [](Vec3 a,Vec3 b){return a.y<b.y;});
+            const auto high=std::max_element(meanSacrum->points.begin(),meanSacrum->points.end(),
+                                             [](Vec3 a,Vec3 b){return a.y<b.y;});
+            const double bottom=low->y, span=high->y-bottom, offset=axis-low->x;
+            if (!(span>0)) { error="Invalid sacrum extent"; return false; }
+            for (Vec3& p:meanSacrum->points) {
+                const double t=std::clamp((p.y-bottom-0.08*span)/(0.17*span),0.0,1.0);
+                p.x+=offset*(1-t*t*(3-2*t));
+            }
+        }
+        if (!bilateral::mirrorAxial(meanSacrum->points,meanSacrum->faces,axis)) {
+            error="Comparison sacrum could not be mirrored"; return false;
         }
         double medial=1e30; for (Vec3 p:meanPelvis->points) medial=std::min(medial,p.x);
         const double outward=axis+meanPubicHalfGap-medial;

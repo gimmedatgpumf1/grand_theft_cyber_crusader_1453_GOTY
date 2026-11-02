@@ -111,7 +111,10 @@ anatomical joint fit or visual quality.
 - [x] Sternum: averaged and mirrored about the common body midplane. The source
   labels the sternum as one mesh; the manubrium is not a separate structure and
   cannot be independently anatomically segmented or certified here.
-- [x] Sacrum: averaged and mirrored about the common body midplane.
+- [x] Sacrum: averaged and mirrored about the common body midplane. The male
+  source's off-centre coccyx tip is smoothly centred before mirroring, so it
+  produces one central tip instead of two. The source provides the sacrum and
+  coccyx as one mesh rather than separately segmented bones.
 - [x] Cervical vertebrae C1–C7: each fitted independently, then rigidly aligned
   to the common plane.
 - [x] Thoracic vertebrae T1–T12: each fitted independently, then rigidly aligned
@@ -127,6 +130,9 @@ White source geometry and poses are unchanged.
 
 ## Verification and remaining work
 
+- [x] `tests/coccyx_symmetry.cpp` checks the male blue coccyx has one central
+  tip and one connected contour at seven levels, across 52 size/slider profiles.
+  It does not establish anatomical accuracy or visual approval.
 - [x] `tests/whole_skeleton_symmetry.cpp` checks the triangle winding of all
   28 central structures and corresponding vertices and winding of all 77 pairs
   against one common plane, in 52 profiles per sex. It also verifies all 182

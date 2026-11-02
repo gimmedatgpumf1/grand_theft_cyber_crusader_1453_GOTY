@@ -141,7 +141,11 @@ height, preserving straight vertical joint-centre lines. This is an
 approximate bilateral *mesh* mean, not a vertex-by-vertex anatomical mean or a
 population average. Both rendered sides have identical reflected triangles.
 The central sacrum and sternum are averaged, clipped and mirrored with a welded
-seam. The skull uses a separate midplane fitted **only to its own source mesh**;
+seam. Before reflecting the male sacrum, its off-axis coccyx tip is centred with
+an X-only adjustment that fades smoothly into the lower sacrum; otherwise the
+single source tip becomes two mirrored tips. This changes only the blue male
+mesh, not the female copy or either original. The skull uses a separate midplane
+fitted **only to its own source mesh**;
 hip and other body landmarks do not determine it. The same skull-derived plane
 is used for the jaw, with no separate jaw-centroid alignment. The complete
 three-axis skull frame follows the head's rigid T-pose rotation. The surfaces
