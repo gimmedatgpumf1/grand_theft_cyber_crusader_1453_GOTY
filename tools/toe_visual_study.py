@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
-from PIL import Image, ImageDraw
+from PIL import Image
 from scipy.interpolate import PchipInterpolator
 from skimage.measure import marching_cubes
 
@@ -40,8 +40,8 @@ def describe_toe(directory, sex, digit, scale):
         root_width = max(.0056 * scale, typical * .56 + .0013 * scale)
     width = PchipInterpolator(
         [0, .12, .34, .57, .75, .88, .95, 1],
-        [root_width, root_width * .99, root_width * .94, distal_width * .91,
-         distal_width, distal_width * .96, distal_width * .78, .00005 * scale])
+        [root_width, root_width * 1.02, root_width * .91, distal_width * .96,
+         distal_width * .98, distal_width * .96, distal_width * .78, .00005 * scale])
     low = min(float(p[:, 1].min()) for p in segments) - .003 * scale
     root_top = bounds[0][1][1] + .003 * scale
     tip_top = bounds[-1][1][1] + .004 * scale
@@ -53,8 +53,40 @@ def describe_toe(directory, sex, digit, scale):
                                [low, low - .0003 * scale, low - .0025 * scale,
                                 low - .004 * scale, low - .0015 * scale, tip_center])
     return {"bounds": bounds, "start": start, "end": end, "width": width,
-            "top": top, "bottom": bottom,
+            "top": top, "bottom": bottom, "tip_scale": 1.,
             "x": [b[2][0] for b in bounds], "z": [b[2][2] for b in bounds]}
+
+
+def separate_toe_tips(specs, scale):
+    # Reduce only distal flesh where neighbouring toes would fuse together.
+    # This is an artistic shape constraint, not proof of bone clearance.
+    for first, second in zip(specs[:-1], specs[1:]):
+        gap = second["x"][-1] - first["x"][-1]
+        if gap <= 0:
+            raise ValueError("Unexpected toe order in the blue skeleton")
+        available = max(gap - .0006 * scale, gap * .7)
+        total = float(first["width"](.85) + second["width"](.85))
+        factor = min(1., available / total)
+        first["tip_scale"] = min(first["tip_scale"], factor)
+        second["tip_scale"] = min(second["tip_scale"], factor)
+
+
+def toe_section(s, t):
+    t = np.asarray(t)
+    # Round the end in both planes, so the side silhouette is a soft toe pad
+    # rather than a pointed cone and the nail need not follow an abrupt bend.
+    shoulder = .88
+    core_t = np.minimum(t, shoulder)
+    q = np.clip((t - shoulder) / (1 - shoulder), 0, 1)
+    cap = np.sqrt(np.maximum(0, 1 - q * q))
+    upper0, lower0 = s["top"](core_t), s["bottom"](core_t)
+    middle = (upper0 + lower0) * .5
+    upper = middle + (upper0 - middle) * cap
+    lower = middle + (lower0 - middle) * cap
+    blend = np.clip((t - .4) / .35, 0, 1)
+    blend = blend * blend * (3 - 2 * blend)
+    narrowing = 1 - blend * (1 - s["tip_scale"])
+    return s["width"](core_t) * cap * narrowing, upper, lower
 
 
 def smooth_union(a, b, k):
@@ -63,7 +95,7 @@ def smooth_union(a, b, k):
 
 
 def surface(specs, scale):
-    step = .0012 * scale
+    step = .0008 * scale
     xs = np.arange(min(s["x"][0] for s in specs) - .018 * scale,
                    max(s["x"][0] for s in specs) + .019 * scale, step)
     ys = np.arange(min(s["bottom"](0) for s in specs) - .015 * scale,
@@ -75,8 +107,8 @@ def surface(specs, scale):
     def toe_field(s):
         t = np.clip((z - s["start"]) / (s["end"] - s["start"]), 0, 1)
         xc = np.interp(z, s["z"], s["x"])
-        w = np.maximum(.0001 * scale, s["width"](t))
-        upper, lower = s["top"](t), s["bottom"](t)
+        w, upper, lower = toe_section(s, t)
+        w = np.maximum(.0001 * scale, w)
         half = np.maximum(.0001 * scale, (upper - lower) * .5)
         cy = (upper + lower) * .5
         distance = (np.sqrt(((x - xc) / w) ** 2 + ((y - cy) / half) ** 2) - 1) * np.minimum(w, half)
@@ -99,15 +131,23 @@ def surface(specs, scale):
               np.abs((y - middle) / yradius) ** 3.5) ** (1 / 3.5) - 1) * np.minimum(radius, yradius)
     web = cross + .008 * scale * np.logaddexp(0, (z - front) / (.005 * scale))
     field = np.maximum(smooth_union(field, web, .006 * scale), back - z)
-    # Small sculpted folds near the source phalanx joints, not texture lines.
+    # Shallow, curved transverse folds at the phalanx joints.  These deform
+    # the surface itself, with a separate crease beneath the toe pad.
     for s in specs:
         for first, second in zip(s["bounds"][:-1], s["bounds"][1:]):
             joint = (first[1][2] + second[0][2]) * .5
             xc = np.interp(joint, s["z"], s["x"])
-            u = np.abs((x - xc) / ((.006 if len(s["bounds"]) > 2 else .009) * scale))
-            v = (z - joint) / (.001 * scale)
-            dorsal = np.clip((y - .006 * scale) / (.005 * scale), 0, 1)
-            field += .00025 * scale * np.exp(-v * v) * np.exp(-u ** 4) * dorsal
+            t = np.clip((joint - s["start"]) / (s["end"] - s["start"]), 0, 1)
+            width, upper, lower = toe_section(s, t)
+            u = (x - xc) / max(float(width), .001 * scale)
+            dorsal = np.clip((y - (upper + lower) * .5) / (.004 * scale), 0, 1)
+            plantar = np.clip(((upper + lower) * .5 - y) / (.004 * scale), 0, 1)
+            along = z - joint - .0012 * scale * u * u
+            envelope = np.exp(-(u / .78) ** 6)
+            crease = np.exp(-(along / (.00085 * scale)) ** 2)
+            echo = np.exp(-((along - .0018 * scale) / (.00075 * scale)) ** 2)
+            field += scale * envelope * (.00038 * dorsal * (crease + .35 * echo) +
+                                          .00032 * plantar * crease)
     vertices, faces, _, _ = marching_cubes(field, level=0, spacing=(step, step, step))
     vertices += np.array([xs[0], ys[0], zs[0]])
     return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
@@ -115,17 +155,20 @@ def surface(specs, scale):
 
 def nail(s, digit, skin, scale):
     columns, rows = 15, 17
-    start, end = (.70 if digit == 1 else .77), .95
+    start, end = (.66 if digit == 1 else .72), .92
     xz = []
     for row in range(rows):
         v = row / (rows - 1)
-        t = start + (end - start) * v
-        z = s["start"] + (s["end"] - s["start"]) * t
-        xc = np.interp(z, s["z"], s["x"])
-        taper = .77 + .23 * np.sqrt(max(0, np.sin(np.pi * v)))
+        taper = .84 + .16 * np.sqrt(max(0, np.sin(np.pi * v)))
         for col in range(columns):
             u = 2 * col / (columns - 1) - 1
-            xz.append((xc + u * float(s["width"](t)) * .68 * taper, z))
+            # Rounded proximal and distal corners; the plate follows the toe
+            # rather than being a rectangular block placed on top.
+            t = start + (end - start) * v + .018 * u ** 4 * (1 - 2 * v)
+            z = s["start"] + (s["end"] - s["start"]) * t
+            xc = np.interp(z, s["z"], s["x"])
+            width, _, _ = toe_section(s, t)
+            xz.append((xc + u * float(width) * .68 * taper, z))
     origins = np.array([(x, max(skin.vertices[:, 1]) + .05 * scale, z) for x, z in xz])
     directions = np.tile([0., -1., 0.], (len(origins), 1))
     hits, indices, _ = skin.ray.intersects_location(origins, directions, multiple_hits=False)
@@ -134,7 +177,13 @@ def nail(s, digit, skin, scale):
     lower = origins.copy()
     lower[indices, 1] = hits[:, 1] + .00010 * scale
     upper = lower.copy()
-    upper[:, 1] += .00055 * scale
+    for row in range(rows):
+        v = row / (rows - 1)
+        for col in range(columns):
+            u = 2 * col / (columns - 1) - 1
+            # Soft edges and an arched plate, not a floating flat decal.
+            relief = .35 + .65 * (1 - u * u) * np.sqrt(max(0., np.sin(np.pi * v)))
+            upper[row * columns + col, 1] += .00055 * scale * relief
     vertices = np.concatenate((lower, upper))
     layer = len(lower)
     faces = []
@@ -154,30 +203,73 @@ def nail(s, digit, skin, scale):
     for row in range(rows - 1):
         wall((row + 1) * columns, row * columns)
         wall(row * columns + columns - 1, (row + 1) * columns + columns - 1)
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    # Subtle vertex colours for the translucent-looking plate and free edge;
+    # the nail is still a separate closed volume, not a decal or texture.
+    colors = np.empty((len(vertices), 4), dtype=np.uint8)
+    for row in range(rows):
+        v = row / (rows - 1)
+        for col in range(columns):
+            u = 2 * col / (columns - 1) - 1
+            edge = max(0., (abs(u) - .7) / .3)
+            tip = max(0., (v - .86) / .14)
+            base = np.array([210., 157., 147.])
+            color = base + np.array([9., 9., 8.]) * (1 - edge) + np.array([14., 20., 23.]) * tip
+            colors[row * columns + col] = (*color.astype(np.uint8), 255)
+            colors[layer + row * columns + col] = (*color.astype(np.uint8), 255)
+    mesh.visual.vertex_colors = colors
+    return mesh
 
 
 def render(objects, matrix, light, path):
-    triangles = []
-    light = np.asarray(light) / np.linalg.norm(light)
-    for mesh, color in objects:
-        normals = mesh.vertex_normals
-        for face in mesh.faces:
-            vertices = mesh.vertices[face]
-            projected = vertices @ matrix.T
-            normal = normals[face].mean(axis=0)
-            normal /= max(1e-18, np.linalg.norm(normal))
-            brightness = .55 + .45 * abs(np.dot(normal, light))
-            triangles.append((projected[:, 2].mean(), projected[:, :2], brightness, color))
-    xy = np.vstack([triangle[1] for triangle in triangles])
+    # A depth buffer is important here: sorting translucent-looking thin nail
+    # triangles by their centroid makes the skin appear to punch holes in them.
+    light = np.asarray(light, dtype=float)
+    light /= np.linalg.norm(light)
+    projected = [mesh.vertices @ matrix.T for mesh, _ in objects]
+    xy = np.vstack([points[:, :2] for points in projected])
     low, high = xy.min(0), xy.max(0)
     scale = min(900 / (high[0] - low[0]), 800 / (high[1] - low[1]))
-    image = Image.new("RGB", (1100, 900), (35, 40, 39))
-    painter = ImageDraw.Draw(image)
-    for _, xy, brightness, color in sorted(triangles, key=lambda triangle: triangle[0], reverse=True):
-        xy = (xy - (low + high) / 2) * scale + np.array([550, 450])
-        painter.polygon([tuple(p) for p in xy], fill=tuple(int(c * brightness) for c in color))
-    image.save(path)
+    image = np.empty((900, 1100, 3), dtype=np.uint8)
+    image[:] = (35, 40, 39)
+    depth = np.full((900, 1100), np.inf)
+    for (mesh, color), points in zip(objects, projected):
+        normals = mesh.vertex_normals
+        screen = (points[:, :2] - (low + high) / 2) * scale + np.array([550, 450])
+        for face in mesh.faces:
+            p = screen[face]
+            x0 = max(0, int(np.floor(p[:, 0].min())))
+            x1 = min(1099, int(np.ceil(p[:, 0].max())))
+            y0 = max(0, int(np.floor(p[:, 1].min())))
+            y1 = min(899, int(np.ceil(p[:, 1].max())))
+            if x0 > x1 or y0 > y1:
+                continue
+            a, b, c = p
+            denom = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(denom) < 1e-12:
+                continue
+            xx, yy = np.meshgrid(np.arange(x0, x1 + 1) + .5, np.arange(y0, y1 + 1) + .5)
+            u = ((b[1] - c[1]) * (xx - c[0]) + (c[0] - b[0]) * (yy - c[1])) / denom
+            v = ((c[1] - a[1]) * (xx - c[0]) + (a[0] - c[0]) * (yy - c[1])) / denom
+            w = 1 - u - v
+            z = u * points[face[0], 2] + v * points[face[1], 2] + w * points[face[2], 2]
+            target_depth = depth[y0:y1 + 1, x0:x1 + 1]
+            mask = (u >= 0) & (v >= 0) & (w >= 0) & (z < target_depth)
+            if not np.any(mask):
+                continue
+            n = (u[..., None] * normals[face[0]] + v[..., None] * normals[face[1]] +
+                 w[..., None] * normals[face[2]])
+            n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-18)
+            brightness = .55 + .45 * np.abs(n @ light)
+            if mesh.visual.kind == "vertex":
+                colors = mesh.visual.vertex_colors[face, :3].astype(float)
+                pigment = (u[..., None] * colors[0] + v[..., None] * colors[1] + w[..., None] * colors[2])
+            else:
+                pigment = np.asarray(color)
+            pixels = np.clip(brightness[..., None] * pigment, 0, 255).astype(np.uint8)
+            image[y0:y1 + 1, x0:x1 + 1][mask] = pixels[mask]
+            target_depth[mask] = z[mask]
+    Image.fromarray(image).save(path)
 
 
 def main():
@@ -191,6 +283,7 @@ def main():
         parser.error("scale must be positive")
     args.output.mkdir(parents=True, exist_ok=True)
     specs = [describe_toe(args.bones, args.sex, d, args.scale) for d in range(1, 6)]
+    separate_toe_tips(specs, args.scale)
     skin = surface(specs, args.scale)
     skin.export(args.output / "skin.obj")
     objects = [(skin, (194, 143, 123))]

@@ -22,8 +22,10 @@ python tools/toe_visual_study.py <bone-exports> <other-output-directory> --sex m
 ```
 
 Each output directory receives a skin OBJ, five separately closed 3D nail
-OBJs, and dorsal, side and plantar PNGs. Use an output directory outside the
-repository. `--scale` is the export height divided by 170; different heights
+OBJs, and dorsal, side and plantar PNGs. The study renderer uses a per-pixel
+depth buffer so overlapping triangles are not ordered by their centroids. Nail
+vertex colors are a visual study only and are not integrated into the game.
+Use an output directory outside the repository. `--scale` is the export height divided by 170; different heights
 are experimental and not visually approved. The images use an offline software
 illustration, not the game renderer or the user's graphics hardware. They do
 not show deformation, joint behavior, skin/bone fit, collisions, or the full
