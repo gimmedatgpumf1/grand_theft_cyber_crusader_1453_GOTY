@@ -576,7 +576,7 @@ public:
             }
             const Vec3 mid=(low+high)*0.5;
             const Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
-            const Vec3 size=(high-low)*0.75;
+            const Vec3 size=(high-low)*0.95;
             std::vector<Vec3> vertices; vertices.reserve(12);
             for (Vec3 corner:corners) {
                 corner=normalized(corner);
