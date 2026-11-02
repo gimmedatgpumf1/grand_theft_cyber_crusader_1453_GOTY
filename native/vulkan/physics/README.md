@@ -12,8 +12,10 @@ API and source lists and need migration to the new GPU path.
 This is **not a PhysX-equivalent engine**. The solver uses graph-coloured joint
 constraints, approximate angular limits, floor support and sphere-proxy contacts.
 Contact search uses four GPU lanes per body, conservative world-space bounds,
-and four contact searches per eight joint iterations. Fewer contact iterations
-reduce work but can reduce contact convergence. Its all-pairs broad phase and overlapping-proxy exclusions need further work;
+and a parallel bitset broad phase to avoid repeatedly searching distant proxies.
+It runs four contact searches per eight joint iterations. Fewer contact iterations
+reduce work but can reduce contact convergence. The broad phase still scans all
+body pairs; it and the overlapping-proxy exclusions need further work;
 limits, collisions, settling and body stability have not been fully validated.
 The current approximation can produce contorted poses. Replacing or expanding
 this solver requires further visual and physical validation.

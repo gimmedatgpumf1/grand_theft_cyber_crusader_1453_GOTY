@@ -149,7 +149,9 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     }
     // Scratch corrections and exclusions share one storage descriptor so the
     // shader fits the Vulkan 1.0 minimum of four per-stage storage buffers.
-    std::vector<std::uint32_t> scratch(count*12+exclusions.size(),0);
+    // Corrections, static exclusions, world bounds/centres, and a transient
+    // broad-phase bitset all share one Vulkan 1.0 storage binding.
+    std::vector<std::uint32_t> scratch(count*16+exclusions.size()*2,0);
     std::copy(exclusions.begin(),exclusions.end(),scratch.begin()+count*8);
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),spheres.size_bytes(),
                                  scratch.size()*sizeof(std::uint32_t)};
@@ -242,7 +244,9 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
         const bool contacts=(pass&1u)!=0u || pass+1u==iterations;
         step.count=bodyCount_; step.first=contacts ? bodyCount_ : 0; step.phase=2; dispatch(command,step);
         if (contacts) {
-            step.first=bodyCount_; step.phase=4; dispatch(command,step);
+            step.first=bodyCount_; step.count=bodyCount_*((bodyCount_+31u)/32u);
+            step.phase=6; dispatch(command,step);
+            step.count=bodyCount_; step.phase=4; dispatch(command,step);
             step.first=0; step.phase=5; dispatch(command,step);
         }
     }

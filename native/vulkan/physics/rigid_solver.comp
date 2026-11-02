@@ -31,8 +31,9 @@ struct Joint {
 layout(std430, set=0, binding=0) buffer Bodies { Body body[]; } bodies;
 layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
 layout(std430, set=0, binding=2) readonly buffer Samples { vec4 point[]; } samples;
-// Eight correction words per body, a symmetric exclusion bitset, then four
-// words per body for cached world bounds. Four storage buffers fit Vulkan 1.0.
+// Scratch: eight correction words per body, the symmetric exclusion bitset,
+// four world-bound words and four centre/radius words per body, then a transient
+// broad-phase bitset. Four storage buffers fit Vulkan 1.0.
 layout(std430, set=0, binding=3) buffer Scratch { uint word[]; } scratch;
 layout(push_constant) uniform Step {
     uint phase;           // predict, joint, floor, velocity, contacts, apply
@@ -88,30 +89,42 @@ void solveHinge(inout Body a, inout Body b, Joint j) {
     if (aa<1e-6 || bb<1e-6) return;
     tangentA/=aa; tangentB/=bb;
     float angle=atan(dot(axisA,cross(tangentA,tangentB)),dot(tangentA,tangentB));
-    solveAngular(a,b,axisA,angle-clamp(angle,j.parentAxis.w,j.childAxis.w));
+    float error=angle-clamp(angle,j.parentAxis.w,j.childAxis.w);
+    if (abs(error)>1e-6) solveAngular(a,b,axisA,error);
 }
 
 // Approximate the three angular coordinates by intrinsic XYZ angles in the
 // fitted joint frame. This is not a coupled anatomical limit surface and has
 // the usual Euler singularity near 90 degrees of the middle coordinate.
+vec3 ballAngles(Body a, Body b, vec3 x, vec3 y, vec3 z, vec3 bx, vec3 by, vec3 bz) {
+    vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
+    vec3 rx=rotate(relative,bx), ry=rotate(relative,by), rz=rotate(relative,bz);
+    return vec3(atan(-dot(y,rz),dot(z,rz)),asin(clamp(dot(x,rz),-1.0,1.0)),
+                atan(-dot(x,ry),dot(x,rx)));
+}
 void solveBall(inout Body a, inout Body b, Joint j) {
+    vec3 x=normalize(j.parentAxis.xyz), y=normalize(j.parentTangent.xyz), z=normalize(cross(x,y));
+    vec3 bx=normalize(j.childAxis.xyz), by=normalize(j.childTangent.xyz), bz=normalize(cross(bx,by));
+    vec3 angles=ballAngles(a,b,x,y,z,bx,by,bz);
+    bool changed=false;
     for (int k=0;k<3;++k) {
-        vec3 x=normalize(j.parentAxis.xyz), y=normalize(j.parentTangent.xyz), z=normalize(cross(x,y));
-        vec3 bx=normalize(j.childAxis.xyz), by=normalize(j.childTangent.xyz), bz=normalize(cross(bx,by));
-        vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
-        vec3 rx=rotate(relative,bx), ry=rotate(relative,by), rz=rotate(relative,bz);
-        float middle=asin(clamp(dot(x,rz),-1.0,1.0));
-        float first=atan(-dot(y,rz),dot(z,rz));
-        float last=atan(-dot(x,ry),dot(x,rx));
-        float angles[3]=float[3](first,middle,last);
+        // Most coordinates are already within their limits. Recompute the
+        // expensive trigonometry only after a previous axis changed the pose.
+        if (changed) { angles=ballAngles(a,b,x,y,z,bx,by,bz); changed=false; }
         float error=angles[k]-clamp(angles[k],j.lowerAngles[k],j.upperAngles[k]);
         if (abs(error)<1e-6) continue;
-        vec3 worldX=rotate(a.rotation,x), worldY=rotate(a.rotation,y), worldZ=rotate(a.rotation,z);
-        vec4 firstTurn=vec4(worldX*sin(first*0.5),cos(first*0.5));
-        worldY=rotate(firstTurn,worldY); worldZ=rotate(firstTurn,worldZ);
-        vec4 middleTurn=vec4(worldY*sin(middle*0.5),cos(middle*0.5));
-        worldZ=rotate(middleTurn,worldZ);
-        solveAngular(a,b,k==0 ? worldX : (k==1 ? worldY : worldZ),error);
+        vec3 axis=rotate(a.rotation,x);
+        if (k>0) {
+            vec4 firstTurn=vec4(axis*sin(angles.x*0.5),cos(angles.x*0.5));
+            vec3 worldY=rotate(firstTurn,rotate(a.rotation,y));
+            if (k==1) axis=worldY;
+            else {
+                vec3 worldZ=rotate(firstTurn,rotate(a.rotation,z));
+                vec4 middleTurn=vec4(worldY*sin(angles.y*0.5),cos(angles.y*0.5));
+                axis=rotate(middleTurn,worldZ);
+            }
+        }
+        solveAngular(a,b,axis,error); changed=true;
     }
 }
 
@@ -125,6 +138,7 @@ void solveJoint(uint index) {
         vec3 ra=rotate(a.rotation,j.parentAnchor.xyz);
         vec3 rb=rotate(b.rotation,j.childAnchor.xyz);
         float error=dot((b.positionMass.xyz+rb)-(a.positionMass.xyz+ra),n);
+        if (abs(error)<1e-8) continue;
         vec3 aa=cross(ra,n), ab=cross(rb,n);
         vec3 ia=invInertia(a,aa), ib=invInertia(b,ab);
         float effective=a.positionMass.w+b.positionMass.w+dot(aa,ia)+dot(ab,ib);
@@ -155,13 +169,45 @@ void solveJoint(uint index) {
 // support points, so this phase is also one writer per body.
 void storeBounds(uint index, uint count, Body b) {
     uint offset=count*8u+count*((count+31u)/32u)+index*4u;
+    uint centerOffset=offset+count*4u;
     vec3 extent=worldBounds(b);
-    for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(extent[k]);
+    for (uint k=0u;k<3u;++k) {
+        scratch.word[offset+k]=floatBitsToUint(extent[k]);
+        scratch.word[centerOffset+k]=floatBitsToUint(b.positionMass[k]);
+    }
+    scratch.word[centerOffset+3u]=floatBitsToUint(b.inverseInertia.w);
 }
 vec3 loadBounds(uint index, uint count) {
     uint offset=count*8u+count*((count+31u)/32u)+index*4u;
     return vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
                 uintBitsToFloat(scratch.word[offset+2u]));
+}
+vec4 loadCenter(uint index, uint count) {
+    uint offset=count*12u+count*((count+31u)/32u)+index*4u;
+    return vec4(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
+                uintBitsToFloat(scratch.word[offset+2u]),uintBitsToFloat(scratch.word[offset+3u]));
+}
+uint candidateOffset(uint count) { return count*16u+count*((count+31u)/32u); }
+
+// One invocation owns one 32-body word. The broad phase is independently
+// parallel and writes a compact list of candidates for the narrow phase.
+void findCandidates(uint wordIndex) {
+    uint count=step.first, stride=(count+31u)/32u;
+    uint index=wordIndex/stride, word=wordIndex%stride;
+    uint excluded=scratch.word[count*8u+wordIndex], mask=0u;
+    vec4 a=loadCenter(index,count);
+    vec3 extentA=loadBounds(index,count);
+    for (uint bit=0u;bit<32u;++bit) {
+        uint other=word*32u+bit;
+        if (other>=count || other==index || (excluded&(1u<<bit))!=0u) continue;
+        vec4 b=loadCenter(other,count);
+        vec3 separation=a.xyz-b.xyz;
+        float radius=a.w+b.w;
+        if (dot(separation,separation)>radius*radius) continue;
+        if (any(greaterThan(abs(separation),extentA+loadBounds(other,count)+vec3(1e-5)))) continue;
+        mask|=1u<<bit;
+    }
+    scratch.word[candidateOffset(count)+wordIndex]=mask;
 }
 void solveFloor(uint index) {
     Body b=bodies.body[index];
@@ -207,16 +253,14 @@ void findContacts(uint index, uint lane, uint localIndex) {
     vec3 positionDelta=vec3(0.0), rotationDelta=vec3(0.0);
     float contactCount=0.0;
     uint stride=(bodyCount+31u)/32u;
-    vec3 boundsA=loadBounds(min(index,bodyCount-1u),bodyCount);
-    if (valid && a.positionMass.w>0.0) for (uint other=lane;other<bodyCount;other+=4u) {
-        if (other==index || (scratch.word[bodyCount*8u+index*stride+other/32u] & (1u<<(other%32u)))!=0u) continue;
+    if (valid && a.positionMass.w>0.0) for (uint word=lane;word<stride;word+=4u) {
+      uint candidates=scratch.word[candidateOffset(bodyCount)+index*stride+word];
+      while (candidates!=0u) {
+        uint bit=uint(findLSB(candidates));
+        candidates&=candidates-1u;
+        uint other=word*32u+bit;
         Body b=bodies.body[other];
-        float extent=a.inverseInertia.w+b.inverseInertia.w;
         vec3 separation=a.positionMass.xyz-b.positionMass.xyz;
-        if (dot(separation,separation)>extent*extent) continue;
-        // A conservative oriented-box bound is much tighter for long bones
-        // than their enclosing sphere. Include proxy radii in each extent.
-        if (any(greaterThan(abs(separation),boundsA+loadBounds(other,bodyCount)+vec3(1e-5)))) continue;
         float depth=0.0;
         vec3 bestLocal=vec3(0.0), bestA=vec3(0.0), bestB=vec3(0.0);
         float bestRadiusA=0.0, bestRadiusB=0.0, bestDistance=0.0;
@@ -255,6 +299,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
         positionDelta+=bestNormal*(impulse*a.positionMass.w);
         rotationDelta+=ia*impulse;
         contactCount+=1.0;
+      }
     }
     contactPosition[localIndex]=vec4(positionDelta,contactCount);
     contactRotation[localIndex]=vec4(rotationDelta,0.0);
@@ -287,6 +332,7 @@ void main() {
     if (index>=step.count) return;
     if (step.phase==1u) { solveJoint(step.first+index); return; }
     if (step.phase==2u) { solveFloor(index); return; }
+    if (step.phase==6u) { findCandidates(index); return; }
     if (step.phase==5u) {
         Body b=bodies.body[index];
         uint offset=index*8u;
