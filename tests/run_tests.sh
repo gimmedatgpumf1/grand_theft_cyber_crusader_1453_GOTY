@@ -168,6 +168,12 @@ fi
   tests/skeleton_skinning.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-skinning
 ./build/bin/gtc-skeleton-skinning
+# Prototype bone-first toe volume and nail topology, and real toe-joint binding.
+# This test does not put the experimental geometry into the game.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/toe_body_geometry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-toe-body-geometry
+./build/bin/gtc-toe-body-geometry
 # Check each original and mirrored vertebra with the actual slider mapping.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
