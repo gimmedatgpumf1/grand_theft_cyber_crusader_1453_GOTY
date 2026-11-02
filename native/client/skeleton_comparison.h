@@ -97,6 +97,16 @@ public:
         // surfaces. Original/white meshes and their rig are never modified.
         const double axis=(hips[0].x+hips[1].x)*0.5;
         const double hipLevel=(hips[0].y+hips[1].y)*0.5;
+        // First fit every central bone in its own scan frame. Afterwards use
+        // the shortest rigid rotation to align that plane to the upright body
+        // midplane. A final X translation centers it; no shape is flattened.
+        const auto alignVector=[](Vec3 v,Vec3 normal) {
+            const Vec3 turn=cross(normal,Vec3{1,0,0});
+            return v+cross(turn,v)+cross(turn,cross(turn,v))/(1+normal.x);
+        };
+        const auto alignPoint=[&](Vec3 p,const SkullMidplane& plane) {
+            return Vec3{axis,plane.origin.y,plane.origin.z}+alignVector(p-plane.origin,plane.normal);
+        };
         auto leg=[](const std::string& name) {
             return name.rfind("Femur_",0)==0 || name.rfind("Patella_",0)==0 ||
                    name.rfind("Tibia_",0)==0 || name.rfind("Fibula_",0)==0 ||
@@ -160,14 +170,18 @@ public:
             Part* part=mutablePart(name); const int id=model.sourceStructure(name);
             if (!part || id<0) { error="Comparison vertebra is missing"; return false; }
             const SkullMidplane plane=posedVertebraPlane(vertebraPlanes.at(name),matrices[static_cast<std::size_t>(id)]);
-            part->vertebra=true; part->vertebraAnchor=plane.origin;
-            part->vertebraNormal=plane.normal; part->vertebraUp=plane.up; part->vertebraForward=plane.forward;
+            if (plane.normal.x<=-0.999) { error="Invalid vertebra orientation: "+name; return false; }
+            part->vertebra=true;
             for (Vec3& p:part->points) p=plane.local(p);
             if (!bilateral::surfaceAverage(part->points,part->faces,nullptr,true) ||
                 !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison vertebra could not be averaged: "+name; return false;
             }
-            for (Vec3& p:part->points) p=plane.world(p);
+            for (Vec3& p:part->points) p=alignPoint(plane.world(p),plane);
+            part->vertebraAnchor={axis,plane.origin.y,plane.origin.z};
+            part->vertebraNormal={1,0,0};
+            part->vertebraUp=alignVector(plane.up,plane.normal);
+            part->vertebraForward=alignVector(plane.forward,plane.normal);
             // Small source-specific joint clearances, measured against the
             // posed triangle surfaces after averaging. A rigid translation
             // preserves the individual vertebra's fitted mirror symmetry.
@@ -175,8 +189,6 @@ public:
             if (male && name=="C1") clearance.y=-0.0004;
             if (male && name=="T6") clearance.z=0.0002;
             if (!male && name=="T2") clearance.y=-0.0006;
-            if (!male && name=="L1") clearance.x=-0.0002;
-            if (!male && name=="L3") clearance.x=0.0002;
             for (Vec3& p:part->points) p+=clearance;
             part->vertebraAnchor+=clearance;
             // Additional millimetre-scale, source-specific joint registrations
@@ -186,9 +198,9 @@ public:
             if (!male && (name=="T1" || name=="T3" || name=="T4" || name=="T5" ||
                           name=="T6" || name=="T7" || name=="T8")) part->jointClearance.y=0.0014;
             if (!male && name=="C5") part->jointClearance.y=0.0002;
-            if (!male && name=="L1") part->jointClearance={-0.0015,0,-0.0023};
-            if (!male && name=="L2") part->jointClearance={-0.0010,0,-0.0018};
-            if (!male && name=="L3") part->jointClearance={-0.0005,0,-0.0010};
+            if (!male && name=="L1") part->jointClearance.z=-0.0023;
+            if (!male && name=="L2") part->jointClearance.z=-0.0018;
+            if (!male && name=="L3") part->jointClearance.z=-0.0010;
             if (!male && name=="L4") part->jointClearance.z=-0.0007;
         }
         // Reflect the skull in its own fitted geometric frame, not the
@@ -197,6 +209,7 @@ public:
         const int headId=model.sourceStructure("Head");
         if (headId<0) { error="Comparison skull structure is missing"; return false; }
         const SkullMidplane skullPlane=skullMidplane(male,matrices[static_cast<std::size_t>(headId)]);
+        if (skullPlane.normal.x<=-0.999) { error="Invalid skull orientation"; return false; }
         // The offline skull-only fit also identifies outward-visible Head
         // triangles. Exterior vertices must match that surface, not the
         // interior wall through thin cranial bone.
@@ -220,9 +233,10 @@ public:
                 !bilateral::mirrorAxial(part->points,part->faces,0)) {
                 error="Comparison skull could not be averaged"; return false;
             }
-            // Undo the complete local-frame transform, retaining the scanned
-            // skull's pose instead of forcing its plane onto a world axis.
-            for (Vec3& p:part->points) p=skullPlane.world(p);
+            // Keep the fitted 3D skull shape and its jaw coupling, then rotate
+            // both rigidly to the common upright plane requested for the whole
+            // blue skeleton. The white source and its scan pose are untouched.
+            for (Vec3& p:part->points) p=alignPoint(skullPlane.world(p),skullPlane);
         }
         // The axial sternum is also centered and mirrored.
         if (Part* sternum=mutablePart("Sternum")) {
@@ -266,6 +280,14 @@ public:
             const int side=suffix=="_L"?1:-1;
             if (part.name.rfind("Scapula_",0)==0)
                 for (Vec3& p:part.points) { p.x+=side*scapulaFit.x; p.y+=scapulaFit.y; p.z+=scapulaFit.z; }
+            // After centering the vertebrae, move affected rib pairs equally
+            // outward in X to retain selected costovertebral clearances.
+            if (part.name.rfind("Rib",0)==0) {
+                const int n=std::stoi(part.name.substr(3));
+                constexpr double femaleRibOffset[13]={0,.0012,.0010,0,0,.0008,.0012,.0008,.0035,.0040,.0045,.0040,.0012};
+                const double offset=n<1 || n>12 ? 0 : male ? (n==10 ? .0027 : 0) : femaleRibOffset[n];
+                for (Vec3& p:part.points) p.x+=side*offset;
+            }
             if (part.name.rfind("Pelvis_",0)==0 || leg(part.name))
                 for (Vec3& p:part.points) p.x+=side*outward;
             if (leg(part.name)) for (Vec3& p:part.points) {

@@ -235,16 +235,25 @@ static void checkSkull(SkeletonRoom& room,bool male) {
                     oldDistance[0]*1000,oldDistance[1]*1000,newDistance[0]*1000,newDistance[1]*1000);
         const auto& result=copy.parts()[static_cast<std::size_t>(id)];
         assert(result.points.size()==averaged.size() && result.faces==triangles);
-        for (std::size_t i=0;i<averaged.size();++i) assert(length(result.points[i]-plane.world(averaged[i]))<1e-12);
-        mirroredTriangles(copy,result,plane,false); mirroredTriangles(copy,result,plane,true);
+        const double axis=(copy.hipCenters()[0].x+copy.hipCenters()[1].x)*0.5;
+        const Vec3 turn=cross(plane.normal,Vec3{1,0,0});
+        for (std::size_t i=0;i<averaged.size();++i) {
+            const Vec3 d=plane.world(averaged[i])-plane.origin;
+            const Vec3 expected=Vec3{axis,plane.origin.y,plane.origin.z}+d+cross(turn,d)+cross(turn,cross(turn,d))/(1+plane.normal.x);
+            assert(length(result.points[i]-expected)<1e-12);
+        }
+        const SkullMidplane upright{{axis,0,0},{1,0,0},{0,1,0},{0,0,1}};
+        mirroredTriangles(copy,result,upright,false); mirroredTriangles(copy,result,upright,true);
         std::printf("%s %s: source unchanged; max average displacement %.3f mm, %zu mirrored triangles\n",
                     male?"male":"female",name,maxDisplacement*1000,result.faces.size());
     }
     for (double height:{50.,250.}) for (double headMultiplier:{0.8,1.2}) {
         auto profile=copy.profile(); profile.height=height; profile.multiplier[SkeletonComparison::Head]=headMultiplier;
         assert(room.setComparison(male,profile,error));
+        const double axis=(copy.hipCenters()[0].x+copy.hipCenters()[1].x)*0.5;
+        const SkullMidplane upright{{axis,0,0},{1,0,0},{0,1,0},{0,0,1}};
         for (const auto& part:copy.parts()) if (part.name=="Head" || part.name=="Jaw")
-            mirroredTriangles(copy,part,plane,true);
+            mirroredTriangles(copy,part,upright,true);
     }
     room.resetComparison(male);
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Audit neutral rib surfaces, not cartilage or clinical joint fit.
 
-The existing blue ribs are already mirrored in pairs. Record intersections at
-selected costovertebral surfaces and require adjacent blue ribs to remain
-separate across tested sizes and single-slider extremes.
+The blue ribs are mirrored in pairs. Require adjacent ribs and selected
+costovertebral surfaces to remain separate across tested sizes and slider
+extremes. This does not model cartilage or prove clinical joint fit.
 """
 import importlib.util
 import os
@@ -52,7 +52,9 @@ with tempfile.TemporaryDirectory(prefix='gtc-ribs-') as temp:
         *[f'native/client/{name}.cpp' for name in ('skeleton_room','skeleton_body','skeleton_ragdoll','raster','hud','ui_layer')],
         'build/obj/bullet/libbullet.a','-o',str(exe)]
     subprocess.run(command,cwd=ROOT,check=True)
-    profiles=[(h,None,None) for h in (50,170,250)]+[(170,d,m) for d in (1,2,3,5,6,7) for m in (.5,1.5)]
+    profiles=([(h,None,None) for h in (50,170,250)]+
+              [(170,d,m) for d in (1,2,3,5,6,7) for m in (.5,1.5)]+
+              [(h,'combined',end) for h in (50,170,250) for end in ('lower','upper')])
     for index,(height,dimension,multiplier) in enumerate(profiles):
         folder=temp/str(index); folder.mkdir(); args=[str(exe),str(folder),'--ribs',str(height)]
         if dimension is not None: args += [str(dimension),str(multiplier)]
@@ -60,10 +62,15 @@ with tempfile.TemporaryDirectory(prefix='gtc-ribs-') as temp:
         for sex in ('male','female'):
             def mesh(color,name): return load(folder/f'{sex}_{color}_{name}.obj')
             ribs={f'Rib{n}_{side}':mesh('blue',f'Rib{n}_{side}') for n in range(1,13) for side in 'LR'}
+            vertebrae={n:mesh('blue',f'T{n}') for n in range(1,13)}
             for side in 'LR':
                 for n in range(1,12):
                     a,b=f'Rib{n}_{side}',f'Rib{n+1}_{side}'
                     count,_=contact(ribs[a],ribs[b]); assert not count,(sex,height,dimension,multiplier,a,b,count)
+                for n in range(1,13):
+                    for t in ([n,n-1] if n>1 else [n]):
+                        count,_=contact(ribs[f'Rib{n}_{side}'],vertebrae[t])
+                        assert not count,(sex,height,dimension,multiplier,f'Rib{n}_{side}',f'T{t}',count)
             if dimension is None:
                 # Both blue ribs use the left template. Report any inherited
                 # left self-crossing and its mirrored-copy counts explicitly.
@@ -75,12 +82,6 @@ with tempfile.TemporaryDirectory(prefix='gtc-ribs-') as temp:
                         name=f'Rib{n}_{side}'; count=self_crossings(ribs[name]); actual.append(count)
                         assert count<=baseline,(sex,height,name,'self crossings',baseline,count)
                     if baseline: inherited.append((n,baseline,*actual))
-                vertebrae={n:mesh('blue',f'T{n}') for n in range(1,13)}
-                intersections=0
-                for side in 'LR':
-                    for n in range(1,13):
-                        count,_=contact(ribs[f'Rib{n}_{side}'],vertebrae[n]); intersections+=bool(count)
-                print(f'{sex} {height} cm: 22 adjacent rib pairs clear; '
-                      f'{intersections}/24 same-level rib/vertebra pairs intersect; '
+                print(f'{sex} {height} cm: adjacent ribs and selected rib/vertebra surfaces clear; '
                       f'self-crossings (rib, source-left, blue-left, blue-right) {inherited}')
-    print('Rib surface sweep: PASS (selected costovertebral overlaps remain; cartilage not tested)')
+    print('Rib surface sweep: PASS (selected surfaces; cartilage not tested)')

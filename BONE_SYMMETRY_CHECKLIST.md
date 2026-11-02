@@ -9,8 +9,8 @@ approved, that its average is anatomically exact, or that every joint is clear.
 ## Arms and legs — yes, their blue meshes are symmetric
 
 Each corresponding left/right pair has identical reflected vertices and
-opposite triangle winding. All the listed parts are included, not just the
-large bones.
+opposite triangle winding about the same upright body plane. All the listed
+parts are included, not just the large bones.
 
 - [x] Upper arms: humeri (1 pair).
 - [x] Forearms: radii and ulnae (2 pairs).
@@ -70,8 +70,9 @@ articulated motion or visual quality.
 
 Each rib is paired with its opposite-side rib; a single curved rib is not
 reflected onto itself. All twelve blue pairs were already mirrored about the
-body midplane. No rib geometry was changed during this audit, and both white
-source ribs remain untouched. The table gives an approximate, bidirectional,
+body midplane. Selected pairs were moved equally outward along X after aligning
+the spine, to maintain tested rib–vertebra clearances. Both white source ribs
+remain untouched. The table gives an approximate, bidirectional,
 area-weighted mean distance between the posed white rib and its reflected
 opposite, in millimetres; it includes position differences as well as shape.
 It is not an anatomical landmark measurement.
@@ -94,32 +95,42 @@ It is not an anatomical landmark measurement.
 `tests/bone_pair_symmetry.cpp` checks every blue vertex and triangle winding at 52
 profiles per sex, including 50/170/250 cm and individual and combined slider
 endpoints. The largest reflected-vertex difference was below 0.000000001 mm.
-`tests/rib_mesh_contact.py` finds adjacent blue ribs clear at those three
-heights and selected 170 cm single-slider extremes. It also finds existing
-rib–vertebra surface intersections: 10/24 same-level pairs for male and
-14/24 for female at each of the three heights tested. Male source rib 8's
-left template has one disjoint triangle self-crossing, which is also mirrored
-onto the right blue rib. The audit does not assess cartilage, anatomical joint
-fit or visual quality.
+`tests/rib_mesh_contact.py` finds adjacent blue ribs and the selected rib/Tn
+and rib/T(n−1) surfaces clear at those three heights, selected 170 cm
+single-slider extremes and combined extremes at all three heights. Male source
+rib 8's left template has one disjoint triangle self-crossing, which is also
+mirrored onto the right blue rib. The audit does not assess cartilage,
+anatomical joint fit or visual quality.
 
 ## Central blue bones
 
-- [x] Head / skull: symmetric about its own 3D, voxel-fitted skull plane.
-- [x] Jaw: mirrored about the same skull-derived plane and shares the skull's
-  cranial transform. Head–jaw intersections remain in the blue meshes.
-- [x] Sternum: averaged and mirrored about the body midplane.
-- [x] Sacrum: averaged and mirrored about the body midplane.
-- [x] Cervical vertebrae C1–C7: each fitted, averaged and mirrored about its own 3D plane.
-- [x] Thoracic vertebrae T1–T12: each fitted, averaged and mirrored about its own 3D plane.
-- [x] Lumbar vertebrae L1–L5: each fitted, averaged and mirrored about its own 3D plane.
+- [x] Head / skull: fitted, averaged and mirrored in its own 3D voxel frame,
+  then rigidly rotated and centered onto the common upright body plane.
+- [x] Jaw: uses the same fitted skull frame and rigid adjustment; shares the
+  skull's cranial scale. Head–jaw intersections remain in the blue meshes.
+- [x] Sternum: averaged and mirrored about the common body midplane. The source
+  labels the sternum as one mesh; the manubrium is not a separate structure and
+  cannot be independently anatomically segmented or certified here.
+- [x] Sacrum: averaged and mirrored about the common body midplane.
+- [x] Cervical vertebrae C1–C7: each fitted independently, then rigidly aligned
+  to the common plane.
+- [x] Thoracic vertebrae T1–T12: each fitted independently, then rigidly aligned
+  to the common plane.
+- [x] Lumbar vertebrae L1–L5: each fitted independently, then rigidly aligned
+  to the common plane.
 
-Each of the 24 vertebrae is symmetric individually. Their independently fitted
-planes and positions preserve the source spine's pose, so they need not coincide
-with one another or with the independently fitted skull plane. This does not
-establish symmetry of the **entire** assembled skeleton about one common plane.
+The source-frame 3D fits still account for the scanned rotations before
+averaging. Their blue reconstructed shapes are then rotated, not flattened, to
+share the upright body plane. Each central bone is translated only along X
+for centering; selected paired ribs also move along X for joint clearance.
+White source geometry and poses are unchanged.
 
 ## Verification and remaining work
 
+- [x] `tests/whole_skeleton_symmetry.cpp` checks the triangle winding of all
+  28 central structures and corresponding vertices and winding of all 77 pairs
+  against one common plane, in 52 profiles per sex. It also verifies all 182
+  white source meshes remain unchanged.
 - [x] `tests/bone_symmetry_checklist.cpp` checks every vertex and triangle
   winding of all 77 paired meshes, for both sexes, over 52 profiles each:
   defaults, heights 50/170/250 cm, each dimension at its slider endpoints,
@@ -140,5 +151,5 @@ establish symmetry of the **entire** assembled skeleton about one common plane.
   tests; overlaps present in the prior blue or source meshes still remain.
 - [ ] Review the visual quality and anatomical plausibility of the averages,
   including the skull and jaw, with the result visible in the application.
-- [ ] Audit assembled alignment and joints across the whole body and during
-  motion; exact neutral mesh reflection does not prove those are symmetric.
+- [ ] Audit all remaining joints and articulated motion; exact neutral mesh
+  reflection does not prove joint clearance or symmetry during motion.

@@ -25,7 +25,7 @@ int main(int argc,char** argv) {
         auto profile=room.comparison(male).profile(); profile.height=std::atof(argv[all?3:2]);
         if (argc==5 || argc==6) {
             const std::string selection=argv[all?4:3];
-            if (shoulders && selection=="combined") {
+            if ((shoulders || ribs) && selection=="combined") {
                 const std::string endpoint=argv[5];
                 if (endpoint!="lower" && endpoint!="upper") return 2;
                 for (int dimension=SkeletonComparison::Head;dimension<SkeletonComparison::Count;++dimension) {

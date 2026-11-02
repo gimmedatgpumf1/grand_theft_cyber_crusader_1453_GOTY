@@ -172,6 +172,11 @@ fi
   tests/bone_pair_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-bone-pair-symmetry
 ./build/bin/gtc-bone-pair-symmetry
+# All 182 parts must share one upright mirror plane, not merely separate planes.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/whole_skeleton_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-whole-skeleton-symmetry
+./build/bin/gtc-whole-skeleton-symmetry
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison

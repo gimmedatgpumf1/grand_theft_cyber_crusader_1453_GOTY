@@ -1,6 +1,7 @@
 // Every blue vertebra must be a reflected triangle mesh about its own fitted
 // 3D plane, including after the actual comparison slider mapping.
 #include "client/skeleton_room.h"
+#include "mirror_triangle_audit.h"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -10,35 +11,14 @@
 #include <string>
 #include <vector>
 using namespace gtc::native;
-using PointKey=std::array<long long,3>;
-using FaceKey=std::array<PointKey,3>;
-static FaceKey canonical(FaceKey f) {
-    return std::min({f,FaceKey{f[1],f[2],f[0]},FaceKey{f[2],f[0],f[1]}});
-}
 static Vec3 transform(const std::array<double,16>& m,Vec3 p) {
     return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
             m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
 }
-static void symmetric(const SkeletonComparison& comparison,const SkeletonComparison::Part& part,SkullMidplane plane) {
-    plane.origin=comparison.mapPart(part.vertebraAnchor,part);
-    if (!part.cranial) {
-        plane.normal=normalized(cross(part.mappedUp,part.mappedForward));
-        plane.up=normalized(part.mappedUp);
-        plane.forward=normalized(cross(plane.normal,plane.up));
-    }
-    std::vector<PointKey> points; points.reserve(part.points.size());
-    for (Vec3 p:part.points) {
-        const Vec3 q=plane.local(comparison.mapPart(p,part));
-        points.push_back({std::llround(q.x*1e7),std::llround(q.y*1e7),std::llround(q.z*1e7)});
-    }
-    std::map<FaceKey,int> triangles;
-    for (auto f:part.faces) ++triangles[canonical({points[f[0]],points[f[1]],points[f[2]]})];
-    for (auto f:part.faces) {
-        auto a=points[f[0]],b=points[f[1]],c=points[f[2]];
-        a[0]=-a[0]; b[0]=-b[0]; c[0]=-c[0];
-        const auto found=triangles.find(canonical({a,c,b}));
-        assert(found!=triangles.end() && found->second==triangles[canonical({points[f[0]],points[f[1]],points[f[2]]})]);
-    }
+static void symmetric(const SkeletonComparison& comparison,const SkeletonComparison::Part& part) {
+    std::vector<Vec3> points; points.reserve(part.points.size());
+    for (Vec3 p:part.points) points.push_back(comparison.mapPart(p,part));
+    assert(reflectedTriangles(points,part.faces,1e-9*std::max(1.0,comparison.profile().height/100)));
 }
 int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
@@ -48,7 +28,6 @@ int main() {
         std::map<std::string,VertebraPlane> fits;
         assert(loadVertebraPlanes("tools/skeleton-source/skeleton-"+sex+".vertebra-planes",fits));
         SkeletonModel raw; assert(raw.load("tools/skeleton-source/skeleton-"+sex+".obj",error));
-        std::map<std::string,SkullMidplane> planes;
         for (const auto& name:vertebraNames()) {
             const int id=model.sourceStructure(name),rawId=raw.sourceStructure(name); assert(id>=0 && rawId>=0);
             const auto& s=model.sourceStructures()[id]; const auto& r=raw.sourceStructures()[rawId];
@@ -67,7 +46,7 @@ int main() {
                 }
                 faces.push_back(a);
             }
-            const auto plane=posedVertebraPlane(fits.at(name),matrices[id]); planes.emplace(name,plane);
+            const auto plane=posedVertebraPlane(fits.at(name),matrices[id]);
             bilateral::TriangleSurfaceTree source(vertices,faces);
             double errorSum=0,totalArea=0;
             for (const auto& f:faces) {
@@ -78,7 +57,22 @@ int main() {
             }
             assert(totalArea>0 && errorSum/totalArea>0.00001);
             const auto& part=copy.parts()[static_cast<std::size_t>(id)]; assert(part.vertebra);
-            symmetric(copy,part,plane);
+            // Reconstruct in the independently fitted scan frame, then verify
+            // that alignment to the body plane is a rigid rotation/translation,
+            // not a flattened or newly fitted replacement shape.
+            auto reconstructed=vertices; auto expectedFaces=faces;
+            for (Vec3& p:reconstructed) p=plane.local(p);
+            assert(bilateral::surfaceAverage(reconstructed,expectedFaces,nullptr,true));
+            assert(bilateral::mirrorAxial(reconstructed,expectedFaces,0));
+            for (Vec3& p:reconstructed) p=plane.world(p);
+            assert(reconstructed.size()==part.points.size() && expectedFaces==part.faces);
+            const Vec3 turn=cross(plane.normal,Vec3{1,0,0});
+            for (std::size_t i=0;i<reconstructed.size();++i) {
+                const Vec3 d=reconstructed[i]-reconstructed[0];
+                const Vec3 expected=d+cross(turn,d)+cross(turn,cross(turn,d))/(1+plane.normal.x);
+                assert(length((part.points[i]-part.points[0])-expected)<1e-10);
+            }
+            symmetric(copy,part);
             std::printf("%s %s: original mean reflection error %.3f mm; blue mirrored triangles PASS\n",
                         sex.c_str(),name.c_str(),errorSum/totalArea*1000);
         }
@@ -100,7 +94,7 @@ int main() {
                 assert(room.setComparison(male,candidate,error));
                 for (const auto& name:vertebraNames()) {
                     const int id=model.sourceStructure(name);
-                    symmetric(copy,copy.parts()[static_cast<std::size_t>(id)],planes.at(name));
+                    symmetric(copy,copy.parts()[static_cast<std::size_t>(id)]);
                 }
             }
         }

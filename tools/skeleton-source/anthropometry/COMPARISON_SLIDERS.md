@@ -145,8 +145,9 @@ seam. The skull uses a separate midplane fitted **only to its own source mesh**;
 hip and other body landmarks do not determine it. The same skull-derived plane
 is used for the jaw, with no separate jaw-centroid alignment. The complete
 three-axis skull frame follows the head's rigid T-pose rotation. The surfaces
-are averaged and mirrored in that frame, then returned through its inverse;
-they are not forced upright or re-centred on the hips. The skull, jaw and C1
+are averaged and mirrored in that frame. Afterwards the complete blue skull and
+jaw are rotated and centered together on the common upright body plane, without
+using the hips to estimate the original skull plane. The skull, jaw and C1
 retain their shared cranial scale transform.
 `45-fit-skull-midplane.py` first voxelizes each Head's selected outer surface at
 1.5 mm isotropic resolution. It searches for the best reflection-plane match
@@ -166,7 +167,9 @@ guaranteed anatomical segmentation, and the voxel fit is not proof of an ideal
 anatomical midline.
 
 After the voxel fit, the skull and jaw meshes are averaged and mirrored about
-the plane. Instead of relying only on the nearest opposite point from each
+the plane. They are then rigidly rotated together and centered along X so their
+symmetry plane coincides with the common upright body plane; the skull's shape
+and the skull–jaw coupling are preserved. Instead of relying only on the nearest opposite point from each
 vertex, the averaging also projects reflected vertices back onto the template
 triangles, distributing their area-weighted midpoint contributions using
 barycentric coordinates. This lets details on the opposite side contribute even
@@ -183,16 +186,17 @@ reconstruction.
 
 Each C1–C7, T1–T12 and L1–L5 source mesh is also fitted independently to its
 own reflected surface voxels at 1 mm resolution (`46-fit-vertebra-midplanes.py`).
-Unlike the skull fit, this uses the whole vertebral surface. The blue copy is
-averaged and mirrored in its fitted 3D frame, then returned to its posed
-position. C1 retains the shared skull/jaw scale. For the other vertebrae, a
-cached profile-dependent plane approximates the surrounding body field; the
-retained half follows that field and the other is reflected, with the normal
-distance controlled to prevent crossing the symmetry plane. Some small,
-source-specific rigid offsets preserve selected adjacent-joint clearances.
-This is a geometric estimate, not a clinical reconstruction. Individual planes
-and positions can differ, so the entire assembled spine/body is not claimed to
-be symmetric about one shared plane.
+Unlike the skull fit, this uses the whole vertebral surface. Each blue copy is
+averaged and mirrored in its own fitted 3D frame, then rigidly rotated and
+centered along X to share the upright body plane. C1 retains the shared
+skull/jaw scale. For the other vertebrae, a cached profile-dependent plane
+approximates the surrounding body field; the retained half follows that field
+and the other is reflected, with the normal distance controlled to prevent
+crossing the symmetry plane. Some source-specific rigid offsets preserve
+selected adjacent-joint clearances; selected rib pairs also move outwards in X.
+The 77 paired and 28 axial parts now share one geometric mirror plane in the
+neutral blue comparison. This is not a clinical reconstruction or proof of
+symmetry in articulated poses.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these
