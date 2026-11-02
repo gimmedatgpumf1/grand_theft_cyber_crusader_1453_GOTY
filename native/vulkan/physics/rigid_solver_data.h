@@ -20,16 +20,29 @@ struct alignas(16) Body {
     std::array<std::uint32_t,4> samples{};
 };
 struct alignas(16) Joint {
+    // bodies.z: 0 = unconstrained ball, 1 = hinge with limits.
     std::array<std::uint32_t,4> bodies{};
     std::array<float,4> parentAnchor{};
     std::array<float,4> childAnchor{};
+    // Axes and tangents are body-local, unit length and perpendicular. The
+    // axes' fourth components hold the lower/upper hinge angles in radians.
+    std::array<float,4> parentAxis{};
+    std::array<float,4> childAxis{};
+    std::array<float,4> parentTangent{};
+    std::array<float,4> childTangent{};
+};
+// Shader phase 4 writes one correction per body; phase 5 applies it only
+// after a barrier. No body reads another body while it is being modified.
+struct alignas(16) ContactDelta {
+    std::array<float,4> position{};
+    std::array<float,4> rotation{};
 };
 struct alignas(16) Step {
     std::uint32_t phase=0, first=0, count=0;
     float dt=0;
     std::array<float,4> gravityFloor{0,-9.81f,0,0};
 };
-static_assert(sizeof(Body)==128 && sizeof(Joint)==48 && sizeof(Step)==32);
+static_assert(sizeof(Body)==128 && sizeof(Joint)==112 && sizeof(ContactDelta)==32 && sizeof(Step)==32);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };

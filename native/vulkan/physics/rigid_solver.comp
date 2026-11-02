@@ -11,22 +11,29 @@ struct Body {
     vec4 rotation;        // local-to-world quaternion, xyzw
     vec4 linearVelocity;
     vec4 angularVelocity;
-    vec4 inverseInertia;  // diagonal local-space inverse inertia
+    vec4 inverseInertia;  // xyz: local-space inverse inertia, w: bounding radius
     vec4 previousPosition; // w is set when a floor contact is resolved
     vec4 previousRotation;
-    uvec4 samples;        // first floor support point, number of support points
+    uvec4 samples;        // x: first sphere, y: sphere count
 };
 struct Joint {
     uvec4 bodies;         // x = parent body, y = child body
     vec4 parentAnchor;    // body-local anchor
     vec4 childAnchor;
+    vec4 parentAxis;      // xyz local axis, w lower angle
+    vec4 childAxis;       // xyz local axis, w upper angle
+    vec4 parentTangent;
+    vec4 childTangent;
 };
 layout(std430, set=0, binding=0) buffer Bodies { Body body[]; } bodies;
 layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
 layout(std430, set=0, binding=2) readonly buffer Samples { vec4 point[]; } samples;
+// Eight scratch words per body, followed by a symmetric bodyCount x bodyCount
+// exclusion bitset. This fits the four storage buffers guaranteed by Vulkan 1.0.
+layout(std430, set=0, binding=3) buffer Scratch { uint word[]; } scratch;
 layout(push_constant) uniform Step {
-    uint phase;           // 0 predict, 1 joint batch, 2 floor, 3 velocities
-    uint first;           // first joint in this batch
+    uint phase;           // predict, joint, floor, velocity, contacts, apply
+    uint first;           // joint offset, or body count in contacts phase
     uint count;           // number of bodies or joints in this dispatch
     float dt;
     vec4 gravityFloor;    // gravity xyz and floor height
@@ -44,6 +51,37 @@ vec3 invInertia(Body b, vec3 worldVector) {
 }
 void rotateBy(inout Body b, vec3 delta) {
     b.rotation=normalize(b.rotation+0.5*qmul(vec4(delta,0.0),b.rotation));
+}
+
+void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
+    vec3 ia=invInertia(a,axis), ib=invInertia(b,axis);
+    float effective=dot(axis,ia+ib);
+    if (effective<=1e-12) return;
+    float impulse=error/effective;
+    rotateBy(a,ia*impulse);
+    rotateBy(b,-ib*impulse);
+}
+
+// Hinge: align its two axes, then clamp the signed twist. Axis and tangent
+// frames are captured from the initial calibrated rig. Ball joints remain
+// unconstrained in orientation until their cone limits are implemented.
+void solveHinge(inout Body a, inout Body b, Joint j) {
+    vec3 axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
+    vec3 axisB=normalize(rotate(b.rotation,j.childAxis.xyz));
+    vec3 crossAxis=cross(axisA,axisB);
+    float sine=length(crossAxis), cosine=clamp(dot(axisA,axisB),-1.0,1.0);
+    if (sine>1e-6) solveAngular(a,b,crossAxis/sine,atan(sine,cosine));
+    else if (cosine<0.0) solveAngular(a,b,normalize(rotate(a.rotation,j.parentTangent.xyz)),3.14159265);
+    axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
+    vec3 tangentA=rotate(a.rotation,j.parentTangent.xyz);
+    vec3 tangentB=rotate(b.rotation,j.childTangent.xyz);
+    tangentA-=axisA*dot(axisA,tangentA);
+    tangentB-=axisA*dot(axisA,tangentB);
+    float aa=length(tangentA), bb=length(tangentB);
+    if (aa<1e-6 || bb<1e-6) return;
+    tangentA/=aa; tangentB/=bb;
+    float angle=atan(dot(axisA,cross(tangentA,tangentB)),dot(tangentA,tangentB));
+    solveAngular(a,b,axisA,angle-clamp(angle,j.parentAxis.w,j.childAxis.w));
 }
 
 // Corrects the separation of the two calibrated anchors. A coloured batch
@@ -66,6 +104,7 @@ void solveJoint(uint index) {
         rotateBy(a,ia*impulse);
         rotateBy(b,-ib*impulse);
     }
+    if (j.bodies.z==1u) solveHinge(a,b,j);
     bodies.body[j.bodies.x]=a;
     bodies.body[j.bodies.y]=b;
 }
@@ -78,9 +117,10 @@ void solveFloor(uint index) {
     float lowest=step.gravityFloor.w;
     vec3 arm=vec3(0.0);
     for (uint i=0u;i<b.samples.y;++i) {
-        vec3 r=rotate(b.rotation,samples.point[b.samples.x+i].xyz);
-        float y=b.positionMass.y+r.y;
-        if (y<lowest) { lowest=y; arm=r; }
+        vec4 sphere=samples.point[b.samples.x+i];
+        vec3 r=rotate(b.rotation,sphere.xyz);
+        float y=b.positionMass.y+r.y-sphere.w;
+        if (y<lowest) { lowest=y; arm=r-vec3(0.0,sphere.w,0.0); }
     }
     if (lowest<step.gravityFloor.w) {
         vec3 n=vec3(0.0,1.0,0.0);
@@ -96,11 +136,75 @@ void solveFloor(uint index) {
     bodies.body[index]=b;
 }
 
+// Jacobi contact pass: one invocation reads all candidate bodies and writes
+// only its own correction. A separate dispatch applies the corrections. The
+// broad phase is intentionally simple all-pairs bounding spheres for now; it
+// needs a spatial accelerator before this is suitable for a larger scene.
+void findContacts(uint index) {
+    Body a=bodies.body[index];
+    vec3 positionDelta=vec3(0.0), rotationDelta=vec3(0.0);
+    float contactCount=0.0;
+    uint bodyCount=step.first;
+    uint stride=(bodyCount+31u)/32u;
+    if (a.positionMass.w>0.0) for (uint other=0u;other<bodyCount;++other) {
+        if (other==index || (scratch.word[bodyCount*8u+index*stride+other/32u] & (1u<<(other%32u)))!=0u) continue;
+        Body b=bodies.body[other];
+        float extent=a.inverseInertia.w+b.inverseInertia.w;
+        vec3 separation=a.positionMass.xyz-b.positionMass.xyz;
+        if (dot(separation,separation)>extent*extent) continue;
+        float depth=0.0;
+        vec3 bestNormal=vec3(0.0), armA=vec3(0.0), armB=vec3(0.0);
+        for (uint i=0u;i<a.samples.y;++i) {
+            vec4 sa=samples.point[a.samples.x+i];
+            vec3 ra=rotate(a.rotation,sa.xyz);
+            for (uint j=0u;j<b.samples.y;++j) {
+                vec4 sb=samples.point[b.samples.x+j];
+                vec3 rb=rotate(b.rotation,sb.xyz);
+                vec3 d=separation+ra-rb;
+                float distance=length(d), overlap=sa.w+sb.w-distance;
+                if (overlap<=depth) continue;
+                vec3 n=distance>1e-7 ? d/distance : vec3(index<other ? -1.0 : 1.0,0.0,0.0);
+                depth=overlap; bestNormal=n;
+                armA=ra-n*sa.w; armB=rb+n*sb.w;
+            }
+        }
+        if (depth<=0.0) continue;
+        vec3 ta=cross(armA,bestNormal), tb=cross(armB,bestNormal);
+        vec3 ia=invInertia(a,ta), ib=invInertia(b,tb);
+        float effective=a.positionMass.w+b.positionMass.w+dot(ta,ia)+dot(tb,ib);
+        if (effective<=1e-12) continue;
+        float impulse=depth/effective;
+        positionDelta+=bestNormal*(impulse*a.positionMass.w);
+        rotationDelta+=ia*impulse;
+        contactCount+=1.0;
+    }
+    float scale=contactCount>0.0 ? 0.8/max(1.0,contactCount) : 0.0;
+    vec3 translation=positionDelta*scale, rotation=rotationDelta*scale;
+    uint offset=index*8u;
+    for (uint k=0u;k<3u;++k) {
+        scratch.word[offset+k]=floatBitsToUint(translation[k]);
+        scratch.word[offset+4u+k]=floatBitsToUint(rotation[k]);
+    }
+}
+
 void main() {
     uint index=gl_GlobalInvocationID.x;
     if (index>=step.count) return;
     if (step.phase==1u) { solveJoint(step.first+index); return; }
     if (step.phase==2u) { solveFloor(index); return; }
+    if (step.phase==4u) { findContacts(index); return; }
+    if (step.phase==5u) {
+        Body b=bodies.body[index];
+        uint offset=index*8u;
+        vec3 translation=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
+                              uintBitsToFloat(scratch.word[offset+2u]));
+        vec3 rotation=vec3(uintBitsToFloat(scratch.word[offset+4u]),uintBitsToFloat(scratch.word[offset+5u]),
+                           uintBitsToFloat(scratch.word[offset+6u]));
+        b.positionMass.xyz+=translation;
+        rotateBy(b,rotation);
+        bodies.body[index]=b;
+        return;
+    }
     Body b=bodies.body[index];
     if (b.positionMass.w<=0.0) return;
     if (step.phase==0u) {
