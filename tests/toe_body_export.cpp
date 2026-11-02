@@ -31,9 +31,13 @@ int main(int argc,char** argv) {
             for (Vec3 p:part.points) c+=copy.mapPart(p,part);
             centers[id]=c/static_cast<double>(part.points.size());
         }
-        std::array<std::array<ToeBoneSample,3>,5> bones; std::array<std::size_t,5> meta{};
+        std::array<std::array<ToeBoneSample,3>,5> bones; std::array<ToeBoneSample,5> supports; std::array<std::size_t,5> meta{};
         for (int d=0;d<5;++d) {
             const auto n=std::to_string(d+1)+"_L"; const int mi=model.sourceStructure("FootMeta"+n); assert(mi>=0); meta[d]=mi;
+            const auto& metatarsal=copy.parts()[mi]; std::vector<Vec3> mapped;
+            for (Vec3 p:metatarsal.points) mapped.push_back(copy.mapPart(p,metatarsal));
+            supports[d].structure=mi; supports[d].points=mapped;
+            write(std::string(argv[1])+"/"+sex+"_meta"+std::to_string(d+1)+".obj",mapped,metatarsal.faces);
             const std::array<std::string,3> name={"FootProxP"+n,d==0?"":"FootMidP"+n,"FootDistP"+n};
             for (int j=0;j<3;++j) if (!name[j].empty()) {
                 const int id=model.sourceStructure(name[j]); assert(id>=0); const auto& part=copy.parts()[id];
@@ -41,7 +45,7 @@ int main(int argc,char** argv) {
                 for (Vec3 p:part.points) sample.points.push_back(copy.mapPart(p,part));
             }
         }
-        const auto mesh=buildToeBody(bones,meta,copy.profile().height/copy.defaultHeight()); assert(mesh.valid);
+        const auto mesh=buildToeBody(bones,meta,copy.profile().height/copy.defaultHeight(),supports); assert(mesh.valid);
         std::vector<ComparisonToeMotion::Matrix> identity(copy.parts().size(),ComparisonToeMotion::identity());
         SkeletonSkinBinding skinBinding,nailBinding;
         assert(skinBinding.bind(mesh.skin,identity,error) && nailBinding.bind(mesh.nails,identity,error));
@@ -70,5 +74,7 @@ int main(int argc,char** argv) {
         }
         write(std::string(argv[1])+"/"+sex+"_skin.obj",skin,mesh.skinFaces);
         write(std::string(argv[1])+"/"+sex+"_nails.obj",nails,mesh.nailFaces);
+        write(std::string(argv[1])+"/"+sex+"_nailbed.obj",nails,mesh.nailBedFaces);
+        write(std::string(argv[1])+"/"+sex+"_nailtips.obj",nails,mesh.nailTipFaces);
     }
 }

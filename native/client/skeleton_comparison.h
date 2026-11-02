@@ -13,6 +13,7 @@
 #include "client/male_comparison_formulas.h"
 #include "client/female_comparison_formulas.h"
 #include "client/comparison_standard_deviations.h"
+#include "client/skeleton_toe_body.h"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -535,14 +537,73 @@ public:
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         for (std::size_t i=0; i<parts_.size(); ++i) {
-            const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
+            const Part& part=parts_[i];
+            // These bones are inside the opaque visual toe/forefoot study;
+            // the rig and the source meshes are retained, not deleted.
+            if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 ||
+                part.name.rfind("FootDistP",0)==0 || part.name.rfind("FootMeta",0)==0 ||
+                part.name.rfind("FootSesa",0)==0) continue;
+            std::vector<Vec3> points; points.reserve(part.points.size());
             for (Vec3 p:part.points) { p=mapPart(p,part); p.x+=x; points.push_back(p); }
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
         }
+        drawToeStudy(rasterizer,x,idBase);
     }
 
 private:
+    // This is a visual-first, static fitting study around the comparison toe
+    // bones. Individual deformation and contact work is deliberately separate.
+    void drawToeStudy(Rasterizer& rasterizer,double offset,std::uint32_t idBase) const {
+        if (toeVisualRevision_!=revision_) {
+            std::array<std::array<ToeBoneSample,3>,5> bones;
+            std::array<ToeBoneSample,5> supports;
+            std::array<std::size_t,5> metatarsals{};
+            const auto find=[&](const std::string& name) {
+                for (std::size_t i=0;i<parts_.size();++i) if (parts_[i].name==name) return i;
+                throw std::runtime_error("Missing comparison toe bone: "+name);
+            };
+            for (int d=0;d<5;++d) {
+                const auto suffix=std::to_string(d+1)+"_L";
+                metatarsals[d]=find("FootMeta"+suffix);
+                supports[d].structure=metatarsals[d];
+                const auto& support=parts_[metatarsals[d]];
+                for (Vec3 p:support.points) supports[d].points.push_back(mapPart(p,support));
+                const std::array<std::string,3> names={"FootProxP"+suffix,d==0?"":"FootMidP"+suffix,"FootDistP"+suffix};
+                for (int j=0;j<3;++j) if (!names[j].empty()) {
+                    const auto id=find(names[j]); const auto& part=parts_[id];
+                    bones[d][j].structure=id;
+                    for (Vec3 p:part.points) bones[d][j].points.push_back(mapPart(p,part));
+                }
+            }
+            toeVisual_=buildToeBody(bones,metatarsals,profile_.height/defaultHeight(),supports);
+            if (!toeVisual_.valid) throw std::runtime_error("Could not construct comparison toe surface");
+            toeVisualRevision_=revision_;
+        }
+        Material skin; skin.color=colorHex(male_?"#c89780":"#d2a18c"); skin.specular=.08;
+        Material nail; nail.color=colorHex("#ddb1a3"); nail.specular=.18;
+        Material tip; tip.color=colorHex("#f0dcd0"); tip.specular=.16;
+        for (int side=0;side<2;++side) {
+            const auto points=[&](const std::vector<SkinVertex>& source) {
+                std::vector<Vec3> out; out.reserve(source.size());
+                for (const auto& v:source) {
+                    Vec3 p=v.position; p.x=(side==0?p.x:-p.x)+offset; out.push_back(p);
+                }
+                return out;
+            };
+            const auto faces=[&](const std::vector<std::array<int,3>>& source) {
+                auto result=source; if (side) for (auto& f:result) std::swap(f[1],f[2]); return result;
+            };
+            const auto skinPoints=points(toeVisual_.skin), nailPoints=points(toeVisual_.nails);
+            rasterizer.setObject(idBase+300+static_cast<std::uint32_t>(side*3),{},0);
+            rasterizer.smoothMesh(skinPoints,faces(toeVisual_.skinFaces),skin);
+            rasterizer.setObject(idBase+301+static_cast<std::uint32_t>(side*3),{},0);
+            rasterizer.smoothMesh(nailPoints,faces(toeVisual_.nailBedFaces),nail);
+            rasterizer.setObject(idBase+302+static_cast<std::uint32_t>(side*3),{},0);
+            rasterizer.smoothMesh(nailPoints,faces(toeVisual_.nailTipFaces),tip);
+        }
+    }
+
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {
         return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
                 m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
@@ -713,5 +774,7 @@ private:
     std::array<double,2> hipY_{};
     std::array<Vec3,2> hipCenters_{},armAnchor_{},elbowAnchor_{},armStart_{},armEnd_{};
     std::uint64_t revision_=0;
+    mutable std::uint64_t toeVisualRevision_=0;
+    mutable ToeBodyMesh toeVisual_;
 };
 } // namespace gtc::native

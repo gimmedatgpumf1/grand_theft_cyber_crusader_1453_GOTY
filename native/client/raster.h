@@ -269,6 +269,30 @@ public:
     // for a vertex cache.
     void mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
               const Material& material);
+    // Smooth, shared-vertex shading for organic surfaces such as toe skin.
+    void smoothMesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+                    const Material& material) {
+        const auto usable=[&](const auto& f) {
+            return f[0]>=0 && f[1]>=0 && f[2]>=0 &&
+                static_cast<std::size_t>(f[0])<points.size() && static_cast<std::size_t>(f[1])<points.size() &&
+                static_cast<std::size_t>(f[2])<points.size();
+        };
+        std::vector<Vec3> normals(points.size());
+        for (const auto& face:faces) if (usable(face)) {
+            const Vec3 n=cross(points[face[1]]-points[face[0]],points[face[2]]-points[face[0]]);
+            for (int i:face) normals[static_cast<std::size_t>(i)]+=n;
+        }
+        for (Vec3& n:normals) if (length(n)>1e-20) n=normalized(n);
+        for (const auto& face:faces) if (usable(face)) {
+            std::array<RenderVertex,3> vertices;
+            for (int i=0;i<3;++i) {
+                const auto index=static_cast<std::size_t>(face[i]);
+                if (gpu_) vertices[i]={points[index],normals[index],points[index],{}};
+                else vertices[i]=cameraVertex(camera_,points[index],normals[index],points[index]);
+            }
+            triangle(vertices,material);
+        }
+    }
     bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);

@@ -16,7 +16,7 @@ namespace gtc::native {
 struct ToeBoneSample { std::size_t structure=0; std::vector<Vec3> points; };
 struct ToeBodyMesh {
     std::vector<SkinVertex> skin,nails;
-    std::vector<std::array<int,3>> skinFaces,nailFaces;
+    std::vector<std::array<int,3>> skinFaces,nailFaces,nailBedFaces,nailTipFaces;
     bool valid=false;
 };
 namespace toe_body {
@@ -28,7 +28,11 @@ inline double fieldPart(Vec3 p,const FieldPart& v) {
     return (r-1)*std::min({v.radius.x,v.radius.y,v.radius.z});
 }
 struct Field {
+    struct Cleft { double x0,x1,z0,z1,width,floor; };
+    struct Crease { double x,z,width,height,spacing,depth; };
     std::vector<FieldPart> parts;
+    std::vector<Cleft> clefts;
+    std::vector<Crease> creases;
     double smoothing=0;
     double operator()(Vec3 p) const {
         std::array<double,6> digits; digits.fill(1e9);
@@ -37,13 +41,29 @@ struct Field {
             return std::min(a,b)-h*h*k*.25;
         };
         for (const auto& part:parts) digits[part.digit]=merge(digits[part.digit],fieldPart(p,part),smoothing);
-        double distance=digits[0];
-        // Retain visible clefts between toes: broad smoothing is for joints
-        // within the same digit, not for welding neighbouring fingertips.
-        for (int digit=1;digit<=5;++digit) distance=merge(distance,digits[digit],smoothing*.16);
-        // The floor is not moved to hide a bone protrusion. Where a bone is
-        // already at y=0, its sole cannot have positive tissue clearance.
-        return std::max(distance,-p.y);
+        // The dorsal forefoot is one continuous surface. Blend each toe root
+        // into it, but retain distinct clefts where the toes extend beyond it.
+        double toes=digits[1];
+        for (int digit=2;digit<=5;++digit) toes=merge(toes,digits[digit],smoothing*.16);
+        double distance=merge(digits[0],toes,smoothing*1.25);
+        // Gentle transverse folds at the phalanx joints are actual shallow
+        // surface relief, not painted lines or separate floating geometry.
+        for (const auto& crease:creases) {
+            const double x=std::abs((p.x-crease.x)/crease.width);
+            const double z=std::abs((p.z-crease.z)/crease.spacing);
+            const double dorsal=std::clamp((p.y-crease.height)/crease.spacing,0.0,1.0);
+            if (x<1 && z<1) distance+=crease.depth*(1-x*x)*(1-z*z)*dorsal;
+        }
+        // A soft web closes each cleft at its root. Beyond it, the narrow
+        // channel defines the contact line rather than a fused mitten.
+        for (const auto& cleft:clefts) {
+            const double t=std::clamp((p.z-cleft.z0)/(cleft.z1-cleft.z0),0.0,1.0);
+            const double x=cleft.x0+(cleft.x1-cleft.x0)*t;
+            const double width=cleft.width*std::min(1.0,t*5.0);
+            const double groove=std::max({std::abs(p.x-x)-width,cleft.z0-p.z,cleft.floor-p.y});
+            distance=-merge(-distance,groove,smoothing*.10);
+        }
+        return distance;
     }
     SkinVertex vertex(Vec3 p) const {
         SkinVertex v; v.position=p;
@@ -95,6 +115,9 @@ inline FieldPart enclose(const ToeBoneSample& bone,double scale) {
         Vec3 q=p-c; factor=std::max(factor,std::sqrt(q.x*q.x/(r.x*r.x)+q.y*q.y/(r.y*r.y)+q.z*q.z/(r.z*r.z)));
     }
     r=r*(factor*1.06);
+    // The scan bones are side-by-side: a single enclosing sphere around each
+    // oblique bone makes the toes overlap and destroys the natural clefts.
+    r.x=(hi.x-lo.x)*.5+.0014*scale;
     return {c,r,static_cast<int>(bone.structure)};
 }
 inline void appendTriangle(ToeBodyMesh& mesh,int a,int b,int c,Vec3 outward,double step) {
@@ -154,13 +177,13 @@ inline void triangulate(ToeBodyMesh& mesh,const Field& field,Vec3 lo,Vec3 hi,dou
 // A nail is a curved closed plate, with physical thickness and side walls.
 // The lower surface is sampled against the generated dorsal skin.
 inline bool nail(ToeBodyMesh& mesh,const FieldPart& distal,double scale) {
-    constexpr int columns=7,rows=7;
-    const double width=distal.radius.x*.52;
-    const double start=distal.center.z-distal.radius.z*.25,end=distal.center.z+distal.radius.z*.48;
+    constexpr int columns=17,rows=15;
+    const double width=distal.radius.x*.72;
+    const double start=distal.center.z-distal.radius.z*.55,end=distal.center.z+distal.radius.z*.55;
     const int base=static_cast<int>(mesh.nails.size());
     for (int layer=0;layer<2;++layer) for (int j=0;j<rows;++j) for (int i=0;i<columns;++i) {
         const double u=2.0*i/(columns-1)-1.0,v=double(j)/(rows-1);
-        const double taper=.85+.15*std::sin(v*3.141592653589793);
+        const double taper=.74+.26*std::sqrt(std::sin(v*3.141592653589793));
         Vec3 p{distal.center.x+u*width*taper,0,start+(end-start)*v};
         // Project onto the actual tessellated skin, not the continuous
         // implicit surface: the latter can sit below its coarse triangles.
@@ -174,17 +197,26 @@ inline bool nail(ToeBodyMesh& mesh,const FieldPart& distal,double scale) {
             if (u>=-1e-9 && v>=-1e-9 && u+v<=1+1e-9) top=std::max(top,u*a.y+v*b.y+(1-u-v)*c.y);
         }
         if (!std::isfinite(top) || top<-1e20) return false;
-        p.y=top+scale*(layer?.0013:.0006);
+        p.y=top+scale*(layer?.0009:.00015);
         SkinVertex vertex; vertex.position=p; vertex.count=1;
         vertex.influences[0]={static_cast<std::size_t>(distal.bone),1}; mesh.nails.push_back(vertex);
     }
     const int layer=columns*rows;
     for (int y=0;y<rows-1;++y) for (int x=0;x<columns-1;++x) {
         const int a=base+y*columns+x,b=a+1,c=a+columns,d=c+1;
-        mesh.nailFaces.push_back({a,b,c}); mesh.nailFaces.push_back({b,d,c});
-        mesh.nailFaces.push_back({a+layer,c+layer,b+layer}); mesh.nailFaces.push_back({b+layer,c+layer,d+layer});
+        for (auto face:{std::array<int,3>{a,b,c},std::array<int,3>{b,d,c}}) {
+            mesh.nailFaces.push_back(face); mesh.nailBedFaces.push_back(face);
+        }
+        auto& top=(y==rows-2?mesh.nailTipFaces:mesh.nailBedFaces);
+        for (auto face:{std::array<int,3>{a+layer,c+layer,b+layer},std::array<int,3>{b+layer,c+layer,d+layer}}) {
+            mesh.nailFaces.push_back(face); top.push_back(face);
+        }
     }
-    const auto wall=[&](int a,int b) { mesh.nailFaces.push_back({a,b,a+layer}); mesh.nailFaces.push_back({b,b+layer,a+layer}); };
+    const auto wall=[&](int a,int b) {
+        for (auto face:{std::array<int,3>{a,b,a+layer},std::array<int,3>{b,b+layer,a+layer}}) {
+            mesh.nailFaces.push_back(face); mesh.nailBedFaces.push_back(face);
+        }
+    };
     for (int i=0;i<columns-1;++i) { wall(base+i+1,base+i); wall(base+(rows-1)*columns+i,base+(rows-1)*columns+i+1); }
     for (int j=0;j<rows-1;++j) { wall(base+j*columns,base+(j+1)*columns); wall(base+(j+1)*columns+columns-1,base+j*columns+columns-1); }
     return true;
@@ -195,7 +227,8 @@ inline bool nail(ToeBodyMesh& mesh,const FieldPart& distal,double scale) {
 // and distal phalanx geometry in mapped comparison coordinates. Metatarsal
 // owners connect the webbed roots to the actual foot bones.
 inline ToeBodyMesh buildToeBody(const std::array<std::array<ToeBoneSample,3>,5>& bones,
-                               const std::array<std::size_t,5>& metatarsals,double scale) {
+                               const std::array<std::size_t,5>& metatarsals,double scale,
+                               const std::array<ToeBoneSample,5>& supports={}) {
     using namespace toe_body; ToeBodyMesh mesh;
     if (!std::isfinite(scale) || scale<=0) return mesh;
     for (int d=0;d<5;++d) for (int j=0;j<3;++j) {
@@ -207,9 +240,25 @@ inline ToeBodyMesh buildToeBody(const std::array<std::array<ToeBoneSample,3>,5>&
     std::array<FieldPart,5> proximal,distal;
     for (int d=0;d<5;++d) for (int j=0;j<3;++j) if (!bones[d][j].points.empty()) {
         auto part=enclose(bones[d][j],scale); part.digit=d+1; part.distal=(j==2); field.parts.push_back(part);
-        if (j==0) proximal[d]=part; if (j==2) distal[d]=part;
+        if (j==0) proximal[d]=part;
+        if (j==2) distal[d]=part;
+    }
+    for (int d=0;d<5;++d) {
+        const auto& a=proximal[d]; const auto& b=distal[d];
+        const double z=a.center.z+(b.center.z-a.center.z)*.42;
+        const double x=a.center.x+(b.center.x-a.center.x)*.42;
+        const double width=std::min(a.radius.x,b.radius.x)*.85;
+        for (int line=-1;line<=1;++line)
+            field.creases.push_back({x,z+line*.0014*scale,width,(a.center.y+b.center.y)*.5,
+                                     .001*scale,.00028*scale});
     }
     for (int d=0;d<4;++d) {
+        const auto& a0=proximal[d]; const auto& b0=proximal[d+1];
+        const auto& a1=distal[d]; const auto& b1=distal[d+1];
+        const double z0=(a0.center.z+b0.center.z)*.5+.004*scale;
+        const double z1=std::max(a1.center.z,b1.center.z);
+        field.clefts.push_back({(a0.center.x+b0.center.x)*.5,(a1.center.x+b1.center.x)*.5,
+                               z0,std::max(z0+.001*scale,z1),.0011*scale,.0025*scale});
         Vec3 a=proximal[d].center,b=proximal[d+1].center;
         // The web lies near the middle of each proximal phalanx, not at
         // its metatarsal joint or halfway down the distal toe.
@@ -219,20 +268,45 @@ inline ToeBodyMesh buildToeBody(const std::array<std::array<ToeBoneSample,3>,5>&
                           std::max(proximal[d].radius.y,proximal[d+1].radius.y)*.78,.008*scale};
         field.parts.push_back({center,radius,static_cast<int>(metatarsals[d])});
     }
+    // Extend the visible toe roots over the actual metatarsal shafts. This
+    // keeps the transition from looking like detached toes on a round pad.
+    Vec3 supportLo{1e30,1e30,1e30},supportHi{-1e30,-1e30,-1e30};
+    bool haveSupport=false;
+    for (const auto& bone:supports) if (!bone.points.empty()) {
+        haveSupport=true;
+        for (Vec3 p:bone.points) {
+            supportLo.x=std::min(supportLo.x,p.x); supportLo.y=std::min(supportLo.y,p.y); supportLo.z=std::min(supportLo.z,p.z);
+            supportHi.x=std::max(supportHi.x,p.x); supportHi.y=std::max(supportHi.y,p.y); supportHi.z=std::max(supportHi.z,p.z);
+        }
+        auto part=enclose(bone,scale); part.radius.x+=.004*scale;
+        part.radius.y+=.004*scale; part.radius.z+=.003*scale;
+        field.parts.push_back(part);
+    }
+    if (haveSupport) {
+        const Vec3 center=(supportLo+supportHi)*.5;
+        const Vec3 radius=(supportHi-supportLo)*.5+Vec3{.006*scale,.008*scale,.004*scale};
+        field.parts.push_back({center,radius,static_cast<int>(metatarsals[2])});
+    }
     Vec3 center=(proximal[0].center+proximal[4].center)*.5;
-    center.z-=.008*scale; center.y=std::max(.010*scale,center.y);
+    center.z-=.045*scale; center.y=std::max(.012*scale,center.y);
     Vec3 radius{std::abs(proximal[4].center.x-proximal[0].center.x)*.5+.012*scale,
-                std::max(proximal[0].radius.y,proximal[4].radius.y),.030*scale};
+                std::max(proximal[0].radius.y,proximal[4].radius.y)*1.1,.048*scale};
     field.parts.push_back({center,radius,static_cast<int>(metatarsals[2])});
-    Vec3 lo{1e30,-.006*scale,1e30},hi{-1e30,-1e30,-1e30};
+    Vec3 lo{1e30,1e30,1e30},hi{-1e30,-1e30,-1e30};
     for (const auto& part:field.parts) {
         lo.x=std::min(lo.x,part.center.x-part.radius.x-.005*scale);
+        lo.y=std::min(lo.y,part.center.y-part.radius.y-.008*scale);
         lo.z=std::min(lo.z,part.center.z-part.radius.z-.005*scale);
         hi.x=std::max(hi.x,part.center.x+part.radius.x+.005*scale);
         hi.y=std::max(hi.y,part.center.y+part.radius.y+.005*scale);
         hi.z=std::max(hi.z,part.center.z+part.radius.z+.005*scale);
     }
-    triangulate(mesh,field,lo,hi,.003*scale);
+    triangulate(mesh,field,lo,hi,.0015*scale);
+    // Preserve curved toe pulp rather than slicing it flat at ground level.
+    // This is a visual placement of the skin; bone and joint fitting comes later.
+    double bottom=1e30;
+    for (const auto& v:mesh.skin) bottom=std::min(bottom,v.position.y);
+    for (auto& v:mesh.skin) v.position.y-=bottom;
     for (const auto& tip:distal) if (!nail(mesh,tip,scale)) return mesh;
     mesh.valid=true; return mesh;
 }
