@@ -43,6 +43,7 @@ public:
     bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
         male_ = male;
         const auto matrices = model.sourceMatrices({}, 0);
+        referenceMatrices_=matrices;
         parts_.clear();
         for (std::size_t i=0; i<matrices.size(); ++i) {
             const auto& source = model.sourceStructures()[i];
@@ -572,6 +573,98 @@ public:
         }
         return vertices;
     }
+    // Rigid toe deltas from the source pose used to fit this comparison. The
+    // mapped centre anchors each rotation in the scaled blue figure. This is a
+    // geometric approximation, not a deformable tissue or clinical fit.
+    std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin) const {
+        const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        std::vector<std::array<double,16>> result(parts_.size(),identity);
+        if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size()) return result;
+        for (std::size_t i=0;i<parts_.size();++i) {
+            const auto& p=parts_[i];
+            if (p.points.empty() || (p.name.rfind("FootProxP",0)!=0 && p.name.rfind("FootMidP",0)!=0 &&
+                                     p.name.rfind("FootDistP",0)!=0)) continue;
+            const auto& a=current[i]; const auto& b=referenceMatrices_[i]; auto& m=result[i];
+            for (int col=0;col<3;++col) for (int row=0;row<3;++row) {
+                m[col*4+row]=0;
+                for (int k=0;k<3;++k) m[col*4+row]+=a[k*4+row]*b[k*4+col];
+            }
+            Vec3 raw{}; for (Vec3 q:p.points) raw+=q;
+            raw=raw/static_cast<double>(p.points.size());
+            const Vec3 sourceOrigin{b[12],b[13],b[14]};
+            const Vec3 currentOrigin{a[12],a[13],a[14]};
+            const auto rotation=[&](Vec3 q) { return Vec3{m[0]*q.x+m[4]*q.y+m[8]*q.z,
+                m[1]*q.x+m[5]*q.y+m[9]*q.z,m[2]*q.x+m[6]*q.y+m[10]*q.z}; };
+            const Vec3 mapped=mapPart(raw,p)+origin;
+            const Vec3 moved=mapPart(currentOrigin+rotation(raw-sourceOrigin),p)+origin;
+            const Vec3 offset=moved-rotation(mapped);
+            m[12]=offset.x; m[13]=offset.y; m[14]=offset.z;
+        }
+        return result;
+    }
+    // The segment immediately behind each distal tip: the lesser toes' middle
+    // phalanges and the great toe's proximal phalanx. Each prism belongs to its
+    // own bone, so the tip and the segment can articulate independently.
+    std::vector<Vec3> toePrism(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        const bool middle=part.name.rfind("FootMidP",0)==0;
+        const bool great=part.name.rfind("FootProxP1_",0)==0;
+        if ((!middle && !great) || part.points.empty()) return {};
+        const std::string suffix=part.name.substr(middle ? 8 : 9);
+        const std::string distalName="FootDistP"+suffix;
+        const auto distal=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==distalName; });
+        if (distal==parts_.end() || distal->points.empty()) return {};
+        Vec3 center{},tipCenter{};
+        for (Vec3 p:part.points) center+=mapPart(p,part)+origin;
+        for (Vec3 p:distal->points) tipCenter+=mapPart(p,*distal)+origin;
+        center=center/static_cast<double>(part.points.size());
+        tipCenter=tipCenter/static_cast<double>(distal->points.size());
+        Vec3 forward=normalized(tipCenter-center);
+        Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        Vec3 up=normalized(cross(forward,lateral));
+        if (length(forward)<1e-8 || length(lateral)<1e-8 || length(up)<1e-8) return {};
+        const auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(mapPart(part.points.front(),part)+origin),high=low;
+        for (Vec3 p:part.points) {
+            p=local(mapPart(p,part)+origin);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        const auto tip=toeIcosahedron(static_cast<std::size_t>(distal-parts_.begin()),origin);
+        if (tip.empty()) return {};
+        Vec3 tipLow=local(tip.front()),tipHigh=tipLow;
+        for (Vec3 p:tip) {
+            p=local(p);
+            tipLow.x=std::min(tipLow.x,p.x); tipLow.y=std::min(tipLow.y,p.y); tipLow.z=std::min(tipLow.z,p.z);
+            tipHigh.x=std::max(tipHigh.x,p.x); tipHigh.y=std::max(tipHigh.y,p.y); tipHigh.z=std::max(tipHigh.z,p.z);
+        }
+        // Extend into the back of the tip at rest, without joining their
+        // transforms. Allow the middle-bone envelope to determine a minimum.
+        const double back=low.z-0.08*(high.z-low.z);
+        const double front=std::max(high.z,tipLow.z+0.20*(tipHigh.z-tipLow.z));
+        const double x=(low.x+high.x)*0.5, y=(low.y+high.y)*0.5;
+        const double rx=std::max((high.x-low.x)*0.65,(tipHigh.x-tipLow.x)*0.45);
+        const double ry=std::max((high.y-low.y)*0.65,(tipHigh.y-tipLow.y)*0.45);
+        constexpr double pi=3.14159265358979323846;
+        std::vector<Vec3> vertices; vertices.reserve(16);
+        for (double z:{back,front}) for (int k=0;k<8;++k) {
+            const double angle=(double(k)+0.5)*pi/4.0;
+            vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*z);
+        }
+        return vertices;
+    }
+    static std::vector<std::array<int,3>> toePrismFaces() {
+        std::vector<std::array<int,3>> faces; faces.reserve(28);
+        for (int i=0;i<8;++i) {
+            const int j=(i+1)%8;
+            faces.push_back({i,j,j+8}); faces.push_back({i,j+8,i+8});
+        }
+        for (int i=1;i<7;++i) {
+            faces.push_back({0,i+1,i}); faces.push_back({8,8+i,8+i+1});
+        }
+        return faces;
+    }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
               const std::vector<std::array<double,16>>* pose=nullptr) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
@@ -580,6 +673,7 @@ public:
             {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
             {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
             {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
+        const auto prismFaces=toePrismFaces();
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
@@ -588,10 +682,17 @@ public:
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
             auto vertices=toeIcosahedron(i,origin);
-            if (vertices.empty()) continue;
-            if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
-            rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
-            rasterizer.mesh(vertices,faces,toe);
+            if (!vertices.empty()) {
+                if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
+                rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
+                rasterizer.mesh(vertices,faces,toe);
+            }
+            vertices=toePrism(i,origin);
+            if (!vertices.empty()) {
+                if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
+                rasterizer.setObject(idBase+static_cast<std::uint32_t>(2*parts_.size()+i),{},0);
+                rasterizer.mesh(vertices,prismFaces,toe);
+            }
         }
     }
 
@@ -757,6 +858,7 @@ private:
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_;
+    std::vector<std::array<double,16>> referenceMatrices_;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;

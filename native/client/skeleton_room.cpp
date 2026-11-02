@@ -200,7 +200,16 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
             }
             if (!match) continue;
             const auto angle=model->referenceBend(i);
-            if (angle && model->setReferenceBend(i,*angle+degrees)) changed=true;
+            if (!angle) continue;
+            // Whole-toe extension is driven at the MTP. The lesser DIP can
+            // hyperextend when selected individually, but automatically
+            // stacking its passive maximum on top of the MTP maximum makes
+            // a pronounced hammer-toe-like bend rather than a natural lift.
+            if (!hand && digit>1 && fingerJoint==0 && degrees<0 && kind=="toe_ip_hinge" &&
+                b.rfind("FootDistP",0)==0) {
+                if (*angle<=0) continue;
+                if (model->setReferenceBend(i,std::max(0.0,*angle+degrees))) changed=true;
+            } else if (model->setReferenceBend(i,*angle+degrees)) changed=true;
         }
     }
     return changed;
@@ -304,8 +313,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
                 femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
-                maleComparison_.draw(raster,-2.85,12000,nullptr);
-                femaleComparison_.draw(raster,2.85,14000,nullptr);
+                const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
+                const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+                maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose);
+                femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -326,8 +337,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-        maleComparison_.draw(raster,-2.85,12000,nullptr);
-        femaleComparison_.draw(raster,2.85,14000,nullptr);
+        const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
+        const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+        maleComparison_.draw(raster,-2.85,12000,&maleToePose);
+        femaleComparison_.draw(raster,2.85,14000,&femaleToePose);
         const UiLayer* ui=frame.uiLayer;
         frame = raster.finish();
         if (ui) compositeUi(frame,*ui);
@@ -347,8 +360,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     (void)seconds;
     // A slider updates only the corresponding blue meshes. Keep the room and
     // original bones in their existing GPU slots, with their pose matrices.
-    if (view.gpu && sceneReady_ && (blueMaleRevision_!=maleComparison_.revision() ||
-                                    blueFemaleRevision_!=femaleComparison_.revision())) {
+    const bool blueChanged=blueMaleRevision_!=maleComparison_.revision() || blueFemaleRevision_!=femaleComparison_.revision();
+    if (view.gpu && sceneReady_ && blueChanged) {
         Rasterizer changed(camera.width,camera.height,colorHex("#0d1210"),camera.focal(),true);
         changed.setCamera(camera);
         if (blueMaleRevision_!=maleComparison_.revision()) maleComparison_.draw(changed,-2.85,12000);
@@ -364,7 +377,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     const double pose = 0.0;
     const bool revisionsMatch = cachedMalePoseRevision_ == male_.sourcePoseRevision() &&
                                 cachedFemalePoseRevision_ == female_.sourcePoseRevision();
-    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_ && revisionsMatch;
+    const bool reuse = view.gpu && sceneReady_ && pose == cachedPose_ && revisionsMatch && !blueChanged;
     if (reuse) {
         updateCamera();
         frame.width = camera.width;
@@ -418,7 +431,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         }
         // The pose is the only thing that changes: write the bone matrices into
         // the batches they belong to. No vertex data moves. The static pose is solved only once.
-        const bool poseMoved = poseChanged;
+        const bool poseMoved = poseChanged || blueChanged;
         if (poseMoved) {
             // Both reference bodies face the same direction in the room.
             cachedMaleMatrices_ = male_.sourceMatrices({-0.95, maleFloor_, 0}, 0.0);
@@ -426,17 +439,21 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
+        const auto maleToePose=poseMoved ? maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0}) : std::vector<std::array<double,16>>{};
+        const auto femaleToePose=poseMoved ? femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0}) : std::vector<std::array<double,16>>{};
         for (const std::pair<std::uint32_t, std::size_t>& entry : boneBatches_) {
             if (!poseMoved) break;
             const int id = static_cast<int>(entry.first);
-            // Blue bone and toe-icosahedron batches share the distal bone's
-            // rigid delta from the same GPU body.
+            bool blue=false;
             for (bool male : {true,false}) {
                 const int base=male ? 12000 : 14000;
-                const auto count=(male ? maleComparison_ : femaleComparison_).parts().size();
-                if (id<base || static_cast<std::size_t>(id-base)>=count*2) continue;
-                scene_.batches[entry.second].modelMatrix={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+                const auto& transforms=male ? maleToePose : femaleToePose;
+                const auto count=transforms.size();
+                if (id<base || static_cast<std::size_t>(id-base)>=count*3) continue;
+                scene_.batches[entry.second].modelMatrix=transforms[static_cast<std::size_t>(id-base)%count];
+                blue=true; break;
             }
+            if (blue) continue;
             const std::vector<std::array<double, 16>>* matrices = nullptr;
             std::size_t boneIndex = 0;
             if (id >= 9001 && static_cast<std::size_t>(id - 9001) < maleMatrices.size()) {
@@ -475,8 +492,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
-    maleComparison_.draw(room,-2.85,12000,nullptr);
-    femaleComparison_.draw(room,2.85,14000,nullptr);
+    const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
+    const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+    maleComparison_.draw(room,-2.85,12000,&maleToePose);
+    femaleComparison_.draw(room,2.85,14000,&femaleToePose);
     const UiLayer* ui=frame.uiLayer;
     frame = room.finish();
     if (ui) compositeUi(frame,*ui);

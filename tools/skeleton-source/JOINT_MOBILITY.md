@@ -247,8 +247,22 @@ extension are not necessarily symmetric. See [cervical segmental ranges](https:/
 [atlanto-occipital and atlanto-axial cadaver review](https://squareonephysio.com.au/wp-content/uploads/2021/08/Bogduk-2000-Biomechanics-Cervical-Spine.pdf),
 [AC joint motion](https://www.kenhub.com/en/library/anatomy/acromioclavicular-ac-joint),
 and [SC motion](https://www.kenhub.com/en/library/anatomy/sternoclavicular-joint).
-The lesser toe PIP range is 0–35° and DIP is −30–60° ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/));
-great toe IP flexion is about 50° ([reference](https://physical-therapy.us/range-of-motion-rom/)).
+For toe extension, the present bounds are great-toe MTP 70° and IP 0°;
+lesser-toe MTP 40°, PIP 0° and DIP 30°, each relative to its own neutral
+joint frame, not a total angle of the entire toe. The lesser-toe values follow
+[OrthopaedicsOne's passive examination ranges](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/);
+the great-toe MTP estimate is within the [QUT teaching reference's 70–90° expected range](https://podiatry-anatomy-app.qut.edu.au/content/joints/1st-mtp-joint-rom.html).
+A [clinical motion table](https://book.physiotutors.com/content/ankle-and-foot-assessment/basic-assessment-of-the-ankle-and-foot/active-range-of-motion-arom-of-the-ankle-and-foot/)
+reports the same extension figures. These are general references, not measured
+limits for the CT subjects, and passive limits do not imply that all joints
+normally reach their maxima together. Whole-toe extension therefore lifts at
+MTP and returns a flexed lesser DIP toward neutral, rather than automatically
+hyperextending that DIP as well. Individual joint control still permits its
+separate 30° bound. The joint-axis and neutral-frame estimates are approximate;
+when a source toe cannot be straightened without crossing the sole, the source
+frame is retained, so the nominal zero is not a validated anatomical neutral.
+Lesser PIP flexion remains 35°, DIP flexion 60°, and great-toe IP flexion 50°;
+other references report different values, including 90° for great-toe IP flexion.
 
 This remains a **partial** implementation: a single-axis tree cannot represent
 all three-dimensional ball-joint motion, pronation/supination with both
