@@ -292,6 +292,9 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
     Step step{}; step.dt=dt;
+    // Identical for every body, so compute the exponentials once per step.
+    step.damping={std::exp(-dt),std::exp(-3.0f*dt),std::exp(-2.0f*dt),std::exp(-4.0f*dt)};
+    step.floorDamping={std::exp(-12.0f*dt),std::exp(-10.0f*dt),0.0f,0.0f};
     step.dragOrigin=dragOrigin; step.dragDirection=dragDirection;
     step.dragControl={dragging ? 1u : 0u,dragSequence,0u,0u};
     if (islandCount_) {

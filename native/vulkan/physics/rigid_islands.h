@@ -65,8 +65,8 @@ inline bool makeIslandPlan(std::size_t bodyCount, std::span<const Joint> joints,
             plan.words.insert(plan.words.end(),list.begin(),list.end());
         }
     }
-    // An eight-word reference pose per body tracks real displacement over a
-    // full second, rather than mistaking solver jitter for useful motion.
+    // An eight-word reference pose per body tracks real displacement across
+    // each quiet window, rather than mistaking solver jitter for useful motion.
     plan.words[1]=static_cast<std::uint32_t>(plan.words.size());
     plan.words.resize(plan.words.size()+8u*bodyCount+20u,0);
     // Four indirect commands and eight drag-state words follow the poses.

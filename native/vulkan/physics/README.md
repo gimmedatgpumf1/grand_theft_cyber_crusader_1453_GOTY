@@ -15,6 +15,10 @@ Contact search uses four GPU lanes per body, conservative world-space bounds,
 and a parallel bitset broad phase to avoid repeatedly searching distant proxies.
 Sphere proxies are sorted once along each body's longest local axis; the narrow
 phase searches only a conservative interval without changing the proxy shapes.
+Pair transforms are composed once per candidate rather than twice per proxy,
+floor scanning projects proxy centres directly onto the floor normal instead
+of rotating every point in full, and per-step damping factors are computed once
+on the host instead of as exponentials for every body.
 It runs four contact searches per eight joint iterations. Independent joint
 islands execute two coloured joint/floor passes per workgroup dispatch, using
 workgroup barriers between colours; cross-island contacts remain global. This
@@ -22,14 +26,17 @@ reduces dispatch overhead, but limits parallelism when there are few islands;
 its effect on integrated-GPU frame rate is not yet measured. An ordinary
 per-colour dispatch path remains for unsupported schedules. Fewer contact
 iterations reduce work but can reduce contact convergence. The solver dissipates
-velocity from projection corrections and uses a non-bouncing floor. Friction at
-floor contact points also resists rotation and sliding. Floor-supported joint
-islands that move slowly across two half-second windows sleep together on the GPU;
-a nearby moving island or a grab can wake them, and resetting R rebuilds the rig.
-Sleeping bodies skip joint and contact work, and GPU-generated indirect dispatches
-skip those phases altogether while every island sleeps. The sleep thresholds and
-wake-up heuristic are approximations, not a general-purpose contact-island sleep
-system. In the room, after R starts the ragdolls, left-click and drag a bone; with
+velocity from projection corrections and uses a non-bouncing floor. Floor and
+body contacts apply bounded friction. Body penetration correction is capped and
+kept out of reconstructed velocity to reduce energy injected into piles. A
+sleeping body acts immovable until it is woken. Joint islands supported by the
+floor or another figure can sleep on the GPU after two quiet half-second windows;
+a substantial nearby impact or a grab can wake them, and resetting R rebuilds the
+rig. Sleeping bodies skip joint and contact work, and GPU-generated indirect
+dispatches skip those phases altogether while every island sleeps. The friction,
+impact damping, sleep thresholds and wake-up heuristic are approximations, not
+a general-purpose contact-island sleep system; slow impacts can fail to wake a
+sleeper. In the room, after R starts the ragdolls, left-click and drag a bone; with
 the cursor released, right-click returns to camera look. Picking and the drag
 constraint execute on the GPU without per-frame pose readback.
 The broad phase still scans all body pairs; it and the overlapping-proxy exclusions

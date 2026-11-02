@@ -53,8 +53,10 @@ struct alignas(16) Step {
     std::array<float,4> dragOrigin{};
     std::array<float,4> dragDirection{};
     std::array<std::uint32_t,4> dragControl{}; // active, press sequence
+    std::array<float,4> damping{};       // free linear/angular, contact linear/angular
+    std::array<float,4> floorDamping{};  // floor tangential and angular
 };
-static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==80);
+static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==112);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };
