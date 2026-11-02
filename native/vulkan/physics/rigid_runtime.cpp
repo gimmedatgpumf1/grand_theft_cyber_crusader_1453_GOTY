@@ -1,4 +1,5 @@
 #include "rigid_runtime.h"
+#include "rigid_islands.h"
 
 #include <algorithm>
 #include <cmath>
@@ -151,8 +152,11 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     // shader fits the Vulkan 1.0 minimum of four per-stage storage buffers.
     // Corrections, static exclusions, world bounds/centres, and a transient
     // broad-phase bitset all share one Vulkan 1.0 storage binding.
+    IslandPlan islands;
+    makeIslandPlan(count,joints,batches,islands);
     std::vector<std::uint32_t> scratch(count*16+exclusions.size()*2,0);
     std::copy(exclusions.begin(),exclusions.end(),scratch.begin()+count*8);
+    scratch.insert(scratch.end(),islands.words.begin(),islands.words.end());
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),spheres.size_bytes(),
                                  scratch.size()*sizeof(std::uint32_t)};
     const void* data[4]={prepared.data(),joints.data(),spheres.data(),scratch.data()};
@@ -206,6 +210,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     destroyShaderModule_(device_,module,nullptr);
     if (result!=VK_SUCCESS) { reset(); return false; }
     bodyCount_=static_cast<std::uint32_t>(count);
+    islandCount_=islands.count;
     batches_.assign(batches.begin(),batches.end());
     return true;
 }
@@ -223,7 +228,8 @@ void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
     cmdPushConstants_(command,layout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(step),&step);
     // Four lanes cooperate on each body during contact search. Other phases
     // use one invocation per body or coloured joint.
-    cmdDispatch_(command,step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u,1,1);
+    const auto groups=step.phase==7 ? step.count : (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u);
+    cmdDispatch_(command,groups,1,1);
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations) const {
@@ -233,16 +239,21 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
     Step step{}; step.dt=dt; step.count=bodyCount_;
     dispatch(command,step);
-    for (std::uint32_t pass=0;pass<iterations;++pass) {
-        step.phase=1;
-        for (const JointBatch& batch:batches_) {
-            step.first=batch.first; step.count=batch.count; dispatch(command,step);
+    for (std::uint32_t pass=0;pass<iterations;) {
+        bool contacts;
+        if (islandCount_ && (pass&1u)==0u && pass+1u<iterations) {
+            // Two ordinary coloured-joint/floor passes, synchronized inside
+            // each independent joint island instead of across dispatches.
+            step.first=bodyCount_; step.count=islandCount_; step.phase=7; dispatch(command,step);
+            pass+=2; contacts=true;
+        } else {
+            step.phase=1;
+            for (const JointBatch& batch:batches_) {
+                step.first=batch.first; step.count=batch.count; dispatch(command,step);
+            }
+            ++pass; contacts=(pass&1u)==0u || pass==iterations;
+            step.count=bodyCount_; step.first=contacts ? bodyCount_ : 0; step.phase=2; dispatch(command,step);
         }
-        // Keep the eight joint and floor projections, but run the expensive
-        // all-pairs contact search on alternating iterations. The floor phase
-        // caches world bounds only on iterations followed by a contact search.
-        const bool contacts=(pass&1u)!=0u || pass+1u==iterations;
-        step.count=bodyCount_; step.first=contacts ? bodyCount_ : 0; step.phase=2; dispatch(command,step);
         if (contacts) {
             step.first=bodyCount_; step.count=bodyCount_*((bodyCount_+31u)/32u);
             step.phase=6; dispatch(command,step);
@@ -366,7 +377,7 @@ void RigidRuntime::reset() {
     }
     pipeline_=VK_NULL_HANDLE; layout_=VK_NULL_HANDLE; pool_=VK_NULL_HANDLE;
     setLayout_=VK_NULL_HANDLE; set_=VK_NULL_HANDLE; device_=VK_NULL_HANDLE;
-    bodyCount_=0; batches_.clear();
+    bodyCount_=0; islandCount_=0; batches_.clear();
 }
 
 } // namespace gtc::native::gpu_physics

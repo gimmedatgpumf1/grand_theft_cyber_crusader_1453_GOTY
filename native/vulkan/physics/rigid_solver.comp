@@ -1,9 +1,9 @@
 #version 450
 
-// Work-in-progress Vulkan rigid-body solver. Not connected to the game yet.
-// Joint batches must be graph-coloured: no two joints in one dispatch may
-// reference the same body. Insert a compute-write -> compute-read/write barrier
-// between dispatches. Coordinates are metres, seconds, and radians.
+// Experimental Vulkan rigid-body solver used by the test room.
+// Joint batches must be graph-coloured: no two joints in one batch may
+// reference the same body. Synchronize between batches and solver phases.
+// Coordinates are metres, seconds, and radians.
 layout(local_size_x = 64) in;
 
 struct Body {
@@ -28,12 +28,13 @@ struct Joint {
     vec4 lowerAngles;
     vec4 upperAngles;
 };
-layout(std430, set=0, binding=0) buffer Bodies { Body body[]; } bodies;
+layout(std430, set=0, binding=0) coherent buffer Bodies { Body body[]; } bodies;
 layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
 layout(std430, set=0, binding=2) readonly buffer Samples { vec4 point[]; } samples;
 // Scratch: eight correction words per body, the symmetric exclusion bitset,
-// four world-bound words and four centre/radius words per body, then a transient
-// broad-phase bitset. Four storage buffers fit Vulkan 1.0.
+// four world-bound words and four centre/radius words per body, a transient
+// broad-phase bitset, then the immutable joint-island schedule. Four storage
+// buffers fit Vulkan 1.0.
 layout(std430, set=0, binding=3) buffer Scratch { uint word[]; } scratch;
 layout(push_constant) uniform Step {
     uint phase;           // predict, joint, floor, velocity, contacts, apply
@@ -209,12 +210,12 @@ void findCandidates(uint wordIndex) {
     }
     scratch.word[candidateOffset(count)+wordIndex]=mask;
 }
-void solveFloor(uint index) {
+void solveFloor(uint index, bool saveBounds) {
     Body b=bodies.body[index];
     // The enclosing sphere is conservative for all proxies. Most bodies are
     // nowhere near the floor during a drop, so do not scan all their samples.
     if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=step.gravityFloor.w) {
-        if (step.first!=0u) storeBounds(index,step.first,b);
+        if (saveBounds) storeBounds(index,step.first,b);
         return;
     }
     float lowest=step.gravityFloor.w;
@@ -237,7 +238,28 @@ void solveFloor(uint index) {
         }
     }
     bodies.body[index]=b;
-    if (step.first!=0u) storeBounds(index,step.first,b);
+    if (saveBounds) storeBounds(index,step.first,b);
+}
+
+// Joint islands have disjoint bodies. Their graph-coloured constraints and
+// floor corrections can be ordered with workgroup barriers rather than one
+// global Vulkan dispatch and pipeline barrier per colour.
+void solveIsland(uint island, uint lane) {
+    uint count=step.first, stride=(count+31u)/32u;
+    uint base=count*16u+2u*count*stride;
+    uint colours=scratch.word[base];
+    uint record=base+1u+island*(2u+2u*colours);
+    uint bodyFirst=base+scratch.word[record], bodyCount=scratch.word[record+1u];
+    for (uint pass=0u;pass<2u;++pass) {
+        for (uint colour=0u;colour<colours;++colour) {
+            uint first=base+scratch.word[record+2u+colour*2u];
+            uint n=scratch.word[record+3u+colour*2u];
+            for (uint i=lane;i<n;i+=64u) solveJoint(scratch.word[first+i]);
+            memoryBarrierBuffer(); barrier();
+        }
+        for (uint i=lane;i<bodyCount;i+=64u) solveFloor(scratch.word[bodyFirst+i],pass==1u);
+        memoryBarrierBuffer(); barrier();
+    }
 }
 
 // Four lanes search candidate bodies for one body, with sixteen bodies per
@@ -323,6 +345,10 @@ void findContacts(uint index, uint lane, uint localIndex) {
 }
 
 void main() {
+    if (step.phase==7u) {
+        solveIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
+        return;
+    }
     if (step.phase==4u) {
         uint localIndex=gl_LocalInvocationIndex;
         findContacts(gl_WorkGroupID.x*16u+localIndex/4u,localIndex%4u,localIndex);
@@ -331,7 +357,7 @@ void main() {
     uint index=gl_GlobalInvocationID.x;
     if (index>=step.count) return;
     if (step.phase==1u) { solveJoint(step.first+index); return; }
-    if (step.phase==2u) { solveFloor(index); return; }
+    if (step.phase==2u) { solveFloor(index,step.first!=0u); return; }
     if (step.phase==6u) { findCandidates(index); return; }
     if (step.phase==5u) {
         Body b=bodies.body[index];

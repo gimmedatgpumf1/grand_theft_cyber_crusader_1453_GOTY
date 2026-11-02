@@ -13,8 +13,8 @@
 
 namespace gtc::native::gpu_physics {
 
-// GPU-resident compute pipeline, not yet wired into the room. Creation/upload
-// happens once; record() only records device-side work. The owner must wait
+// GPU-resident compute pipeline. Creation/upload happens once; record()
+// only records device-side work. The owner must wait
 // for all submitted uses before calling reset() or destroying the device.
 class RigidRuntime {
 public:
@@ -58,7 +58,7 @@ private:
     VkDescriptorSet set_=VK_NULL_HANDLE;
     VkPipelineLayout layout_=VK_NULL_HANDLE;
     VkPipeline pipeline_=VK_NULL_HANDLE;
-    std::uint32_t bodyCount_=0;
+    std::uint32_t bodyCount_=0, islandCount_=0;
     std::vector<JointBatch> batches_;
     Buffer skinBindings_{};
     VkDescriptorSetLayout skinSetLayout_=VK_NULL_HANDLE;
