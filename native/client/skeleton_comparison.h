@@ -549,15 +549,39 @@ public:
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
             if (part.name.rfind("FootDistP",0)!=0 || points.empty()) continue;
-            Vec3 low=points.front(), high=low;
+            // Measure each distal phalanx in a frame running along its toe,
+            // not a sphere sized from its longest dimension. The neighbouring
+            // phalanx supplies the direction for that toe on either foot.
+            const std::string suffix=part.name.substr(9); // e.g. 1_L
+            const std::string parentName=std::string(suffix[0]=='1' ? "FootProxP" : "FootMidP")+suffix;
+            const auto parent=std::find_if(parts_.begin(),parts_.end(),
+                [&](const Part& candidate) { return candidate.name==parentName; });
+            if (parent==parts_.end() || parent->points.empty()) continue;
+            Vec3 distalCenter{}, parentCenter{};
+            for (Vec3 p:points) distalCenter+=p;
+            distalCenter=distalCenter/static_cast<double>(points.size());
+            for (Vec3 p:parent->points) {
+                p=mapPart(p,*parent); p.x+=x; p.y+=0.10; parentCenter+=p;
+            }
+            parentCenter=parentCenter/static_cast<double>(parent->points.size());
+            const Vec3 forward=normalized(distalCenter-parentCenter);
+            const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+            const Vec3 up=normalized(cross(forward,lateral));
+            auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+            Vec3 low=local(points.front()), high=low;
             for (Vec3 p:points) {
+                p=local(p);
                 low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
                 high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
             }
-            const Vec3 center=(low+high)*0.5;
-            const double radius=0.65*std::max({high.x-low.x,high.y-low.y,high.z-low.z});
+            const Vec3 mid=(low+high)*0.5;
+            const Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
+            const Vec3 size=(high-low)*0.65;
             std::vector<Vec3> vertices; vertices.reserve(12);
-            for (Vec3 corner:corners) vertices.push_back(center+normalized(corner)*radius);
+            for (Vec3 corner:corners) {
+                corner=normalized(corner);
+                vertices.push_back(center+lateral*(corner.x*size.x)+up*(corner.y*size.y)+forward*(corner.z*size.z));
+            }
             // A separate stable batch follows this mapped distal bone whenever
             // the comparison dimensions change.
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
