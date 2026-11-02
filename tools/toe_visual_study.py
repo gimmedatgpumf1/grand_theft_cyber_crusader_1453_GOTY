@@ -15,12 +15,16 @@ import numpy as np
 import trimesh
 from PIL import Image
 from scipy.interpolate import PchipInterpolator
+from scipy.ndimage import gaussian_filter1d
 from skimage.measure import marching_cubes
 
 
+def bone_path(directory, sex, part, digit):
+    return directory / f"{sex}_blue_Foot{part}P{digit}_L.obj"
+
+
 def read_bone(directory, sex, part, digit):
-    path = directory / f"{sex}_blue_Foot{part}P{digit}_L.obj"
-    return np.asarray(trimesh.load(path, process=False).vertices)
+    return np.asarray(trimesh.load(bone_path(directory, sex, part, digit), process=False).vertices)
 
 
 def describe_toe(directory, sex, digit, scale):
@@ -52,6 +56,18 @@ def describe_toe(directory, sex, digit, scale):
     bottom = PchipInterpolator([0, .20, .60, .80, .93, 1],
                                [low, low - .0003 * scale, low - .0025 * scale,
                                 low - .004 * scale, low - .0015 * scale, tip_center])
+    # Follow the actual phalanx heights. A monotonic taper left the fifth
+    # phalanges visibly poking through the dorsal surface in both sexes.
+    samples = np.linspace(0, .88, 60)
+    profile = top(samples)
+    all_vertices = np.vstack(segments)
+    t_vertex = (all_vertices[:, 2] - start) / (end - start)
+    for j, t in enumerate(samples):
+        nearby = np.abs(t_vertex - t) < .075
+        if np.any(nearby):
+            profile[j] = max(profile[j], all_vertices[nearby, 1].max() + .0025 * scale)
+    profile = gaussian_filter1d(profile, 2, mode="nearest")
+    top = PchipInterpolator(np.r_[samples, 1.], np.r_[profile, tip_center])
     return {"bounds": bounds, "start": start, "end": end, "width": width,
             "top": top, "bottom": bottom, "tip_scale": 1.,
             "x": [b[2][0] for b in bounds], "z": [b[2][2] for b in bounds]}
@@ -112,7 +128,18 @@ def surface(specs, scale):
         half = np.maximum(.0001 * scale, (upper - lower) * .5)
         cy = (upper + lower) * .5
         distance = (np.sqrt(((x - xc) / w) ** 2 + ((y - cy) / half) ** 2) - 1) * np.minimum(w, half)
-        return np.maximum(distance, z - s["end"])
+        # An ellipsoidal tip avoids the concentric pinching left by shrinking
+        # cross-sections to a singular point at the end of the toe.
+        shoulder = .86
+        cap_z = s["start"] + shoulder * (s["end"] - s["start"])
+        cap_x = np.interp(cap_z, s["z"], s["x"])
+        cap_w, cap_top, cap_bottom = toe_section(s, shoulder)
+        cap_h = (cap_top - cap_bottom) * .5
+        cap_y = (cap_top + cap_bottom) * .5
+        cap_l = s["end"] - cap_z
+        cap = (np.sqrt(((x - cap_x) / cap_w) ** 2 + ((y - cap_y) / cap_h) ** 2 +
+                       ((z - cap_z) / cap_l) ** 2) - 1) * min(float(cap_w), float(cap_h), cap_l)
+        return np.where(z > cap_z, cap, distance)
 
     field = toe_field(specs[0])
     for s in specs[1:]:
@@ -294,10 +321,23 @@ def main():
     views = {
         "dorsal": ([[1, 0, 0], [0, -.25, -1], [0, -1, .25]], [-.2, .9, .3]),
         "side": ([[0, 0, -1], [0, -1, 0], [1, 0, 0]], [-.7, .65, .25]),
+        "lateral": ([[0, 0, 1], [0, -1, 0], [-1, 0, 0]], [.7, .65, .25]),
+        "oblique": ([[.87, 0, .49], [-.196, -.919, .349], [.45, -.4, -.8]], [-.4, .8, .35]),
         "plantar": ([[1, 0, 0], [0, .25, -1], [0, 1, .25]], [-.2, -.9, .3]),
     }
+    # Also show the actual blue bones in the same views, with the skin still
+    # visible. Exposed blue triangles reveal an obvious sculpting failure;
+    # their absence is not proof of clearance or a deformation check.
+    bone_objects = []
+    for digit in range(1, 6):
+        parts = ("Prox", "Dist") if digit == 1 else ("Prox", "Mid", "Dist")
+        for part in parts:
+            mesh = trimesh.load(bone_path(args.bones, args.sex, part, digit), process=False)
+            bone_objects.append((mesh, (55, 125, 215)))
     for name, (matrix, light) in views.items():
-        render(objects, np.array(matrix, dtype=float), light, args.output / f"{name}.png")
+        matrix = np.array(matrix, dtype=float)
+        render(objects, matrix, light, args.output / f"{name}.png")
+        render(objects + bone_objects, matrix, light, args.output / f"{name}-bones.png")
     print("Visual study only: inspect all three angles; this is not a finished replacement.")
 
 
