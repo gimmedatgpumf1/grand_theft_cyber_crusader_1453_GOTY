@@ -19,11 +19,16 @@ workgroup barriers between colours; cross-island contacts remain global. This
 reduces dispatch overhead, but limits parallelism when there are few islands;
 its effect on integrated-GPU frame rate is not yet measured. An ordinary
 per-colour dispatch path remains for unsupported schedules. Fewer contact
-iterations reduce work but can reduce contact convergence. The broad phase still
-scans all body pairs; it and the overlapping-proxy exclusions need further work;
-limits, collisions, settling and body stability have not been fully validated.
-The current approximation can produce contorted poses. Replacing or expanding
-this solver requires further visual and physical validation.
+iterations reduce work but can reduce contact convergence. The solver dissipates
+velocity from projection corrections and uses a non-bouncing floor. Floor-supported
+joint islands that move slowly across two one-second windows sleep together on
+the GPU; a nearby moving island can wake them, and resetting R rebuilds the rig.
+Sleeping bodies skip joint and contact work. The sleep thresholds and wake-up
+heuristic are approximations, not a general-purpose contact-island sleep system.
+The broad phase still scans all body pairs; it and the overlapping-proxy exclusions
+need further work. Limits, collisions, settling and body stability have not been
+fully validated. The current approximation can produce contorted poses. Replacing
+or expanding this solver requires further visual and physical validation.
 
 The room path was inspected using SwiftShader's software Vulkan implementation,
 not a physical GPU. Windows/MSVC, integrated-GPU compatibility and performance

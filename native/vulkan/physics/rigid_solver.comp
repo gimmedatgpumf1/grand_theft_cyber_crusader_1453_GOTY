@@ -14,7 +14,7 @@ struct Body {
     vec4 inverseInertia;  // xyz: local-space inverse inertia, w: bounding radius
     vec4 previousPosition; // w is set when a floor contact is resolved
     vec4 previousRotation;
-    uvec4 samples;        // x: first sphere, y: sphere count
+    uvec4 samples;        // x: first sphere, y: count, z: island+1, w: sleeping
     vec4 bounds;          // local proxy AABB half-extents
 };
 struct Joint {
@@ -134,6 +134,7 @@ void solveBall(inout Body a, inout Body b, Joint j) {
 void solveJoint(uint index) {
     Joint j=joints.joint[index];
     Body a=bodies.body[j.bodies.x], b=bodies.body[j.bodies.y];
+    if (a.samples.w!=0u) return;
     for (int k=0;k<3;++k) {
         vec3 n=vec3(k==0 ? 1.0 : 0.0,k==1 ? 1.0 : 0.0,k==2 ? 1.0 : 0.0);
         vec3 ra=rotate(a.rotation,j.parentAnchor.xyz);
@@ -189,6 +190,24 @@ vec4 loadCenter(uint index, uint count) {
                 uintBitsToFloat(scratch.word[offset+2u]),uintBitsToFloat(scratch.word[offset+3u]));
 }
 uint candidateOffset(uint count) { return count*16u+count*((count+31u)/32u); }
+uint islandBase(uint count) { return count*16u+2u*count*((count+31u)/32u); }
+uint islandRecord(uint count, uint island) {
+    uint base=islandBase(count), colours=scratch.word[base];
+    return base+2u+island*(5u+2u*colours);
+}
+uint islandState(uint count, uint island) {
+    uint base=islandBase(count);
+    return islandRecord(count,island)+2u+2u*scratch.word[base];
+}
+uint poseOffset(uint count, uint bodyIndex) {
+    uint base=islandBase(count);
+    return base+scratch.word[base+1u]+bodyIndex*8u;
+}
+void saveRestReference(uint count, uint index, Body b) {
+    uint offset=poseOffset(count,index);
+    for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
+    for (uint k=0u;k<4u;++k) scratch.word[offset+4u+k]=floatBitsToUint(b.rotation[k]);
+}
 
 // One invocation owns one 32-body word. The broad phase is independently
 // parallel and writes a compact list of candidates for the narrow phase.
@@ -196,6 +215,10 @@ void findCandidates(uint wordIndex) {
     uint count=step.first, stride=(count+31u)/32u;
     uint index=wordIndex/stride, word=wordIndex%stride;
     uint excluded=scratch.word[count*8u+wordIndex], mask=0u;
+    if (bodies.body[index].samples.w!=0u) {
+        scratch.word[candidateOffset(count)+wordIndex]=0u;
+        return;
+    }
     vec4 a=loadCenter(index,count);
     vec3 extentA=loadBounds(index,count);
     for (uint bit=0u;bit<32u;++bit) {
@@ -212,6 +235,7 @@ void findCandidates(uint wordIndex) {
 }
 void solveFloor(uint index, bool saveBounds) {
     Body b=bodies.body[index];
+    if (b.samples.w!=0u) return;
     // The enclosing sphere is conservative for all proxies. Most bodies are
     // nowhere near the floor during a drop, so do not scan all their samples.
     if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=step.gravityFloor.w) {
@@ -245,11 +269,11 @@ void solveFloor(uint index, bool saveBounds) {
 // floor corrections can be ordered with workgroup barriers rather than one
 // global Vulkan dispatch and pipeline barrier per colour.
 void solveIsland(uint island, uint lane) {
-    uint count=step.first, stride=(count+31u)/32u;
-    uint base=count*16u+2u*count*stride;
-    uint colours=scratch.word[base];
-    uint record=base+1u+island*(2u+2u*colours);
+    uint count=step.first;
+    uint base=islandBase(count), colours=scratch.word[base];
+    uint record=islandRecord(count,island);
     uint bodyFirst=base+scratch.word[record], bodyCount=scratch.word[record+1u];
+    if (bodyCount==0u || bodies.body[scratch.word[bodyFirst]].samples.w!=0u) return;
     for (uint pass=0u;pass<2u;++pass) {
         for (uint colour=0u;colour<colours;++colour) {
             uint first=base+scratch.word[record+2u+colour*2u];
@@ -259,6 +283,133 @@ void solveIsland(uint island, uint lane) {
         }
         for (uint i=lane;i<bodyCount;i+=64u) solveFloor(scratch.word[bodyFirst+i],pass==1u);
         memoryBarrierBuffer(); barrier();
+    }
+}
+
+// Sleeping is an island decision: connected bodies never freeze individually.
+// Wake decisions read last step's immutable sleep flags and are committed by
+// the following prediction dispatch, avoiding inter-workgroup races. A moving
+// neighbouring island wakes a resting one before it can strike its proxies.
+shared uint wakeLanes[64];
+shared float motionLanes[64];
+shared float maxMotionLanes[64];
+shared uint supportLanes[64];
+shared uint islandSleep;
+void wakeIsland(uint island, uint lane) {
+    uint count=step.first, base=islandBase(count), record=islandRecord(count,island);
+    uint first=base+scratch.word[record], n=scratch.word[record+1u];
+    bool sleeping=n!=0u && bodies.body[scratch.word[first]].samples.w!=0u;
+    bool anyAwake=false;
+    if (sleeping) for (uint other=0u;other<step.count;++other) {
+        uint otherRecord=islandRecord(count,other);
+        uint otherFirst=base+scratch.word[otherRecord];
+        if (scratch.word[otherRecord+1u]!=0u && bodies.body[scratch.word[otherFirst]].samples.w==0u) {
+            anyAwake=true; break;
+        }
+    }
+    if (!sleeping || !anyAwake) {
+        if (lane==0u) scratch.word[islandState(count,island)+1u]=0u;
+        return;
+    }
+    uint found=0u;
+    for (uint i=lane;i<n;i+=64u) {
+        Body a=bodies.body[scratch.word[first+i]];
+        for (uint j=0u;j<count;++j) {
+            Body b=bodies.body[j];
+            if (b.samples.w!=0u || b.samples.z==a.samples.z || b.positionMass.w<=0.0) continue;
+            float speed=length(b.linearVelocity.xyz)+b.inverseInertia.w*length(b.angularVelocity.xyz);
+            if (speed<0.08) continue;
+            float reach=a.inverseInertia.w+b.inverseInertia.w+0.02+speed*step.dt*2.0;
+            vec3 delta=a.positionMass.xyz-b.positionMass.xyz;
+            if (dot(delta,delta)<=reach*reach) { found=1u; break; }
+        }
+    }
+    wakeLanes[lane]=found;
+    barrier();
+    for (uint width=32u;width>0u;width>>=1u) {
+        if (lane<width) wakeLanes[lane]|=wakeLanes[lane+width];
+        barrier();
+    }
+    if (lane==0u) {
+        uint state=islandState(count,island);
+        scratch.word[state+1u]=wakeLanes[0];
+        if (wakeLanes[0]!=0u) { scratch.word[state]=0u; scratch.word[state+2u]=0u; }
+    }
+}
+
+void settleIsland(uint island, uint lane) {
+    uint count=step.first, base=islandBase(count), record=islandRecord(count,island);
+    uint first=base+scratch.word[record], n=scratch.word[record+1u];
+    if (n==0u || bodies.body[scratch.word[first]].samples.w!=0u) return;
+    uint state=islandState(count,island);
+    // Inspect displacement against a one-second-old reference pose. This
+    // recognizes small oscillations even when per-step reconstructed velocity
+    // is noisy, without sleeping a figure that is still travelling or falling.
+    float elapsed=uintBitsToFloat(scratch.word[state])+step.dt;
+    barrier();
+    if (elapsed<1.0-1e-6) {
+        if (lane==0u) scratch.word[state]=floatBitsToUint(elapsed);
+        return;
+    }
+    float total=0.0, largest=0.0, speedTotal=0.0;
+    uint support=0u, dynamicCount=0u;
+    for (uint i=lane;i<n;i+=64u) {
+        uint index=scratch.word[first+i], offset=poseOffset(count,index);
+        Body b=bodies.body[index];
+        if (b.positionMass.w<=0.0) continue;
+        vec3 refPosition=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
+                              uintBitsToFloat(scratch.word[offset+2u]));
+        vec4 refRotation=vec4(uintBitsToFloat(scratch.word[offset+4u]),uintBitsToFloat(scratch.word[offset+5u]),
+                              uintBitsToFloat(scratch.word[offset+6u]),uintBitsToFloat(scratch.word[offset+7u]));
+        float alignment=clamp(abs(dot(refRotation,b.rotation)),0.0,1.0);
+        float movement=length(b.positionMass.xyz-refPosition)+
+                       2.0*b.inverseInertia.w*sqrt(max(0.0,1.0-alignment*alignment));
+        total+=movement; largest=max(largest,movement);
+        speedTotal+=length(b.linearVelocity.xyz)+b.inverseInertia.w*length(b.angularVelocity.xyz);
+        ++dynamicCount;
+        if (b.previousPosition.w>0.0) support=1u;
+    }
+    motionLanes[lane]=total;
+    maxMotionLanes[lane]=largest;
+    // Reuse the wake reduction array to sum a floating-point speed safely.
+    wakeLanes[lane]=floatBitsToUint(speedTotal);
+    supportLanes[lane]=support | (dynamicCount<<1u);
+    barrier();
+    for (uint width=32u;width>0u;width>>=1u) {
+        if (lane<width) {
+            motionLanes[lane]+=motionLanes[lane+width];
+            maxMotionLanes[lane]=max(maxMotionLanes[lane],maxMotionLanes[lane+width]);
+            wakeLanes[lane]=floatBitsToUint(uintBitsToFloat(wakeLanes[lane])+uintBitsToFloat(wakeLanes[lane+width]));
+            uint a=supportLanes[lane], b=supportLanes[lane+width];
+            supportLanes[lane]=((a&1u)|(b&1u)) + ((a>>1u)+(b>>1u))*2u;
+        }
+        barrier();
+    }
+    uint dynamicCountTotal=supportLanes[0]>>1u;
+    bool quiet=(supportLanes[0]&1u)!=0u && dynamicCountTotal>0u &&
+               motionLanes[0]/float(dynamicCountTotal)<0.10 && maxMotionLanes[0]<0.25 &&
+               uintBitsToFloat(wakeLanes[0])/float(dynamicCountTotal)<0.35;
+    if (lane==0u) {
+        scratch.word[state]=0u;
+        uint windows=quiet ? min(scratch.word[state+2u]+1u,2u) : 0u;
+        scratch.word[state+2u]=windows;
+        islandSleep=windows>=2u ? 1u : 0u;
+    }
+    barrier();
+    bool sleep=islandSleep!=0u;
+    for (uint i=lane;i<n;i+=64u) {
+        uint index=scratch.word[first+i];
+        if (sleep) {
+            // Contacts are the last ordinary projection, so make sure the
+            // resting pose is above the floor before freezing it.
+            solveFloor(index,true);
+            Body b=bodies.body[index];
+            b.linearVelocity.xyz=vec3(0.0); b.angularVelocity.xyz=vec3(0.0);
+            b.samples.w=1u;
+            bodies.body[index]=b;
+        } else {
+            saveRestReference(count,index,bodies.body[index]);
+        }
     }
 }
 
@@ -275,7 +426,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
     vec3 positionDelta=vec3(0.0), rotationDelta=vec3(0.0);
     float contactCount=0.0;
     uint stride=(bodyCount+31u)/32u;
-    if (valid && a.positionMass.w>0.0) for (uint word=lane;word<stride;word+=4u) {
+    if (valid && a.samples.w==0u && a.positionMass.w>0.0) for (uint word=lane;word<stride;word+=4u) {
       uint candidates=scratch.word[candidateOffset(bodyCount)+index*stride+word];
       while (candidates!=0u) {
         uint bit=uint(findLSB(candidates));
@@ -349,6 +500,14 @@ void main() {
         solveIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
         return;
     }
+    if (step.phase==8u) {
+        wakeIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
+        return;
+    }
+    if (step.phase==9u) {
+        settleIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
+        return;
+    }
     if (step.phase==4u) {
         uint localIndex=gl_LocalInvocationIndex;
         findContacts(gl_WorkGroupID.x*16u+localIndex/4u,localIndex%4u,localIndex);
@@ -361,6 +520,7 @@ void main() {
     if (step.phase==6u) { findCandidates(index); return; }
     if (step.phase==5u) {
         Body b=bodies.body[index];
+        if (b.samples.w!=0u) return;
         uint offset=index*8u;
         vec3 translation=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
                               uintBitsToFloat(scratch.word[offset+2u]));
@@ -372,7 +532,13 @@ void main() {
         return;
     }
     Body b=bodies.body[index];
-    if (b.positionMass.w<=0.0) return;
+    if (step.phase==0u && b.samples.w!=0u && b.samples.z!=0u &&
+        scratch.word[islandState(step.first,b.samples.z-1u)+1u]!=0u) {
+        b.samples.w=0u;
+        saveRestReference(step.first,index,b);
+        bodies.body[index]=b;
+    }
+    if (b.samples.w!=0u || b.positionMass.w<=0.0) return;
     if (step.phase==0u) {
         b.previousPosition=vec4(b.positionMass.xyz,0.0);
         b.previousRotation=b.rotation;
@@ -380,11 +546,27 @@ void main() {
         b.positionMass.xyz+=b.linearVelocity.xyz*step.dt;
         rotateBy(b,b.angularVelocity.xyz*step.dt);
     } else if (step.phase==3u) {
-        b.linearVelocity.xyz=(b.positionMass.xyz-b.previousPosition.xyz)/step.dt;
+        vec3 projectedLinear=(b.positionMass.xyz-b.previousPosition.xyz)/step.dt;
         vec4 dq=qmul(b.rotation,vec4(-b.previousRotation.xyz,b.previousRotation.w));
         if (dq.w<0.0) dq=-dq;
-        b.angularVelocity.xyz=2.0*dq.xyz/step.dt;
-        if (b.previousPosition.w>0.0) b.linearVelocity.xz*=0.9;
+        vec3 projectedAngular=2.0*dq.xyz/step.dt;
+        // Constraint projections repair positions, but feeding all their
+        // correction back into velocity injects energy into the ragdoll.
+        b.linearVelocity.xyz=mix(b.linearVelocity.xyz,projectedLinear,0.35);
+        b.angularVelocity.xyz=mix(b.angularVelocity.xyz,projectedAngular,0.35);
+        // Position projection can otherwise turn tiny constraint errors into
+        // kinetic energy on every step. Damping and a non-bouncing floor let
+        // the articulated body dissipate that energy instead of dancing.
+        b.linearVelocity.xyz*=exp(-1.0*step.dt);
+        b.angularVelocity.xyz*=exp(-2.0*step.dt);
+        if (b.previousPosition.w>0.0) {
+            b.linearVelocity.y=0.0;
+            b.linearVelocity.xz*=exp(-12.0*step.dt);
+            b.angularVelocity.xyz*=exp(-6.0*step.dt);
+        }
+        float linearSpeed=length(b.linearVelocity.xyz), angularSpeed=length(b.angularVelocity.xyz);
+        if (linearSpeed>5.0) b.linearVelocity.xyz*=5.0/linearSpeed;
+        if (angularSpeed>18.0) b.angularVelocity.xyz*=18.0/angularSpeed;
     }
     bodies.body[index]=b;
 }

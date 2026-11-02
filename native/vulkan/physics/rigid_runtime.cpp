@@ -154,9 +154,21 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     // broad-phase bitset all share one Vulkan 1.0 storage binding.
     IslandPlan islands;
     makeIslandPlan(count,joints,batches,islands);
+    for (std::size_t i=0;i<count;++i) {
+        // Zero means the ordinary non-island fallback. samples.w is the
+        // GPU-owned sleep flag and is always reset for a fresh simulation.
+        prepared[i].samples[2]=islands.count ? islands.bodyIsland[i]+1u : 0u;
+        prepared[i].samples[3]=0u;
+    }
     std::vector<std::uint32_t> scratch(count*16+exclusions.size()*2,0);
     std::copy(exclusions.begin(),exclusions.end(),scratch.begin()+count*8);
+    const auto islandBase=scratch.size();
     scratch.insert(scratch.end(),islands.words.begin(),islands.words.end());
+    if (islands.count) for (std::size_t i=0;i<count;++i) {
+        const auto offset=islandBase+islands.words[1]+i*8;
+        std::memcpy(scratch.data()+offset,prepared[i].positionMass.data(),3*sizeof(float));
+        std::memcpy(scratch.data()+offset+4,prepared[i].rotation.data(),4*sizeof(float));
+    }
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),spheres.size_bytes(),
                                  scratch.size()*sizeof(std::uint32_t)};
     const void* data[4]={prepared.data(),joints.data(),spheres.data(),scratch.data()};
@@ -228,7 +240,7 @@ void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
     cmdPushConstants_(command,layout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(step),&step);
     // Four lanes cooperate on each body during contact search. Other phases
     // use one invocation per body or coloured joint.
-    const auto groups=step.phase==7 ? step.count : (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u);
+    const auto groups=step.phase>=7 ? step.count : (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u);
     cmdDispatch_(command,groups,1,1);
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
@@ -237,8 +249,11 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
-    Step step{}; step.dt=dt; step.count=bodyCount_;
-    dispatch(command,step);
+    Step step{}; step.dt=dt;
+    if (islandCount_) {
+        step.phase=8; step.first=bodyCount_; step.count=islandCount_; dispatch(command,step);
+    }
+    step.phase=0; step.first=bodyCount_; step.count=bodyCount_; dispatch(command,step);
     for (std::uint32_t pass=0;pass<iterations;) {
         bool contacts;
         if (islandCount_ && (pass&1u)==0u && pass+1u<iterations) {
@@ -261,7 +276,10 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
             step.first=0; step.phase=5; dispatch(command,step);
         }
     }
-    step.phase=3; dispatch(command,step);
+    step.first=bodyCount_; step.count=bodyCount_; step.phase=3; dispatch(command,step);
+    if (islandCount_) {
+        step.phase=9; step.count=islandCount_; dispatch(command,step);
+    }
     barrier(command,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
     return true;
 }
