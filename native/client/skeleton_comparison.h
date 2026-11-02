@@ -532,58 +532,64 @@ public:
         const double distance=dot(result-part.mappedAnchor,part.mappedNormal);
         return result+part.mappedNormal*(side*part.mappedNormalScale-distance);
     }
-    void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
-        Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
-        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
+    // The same vertices are used for rendering and for distal-toe collision.
+    std::vector<Vec3> toeIcosahedron(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        if (part.name.rfind("FootDistP",0)!=0 || part.points.empty()) return {};
+        std::vector<Vec3> points; points.reserve(part.points.size());
+        for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
+        const std::string suffix=part.name.substr(9);
+        const std::string parentName=std::string(suffix[0]=='1' ? "FootProxP" : "FootMidP")+suffix;
+        const auto parent=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==parentName; });
+        if (parent==parts_.end() || parent->points.empty()) return {};
+        Vec3 distalCenter{}, parentCenter{};
+        for (Vec3 p:points) distalCenter+=p;
+        distalCenter=distalCenter/static_cast<double>(points.size());
+        for (Vec3 p:parent->points) parentCenter+=mapPart(p,*parent)+origin;
+        parentCenter=parentCenter/static_cast<double>(parent->points.size());
+        const Vec3 forward=normalized(distalCenter-parentCenter);
+        const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        const Vec3 up=normalized(cross(forward,lateral));
+        auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(points.front()), high=low;
+        for (Vec3 p:points) {
+            p=local(p);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        const Vec3 mid=(low+high)*0.5;
+        const Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
+        const Vec3 size=(high-low)*0.95;
         constexpr double phi=1.618033988749895;
         const Vec3 corners[]={{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
             {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
             {phi,0,-1},{phi,0,1},{-phi,0,-1},{-phi,0,1}};
+        std::vector<Vec3> vertices; vertices.reserve(12);
+        for (Vec3 corner:corners) {
+            corner=normalized(corner);
+            vertices.push_back(center+lateral*(corner.x*size.x)+up*(corner.y*size.y)+forward*(corner.z*size.z));
+        }
+        return vertices;
+    }
+    void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
+              const std::vector<std::array<double,16>>* pose=nullptr) const {
+        Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
+        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
         const std::vector<std::array<int,3>> faces={{0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},
             {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
             {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
             {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
+        const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
-            for (Vec3 p:part.points) { p=mapPart(p,part); p.x+=x; p.y+=0.10; points.push_back(p); }
+            for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
+            if (pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
-            if (part.name.rfind("FootDistP",0)!=0 || points.empty()) continue;
-            // Measure each distal phalanx in a frame running along its toe,
-            // not a sphere sized from its longest dimension. The neighbouring
-            // phalanx supplies the direction for that toe on either foot.
-            const std::string suffix=part.name.substr(9); // e.g. 1_L
-            const std::string parentName=std::string(suffix[0]=='1' ? "FootProxP" : "FootMidP")+suffix;
-            const auto parent=std::find_if(parts_.begin(),parts_.end(),
-                [&](const Part& candidate) { return candidate.name==parentName; });
-            if (parent==parts_.end() || parent->points.empty()) continue;
-            Vec3 distalCenter{}, parentCenter{};
-            for (Vec3 p:points) distalCenter+=p;
-            distalCenter=distalCenter/static_cast<double>(points.size());
-            for (Vec3 p:parent->points) {
-                p=mapPart(p,*parent); p.x+=x; p.y+=0.10; parentCenter+=p;
-            }
-            parentCenter=parentCenter/static_cast<double>(parent->points.size());
-            const Vec3 forward=normalized(distalCenter-parentCenter);
-            const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
-            const Vec3 up=normalized(cross(forward,lateral));
-            auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
-            Vec3 low=local(points.front()), high=low;
-            for (Vec3 p:points) {
-                p=local(p);
-                low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
-                high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
-            }
-            const Vec3 mid=(low+high)*0.5;
-            const Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
-            const Vec3 size=(high-low)*0.95;
-            std::vector<Vec3> vertices; vertices.reserve(12);
-            for (Vec3 corner:corners) {
-                corner=normalized(corner);
-                vertices.push_back(center+lateral*(corner.x*size.x)+up*(corner.y*size.y)+forward*(corner.z*size.z));
-            }
-            // A separate stable batch follows this mapped distal bone whenever
-            // the comparison dimensions change.
+            auto vertices=toeIcosahedron(i,origin);
+            if (vertices.empty()) continue;
+            if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
             rasterizer.mesh(vertices,faces,toe);
         }

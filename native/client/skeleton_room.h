@@ -31,6 +31,7 @@ public:
     SkeletonModel& female() { return female_; }
     const SkeletonComparison& comparison(bool male) const { return male ? maleComparison_ : femaleComparison_; }
     bool setComparison(bool male, const SkeletonComparison::Profile& profile, std::string& error) {
+        if (ragdoll_ && !restoreReferencePose()) { error="Unable to restore skeleton pose"; return false; }
         SkeletonComparison& copy=male ? maleComparison_ : femaleComparison_;
         const auto revision=copy.revision();
         if (!copy.setProfile(profile,error)) return false;
@@ -38,6 +39,7 @@ public:
         return true;
     }
     void resetComparison(bool male) {
+        if (ragdoll_ && !restoreReferencePose()) return;
         std::string error; (male ? maleComparison_ : femaleComparison_).reset(error);
         lineSceneReady_=false;
     }

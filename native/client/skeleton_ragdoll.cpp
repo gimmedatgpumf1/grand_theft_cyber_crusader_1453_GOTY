@@ -1,5 +1,6 @@
 #include "client/skeleton_ragdoll.h"
 #include "client/skeleton_body.h"
+#include "client/skeleton_comparison.h"
 #include <btBulletDynamicsCommon.h>
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,9 @@ struct SkeletonRagdoll::Impl {
         Vec3 origin{};
         std::vector<int> bodyForStructure;
         std::vector<btTransform> localSkin;
+        const SkeletonComparison* comparison=nullptr;
+        bool male=false;
+        std::vector<btTransform> initialBody;
     };
     std::unique_ptr<btDefaultCollisionConfiguration> config=std::make_unique<btDefaultCollisionConfiguration>();
     std::unique_ptr<btCollisionDispatcher> dispatcher=std::make_unique<btCollisionDispatcher>(config.get());
@@ -47,6 +51,7 @@ struct SkeletonRagdoll::Impl {
     std::vector<btHingeConstraint*> fingerJoints;
     std::vector<btVector3> centers;
     std::vector<Figure> figures;
+    std::vector<std::array<double,16>> blueMalePose,blueFemalePose;
     // Sequential impulses can leave a visible gap at a tiny finger joint
     // during a hard contact. Finish each physics substep with a positional
     // projection of the existing joint anchors, in parent-to-child order.
@@ -87,12 +92,19 @@ struct SkeletonRagdoll::Impl {
         for (std::size_t i=0;i<part.pointCount;++i) sum+=v(points[part.firstPoint+i]);
         return part.pointCount ? sum/btScalar(part.pointCount) : sum;
     }
+    static Vec3 mappedPoint(const SkeletonComparison& comparison, std::size_t index, std::size_t vertex, Vec3 origin) {
+        const auto& part=comparison.parts()[index];
+        return comparison.mapPart(part.points[vertex],part)+origin;
+    }
     void addBoneCollision(const SkeletonModel& model, std::size_t index, const btTransform& relative,
-                          const btVector3& center, btCompoundShape& compound, btVector3& lo, btVector3& hi) {
+                          const btVector3& center, btCompoundShape& compound, btVector3& lo, btVector3& hi,
+                          const SkeletonComparison* comparison, Vec3 origin) {
         const auto& part=model.sourceStructures()[index]; const auto& points=model.bones()[part.group].points;
-        std::vector<btVector3> local; local.reserve(part.pointCount);
-        for (std::size_t i=0;i<part.pointCount;++i) {
-            const auto p=relative*v(points[part.firstPoint+i])-center;
+        const std::size_t count=comparison ? comparison->parts()[index].points.size() : part.pointCount;
+        std::vector<btVector3> local; local.reserve(count);
+        for (std::size_t i=0;i<count;++i) {
+            const auto p=(comparison ? v(mappedPoint(*comparison,index,i,origin))
+                                     : relative*v(points[part.firstPoint+i]))-center;
             local.push_back(p); lo.setMin(p); hi.setMax(p);
         }
         auto addHull=[&](const std::vector<btVector3>& vertices) {
@@ -109,20 +121,29 @@ struct SkeletonRagdoll::Impl {
         // Divide the actual CT vertices along their source-derived arc so the
         // compound collider follows the bone instead of a huge solid wedge.
         const auto underscore=part.name.find('_');
-        if (part.name.rfind("Rib",0)!=0 || underscore==std::string::npos || part.pointCount<32) {
+        if (part.name.rfind("Rib",0)!=0 || underscore==std::string::npos || count<32) {
             addHull(local); return;
         }
         const auto vertebra=model.sourceStructure("T"+part.name.substr(3,underscore-3));
         const auto sternum=model.sourceStructure("Sternum");
         if (vertebra<0 || sternum<0) { addHull(local); return; }
-        const auto axis=(sourceCenter(model,vertebra)+sourceCenter(model,sternum))*0.5f;
-        std::vector<double> angles; angles.reserve(part.pointCount); double sn=0,cs=0;
-        for (std::size_t i=0;i<part.pointCount;++i) {
-            const auto p=v(points[part.firstPoint+i])-axis; const double a=std::atan2(p.z(),p.x());
+        btVector3 axis=(sourceCenter(model,vertebra)+sourceCenter(model,sternum))*0.5f;
+        if (comparison) {
+            auto centerOf=[&](int id) {
+                btVector3 sum(0,0,0); const auto& vertices=comparison->parts()[std::size_t(id)].points;
+                for (std::size_t n=0;n<vertices.size();++n) sum+=v(mappedPoint(*comparison,std::size_t(id),n,origin));
+                return sum/btScalar(vertices.size());
+            };
+            axis=(centerOf(vertebra)+centerOf(sternum))*0.5f;
+        }
+        std::vector<double> angles; angles.reserve(count); double sn=0,cs=0;
+        for (std::size_t i=0;i<count;++i) {
+            const auto p=(comparison ? v(mappedPoint(*comparison,index,i,origin)) : v(points[part.firstPoint+i]))-axis;
+            const double a=std::atan2(p.z(),p.x());
             angles.push_back(a); sn+=std::sin(a); cs+=std::cos(a);
         }
         const double mean=std::atan2(sn,cs);
-        std::vector<std::pair<double,std::size_t>> ordered; ordered.reserve(part.pointCount);
+        std::vector<std::pair<double,std::size_t>> ordered; ordered.reserve(count);
         for (std::size_t i=0;i<angles.size();++i)
             ordered.emplace_back(std::atan2(std::sin(angles[i]-mean),std::cos(angles[i]-mean)),i);
         std::sort(ordered.begin(),ordered.end());
@@ -135,13 +156,15 @@ struct SkeletonRagdoll::Impl {
             addHull(vertices);
         }
     }
-    bool addFigure(SkeletonModel& model, Vec3 origin) {
+    bool addFigure(SkeletonModel& model, Vec3 origin, const SkeletonComparison* comparison=nullptr, bool male=false) {
         const auto* rig=model.sourceRig();
         const auto& structures=model.sourceStructures();
         const auto& mapping=model.sourceBodyMap();
         if (!rig || mapping.size()!=structures.size()) return false;
-        const auto initial=model.sourceMatrices(origin,0);
-        if (initial.size()!=structures.size()) return false;
+        const auto initial=model.sourceMatrices(comparison ? Vec3{} : origin,0);
+        if (initial.size()!=structures.size() || (comparison && comparison->parts().size()!=structures.size())) return false;
+        if (comparison) for (std::size_t i=0;i<structures.size();++i)
+            if (comparison->parts()[i].name!=structures[i].name || comparison->parts()[i].points.empty()) return false;
         std::vector<int> structureForNode(rig->size(),-1), groupForNode(rig->size(),-1);
         for (std::size_t i=0;i<mapping.size();++i) structureForNode[mapping[i]]=int(i);
         std::vector<std::vector<std::size_t>> groups;
@@ -165,17 +188,20 @@ struct SkeletonRagdoll::Impl {
             groups[std::size_t(second)].clear();
             for (auto& group:groupForNode) if (group==second) group=first;
         }
-        Figure f; f.model=&model; f.origin=origin; f.bodyForStructure.resize(structures.size());
-        f.localSkin.resize(structures.size());
+        Figure f; f.model=&model; f.origin=origin; f.comparison=comparison; f.male=male;
+        f.bodyForStructure.resize(structures.size()); f.localSkin.resize(structures.size());
+        if (comparison) f.initialBody.resize(structures.size());
         std::vector<int> bodyForGroup(groups.size(),-1);
         for (std::size_t group=0;group<groups.size();++group) {
             if (groups[group].empty()) continue;
             const auto first=groups[group][0]; const auto& part=structures[first];
             const auto& points=model.bones()[part.group].points;
             btVector3 center(0,0,0);
-            for (std::size_t i=0;i<part.pointCount;++i) center+=v(points[part.firstPoint+i]);
-            if (!part.pointCount) return false;
-            center/=btScalar(part.pointCount);
+            const auto count=comparison ? comparison->parts()[first].points.size() : part.pointCount;
+            if (!count) return false;
+            for (std::size_t i=0;i<count;++i)
+                center+=comparison ? v(mappedPoint(*comparison,first,i,origin)) : v(points[part.firstPoint+i]);
+            center/=btScalar(count);
             auto compound=std::make_unique<btCompoundShape>();
             btVector3 lo(BT_LARGE_FLOAT,BT_LARGE_FLOAT,BT_LARGE_FLOAT),hi(-BT_LARGE_FLOAT,-BT_LARGE_FLOAT,-BT_LARGE_FLOAT);
             for (const auto index:groups[group]) {
@@ -183,7 +209,19 @@ struct SkeletonRagdoll::Impl {
                 if (!s.pointCount) return false;
                 const btTransform relative=rigid(initial[first]).inverse()*rigid(initial[index]);
                 f.localSkin[index]=relative;
-                addBoneCollision(model,index,relative,center,*compound,lo,hi);
+                addBoneCollision(model,index,relative,center,*compound,lo,hi,comparison,origin);
+                if (comparison && s.name.rfind("FootDistP",0)==0) {
+                    const auto vertices=comparison->toeIcosahedron(index,origin);
+                    if (vertices.empty()) return false;
+                    auto hull=std::make_unique<btConvexHullShape>();
+                    for (Vec3 vertex:vertices) {
+                        const auto p=v(vertex)-center;
+                        hull->addPoint(p,false); lo.setMin(p); hi.setMax(p);
+                    }
+                    hull->setMargin(0.001f); hull->recalcLocalAabb();
+                    btTransform child; child.setIdentity(); compound->addChildShape(child,hull.get());
+                    shapes.push_back(std::move(hull));
+                }
             }
             compound->setMargin(0.001f); compound->recalculateLocalAabb();
             const auto extent=hi-lo;
@@ -199,7 +237,9 @@ struct SkeletonRagdoll::Impl {
             const bool hand=part.name.rfind("Hand",0)==0;
             btCollisionShape* collision=hand && compound->getNumChildShapes()==1 ? compound->getChildShape(0) : compound.get();
             btVector3 inertia(0,0,0); collision->calculateLocalInertia(mass,inertia);
-            btTransform pose=rigid(initial[first]); pose.setOrigin(pose*center);
+            btTransform pose;
+            if (comparison) { pose.setIdentity(); pose.setOrigin(center); }
+            else { pose=rigid(initial[first]); pose.setOrigin(pose*center); }
             btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,collision,inertia);
             auto body=std::make_unique<btRigidBody>(ci);
             body->setWorldTransform(pose); body->setFriction(0.7f); body->setRestitution(0.02f);
@@ -207,10 +247,25 @@ struct SkeletonRagdoll::Impl {
             body->setCcdMotionThreshold(hand ? 0.01f : 0.0f);
             body->setCcdSweptSphereRadius(0.003f);
             const int id=int(bodies.size()); body->setUserIndex(int(figures.size())); world->addRigidBody(body.get());
-            bodyForGroup[group]=id; centers.push_back(center); bodies.push_back(std::move(body)); shapes.push_back(std::move(compound));
-            for (auto index:groups[group]) f.bodyForStructure[index]=id;
+            bodyForGroup[group]=id; centers.push_back(comparison ? btVector3(0,0,0) : center);
+            bodies.push_back(std::move(body)); shapes.push_back(std::move(compound));
+            for (auto index:groups[group]) {
+                f.bodyForStructure[index]=id;
+                if (comparison) f.initialBody[index]=pose;
+            }
         }
         const auto& abs=rig->absoluteTransforms();
+        auto blueAnchor=[&](std::size_t index, const btVector3& point) {
+            const auto& part=comparison->parts()[index];
+            const Vec3 p{double(point.x()),double(point.y()),double(point.z())};
+            const auto rawCenter=rigid(initial[index])*sourceCenter(model,int(index));
+            const Vec3 source{double(rawCenter.x()),double(rawCenter.y()),double(rawCenter.z())};
+            const auto mapped=[&](Vec3 q) { return comparison->map(q,part.armSide,part.cranial,part.girdle,part.humerus); };
+            Vec3 center{};
+            for (Vec3 q:part.points) center+=comparison->mapPart(q,part);
+            center=center/static_cast<double>(part.points.size());
+            return v(mapped(p)+center-mapped(source)+origin);
+        };
         std::set<std::pair<int,int>> connected;
         for (std::size_t node=1;node<rig->size();++node) {
             const auto parent=*rig->parent(node); const auto* joint=rig->joint(node);
@@ -218,11 +273,16 @@ struct SkeletonRagdoll::Impl {
             const int a=bodyForGroup[std::size_t(groupForNode[parent])], b=bodyForGroup[std::size_t(groupForNode[node])];
             if (a==b || !connected.insert(std::minmax(a,b)).second) continue;
             const btTransform jointWorld=rigid(abs[parent])*rigid(joint->parentFrame());
-            const auto axis=jointWorld.getBasis()*v(joint->axes()[0].direction);
-            const auto pivot=jointWorld.getOrigin();
+            const auto si=std::size_t(structureForNode[node]), pi=std::size_t(structureForNode[parent]);
+            auto axis=jointWorld.getBasis()*v(joint->axes()[0].direction);
+            auto pivot=jointWorld.getOrigin();
+            if (comparison) {
+                const auto rawPivot=pivot;
+                pivot=(blueAnchor(pi,rawPivot)+blueAnchor(si,rawPivot))*0.5f;
+                axis=blueAnchor(pi,rawPivot+axis*0.01f)-blueAnchor(pi,rawPivot);
+            }
             const auto aInv=bodies[a]->getWorldTransform().inverse(), bInv=bodies[b]->getWorldTransform().inverse();
             std::string kind;
-            const auto si=std::size_t(structureForNode[node]), pi=std::size_t(structureForNode[parent]);
             for (const auto& link:model.sourceLinks())
                 if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { kind=link.mobility; break; }
             const auto& range=joint->axes()[0]; const auto q=joint->angles()[0];
@@ -298,11 +358,14 @@ struct SkeletonRagdoll::Impl {
             const auto& va=model.bones()[sa.group].points; const auto& vb=model.bones()[sb.group].points;
             const auto ta=rigid(initial[link.first]), tb=rigid(initial[link.second]);
             btScalar best=BT_LARGE_FLOAT; btVector3 pivot(0,0,0);
-            const auto as=std::max<std::size_t>(1,sa.pointCount/250), bs=std::max<std::size_t>(1,sb.pointCount/250);
-            for (std::size_t i=0;i<sa.pointCount;i+=as) {
-                const btVector3 p=ta*v(va[sa.firstPoint+i]);
-                for (std::size_t j=0;j<sb.pointCount;j+=bs) {
-                    const btVector3 q=tb*v(vb[sb.firstPoint+j]); const auto distance=(p-q).length2();
+            const auto ac=comparison ? comparison->parts()[link.first].points.size() : sa.pointCount;
+            const auto bc=comparison ? comparison->parts()[link.second].points.size() : sb.pointCount;
+            const auto as=std::max<std::size_t>(1,ac/250), bs=std::max<std::size_t>(1,bc/250);
+            for (std::size_t i=0;i<ac;i+=as) {
+                const btVector3 p=comparison ? v(mappedPoint(*comparison,link.first,i,origin)) : ta*v(va[sa.firstPoint+i]);
+                for (std::size_t j=0;j<bc;j+=bs) {
+                    const btVector3 q=comparison ? v(mappedPoint(*comparison,link.second,j,origin)) : tb*v(vb[sb.firstPoint+j]);
+                    const auto distance=(p-q).length2();
                     if (distance<best) { best=distance; pivot=(p+q)*0.5f; }
                 }
             }
@@ -344,19 +407,28 @@ struct SkeletonRagdoll::Impl {
             std::vector<std::array<double,16>> pose; pose.reserve(f.bodyForStructure.size());
             for (std::size_t i=0;i<f.bodyForStructure.size();++i) {
                 const int id=f.bodyForStructure[i];
-                btTransform skin=bodies[id]->getWorldTransform();
-                skin.setOrigin(skin.getOrigin()-skin.getBasis()*centers[id]);
-                pose.push_back(matrix(skin*f.localSkin[i],f.origin));
+                if (f.comparison) {
+                    const auto delta=bodies[id]->getWorldTransform()*f.initialBody[i].inverse();
+                    pose.push_back(matrix(delta,{}));
+                } else {
+                    btTransform skin=bodies[id]->getWorldTransform();
+                    skin.setOrigin(skin.getOrigin()-skin.getBasis()*centers[id]);
+                    pose.push_back(matrix(skin*f.localSkin[i],f.origin));
+                }
             }
-            f.model->setDynamicSourcePose(std::move(pose));
+            if (f.comparison) (f.male ? blueMalePose : blueFemalePose)=std::move(pose);
+            else f.model->setDynamicSourcePose(std::move(pose));
         }
     }
 };
 
 SkeletonRagdoll::SkeletonRagdoll():impl_(std::make_unique<Impl>()) {}
 SkeletonRagdoll::~SkeletonRagdoll()=default;
-bool SkeletonRagdoll::create(SkeletonModel& male, Vec3 maleOrigin, SkeletonModel& female, Vec3 femaleOrigin) {
-    if (!impl_->addFigure(male,maleOrigin) || !impl_->addFigure(female,femaleOrigin)) return false;
+bool SkeletonRagdoll::create(SkeletonModel& male, Vec3 maleOrigin, SkeletonModel& female, Vec3 femaleOrigin,
+                             const SkeletonComparison* blueMale, const SkeletonComparison* blueFemale) {
+    if (!impl_->addFigure(male,maleOrigin) || !impl_->addFigure(female,femaleOrigin) ||
+        (blueMale && !impl_->addFigure(male,{-2.85,0.10,0},blueMale,true)) ||
+        (blueFemale && !impl_->addFigure(female,{2.85,0.10,0},blueFemale,false))) return false;
     // Existing CT geometry/proxy overlaps should not create explosive separating impulses.
     // Connected bones are already filtered by their constraints. Other pairs can collide.
     impl_->world->performDiscreteCollisionDetection();
@@ -370,6 +442,9 @@ bool SkeletonRagdoll::create(SkeletonModel& male, Vec3 maleOrigin, SkeletonModel
         }
     }
     impl_->publish(); return true;
+}
+const std::vector<std::array<double,16>>& SkeletonRagdoll::bluePose(bool male) const {
+    return male ? impl_->blueMalePose : impl_->blueFemalePose;
 }
 SkeletonRagdoll::Contacts SkeletonRagdoll::contacts() const {
     Contacts result;

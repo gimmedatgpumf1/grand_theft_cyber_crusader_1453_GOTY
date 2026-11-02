@@ -240,7 +240,8 @@ bool SkeletonRoom::toggleRagdoll() {
     if (!ready_) return false;
     if (ragdoll_) return restoreReferencePose();
     auto simulation=std::make_unique<SkeletonRagdoll>();
-    if (!simulation->create(male_,{-0.95,maleFloor_,0},female_,{0.95,femaleFloor_,0})) return false;
+    if (!simulation->create(male_,{-0.95,maleFloor_,0},female_,{0.95,femaleFloor_,0},
+                            &maleComparison_,&femaleComparison_)) return false;
     ragdoll_=std::move(simulation);
     return true;
 }
@@ -279,7 +280,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
                 femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-                maleComparison_.draw(raster,-2.85,12000); femaleComparison_.draw(raster,2.85,14000);
+                maleComparison_.draw(raster,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
+                femaleComparison_.draw(raster,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -300,7 +302,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-        maleComparison_.draw(raster,-2.85); femaleComparison_.draw(raster,2.85);
+        maleComparison_.draw(raster,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
+        femaleComparison_.draw(raster,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
         const UiLayer* ui=frame.uiLayer;
         frame = raster.finish();
         if (ui) compositeUi(frame,*ui);
@@ -402,6 +405,17 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         for (const std::pair<std::uint32_t, std::size_t>& entry : boneBatches_) {
             if (!poseMoved) break;
             const int id = static_cast<int>(entry.first);
+            // Blue bone and toe-icosahedron batches share the distal bone's
+            // rigid delta from the same Bullet body.
+            for (bool male : {true,false}) {
+                const int base=male ? 12000 : 14000;
+                const auto count=(male ? maleComparison_ : femaleComparison_).parts().size();
+                if (id<base || static_cast<std::size_t>(id-base)>=count*2) continue;
+                const auto index=static_cast<std::size_t>(id-base)%count;
+                if (ragdoll_ && index<ragdoll_->bluePose(male).size())
+                    scene_.batches[entry.second].modelMatrix=ragdoll_->bluePose(male)[index];
+                else scene_.batches[entry.second].modelMatrix={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+            }
             const std::vector<std::array<double, 16>>* matrices = nullptr;
             std::size_t boneIndex = 0;
             if (id >= 9001 && static_cast<std::size_t>(id - 9001) < maleMatrices.size()) {
@@ -440,7 +454,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
-    maleComparison_.draw(room,-2.85); femaleComparison_.draw(room,2.85);
+    maleComparison_.draw(room,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
+    femaleComparison_.draw(room,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
     const UiLayer* ui=frame.uiLayer;
     frame = room.finish();
     if (ui) compositeUi(frame,*ui);
