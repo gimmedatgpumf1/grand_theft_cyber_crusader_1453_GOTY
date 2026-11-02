@@ -68,7 +68,8 @@ inline bool makeIslandPlan(std::size_t bodyCount, std::span<const Joint> joints,
     // An eight-word reference pose per body tracks real displacement over a
     // full second, rather than mistaking solver jitter for useful motion.
     plan.words[1]=static_cast<std::uint32_t>(plan.words.size());
-    plan.words.resize(plan.words.size()+8u*bodyCount,0);
+    plan.words.resize(plan.words.size()+8u*bodyCount+12u,0);
+    // Four VkDispatchIndirectCommand records follow the reference poses.
     return true;
 }
 } // namespace gtc::native::gpu_physics

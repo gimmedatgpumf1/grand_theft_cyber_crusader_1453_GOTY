@@ -46,9 +46,9 @@ public:
 
 private:
     struct Buffer { VkBuffer buffer=VK_NULL_HANDLE; VkDeviceMemory memory=VK_NULL_HANDLE; };
-    bool makeBuffer(Buffer& out, VkDeviceSize size, const void* data);
+    bool makeBuffer(Buffer& out, VkDeviceSize size, const void* data, VkBufferUsageFlags extraUsage=0);
     void resetSkin();
-    void barrier(VkCommandBuffer command, VkPipelineStageFlags destination) const;
+    void barrier(VkCommandBuffer command, VkPipelineStageFlags destination, bool indirectSource=false) const;
     void dispatch(VkCommandBuffer command, const Step& step) const;
     VkDevice device_=VK_NULL_HANDLE;
     VkPhysicalDeviceMemoryProperties memory_{};
@@ -59,6 +59,7 @@ private:
     VkPipelineLayout layout_=VK_NULL_HANDLE;
     VkPipeline pipeline_=VK_NULL_HANDLE;
     std::uint32_t bodyCount_=0, islandCount_=0;
+    VkDeviceSize indirectOffset_=0;
     std::vector<JointBatch> batches_;
     Buffer skinBindings_{};
     VkDescriptorSetLayout skinSetLayout_=VK_NULL_HANDLE;
@@ -92,6 +93,7 @@ private:
     PFN_vkCmdBindDescriptorSets cmdBindDescriptorSets_=nullptr;
     PFN_vkCmdPushConstants cmdPushConstants_=nullptr;
     PFN_vkCmdDispatch cmdDispatch_=nullptr;
+    PFN_vkCmdDispatchIndirect cmdDispatchIndirect_=nullptr;
     PFN_vkCmdPipelineBarrier cmdPipelineBarrier_=nullptr;
 };
 

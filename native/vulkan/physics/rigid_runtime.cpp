@@ -8,11 +8,11 @@
 
 namespace gtc::native::gpu_physics {
 
-bool RigidRuntime::makeBuffer(Buffer& out, VkDeviceSize size, const void* data) {
+bool RigidRuntime::makeBuffer(Buffer& out, VkDeviceSize size, const void* data, VkBufferUsageFlags extraUsage) {
     VkBufferCreateInfo info{};
     info.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     info.size=std::max<VkDeviceSize>(size,16);
-    info.usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|extraUsage;
     info.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
     if (createBuffer_(device_,&info,nullptr,&out.buffer)!=VK_SUCCESS) return false;
     VkMemoryRequirements requirements{};
@@ -134,19 +134,37 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     LOAD(cmdBindDescriptorSets_,"vkCmdBindDescriptorSets")
     LOAD(cmdPushConstants_,"vkCmdPushConstants")
     LOAD(cmdDispatch_,"vkCmdDispatch")
+    LOAD(cmdDispatchIndirect_,"vkCmdDispatchIndirect")
     LOAD(cmdPipelineBarrier_,"vkCmdPipelineBarrier")
 #undef LOAD
     getMemoryProperties(physical,&memory_);
     // Derive conservative local bounds from the actual proxies, including for
     // callers which did not precompute them in their input bodies.
     std::vector<Body> prepared(bodies.begin(),bodies.end());
+    // Build an independent, local-axis-sorted sample range for each body.
+    // Ranges provided by callers may overlap, so never sort them in place.
+    std::uint64_t sampleCount=0;
+    for (const Body& body:prepared) sampleCount+=body.samples[1];
+    if (sampleCount>std::numeric_limits<std::uint32_t>::max()) { reset(); return false; }
+    std::vector<std::array<float,4>> sortedSamples;
+    sortedSamples.reserve(static_cast<std::size_t>(sampleCount));
     for (Body& body:prepared) {
         body.bounds={};
-        for (std::size_t i=body.samples[0];i<std::size_t(body.samples[0])+body.samples[1];++i) {
+        const auto first=body.samples[0];
+        for (std::size_t i=first;i<std::size_t(first)+body.samples[1];++i) {
             const auto& sphere=spheres[i];
             for (int axis=0;axis<3;++axis)
                 body.bounds[axis]=std::max(body.bounds[axis],std::abs(sphere[axis])+sphere[3]);
+            body.bounds[3]=std::max(body.bounds[3],sphere[3]);
+            sortedSamples.push_back(sphere);
         }
+        int axis=0;
+        if (body.bounds[1]>body.bounds[axis]) axis=1;
+        if (body.bounds[2]>body.bounds[axis]) axis=2;
+        body.angularVelocity[3]=float(axis); // metadata; xyz holds velocity
+        body.samples[0]=static_cast<std::uint32_t>(sortedSamples.size()-body.samples[1]);
+        auto begin=sortedSamples.begin()+body.samples[0];
+        std::stable_sort(begin,sortedSamples.end(),[axis](const auto& a,const auto& b) { return a[axis]<b[axis]; });
     }
     // Scratch corrections and exclusions share one storage descriptor so the
     // shader fits the Vulkan 1.0 minimum of four per-stage storage buffers.
@@ -169,10 +187,13 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         std::memcpy(scratch.data()+offset,prepared[i].positionMass.data(),3*sizeof(float));
         std::memcpy(scratch.data()+offset+4,prepared[i].rotation.data(),4*sizeof(float));
     }
-    const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),spheres.size_bytes(),
+    const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),sortedSamples.size()*sizeof(sortedSamples[0]),
                                  scratch.size()*sizeof(std::uint32_t)};
-    const void* data[4]={prepared.data(),joints.data(),spheres.data(),scratch.data()};
-    for (std::size_t i=0;i<buffers_.size();++i) if (!makeBuffer(buffers_[i],sizes[i],data[i])) { reset(); return false; }
+    const void* data[4]={prepared.data(),joints.data(),sortedSamples.data(),scratch.data()};
+    for (std::size_t i=0;i<buffers_.size();++i) {
+        const VkBufferUsageFlags usage=i==3 ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : 0;
+        if (!makeBuffer(buffers_[i],sizes[i],data[i],usage)) { reset(); return false; }
+    }
 
     std::array<VkDescriptorSetLayoutBinding,4> bindings{};
     for (std::uint32_t i=0;i<bindings.size();++i) {
@@ -223,26 +244,45 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     if (result!=VK_SUCCESS) { reset(); return false; }
     bodyCount_=static_cast<std::uint32_t>(count);
     islandCount_=islands.count;
+    indirectOffset_=islandCount_ ? (islandBase+islands.words[1]+count*8u)*sizeof(std::uint32_t) : 0;
     batches_.assign(batches.begin(),batches.end());
     return true;
 }
 
-void RigidRuntime::barrier(VkCommandBuffer command, VkPipelineStageFlags destination) const {
+void RigidRuntime::barrier(VkCommandBuffer command, VkPipelineStageFlags destination, bool indirectSource) const {
     VkMemoryBarrier memory{};
     memory.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     memory.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT;
     memory.dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
-    cmdPipelineBarrier_(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                        destination,0,1,&memory,0,nullptr,0,nullptr);
+    VkPipelineStageFlags source=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+    if (indirectSource) {
+        source|=VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        memory.srcAccessMask|=VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    }
+    if (destination&VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) memory.dstAccessMask|=VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    cmdPipelineBarrier_(command,source,destination,0,1,&memory,0,nullptr,0,nullptr);
 }
 void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
     if (!step.count) return;
     cmdPushConstants_(command,layout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(step),&step);
-    // Four lanes cooperate on each body during contact search. Other phases
-    // use one invocation per body or coloured joint.
-    const auto groups=step.phase>=7 ? step.count : (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u);
-    cmdDispatch_(command,groups,1,1);
-    barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    // When all islands sleep, a GPU-generated indirect dispatch has zero
+    // groups. Wake and scheduling still run, so no CPU readback is needed.
+    int indirect=-1;
+    if (islandCount_) {
+        if (step.phase==0 || step.phase==3 || step.phase==5) indirect=0;
+        else if (step.phase==7 || step.phase==9) indirect=1;
+        else if (step.phase==6) indirect=2;
+        else if (step.phase==4) indirect=3;
+    }
+    if (indirect>=0) cmdDispatchIndirect_(command,buffers_[3].buffer,indirectOffset_+VkDeviceSize(indirect)*12);
+    else {
+        const auto groups=step.phase==10 ? 1u : (step.phase==8 ? step.count :
+                          (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u));
+        cmdDispatch_(command,groups,1,1);
+    }
+    const auto destination=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+        (step.phase==10 ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0);
+    barrier(command,destination,step.phase==8);
 }
 bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations) const {
     if (!command || !pipeline_ || !(dt>0) || !std::isfinite(dt) || !iterations) return false;
@@ -252,6 +292,7 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     Step step{}; step.dt=dt;
     if (islandCount_) {
         step.phase=8; step.first=bodyCount_; step.count=islandCount_; dispatch(command,step);
+        step.phase=10; dispatch(command,step);
     }
     step.phase=0; step.first=bodyCount_; step.count=bodyCount_; dispatch(command,step);
     for (std::uint32_t pass=0;pass<iterations;) {
@@ -395,7 +436,7 @@ void RigidRuntime::reset() {
     }
     pipeline_=VK_NULL_HANDLE; layout_=VK_NULL_HANDLE; pool_=VK_NULL_HANDLE;
     setLayout_=VK_NULL_HANDLE; set_=VK_NULL_HANDLE; device_=VK_NULL_HANDLE;
-    bodyCount_=0; islandCount_=0; batches_.clear();
+    bodyCount_=0; islandCount_=0; indirectOffset_=0; batches_.clear();
 }
 
 } // namespace gtc::native::gpu_physics

@@ -13,12 +13,12 @@ struct alignas(16) Body {
     std::array<float,4> positionMass{};
     std::array<float,4> rotation{0,0,0,1};
     std::array<float,4> linearVelocity{};
-    std::array<float,4> angularVelocity{};
+    std::array<float,4> angularVelocity{}; // w is filled with the sorted-proxy axis by the runtime
     std::array<float,4> inverseInertia{};
     std::array<float,4> previousPosition{};
     std::array<float,4> previousRotation{0,0,0,1};
     std::array<std::uint32_t,4> samples{};
-    // Body-local AABB of the sphere proxies, used to reject distant pairs.
+    // Local proxy AABB half-extents and maximum sphere radius, filled by the runtime.
     std::array<float,4> bounds{};
 };
 struct alignas(16) Joint {
