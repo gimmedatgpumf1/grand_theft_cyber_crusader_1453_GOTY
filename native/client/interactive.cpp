@@ -95,8 +95,11 @@ public:
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
-            if (testRoom_) { roomCamera_.move(dt); room_.advanceRagdoll(dt); }
-            else updateGod(dt);
+            if (testRoom_) {
+                roomCamera_.move(dt);
+                if (roomDragging_) updateRoomDragRay();
+                room_.advanceRagdoll(dt);
+            } else updateGod(dt);
             if (now - inputTime >= std::chrono::milliseconds(50)) {
                 sendInput();
                 inputTime = now;
@@ -111,6 +114,12 @@ public:
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
                 roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
+                if (captured_) {
+                    const int x=int(std::lround(roomDragging_ ? roomDragX_ : view_.width*0.5));
+                    const int y=int(std::lround(roomDragging_ ? roomDragY_ : view_.height*0.5));
+                    const Color ink=colorHex("#d7ff54");
+                    frame.rectangle(x-5,y,11,1,ink); frame.rectangle(x,y-5,1,11,ink);
+                }
                 frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
                 frame.wantPixels = screenshot_;
                 room_.render(frame, view_, seconds, &roomCamera_);
@@ -484,8 +493,18 @@ private:
         return cheatMenuAt(layoutCheatMenu(view_.width, view_.height), at.first, at.second);
     }
 
+    void updateRoomDragRay() {
+        const Camera camera=roomCamera_.camera(view_.width,view_.height,view_.gpu);
+        const double x=(roomDragX_-camera.width*0.5)/camera.focal();
+        const double y=(camera.height*0.5-roomDragY_)/camera.focal();
+        room_.setDragRay(camera.position,normalized(camera.world({x,y,1.0})-camera.position));
+    }
+
+    void stopRoomDrag() { roomDragging_=false; room_.endDrag(); }
+
     void enterRoom() {
         if (!room_.ready()) return;
+        stopRoomDrag();
         endOrbit();
         roomRestoreCapture_ = captured_;
         keys_.clear();
@@ -498,9 +517,28 @@ private:
     }
 
     void handleRoom(const WindowEvent& event) {
+        if (roomDragging_ && event.type==WindowEvent::Type::MouseUp && event.button==1) {
+            stopRoomDrag(); return;
+        }
+        if (roomDragging_ && event.type==WindowEvent::Type::MouseMove) {
+            roomDragX_=std::clamp(captured_ ? roomDragX_+event.dx : event.x,0.0,double(std::max(1,view_.width)-1));
+            roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
+            updateRoomDragRay(); return;
+        }
         if (roomUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
+        if (event.type==WindowEvent::Type::MouseDown && event.button==1 && room_.ragdollActive()) {
+            roomDragging_=true;
+            roomDragX_=captured_ ? view_.width*0.5 : event.x;
+            roomDragY_=captured_ ? view_.height*0.5 : event.y;
+            updateRoomDragRay(); room_.beginDrag(); return;
+        }
+        // In ragdoll mode the free left button is reserved for grabbing.
+        if (event.type==WindowEvent::Type::MouseDown && event.button==3 && !captured_ && room_.ragdollActive()) {
+            window_.captureMouse(true); captured_=true; return;
+        }
         const RoomFreecam::Action action = roomCamera_.handle(event, captured_);
         if (action == RoomFreecam::Action::Exit) {
+            stopRoomDrag();
             testRoom_ = false;
             roomCamera_.clear();
             keys_.clear();
@@ -512,6 +550,7 @@ private:
             window_.captureMouse(true);
             captured_ = true;
         } else if (action == RoomFreecam::Action::Release) {
+            stopRoomDrag();
             window_.captureMouse(false);
             captured_ = false;
         } else if (action == RoomFreecam::Action::ToggleLines) {
@@ -522,14 +561,16 @@ private:
             room_.adjustReferenceGroup(event.key, roomCamera_.reverseBend() ? -5.0 : 5.0,
                                        roomCamera_.fingerJoint());
         } else if (action == RoomFreecam::Action::RestorePose) {
+            stopRoomDrag();
             if (!room_.toggleRagdoll()) std::cerr << "Unable to start skeleton ragdolls\n";
         } else if (action == RoomFreecam::Action::RestoreOriginal) {
-            room_.restoreOriginalPose();
+            stopRoomDrag(); room_.restoreOriginalPose();
         }
     }
 
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
+            stopRoomDrag();
             roomUi_.handle(event,captured_,view_.width,view_.height,room_);
             roomCamera_.clear();
             roomRestoreCapture_ = false;
@@ -777,6 +818,8 @@ private:
     SkeletonComparisonUi roomUi_;
     bool testRoom_ = false;
     bool roomRestoreCapture_ = false;
+    bool roomDragging_ = false;
+    double roomDragX_ = 0, roomDragY_ = 0;
     ClientState presentationPrevious_, presentationTarget_, presentation_;
     std::uint64_t presentationVersion_ = 0;
     std::chrono::steady_clock::time_point snapshotAt_{};

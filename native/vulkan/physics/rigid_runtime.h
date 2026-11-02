@@ -34,7 +34,9 @@ public:
     // command must be recording on a compute-capable queue, outside a render
     // pass. Call once per fixed step. The owner must serialize uses of this
     // state across submissions and apply a vertex-stage dependency before draw.
-    bool record(VkCommandBuffer command, float dt, std::uint32_t iterations) const;
+    bool record(VkCommandBuffer command, float dt, std::uint32_t iterations,
+                const std::array<float,4>& dragOrigin, const std::array<float,4>& dragDirection,
+                bool dragging, std::uint32_t dragSequence) const;
     // Output buffers are renderer-owned storage-buffer ranges, one per
     // in-flight frame. Retire previous uses before replacing these bindings.
     bool createSkin(std::span<const std::uint32_t> shader,

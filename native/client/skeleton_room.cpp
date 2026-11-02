@@ -4,6 +4,7 @@
 #include "client/skeleton_toe_yaw.h"
 #include "client/threadpool.h"
 #include "client/ui_layer.h"
+#include "vulkan/physics/rigid_timing.h"
 
 #include <thread>
 #include <atomic>
@@ -207,7 +208,7 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
-    physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     for (SkeletonModel* model : {&male_,&female_}) {
         if (!model->restoreSourcePose() || !model->levelReferencePelvis()) return false;
@@ -232,7 +233,7 @@ bool SkeletonRoom::restoreReferencePose() {
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
-    physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
@@ -256,9 +257,10 @@ void SkeletonRoom::advanceRagdoll(double seconds) {
     if (!physicsRig_ || !std::isfinite(seconds) || seconds<=0) return;
     // At most two steps per rendered frame: otherwise a slow GPU causes a
     // catch-up spiral in which each late frame queues even more physics work.
-    physicsTime_+=std::min(seconds,2.0/120.0);
-    const auto steps=static_cast<std::uint64_t>(physicsTime_*120.0);
-    physicsTime_-=double(steps)/120.0;
+    constexpr double hz=gpu_physics::kPhysicsHz;
+    physicsTime_+=std::min(seconds,2.0/hz);
+    const auto steps=static_cast<std::uint64_t>(physicsTime_*hz);
+    physicsTime_-=double(steps)/hz;
     physicsSteps_+=steps;
 }
 
@@ -276,6 +278,9 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     const auto submit = [&](GpuScene& scene) {
         scene.physicsRig=physicsRig_.get();
         scene.physicsGeneration=physicsGeneration_; scene.physicsSteps=physicsSteps_;
+        scene.physicsDragging=dragging_ && bool(physicsRig_);
+        scene.physicsDragSequence=dragSequence_;
+        scene.physicsDragOrigin=dragOrigin_; scene.physicsDragDirection=dragDirection_;
         scene.physicsLineView=lineView_ && bool(physicsRig_);
         scene.maleSkinCount=static_cast<std::uint32_t>(male_.sourceStructures().size());
         scene.femaleSkinCount=static_cast<std::uint32_t>(female_.sourceStructures().size());

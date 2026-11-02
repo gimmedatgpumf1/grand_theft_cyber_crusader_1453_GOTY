@@ -50,8 +50,11 @@ struct alignas(16) Step {
     std::uint32_t phase=0, first=0, count=0;
     float dt=0;
     std::array<float,4> gravityFloor{0,-9.81f,0,0};
+    std::array<float,4> dragOrigin{};
+    std::array<float,4> dragDirection{};
+    std::array<std::uint32_t,4> dragControl{}; // active, press sequence
 };
-static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==32);
+static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==80);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };

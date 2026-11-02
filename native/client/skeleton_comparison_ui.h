@@ -17,12 +17,12 @@ public:
         if (!open_) {
             const int x=(frame.width-330)/2, y=std::max(0,frame.height-37);
             frame.blendRectangle(x,y,330,29,colorHex(hexRgb("#142632")),0.78);
-            drawTextPixels(frame,x+10,y+4,"P: sliders   Esc: cursor",colorHex(hexRgb("#d4e9ff")),20);
+            drawTextPixels(frame,x+10,y+4,room.ragdollActive()?"LMB: drag  Esc: cursor  P: sliders":"P: sliders   Esc: cursor",colorHex(hexRgb("#d4e9ff")),20);
             return;
         }
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex(hexRgb("#10212c")),0.83);
         drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex(hexRgb("#9dceff")),20);
-        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   P: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
+        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,room.ragdollActive()?"Esc: cursor   P: hide   RMB: look   LMB: drag":"Esc: cursor   P: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
         button(frame,l.x+l.w-84,l.y+30,74,"RESET");

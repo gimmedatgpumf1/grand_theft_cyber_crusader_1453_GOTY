@@ -212,10 +212,13 @@ struct GpuBatch {
 struct GpuSkeletonRig;
 struct GpuScene {
     // A live rig is simulated and skinned by the Vulkan backend. The rig is
-    // immutable for this generation; physicsSteps counts fixed 120 Hz steps.
+    // immutable for this generation; physicsSteps counts fixed 60 Hz steps.
     const GpuSkeletonRig* physicsRig = nullptr;
     std::uint64_t physicsGeneration = 0;
     std::uint64_t physicsSteps = 0;
+    std::array<float,4> physicsDragOrigin{}, physicsDragDirection{};
+    std::uint32_t physicsDragSequence = 0;
+    bool physicsDragging = false;
     bool physicsLineView = false;
     std::uint32_t maleSkinCount = 0, femaleSkinCount = 0;
     int width = kDefaultWindowWidth;

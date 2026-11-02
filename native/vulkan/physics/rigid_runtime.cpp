@@ -284,17 +284,27 @@ void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
         (step.phase==10 ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0);
     barrier(command,destination,step.phase==8);
 }
-bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations) const {
+bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations,
+                          const std::array<float,4>& dragOrigin, const std::array<float,4>& dragDirection,
+                          bool dragging, std::uint32_t dragSequence) const {
     if (!command || !pipeline_ || !(dt>0) || !std::isfinite(dt) || !iterations) return false;
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
     Step step{}; step.dt=dt;
+    step.dragOrigin=dragOrigin; step.dragDirection=dragDirection;
+    step.dragControl={dragging ? 1u : 0u,dragSequence,0u,0u};
     if (islandCount_) {
+        if (dragging) {
+            step.phase=11; step.first=bodyCount_; step.count=1; dispatch(command,step);
+        }
         step.phase=8; step.first=bodyCount_; step.count=islandCount_; dispatch(command,step);
         step.phase=10; dispatch(command,step);
     }
     step.phase=0; step.first=bodyCount_; step.count=bodyCount_; dispatch(command,step);
+    if (islandCount_ && dragging) {
+        step.phase=12; step.count=1; dispatch(command,step);
+    }
     for (std::uint32_t pass=0;pass<iterations;) {
         bool contacts;
         if (islandCount_ && (pass&1u)==0u && pass+1u<iterations) {

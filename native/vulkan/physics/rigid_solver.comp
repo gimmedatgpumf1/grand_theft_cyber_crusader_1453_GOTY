@@ -42,6 +42,9 @@ layout(push_constant) uniform Step {
     uint count;           // number of bodies or joints in this dispatch
     float dt;
     vec4 gravityFloor;    // gravity xyz and floor height
+    vec4 dragOrigin;
+    vec4 dragDirection;
+    uvec4 dragControl;    // x active, y press sequence
 } step;
 
 vec4 qmul(vec4 a, vec4 b) {
@@ -203,6 +206,13 @@ uint poseOffset(uint count, uint bodyIndex) {
     uint base=islandBase(count);
     return base+scratch.word[base+1u]+bodyIndex*8u;
 }
+uint dragOffset(uint count) {
+    uint base=islandBase(count);
+    return base+scratch.word[base+1u]+count*8u+12u;
+}
+uint draggedBody(uint count) {
+    return step.dragControl.x!=0u ? scratch.word[dragOffset(count)+1u] : 0u;
+}
 void saveRestReference(uint count, uint index, Body b) {
     uint offset=poseOffset(count,index);
     for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
@@ -287,6 +297,116 @@ void solveFloor(uint index, bool saveBounds) {
     if (saveBounds) storeBounds(index,step.first,b);
 }
 
+// Pick directly from the current GPU proxies; the host never reads body poses.
+shared float pickDistance[64];
+shared uint pickBody[64];
+float raySphere(vec3 origin, vec3 direction, vec3 center, float radius) {
+    vec3 relative=origin-center;
+    float along=dot(relative,direction);
+    float discriminant=along*along-dot(relative,relative)+radius*radius;
+    if (discriminant<0.0) return 1e30;
+    float t=-along-sqrt(discriminant);
+    if (t<0.0) t=-along+sqrt(discriminant);
+    return t>=0.0 ? t : 1e30;
+}
+void pickDrag(uint lane) {
+    uint count=step.first, offset=dragOffset(count);
+    if (scratch.word[offset]==step.dragControl.y) return;
+    vec3 origin=step.dragOrigin.xyz, direction=step.dragDirection.xyz;
+    float limit=25.0;
+    if (direction.y< -1e-6) {
+        float floorDistance=(step.gravityFloor.w-origin.y)/direction.y;
+        if (floorDistance>0.0) limit=min(limit,floorDistance+0.015);
+    }
+    float best=limit;
+    uint selected=0u;
+    for (uint index=lane;index<count;index+=64u) {
+        Body b=bodies.body[index];
+        if (b.positionMass.w<=0.0 || raySphere(origin,direction,b.positionMass.xyz,b.inverseInertia.w+0.012)>=best) continue;
+        for (uint i=0u;i<b.samples.y;++i) {
+            vec4 sphere=samples.point[b.samples.x+i];
+            vec3 center=b.positionMass.xyz+rotate(b.rotation,sphere.xyz);
+            float t=raySphere(origin,direction,center,sphere.w+0.012);
+            if (t<best) { best=t; selected=index+1u; }
+        }
+    }
+    pickDistance[lane]=best; pickBody[lane]=selected;
+    barrier();
+    for (uint width=32u;width>0u;width>>=1u) {
+        if (lane<width && pickDistance[lane+width]<pickDistance[lane]) {
+            pickDistance[lane]=pickDistance[lane+width]; pickBody[lane]=pickBody[lane+width];
+        }
+        barrier();
+    }
+    if (lane==0u) {
+        uint hit=pickBody[0];
+        scratch.word[offset]=step.dragControl.y;
+        scratch.word[offset+1u]=hit;
+        if (hit!=0u) {
+            Body b=bodies.body[hit-1u];
+            vec3 point=origin+direction*pickDistance[0]-b.positionMass.xyz;
+            vec3 local=rotate(vec4(-b.rotation.xyz,b.rotation.w),point);
+            scratch.word[offset+2u]=floatBitsToUint(pickDistance[0]);
+            for (uint k=0u;k<3u;++k) scratch.word[offset+3u+k]=floatBitsToUint(local[k]);
+        }
+    }
+}
+
+void solveDrag(uint index, uint count) {
+    uint offset=dragOffset(count);
+    Body b=bodies.body[index];
+    vec3 local=vec3(uintBitsToFloat(scratch.word[offset+3u]),uintBitsToFloat(scratch.word[offset+4u]),
+                    uintBitsToFloat(scratch.word[offset+5u]));
+    vec3 target=step.dragOrigin.xyz+step.dragDirection.xyz*uintBitsToFloat(scratch.word[offset+2u]);
+    for (int k=0;k<3;++k) {
+        vec3 axis=vec3(k==0 ? 1.0 : 0.0,k==1 ? 1.0 : 0.0,k==2 ? 1.0 : 0.0);
+        vec3 arm=rotate(b.rotation,local);
+        float error=dot(target-b.positionMass.xyz-arm,axis);
+        vec3 torque=cross(arm,axis), angular=invInertia(b,torque);
+        float effective=b.positionMass.w+dot(torque,angular);
+        if (effective<=1e-12) continue;
+        float impulse=clamp(error*0.20/effective,-0.04/b.positionMass.w,0.04/b.positionMass.w);
+        vec3 turn=angular*impulse;
+        float angle=length(turn);
+        if (angle>0.06) turn*=0.06/angle;
+        b.positionMass.xyz+=axis*(impulse*b.positionMass.w);
+        rotateBy(b,turn);
+    }
+    bodies.body[index]=b;
+}
+
+// Give the connected figure a bounded translation toward the pointer before
+// solving its joints, then pull at the actual grabbed point. This avoids
+// tearing a small bone away from a much heavier articulated body.
+shared vec3 dragShift;
+void dragIsland(uint lane) {
+    uint count=step.first, held=draggedBody(count);
+    if (held==0u) return;
+    Body grabbed=bodies.body[held-1u];
+    if (grabbed.samples.w!=0u || grabbed.samples.z==0u) return;
+    uint base=islandBase(count), record=islandRecord(count,grabbed.samples.z-1u);
+    uint first=base+scratch.word[record], n=scratch.word[record+1u];
+    if (lane==0u) {
+        uint offset=dragOffset(count);
+        vec3 local=vec3(uintBitsToFloat(scratch.word[offset+3u]),uintBitsToFloat(scratch.word[offset+4u]),
+                        uintBitsToFloat(scratch.word[offset+5u]));
+        vec3 target=step.dragOrigin.xyz+step.dragDirection.xyz*uintBitsToFloat(scratch.word[offset+2u]);
+        vec3 delta=(target-grabbed.positionMass.xyz-rotate(grabbed.rotation,local))*0.10;
+        float distance=length(delta);
+        dragShift=distance>0.025 ? delta*(0.025/distance) : delta;
+    }
+    barrier();
+    for (uint i=lane;i<n;i+=64u) {
+        uint index=scratch.word[first+i];
+        Body b=bodies.body[index];
+        if (b.positionMass.w<=0.0) continue;
+        b.positionMass.xyz+=dragShift;
+        bodies.body[index]=b;
+    }
+    memoryBarrierBuffer(); barrier();
+    if (lane==0u) solveDrag(held-1u,count);
+}
+
 // Joint islands have disjoint bodies. Their graph-coloured constraints and
 // floor corrections can be ordered with workgroup barriers rather than one
 // global Vulkan dispatch and pipeline barrier per colour.
@@ -321,6 +441,14 @@ void wakeIsland(uint island, uint lane) {
     uint count=step.first, base=islandBase(count), record=islandRecord(count,island);
     uint first=base+scratch.word[record], n=scratch.word[record+1u];
     bool sleeping=n!=0u && bodies.body[scratch.word[first]].samples.w!=0u;
+    uint held=draggedBody(count);
+    if (sleeping && held!=0u && bodies.body[held-1u].samples.z==island+1u) {
+        if (lane==0u) {
+            uint state=islandState(count,island);
+            scratch.word[state]=0u; scratch.word[state+1u]=1u; scratch.word[state+2u]=0u;
+        }
+        return;
+    }
     bool anyAwake=false;
     if (sleeping) for (uint other=0u;other<step.count;++other) {
         uint otherRecord=islandRecord(count,other);
@@ -364,12 +492,17 @@ void settleIsland(uint island, uint lane) {
     uint first=base+scratch.word[record], n=scratch.word[record+1u];
     if (n==0u || bodies.body[scratch.word[first]].samples.w!=0u) return;
     uint state=islandState(count,island);
-    // Inspect displacement against a one-second-old reference pose. This
+    uint held=draggedBody(count);
+    if (held!=0u && bodies.body[held-1u].samples.z==island+1u) {
+        if (lane==0u) { scratch.word[state]=0u; scratch.word[state+2u]=0u; }
+        return;
+    }
+    // Inspect displacement against a half-second-old reference pose. This
     // recognizes small oscillations even when per-step reconstructed velocity
     // is noisy, without sleeping a figure that is still travelling or falling.
     float elapsed=uintBitsToFloat(scratch.word[state])+step.dt;
     barrier();
-    if (elapsed<1.0-1e-6) {
+    if (elapsed<0.5-1e-6) {
         if (lane==0u) scratch.word[state]=floatBitsToUint(elapsed);
         return;
     }
@@ -409,8 +542,8 @@ void settleIsland(uint island, uint lane) {
     }
     uint dynamicCountTotal=supportLanes[0]>>1u;
     bool quiet=(supportLanes[0]&1u)!=0u && dynamicCountTotal>0u &&
-               motionLanes[0]/float(dynamicCountTotal)<0.10 && maxMotionLanes[0]<0.25 &&
-               uintBitsToFloat(wakeLanes[0])/float(dynamicCountTotal)<0.35;
+               motionLanes[0]/float(dynamicCountTotal)<0.04 && maxMotionLanes[0]<0.125 &&
+               uintBitsToFloat(wakeLanes[0])/float(dynamicCountTotal)<0.30;
     if (lane==0u) {
         scratch.word[state]=0u;
         uint windows=quiet ? min(scratch.word[state+2u]+1u,2u) : 0u;
@@ -552,6 +685,14 @@ void scheduleAwakeWork() {
 }
 
 void main() {
+    if (step.phase==12u) {
+        dragIsland(gl_LocalInvocationIndex);
+        return;
+    }
+    if (step.phase==11u) {
+        pickDrag(gl_LocalInvocationIndex);
+        return;
+    }
     if (step.phase==10u) {
         if (gl_GlobalInvocationID.x==0u) scheduleAwakeWork();
         return;
@@ -618,11 +759,11 @@ void main() {
         // kinetic energy on every step. Damping and a non-bouncing floor let
         // the articulated body dissipate that energy instead of dancing.
         b.linearVelocity.xyz*=exp(-1.0*step.dt);
-        b.angularVelocity.xyz*=exp(-2.0*step.dt);
+        b.angularVelocity.xyz*=exp(-3.0*step.dt);
         if (b.previousPosition.w>0.0) {
             b.linearVelocity.y=0.0;
             b.linearVelocity.xz*=exp(-12.0*step.dt);
-            b.angularVelocity.xyz*=exp(-6.0*step.dt);
+            b.angularVelocity.xyz*=exp(-10.0*step.dt);
         }
         float linearSpeed=length(b.linearVelocity.xyz), angularSpeed=length(b.angularVelocity.xyz);
         if (linearSpeed>5.0) b.linearVelocity.xyz*=5.0/linearSpeed;

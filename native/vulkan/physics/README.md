@@ -24,12 +24,14 @@ per-colour dispatch path remains for unsupported schedules. Fewer contact
 iterations reduce work but can reduce contact convergence. The solver dissipates
 velocity from projection corrections and uses a non-bouncing floor. Friction at
 floor contact points also resists rotation and sliding. Floor-supported joint
-islands that move slowly across two one-second windows sleep together on the GPU;
-a nearby moving island can wake them, and resetting R rebuilds the rig. Sleeping
-bodies skip joint and contact work, and GPU-generated indirect dispatches skip
-those phases altogether while every island sleeps. The sleep thresholds and
+islands that move slowly across two half-second windows sleep together on the GPU;
+a nearby moving island or a grab can wake them, and resetting R rebuilds the rig.
+Sleeping bodies skip joint and contact work, and GPU-generated indirect dispatches
+skip those phases altogether while every island sleeps. The sleep thresholds and
 wake-up heuristic are approximations, not a general-purpose contact-island sleep
-system.
+system. In the room, after R starts the ragdolls, left-click and drag a bone; with
+the cursor released, right-click returns to camera look. Picking and the drag
+constraint execute on the GPU without per-frame pose readback.
 The broad phase still scans all body pairs; it and the overlapping-proxy exclusions
 need further work. Limits, collisions, settling and body stability have not been
 fully validated. The current approximation can produce contorted poses. Replacing
@@ -37,9 +39,11 @@ or expanding this solver requires further visual and physical validation.
 
 The room path was inspected using SwiftShader's software Vulkan implementation,
 not a physical GPU. Windows/MSVC, integrated-GPU compatibility and performance
-have not been verified; no speed or frame-rate claim is made. GPU simulation
-steps are capped at two per rendered frame to avoid a catch-up spiral; below
-60 rendered frames per second the simulation runs slower than wall-clock time.
+have not been verified; no speed or frame-rate claim is made. The server ticks at
+20 Hz. The local-only room simulation uses three fixed 60 Hz substeps per 50 ms
+interval; its ragdolls and dragging are not server-authoritative or replicated.
+GPU simulation steps are capped at two per rendered frame to avoid a catch-up
+spiral; below 30 rendered frames per second it runs slower than wall-clock time.
 
 `rigid_runtime` owns compute pipelines and buffers. The renderer requires a
 queue with graphics and compute support, dispatches fixed steps, and writes the

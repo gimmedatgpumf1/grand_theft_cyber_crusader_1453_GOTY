@@ -2,6 +2,7 @@
 #include "../client/skeleton_gpu_rig.h"
 #include "physics/rigid_solver_spirv.h"
 #include "physics/rigid_skin_spirv.h"
+#include "physics/rigid_timing.h"
 #include <cstdio>
 #include <unordered_map>
 
@@ -81,7 +82,8 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
 bool Renderer::recordPhysics(const GpuScene& scene, VkCommandBuffer command, int frameSlot) {
     if (!scene.physicsRig) return true;
     while (physicsStep_<scene.physicsSteps) {
-        if (!physics_.record(command,1.0f/120.0f,8)) return false;
+        if (!physics_.record(command,gpu_physics::kPhysicsStep,8,scene.physicsDragOrigin,scene.physicsDragDirection,
+                             scene.physicsDragging,scene.physicsDragSequence)) return false;
         ++physicsStep_;
     }
     return physics_.recordSkin(command,std::size_t(frameSlot));

@@ -54,6 +54,16 @@ public:
     bool toggleRagdoll();
     void advanceRagdoll(double seconds);
     bool ragdollActive() const { return bool(physicsRig_); }
+    void beginDrag() {
+        if (!physicsRig_) return;
+        dragging_=true;
+        if (++dragSequence_==0) ++dragSequence_;
+    }
+    void endDrag() { dragging_=false; }
+    void setDragRay(Vec3 origin, Vec3 direction) {
+        dragOrigin_={float(origin.x),float(origin.y),float(origin.z),0};
+        dragDirection_={float(direction.x),float(direction.y),float(direction.z),0};
+    }
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
@@ -61,6 +71,9 @@ private:
     std::unique_ptr<GpuSkeletonRig> physicsRig_;
     std::uint64_t physicsGeneration_=0, physicsSteps_=0;
     double physicsTime_=0;
+    std::array<float,4> dragOrigin_{}, dragDirection_{};
+    std::uint32_t dragSequence_=0;
+    bool dragging_=false;
     SkeletonModel male_;
     SkeletonModel female_;
     SkeletonComparison maleComparison_, femaleComparison_;
