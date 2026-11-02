@@ -162,6 +162,12 @@ fi
   tests/skull_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skull-symmetry
 ./build/bin/gtc-skull-symmetry
+# Exercise bone-relative skinning against every actual toe joint and ragdoll matrices.
+# These are attachment probes, not a rendered or anatomically fitted foot.
+"${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
+  tests/skeleton_skinning.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-skinning
+./build/bin/gtc-skeleton-skinning
 # Check each original and mirrored vertebra with the actual slider mapping.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
   tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
