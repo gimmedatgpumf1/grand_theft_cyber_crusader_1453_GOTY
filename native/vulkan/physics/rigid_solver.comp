@@ -161,7 +161,9 @@ void findContacts(uint index) {
                 vec4 sb=samples.point[b.samples.x+j];
                 vec3 rb=rotate(b.rotation,sb.xyz);
                 vec3 d=separation+ra-rb;
-                float distance=length(d), overlap=sa.w+sb.w-distance;
+                float radius=sa.w+sb.w, distanceSquared=dot(d,d);
+                if (distanceSquared>=radius*radius) continue;
+                float distance=sqrt(distanceSquared), overlap=radius-distance;
                 if (overlap<=depth) continue;
                 vec3 n=distance>1e-7 ? d/distance : vec3(index<other ? -1.0 : 1.0,0.0,0.0);
                 depth=overlap; bestNormal=n;

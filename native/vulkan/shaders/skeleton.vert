@@ -32,7 +32,7 @@ layout(set = 0, binding = 0) uniform Frame {
 // per vertex and travels in the normal field, which an indexed batch leaves
 // empty because its normal belongs to the triangle.
 layout(std430, set = 0, binding = 2) readonly buffer Bones {
-    mat4 bone[512];
+    mat4 bone[1024];
 } bones;
 
 layout(push_constant) uniform Batch {

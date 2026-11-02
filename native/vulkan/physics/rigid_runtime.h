@@ -35,12 +35,19 @@ public:
     // pass. Call once per fixed step. The owner must serialize uses of this
     // state across submissions and apply a vertex-stage dependency before draw.
     bool record(VkCommandBuffer command, float dt, std::uint32_t iterations) const;
+    // Output buffers are renderer-owned storage-buffer ranges, one per
+    // in-flight frame. Retire previous uses before replacing these bindings.
+    bool createSkin(std::span<const std::uint32_t> shader,
+                    std::span<const SkinBinding> bindings,
+                    std::span<const VkDescriptorBufferInfo> outputs);
+    bool recordSkin(VkCommandBuffer command, std::size_t frameSlot) const;
     VkBuffer bodyBuffer() const { return buffers_[0].buffer; }
     void reset();
 
 private:
     struct Buffer { VkBuffer buffer=VK_NULL_HANDLE; VkDeviceMemory memory=VK_NULL_HANDLE; };
     bool makeBuffer(Buffer& out, VkDeviceSize size, const void* data);
+    void resetSkin();
     void barrier(VkCommandBuffer command, VkPipelineStageFlags destination) const;
     void dispatch(VkCommandBuffer command, const Step& step) const;
     VkDevice device_=VK_NULL_HANDLE;
@@ -53,6 +60,13 @@ private:
     VkPipeline pipeline_=VK_NULL_HANDLE;
     std::uint32_t bodyCount_=0;
     std::vector<JointBatch> batches_;
+    Buffer skinBindings_{};
+    VkDescriptorSetLayout skinSetLayout_=VK_NULL_HANDLE;
+    VkDescriptorPool skinPool_=VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> skinSets_;
+    VkPipelineLayout skinLayout_=VK_NULL_HANDLE;
+    VkPipeline skinPipeline_=VK_NULL_HANDLE;
+    std::uint32_t skinCount_=0;
 
     PFN_vkCreateBuffer createBuffer_=nullptr;
     PFN_vkDestroyBuffer destroyBuffer_=nullptr;

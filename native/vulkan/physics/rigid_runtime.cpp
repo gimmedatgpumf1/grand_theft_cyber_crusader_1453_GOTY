@@ -228,7 +228,104 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     barrier(command,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
     return true;
 }
+bool RigidRuntime::createSkin(std::span<const std::uint32_t> shader,
+                              std::span<const SkinBinding> bindings,
+                              std::span<const VkDescriptorBufferInfo> outputs) {
+    resetSkin();
+    if (!device_ || !pipeline_ || shader.size()<5 || shader[0]!=0x07230203u ||
+        bindings.empty() || bindings.size()>4194240u || outputs.empty() || outputs.size()>16) return false;
+    std::uint32_t maxSlot=0;
+    std::vector<std::uint32_t> slots;
+    slots.reserve(bindings.size());
+    for (const SkinBinding& binding:bindings) {
+        if (binding.indices[0]>=bodyCount_) return false;
+        for (float word:binding.localFromMesh) if (!std::isfinite(word)) return false;
+        maxSlot=std::max(maxSlot,binding.indices[1]); slots.push_back(binding.indices[1]);
+    }
+    std::sort(slots.begin(),slots.end());
+    if (std::adjacent_find(slots.begin(),slots.end())!=slots.end()) return false;
+    for (const auto& output:outputs)
+        if (!output.buffer || output.range==VK_WHOLE_SIZE || output.range<(VkDeviceSize(maxSlot)+1)*64) return false;
+    if (!makeBuffer(skinBindings_,bindings.size_bytes(),bindings.data())) { resetSkin(); return false; }
+    std::array<VkDescriptorSetLayoutBinding,3> descriptions{};
+    for (std::uint32_t i=0;i<descriptions.size();++i) {
+        descriptions[i].binding=i; descriptions[i].descriptorCount=1;
+        descriptions[i].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptions[i].stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo setInfo{};
+    setInfo.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setInfo.bindingCount=static_cast<std::uint32_t>(descriptions.size()); setInfo.pBindings=descriptions.data();
+    if (createDescriptorSetLayout_(device_,&setInfo,nullptr,&skinSetLayout_)!=VK_SUCCESS) { resetSkin(); return false; }
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,std::uint32_t(outputs.size()*3)};
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets=std::uint32_t(outputs.size()); poolInfo.poolSizeCount=1; poolInfo.pPoolSizes=&poolSize;
+    if (createDescriptorPool_(device_,&poolInfo,nullptr,&skinPool_)!=VK_SUCCESS) { resetSkin(); return false; }
+    std::vector<VkDescriptorSetLayout> layouts(outputs.size(),skinSetLayout_);
+    skinSets_.resize(outputs.size());
+    VkDescriptorSetAllocateInfo allocation{};
+    allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocation.descriptorPool=skinPool_; allocation.descriptorSetCount=std::uint32_t(outputs.size());
+    allocation.pSetLayouts=layouts.data();
+    if (allocateDescriptorSets_(device_,&allocation,skinSets_.data())!=VK_SUCCESS) { resetSkin(); return false; }
+    for (std::size_t i=0;i<outputs.size();++i) {
+        const std::array<VkDescriptorBufferInfo,3> infos={VkDescriptorBufferInfo{buffers_[0].buffer,0,VK_WHOLE_SIZE},
+            VkDescriptorBufferInfo{skinBindings_.buffer,0,VK_WHOLE_SIZE},outputs[i]};
+        std::array<VkWriteDescriptorSet,3> writes{};
+        for (std::uint32_t j=0;j<writes.size();++j) {
+            writes[j].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; writes[j].dstSet=skinSets_[i];
+            writes[j].dstBinding=j; writes[j].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[j].descriptorCount=1; writes[j].pBufferInfo=&infos[j];
+        }
+        updateDescriptorSets_(device_,std::uint32_t(writes.size()),writes.data(),0,nullptr);
+    }
+    VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(std::uint32_t)};
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount=1; layoutInfo.pSetLayouts=&skinSetLayout_;
+    layoutInfo.pushConstantRangeCount=1; layoutInfo.pPushConstantRanges=&range;
+    if (createPipelineLayout_(device_,&layoutInfo,nullptr,&skinLayout_)!=VK_SUCCESS) { resetSkin(); return false; }
+    VkShaderModuleCreateInfo moduleInfo{};
+    moduleInfo.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    moduleInfo.codeSize=shader.size_bytes(); moduleInfo.pCode=shader.data();
+    VkShaderModule module=VK_NULL_HANDLE;
+    if (createShaderModule_(device_,&moduleInfo,nullptr,&module)!=VK_SUCCESS) { resetSkin(); return false; }
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage=VK_SHADER_STAGE_COMPUTE_BIT; stage.module=module; stage.pName="main";
+    VkComputePipelineCreateInfo info{};
+    info.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO; info.stage=stage; info.layout=skinLayout_;
+    const VkResult result=createComputePipelines_(device_,VK_NULL_HANDLE,1,&info,nullptr,&skinPipeline_);
+    destroyShaderModule_(device_,module,nullptr);
+    if (result!=VK_SUCCESS) { resetSkin(); return false; }
+    skinCount_=std::uint32_t(bindings.size());
+    return true;
+}
+bool RigidRuntime::recordSkin(VkCommandBuffer command, std::size_t frameSlot) const {
+    if (!command || !skinPipeline_ || frameSlot>=skinSets_.size()) return false;
+    barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,skinPipeline_);
+    cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,skinLayout_,0,1,&skinSets_[frameSlot],0,nullptr);
+    cmdPushConstants_(command,skinLayout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(skinCount_),&skinCount_);
+    cmdDispatch_(command,(skinCount_+63u)/64u,1,1);
+    barrier(command,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+    return true;
+}
+void RigidRuntime::resetSkin() {
+    if (device_) {
+        if (skinPipeline_ && destroyPipeline_) destroyPipeline_(device_,skinPipeline_,nullptr);
+        if (skinLayout_ && destroyPipelineLayout_) destroyPipelineLayout_(device_,skinLayout_,nullptr);
+        if (skinPool_ && destroyDescriptorPool_) destroyDescriptorPool_(device_,skinPool_,nullptr);
+        if (skinSetLayout_ && destroyDescriptorSetLayout_) destroyDescriptorSetLayout_(device_,skinSetLayout_,nullptr);
+        if (skinBindings_.buffer && destroyBuffer_) destroyBuffer_(device_,skinBindings_.buffer,nullptr);
+        if (skinBindings_.memory && freeMemory_) freeMemory_(device_,skinBindings_.memory,nullptr);
+    }
+    skinPipeline_=VK_NULL_HANDLE; skinLayout_=VK_NULL_HANDLE; skinPool_=VK_NULL_HANDLE;
+    skinSetLayout_=VK_NULL_HANDLE; skinBindings_={}; skinSets_.clear(); skinCount_=0;
+}
 void RigidRuntime::reset() {
+    resetSkin();
     // The caller must have retired all work referencing these resources.
     if (device_) {
         if (pipeline_ && destroyPipeline_) destroyPipeline_(device_,pipeline_,nullptr);

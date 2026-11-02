@@ -91,9 +91,9 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
 
 // Rigid batches sharing a material use one draw. Their matrices ride in a
 // storage buffer instead of one push block per draw, and each indexed vertex
-// carries its matrix slot in the otherwise-unused normal field. 512 slots fit
-// both 182-structure source bodies; past this ceiling runs are drawn singly.
-constexpr std::size_t kBatchSlots = 512;
+// carries its matrix slot in the otherwise-unused normal field. 1024 slots fit
+// all four skeletons and their toe attachments; larger runs are drawn singly.
+constexpr std::size_t kBatchSlots = 1024;
 constexpr VkDeviceSize kSlotBlock = kBatchSlots * 16 * sizeof(float);
 // Both uniform and storage descriptor offsets are aligned to 256 bytes.
 constexpr VkDeviceSize kSlotOffset = 256;
