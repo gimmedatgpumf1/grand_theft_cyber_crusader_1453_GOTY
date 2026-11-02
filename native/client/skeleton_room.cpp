@@ -224,15 +224,15 @@ bool SkeletonRoom::restoreReferencePose() {
         for (int pass=0;pass<2;++pass)
             if (!alignReferenceToeDirections(*model,model==&male_ ? maleLines_ : femaleLines_) || !settleReferenceToes(*model)) return false;
     }
-    // Reposition each whole body onto the floor; no geometry is scaled.
-    maleFloor_=-minimumY(male_); femaleFloor_=-minimumY(female_);
+    // Lift the whole reference bodies ten centimetres above the floor.
+    maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
     ragdoll_.reset(); male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
-    maleFloor_=femaleFloor_=0;
+    maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
 }
 

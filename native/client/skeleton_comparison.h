@@ -534,11 +534,34 @@ public:
     }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
+        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
+        constexpr double phi=1.618033988749895;
+        const Vec3 corners[]={{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
+            {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
+            {phi,0,-1},{phi,0,1},{-phi,0,-1},{-phi,0,1}};
+        const std::vector<std::array<int,3>> faces={{0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},
+            {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
+            {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
+            {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
-            for (Vec3 p:part.points) { p=mapPart(p,part); p.x+=x; points.push_back(p); }
+            for (Vec3 p:part.points) { p=mapPart(p,part); p.x+=x; p.y+=0.10; points.push_back(p); }
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
+            if (part.name.rfind("FootDistP",0)!=0 || points.empty()) continue;
+            Vec3 low=points.front(), high=low;
+            for (Vec3 p:points) {
+                low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+                high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+            }
+            const Vec3 center=(low+high)*0.5;
+            const double radius=0.65*std::max({high.x-low.x,high.y-low.y,high.z-low.z});
+            std::vector<Vec3> vertices; vertices.reserve(12);
+            for (Vec3 corner:corners) vertices.push_back(center+normalized(corner)*radius);
+            // A separate stable batch follows this mapped distal bone whenever
+            // the comparison dimensions change.
+            rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
+            rasterizer.mesh(vertices,faces,toe);
         }
     }
 
