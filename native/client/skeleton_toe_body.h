@@ -145,9 +145,9 @@ inline void triangulate(ToeBodyMesh& mesh,const Field& field,Vec3 lo,Vec3 hi,dou
     std::unordered_map<std::uint64_t,int> edges;
     const auto edge=[&](int a,int b) {
         const int endpoint=std::abs(values[a])<1e-14 ? a : std::abs(values[b])<1e-14 ? b : -1;
-        const auto small=static_cast<std::uint32_t>(endpoint>=0?endpoint:std::min(a,b));
-        const auto large=static_cast<std::uint32_t>(endpoint>=0?endpoint:std::max(a,b));
-        const std::uint64_t key=(std::uint64_t(small)<<32)|large;
+        const auto lowIndex=static_cast<std::uint32_t>(endpoint>=0?endpoint:std::min(a,b));
+        const auto highIndex=static_cast<std::uint32_t>(endpoint>=0?endpoint:std::max(a,b));
+        const std::uint64_t key=(std::uint64_t(lowIndex)<<32)|highIndex;
         const auto found=edges.find(key); if (found!=edges.end()) return found->second;
         const double t=values[a]/(values[a]-values[b]);
         const Vec3 p=position(a)+(position(b)-position(a))*std::clamp(t,0.0,1.0);
