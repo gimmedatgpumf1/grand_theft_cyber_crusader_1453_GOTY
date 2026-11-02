@@ -308,19 +308,21 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     if (islandCount_ && dragging) {
         step.phase=12; step.count=1; dispatch(command,step);
     }
+    // Keep all joint passes for articulation, but search contacts only after
+    // each four passes. The narrow phase is the costly part of piled rigs.
     for (std::uint32_t pass=0;pass<iterations;) {
         bool contacts;
         if (islandCount_ && (pass&1u)==0u && pass+1u<iterations) {
             // Two ordinary coloured-joint/floor passes, synchronized inside
             // each independent joint island instead of across dispatches.
             step.first=bodyCount_; step.count=islandCount_; step.phase=7; dispatch(command,step);
-            pass+=2; contacts=true;
+            pass+=2; contacts=(pass%4u)==0u || pass==iterations;
         } else {
             step.phase=1;
             for (const JointBatch& batch:batches_) {
                 step.first=batch.first; step.count=batch.count; dispatch(command,step);
             }
-            ++pass; contacts=(pass&1u)==0u || pass==iterations;
+            ++pass; contacts=(pass%4u)==0u || pass==iterations;
             step.count=bodyCount_; step.first=contacts ? bodyCount_ : 0; step.phase=2; dispatch(command,step);
         }
         if (contacts) {

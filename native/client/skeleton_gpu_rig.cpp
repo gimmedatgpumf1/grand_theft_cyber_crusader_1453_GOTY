@@ -47,10 +47,10 @@ bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& cen
     // Subdivide long thin bones along their length so their proxies do not
     // become a handful of oversized spheres. Bound the per-body budget.
     const double longest=std::max({extent.x,extent.y,extent.z,1e-9});
-    int divisions[3]={std::clamp(int(std::ceil(extent.x*16/longest)),1,16),
-                      std::clamp(int(std::ceil(extent.y*16/longest)),1,16),
-                      std::clamp(int(std::ceil(extent.z*16/longest)),1,16)};
-    while (divisions[0]*divisions[1]*divisions[2]>128) {
+    int divisions[3]={std::clamp(int(std::ceil(extent.x*12/longest)),1,12),
+                      std::clamp(int(std::ceil(extent.y*12/longest)),1,12),
+                      std::clamp(int(std::ceil(extent.z*12/longest)),1,12)};
+    while (divisions[0]*divisions[1]*divisions[2]>64) {
         int axis=divisions[1]>divisions[0] ? 1 : 0;
         if (divisions[2]>divisions[axis]) axis=2;
         --divisions[axis];

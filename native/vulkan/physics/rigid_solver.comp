@@ -467,22 +467,29 @@ void wakeIsland(uint island, uint lane) {
     uint found=0u;
     for (uint i=lane;i<n;i+=64u) {
         Body a=bodies.body[scratch.word[first+i]];
+        vec3 extentA=worldBounds(a);
         for (uint j=0u;j<count;++j) {
             Body b=bodies.body[j];
             if (b.samples.w!=0u || b.samples.z==a.samples.z || b.positionMass.w<=0.0) continue;
-            // Resting contacts generate small numerical velocities. Do not
-            // wake an entire pile just because those bones are nearby. A
-            // deliberate grab or a sizeable approaching impact can wake it.
+            // Cull distant pairs before calculating speeds or transformed
+            // bounds. Only an approaching impact (or deliberate grab) wakes
+            // a pile; jitter on a neighbouring bone is not enough.
+            vec3 delta=a.positionMass.xyz-b.positionMass.xyz;
+            float reach=a.inverseInertia.w+b.inverseInertia.w+0.165;
+            float distanceSquared=dot(delta,delta);
+            if (distanceSquared>reach*reach) continue;
             bool grabbed=held!=0u && bodies.body[held-1u].samples.z==b.samples.z;
             float speed=length(b.linearVelocity.xyz)+b.inverseInertia.w*length(b.angularVelocity.xyz);
             if (!grabbed && speed<0.65) continue;
             float margin=0.015+min(speed*step.dt*2.0,0.15);
-            vec3 delta=a.positionMass.xyz-b.positionMass.xyz;
-            float reach=a.inverseInertia.w+b.inverseInertia.w+margin;
-            if (dot(delta,delta)>reach*reach) continue;
-            if (any(greaterThan(abs(delta),worldBounds(a)+worldBounds(b)+vec3(margin)))) continue;
-            if (grabbed || dot(delta,b.linearVelocity.xyz)>-0.02*speed ||
-                b.inverseInertia.w*length(b.angularVelocity.xyz)>0.65) { found=1u; break; }
+            reach=a.inverseInertia.w+b.inverseInertia.w+margin;
+            if (distanceSquared>reach*reach ||
+                any(greaterThan(abs(delta),extentA+worldBounds(b)+vec3(margin)))) continue;
+            vec3 direction=distanceSquared>1e-10 ? delta*inversesqrt(distanceSquared) : vec3(0.0,1.0,0.0);
+            vec3 localPoint=rotate(vec4(-b.rotation.xyz,b.rotation.w),delta);
+            vec3 arm=rotate(b.rotation,clamp(localPoint,-b.bounds.xyz,b.bounds.xyz));
+            vec3 contactVelocity=b.linearVelocity.xyz+cross(b.angularVelocity.xyz,arm);
+            if (grabbed || dot(contactVelocity,direction)>0.5) { found=1u; break; }
         }
     }
     wakeLanes[lane]=found;
@@ -554,8 +561,8 @@ void settleIsland(uint island, uint lane) {
     }
     uint dynamicCountTotal=supportLanes[0]>>1u;
     bool quiet=(supportLanes[0]&1u)!=0u && dynamicCountTotal>0u &&
-               motionLanes[0]/float(dynamicCountTotal)<0.04 && maxMotionLanes[0]<0.125 &&
-               uintBitsToFloat(wakeLanes[0])/float(dynamicCountTotal)<0.45;
+               motionLanes[0]/float(dynamicCountTotal)<0.055 && maxMotionLanes[0]<0.18 &&
+               uintBitsToFloat(wakeLanes[0])/float(dynamicCountTotal)<0.55;
     if (lane==0u) {
         scratch.word[state]=0u;
         uint windows=quiet ? min(scratch.word[state+2u]+1u,2u) : 0u;
