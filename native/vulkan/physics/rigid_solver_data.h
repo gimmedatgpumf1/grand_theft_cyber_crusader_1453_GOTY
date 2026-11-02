@@ -1,7 +1,7 @@
 #pragma once
 
-// Host-side layouts for the unfinished Vulkan rigid-body solver. These are not
-// yet connected to the room or renderer. Keep in step with rigid_solver.comp.
+// Host-side layouts for the experimental Vulkan rigid-body solver.
+// Keep in step with rigid_solver.comp.
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +20,7 @@ struct alignas(16) Body {
     std::array<std::uint32_t,4> samples{};
 };
 struct alignas(16) Joint {
-    // bodies.z: 0 = unconstrained ball, 1 = hinge with limits.
+    // bodies.z: 0 = limited ball, 1 = hinge, 2 = positional only.
     std::array<std::uint32_t,4> bodies{};
     std::array<float,4> parentAnchor{};
     std::array<float,4> childAnchor{};
@@ -30,6 +30,9 @@ struct alignas(16) Joint {
     std::array<float,4> childAxis{};
     std::array<float,4> parentTangent{};
     std::array<float,4> childTangent{};
+    // Approximate XYZ angles relative to the calibrated initial ball frame.
+    std::array<float,4> lowerAngles{};
+    std::array<float,4> upperAngles{};
 };
 // Shader phase 4 writes one correction per body; phase 5 applies it only
 // after a barrier. No body reads another body while it is being modified.
@@ -46,7 +49,7 @@ struct alignas(16) Step {
     float dt=0;
     std::array<float,4> gravityFloor{0,-9.81f,0,0};
 };
-static_assert(sizeof(Body)==128 && sizeof(Joint)==112 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==32);
+static_assert(sizeof(Body)==128 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==32);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };

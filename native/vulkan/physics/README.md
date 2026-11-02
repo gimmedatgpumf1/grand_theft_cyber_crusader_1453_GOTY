@@ -1,27 +1,34 @@
-# Vulkan rigid solver — work in progress
+# Vulkan rigid solver — experimental
 
-This is **not used by the game yet**. The room still uses Bullet. The compute
-kernel, host runtime and buffers have not been run on a Vulkan device. This is
-not yet a replacement for a production physics engine or proof of speed.
+The test room's R toggle now builds four skeleton rigs and submits the simulation
+and skinning to Vulkan compute. Both the bone meshes and V-view inspection shapes
+follow GPU body transforms; no physics state is read back to the CPU each frame.
+Rig construction runs male and female preparation concurrently on the CPU.
+The normal Linux and Windows native build scripts no longer link Bullet; the
+older Bullet sources and Bullet-specific historical tooling remain in the tree.
+The historical test and measurement build commands still reference the old room
+API and source lists and need migration to the new GPU path.
 
-The prototype has parallel rigid-body integration, graph-coloured positional
-joints, limited hinges, floor support and sphere-proxy body contacts. Ball
-joints have no angular limits yet; sphere proxies and the current all-pairs
-broad phase are approximations and need further work. The initial skeleton-rig
-builder is in `client/skeleton_gpu_rig.cpp`: it builds male and female data on
-separate CPU threads at startup, including the blue toe proxies. This builder is
-not wired into the room. Renderer/device integration is still missing.
+This is **not a PhysX-equivalent engine**. The solver uses graph-coloured joint
+constraints, approximate angular limits, floor support and sphere-proxy contacts.
+Its all-pairs broad phase and overlapping-proxy exclusions need further work;
+limits, collisions, settling and body stability have not been fully validated.
+The current approximation can produce contorted poses. Replacing or expanding
+this solver requires further visual and physical validation.
 
-`rigid_runtime` creates compute pipelines and storage buffers, uploads the
-initial data once and records fixed-step dispatches with GPU barriers. The
-separate `rigid_skin.comp` writes body transforms into renderer-owned matrix
-slots on the GPU, without a CPU readback. These entry points are not yet called
-by the renderer. The runtime requires a queue supporting graphics and compute;
-the caller must synchronize prior uses before replacing or destroying resources.
-`rigid_solver_data.h` contains the shared layouts and joint colouring. The
-contact passes use a symmetric exclusion bitset and per-body scratch space, so
-they need no float atomics.
+The room path was inspected using SwiftShader's software Vulkan implementation,
+not a physical GPU. Windows/MSVC, integrated-GPU compatibility and performance
+have not been verified; no speed or frame-rate claim is made. GPU simulation
+steps are capped per rendered frame so a long pause cannot generate an unbounded
+submission; under load the simulation can run slower than wall-clock time.
 
-The checked-in SPIR-V modules were compiled from the compute shaders with
-glslang for Vulkan. A normal client build needs no shader compiler. There is deliberately
-no CPU fallback hidden behind this unfinished compute code.
+`rigid_runtime` owns compute pipelines and buffers. The renderer requires a
+queue with graphics and compute support, dispatches fixed steps, and writes the
+resulting matrices directly into the per-frame graphics buffer. Synchronization
+is required before replacing or destroying these resources. `rigid_solver_data.h`
+contains the shared layouts and constraint colouring; the contact passes use a
+symmetric exclusion bitset and per-body scratch space instead of float atomics.
+
+The checked-in SPIR-V modules are compiled from the compute shaders with
+glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
+headers from those modules. Client builds do not require a shader compiler.

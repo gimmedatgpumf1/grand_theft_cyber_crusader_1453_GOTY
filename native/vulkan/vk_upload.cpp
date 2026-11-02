@@ -92,8 +92,10 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
                     UvVertex coordinate{vertex.u, vertex.v};
                     std::memcpy(cursor + dest, &coordinate, sizeof(coordinate));
                 } else {
-                    PackedVertex packed{vertex.x, vertex.y, vertex.z,
-                        slots_[i] >= 0.0F ? slots_[i] : vertex.nx, vertex.ny, vertex.nz};
+                    const float boneSlot=batch.vertexSkinned
+                        ? vertex.nx + (batch.objectId==8001 ? float(scene.maleSkinCount) : 0.0f)
+                        : (slots_[i] >= 0.0F ? slots_[i] : vertex.nx);
+                    PackedVertex packed{vertex.x, vertex.y, vertex.z, boneSlot, vertex.ny, vertex.nz};
                     std::memcpy(cursor + dest, &packed, sizeof(packed));
                 }
             }

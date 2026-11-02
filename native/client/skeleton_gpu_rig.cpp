@@ -29,7 +29,7 @@ Vec3 direction(const JointRigidTransform& t, Vec3 p) {
 // Approximate a body's collision mesh by small spheres covering occupied cells.
 // These are deliberately proxies, not a triangle-accurate collision model.
 // Original bone vertices remain unchanged for drawing.
-bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& center) {
+bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& center, double minimumMass) {
     if (points.empty()) return false;
     Vec3 low=points.front(), high=low;
     for (const Vec3 p:points) {
@@ -39,7 +39,7 @@ bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& cen
     }
     center=(low+high)*0.5;
     const Vec3 extent=high-low;
-    const double mass=std::clamp(extent.x*extent.y*extent.z*500.0,0.015,6.0);
+    const double mass=std::clamp(extent.x*extent.y*extent.z*500.0,minimumMass,6.0);
     Body body; body.positionMass=packed(center,1.0/mass);
     const auto inv=[&](double a,double b) { return float(12.0/(mass*std::max(a*a+b*b,1e-8))); };
     body.inverseInertia={inv(extent.y,extent.z),inv(extent.x,extent.z),inv(extent.x,extent.y),0};
@@ -148,7 +148,9 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         }
         Vec3 center{};
         bodyForGroup[group]=int(result.bodies.size());
-        if (!makeBody(vertices,result,center)) { error="Unable to build collision proxy"; return false; }
+        const auto& name=parts[groups[group].front()].name;
+        const bool vertebra=name.size()>=2 && name.size()<=3 && (name[0]=='C' || name[0]=='T' || name[0]=='L') && name[1]>='0' && name[1]<='9';
+        if (!makeBody(vertices,result,center,vertebra ? 0.3 : 0.015)) { error="Unable to build collision proxy"; return false; }
         const auto body=static_cast<std::uint32_t>(bodyForGroup[group]);
         for (auto i:groups[group]) {
             GpuSkeletonBinding binding; binding.objectId=input.idBase+static_cast<std::uint32_t>(i); binding.body=body;
@@ -188,19 +190,41 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         }
         if (length(axis)<1e-9) { error="Invalid joint axis"; return false; }
         axis=normalized(axis);
-        Vec3 tangent=cross(axis,{0,1,0});
-        if (length(tangent)<1e-6) tangent=cross(axis,{1,0,0});
-        tangent=normalized(tangent);
-        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),1,0};
-        joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
-        joint.childAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         std::string mobility;
         for (const auto& link:model.sourceLinks()) if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { mobility=link.mobility; break; }
-        if (mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular") joint.bodies[2]=0;
+        const bool ball=mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";
+        const bool fitted=ball && mobility!="shoulder_ball_socket" && source->axes().size()>2;
+        Vec3 tangent=cross(axis,{0,1,0});
+        if (fitted) {
+            const auto rotation=joint_detail::rotate(source->axes()[0].direction,source->angles()[0]);
+            tangent=direction(transform,direction(rotation,source->axes()[1].direction));
+            if (comparison) tangent=anchor(pi,transform.translation+tangent*0.01)-anchor(pi,transform.translation);
+            tangent-=axis*dot(axis,tangent);
+        }
+        if (length(tangent)<1e-6) tangent=cross(axis,{1,0,0});
+        if (length(tangent)<1e-6) tangent=cross(axis,{0,0,1});
+        tangent=normalized(tangent);
+        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,0};
+        joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
+        joint.childAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         const double piValue=3.14159265358979323846;
-        joint.parentAxis=packed(axis,std::clamp(source->axes()[0].minimum-source->angles()[0],-piValue,piValue));
-        joint.childAxis=packed(axis,std::clamp(source->axes()[0].maximum-source->angles()[0],-piValue,piValue));
+        const auto lower=[&](std::size_t k) { return float(std::clamp(source->axes()[k].minimum-source->angles()[k],-piValue,piValue)); };
+        const auto upper=[&](std::size_t k) { return float(std::clamp(source->axes()[k].maximum-source->angles()[k],-piValue,piValue)); };
+        joint.parentAxis=packed(axis,lower(0)); joint.childAxis=packed(axis,upper(0));
         joint.parentTangent=joint.childTangent=packed(tangent);
+        joint.lowerAngles={lower(0),float(-piValue/2),float(-piValue/2),0};
+        joint.upperAngles={upper(0),float(piValue/2),float(piValue/2),0};
+        if (fitted) {
+            joint.lowerAngles[1]=lower(1); joint.upperAngles[1]=upper(1);
+            joint.lowerAngles[2]=lower(2); joint.upperAngles[2]=upper(2);
+            const auto first=joint_detail::rotate(source->axes()[0].direction,source->angles()[0]);
+            const auto second=joint_detail::rotate(source->axes()[1].direction,source->angles()[1]);
+            Vec3 third=direction(transform,direction(joint_detail::compose(first,second),source->axes()[2].direction));
+            if (comparison) third=anchor(pi,transform.translation+third*0.01)-anchor(pi,transform.translation);
+            if (dot(cross(axis,tangent),third)<0) {
+                const float old=joint.lowerAngles[2]; joint.lowerAngles[2]=-joint.upperAngles[2]; joint.upperAngles[2]=-old;
+            }
+        }
         result.joints.push_back(joint);
     }
     // Close the rib/sternum loops at the nearest proxy attachment, rather than
@@ -222,7 +246,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
             }
         }
         if (!std::isfinite(best)) { error="Missing rib contact proxy"; return false; }
-        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),0,0};
+        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),2,0};
         joint.parentAnchor=packed(pivot-ca); joint.childAnchor=packed(pivot-cb);
         result.joints.push_back(joint);
     }

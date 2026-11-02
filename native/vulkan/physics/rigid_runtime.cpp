@@ -86,12 +86,13 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         std::vector<bool> used(count,false);
         for (std::size_t j=batch.first;j<std::size_t(batch.first)+batch.count;++j) {
             const auto a=joints[j].bodies[0], b=joints[j].bodies[1];
-            if (a>=count || b>=count || a==b || used[a] || used[b] || !excluded(a,b) || joints[j].bodies[2]>1) return false;
+            if (a>=count || b>=count || a==b || used[a] || used[b] || !excluded(a,b) || joints[j].bodies[2]>2) return false;
             const Joint& joint=joints[j];
             for (const auto* values:{&joint.parentAnchor,&joint.childAnchor,&joint.parentAxis,
-                                     &joint.childAxis,&joint.parentTangent,&joint.childTangent})
+                                     &joint.childAxis,&joint.parentTangent,&joint.childTangent,
+                                     &joint.lowerAngles,&joint.upperAngles})
                 for (float value:*values) if (!std::isfinite(value)) return false;
-            if (joint.bodies[2]==1) {
+            if (joint.bodies[2]!=2) {
                 const auto frameValid=[](const auto& axis,const auto& tangent) {
                     float aa=0,tt=0,at=0;
                     for (int k=0;k<3;++k) { aa+=axis[k]*axis[k]; tt+=tangent[k]*tangent[k]; at+=axis[k]*tangent[k]; }
@@ -99,6 +100,8 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
                 };
                 if (!frameValid(joint.parentAxis,joint.parentTangent) ||
                     !frameValid(joint.childAxis,joint.childTangent) || joint.parentAxis[3]>joint.childAxis[3]) return false;
+                if (joint.bodies[2]==0) for (int k=0;k<3;++k)
+                    if (joint.lowerAngles[k]>joint.upperAngles[k]) return false;
             }
             used[a]=used[b]=true;
         }

@@ -5,7 +5,8 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_lines.h"
-#include "client/skeleton_ragdoll.h"
+#include "client/skeleton_gpu_rig.h"
+#include <memory>
 
 #include <cstdint>
 #include <utility>
@@ -31,7 +32,7 @@ public:
     SkeletonModel& female() { return female_; }
     const SkeletonComparison& comparison(bool male) const { return male ? maleComparison_ : femaleComparison_; }
     bool setComparison(bool male, const SkeletonComparison::Profile& profile, std::string& error) {
-        if (ragdoll_ && !restoreReferencePose()) { error="Unable to restore skeleton pose"; return false; }
+        if (physicsRig_ && !restoreReferencePose()) { error="Unable to restore skeleton pose"; return false; }
         SkeletonComparison& copy=male ? maleComparison_ : femaleComparison_;
         const auto revision=copy.revision();
         if (!copy.setProfile(profile,error)) return false;
@@ -39,7 +40,7 @@ public:
         return true;
     }
     void resetComparison(bool male) {
-        if (ragdoll_ && !restoreReferencePose()) return;
+        if (physicsRig_ && !restoreReferencePose()) return;
         std::string error; (male ? maleComparison_ : femaleComparison_).reset(error);
         lineSceneReady_=false;
     }
@@ -52,13 +53,14 @@ public:
     bool restoreOriginalPose(); // original registered CT pose
     bool toggleRagdoll();
     void advanceRagdoll(double seconds);
-    bool ragdollActive() const { return bool(ragdoll_); }
-    const SkeletonRagdoll* ragdoll() const { return ragdoll_.get(); }
+    bool ragdollActive() const { return bool(physicsRig_); }
 
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
-    std::unique_ptr<SkeletonRagdoll> ragdoll_;
+    std::unique_ptr<GpuSkeletonRig> physicsRig_;
+    std::uint64_t physicsGeneration_=0, physicsSteps_=0;
+    double physicsTime_=0;
     SkeletonModel male_;
     SkeletonModel female_;
     SkeletonComparison maleComparison_, femaleComparison_;

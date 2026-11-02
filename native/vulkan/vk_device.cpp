@@ -195,7 +195,8 @@ bool Renderer::chooseDevice() {
         std::vector<VkQueueFamilyProperties> queues(families);
         getPhysicalDeviceQueueFamilyProperties(candidate, &families, queues.data());
         for (std::uint32_t index = 0; index < families; ++index) {
-            if ((queues[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) continue;
+            constexpr VkQueueFlags required=VK_QUEUE_GRAPHICS_BIT|VK_QUEUE_COMPUTE_BIT;
+            if ((queues[index].queueFlags & required) != required) continue;
             physical_ = candidate;
             family_ = index;
             break;
@@ -780,6 +781,7 @@ void Renderer::stop() {
     destroySwapchain();
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
+        physics_.reset(); physicsGeneration_=0; physicsStep_=0; physicsMatrixSlots_.clear();
         for (DeviceArray* array : {&vertex_, &uv_, &index_}) {
             if (array->buffer) destroyBuffer(device_, array->buffer, nullptr);
             if (array->memory) freeMemory(device_, array->memory, nullptr);

@@ -203,11 +203,21 @@ struct GpuBatch {
     // its colour arrives already prepared for the display. Drawn last, so what it
     // covers it covers.
     bool isUi = false;
+    // V-view indexed vertices carry source-structure indices in nx for GPU skinning.
+    bool vertexSkinned = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
+struct GpuSkeletonRig;
 struct GpuScene {
+    // A live rig is simulated and skinned by the Vulkan backend. The rig is
+    // immutable for this generation; physicsSteps counts fixed 120 Hz steps.
+    const GpuSkeletonRig* physicsRig = nullptr;
+    std::uint64_t physicsGeneration = 0;
+    std::uint64_t physicsSteps = 0;
+    bool physicsLineView = false;
+    std::uint32_t maleSkinCount = 0, femaleSkinCount = 0;
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
     double focal = 640;
@@ -269,6 +279,17 @@ public:
     // for a vertex cache.
     void mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
               const Material& material);
+    void meshSkinned(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+                     const std::vector<int>& owners, const Material& material) {
+        if (!gpu_ || owners.size()!=points.size()) { mesh(points,faces,material); return; }
+        const auto index=prepareBatch(material);
+        const std::size_t start=scene_.batches[index].vertices.size();
+        mesh(points,faces,material);
+        GpuBatch& batch=scene_.batches[index];
+        if (batch.vertices.size()!=start+points.size()) return;
+        batch.vertexSkinned=true;
+        for (std::size_t i=0;i<owners.size();++i) batch.vertices[start+i].nx=float(owners[i]<0 ? 0 : owners[i]);
+    }
     bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);

@@ -7,6 +7,7 @@
 // with the matrix read out of a device buffer.
 
 #include "vk_internal.h"
+#include "../client/skeleton_gpu_rig.h"
 
 #include <cstdio>
 #include <cstring>
@@ -58,7 +59,7 @@ namespace {
 // bind per draw), and it is actually shaded -- a flat batch is one colour and
 // costs nothing to draw on its own.
 bool coalescable(const GpuBatch& batch) {
-    if (batch.indices.empty()) return false;
+    if (batch.indices.empty() || batch.vertexSkinned) return false;
     if (texturedMaterial(batch.material)) return false;
     if (batch.material.constantLighting || batch.material.unlit) return false;
     return true;
@@ -82,7 +83,7 @@ void Renderer::findRuns(const GpuScene& scene) {
 void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<float>& slots) {
     runs.clear();
     slots.assign(scene.batches.size(), -1.0F);
-    std::size_t slot = 0;
+    std::size_t slot = scene.physicsLineView ? std::size_t(scene.maleSkinCount)+scene.femaleSkinCount : 0;
     std::size_t index = 0;
     while (index < scene.batches.size()) {
         if (!coalescable(scene.batches[index])) {
@@ -98,7 +99,10 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         // One batch on its own is a draw either way, and there is no point
         // spending a slot on it. A run that would run past the array is left
         // alone rather than split: a body of bones is one draw or no draw.
-        if (last == index || slot + (last - index + 1) > kBatchSlots) {
+        const bool physicsSingle=last==index && scene.physicsRig &&
+            std::any_of(scene.physicsRig->bindings.begin(),scene.physicsRig->bindings.end(),
+                        [&](const GpuSkeletonBinding& binding) { return binding.objectId==scene.batches[index].objectId; });
+        if ((last == index && !physicsSingle) || slot + (last - index + 1) > kBatchSlots) {
             index = last + 1;
             continue;
         }

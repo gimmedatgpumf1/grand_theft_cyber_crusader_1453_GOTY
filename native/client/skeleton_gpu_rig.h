@@ -11,7 +11,7 @@ namespace gtc::native {
 class SkeletonModel;
 class SkeletonComparison;
 
-// Startup data for the unfinished GPU solver. No Bullet objects are used.
+// Startup data for the experimental GPU solver.
 // A binding's matrix maps the batch's original vertices into body-local space;
 // the renderer will apply the GPU body's current orientation and position.
 struct GpuSkeletonBinding {

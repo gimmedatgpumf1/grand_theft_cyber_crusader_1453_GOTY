@@ -226,7 +226,7 @@ public:
     }
 
     void draw(Rasterizer& out, Vec3 origin, double yaw, std::uint32_t id,
-              const std::vector<std::array<double,16>>& pose = {}) const {
+              const std::vector<std::array<double,16>>& pose = {}, bool gpuSkin=false) const {
         constexpr int sides = 6;
         constexpr double pi = 3.141592653589793;
         const double c = std::cos(yaw), s = std::sin(yaw);
@@ -241,6 +241,11 @@ public:
                         m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
         };
         out.setObject(id, {}, 0);
+        const auto emit=[&](const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
+                            const std::vector<int>& owners, const Material& material) {
+            if (gpuSkin) out.meshSkinned(points,faces,owners,material);
+            else out.mesh(points,faces,material);
+        };
         Material materials[3];
         materials[0].color = colorHex("#eee6c7");
         materials[1].color = colorHex("#5cd6d0");
@@ -250,6 +255,7 @@ public:
         for (int type = 0; type < 3; ++type) {
             const char kind = kinds[type];
             std::vector<Vec3> points;
+            std::vector<int> owners;
             std::vector<std::array<int, 3>> faces;
             for (const auto& segment : segments_) {
                 if (segment.kind != kind) continue;
@@ -263,6 +269,7 @@ public:
                 for (int end = 0; end < 2; ++end) for (int i = 0; i < sides; ++i) {
                     const double angle = 2 * pi * i / sides;
                     points.push_back((end ? b : a) + u * (std::cos(angle)*radius) + v * (std::sin(angle)*radius));
+                    owners.push_back(end ? segment.ownerB : segment.ownerA);
                 }
                 for (int i = 0; i < sides; ++i) {
                     const int next = (i + 1) % sides;
@@ -284,12 +291,12 @@ public:
                 for (const auto& dot : dots_) {
                     const int start = static_cast<int>(points.size());
                     const Vec3 center = place(moved(dot.a,dot.ownerA));
-                    for (Vec3 vertex : vertices) points.push_back(center + normalized(vertex) * 0.007);
+                    for (Vec3 vertex : vertices) { points.push_back(center + normalized(vertex) * 0.007); owners.push_back(dot.ownerA); }
                     for (const auto& triangle : triangles)
                         faces.push_back({start+triangle[0], start+triangle[1], start+triangle[2]});
                 }
             }
-            out.mesh(points, faces, materials[type]);
+            emit(points,faces,owners,materials[type]);
         }
         // One subdivided icosahedron per fitted joint, emitted into a single
         // cached GPU batch. Nothing is generated per frame in the room view.
@@ -303,6 +310,7 @@ public:
                 {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
                 {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
             std::vector<Vec3> points;
+            std::vector<int> owners;
             std::vector<std::array<int, 3>> faces;
             // Share the twelve corners and thirty edge midpoints per sphere.
             std::vector<Vec3> unit;
@@ -327,23 +335,26 @@ public:
             for (const Joint& joint : joints_) {
                 const int start = static_cast<int>(points.size());
                 const Vec3 center = place(moved(joint.center,joint.owner));
-                for (Vec3 p : unit) points.push_back(center + p*joint.radius);
+                for (Vec3 p : unit) { points.push_back(center + p*joint.radius); owners.push_back(joint.owner); }
                 for (const auto& f : unitFaces) faces.push_back({start+f[0], start+f[1], start+f[2]});
             }
             Material material;
             material.color = colorHex("#e9dfbd");
-            out.mesh(points, faces, material);
+            emit(points,faces,owners,material);
         }
         // Palms, paired limbs, shoulder girdle and rib cage are thin surfaces;
         // feet are fitted closed volumes. All use the cached GPU solid batch.
         std::vector<Vec3> points;
+        std::vector<int> owners;
         std::vector<std::array<int, 3>> faces;
         for (const auto& solid : solids_) {
             const int start = static_cast<int>(points.size());
             const int count = static_cast<int>(solid.points.size());
             if (solid.volume) {
-                for (std::size_t i=0; i<solid.points.size(); ++i)
-                    points.push_back(place(moved(solid.points[i],solid.owners.empty() ? -1 : solid.owners[i])));
+                for (std::size_t i=0; i<solid.points.size(); ++i) {
+                    const int owner=solid.owners.empty() ? -1 : solid.owners[i];
+                    points.push_back(place(moved(solid.points[i],owner))); owners.push_back(owner);
+                }
                 for (const auto& face : solid.faces)
                     faces.push_back({start+face[0], start+face[1], start+face[2]});
                 continue;
@@ -359,8 +370,10 @@ public:
                 if (dot(n,n)>largest) { largest=dot(n,n); normal=normalized(n); }
             }
             for (int layer = 0; layer < 2; ++layer)
-                for (Vec3 point : transformed)
-                    points.push_back(place(point + normal * ((layer ? 0.5 : -0.5) * solid.thickness)));
+                for (std::size_t i=0;i<transformed.size();++i) {
+                    points.push_back(place(transformed[i] + normal * ((layer ? 0.5 : -0.5) * solid.thickness)));
+                    owners.push_back(solid.owners.empty() ? -1 : solid.owners[i]);
+                }
             for (const auto& face : solid.faces) {
                 faces.push_back({start+face[0], start+face[2], start+face[1]});
                 faces.push_back({start+count+face[0], start+count+face[1], start+count+face[2]});
@@ -372,7 +385,7 @@ public:
         }
         Material solid;
         solid.color = colorHex("#eee6c7");
-        out.mesh(points, faces, solid);
+        emit(points,faces,owners,solid);
     }
 
 private:

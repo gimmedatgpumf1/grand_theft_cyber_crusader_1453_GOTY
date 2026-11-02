@@ -24,6 +24,8 @@ struct Joint {
     vec4 childAxis;       // xyz local axis, w upper angle
     vec4 parentTangent;
     vec4 childTangent;
+    vec4 lowerAngles;
+    vec4 upperAngles;
 };
 layout(std430, set=0, binding=0) buffer Bodies { Body body[]; } bodies;
 layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
@@ -84,6 +86,30 @@ void solveHinge(inout Body a, inout Body b, Joint j) {
     solveAngular(a,b,axisA,angle-clamp(angle,j.parentAxis.w,j.childAxis.w));
 }
 
+// Approximate the three angular coordinates by intrinsic XYZ angles in the
+// fitted joint frame. This is not a coupled anatomical limit surface and has
+// the usual Euler singularity near 90 degrees of the middle coordinate.
+void solveBall(inout Body a, inout Body b, Joint j) {
+    for (int k=0;k<3;++k) {
+        vec3 x=normalize(j.parentAxis.xyz), y=normalize(j.parentTangent.xyz), z=normalize(cross(x,y));
+        vec3 bx=normalize(j.childAxis.xyz), by=normalize(j.childTangent.xyz), bz=normalize(cross(bx,by));
+        vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
+        vec3 rx=rotate(relative,bx), ry=rotate(relative,by), rz=rotate(relative,bz);
+        float middle=asin(clamp(dot(x,rz),-1.0,1.0));
+        float first=atan(-dot(y,rz),dot(z,rz));
+        float last=atan(-dot(x,ry),dot(x,rx));
+        float angles[3]=float[3](first,middle,last);
+        float error=angles[k]-clamp(angles[k],j.lowerAngles[k],j.upperAngles[k]);
+        if (abs(error)<1e-6) continue;
+        vec3 worldX=rotate(a.rotation,x), worldY=rotate(a.rotation,y), worldZ=rotate(a.rotation,z);
+        vec4 firstTurn=vec4(worldX*sin(first*0.5),cos(first*0.5));
+        worldY=rotate(firstTurn,worldY); worldZ=rotate(firstTurn,worldZ);
+        vec4 middleTurn=vec4(worldY*sin(middle*0.5),cos(middle*0.5));
+        worldZ=rotate(middleTurn,worldZ);
+        solveAngular(a,b,k==0 ? worldX : (k==1 ? worldY : worldZ),error);
+    }
+}
+
 // Corrects the separation of the two calibrated anchors. A coloured batch
 // makes each body writable by just one invocation, without float atomics.
 void solveJoint(uint index) {
@@ -104,7 +130,18 @@ void solveJoint(uint index) {
         rotateBy(a,ia*impulse);
         rotateBy(b,-ib*impulse);
     }
-    if (j.bodies.z==1u) solveHinge(a,b,j);
+    if (j.bodies.z==0u) solveBall(a,b,j);
+    else if (j.bodies.z==1u) solveHinge(a,b,j);
+    // Angular correction can move anchors apart again. Close the remaining
+    // gap by inverse-mass weighted translation, just as the old hand solver
+    // projected tiny finger anchors after constraint solving.
+    float weight=a.positionMass.w+b.positionMass.w;
+    if (weight>1e-12) {
+        vec3 separation=(b.positionMass.xyz+rotate(b.rotation,j.childAnchor.xyz))-
+                        (a.positionMass.xyz+rotate(a.rotation,j.parentAnchor.xyz));
+        a.positionMass.xyz+=separation*(a.positionMass.w/weight);
+        b.positionMass.xyz-=separation*(b.positionMass.w/weight);
+    }
     bodies.body[j.bodies.x]=a;
     bodies.body[j.bodies.y]=b;
 }
@@ -157,6 +194,9 @@ void findContacts(uint index) {
         for (uint i=0u;i<a.samples.y;++i) {
             vec4 sa=samples.point[a.samples.x+i];
             vec3 ra=rotate(a.rotation,sa.xyz);
+            vec3 centerDistance=separation+ra;
+            float candidateRadius=b.inverseInertia.w+sa.w;
+            if (dot(centerDistance,centerDistance)>candidateRadius*candidateRadius) continue;
             for (uint j=0u;j<b.samples.y;++j) {
                 vec4 sb=samples.point[b.samples.x+j];
                 vec3 rb=rotate(b.rotation,sb.xyz);

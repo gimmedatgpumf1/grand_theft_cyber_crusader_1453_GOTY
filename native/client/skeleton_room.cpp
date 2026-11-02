@@ -6,6 +6,7 @@
 #include "client/ui_layer.h"
 
 #include <thread>
+#include <atomic>
 
 #include <algorithm>
 #include <cmath>
@@ -134,7 +135,7 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
 }
 
 bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint) {
-    if (!ready_ || ragdoll_ || !std::isfinite(degrees)) return false;
+    if (!ready_ || physicsRig_ || !std::isfinite(degrees)) return false;
     // Keys select concrete anatomical groups; there is no hidden joint-selection
     // mode. Every finger/toe can be moved independently of its neighbours.
     int digit = key >= '1' && key <= '5' ? key-'0' :
@@ -206,7 +207,8 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
-    ragdoll_.reset(); male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
+    physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     for (SkeletonModel* model : {&male_,&female_}) {
         if (!model->restoreSourcePose() || !model->levelReferencePelvis()) return false;
         for (std::size_t i=0;i<model->sourceLinks().size();++i) {
@@ -230,7 +232,8 @@ bool SkeletonRoom::restoreReferencePose() {
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
-    ragdoll_.reset(); male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
+    physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
@@ -238,15 +241,25 @@ bool SkeletonRoom::restoreOriginalPose() {
 
 bool SkeletonRoom::toggleRagdoll() {
     if (!ready_) return false;
-    if (ragdoll_) return restoreReferencePose();
-    auto simulation=std::make_unique<SkeletonRagdoll>();
-    if (!simulation->create(male_,{-0.95,maleFloor_,0},female_,{0.95,femaleFloor_,0},
-                            &maleComparison_,&femaleComparison_)) return false;
-    ragdoll_=std::move(simulation);
+    if (physicsRig_) return restoreReferencePose();
+    auto simulation=std::make_unique<GpuSkeletonRig>();
+    if (!buildGpuSkeletonRig(male_,{-0.95,maleFloor_,0},maleComparison_,
+                             female_,{0.95,femaleFloor_,0},femaleComparison_,*simulation,error_)) return false;
+    static std::atomic<std::uint64_t> nextGeneration{1};
+    physicsGeneration_=nextGeneration.fetch_add(1,std::memory_order_relaxed);
+    physicsSteps_=0; physicsTime_=0; physicsRig_=std::move(simulation);
+    lineSceneReady_=false;
     return true;
 }
 
-void SkeletonRoom::advanceRagdoll(double seconds) { if (ragdoll_) ragdoll_->advance(seconds); }
+void SkeletonRoom::advanceRagdoll(double seconds) {
+    if (!physicsRig_ || !std::isfinite(seconds) || seconds<=0) return;
+    // Bound catch-up work after pauses; never queue an unbounded GPU submission.
+    physicsTime_+=std::min(seconds,4.0/120.0);
+    const auto steps=static_cast<std::uint64_t>(physicsTime_*120.0);
+    physicsTime_-=double(steps)/120.0;
+    physicsSteps_+=steps;
+}
 
 void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
     Camera camera = freecam ? freecam->camera(view.width, view.height, view.gpu) : Camera{};
@@ -260,6 +273,11 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.worldSpaceGpu = view.gpu;
     }
     const auto submit = [&](GpuScene& scene) {
+        scene.physicsRig=physicsRig_.get();
+        scene.physicsGeneration=physicsGeneration_; scene.physicsSteps=physicsSteps_;
+        scene.physicsLineView=lineView_ && bool(physicsRig_);
+        scene.maleSkinCount=static_cast<std::uint32_t>(male_.sourceStructures().size());
+        scene.femaleSkinCount=static_cast<std::uint32_t>(female_.sourceStructures().size());
         const std::size_t worldCount=scene.batches.size();
         frame.interfaceInFrame=false;
         if (frame.uiLayer && !frame.uiLayer->empty()) {
@@ -278,10 +296,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-                maleComparison_.draw(raster,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
-                femaleComparison_.draw(raster,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
+                maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
+                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
+                maleComparison_.draw(raster,-2.85,12000,nullptr);
+                femaleComparison_.draw(raster,2.85,14000,nullptr);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -302,8 +320,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-        maleComparison_.draw(raster,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
-        femaleComparison_.draw(raster,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
+        maleComparison_.draw(raster,-2.85,12000,nullptr);
+        femaleComparison_.draw(raster,2.85,14000,nullptr);
         const UiLayer* ui=frame.uiLayer;
         frame = raster.finish();
         if (ui) compositeUi(frame,*ui);
@@ -406,15 +424,12 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             if (!poseMoved) break;
             const int id = static_cast<int>(entry.first);
             // Blue bone and toe-icosahedron batches share the distal bone's
-            // rigid delta from the same Bullet body.
+            // rigid delta from the same GPU body.
             for (bool male : {true,false}) {
                 const int base=male ? 12000 : 14000;
                 const auto count=(male ? maleComparison_ : femaleComparison_).parts().size();
                 if (id<base || static_cast<std::size_t>(id-base)>=count*2) continue;
-                const auto index=static_cast<std::size_t>(id-base)%count;
-                if (ragdoll_ && index<ragdoll_->bluePose(male).size())
-                    scene_.batches[entry.second].modelMatrix=ragdoll_->bluePose(male)[index];
-                else scene_.batches[entry.second].modelMatrix={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+                scene_.batches[entry.second].modelMatrix={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
             }
             const std::vector<std::array<double, 16>>* matrices = nullptr;
             std::size_t boneIndex = 0;
@@ -454,8 +469,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
-    maleComparison_.draw(room,-2.85,12000,ragdoll_ ? &ragdoll_->bluePose(true) : nullptr);
-    femaleComparison_.draw(room,2.85,14000,ragdoll_ ? &ragdoll_->bluePose(false) : nullptr);
+    maleComparison_.draw(room,-2.85,12000,nullptr);
+    femaleComparison_.draw(room,2.85,14000,nullptr);
     const UiLayer* ui=frame.uiLayer;
     frame = room.finish();
     if (ui) compositeUi(frame,*ui);
