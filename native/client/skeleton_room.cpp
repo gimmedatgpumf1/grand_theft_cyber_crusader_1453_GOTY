@@ -254,8 +254,9 @@ bool SkeletonRoom::toggleRagdoll() {
 
 void SkeletonRoom::advanceRagdoll(double seconds) {
     if (!physicsRig_ || !std::isfinite(seconds) || seconds<=0) return;
-    // Bound catch-up work after pauses; never queue an unbounded GPU submission.
-    physicsTime_+=std::min(seconds,4.0/120.0);
+    // At most two steps per rendered frame: otherwise a slow GPU causes a
+    // catch-up spiral in which each late frame queues even more physics work.
+    physicsTime_+=std::min(seconds,2.0/120.0);
     const auto steps=static_cast<std::uint64_t>(physicsTime_*120.0);
     physicsTime_-=double(steps)/120.0;
     physicsSteps_+=steps;

@@ -18,6 +18,8 @@ struct alignas(16) Body {
     std::array<float,4> previousPosition{};
     std::array<float,4> previousRotation{0,0,0,1};
     std::array<std::uint32_t,4> samples{};
+    // Body-local AABB of the sphere proxies, used to reject distant pairs.
+    std::array<float,4> bounds{};
 };
 struct alignas(16) Joint {
     // bodies.z: 0 = limited ball, 1 = hinge, 2 = positional only.
@@ -49,7 +51,7 @@ struct alignas(16) Step {
     float dt=0;
     std::array<float,4> gravityFloor{0,-9.81f,0,0};
 };
-static_assert(sizeof(Body)==128 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==32);
+static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==32);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };

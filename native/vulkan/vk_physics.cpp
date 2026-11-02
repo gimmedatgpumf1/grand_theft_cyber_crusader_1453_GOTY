@@ -16,7 +16,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
     if (!scene.physicsGeneration) return false;
     if (scene.physicsGeneration!=physicsGeneration_) {
         if (physicsGeneration_ && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
-        physics_.reset(); physicsMatrixSlots_.clear(); physicsStep_=0; physicsGeneration_=0;
+        physics_.reset(); physicsMatrixSlots_.clear(); physicsPlan_.clear(); physicsStep_=0; physicsGeneration_=0;
         const auto getDevice=reinterpret_cast<PFN_vkGetDeviceProcAddr>(getInstanceProcAddr_(instance_,"vkGetDeviceProcAddr"));
         if (!physics_.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,
                              gpu_physics::rigid_solver_spirv,rig.bodies,rig.joints,rig.spheres,rig.exclusions,rig.batches)) {
@@ -25,6 +25,15 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
         physicsGeneration_=scene.physicsGeneration;
     }
     if (scene.physicsSteps<physicsStep_) return false;
+    auto& plan=physicsNextPlan_;
+    plan.clear();
+    plan.reserve(scene.batches.size()+2);
+    plan.push_back((std::uint64_t(scene.maleSkinCount)<<32)|scene.femaleSkinCount);
+    plan.push_back(scene.physicsLineView ? 1u : 0u);
+    for (std::size_t i=0;i<scene.batches.size();++i)
+        if (i<slots_.size() && slots_[i]>=0)
+            plan.push_back((std::uint64_t(scene.batches[i].objectId)<<32)|std::uint32_t(slots_[i]));
+    if (plan==physicsPlan_ && !physicsMatrixSlots_.empty()) return true;
     std::unordered_map<std::uint32_t,std::uint32_t> byObject;
     byObject.reserve(scene.batches.size());
     for (std::size_t i=0;i<scene.batches.size();++i) {
@@ -65,6 +74,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
         physicsMatrixSlots_=std::move(matrixSlots);
         physicsLineView_=scene.physicsLineView;
     }
+    physicsPlan_.swap(plan);
     return true;
 }
 

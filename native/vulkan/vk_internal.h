@@ -378,6 +378,8 @@ private:
     std::uint64_t physicsGeneration_=0, physicsStep_=0;
     bool physicsLineView_=false;
     std::vector<std::uint32_t> physicsMatrixSlots_;
+    // Reuse the binding plan when the rigid batches and their slots are unchanged.
+    std::vector<std::uint64_t> physicsPlan_, physicsNextPlan_;
 
     template <class Function>
     bool resolve(Function& slot, const char* name) {

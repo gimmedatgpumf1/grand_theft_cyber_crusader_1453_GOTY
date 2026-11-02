@@ -73,6 +73,9 @@ bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& cen
         const double radius=std::max(0.001,length(cell.high-cell.low)*0.5+0.001);
         result.spheres.push_back(packed(local,radius));
         body.inverseInertia[3]=std::max(body.inverseInertia[3],float(length(local)+radius+0.0001));
+        body.bounds[0]=std::max(body.bounds[0],float(std::abs(local.x)+radius));
+        body.bounds[1]=std::max(body.bounds[1],float(std::abs(local.y)+radius));
+        body.bounds[2]=std::max(body.bounds[2],float(std::abs(local.z)+radius));
     }
     body.samples[1]=static_cast<std::uint32_t>(result.spheres.size()-body.samples[0]);
     result.bodies.push_back(body);
@@ -286,10 +289,12 @@ void fillExclusions(GpuSkeletonRig& rig) {
     for (std::size_t a=0;a<count;++a) for (auto b:adjacent[a]) for (auto c:adjacent[b]) if (a!=c) exclude(a,c);
     // Preserve source meshes which already intersect: don't launch them apart.
     for (std::size_t i=0;i<count;++i) for (std::size_t j=i+1;j<count;++j) {
+        if ((rig.exclusions[i*stride+j/32] & (1u<<(j%32)))!=0) continue;
         const Body& a=rig.bodies[i]; const Body& b=rig.bodies[j];
-        const Vec3 ca=vectorOf(a.positionMass), cb=vectorOf(b.positionMass);
+        const Vec3 ca=vectorOf(a.positionMass), cb=vectorOf(b.positionMass), delta=ca-cb;
         const double limit=a.inverseInertia[3]+b.inverseInertia[3];
-        if (dot(ca-cb,ca-cb)>limit*limit) continue;
+        if (dot(delta,delta)>limit*limit || std::abs(delta.x)>a.bounds[0]+b.bounds[0] ||
+            std::abs(delta.y)>a.bounds[1]+b.bounds[1] || std::abs(delta.z)>a.bounds[2]+b.bounds[2]) continue;
         bool overlap=false;
         for (std::uint32_t x=0;x<a.samples[1] && !overlap;++x) for (std::uint32_t y=0;y<b.samples[1];++y) {
             const auto& sa=rig.spheres[a.samples[0]+x]; const auto& sb=rig.spheres[b.samples[0]+y];

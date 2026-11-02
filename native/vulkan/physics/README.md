@@ -11,7 +11,9 @@ API and source lists and need migration to the new GPU path.
 
 This is **not a PhysX-equivalent engine**. The solver uses graph-coloured joint
 constraints, approximate angular limits, floor support and sphere-proxy contacts.
-Its all-pairs broad phase and overlapping-proxy exclusions need further work;
+Contact search uses four GPU lanes per body, conservative world-space bounds,
+and four contact searches per eight joint iterations. Fewer contact iterations
+reduce work but can reduce contact convergence. Its all-pairs broad phase and overlapping-proxy exclusions need further work;
 limits, collisions, settling and body stability have not been fully validated.
 The current approximation can produce contorted poses. Replacing or expanding
 this solver requires further visual and physical validation.
@@ -19,8 +21,8 @@ this solver requires further visual and physical validation.
 The room path was inspected using SwiftShader's software Vulkan implementation,
 not a physical GPU. Windows/MSVC, integrated-GPU compatibility and performance
 have not been verified; no speed or frame-rate claim is made. GPU simulation
-steps are capped per rendered frame so a long pause cannot generate an unbounded
-submission; under load the simulation can run slower than wall-clock time.
+steps are capped at two per rendered frame to avoid a catch-up spiral; below
+60 rendered frames per second the simulation runs slower than wall-clock time.
 
 `rigid_runtime` owns compute pipelines and buffers. The renderer requires a
 queue with graphics and compute support, dispatches fixed steps, and writes the

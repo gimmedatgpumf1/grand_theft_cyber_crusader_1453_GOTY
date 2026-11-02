@@ -136,13 +136,24 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     LOAD(cmdPipelineBarrier_,"vkCmdPipelineBarrier")
 #undef LOAD
     getMemoryProperties(physical,&memory_);
+    // Derive conservative local bounds from the actual proxies, including for
+    // callers which did not precompute them in their input bodies.
+    std::vector<Body> prepared(bodies.begin(),bodies.end());
+    for (Body& body:prepared) {
+        body.bounds={};
+        for (std::size_t i=body.samples[0];i<std::size_t(body.samples[0])+body.samples[1];++i) {
+            const auto& sphere=spheres[i];
+            for (int axis=0;axis<3;++axis)
+                body.bounds[axis]=std::max(body.bounds[axis],std::abs(sphere[axis])+sphere[3]);
+        }
+    }
     // Scratch corrections and exclusions share one storage descriptor so the
     // shader fits the Vulkan 1.0 minimum of four per-stage storage buffers.
-    std::vector<std::uint32_t> scratch(count*8+exclusions.size(),0);
+    std::vector<std::uint32_t> scratch(count*12+exclusions.size(),0);
     std::copy(exclusions.begin(),exclusions.end(),scratch.begin()+count*8);
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),spheres.size_bytes(),
                                  scratch.size()*sizeof(std::uint32_t)};
-    const void* data[4]={bodies.data(),joints.data(),spheres.data(),scratch.data()};
+    const void* data[4]={prepared.data(),joints.data(),spheres.data(),scratch.data()};
     for (std::size_t i=0;i<buffers_.size();++i) if (!makeBuffer(buffers_[i],sizes[i],data[i])) { reset(); return false; }
 
     std::array<VkDescriptorSetLayoutBinding,4> bindings{};
@@ -208,7 +219,9 @@ void RigidRuntime::barrier(VkCommandBuffer command, VkPipelineStageFlags destina
 void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
     if (!step.count) return;
     cmdPushConstants_(command,layout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(step),&step);
-    cmdDispatch_(command,(step.count+63u)/64u,1,1);
+    // Four lanes cooperate on each body during contact search. Other phases
+    // use one invocation per body or coloured joint.
+    cmdDispatch_(command,step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u,1,1);
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations) const {
@@ -223,9 +236,15 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
         for (const JointBatch& batch:batches_) {
             step.first=batch.first; step.count=batch.count; dispatch(command,step);
         }
-        step.count=bodyCount_; step.first=0; step.phase=2; dispatch(command,step);
-        step.first=bodyCount_; step.phase=4; dispatch(command,step);
-        step.first=0; step.phase=5; dispatch(command,step);
+        // Keep the eight joint and floor projections, but run the expensive
+        // all-pairs contact search on alternating iterations. The floor phase
+        // caches world bounds only on iterations followed by a contact search.
+        const bool contacts=(pass&1u)!=0u || pass+1u==iterations;
+        step.count=bodyCount_; step.first=contacts ? bodyCount_ : 0; step.phase=2; dispatch(command,step);
+        if (contacts) {
+            step.first=bodyCount_; step.phase=4; dispatch(command,step);
+            step.first=0; step.phase=5; dispatch(command,step);
+        }
     }
     step.phase=3; dispatch(command,step);
     barrier(command,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);

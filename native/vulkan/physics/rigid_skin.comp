@@ -12,6 +12,7 @@ struct Body {
     vec4 previousPosition;
     vec4 previousRotation;
     uvec4 samples;
+    vec4 bounds;
 };
 struct Binding {
     mat4 localFromMesh;
