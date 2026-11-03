@@ -89,8 +89,9 @@ protruding portions, and welded into one foot-owned indexed mesh. Their fitted
 plane equations are retained. In plan view the open front follows straight
 segments through the 40% points of the five proximal octagonal toe prisms
 (measured between their ring centers), returning to the sides by the outer
-toes' back rings. Reference-pose bone and toe-skin cross-sections are cut out
-rather than intersected, so parts of that boundary can be obscured by the toes. Those cutouts can leave openings where seams meet the ankle
+toes' back rings. Disconnected reference-pose bone and toe-skin cross-sections
+are cut out separately, so clear areas of the sole and sides between them are
+preserved. Parts of the boundary can still be obscured by the toes. Those cutouts can leave openings where seams meet the ankle
 or toes. The sole is visual geometry, not a new collision proxy. The mesh moves
 with the foot body, so independently moving toes or ankle bones can still
 intersect it.

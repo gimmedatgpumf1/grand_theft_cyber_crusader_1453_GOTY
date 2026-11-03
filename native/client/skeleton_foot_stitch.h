@@ -80,7 +80,8 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
     const double clearance=.0001*std::sqrt(1+plane.slopeU*plane.slopeU+plane.slopeV*plane.slopeV);
     for (const auto& obstacle:obstacles) {
         if (pieces.empty()) return;
-        std::vector<Vec3> mapped,overlap;
+        std::vector<Vec3> mapped;
+        std::vector<std::vector<Vec3>> sections;
         mapped.reserve(obstacle.points.size());
         for (Vec3 p:obstacle.points) mapped.push_back(plane.local(p));
         for (auto f:obstacle.faces) {
@@ -88,16 +89,34 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
                 std::size_t(f[1])>=mapped.size() || std::size_t(f[2])>=mapped.size()) continue;
             auto slab=heightClip({mapped[f[0]],mapped[f[1]],mapped[f[2]]},plane.slopeU,plane.slopeV,plane.level-clearance,true);
             slab=heightClip(slab,plane.slopeU,plane.slopeV,plane.level+clearance,false);
-            overlap.insert(overlap.end(),slab.begin(),slab.end());
+            if (slab.size()>=3) sections.push_back(std::move(slab));
         }
-        auto cut=hull(std::move(overlap));
-        if (cut.size()<3) continue;
-        std::vector<std::vector<Vec3>> next;
-        for (const auto& piece:pieces) {
-            auto remaining=subtract(piece,cut);
-            next.insert(next.end(),remaining.begin(),remaining.end());
+        // A skin can meet a sheet in two separated places. Taking one hull of
+        // both removes the perfectly clear area between them (notably under
+        // the little toe), so join only touching cross-section fragments.
+        std::vector<std::size_t> group(sections.size());
+        for (std::size_t i=0;i<group.size();++i) group[i]=i;
+        const auto root=[&](std::size_t i) { while (group[i]!=i) i=group[i]; return i; };
+        for (std::size_t i=0;i<sections.size();++i) for (std::size_t j=0;j<i;++j) {
+            bool touching=false;
+            for (Vec3 a:sections[i]) for (Vec3 b:sections[j])
+                if (std::hypot(a.x-b.x,a.z-b.z)<1e-7) touching=true;
+            if (touching) group[root(i)]=root(j);
         }
-        pieces=std::move(next);
+        for (std::size_t i=0;i<sections.size();++i) {
+            if (root(i)!=i) continue;
+            std::vector<Vec3> overlap;
+            for (std::size_t j=0;j<sections.size();++j) if (root(j)==i)
+                overlap.insert(overlap.end(),sections[j].begin(),sections[j].end());
+            auto cut=hull(std::move(overlap));
+            if (cut.size()<3) continue;
+            std::vector<std::vector<Vec3>> next;
+            for (const auto& piece:pieces) {
+                auto remaining=subtract(piece,cut);
+                next.insert(next.end(),remaining.begin(),remaining.end());
+            }
+            pieces=std::move(next);
+        }
     }
 }
 // Weld coincident points into a single indexed mesh and split T-junctions so
