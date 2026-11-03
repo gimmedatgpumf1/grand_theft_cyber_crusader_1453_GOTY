@@ -6,9 +6,9 @@
 namespace gtc::native {
 
 // Add only the missing portion of the dorsal plane between its existing
-// outline and the medial sheet. The bridge is coplanar with that plane.
+// outline and a foot side sheet. The bridge is coplanar with that plane.
 template<class Comparison>
-void bridgeMedialFootPlane(const Comparison& comparison,const std::string& suffix,Vec3 origin,
+void bridgeFootSidePlane(const Comparison& comparison,const std::string& suffix,Vec3 origin,
                            const MetatarsalPlane& side,MetatarsalPlane& top) {
     using namespace metatarsal_plane_detail;
     const auto plane=[](const MetatarsalPlane& mesh,Vec3& point,Vec3& normal) {
@@ -34,7 +34,7 @@ void bridgeMedialFootPlane(const Comparison& comparison,const std::string& suffi
         return (t*sn.y-s*tn.y)/determinant;
     };
     const auto roofY=[&](double x,double z) { return (td-tn.x*x-tn.z*z)/tn.y; };
-    // Only bridge z ranges where the medial mesh actually reaches the roof.
+    // Only bridge z ranges where the side mesh actually reaches the roof.
     std::vector<std::pair<double,double>> ranges;
     for (const auto& f:side.faces) for (int i=0;i<3;++i) {
         const Vec3 p=side.points[f[i]],q=side.points[f[(i+1)%3]];

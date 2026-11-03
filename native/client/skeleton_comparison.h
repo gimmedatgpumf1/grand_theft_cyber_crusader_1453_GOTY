@@ -791,7 +791,8 @@ public:
             const std::string suffix=side==0 ? "_L" : "_R";
             auto plane=makeMetatarsalPlane(*this,suffix,origin);
             if (plane.points.empty()) continue;
-            auto medial=makeMedialFootPlane(*this,suffix,origin,plane);
+            auto medial=makeFootSidePlane(*this,suffix,origin,plane);
+            auto lateral=makeFootSidePlane(*this,suffix,origin,plane,true);
             const auto drawFootPlane=[&](MetatarsalPlane& sheet,std::size_t objectGroup) {
                 if (sheet.points.empty()) return;
                 if (!rasterizer.gpu() && pose && std::size_t(sheet.owner)<pose->size())
@@ -802,6 +803,7 @@ public:
             };
             drawFootPlane(plane,5);
             drawFootPlane(medial,6);
+            drawFootPlane(lateral,7);
         }
         for (std::size_t i=0;i<parts_.size();++i) {
             if (parts_[i].name.rfind("FootDistP",0)!=0) continue;

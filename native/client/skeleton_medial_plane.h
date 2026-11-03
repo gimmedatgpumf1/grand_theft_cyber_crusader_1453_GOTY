@@ -5,46 +5,48 @@
 
 namespace gtc::native {
 
-// The medial sheet runs from the first metatarsal to the heel. It is fitted
-// to outward-facing foot bones and moves with the dorsal sheet's foot body.
+// A side sheet runs from a metatarsal to the heel, fitted to outward-facing
+// bones. It moves with the dorsal sheet's foot body.
 template<class Comparison>
-MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::string& suffix,
-                                   Vec3 origin, MetatarsalPlane& top) {
+MetatarsalPlane makeFootSidePlane(const Comparison& comparison, const std::string& suffix,
+                                  Vec3 origin, MetatarsalPlane& top, bool littleToe=false) {
     using namespace metatarsal_plane_detail;
     MetatarsalPlane result;
     const auto& parts=comparison.parts();
-    std::vector<Vec3> medial, first, fifth, talus, heel;
-    std::size_t greatToe=parts.size();
+    std::vector<Vec3> fitted, first, fifth, talus, heel;
+    std::size_t sideToe=parts.size();
     for (std::size_t i=0;i<parts.size();++i) {
         const auto& part=parts[i];
         if (!part.name.ends_with(suffix)) continue;
         if (part.name=="FootMeta3"+suffix) result.owner=static_cast<int>(i);
-        if (part.name=="FootDistP1"+suffix) greatToe=i;
+        if (part.name==(littleToe ? "FootDistP5" : "FootDistP1")+suffix) sideToe=i;
         const bool firstMeta=part.name=="FootMeta1"+suffix;
         const bool fifthMeta=part.name=="FootMeta5"+suffix;
         const bool isHeel=part.name=="Cal"+suffix;
-        const bool fit=firstMeta || part.name=="MedCun"+suffix ||
-                       part.name=="Nav"+suffix || part.name=="Tal"+suffix;
-        if (!fit && !fifthMeta && !isHeel) continue;
+        const bool fit=part.name=="Tal"+suffix || (littleToe
+            ? (fifthMeta || part.name=="Cub"+suffix || part.name=="LatCun"+suffix)
+            : (firstMeta || part.name=="MedCun"+suffix || part.name=="Nav"+suffix));
+        if (!fit && !firstMeta && !fifthMeta && !isHeel) continue;
         for (Vec3 p:part.points) {
             p=comparison.mapPart(p,part)+origin;
-            if (fit) medial.push_back(p);
+            if (fit) fitted.push_back(p);
             if (firstMeta) first.push_back(p);
             if (fifthMeta) fifth.push_back(p);
             if (part.name=="Tal"+suffix) talus.push_back(p);
             if (isHeel) heel.push_back(p);
         }
     }
-    if (result.owner<0 || medial.size()<3 || first.empty() || fifth.empty() || talus.empty() || heel.empty() || top.faces.empty()) return {};
+    if (result.owner<0 || fitted.size()<3 || first.empty() || fifth.empty() || talus.empty() || heel.empty() || top.faces.empty()) return {};
     double firstX=0,fifthX=0;
     for (Vec3 p:first) firstX+=p.x;
     for (Vec3 p:fifth) fifthX+=p.x;
-    const double outward=firstX/double(first.size())<fifthX/double(fifth.size()) ? -1.0 : 1.0;
+    const double medialOutward=firstX/double(first.size())<fifthX/double(fifth.size()) ? -1.0 : 1.0;
+    const double outward=littleToe ? -medialOutward : medialOutward;
     // Convert to a 2-D (z,y) footprint with the outward coordinate as height.
     const auto local=[&](Vec3 p) { return Vec3{p.z,outward*p.x,p.y}; };
     std::vector<Vec3> candidates;
-    candidates.reserve(medial.size());
-    for (Vec3 p:medial) candidates.push_back(local(p));
+    candidates.reserve(fitted.size());
+    for (Vec3 p:fitted) candidates.push_back(local(p));
     double loU=candidates[0].x,hiU=loU,loV=candidates[0].z,hiV=loV;
     for (Vec3 p:candidates) {
         loU=std::min(loU,p.x); hiU=std::max(hiU,p.x);
@@ -137,14 +139,14 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
     expanded.push_back(joinPoint(maxTop));
     boundary=hull(std::move(expanded));
     if (boundary.size()<3) return {};
-    // End the sheet before it crosses the great toe's existing skin, keeping
-    // that separately articulated mesh untouched.
-    if (greatToe<parts.size()) {
+    // End the sheet before it crosses the adjacent toe's existing skin.
+    if (sideToe<parts.size()) {
         double fore=0,back=0;
-        for (Vec3 p:first) fore+=p.z;
+        const auto& metatarsal=littleToe ? fifth : first;
+        for (Vec3 p:metatarsal) fore+=p.z;
         for (Vec3 p:talus) back+=p.z;
-        const double towardToe=fore/double(first.size())>back/double(talus.size()) ? 1.0 : -1.0;
-        const auto skin=comparison.toeSurface(greatToe,origin);
+        const double towardToe=fore/double(metatarsal.size())>back/double(talus.size()) ? 1.0 : -1.0;
+        const auto skin=comparison.toeSurface(sideToe,origin);
         double toeStart=1e30;
         for (const auto& f:skin.faces) {
             if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=skin.points.size() ||
@@ -208,7 +210,7 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
         result.faces.push_back(outward<0 ? std::array<int,3>{base,base+1,base+2}
                                          : std::array<int,3>{base,base+2,base+1});
     }
-    if (!result.faces.empty()) bridgeMedialFootPlane(comparison,suffix,origin,result,top);
+    if (!result.faces.empty()) bridgeFootSidePlane(comparison,suffix,origin,result,top);
     return result;
 }
 } // namespace gtc::native
