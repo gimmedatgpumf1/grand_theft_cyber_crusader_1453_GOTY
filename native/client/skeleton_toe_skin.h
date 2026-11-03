@@ -26,10 +26,11 @@ struct ToeSkinMesh {
     void triangle(int a,int b,int c) { if (a!=b && b!=c && c!=a) faces.push_back({a,b,c}); }
 };
 
-// Fill the cut around a possibly concave nail. Subtract each triangle of the
-// nail fan from the cut, so no hidden flesh surface remains beneath the nail.
-inline void fillNailSurround(ToeSkinMesh& mesh, const std::vector<int>& boundary,
-                             Vec3 center, Vec3 lateral, Vec3 forward, int owner) {
+// Retain the original facets outside the nail footprint. Only the part above
+// the nail plane and inside the plate is removed; the narrow cut edge is joined
+// to the plate rather than flattening the whole tip.
+inline void restoreNailTip(ToeSkinMesh& mesh, const std::vector<std::array<int,3>>& original,
+                           Vec3 lateral, Vec3 forward, Vec3 normal, int owner) {
     const auto side=[&](Vec3 p,Vec3 a,Vec3 b) {
         const Vec3 ab=b-a, ap=p-a;
         return dot(ab,lateral)*dot(ap,forward)-dot(ab,forward)*dot(ap,lateral);
@@ -49,39 +50,60 @@ inline void fillNailSurround(ToeSkinMesh& mesh, const std::vector<int>& boundary
     Vec3 nailCenter{};
     for (Vec3 p:mesh.nailPoints) nailCenter+=p;
     nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
-    for (std::size_t i=0;i<boundary.size();++i) {
-        std::vector<std::vector<Vec3>> pieces{{center,mesh.points[std::size_t(boundary[i])],
-                                              mesh.points[std::size_t(boundary[(i+1)%boundary.size()])]}};
-        for (std::size_t k=0;k<mesh.nailPoints.size() && !pieces.empty();++k) {
-            const std::array<Vec3,3> triangle{nailCenter,mesh.nailPoints[k],
-                                               mesh.nailPoints[(k+1)%mesh.nailPoints.size()]};
+    const auto height=[&](Vec3 p) { return dot(p-nailCenter,normal); };
+    const auto emitPolygon=[&](const std::vector<Vec3>& polygon) {
+        if (polygon.size()<3) return;
+        const int root=mesh.vertex(polygon[0],owner);
+        for (std::size_t j=1;j+1<polygon.size();++j) {
+            if (length(cross(polygon[j]-polygon[0],polygon[j+1]-polygon[0]))>1e-14) {
+                const int v1=mesh.vertex(polygon[j],owner), v2=mesh.vertex(polygon[j+1],owner);
+                mesh.triangle(root,v1,v2);
+            }
+        }
+    };
+    for (const auto& face:original) {
+        std::vector<Vec3> upper;
+        for (int k=0;k<3;++k) {
+            const Vec3 p=mesh.points[std::size_t(face[k])], q=mesh.points[std::size_t(face[(k+1)%3])];
+            const double h1=height(p), h2=height(q);
+            if (h1>=0) upper.push_back(p);
+            if ((h1>=0)!=(h2>=0)) upper.push_back(p+(q-p)*(h1/(h1-h2)));
+        }
+        if (upper.size()<3) continue;
+        std::vector<std::vector<Vec3>> pieces{upper};
+        for (std::size_t k=0;k<mesh.nailPoints.size();++k) {
+            const Vec3 a=mesh.nailPoints[k], b=mesh.nailPoints[(k+1)%mesh.nailPoints.size()];
+            const std::array<Vec3,3> wedge{nailCenter,a,b};
+            // At the outer wedge edge, join the retained icosahedron surface to
+            // the nail plane. Radial wedge edges are internal and get no wall.
+            auto overlap=upper;
+            for (int edge=0;edge<3 && !overlap.empty();++edge)
+                overlap=clip(overlap,wedge[edge],wedge[(edge+1)%3],true);
+            for (std::size_t j=0;j<overlap.size();++j) {
+                const Vec3 p=overlap[j], q=overlap[(j+1)%overlap.size()];
+                if (std::abs(side(p,a,b))<1e-12 && std::abs(side(q,a,b))<1e-12 && length(q-p)>1e-9) {
+                    const Vec3 p0=p-normal*height(p), q0=q-normal*height(q);
+                    emitPolygon({p,q,q0,p0});
+                }
+            }
             std::vector<std::vector<Vec3>> outsidePieces;
             for (auto remainder:pieces) {
                 for (int edge=0;edge<3 && !remainder.empty();++edge) {
-                    const Vec3 a=triangle[edge], b=triangle[(edge+1)%3];
-                    auto outside=clip(remainder,a,b,false);
+                    auto outside=clip(remainder,wedge[edge],wedge[(edge+1)%3],false);
                     if (outside.size()>=3) outsidePieces.push_back(std::move(outside));
-                    remainder=clip(remainder,a,b,true);
+                    remainder=clip(remainder,wedge[edge],wedge[(edge+1)%3],true);
                 }
             }
             pieces=std::move(outsidePieces);
         }
-        for (const auto& polygon:pieces) {
-            const int root=mesh.vertex(polygon[0],owner);
-            for (std::size_t j=1;j+1<polygon.size();++j) {
-                if (length(cross(polygon[j]-polygon[0],polygon[j+1]-polygon[0]))>1e-14) {
-                    const int v1=mesh.vertex(polygon[j],owner), v2=mesh.vertex(polygon[j+1],owner);
-                    mesh.triangle(root,v1,v2);
-                }
-            }
-        }
+        for (const auto& polygon:pieces) emitPolygon(polygon);
     }
 }
 
 // Trim the distal icosahedron and fit an eight-sided, recessed flat nail.
 inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vector<Vec3>& tip,
                        const std::vector<Vec3>& bone, Vec3 axis, Vec3 basePlane,
-                       int owner, std::vector<int>& baseBoundary) {
+                       int owner) {
     const Vec3 lateral=normalized(cross(Vec3{0,1,0},axis));
     const Vec3 up=normalized(cross(axis,lateral));
     if (length(lateral)<1e-8 || length(up)<1e-8) return;
@@ -112,6 +134,7 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
         const Vec3 point=mesh.points[std::size_t(a)]+(mesh.points[std::size_t(b)]-mesh.points[std::size_t(a)])*t;
         const int index=mesh.vertex(point,owner); cutEdges.emplace(key,index); return index;
     };
+    const std::vector<std::array<int,3>> original(mesh.faces.begin()+firstFace,mesh.faces.end());
     std::vector<std::array<int,3>> clipped;
     for (std::size_t f=firstFace;f<mesh.faces.size();++f) {
         const auto& face=mesh.faces[f]; std::vector<int> polygon;
@@ -137,7 +160,8 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     };
     unique(clippedBase); unique(nailBoundary);
     if (clippedBase.size()<3 || nailBoundary.size()<3) return;
-    baseBoundary=std::move(clippedBase);
+    // The restored upper facets reach the original rear boundary too. Keep
+    // that complete loop for stitching to the prism, not the shortened cut.
     mesh.faces.resize(firstFace); mesh.faces.insert(mesh.faces.end(),clipped.begin(),clipped.end());
     Vec3 center{}; for (int index:nailBoundary) center+=mesh.points[std::size_t(index)];
     center=center/static_cast<double>(nailBoundary.size());
@@ -157,10 +181,10 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     if (width<1e-8 || depth<1e-8) return;
     // A broad, almost rectangular plate. The two inner points at the root
     // recede towards the tip, reversing the usual convex octagon there.
-    const double midX=(minX+maxX)*0.5, halfWidth=0.40*width;
-    const double back=minF+0.20*depth, front=maxF-0.18*depth;
-    const double rootInset=(front-back)*0.14;
-    const double tipChamferX=halfWidth*0.12, tipChamferF=(front-back)*0.10;
+    const double midX=(minX+maxX)*0.5, halfWidth=0.47*width;
+    const double back=minF+0.07*depth, front=maxF-0.04*depth;
+    const double rootInset=(front-back)*0.16;
+    const double tipChamferX=halfWidth*0.36, tipChamferF=(front-back)*0.25;
     const std::array<std::array<double,2>,8> outline={{{midX-halfWidth*0.38,back+rootInset},
         {midX+halfWidth*0.38,back+rootInset},{midX+halfWidth,back},
         {midX+halfWidth,front-tipChamferF},{midX+halfWidth-tipChamferX,front},
@@ -180,7 +204,7 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
         if (std::all_of(mesh.nailPoints.begin(),mesh.nailPoints.end(),withinCut)) break;
         for (Vec3& p:mesh.nailPoints) p=center+(p-center)*0.90;
     }
-    fillNailSurround(mesh,nailBoundary,center,lateral,nailForward,owner);
+    restoreNailTip(mesh,original,lateral,nailForward,normal,owner);
     Vec3 nailCenter{};
     for (Vec3 p:mesh.nailPoints) nailCenter+=p;
     nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
@@ -260,7 +284,7 @@ inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
         }
         for (std::size_t k=1;k+1<polygon.size();++k) out.triangle(polygon[0],polygon[k],polygon[k+1]);
     }
-    cutToeNail(out,tipFaceStart,tip,tipBone,axis,plane,tipId,boundary);
+    cutToeNail(out,tipFaceStart,tip,tipBone,axis,plane,tipId);
     std::sort(boundary.begin(),boundary.end());
     boundary.erase(std::unique(boundary.begin(),boundary.end()),boundary.end());
     if (boundary.size()<3 || length(u)<1e-8 || length(v)<1e-8) return {};
