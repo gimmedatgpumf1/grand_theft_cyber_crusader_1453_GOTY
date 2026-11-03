@@ -171,16 +171,9 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                 for (int k=0;k<16;++k) binding.localFromMesh[k]=float(matrices[i][k]);
                 binding.localFromMesh[12]-=float(center.x); binding.localFromMesh[13]-=float(center.y); binding.localFromMesh[14]-=float(center.z);
             }
+            // Toe skin vertices use these same bone slots; the joined surface
+            // has no separate rigid-piece batches to bind.
             result.bindings.push_back(binding);
-            if (comparison && parts[i].name.rfind("FootDistP",0)==0) {
-                binding.objectId=input.idBase+static_cast<std::uint32_t>(parts.size()+i);
-                result.bindings.push_back(binding);
-            }
-            if (comparison && (parts[i].name.rfind("FootMidP",0)==0 || parts[i].name.rfind("FootProxP",0)==0) &&
-                !comparison->toePrism(i,input.origin).empty()) {
-                binding.objectId=input.idBase+static_cast<std::uint32_t>(2*parts.size()+i);
-                result.bindings.push_back(binding);
-            }
         }
     }
     const auto& absolute=rig->absoluteTransforms();

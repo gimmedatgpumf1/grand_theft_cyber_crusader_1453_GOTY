@@ -205,6 +205,9 @@ struct GpuBatch {
     bool isUi = false;
     // V-view indexed vertices carry source-structure indices in nx for GPU skinning.
     bool vertexSkinned = false;
+    // Toe skin vertices name their owner's object ID rather than a V-view slot.
+    bool skinObjectIds = false;
+    bool skinOwner = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
@@ -292,6 +295,17 @@ public:
         if (batch.vertices.size()!=start+points.size()) return;
         batch.vertexSkinned=true;
         for (std::size_t i=0;i<owners.size();++i) batch.vertices[start+i].nx=float(owners[i]<0 ? 0 : owners[i]);
+    }
+    void setBatchPose(const std::array<double,16>& pose) {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].modelMatrix=pose;
+    }
+    void markSkinOwner() {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinOwner=true;
+    }
+    void meshObjectSkinned(const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
+                           const std::vector<int>& owners, const Material& material) {
+        meshSkinned(points,faces,owners,material);
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinObjectIds=true;
     }
     bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);

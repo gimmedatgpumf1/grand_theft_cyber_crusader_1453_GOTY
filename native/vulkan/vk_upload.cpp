@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <unordered_map>
 
 namespace gtc::native::detail {
 
@@ -81,6 +82,17 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     const VkDeviceSize stride = uvs ? sizeof(UvVertex) : sizeof(PackedVertex);
     const VkDeviceSize offset = static_cast<VkDeviceSize>(start) * stride;
     if (offset == bytes) return true;
+    std::unordered_map<std::uint32_t,float> skinSlots;
+    if (!uvs) {
+        for (std::size_t i=0;i<scene.batches.size();++i)
+            if (scene.batches[i].skinOwner && slots_[i]>=0) skinSlots.emplace(scene.batches[i].objectId,slots_[i]);
+        for (std::size_t i=first;i<scene.batches.size();++i) if (scene.batches[i].skinObjectIds)
+            for (const auto& vertex:scene.batches[i].vertices)
+                if (!skinSlots.count(static_cast<std::uint32_t>(vertex.nx))) {
+                    std::fprintf(stderr,"[vk] missing toe skin bone slot %u\n",static_cast<std::uint32_t>(vertex.nx));
+                    return false;
+                }
+    }
     const auto write = [&](char* cursor) {
         for (std::size_t i = first; i < scene.batches.size(); ++i) {
             const GpuBatch& batch = scene.batches[i];
@@ -92,8 +104,8 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
                     UvVertex coordinate{vertex.u, vertex.v};
                     std::memcpy(cursor + dest, &coordinate, sizeof(coordinate));
                 } else {
-                    const float boneSlot=batch.vertexSkinned
-                        ? vertex.nx + (batch.objectId==8001 ? float(scene.maleSkinCount) : 0.0f)
+                    const float boneSlot=batch.skinObjectIds ? skinSlots.at(static_cast<std::uint32_t>(vertex.nx)) :
+                        batch.vertexSkinned ? vertex.nx + (batch.objectId==8001 ? float(scene.maleSkinCount) : 0.0f)
                         : (slots_[i] >= 0.0F ? slots_[i] : vertex.nx);
                     PackedVertex packed{vertex.x, vertex.y, vertex.z, boneSlot, vertex.ny, vertex.nz};
                     std::memcpy(cursor + dest, &packed, sizeof(packed));

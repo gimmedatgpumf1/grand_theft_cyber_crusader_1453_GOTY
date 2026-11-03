@@ -63,6 +63,13 @@ is required before replacing or destroying these resources. `rigid_solver_data.h
 contains the shared layouts and constraint colouring; the contact passes use a
 symmetric exclusion bitset and per-body scratch space instead of float atomics.
 
+Each blue toe now has one connected exterior mesh. Its rings follow their owning
+phalanges through the same GPU bone matrices, and triangles bridge the joints;
+the buried prism caps and rear tip faces are omitted. Side faces between separate
+toes remain because independent motion can expose them. The low-poly bridges are
+not a soft-tissue simulation and can still intersect or expose bone at extreme
+poses. The collision proxy continues to approximate the underlying rigid pieces.
+
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
 headers from those modules. Client builds do not require a shader compiler.

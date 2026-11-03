@@ -102,7 +102,8 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         const bool physicsSingle=last==index && scene.physicsRig &&
             std::any_of(scene.physicsRig->bindings.begin(),scene.physicsRig->bindings.end(),
                         [&](const GpuSkeletonBinding& binding) { return binding.objectId==scene.batches[index].objectId; });
-        if ((last == index && !physicsSingle) || slot + (last - index + 1) > kBatchSlots) {
+        const bool skinSingle=last==index && scene.batches[index].skinOwner;
+        if ((last == index && !physicsSingle && !skinSingle) || slot + (last - index + 1) > kBatchSlots) {
             index = last + 1;
             continue;
         }

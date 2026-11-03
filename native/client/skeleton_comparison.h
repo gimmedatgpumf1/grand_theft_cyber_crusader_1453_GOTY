@@ -4,6 +4,7 @@
 // describe skin landmarks; the available landmarks below are skeletal proxies.
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
+#include "client/skeleton_toe_skin.h"
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
@@ -707,45 +708,45 @@ public:
         }
         return vertices;
     }
-    static std::vector<std::array<int,3>> toePrismFaces() {
-        std::vector<std::array<int,3>> faces; faces.reserve(28);
-        for (int i=0;i<8;++i) {
-            const int j=(i+1)%8;
-            faces.push_back({i,j,j+8}); faces.push_back({i,j+8,i+8});
-        }
-        for (int i=1;i<7;++i) {
-            faces.push_back({0,i+1,i}); faces.push_back({8,8+i,8+i+1});
-        }
-        return faces;
-    }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
               const std::vector<std::array<double,16>>* pose=nullptr) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
-        const std::vector<std::array<int,3>> faces={{0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},
-            {1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
-            {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},
-            {4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
-        const auto prismFaces=toePrismFaces();
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
             for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
-            if (pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
+            if (!rasterizer.gpu() && pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
-            auto vertices=toeIcosahedron(i,origin);
-            if (!vertices.empty()) {
-                if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
-                rasterizer.setObject(idBase+static_cast<std::uint32_t>(parts_.size()+i),{},0);
-                rasterizer.mesh(vertices,faces,toe);
-            }
-            vertices=toePrism(i,origin);
-            if (!vertices.empty()) {
-                if (pose && i<pose->size()) for (Vec3& p:vertices) p=transform((*pose)[i],p);
-                rasterizer.setObject(idBase+static_cast<std::uint32_t>(2*parts_.size()+i),{},0);
-                rasterizer.mesh(vertices,prismFaces,toe);
-            }
+            if (pose && i<pose->size()) rasterizer.setBatchPose((*pose)[i]);
+            if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0)
+                rasterizer.markSkinOwner();
+        }
+        for (std::size_t i=0;i<parts_.size();++i) {
+            const auto& name=parts_[i].name;
+            if (name.rfind("FootDistP",0)!=0) continue;
+            const std::string suffix=name.substr(9);
+            const auto findPart=[&](const std::string& partName) {
+                return std::find_if(parts_.begin(),parts_.end(),[&](const Part& p) { return p.name==partName; });
+            };
+            const auto proximal=findPart("FootProxP"+suffix);
+            const auto middle=findPart("FootMidP"+suffix);
+            if (proximal==parts_.end() || (suffix[0]!='1' && middle==parts_.end())) continue;
+            std::vector<std::vector<Vec3>> prisms;
+            std::vector<int> owners;
+            const auto add=[&](const auto& part) {
+                const auto index=static_cast<std::size_t>(part-parts_.begin());
+                prisms.push_back(toePrism(index,origin)); owners.push_back(static_cast<int>(index));
+            };
+            add(proximal); if (suffix[0]!='1') add(middle);
+            auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),static_cast<int>(i));
+            if (skin.points.empty()) continue;
+            if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
+                if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);
+            for (int& owner:skin.owners) owner+=static_cast<int>(idBase);
+            rasterizer.setObject(idBase+static_cast<std::uint32_t>(3*parts_.size()+i),{},0);
+            rasterizer.meshObjectSkinned(skin.points,skin.faces,skin.owners,toe);
         }
     }
 
