@@ -257,7 +257,7 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     // The user-specified eight-point outline has a shallow inverted root,
     // almost straight sides and a broad, straight free edge with chamfers.
     // Size it from this icosahedron's cut, not a uniformly shrunken rectangle.
-    const double midX=(minX+maxX)*0.5, halfWidth=width*0.47;
+    const double midX=(minX+maxX)*0.5, halfWidth=width*0.37;
     const double back=minF+depth*0.10, front=maxF-depth*0.005;
     const double notch=(front-back)*0.075, chamfer=(front-back)*0.18;
     const double inner=halfWidth*0.37;
