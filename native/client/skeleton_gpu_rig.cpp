@@ -147,7 +147,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                     for (Vec3& p:toes) p=apply(bluePose[i],p);
                     vertices.insert(vertices.end(),toes.begin(),toes.end());
                 }
-                if (part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootProxP1_",0)==0) {
+                if (part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootProxP",0)==0) {
                     auto segment=comparison->toePrism(i,input.origin);
                     for (Vec3& p:segment) p=apply(bluePose[i],p);
                     vertices.insert(vertices.end(),segment.begin(),segment.end());
@@ -176,7 +176,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                 binding.objectId=input.idBase+static_cast<std::uint32_t>(parts.size()+i);
                 result.bindings.push_back(binding);
             }
-            if (comparison && (parts[i].name.rfind("FootMidP",0)==0 || parts[i].name.rfind("FootProxP1_",0)==0) &&
+            if (comparison && (parts[i].name.rfind("FootMidP",0)==0 || parts[i].name.rfind("FootProxP",0)==0) &&
                 !comparison->toePrism(i,input.origin).empty()) {
                 binding.objectId=input.idBase+static_cast<std::uint32_t>(2*parts.size()+i);
                 result.bindings.push_back(binding);

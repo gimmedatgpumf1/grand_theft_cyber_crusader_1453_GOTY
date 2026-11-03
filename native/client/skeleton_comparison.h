@@ -602,13 +602,14 @@ public:
         }
         return result;
     }
-    // The segment immediately behind each distal tip: the lesser toes' middle
-    // phalanges and the great toe's proximal phalanx. Each prism belongs to its
-    // own bone, so the tip and the segment can articulate independently.
+    // Toe prisms belong to their own phalanges, so the pieces articulate
+    // independently. The great toe has only two phalanges.
     std::vector<Vec3> toePrism(std::size_t i, Vec3 origin) const {
         const Part& part=parts_[i];
         const bool middle=part.name.rfind("FootMidP",0)==0;
         const bool great=part.name.rfind("FootProxP1_",0)==0;
+        const bool lesserProx=part.name.rfind("FootProxP",0)==0 && !great;
+        if (lesserProx) return proximalToePrism(i,origin);
         if ((!middle && !great) || part.points.empty()) return {};
         const std::string suffix=part.name.substr(middle ? 8 : 9);
         const std::string distalName="FootDistP"+suffix;
@@ -656,6 +657,53 @@ public:
             const double ry=(end ? (tipHigh.y-tipLow.y)*0.40 : (high.y-low.y)*0.65)/octagonExtent;
             const double angle=(double(k)+0.5)*pi/4.0;
             vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*z);
+        }
+        return vertices;
+    }
+    // The four lesser toes have a third phalanx. Fit its prism to that
+    // proximal bone and overlap the next prism slightly at the joint.
+    std::vector<Vec3> proximalToePrism(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        if (part.points.empty()) return {};
+        const std::string nextName="FootMidP"+part.name.substr(9);
+        const auto next=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==nextName; });
+        if (next==parts_.end() || next->points.empty()) return {};
+        const auto nextPrism=toePrism(static_cast<std::size_t>(next-parts_.begin()),origin);
+        if (nextPrism.size()!=16) return {};
+        Vec3 center{}, nextCenter{};
+        for (Vec3 p:part.points) center+=mapPart(p,part)+origin;
+        for (Vec3 p:next->points) nextCenter+=mapPart(p,*next)+origin;
+        center=center/static_cast<double>(part.points.size());
+        nextCenter=nextCenter/static_cast<double>(next->points.size());
+        const Vec3 forward=normalized(nextCenter-center);
+        const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        const Vec3 up=normalized(cross(forward,lateral));
+        if (length(forward)<1e-8 || length(lateral)<1e-8 || length(up)<1e-8) return {};
+        const auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(mapPart(part.points.front(),part)+origin), high=low;
+        for (Vec3 p:part.points) {
+            p=local(mapPart(p,part)+origin);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        Vec3 nextLow=local(nextPrism[0]), nextHigh=nextLow;
+        for (int k=1;k<8;++k) {
+            const Vec3 p=local(nextPrism[k]);
+            nextLow.x=std::min(nextLow.x,p.x); nextLow.y=std::min(nextLow.y,p.y); nextLow.z=std::min(nextLow.z,p.z);
+            nextHigh.x=std::max(nextHigh.x,p.x); nextHigh.y=std::max(nextHigh.y,p.y); nextHigh.z=std::max(nextHigh.z,p.z);
+        }
+        const double back=low.z-0.08*(high.z-low.z);
+        const double front=std::max(high.z,(nextLow.z+nextHigh.z)*0.5+0.12*(high.z-low.z));
+        constexpr double extent=0.9238795325112867, pi=3.14159265358979323846;
+        std::vector<Vec3> vertices; vertices.reserve(16);
+        for (int end=0;end<2;++end) for (int k=0;k<8;++k) {
+            const double x=end ? (nextLow.x+nextHigh.x)*0.5 : (low.x+high.x)*0.5;
+            const double y=end ? (nextLow.y+nextHigh.y)*0.5 : (low.y+high.y)*0.5;
+            const double rx=(end ? (nextHigh.x-nextLow.x)*0.5 : (high.x-low.x)*0.65)/extent;
+            const double ry=(end ? (nextHigh.y-nextLow.y)*0.5 : (high.y-low.y)*0.65)/extent;
+            const double angle=(double(k)+0.5)*pi/4.0;
+            vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*(end ? front : back));
         }
         return vertices;
     }
