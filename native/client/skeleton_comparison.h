@@ -643,10 +643,13 @@ public:
         // segment and tip independently attached to their own bones.
         const double back=low.z-0.08*(high.z-low.z);
         const double tipLength=tipHigh.z-tipLow.z;
-        const double front=std::max(high.z,tipLow.z+0.20*tipLength)+0.10*tipLength;
+        const double front=std::max(high.z,tipLow.z+0.20*tipLength)+0.20*tipLength;
         const double x=(low.x+high.x)*0.5, y=(low.y+high.y)*0.5;
-        const double rx=std::max((high.x-low.x)*0.65,(tipHigh.x-tipLow.x)*0.45);
-        const double ry=std::max((high.y-low.y)*0.65,(tipHigh.y-tipLow.y)*0.45);
+        // The octagon's extrema are cos(pi/8) times its radii. Match its
+        // width and height to 90% of the tip's projected dimensions.
+        constexpr double octagonExtent=0.9238795325112867;
+        const double rx=(tipHigh.x-tipLow.x)*0.45/octagonExtent;
+        const double ry=(tipHigh.y-tipLow.y)*0.45/octagonExtent;
         constexpr double pi=3.14159265358979323846;
         std::vector<Vec3> vertices; vertices.reserve(16);
         for (double z:{back,front}) for (int k=0;k<8;++k) {
