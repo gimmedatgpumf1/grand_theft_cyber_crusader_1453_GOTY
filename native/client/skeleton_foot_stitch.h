@@ -203,7 +203,7 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     };
     std::array<Plane,6> planes;
     for (int i=0;i<6;++i) if (!setup(*sheets[std::size_t(i)],i,planes[std::size_t(i)])) { preserve(); return; }
-    struct ToeEnd { Vec3 back{},point{}; double left=0,right=0; };
+    struct ToeEnd { Vec3 point{},left40{},right40{}; double left=0,right=0; };
     std::vector<ToeEnd> ends;
     // Each toe has its own hard end border, measured from the back to the
     // front of its proximal prism (after the existing great-toe scaling).
@@ -213,42 +213,51 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         auto prism=comparison.toePrism(i,origin);
         if (prism.size()!=16) continue;
         comparison.resizeGreatToe(i,origin,prism);
-        Vec3 back{},front{};
+        Vec3 back{},front{},left40{},right40{};
         double left=1e30,right=-1e30;
+        left40.x=1e30; right40.x=-1e30;
         for (int k=0;k<8;++k) {
             back+=prism[std::size_t(k)]; front+=prism[std::size_t(k+8)];
-            const double at40=prism[std::size_t(k)].x*.6+prism[std::size_t(k+8)].x*.4;
-            left=std::min({left,prism[std::size_t(k)].x,at40});
-            right=std::max({right,prism[std::size_t(k)].x,at40});
+            const Vec3 at40=prism[std::size_t(k)]*.6+prism[std::size_t(k+8)]*.4;
+            if (at40.x<left40.x) left40=at40;
+            if (at40.x>right40.x) right40=at40;
+            left=std::min({left,prism[std::size_t(k)].x,at40.x});
+            right=std::max({right,prism[std::size_t(k)].x,at40.x});
         }
         back=back/8; front=front/8;
         if (length(Vec3{front.x-back.x,0,front.z-back.z})<1e-8) continue;
-        ends.push_back({back,back+(front-back)*.4,left,right});
+        ends.push_back({back+(front-back)*.4,left40,right40,left,right});
     }
     if (ends.size()!=5) { preserve(); return; }
     std::sort(ends.begin(),ends.end(),[](const ToeEnd& a,const ToeEnd& b){return a.point.x<b.point.x;});
-    // In plan view the front is one connected, angular line through the five
-    // 40% points, returning to the side sheets at the outer toes' back rings.
-    // The slanted sides meet the roof and sole at different X coordinates;
-    // include both, so the end does not retreat behind the toe root.
-    const auto sideExtent=[&](const ToeEnd& end,double outward) {
+    // The outer segments pass through the 40% ring's outermost vertex as
+    // well as its center, continuing to the side sheets. Account for the
+    // different roof/side and sole/side intersections of each slanted side.
+    const auto sideEnd=[&](const ToeEnd& end,double outward) {
         const Plane& side=planes[planes[1].normal.x*outward>0 ? 1 : 2];
+        const Vec3 edge=outward<0 ? end.left40 : end.right40;
+        const double dx=edge.x-end.point.x;
+        const double slope=std::abs(dx)<1e-8 ? 0 : (edge.z-end.point.z)/dx;
+        const double intercept=end.point.z-slope*end.point.x;
         double extent=outward<0 ? end.left : end.right;
         for (int surface:{0,5}) {
             const Plane& face=planes[std::size_t(surface)];
-            const double a=dot(face.normal,face.point)-face.normal.z*end.back.z;
-            const double b=dot(side.normal,side.point)-side.normal.z*end.back.z;
-            const double det=face.normal.x*side.normal.y-side.normal.x*face.normal.y;
+            const double fx=face.normal.x+face.normal.z*slope;
+            const double sx=side.normal.x+side.normal.z*slope;
+            const double a=dot(face.normal,face.point)-face.normal.z*intercept;
+            const double b=dot(side.normal,side.point)-side.normal.z*intercept;
+            const double det=fx*side.normal.y-sx*face.normal.y;
             if (std::abs(det)<1e-8) continue;
             const double x=(a*side.normal.y-b*face.normal.y)/det;
             extent=outward<0 ? std::min(extent,x) : std::max(extent,x);
         }
-        return extent;
+        extent=outward<0 ? std::min(extent,end.point.x-1e-8) : std::max(extent,end.point.x+1e-8);
+        return Vec3{extent,0,intercept+slope*extent};
     };
     std::vector<Vec3> border;
-    border.push_back({std::min(sideExtent(ends.front(),-1),ends.front().point.x-1e-8),0,ends.front().back.z});
+    border.push_back(sideEnd(ends.front(),-1));
     for (const ToeEnd& end:ends) border.push_back(end.point);
-    border.push_back({std::max(sideExtent(ends.back(),1),ends.back().point.x+1e-8),0,ends.back().back.z});
+    border.push_back(sideEnd(ends.back(),1));
     for (std::size_t i=1;i<border.size();++i)
         if (border[i].x-border[i-1].x<1e-8) { preserve(); return; }
     std::vector<Vec3> bounds;
