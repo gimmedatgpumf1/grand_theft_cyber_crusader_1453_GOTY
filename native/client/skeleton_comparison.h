@@ -644,18 +644,18 @@ public:
         const double back=low.z-0.08*(high.z-low.z);
         const double front=(tipLow.z+tipHigh.z)*0.5;
         const double x=(low.x+high.x)*0.5, y=(low.y+high.y)*0.5;
-        // The octagon's extrema are cos(pi/8) times its radii. Taper from
-        // 90% of the tip's width and height at the back to 80% at the front.
+        // The octagon's extrema are cos(pi/8) times its radii. Fit the back
+        // to this bone with a 30% flesh allowance; keep the front at 80% of
+        // the tip's width and height.
         constexpr double octagonExtent=0.9238795325112867;
-        const double rx=(tipHigh.x-tipLow.x)*0.5/octagonExtent;
-        const double ry=(tipHigh.y-tipLow.y)*0.5/octagonExtent;
         constexpr double pi=3.14159265358979323846;
         std::vector<Vec3> vertices; vertices.reserve(16);
         for (int end=0;end<2;++end) for (int k=0;k<8;++k) {
             const double z=end ? front : back;
-            const double scale=end ? 0.80 : 0.90;
+            const double rx=(end ? (tipHigh.x-tipLow.x)*0.40 : (high.x-low.x)*0.65)/octagonExtent;
+            const double ry=(end ? (tipHigh.y-tipLow.y)*0.40 : (high.y-low.y)*0.65)/octagonExtent;
             const double angle=(double(k)+0.5)*pi/4.0;
-            vertices.push_back(lateral*(x+scale*rx*std::cos(angle))+up*(y+scale*ry*std::sin(angle))+forward*z);
+            vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*z);
         }
         return vertices;
     }
