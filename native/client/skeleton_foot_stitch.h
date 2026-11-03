@@ -56,7 +56,6 @@ std::vector<Obstacle> obstacles(const Comparison& comparison,const std::string& 
         const auto& part=comparison.parts()[i];
         if (!part.name.ends_with(suffix)) continue;
         const bool bone=part.name.rfind("FootMeta",0)==0 || part.name.rfind("FootSesa",0)==0 ||
-            part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
             part.name.rfind("Tal_",0)==0 || part.name.rfind("Cal_",0)==0 || part.name.rfind("Nav_",0)==0 ||
             part.name.rfind("Cub_",0)==0 || part.name.rfind("MedCun_",0)==0 || part.name.rfind("InterCun_",0)==0 ||
             part.name.rfind("LatCun_",0)==0 || part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0;
@@ -65,18 +64,14 @@ std::vector<Obstacle> obstacles(const Comparison& comparison,const std::string& 
             for (Vec3 p:part.points) item.points.push_back(comparison.mapPart(p,part)+origin);
             item.faces=part.faces; result.push_back(std::move(item));
         }
-        if (part.name.rfind("FootDistP",0)==0) {
-            auto skin=comparison.toeSurface(i,origin);
-            result.push_back({std::move(skin.points),std::move(skin.faces)});
-        }
     }
     return result;
 }
 
 inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& plane,
                          const std::vector<Obstacle>& obstacles) {
-    // Remove reference-pose cross sections, preserving the separately moving
-    // bones and toes rather than letting an extended foot sheet cut through them.
+    // Preserve clearance around the fixed foot and ankle bones. The toe bones
+    // and flesh are deliberately not obstacles: the sheets continue through them.
     const double clearance=.0001*std::sqrt(1+plane.slopeU*plane.slopeU+plane.slopeV*plane.slopeV);
     for (const auto& obstacle:obstacles) {
         if (pieces.empty()) return;
@@ -91,9 +86,8 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
             slab=heightClip(slab,plane.slopeU,plane.slopeV,plane.level+clearance,false);
             if (slab.size()>=3) sections.push_back(std::move(slab));
         }
-        // A skin can meet a sheet in two separated places. Taking one hull of
-        // both removes the perfectly clear area between them (notably under
-        // the little toe), so join only touching cross-section fragments.
+        // Keep disconnected cross-sections separate instead of cutting away
+        // the clear area between them.
         std::vector<std::size_t> group(sections.size());
         for (std::size_t i=0;i<group.size();++i) group[i]=i;
         const auto root=[&](std::size_t i) { while (group[i]!=i) i=group[i]; return i; };
@@ -309,9 +303,8 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     // Keep the original fitted sheets if a pathological profile produced no
     // bounded face, rather than replacing visible geometry with an empty mesh.
     for (const auto& mesh:rebuilt) if (mesh.faces.empty()) { preserve(); return; }
-    // Close the front with vertical panels following the same angular outline.
-    // Each panel is bounded by the extended roof, sole, sides and heel planes,
-    // then cut around the separately articulated toe skin and bones.
+    // Close the front with uninterrupted vertical panels following the same
+    // angular outline. They meet the extended sheets and pass through the toes.
     double lowY=1e30,highY=-1e30;
     for (Vec3 p:bounds) { lowY=std::min(lowY,p.y); highY=std::max(highY,p.y); }
     const double yPadding=std::max(highY-lowY,.01)*2;
@@ -332,7 +325,6 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         }
         std::vector<std::vector<Vec3>> pieces;
         if (polygon.size()>=3) pieces.push_back(std::move(polygon));
-        cutObstacles(pieces,front,cuts);
         auto& result=rebuilt[0];
         for (const auto& piece:pieces) for (std::size_t j=1;j+1<piece.size();++j) {
             if (std::abs(turn(piece[0],piece[j],piece[j+1]))<1e-14) continue;

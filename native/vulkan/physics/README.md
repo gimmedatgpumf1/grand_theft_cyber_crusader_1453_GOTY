@@ -76,10 +76,11 @@ Each foot also has a flat sheet attached to the metatarsal body, extending to
 the ankle. It slopes towards the little toe; its sagittal tilt clears adjacent
 fixed foot bones, and its supporting metatarsal is 0.1 mm from the plane along
 its normal in the reference pose. The irregular bones cannot all be uniformly
-0.1 mm from a flat sheet. Reference-pose toe and ankle overlaps are trimmed;
-independently moving toes and ankle bones can still intersect the sheet. If the
-tilt search cannot clear fixed bones, their overlaps are trimmed too rather than
-raising the sheet. A separate near-vertical medial sheet follows the big-toe
+0.1 mm from a flat sheet. Reference-pose fixed foot and ankle bone overlaps are
+trimmed if needed; the final sheets pass through the toe geometry without toe
+cutouts. Independently moving toes and ankle bones can still intersect the
+sheet. If the tilt search cannot clear fixed bones, their overlaps are trimmed
+rather than raising the sheet. A separate near-vertical medial sheet follows the big-toe
 side from the first metatarsal to the heel. It is fitted to the reference foot
 bones. A matching near-vertical lateral sheet follows the little-toe side to
 the heel. Two near-vertical heel panels meet at a rear hinge, and a flat sole
@@ -90,13 +91,12 @@ plane equations are retained. In plan view the front follows straight
 segments through the 50% points of the five proximal octagonal toe prisms
 (measured between their ring centers). The outer segments also pass through
 the outer vertices of those toes' 50% rings before reaching the side sheets.
-Vertical front panels follow these segments and meet the extended top, sole and
-sides. Disconnected reference-pose bone and toe-skin cross-sections are cut out
-separately, preserving the individually moving toes and clear areas between
-them. Those cutouts can shorten a visible edge or leave openings where seams
-meet the ankle or toes. The sole is visual geometry, not a new collision proxy.
-The mesh moves with the foot body, so independently moving toes or ankle bones
-can still intersect it.
+Uninterrupted vertical front panels follow these segments, meet the extended
+top, sole and sides, and pass directly through the toes. The toe geometry is
+not cut out from any of the stitched sheets. The sole is visual geometry, not a
+new collision proxy. The foot mesh moves with the foot body; the separately
+moving toes intersect the panels by design, and ankle bones can still intersect
+it in moving poses.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
