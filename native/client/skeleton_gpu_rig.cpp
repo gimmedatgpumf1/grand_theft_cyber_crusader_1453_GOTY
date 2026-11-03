@@ -144,6 +144,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                 mappedCenters[i]=mappedCenters[i]/double(blue.points.size());
                 if (part.name.rfind("FootDistP",0)==0) {
                     auto toes=comparison->toeIcosahedron(i,input.origin);
+                    comparison->resizeGreatToe(i,input.origin,toes);
                     auto nail=comparison->toeSurface(i,input.origin).nailPoints;
                     toes.insert(toes.end(),nail.begin(),nail.end());
                     for (Vec3& p:toes) p=apply(bluePose[i],p);
@@ -151,6 +152,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                 }
                 if (part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootProxP",0)==0) {
                     auto segment=comparison->toePrism(i,input.origin);
+                    comparison->resizeGreatToe(i,input.origin,segment);
                     for (Vec3& p:segment) p=apply(bluePose[i],p);
                     vertices.insert(vertices.end(),segment.begin(),segment.end());
                 }
