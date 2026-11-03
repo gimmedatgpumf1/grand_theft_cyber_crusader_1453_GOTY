@@ -165,7 +165,7 @@ inline MetatarsalPlane weld(const std::array<MetatarsalPlane,6>& sheets) {
 
 // Rebuild the six existing fitted planes to their mutual intersections. Their
 // equations and foot owner stay unchanged; no extra sculpt or toe bodies are
-// introduced. The sole footprint limits the open end at the individual toes.
+// introduced. The front footprint extends partway along the proximal toes.
 template<class Comparison>
 void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec3 origin,
                       MetatarsalPlane& top,MetatarsalPlane& medial,MetatarsalPlane& lateral,
@@ -184,10 +184,25 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     };
     std::array<Plane,6> planes;
     for (int i=0;i<6;++i) if (!setup(*sheets[std::size_t(i)],i,planes[std::size_t(i)])) { preserve(); return; }
-    std::vector<Vec3> footprint;
-    for (Vec3 p:sole.points) footprint.push_back({p.x,0,p.z});
-    footprint=hull(std::move(footprint));
-    if (footprint.size()<3) { preserve(); return; }
+    struct ToeEnd { Vec3 point{},direction{}; };
+    std::vector<ToeEnd> ends;
+    // Each toe has its own hard end border, measured from the back to the
+    // front of its proximal prism (after the existing great-toe scaling).
+    for (std::size_t i=0;i<comparison.parts().size();++i) {
+        const auto& part=comparison.parts()[i];
+        if (!part.name.ends_with(suffix) || part.name.rfind("FootProxP",0)!=0) continue;
+        auto prism=comparison.toePrism(i,origin);
+        if (prism.size()!=16) continue;
+        comparison.resizeGreatToe(i,origin,prism);
+        Vec3 back{},front{};
+        for (int k=0;k<8;++k) { back+=prism[std::size_t(k)]; front+=prism[std::size_t(k+8)]; }
+        back=back/8; front=front/8;
+        Vec3 direction=front-back; direction.y=0;
+        if (length(direction)<1e-8) continue;
+        ends.push_back({back+(front-back)*.4,normalized(direction)});
+    }
+    if (ends.size()!=5) { preserve(); return; }
+    std::sort(ends.begin(),ends.end(),[](const ToeEnd& a,const ToeEnd& b){return a.point.x<b.point.x;});
     std::vector<Vec3> bounds;
     for (const auto* sheet:sheets) bounds.insert(bounds.end(),sheet->points.begin(),sheet->points.end());
     const auto cuts=obstacles(comparison,suffix,origin);
@@ -207,14 +222,23 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
             const Plane& limit=planes[std::size_t(other)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,current.world(p)-limit.point);});
         }
-        // The projected sole outline bounds the open front and prevents a
-        // plane extension from growing past the separate toes.
-        for (std::size_t i=0;i<footprint.size() && polygon.size()>=3;++i) {
-            const Vec3 a=footprint[i],b=footprint[(i+1)%footprint.size()];
-            polygon=clipBy(polygon,[&](Vec3 p){return -turn(a,b,current.world(p));});
+        // Keep the five limits separate. Their step changes are sharp, not a
+        // convex-hull interpolation that could overshoot an individual toe.
+        std::vector<std::vector<Vec3>> pieces;
+        for (std::size_t i=0;i<ends.size();++i) {
+            auto section=polygon;
+            if (i>0) {
+                const double x=(ends[i-1].point.x+ends[i].point.x)*.5;
+                section=clipBy(section,[&](Vec3 p){return x-current.world(p).x;});
+            }
+            if (i+1<ends.size()) {
+                const double x=(ends[i].point.x+ends[i+1].point.x)*.5;
+                section=clipBy(section,[&](Vec3 p){return current.world(p).x-x;});
+            }
+            const ToeEnd& end=ends[i];
+            section=clipBy(section,[&](Vec3 p){return dot(end.direction,current.world(p)-end.point);});
+            if (section.size()>=3) pieces.push_back(std::move(section));
         }
-        if (polygon.size()<3) continue;
-        std::vector<std::vector<Vec3>> pieces{std::move(polygon)};
         cutObstacles(pieces,current,cuts);
         auto& result=rebuilt[std::size_t(index)]; result.owner=sheets[std::size_t(index)]->owner;
         const bool positive=dot(cross(current.u,current.v),current.normal)>0;

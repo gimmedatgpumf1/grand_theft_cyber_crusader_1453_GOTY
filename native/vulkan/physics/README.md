@@ -86,12 +86,13 @@ the heel. Two near-vertical heel panels meet at a rear hinge, and a flat sole
 lies 0.1 mm below the lowest fixed foot bone in the reference pose. The six
 fitted planes are extended to their mutual intersections, clipped to remove
 protruding portions, and welded into one foot-owned indexed mesh. Their fitted
-plane equations are retained. The open front follows the sole footprint near
-the independently owned toes; reference-pose bone and toe-skin cross-sections
-are cut out rather than intersected. Those cutouts can leave openings where
-seams meet the ankle or toes. The sole is visual geometry, not a new collision
-proxy. The mesh moves with the foot body, so independently moving toes or ankle
-bones can still intersect it.
+plane equations are retained. The open front has a separate, sharp limit for
+each toe at 40% of its proximal octagonal prism's length (measured from its
+back ring). Reference-pose bone and toe-skin cross-sections are cut out rather
+than intersected. Those cutouts can leave openings where seams meet the ankle
+or toes. The sole is visual geometry, not a new collision proxy. The mesh moves
+with the foot body, so independently moving toes or ankle bones can still
+intersect it.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
