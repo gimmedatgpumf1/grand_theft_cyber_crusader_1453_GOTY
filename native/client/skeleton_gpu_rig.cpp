@@ -142,6 +142,11 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                     mappedCenters[i]+=p; vertices.push_back(p);
                 }
                 mappedCenters[i]=mappedCenters[i]/double(blue.points.size());
+                if (part.name.rfind("Cal_",0)==0) {
+                    const auto foot=comparisonFootSkin(*comparison,part.name.substr(3),input.origin);
+                    for (std::size_t v=0;v<foot.points.size();++v) if (foot.owners[v]==int(i))
+                        vertices.push_back(apply(bluePose[i],foot.points[v]));
+                }
                 if (part.name.rfind("FootDistP",0)==0) {
                     auto toes=comparison->toeIcosahedron(i,input.origin);
                     comparison->resizeGreatToe(i,input.origin,toes);

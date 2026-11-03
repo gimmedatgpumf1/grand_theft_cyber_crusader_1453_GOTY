@@ -5,6 +5,7 @@
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
 #include "client/skeleton_toe_skin.h"
+#include "client/skeleton_foot_skin.h"
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
@@ -587,8 +588,9 @@ public:
         if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size()) return result;
         for (std::size_t i=0;i<parts_.size();++i) {
             const auto& p=parts_[i];
-            if (p.points.empty() || (p.name.rfind("FootProxP",0)!=0 && p.name.rfind("FootMidP",0)!=0 &&
-                                     p.name.rfind("FootDistP",0)!=0)) continue;
+            if (p.points.empty() || (p.name.rfind("Foot",0)!=0 && p.name.rfind("Cal_",0)!=0 &&
+                p.name.rfind("Tal_",0)!=0 && p.name.rfind("Nav_",0)!=0 && p.name.rfind("Cub_",0)!=0 &&
+                p.name.rfind("MedCun_",0)!=0 && p.name.rfind("InterCun_",0)!=0 && p.name.rfind("LatCun_",0)!=0)) continue;
             const auto& a=current[i]; const auto& b=referenceMatrices_[i]; auto& m=result[i];
             for (int col=0;col<3;++col) for (int row=0;row<3;++row) {
                 m[col*4+row]=0;
@@ -738,7 +740,7 @@ public:
         if (!greatToeAnchor(i,origin,anchor)) return;
         for (Vec3& p:points) p=anchor+(p-anchor)*greatToeScale;
     }
-    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin) const {
+    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin, bool capRear=true) const {
         const auto& name=parts_[i].name;
         if (name.rfind("FootDistP",0)!=0) return {};
         const std::string suffix=name.substr(9);
@@ -762,7 +764,7 @@ public:
         Vec3 anchor{};
         if (suffix[0]=='1' && greatToeAnchor(i,origin,anchor))
             for (Vec3& p:tipBone) p=anchor+(p-anchor)/greatToeScale;
-        auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i));
+        auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i),capRear);
         if (suffix[0]=='1') {
             resizeGreatToe(i,origin,skin.points);
             resizeGreatToe(i,origin,skin.nailPoints);
@@ -782,12 +784,22 @@ public:
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
             if (pose && i<pose->size()) rasterizer.setBatchPose((*pose)[i]);
-            if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0)
+            if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 || part.name.rfind("Cal_",0)==0)
                 rasterizer.markSkinOwner();
+        }
+        std::array<ToeSkinMesh,2> feet{comparisonFootSkin(*this,"_L",origin),comparisonFootSkin(*this,"_R",origin)};
+        for (std::size_t side=0;side<feet.size();++side) {
+            auto& skin=feet[side];
+            if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
+                if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);
+            for (int& owner:skin.owners) owner+=static_cast<int>(idBase);
+            rasterizer.setObject(idBase+static_cast<std::uint32_t>(5*parts_.size()+side),{},0);
+            rasterizer.meshObjectSkinned(skin.points,skin.faces,skin.owners,toe);
         }
         for (std::size_t i=0;i<parts_.size();++i) {
             if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
-            auto skin=toeSurface(i,origin);
+            const bool joined=parts_[i].name.ends_with("_L") ? !feet[0].points.empty() : !feet[1].points.empty();
+            auto skin=toeSurface(i,origin,!joined);
             if (skin.points.empty()) continue;
             if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
                 if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);

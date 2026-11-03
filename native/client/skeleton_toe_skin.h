@@ -178,7 +178,8 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
 
 inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
                                const std::vector<int>& boneIds,
-                               const std::vector<Vec3>& tip, const std::vector<Vec3>& tipBone, int tipId) {
+                               const std::vector<Vec3>& tip, const std::vector<Vec3>& tipBone, int tipId,
+                               bool capRear=true) {
     ToeSkinMesh out;
     if (prisms.empty() || prisms.size()!=boneIds.size() || tip.size()!=12) return out;
     for (const auto& prism:prisms) if (prism.size()!=16) return {};
@@ -197,7 +198,7 @@ inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
     for (std::size_t i=0;i<prisms.size();++i) {
         const auto rear=ring(prisms[i],i==0 ? 0.0 : 0.12,boneIds[i]);
         const auto front=ring(prisms[i],i+1==prisms.size() ? 0.88 : 0.85,boneIds[i]);
-        if (i==0) for (int k=1;k<7;++k) out.triangle(rear[0],rear[k+1],rear[k]);
+        if (i==0) { if (capRear) for (int k=1;k<7;++k) out.triangle(rear[0],rear[k+1],rear[k]); }
         else join(last,rear);
         join(rear,front);
         last=front;
