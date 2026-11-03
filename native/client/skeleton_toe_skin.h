@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <utility>
 #include <vector>
 
 namespace gtc::native {
@@ -25,8 +26,8 @@ struct ToeSkinMesh {
     void triangle(int a,int b,int c) { if (a!=b && b!=c && c!=a) faces.push_back({a,b,c}); }
 };
 
-// Fill the exposed cut with skin except where the nail sits. Splitting the
-// polygons against the convex nail avoids hiding a second surface beneath it.
+// Fill the cut around a possibly concave nail. Subtract each triangle of the
+// nail fan from the cut, so no hidden flesh surface remains beneath the nail.
 inline void fillNailSurround(ToeSkinMesh& mesh, const std::vector<int>& boundary,
                              Vec3 center, Vec3 lateral, Vec3 forward, int owner) {
     const auto side=[&](Vec3 p,Vec3 a,Vec3 b) {
@@ -45,21 +46,34 @@ inline void fillNailSurround(ToeSkinMesh& mesh, const std::vector<int>& boundary
         }
         return result;
     };
+    Vec3 nailCenter{};
+    for (Vec3 p:mesh.nailPoints) nailCenter+=p;
+    nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
     for (std::size_t i=0;i<boundary.size();++i) {
-        std::vector<Vec3> remainder{center,mesh.points[std::size_t(boundary[i])],
-                                   mesh.points[std::size_t(boundary[(i+1)%boundary.size()])]};
-        for (std::size_t k=0;k<mesh.nailPoints.size() && !remainder.empty();++k) {
-            const Vec3 a=mesh.nailPoints[k], b=mesh.nailPoints[(k+1)%mesh.nailPoints.size()];
-            const auto outside=clip(remainder,a,b,false);
-            if (outside.size()>=3) {
-                const int root=mesh.vertex(outside[0],owner);
-                for (std::size_t j=1;j+1<outside.size();++j) {
-                    const int v1=mesh.vertex(outside[j],owner), v2=mesh.vertex(outside[j+1],owner);
-                    if (length(cross(outside[j]-outside[0],outside[j+1]-outside[0]))>1e-14)
-                        mesh.triangle(root,v1,v2);
+        std::vector<std::vector<Vec3>> pieces{{center,mesh.points[std::size_t(boundary[i])],
+                                              mesh.points[std::size_t(boundary[(i+1)%boundary.size()])]}};
+        for (std::size_t k=0;k<mesh.nailPoints.size() && !pieces.empty();++k) {
+            const std::array<Vec3,3> triangle{nailCenter,mesh.nailPoints[k],
+                                               mesh.nailPoints[(k+1)%mesh.nailPoints.size()]};
+            std::vector<std::vector<Vec3>> outsidePieces;
+            for (auto remainder:pieces) {
+                for (int edge=0;edge<3 && !remainder.empty();++edge) {
+                    const Vec3 a=triangle[edge], b=triangle[(edge+1)%3];
+                    auto outside=clip(remainder,a,b,false);
+                    if (outside.size()>=3) outsidePieces.push_back(std::move(outside));
+                    remainder=clip(remainder,a,b,true);
                 }
             }
-            remainder=clip(remainder,a,b,true);
+            pieces=std::move(outsidePieces);
+        }
+        for (const auto& polygon:pieces) {
+            const int root=mesh.vertex(polygon[0],owner);
+            for (std::size_t j=1;j+1<polygon.size();++j) {
+                if (length(cross(polygon[j]-polygon[0],polygon[j+1]-polygon[0]))>1e-14) {
+                    const int v1=mesh.vertex(polygon[j],owner), v2=mesh.vertex(polygon[j+1],owner);
+                    mesh.triangle(root,v1,v2);
+                }
+            }
         }
     }
 }
@@ -141,15 +155,17 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     }
     const double width=maxX-minX, depth=maxF-minF;
     if (width<1e-8 || depth<1e-8) return;
-    // Set the octagon farther inside the cut surface on all sides.
-    const double midX=(minX+maxX)*0.5, halfWidth=0.35*width;
-    const double back=minF+0.12*depth, front=maxF-0.08*depth;
-    const double chamferX=halfWidth*0.40, chamferF=(front-back)*0.20;
-    const std::array<std::array<double,2>,8> outline={{{midX-halfWidth+chamferX,back},
-        {midX+halfWidth-chamferX,back},{midX+halfWidth,back+chamferF},
-        {midX+halfWidth,front-chamferF},{midX+halfWidth-chamferX,front},
-        {midX-halfWidth+chamferX,front},{midX-halfWidth,front-chamferF},
-        {midX-halfWidth,back+chamferF}}};
+    // A broad, almost rectangular plate. The two inner points at the root
+    // recede towards the tip, reversing the usual convex octagon there.
+    const double midX=(minX+maxX)*0.5, halfWidth=0.40*width;
+    const double back=minF+0.20*depth, front=maxF-0.18*depth;
+    const double rootInset=(front-back)*0.14;
+    const double tipChamferX=halfWidth*0.12, tipChamferF=(front-back)*0.10;
+    const std::array<std::array<double,2>,8> outline={{{midX-halfWidth*0.38,back+rootInset},
+        {midX+halfWidth*0.38,back+rootInset},{midX+halfWidth,back},
+        {midX+halfWidth,front-tipChamferF},{midX+halfWidth-tipChamferX,front},
+        {midX-halfWidth+tipChamferX,front},{midX-halfWidth,front-tipChamferF},
+        {midX-halfWidth,back}}};
     for (const auto& p:outline) mesh.nailPoints.push_back(center+lateral*p[0]+nailForward*p[1]);
     const auto withinCut=[&](Vec3 p) {
         for (std::size_t k=0;k<nailBoundary.size();++k) {
@@ -164,8 +180,13 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
         if (std::all_of(mesh.nailPoints.begin(),mesh.nailPoints.end(),withinCut)) break;
         for (Vec3& p:mesh.nailPoints) p=center+(p-center)*0.90;
     }
-    for (int k=1;k<7;++k) mesh.nailFaces.push_back({0,k,k+1});
     fillNailSurround(mesh,nailBoundary,center,lateral,nailForward,owner);
+    Vec3 nailCenter{};
+    for (Vec3 p:mesh.nailPoints) nailCenter+=p;
+    nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
+    const int centerIndex=static_cast<int>(mesh.nailPoints.size());
+    mesh.nailPoints.push_back(nailCenter);
+    for (int k=0;k<8;++k) mesh.nailFaces.push_back({centerIndex,k,(k+1)%8});
 }
 
 inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
