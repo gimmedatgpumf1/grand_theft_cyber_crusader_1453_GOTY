@@ -184,7 +184,7 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     };
     std::array<Plane,6> planes;
     for (int i=0;i<6;++i) if (!setup(*sheets[std::size_t(i)],i,planes[std::size_t(i)])) { preserve(); return; }
-    struct ToeEnd { Vec3 point{},direction{}; };
+    struct ToeEnd { Vec3 back{},point{}; double left=0,right=0; };
     std::vector<ToeEnd> ends;
     // Each toe has its own hard end border, measured from the back to the
     // front of its proximal prism (after the existing great-toe scaling).
@@ -195,14 +195,43 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         if (prism.size()!=16) continue;
         comparison.resizeGreatToe(i,origin,prism);
         Vec3 back{},front{};
-        for (int k=0;k<8;++k) { back+=prism[std::size_t(k)]; front+=prism[std::size_t(k+8)]; }
+        double left=1e30,right=-1e30;
+        for (int k=0;k<8;++k) {
+            back+=prism[std::size_t(k)]; front+=prism[std::size_t(k+8)];
+            const double at40=prism[std::size_t(k)].x*.6+prism[std::size_t(k+8)].x*.4;
+            left=std::min({left,prism[std::size_t(k)].x,at40});
+            right=std::max({right,prism[std::size_t(k)].x,at40});
+        }
         back=back/8; front=front/8;
-        Vec3 direction=front-back; direction.y=0;
-        if (length(direction)<1e-8) continue;
-        ends.push_back({back+(front-back)*.4,normalized(direction)});
+        if (length(Vec3{front.x-back.x,0,front.z-back.z})<1e-8) continue;
+        ends.push_back({back,back+(front-back)*.4,left,right});
     }
     if (ends.size()!=5) { preserve(); return; }
     std::sort(ends.begin(),ends.end(),[](const ToeEnd& a,const ToeEnd& b){return a.point.x<b.point.x;});
+    // In plan view the front is one connected, angular line through the five
+    // 40% points, returning to the side sheets at the outer toes' back rings.
+    // The slanted sides meet the roof and sole at different X coordinates;
+    // include both, so the end does not retreat behind the toe root.
+    const auto sideExtent=[&](const ToeEnd& end,double outward) {
+        const Plane& side=planes[planes[1].normal.x*outward>0 ? 1 : 2];
+        double extent=outward<0 ? end.left : end.right;
+        for (int surface:{0,5}) {
+            const Plane& face=planes[std::size_t(surface)];
+            const double a=dot(face.normal,face.point)-face.normal.z*end.back.z;
+            const double b=dot(side.normal,side.point)-side.normal.z*end.back.z;
+            const double det=face.normal.x*side.normal.y-side.normal.x*face.normal.y;
+            if (std::abs(det)<1e-8) continue;
+            const double x=(a*side.normal.y-b*face.normal.y)/det;
+            extent=outward<0 ? std::min(extent,x) : std::max(extent,x);
+        }
+        return extent;
+    };
+    std::vector<Vec3> border;
+    border.push_back({std::min(sideExtent(ends.front(),-1),ends.front().point.x-1e-8),0,ends.front().back.z});
+    for (const ToeEnd& end:ends) border.push_back(end.point);
+    border.push_back({std::max(sideExtent(ends.back(),1),ends.back().point.x+1e-8),0,ends.back().back.z});
+    for (std::size_t i=1;i<border.size();++i)
+        if (border[i].x-border[i-1].x<1e-8) { preserve(); return; }
     std::vector<Vec3> bounds;
     for (const auto* sheet:sheets) bounds.insert(bounds.end(),sheet->points.begin(),sheet->points.end());
     const auto cuts=obstacles(comparison,suffix,origin);
@@ -222,21 +251,20 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
             const Plane& limit=planes[std::size_t(other)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,current.world(p)-limit.point);});
         }
-        // Keep the five limits separate. Their step changes are sharp, not a
-        // convex-hull interpolation that could overshoot an individual toe.
+        // Clip each segment separately, then weld their common endpoints.
+        // The first and last segments continue to the side planes, so the
+        // line reaches the outer edge even where the side is slanted.
         std::vector<std::vector<Vec3>> pieces;
-        for (std::size_t i=0;i<ends.size();++i) {
+        for (std::size_t i=0;i+1<border.size();++i) {
+            const Vec3 a=border[i],b=border[i+1];
             auto section=polygon;
-            if (i>0) {
-                const double x=(ends[i-1].point.x+ends[i].point.x)*.5;
-                section=clipBy(section,[&](Vec3 p){return x-current.world(p).x;});
-            }
-            if (i+1<ends.size()) {
-                const double x=(ends[i].point.x+ends[i+1].point.x)*.5;
-                section=clipBy(section,[&](Vec3 p){return current.world(p).x-x;});
-            }
-            const ToeEnd& end=ends[i];
-            section=clipBy(section,[&](Vec3 p){return dot(end.direction,current.world(p)-end.point);});
+            if (i>0) section=clipBy(section,[&](Vec3 p){return a.x-current.world(p).x;});
+            if (i+2<border.size()) section=clipBy(section,[&](Vec3 p){return current.world(p).x-b.x;});
+            const double slope=(b.z-a.z)/(b.x-a.x);
+            section=clipBy(section,[&](Vec3 p){
+                const Vec3 world=current.world(p);
+                return world.z-(a.z+(world.x-a.x)*slope);
+            });
             if (section.size()>=3) pieces.push_back(std::move(section));
         }
         cutObstacles(pieces,current,cuts);

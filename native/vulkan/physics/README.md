@@ -86,10 +86,11 @@ the heel. Two near-vertical heel panels meet at a rear hinge, and a flat sole
 lies 0.1 mm below the lowest fixed foot bone in the reference pose. The six
 fitted planes are extended to their mutual intersections, clipped to remove
 protruding portions, and welded into one foot-owned indexed mesh. Their fitted
-plane equations are retained. The open front has a separate, sharp limit for
-each toe at 40% of its proximal octagonal prism's length (measured from its
-back ring). Reference-pose bone and toe-skin cross-sections are cut out rather
-than intersected. Those cutouts can leave openings where seams meet the ankle
+plane equations are retained. In plan view the open front follows straight
+segments through the 40% points of the five proximal octagonal toe prisms
+(measured between their ring centers), returning to the sides by the outer
+toes' back rings. Reference-pose bone and toe-skin cross-sections are cut out
+rather than intersected, so parts of that boundary can be obscured by the toes. Those cutouts can leave openings where seams meet the ankle
 or toes. The sole is visual geometry, not a new collision proxy. The mesh moves
 with the foot body, so independently moving toes or ankle bones can still
 intersect it.
