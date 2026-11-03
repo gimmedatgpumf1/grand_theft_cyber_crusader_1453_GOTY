@@ -562,9 +562,9 @@ public:
         }
         const Vec3 mid=(low+high)*0.5;
         Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
-        // Apply another 10% reduction to the big-toe tip, retaining its
-        // forwardmost point. The prism follows the tip midpoint; its rear stays fixed.
-        constexpr double greatTipScale=0.95*0.90;
+        // Size the big-toe tip while retaining its forwardmost point. The
+        // prism follows the tip midpoint; its rear stays fixed.
+        constexpr double greatTipScale=0.95*0.90*1.05;
         if (suffix[0]=='1') center+=forward*((high.z-low.z)*0.95*0.85065080835204*(1.0-greatTipScale));
         const Vec3 size=(high-low)*(0.95*(suffix[0]=='1' ? greatTipScale : 1.0));
         constexpr double phi=1.618033988749895;
