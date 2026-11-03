@@ -131,10 +131,16 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
     }
     // Clip the upper edge to the existing dorsal plane so the two planes do
     // not cross. That edge remains coplanar with the rest of the side sheet.
-    const auto face=top.faces[0];
-    const Vec3 a=top.points[face[0]],b=top.points[face[1]],c=top.points[face[2]];
-    Vec3 n=cross(b-a,c-a);
-    if (std::abs(n.y)<1e-12) return {};
+    // Subtraction can leave a very small first face. Select the largest
+    // projected triangle for a stable normal regardless of room placement.
+    Vec3 a{},n{};
+    double largest=0;
+    for (const auto& face:top.faces) {
+        const Vec3 p=top.points[face[0]],q=top.points[face[1]],r=top.points[face[2]];
+        const Vec3 candidate=cross(q-p,r-p);
+        if (std::abs(candidate.y)>largest) { largest=std::abs(candidate.y); a=p; n=candidate; }
+    }
+    if (largest<1e-20) return {};
     if (n.y<0) n=n*-1;
     const auto height=[&](Vec3 p) {
         const double x=outward*(slopeU*p.x+slopeV*p.z+level);
