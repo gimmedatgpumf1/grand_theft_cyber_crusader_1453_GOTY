@@ -100,6 +100,81 @@ inline void restoreNailTip(ToeSkinMesh& mesh, const std::vector<std::array<int,3
     }
 }
 
+// When a straight free edge extends past the tapered cut, connect it to the
+// closest original tip facets. This keeps the flat plate supported instead of
+// leaving its outer corners floating above the pointed icosahedron.
+inline void joinNailEdge(ToeSkinMesh& mesh, const std::vector<std::array<int,3>>& original,
+                         const std::vector<int>& cut, Vec3 lateral, Vec3 forward,
+                         Vec3 normal, int owner) {
+    const auto cross2=[&](Vec3 a,Vec3 b) {
+        return dot(a,lateral)*dot(b,forward)-dot(a,forward)*dot(b,lateral);
+    };
+    const auto side=[&](Vec3 p,Vec3 a,Vec3 b) { return cross2(b-a,p-a); };
+    const auto support=[&](Vec3 p) {
+        double best=1e100, bestHeight=-1e100;
+        Vec3 nearest=p;
+        const auto consider=[&](Vec3 q) {
+            const Vec3 d=q-p;
+            const double x=dot(d,lateral), f=dot(d,forward);
+            const double distance=x*x+f*f, height=dot(q,normal);
+            if (distance<best-1e-15 || (std::abs(distance-best)<=1e-15 && height>bestHeight)) {
+                best=distance; bestHeight=height; nearest=q;
+            }
+        };
+        for (const auto& face:original) {
+            const Vec3 a=mesh.points[std::size_t(face[0])], b=mesh.points[std::size_t(face[1])],
+                       c=mesh.points[std::size_t(face[2])];
+            const double denom=cross2(b-a,c-a);
+            if (std::abs(denom)>1e-20) {
+                const double u=cross2(p-a,c-a)/denom, v=cross2(b-a,p-a)/denom;
+                if (u>=0 && v>=0 && u+v<=1) consider(a+(b-a)*u+(c-a)*v);
+            }
+            const std::array<Vec3,3> vertices{a,b,c};
+            for (int i=0;i<3;++i) {
+                const Vec3 v0=vertices[i], d=vertices[(i+1)%3]-v0, rel=p-v0;
+                const double dx=dot(d,lateral), dy=dot(d,forward), norm=dx*dx+dy*dy;
+                if (norm>1e-20) {
+                    const double t=std::clamp((dot(rel,lateral)*dx+dot(rel,forward)*dy)/norm,0.0,1.0);
+                    consider(v0+d*t);
+                }
+            }
+        }
+        return nearest;
+    };
+    for (std::size_t k=0;k<mesh.nailPoints.size();++k) {
+        const Vec3 a=mesh.nailPoints[k], b=mesh.nailPoints[(k+1)%mesh.nailPoints.size()];
+        std::vector<double> breaks{0.0,1.0};
+        for (std::size_t j=0;j<cut.size();++j) {
+            const Vec3 c=mesh.points[std::size_t(cut[j])], d=mesh.points[std::size_t(cut[(j+1)%cut.size()])];
+            const double s1=side(a,c,d), s2=side(b,c,d);
+            if ((s1<0)!=(s2<0) && std::abs(s1-s2)>1e-20)
+                breaks.push_back(std::clamp(s1/(s1-s2),0.0,1.0));
+        }
+        std::sort(breaks.begin(),breaks.end());
+        for (std::size_t j=0;j+1<breaks.size();++j) {
+            const double lo=breaks[j], hi=breaks[j+1];
+            if (hi-lo<1e-9) continue;
+            const Vec3 middle=a+(b-a)*((lo+hi)*0.5);
+            bool inside=true;
+            for (std::size_t m=0;m<cut.size();++m) {
+                const Vec3 c=mesh.points[std::size_t(cut[m])], d=mesh.points[std::size_t(cut[(m+1)%cut.size()])];
+                if (side(middle,c,d)<-1e-14) { inside=false; break; }
+            }
+            if (inside) continue;
+            // Subdivide to follow the changing nearest tip facet.
+            for (int part=0;part<4;++part) {
+                const double t0=lo+(hi-lo)*part/4.0, t1=lo+(hi-lo)*(part+1)/4.0;
+                const Vec3 p=a+(b-a)*t0, q=a+(b-a)*t1, p0=support(p), q0=support(q);
+                if (length(cross(q-p,p0-p))>1e-14) {
+                    const int i0=mesh.vertex(p,owner), i1=mesh.vertex(q,owner);
+                    const int i2=mesh.vertex(q0,owner), i3=mesh.vertex(p0,owner);
+                    mesh.triangle(i0,i1,i2); mesh.triangle(i0,i2,i3);
+                }
+            }
+        }
+    }
+}
+
 // Trim the distal icosahedron and fit an eight-sided, recessed flat nail.
 inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vector<Vec3>& tip,
                        const std::vector<Vec3>& bone, Vec3 axis, Vec3 basePlane,
@@ -179,37 +254,21 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     }
     const double width=maxX-minX, depth=maxF-minF;
     if (width<1e-8 || depth<1e-8) return;
-    // Fit each point to the actual cut through this icosahedron. A single
-    // uniform shrink makes the narrow far tip shrink the entire nail. Instead,
-    // follow each cross-section: wide at the root and middle, tapering to the
-    // forward end of the tip. The root's centre is inset towards the toe end.
-    const auto section=[&](double f) {
-        double left=1e30,right=-1e30;
-        for (std::size_t k=0;k<nailBoundary.size();++k) {
-            const Vec3 a=mesh.points[std::size_t(nailBoundary[k])]-center;
-            const Vec3 b=mesh.points[std::size_t(nailBoundary[(k+1)%nailBoundary.size()])]-center;
-            const double af=dot(a,nailForward), bf=dot(b,nailForward);
-            if (f<std::min(af,bf)-1e-12 || f>std::max(af,bf)+1e-12 || std::abs(bf-af)<1e-12) continue;
-            const double t=std::clamp((f-af)/(bf-af),0.0,1.0);
-            const double x=dot(a+(b-a)*t,lateral);
-            left=std::min(left,x); right=std::max(right,x);
-        }
-        if (left>right) return std::array<double,2>{0.0,0.0};
-        return std::array<double,2>{left,right};
-    };
-    const auto fit=[&](double t, double across) {
-        const double f=minF+depth*t;
-        const auto limits=section(f);
-        const double mid=(limits[0]+limits[1])*0.5;
-        const double half=(limits[1]-limits[0])*0.5;
-        return center+lateral*(mid+across*half)+nailForward*f;
-    };
-    // Eight boundary vertices: an indented root, wide shoulders and a single
-    // point just inside the forwardmost tip. No uniform size reduction.
-    mesh.nailPoints={fit(0.20,0.0), fit(0.10,0.97), fit(0.40,0.97),
-        fit(0.82,0.97), fit(0.999,0.0), fit(0.82,-0.97),
-        fit(0.40,-0.97), fit(0.10,-0.97)};
+    // The user-specified eight-point outline has a shallow inverted root,
+    // almost straight sides and a broad, straight free edge with chamfers.
+    // Size it from this icosahedron's cut, not a uniformly shrunken rectangle.
+    const double midX=(minX+maxX)*0.5, halfWidth=width*0.47;
+    const double back=minF+depth*0.10, front=maxF-depth*0.005;
+    const double notch=(front-back)*0.075, chamfer=(front-back)*0.18;
+    const double inner=halfWidth*0.37;
+    const std::array<std::array<double,2>,8> outline={{{midX-inner,back+notch},
+        {midX+inner,back+notch},{midX+halfWidth,back},
+        {midX+halfWidth,front-chamfer},{midX+inner,front},
+        {midX-inner,front},{midX-halfWidth,front-chamfer},
+        {midX-halfWidth,back}}};
+    for (const auto& p:outline) mesh.nailPoints.push_back(center+lateral*p[0]+nailForward*p[1]);
     restoreNailTip(mesh,original,lateral,nailForward,normal,owner);
+    joinNailEdge(mesh,original,nailBoundary,lateral,nailForward,normal,owner);
     Vec3 nailCenter{};
     for (Vec3 p:mesh.nailPoints) nailCenter+=p;
     nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
