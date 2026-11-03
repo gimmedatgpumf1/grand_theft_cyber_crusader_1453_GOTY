@@ -179,31 +179,36 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     }
     const double width=maxX-minX, depth=maxF-minF;
     if (width<1e-8 || depth<1e-8) return;
-    // A broad, almost rectangular plate. The two inner points at the root
-    // recede towards the tip, reversing the usual convex octagon there.
-    const double midX=(minX+maxX)*0.5, halfWidth=0.47*width;
-    const double back=minF+0.07*depth, front=maxF-0.04*depth;
-    const double rootInset=(front-back)*0.16;
-    const double tipChamferX=halfWidth*0.36, tipChamferF=(front-back)*0.25;
-    const std::array<std::array<double,2>,8> outline={{{midX-halfWidth*0.38,back+rootInset},
-        {midX+halfWidth*0.38,back+rootInset},{midX+halfWidth,back},
-        {midX+halfWidth,front-tipChamferF},{midX+halfWidth-tipChamferX,front},
-        {midX-halfWidth+tipChamferX,front},{midX-halfWidth,front-tipChamferF},
-        {midX-halfWidth,back}}};
-    for (const auto& p:outline) mesh.nailPoints.push_back(center+lateral*p[0]+nailForward*p[1]);
-    const auto withinCut=[&](Vec3 p) {
+    // Fit each point to the actual cut through this icosahedron. A single
+    // uniform shrink makes the narrow far tip shrink the entire nail. Instead,
+    // follow each cross-section: wide at the root and middle, tapering to the
+    // forward end of the tip. The root's centre is inset towards the toe end.
+    const auto section=[&](double f) {
+        double left=1e30,right=-1e30;
         for (std::size_t k=0;k<nailBoundary.size();++k) {
-            const Vec3 a=mesh.points[std::size_t(nailBoundary[k])];
-            const Vec3 b=mesh.points[std::size_t(nailBoundary[(k+1)%nailBoundary.size()])];
-            const Vec3 ab=b-a, ap=p-a;
-            if (dot(ab,lateral)*dot(ap,nailForward)-dot(ab,nailForward)*dot(ap,lateral)<-1e-12) return false;
+            const Vec3 a=mesh.points[std::size_t(nailBoundary[k])]-center;
+            const Vec3 b=mesh.points[std::size_t(nailBoundary[(k+1)%nailBoundary.size()])]-center;
+            const double af=dot(a,nailForward), bf=dot(b,nailForward);
+            if (f<std::min(af,bf)-1e-12 || f>std::max(af,bf)+1e-12 || std::abs(bf-af)<1e-12) continue;
+            const double t=std::clamp((f-af)/(bf-af),0.0,1.0);
+            const double x=dot(a+(b-a)*t,lateral);
+            left=std::min(left,x); right=std::max(right,x);
         }
-        return true;
+        if (left>right) return std::array<double,2>{0.0,0.0};
+        return std::array<double,2>{left,right};
     };
-    for (int attempt=0;attempt<24;++attempt) {
-        if (std::all_of(mesh.nailPoints.begin(),mesh.nailPoints.end(),withinCut)) break;
-        for (Vec3& p:mesh.nailPoints) p=center+(p-center)*0.90;
-    }
+    const auto fit=[&](double t, double across) {
+        const double f=minF+depth*t;
+        const auto limits=section(f);
+        const double mid=(limits[0]+limits[1])*0.5;
+        const double half=(limits[1]-limits[0])*0.5;
+        return center+lateral*(mid+across*half)+nailForward*f;
+    };
+    // Eight boundary vertices: an indented root, wide shoulders and a single
+    // point just inside the forwardmost tip. No uniform size reduction.
+    mesh.nailPoints={fit(0.20,0.0), fit(0.10,0.97), fit(0.40,0.97),
+        fit(0.82,0.97), fit(0.999,0.0), fit(0.82,-0.97),
+        fit(0.40,-0.97), fit(0.10,-0.97)};
     restoreNailTip(mesh,original,lateral,nailForward,normal,owner);
     Vec3 nailCenter{};
     for (Vec3 p:mesh.nailPoints) nailCenter+=p;
