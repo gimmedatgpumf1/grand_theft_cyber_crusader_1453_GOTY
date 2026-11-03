@@ -6,6 +6,7 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_toe_skin.h"
 #include "client/skeleton_metatarsal_plane.h"
+#include "client/skeleton_medial_plane.h"
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
@@ -787,13 +788,20 @@ public:
                 part.name.rfind("FootMeta3_",0)==0) rasterizer.markSkinOwner();
         }
         for (int side=0;side<2;++side) {
-            auto plane=makeMetatarsalPlane(*this,side==0 ? "_L" : "_R",origin);
+            const std::string suffix=side==0 ? "_L" : "_R";
+            auto plane=makeMetatarsalPlane(*this,suffix,origin);
             if (plane.points.empty()) continue;
-            if (!rasterizer.gpu() && pose && std::size_t(plane.owner)<pose->size())
-                for (Vec3& p:plane.points) p=transform((*pose)[plane.owner],p);
-            const std::vector<int> owners(plane.points.size(),int(idBase)+plane.owner);
-            rasterizer.setObject(idBase+static_cast<std::uint32_t>(5*parts_.size()+side),{},0);
-            rasterizer.meshObjectSkinned(plane.points,plane.faces,owners,toe);
+            auto medial=makeMedialFootPlane(*this,suffix,origin,plane);
+            const auto drawFootPlane=[&](MetatarsalPlane& sheet,std::size_t objectGroup) {
+                if (sheet.points.empty()) return;
+                if (!rasterizer.gpu() && pose && std::size_t(sheet.owner)<pose->size())
+                    for (Vec3& p:sheet.points) p=transform((*pose)[sheet.owner],p);
+                const std::vector<int> owners(sheet.points.size(),int(idBase)+sheet.owner);
+                rasterizer.setObject(idBase+static_cast<std::uint32_t>(objectGroup*parts_.size()+side),{},0);
+                rasterizer.meshObjectSkinned(sheet.points,sheet.faces,owners,toe);
+            };
+            drawFootPlane(plane,5);
+            drawFootPlane(medial,6);
         }
         for (std::size_t i=0;i<parts_.size();++i) {
             if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
