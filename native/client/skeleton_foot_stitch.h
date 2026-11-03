@@ -80,8 +80,7 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
     const double clearance=.0001*std::sqrt(1+plane.slopeU*plane.slopeU+plane.slopeV*plane.slopeV);
     for (const auto& obstacle:obstacles) {
         if (pieces.empty()) return;
-        std::vector<Vec3> mapped;
-        std::vector<std::vector<Vec3>> sections;
+        std::vector<Vec3> mapped,overlap;
         mapped.reserve(obstacle.points.size());
         for (Vec3 p:obstacle.points) mapped.push_back(plane.local(p));
         for (auto f:obstacle.faces) {
@@ -89,34 +88,16 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
                 std::size_t(f[1])>=mapped.size() || std::size_t(f[2])>=mapped.size()) continue;
             auto slab=heightClip({mapped[f[0]],mapped[f[1]],mapped[f[2]]},plane.slopeU,plane.slopeV,plane.level-clearance,true);
             slab=heightClip(slab,plane.slopeU,plane.slopeV,plane.level+clearance,false);
-            if (slab.size()>=3) sections.push_back(std::move(slab));
+            overlap.insert(overlap.end(),slab.begin(),slab.end());
         }
-        // A skin can meet a sheet in two separated places. Taking one hull of
-        // both removes the perfectly clear area between them (notably under
-        // the little toe), so join only touching cross-section fragments.
-        std::vector<std::size_t> group(sections.size());
-        for (std::size_t i=0;i<group.size();++i) group[i]=i;
-        const auto root=[&](std::size_t i) { while (group[i]!=i) i=group[i]; return i; };
-        for (std::size_t i=0;i<sections.size();++i) for (std::size_t j=0;j<i;++j) {
-            bool touching=false;
-            for (Vec3 a:sections[i]) for (Vec3 b:sections[j])
-                if (std::hypot(a.x-b.x,a.z-b.z)<1e-7) touching=true;
-            if (touching) group[root(i)]=root(j);
+        auto cut=hull(std::move(overlap));
+        if (cut.size()<3) continue;
+        std::vector<std::vector<Vec3>> next;
+        for (const auto& piece:pieces) {
+            auto remaining=subtract(piece,cut);
+            next.insert(next.end(),remaining.begin(),remaining.end());
         }
-        for (std::size_t i=0;i<sections.size();++i) {
-            if (root(i)!=i) continue;
-            std::vector<Vec3> overlap;
-            for (std::size_t j=0;j<sections.size();++j) if (root(j)==i)
-                overlap.insert(overlap.end(),sections[j].begin(),sections[j].end());
-            auto cut=hull(std::move(overlap));
-            if (cut.size()<3) continue;
-            std::vector<std::vector<Vec3>> next;
-            for (const auto& piece:pieces) {
-                auto remaining=subtract(piece,cut);
-                next.insert(next.end(),remaining.begin(),remaining.end());
-            }
-            pieces=std::move(next);
-        }
+        pieces=std::move(next);
     }
 }
 // Weld coincident points into a single indexed mesh and split T-junctions so
@@ -182,9 +163,9 @@ inline MetatarsalPlane weld(const std::array<MetatarsalPlane,6>& sheets) {
 }
 } // namespace foot_stitch_detail
 
-// Rebuild the fitted sheets to their intersections, preserving the dorsal,
-// heel and sole planes and the foot owner. A bounded medial continuation fits
-// the great toe; no extra sculpt or toe bodies are introduced.
+// Rebuild the six existing fitted planes to their mutual intersections. Their
+// equations and foot owner stay unchanged; no extra sculpt or toe bodies are
+// introduced. The front footprint extends partway along the proximal toes.
 template<class Comparison>
 void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec3 origin,
                       MetatarsalPlane& top,MetatarsalPlane& medial,MetatarsalPlane& lateral,
@@ -203,7 +184,7 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     };
     std::array<Plane,6> planes;
     for (int i=0;i<6;++i) if (!setup(*sheets[std::size_t(i)],i,planes[std::size_t(i)])) { preserve(); return; }
-    struct ToeEnd { Vec3 back{},point{},direction{}; std::size_t part=0; };
+    struct ToeEnd { Vec3 point{},direction{}; };
     std::vector<ToeEnd> ends;
     // Each toe has its own hard end border, measured from the back to the
     // front of its proximal prism (after the existing great-toe scaling).
@@ -218,91 +199,16 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         back=back/8; front=front/8;
         Vec3 direction=front-back; direction.y=0;
         if (length(direction)<1e-8) continue;
-        ends.push_back({back,back+(front-back)*.4,normalized(direction),i});
+        ends.push_back({back+(front-back)*.4,normalized(direction)});
     }
     if (ends.size()!=5) { preserve(); return; }
     std::sort(ends.begin(),ends.end(),[](const ToeEnd& a,const ToeEnd& b){return a.point.x<b.point.x;});
-    std::size_t great=0;
-    while (great<ends.size() && comparison.parts()[ends[great].part].name.rfind("FootProxP1_",0)!=0) ++great;
-    if (great==ends.size()) { preserve(); return; }
-    // Keep the dorsal and sole sheets on their original planes. A short
-    // continuation of the medial side follows the outer width of the great
-    // toe without forming a projecting end flap.
-    const ToeEnd& big=ends[great];
-    const double outward=great==0 ? -1.0 : 1.0;
-    const int outer=(planes[1].normal.x*outward>0) ? 1 : 2;
-    auto prism=comparison.toePrism(big.part,origin);
-    comparison.resizeGreatToe(big.part,origin,prism);
-    const double length40=length(Vec3{big.point.x-big.back.x,0,big.point.z-big.back.z});
-    const Vec3 transition=big.back-big.direction*(length40*2.0);
-    auto frontPlanes=planes;
-    Plane& side=frontPlanes[std::size_t(outer)];
-    double spread=0;
-    for (double fraction:{.05,.39}) {
-        Vec3 center{}; double low=1e30,high=-1e30;
-        for (int k=0;k<8;++k) {
-            Vec3 p=prism[std::size_t(k)]*(1-fraction)+prism[std::size_t(k+8)]*fraction;
-            center+=p; low=std::min(low,p.x); high=std::max(high,p.x);
-        }
-        center=center/8;
-        center.x=outward<0 ? low+(high-low)*.1 : high-(high-low)*.1;
-        const double progress=dot(big.direction,center-transition);
-        if (progress<1e-8) { preserve(); return; }
-        for (int surface:{0,5}) {
-            center.y=planes[std::size_t(surface)].world(planes[std::size_t(surface)].local(center)).y;
-            spread=std::max(spread,(dot(side.normal,center-side.point)+.0001)/progress);
-        }
-    }
-    if (spread>1e-12) {
-        const Vec3 n=side.normal-big.direction*spread;
-        const double offset=dot(side.normal,side.point)-spread*dot(big.direction,transition);
-        const double across=dot(n,side.w);
-        if (across<1e-6) { preserve(); return; }
-        side.slopeU=-dot(n,side.u)/across; side.slopeV=-dot(n,side.v)/across;
-        side.level=offset/across; side.normal=normalized(n);
-        side.point=side.world({dot(transition,side.u),0,dot(transition,side.v)});
-    }
-    // Trim the lower corner back toward the toe outline. The extra vertical
-    // facet meets the original sole rather than leaving a triangular wing.
-    Plane toeSide=planes[std::size_t(outer)];
-    const Plane& oldSide=planes[std::size_t(outer)];
-    const Plane& solePlane=planes[5];
-    Vec3 soleStart=transition;
-    soleStart.y=solePlane.world(solePlane.local(soleStart)).y;
-    soleStart=oldSide.world(oldSide.local(soleStart));
-    double outside=-1e30;
-    Vec3 target{};
-    for (int k=0;k<8;++k) {
-        const Vec3 p=prism[std::size_t(k)]*.61+prism[std::size_t(k+8)]*.39;
-        target+=p; outside=std::max(outside,outward*p.x);
-    }
-    target=target/8; outside+=.0001;
-    const double capDz=target.z-transition.z;
-    if (std::abs(capDz)<1e-8) { preserve(); return; }
-    toeSide.slopeU=(outside-outward*soleStart.x)/capDz;
-    toeSide.slopeV=0;
-    toeSide.level=outward*soleStart.x-toeSide.slopeU*transition.z;
-    toeSide.normal=normalized(toeSide.w-toeSide.u*toeSide.slopeU);
-    toeSide.point=toeSide.world({transition.z,0,transition.y});
     std::vector<Vec3> bounds;
     for (const auto* sheet:sheets) bounds.insert(bounds.end(),sheet->points.begin(),sheet->points.end());
     const auto cuts=obstacles(comparison,suffix,origin);
     std::array<MetatarsalPlane,6> rebuilt;
-    const auto emit=[&](int index,const Plane& current,std::vector<std::vector<Vec3>> pieces) {
-        cutObstacles(pieces,current,cuts);
-        auto& result=rebuilt[std::size_t(index)]; result.owner=sheets[std::size_t(index)]->owner;
-        const bool positive=dot(cross(current.u,current.v),current.normal)>0;
-        for (const auto& piece:pieces) for (std::size_t i=1;i+1<piece.size();++i) {
-            if (std::abs(turn(piece[0],piece[i],piece[i+1]))<1e-14) continue;
-            const int base=static_cast<int>(result.points.size());
-            for (Vec3 p:{piece[0],piece[i],piece[i+1]}) result.points.push_back(current.world(p));
-            result.faces.push_back(positive ? std::array<int,3>{base,base+1,base+2}
-                                            : std::array<int,3>{base,base+2,base+1});
-        }
-    };
-    for (int index=0;index<6;++index) for (int phase=0;phase<2;++phase) {
-        const auto& active=phase==0 ? planes : frontPlanes;
-        const Plane& current=active[std::size_t(index)];
+    for (int index=0;index<6;++index) {
+        const Plane& current=planes[std::size_t(index)];
         double loU=1e30,hiU=-1e30,loV=1e30,hiV=-1e30;
         for (Vec3 p:bounds) {
             p=current.local(p);
@@ -313,12 +219,13 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         std::vector<Vec3> polygon{{loU-padding,0,loV-padding},{hiU+padding,0,loV-padding},
                                   {hiU+padding,0,hiV+padding},{loU-padding,0,hiV+padding}};
         for (int other=0;other<6 && polygon.size()>=3;++other) if (other!=index) {
-            const Plane& limit=active[std::size_t(other)];
+            const Plane& limit=planes[std::size_t(other)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,current.world(p)-limit.point);});
         }
+        // Keep the five limits separate. Their step changes are sharp, not a
+        // convex-hull interpolation that could overshoot an individual toe.
         std::vector<std::vector<Vec3>> pieces;
         for (std::size_t i=0;i<ends.size();++i) {
-            if (phase>0 && i!=great) continue;
             auto section=polygon;
             if (i>0) {
                 const double x=(ends[i-1].point.x+ends[i].point.x)*.5;
@@ -330,43 +237,18 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
             }
             const ToeEnd& end=ends[i];
             section=clipBy(section,[&](Vec3 p){return dot(end.direction,current.world(p)-end.point);});
-            if (i==great) {
-                if (phase>0) section=clipBy(section,[&](Vec3 p){
-                    return dot(toeSide.normal,current.world(p)-toeSide.point);
-                });
-                section=clipBy(section,[&](Vec3 p){
-                    const double d=dot(end.direction,current.world(p)-transition);
-                    return phase==0 ? d : -d;
-                });
-            }
             if (section.size()>=3) pieces.push_back(std::move(section));
         }
-        emit(index,current,std::move(pieces));
-    }
-    {
-        const auto& active=frontPlanes;
-        const Vec3 local=toeSide.local(big.back);
-        double pad=.01;
-        for (Vec3 p:bounds) {
-            const Vec3 q=toeSide.local(p);
-            pad=std::max({pad,std::abs(q.x-local.x)*2,std::abs(q.z-local.z)*2});
+        cutObstacles(pieces,current,cuts);
+        auto& result=rebuilt[std::size_t(index)]; result.owner=sheets[std::size_t(index)]->owner;
+        const bool positive=dot(cross(current.u,current.v),current.normal)>0;
+        for (const auto& piece:pieces) for (std::size_t i=1;i+1<piece.size();++i) {
+            if (std::abs(turn(piece[0],piece[i],piece[i+1]))<1e-14) continue;
+            const int base=static_cast<int>(result.points.size());
+            for (Vec3 p:{piece[0],piece[i],piece[i+1]}) result.points.push_back(current.world(p));
+            result.faces.push_back(positive ? std::array<int,3>{base,base+1,base+2}
+                                            : std::array<int,3>{base,base+2,base+1});
         }
-        std::vector<Vec3> patch{{local.x-pad,0,local.z-pad},{local.x+pad,0,local.z-pad},
-                                {local.x+pad,0,local.z+pad},{local.x-pad,0,local.z+pad}};
-        for (const Plane& limit:active) {
-            patch=clipBy(patch,[&](Vec3 p){return dot(limit.normal,toeSide.world(p)-limit.point);});
-        }
-        if (great>0) {
-            const double x=(ends[great-1].point.x+big.point.x)*.5;
-            patch=clipBy(patch,[&](Vec3 p){return x-toeSide.world(p).x;});
-        }
-        if (great+1<ends.size()) {
-            const double x=(big.point.x+ends[great+1].point.x)*.5;
-            patch=clipBy(patch,[&](Vec3 p){return toeSide.world(p).x-x;});
-        }
-        patch=clipBy(patch,[&](Vec3 p){return -dot(big.direction,toeSide.world(p)-transition);});
-        patch=clipBy(patch,[&](Vec3 p){return dot(big.direction,toeSide.world(p)-big.point);});
-        if (patch.size()>=3) emit(outer,toeSide,{std::move(patch)});
     }
     // Keep the original fitted sheets if a pathological profile produced no
     // bounded face, rather than replacing visible geometry with an empty mesh.
