@@ -105,7 +105,7 @@ inline void restoreNailTip(ToeSkinMesh& mesh, const std::vector<std::array<int,3
 // leaving its outer corners floating above the pointed icosahedron.
 inline void joinNailEdge(ToeSkinMesh& mesh, const std::vector<std::array<int,3>>& original,
                          const std::vector<int>& cut, Vec3 lateral, Vec3 forward,
-                         Vec3 normal, double skinEnd, int owner) {
+                         Vec3 normal, int owner) {
     const auto cross2=[&](Vec3 a,Vec3 b) {
         return dot(a,lateral)*dot(b,forward)-dot(a,forward)*dot(b,lateral);
     };
@@ -164,12 +164,7 @@ inline void joinNailEdge(ToeSkinMesh& mesh, const std::vector<std::array<int,3>>
             // Subdivide to follow the changing nearest tip facet.
             for (int part=0;part<4;++part) {
                 const double t0=lo+(hi-lo)*part/4.0, t1=lo+(hi-lo)*(part+1)/4.0;
-                Vec3 p=a+(b-a)*t0, q=a+(b-a)*t1;
-                // Stop the flesh at the original cut tip, leaving only the
-                // tiny nail free edge beyond it.
-                p=p-forward*std::max(0.0,dot(p,forward)-skinEnd);
-                q=q-forward*std::max(0.0,dot(q,forward)-skinEnd);
-                const Vec3 p0=support(p), q0=support(q);
+                const Vec3 p=a+(b-a)*t0, q=a+(b-a)*t1, p0=support(p), q0=support(q);
                 if (length(cross(q-p,p0-p))>1e-14) {
                     const int i0=mesh.vertex(p,owner), i1=mesh.vertex(q,owner);
                     const int i2=mesh.vertex(q0,owner), i3=mesh.vertex(p0,owner);
@@ -263,8 +258,7 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
     // almost straight sides and a broad, straight free edge with chamfers.
     // Size it from this icosahedron's cut, not a uniformly shrunken rectangle.
     const double midX=(minX+maxX)*0.5, halfWidth=width*0.37;
-    // Half a percent of the exposed tip depth gives a barely visible free edge.
-    const double back=minF+depth*0.10, front=maxF+depth*0.005;
+    const double back=minF+depth*0.10, front=maxF-depth*0.005;
     const double notch=(front-back)*0.075, chamfer=(front-back)*0.18;
     const double inner=halfWidth*0.37;
     const std::array<std::array<double,2>,8> outline={{{midX-inner,back+notch},
@@ -274,7 +268,12 @@ inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vect
         {midX-halfWidth,back}}};
     for (const auto& p:outline) mesh.nailPoints.push_back(center+lateral*p[0]+nailForward*p[1]);
     restoreNailTip(mesh,original,lateral,nailForward,normal,owner);
-    joinNailEdge(mesh,original,nailBoundary,lateral,nailForward,normal,dot(center,nailForward)+maxF,owner);
+    joinNailEdge(mesh,original,nailBoundary,lateral,nailForward,normal,owner);
+    // The flesh is complete now. Extend only the two nail-tip vertices;
+    // leave the icosahedron, surrounding skin and cut exactly where they were.
+    const Vec3 freeEdge=nailForward*(depth*0.01);
+    mesh.nailPoints[4]+=freeEdge;
+    mesh.nailPoints[5]+=freeEdge;
     Vec3 nailCenter{};
     for (Vec3 p:mesh.nailPoints) nailCenter+=p;
     nailCenter=nailCenter/static_cast<double>(mesh.nailPoints.size());
