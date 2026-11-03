@@ -82,17 +82,18 @@ tilt search cannot clear fixed bones, their overlaps are trimmed too rather than
 raising the sheet. A separate near-vertical medial sheet follows the big-toe
 side from the first metatarsal to the heel. It is fitted to the reference foot
 bones. A matching near-vertical lateral sheet follows the little-toe side to
-the heel. Two near-vertical heel panels meet at a rear hinge, and a flat sole
-lies 0.1 mm below the lowest fixed foot bone in the reference pose. The six
-fitted planes are extended to their mutual intersections, clipped to remove
-protruding portions, and welded into one foot-owned indexed mesh. Their fitted
-plane equations are retained. The open front has a separate, sharp limit for
-each toe at 40% of its proximal octagonal prism's length (measured from its
-back ring). Reference-pose bone and toe-skin cross-sections are cut out rather
-than intersected. Those cutouts can leave openings where seams meet the ankle
-or toes. The sole is visual geometry, not a new collision proxy. The mesh moves
-with the foot body, so independently moving toes or ankle bones can still
-intersect it.
+the heel. Two near-vertical heel panels meet at a rear hinge, and a flat rear
+sole lies 0.1 mm below the lowest fixed foot bone in the reference pose. The
+six fitted planes meet and are welded into a foot-owned indexed mesh. At the
+front, separate planar continuations fit each toe band, with small joining
+facets between bands; the toe ends retain sharp limits at 40% of each proximal
+octagonal prism measured from its back ring. The original supporting point of
+the dorsal plane is retained. Reference-pose bone and toe-skin cross-sections
+are cut out rather than intersected; separate cross-sections are kept separate
+so they do not erase clear areas between them. Cutouts can still leave openings
+at the ankle or toes. The sole is visual geometry, not a new collision proxy.
+The mesh moves with the foot body, so independently moving toes or ankle bones
+can still intersect it.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
