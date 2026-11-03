@@ -309,6 +309,38 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     // Keep the original fitted sheets if a pathological profile produced no
     // bounded face, rather than replacing visible geometry with an empty mesh.
     for (const auto& mesh:rebuilt) if (mesh.faces.empty()) { preserve(); return; }
+    // Close the front with vertical panels following the same angular outline.
+    // Each panel is bounded by the extended roof, sole, sides and heel planes,
+    // then cut around the separately articulated toe skin and bones.
+    double lowY=1e30,highY=-1e30;
+    for (Vec3 p:bounds) { lowY=std::min(lowY,p.y); highY=std::max(highY,p.y); }
+    const double yPadding=std::max(highY-lowY,.01)*2;
+    for (std::size_t i=0;i+1<border.size();++i) {
+        const Vec3 a=border[i],b=border[i+1];
+        Plane front;
+        front.u=normalized(Vec3{b.x-a.x,0,b.z-a.z});
+        front.v={0,1,0};
+        front.w={-front.u.z,0,front.u.x};
+        front.normal=front.w; front.point=a;
+        front.level=dot(front.w,a);
+        const double lo=dot(front.u,a),hi=dot(front.u,b);
+        std::vector<Vec3> polygon{{lo,0,lowY-yPadding},{hi,0,lowY-yPadding},
+                                  {hi,0,highY+yPadding},{lo,0,highY+yPadding}};
+        for (const Plane& limit:planes) {
+            if (polygon.size()<3) break;
+            polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,front.world(p)-limit.point);});
+        }
+        std::vector<std::vector<Vec3>> pieces;
+        if (polygon.size()>=3) pieces.push_back(std::move(polygon));
+        cutObstacles(pieces,front,cuts);
+        auto& result=rebuilt[0];
+        for (const auto& piece:pieces) for (std::size_t j=1;j+1<piece.size();++j) {
+            if (std::abs(turn(piece[0],piece[j],piece[j+1]))<1e-14) continue;
+            const int base=static_cast<int>(result.points.size());
+            for (Vec3 p:{piece[0],piece[j],piece[j+1]}) result.points.push_back(front.world(p));
+            result.faces.push_back({base,base+1,base+2});
+        }
+    }
     combine(rebuilt);
 }
 } // namespace gtc::native
