@@ -72,13 +72,14 @@ poses. Flat nail meshes follow their distal bones; their vertices are included
 in the corresponding collision proxy. The proxy continues to approximate the
 underlying rigid pieces rather than resolving an exact thin nail surface.
 
-Each foot also has a flat metatarsal sheet attached to the metatarsal body.
-Its sagittal tilt clears the adjacent fixed foot bones, and its supporting
-metatarsal is 0.1 mm from the plane along its normal in the reference pose.
-The irregular bones cannot all be uniformly 0.1 mm from a flat sheet. Projected
-reference-pose toe overlaps are trimmed from the sheet; independently moving toes
-can still intersect it. If the tilt search cannot clear fixed bones, their
-projected overlaps are trimmed too rather than raising the sheet.
+Each foot also has a flat sheet attached to the metatarsal body, extending to
+the ankle. It slopes towards the little toe; its sagittal tilt clears adjacent
+fixed foot bones, and its supporting metatarsal is 0.1 mm from the plane along
+its normal in the reference pose. The irregular bones cannot all be uniformly
+0.1 mm from a flat sheet. Reference-pose toe and ankle overlaps are trimmed;
+independently moving toes and ankle bones can still intersect the sheet. If the
+tilt search cannot clear fixed bones, their overlaps are trimmed too rather than
+raising the sheet.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
