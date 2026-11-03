@@ -1,19 +1,19 @@
 #pragma once
 
 #include "client/skeleton_metatarsal_plane.h"
+#include "client/skeleton_medial_bridge.h"
 
 namespace gtc::native {
 
-// The medial sheet runs from the first metatarsal towards the ankle. It is
-// fitted to the outward-facing bone surfaces in the reference pose and moves
-// with the same foot body as the dorsal sheet.
+// The medial sheet runs from the first metatarsal to the heel. It is fitted
+// to outward-facing foot bones and moves with the dorsal sheet's foot body.
 template<class Comparison>
 MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::string& suffix,
-                                   Vec3 origin, const MetatarsalPlane& top) {
+                                   Vec3 origin, MetatarsalPlane& top) {
     using namespace metatarsal_plane_detail;
     MetatarsalPlane result;
     const auto& parts=comparison.parts();
-    std::vector<Vec3> medial, first, fifth, talus;
+    std::vector<Vec3> medial, first, fifth, talus, heel;
     std::size_t greatToe=parts.size();
     for (std::size_t i=0;i<parts.size();++i) {
         const auto& part=parts[i];
@@ -22,18 +22,20 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
         if (part.name=="FootDistP1"+suffix) greatToe=i;
         const bool firstMeta=part.name=="FootMeta1"+suffix;
         const bool fifthMeta=part.name=="FootMeta5"+suffix;
+        const bool isHeel=part.name=="Cal"+suffix;
         const bool fit=firstMeta || part.name=="MedCun"+suffix ||
                        part.name=="Nav"+suffix || part.name=="Tal"+suffix;
-        if (!fit && !fifthMeta) continue;
+        if (!fit && !fifthMeta && !isHeel) continue;
         for (Vec3 p:part.points) {
             p=comparison.mapPart(p,part)+origin;
             if (fit) medial.push_back(p);
             if (firstMeta) first.push_back(p);
             if (fifthMeta) fifth.push_back(p);
             if (part.name=="Tal"+suffix) talus.push_back(p);
+            if (isHeel) heel.push_back(p);
         }
     }
-    if (result.owner<0 || medial.size()<3 || first.empty() || fifth.empty() || talus.empty() || top.faces.empty()) return {};
+    if (result.owner<0 || medial.size()<3 || first.empty() || fifth.empty() || talus.empty() || heel.empty() || top.faces.empty()) return {};
     double firstX=0,fifthX=0;
     for (Vec3 p:first) firstX+=p.x;
     for (Vec3 p:fifth) fifthX+=p.x;
@@ -72,13 +74,19 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
     const double slopeU=std::clamp((uw*vv-vw*uv)/determinant,-.7,.7);
     // Keep the side sheet nearly vertical even at extreme body scales.
     const double slopeV=std::clamp((vw*uu-uw*uv)/determinant,-.25,.25);
+    for (Vec3 p:heel) {
+        p=local(p); candidates.push_back(p);
+        loU=std::min(loU,p.x); hiU=std::max(hiU,p.x);
+        loV=std::min(loV,p.z); hiV=std::max(hiV,p.z);
+    }
     auto boundary=hull(candidates);
     if (boundary.size()<3) return {};
-    double minTop=1e30,maxTop=-1e30;
-    for (Vec3 p:top.points) { minTop=std::min(minTop,p.z); maxTop=std::max(maxTop,p.z); }
-    boundary=clip(boundary,{minTop,0,0},{minTop,0,-1},true);
-    boundary=clip(boundary,{maxTop,0,0},{maxTop,0,1},true);
-    if (boundary.size()<3) return {};
+    // Extend the fitting footprint upwards before finding bone support, so
+    // the later connection to the dorsal plane cannot cut through a bone.
+    std::vector<Vec3> supportFootprint=candidates;
+    supportFootprint.push_back({loU,0,hiV+(hiV-loV)});
+    supportFootprint.push_back({hiU,0,hiV+(hiV-loV)});
+    const auto supportBoundary=hull(std::move(supportFootprint));
     // Use the clipped surfaces of the rigid foot bones, not a rectangular
     // bounding box, to keep the sheet on the outside without lifting it for
     // unrelated bones outside the footprint.
@@ -96,13 +104,39 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
         for (const auto& f:part.faces) {
             if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=mapped.size() ||
                 std::size_t(f[1])>=mapped.size() || std::size_t(f[2])>=mapped.size()) continue;
-            for (Vec3 p:intersect({mapped[f[0]],mapped[f[1]],mapped[f[2]]},boundary))
+            for (Vec3 p:intersect({mapped[f[0]],mapped[f[1]],mapped[f[2]]},supportBoundary))
                 support=std::max(support,p.y-slopeU*p.x-slopeV*p.z);
         }
     }
     if (support<-1e20) return {};
     const double offset=.0001*std::sqrt(1+slopeU*slopeU+slopeV*slopeV);
     const double level=support+offset;
+    // Use the largest dorsal triangle, not a tiny sliver at the start of the
+    // mesh, to recover its stable plane equation.
+    Vec3 a{},n{};
+    double largest=0;
+    for (const auto& face:top.faces) {
+        const Vec3 p=top.points[face[0]],q=top.points[face[1]],r=top.points[face[2]];
+        const Vec3 candidate=cross(q-p,r-p);
+        if (std::abs(candidate.y)>largest) { largest=std::abs(candidate.y); a=p; n=candidate; }
+    }
+    if (largest<1e-20) return {};
+    if (n.y<0) n=n*-1;
+    const double denominator=n.y+n.x*outward*slopeV;
+    if (std::abs(denominator)<1e-20) return {};
+    const auto joinPoint=[&](double z) {
+        const double y=(dot(n,a)-n.x*outward*level-(n.x*outward*slopeU+n.z)*z)/denominator;
+        return Vec3{z,0,y};
+    };
+    // Extend the side up to the dorsal plane over its full length. Where
+    // that line lies outside the dorsal outline, a coplanar bridge fills it.
+    double minTop=1e30,maxTop=-1e30;
+    for (Vec3 p:top.points) { minTop=std::min(minTop,p.z); maxTop=std::max(maxTop,p.z); }
+    std::vector<Vec3> expanded=candidates;
+    expanded.push_back(joinPoint(minTop));
+    expanded.push_back(joinPoint(maxTop));
+    boundary=hull(std::move(expanded));
+    if (boundary.size()<3) return {};
     // End the sheet before it crosses the great toe's existing skin, keeping
     // that separately articulated mesh untouched.
     if (greatToe<parts.size()) {
@@ -129,19 +163,7 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
             boundary=clip(boundary,{z,0,0},{z,0,towardToe},true);
         }
     }
-    // Clip the upper edge to the existing dorsal plane so the two planes do
-    // not cross. That edge remains coplanar with the rest of the side sheet.
-    // Subtraction can leave a very small first face. Select the largest
-    // projected triangle for a stable normal regardless of room placement.
-    Vec3 a{},n{};
-    double largest=0;
-    for (const auto& face:top.faces) {
-        const Vec3 p=top.points[face[0]],q=top.points[face[1]],r=top.points[face[2]];
-        const Vec3 candidate=cross(q-p,r-p);
-        if (std::abs(candidate.y)>largest) { largest=std::abs(candidate.y); a=p; n=candidate; }
-    }
-    if (largest<1e-20) return {};
-    if (n.y<0) n=n*-1;
+    // Clip at the dorsal plane; the generated upper edge meets it exactly.
     const auto height=[&](Vec3 p) {
         const double x=outward*(slopeU*p.x+slopeV*p.z+level);
         return dot(n,Vec3{x,p.z,p.x}-a);
@@ -153,14 +175,40 @@ MetatarsalPlane makeMedialFootPlane(const Comparison& comparison, const std::str
         if (dp<=0) clipped.push_back(p);
         if ((dp<=0)!=(dq<=0)) clipped.push_back(p+(q-p)*(dp/(dp-dq)));
     }
-    for (std::size_t i=1;i+1<clipped.size();++i) {
-        if (std::abs(turn(clipped[0],clipped[i],clipped[i+1]))<1e-12*(hiU-loU)*(hiV-loV)) continue;
+    // The leg articulates separately from the foot. In the reference pose,
+    // remove its cross-section instead of letting the extended sheet cut it.
+    std::vector<std::vector<Vec3>> pieces;
+    if (clipped.size()>=3) pieces.push_back(std::move(clipped));
+    for (const auto& part:parts) {
+        if (part.name!="Tibia"+suffix && part.name!="Fibula"+suffix) continue;
+        std::vector<Vec3> mapped,overlap;
+        mapped.reserve(part.points.size());
+        for (Vec3 p:part.points) mapped.push_back(local(comparison.mapPart(p,part)+origin));
+        for (const auto& f:part.faces) {
+            if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=mapped.size() ||
+                std::size_t(f[1])>=mapped.size() || std::size_t(f[2])>=mapped.size()) continue;
+            auto slab=heightClip({mapped[f[0]],mapped[f[1]],mapped[f[2]]},slopeU,slopeV,level-offset,true);
+            slab=heightClip(slab,slopeU,slopeV,level+offset,false);
+            overlap.insert(overlap.end(),slab.begin(),slab.end());
+        }
+        const auto cut=hull(std::move(overlap));
+        if (cut.size()<3) continue;
+        std::vector<std::vector<Vec3>> next;
+        for (const auto& piece:pieces) {
+            auto remaining=subtract(piece,cut);
+            next.insert(next.end(),remaining.begin(),remaining.end());
+        }
+        pieces=std::move(next);
+    }
+    for (const auto& piece:pieces) for (std::size_t i=1;i+1<piece.size();++i) {
+        if (std::abs(turn(piece[0],piece[i],piece[i+1]))<1e-12*(hiU-loU)*(hiV-loV)) continue;
         const int base=static_cast<int>(result.points.size());
-        for (Vec3 p:{clipped[0],clipped[i],clipped[i+1]})
+        for (Vec3 p:{piece[0],piece[i],piece[i+1]})
             result.points.push_back({outward*(slopeU*p.x+slopeV*p.z+level),p.z,p.x});
         result.faces.push_back(outward<0 ? std::array<int,3>{base,base+1,base+2}
                                          : std::array<int,3>{base,base+2,base+1});
     }
+    if (!result.faces.empty()) bridgeMedialFootPlane(comparison,suffix,origin,result,top);
     return result;
 }
 } // namespace gtc::native

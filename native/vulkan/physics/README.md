@@ -80,10 +80,11 @@ its normal in the reference pose. The irregular bones cannot all be uniformly
 independently moving toes and ankle bones can still intersect the sheet. If the
 tilt search cannot clear fixed bones, their overlaps are trimmed too rather than
 raising the sheet. A separate near-vertical medial sheet follows the big-toe
-side from the first metatarsal toward the ankle. It is fitted to the reference
-bone surfaces and moves with the same foot body. Its edge is trimmed against
-the great-toe skin in the reference pose; independently moving toes or ankle
-bones can still intersect it.
+side from the first metatarsal to the heel. It is fitted to the reference foot
+bones and meets the dorsal sheet; any bridging surface stays coplanar with the
+original dorsal plane. The great-toe and leg overlaps are trimmed in the
+reference pose. Both sheets move with the foot body, so independently moving
+toes or ankle bones can still intersect them.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++
