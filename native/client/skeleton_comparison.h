@@ -639,10 +639,11 @@ public:
             tipLow.x=std::min(tipLow.x,p.x); tipLow.y=std::min(tipLow.y,p.y); tipLow.z=std::min(tipLow.z,p.z);
             tipHigh.x=std::max(tipHigh.x,p.x); tipHigh.y=std::max(tipHigh.y,p.y); tipHigh.z=std::max(tipHigh.z,p.z);
         }
-        // Extend into the back of the tip at rest, without joining their
-        // transforms. Allow the middle-bone envelope to determine a minimum.
+        // Extend a little farther into the tip at rest, while keeping the
+        // segment and tip independently attached to their own bones.
         const double back=low.z-0.08*(high.z-low.z);
-        const double front=std::max(high.z,tipLow.z+0.20*(tipHigh.z-tipLow.z));
+        const double tipLength=tipHigh.z-tipLow.z;
+        const double front=std::max(high.z,tipLow.z+0.20*tipLength)+0.10*tipLength;
         const double x=(low.x+high.x)*0.5, y=(low.y+high.y)*0.5;
         const double rx=std::max((high.x-low.x)*0.65,(tipHigh.x-tipLow.x)*0.45);
         const double ry=std::max((high.y-low.y)*0.65,(tipHigh.y-tipLow.y)*0.45);
