@@ -15,6 +15,8 @@ struct ToeSkinMesh {
     std::vector<Vec3> points;
     std::vector<std::array<int,3>> faces;
     std::vector<int> owners;
+    std::vector<Vec3> nailPoints;
+    std::vector<std::array<int,3>> nailFaces;
 
     int vertex(Vec3 p, int owner) {
         points.push_back(p); owners.push_back(owner);
@@ -23,9 +25,104 @@ struct ToeSkinMesh {
     void triangle(int a,int b,int c) { if (a!=b && b!=c && c!=a) faces.push_back({a,b,c}); }
 };
 
+// Trim only the distal icosahedron, then cap the cut with a real flat nail
+// mesh. Its free edge extends a little beyond the original tip.
+inline void cutToeNail(ToeSkinMesh& mesh, std::size_t firstFace, const std::vector<Vec3>& tip,
+                       const std::vector<Vec3>& bone, Vec3 axis, Vec3 basePlane,
+                       int owner, std::vector<int>& baseBoundary) {
+    const Vec3 lateral=normalized(cross(Vec3{0,1,0},axis));
+    const Vec3 up=normalized(cross(axis,lateral));
+    if (length(lateral)<1e-8 || length(up)<1e-8) return;
+    double lowY=dot(tip[0],up), highY=lowY, lowZ=dot(tip[0],axis), highZ=lowZ;
+    for (Vec3 p:tip) {
+        lowY=std::min(lowY,dot(p,up)); highY=std::max(highY,dot(p,up));
+        lowZ=std::min(lowZ,dot(p,axis)); highZ=std::max(highZ,dot(p,axis));
+    }
+    const double height=highY-lowY, lengthZ=highZ-lowZ;
+    if (height<1e-8 || lengthZ<1e-8) return;
+    // A gentle downward slope towards the free edge, sized to the tip.
+    const double slope=0.22*height/lengthZ;
+    const Vec3 normal=normalized(up+axis*slope);
+    double level=lowY+0.64*height+slope*(lowZ+highZ)*0.5;
+    // Keep the plane above the distal bone, even with different foot scales.
+    for (Vec3 p:bone) level=std::max(level,dot(p,up)+slope*dot(p,axis)+0.04*height);
+    const auto distance=[&](Vec3 p) { return dot(p,up)+slope*dot(p,axis)-level; };
+    constexpr double epsilon=1e-9;
+    std::map<std::pair<int,int>,int> cutEdges;
+    const auto crossing=[&](int a,int b,double da,double db) {
+        if (std::abs(da)<epsilon) return a;
+        if (std::abs(db)<epsilon) return b;
+        const auto mm=std::minmax(a,b);
+        const std::pair<int,int> key{mm.first,mm.second};
+        const auto found=cutEdges.find(key);
+        if (found!=cutEdges.end()) return found->second;
+        const double t=da/(da-db);
+        const Vec3 point=mesh.points[std::size_t(a)]+(mesh.points[std::size_t(b)]-mesh.points[std::size_t(a)])*t;
+        const int index=mesh.vertex(point,owner); cutEdges.emplace(key,index); return index;
+    };
+    std::vector<std::array<int,3>> clipped;
+    for (std::size_t f=firstFace;f<mesh.faces.size();++f) {
+        const auto& face=mesh.faces[f]; std::vector<int> polygon;
+        for (int k=0;k<3;++k) {
+            const int a=face[k], b=face[(k+1)%3];
+            const double da=distance(mesh.points[std::size_t(a)]), db=distance(mesh.points[std::size_t(b)]);
+            const bool inA=da<=epsilon, inB=db<=epsilon;
+            if (inA) polygon.push_back(a);
+            if (inA!=inB) polygon.push_back(crossing(a,b,da,db));
+        }
+        for (std::size_t k=1;k+1<polygon.size();++k)
+            if (polygon[0]!=polygon[k] && polygon[k]!=polygon[k+1] && polygon[k+1]!=polygon[0])
+                clipped.push_back({polygon[0],polygon[k],polygon[k+1]});
+    }
+    std::vector<int> nailBoundary, clippedBase;
+    for (const auto& face:clipped) for (int index:face) {
+        const Vec3 p=mesh.points[std::size_t(index)];
+        if (std::abs(dot(p-basePlane,axis))<epsilon) clippedBase.push_back(index);
+        if (std::abs(distance(p))<epsilon) nailBoundary.push_back(index);
+    }
+    const auto unique=[](std::vector<int>& ids) {
+        std::sort(ids.begin(),ids.end()); ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+    };
+    unique(clippedBase); unique(nailBoundary);
+    if (clippedBase.size()<3 || nailBoundary.size()<3) return;
+    baseBoundary=std::move(clippedBase);
+    mesh.faces.resize(firstFace); mesh.faces.insert(mesh.faces.end(),clipped.begin(),clipped.end());
+    Vec3 center{}; for (int index:nailBoundary) center+=mesh.points[std::size_t(index)];
+    center=center/static_cast<double>(nailBoundary.size());
+    const Vec3 nailForward=normalized(axis-normal*dot(axis,normal));
+    const auto angle=[&](int index) {
+        const Vec3 q=mesh.points[std::size_t(index)]-center;
+        return std::atan2(-dot(q,nailForward),dot(q,lateral));
+    };
+    std::sort(nailBoundary.begin(),nailBoundary.end(),[&](int a,int b) {return angle(a)<angle(b);});
+    for (int index:nailBoundary) mesh.nailPoints.push_back(mesh.points[std::size_t(index)]);
+    for (std::size_t k=1;k+1<mesh.nailPoints.size();++k)
+        mesh.nailFaces.push_back({0,static_cast<int>(k),static_cast<int>(k+1)});
+    double nailLow=dot(mesh.nailPoints[0],axis), nailHigh=nailLow;
+    for (Vec3 p:mesh.nailPoints) {nailLow=std::min(nailLow,dot(p,axis)); nailHigh=std::max(nailHigh,dot(p,axis));}
+    const double forwardDot=std::max(0.1,dot(nailForward,axis));
+    const double freeEdge=highZ+0.04*lengthZ;
+    for (std::size_t k=0;k<nailBoundary.size();++k) {
+        const std::size_t j=(k+1)%nailBoundary.size();
+        const Vec3 a=mesh.nailPoints[k], b=mesh.nailPoints[j];
+        // Only the distal-facing perimeter receives the free edge.
+        const Vec3 edge=b-a;
+        if (dot(cross(edge,normal),nailForward)<=0 ||
+            dot((a+b)*0.5,axis)<nailLow+0.55*(nailHigh-nailLow)) continue;
+        const auto edgePoint=[&](Vec3 p) {
+            p+=nailForward*((freeEdge-dot(p,axis))/forwardDot);
+            return p-lateral*(0.12*dot(p-center,lateral));
+        };
+        const int na=static_cast<int>(mesh.nailPoints.size());
+        mesh.nailPoints.push_back(edgePoint(a)); mesh.nailPoints.push_back(edgePoint(b));
+        mesh.nailFaces.push_back({static_cast<int>(k),static_cast<int>(j),na+1});
+        mesh.nailFaces.push_back({static_cast<int>(k),na+1,na});
+    }
+}
+
 inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
                                const std::vector<int>& boneIds,
-                               const std::vector<Vec3>& tip, int tipId) {
+                               const std::vector<Vec3>& tip, const std::vector<Vec3>& tipBone, int tipId) {
     ToeSkinMesh out;
     if (prisms.empty() || prisms.size()!=boneIds.size() || tip.size()!=12) return out;
     for (const auto& prism:prisms) if (prism.size()!=16) return {};
@@ -83,6 +180,7 @@ inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
         const int id=out.vertex(tip[a]+(tip[b]-tip[a])*t,tipId);
         edges.emplace(edge,id); boundary.push_back(id); return id;
     };
+    const std::size_t tipFaceStart=out.faces.size();
     for (const auto& face:ico) {
         std::vector<int> polygon;
         for (int k=0;k<3;++k) {
@@ -93,6 +191,7 @@ inline ToeSkinMesh makeToeSkin(const std::vector<std::vector<Vec3>>& prisms,
         }
         for (std::size_t k=1;k+1<polygon.size();++k) out.triangle(polygon[0],polygon[k],polygon[k+1]);
     }
+    cutToeNail(out,tipFaceStart,tip,tipBone,axis,plane,tipId,boundary);
     std::sort(boundary.begin(),boundary.end());
     boundary.erase(std::unique(boundary.begin(),boundary.end()),boundary.end());
     if (boundary.size()<3 || length(u)<1e-8 || length(v)<1e-8) return {};

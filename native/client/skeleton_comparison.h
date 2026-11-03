@@ -708,10 +708,32 @@ public:
         }
         return vertices;
     }
+    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin) const {
+        const auto& name=parts_[i].name;
+        if (name.rfind("FootDistP",0)!=0) return {};
+        const std::string suffix=name.substr(9);
+        const auto findPart=[&](const std::string& partName) {
+            return std::find_if(parts_.begin(),parts_.end(),[&](const Part& p) { return p.name==partName; });
+        };
+        const auto proximal=findPart("FootProxP"+suffix);
+        const auto middle=findPart("FootMidP"+suffix);
+        if (proximal==parts_.end() || (suffix[0]!='1' && middle==parts_.end())) return {};
+        std::vector<std::vector<Vec3>> prisms;
+        std::vector<int> owners;
+        const auto add=[&](const auto& part) {
+            const auto index=static_cast<std::size_t>(part-parts_.begin());
+            prisms.push_back(toePrism(index,origin)); owners.push_back(static_cast<int>(index));
+        };
+        add(proximal); if (suffix[0]!='1') add(middle);
+        std::vector<Vec3> tipBone; tipBone.reserve(parts_[i].points.size());
+        for (Vec3 p:parts_[i].points) tipBone.push_back(mapPart(p,parts_[i])+origin);
+        return makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i));
+    }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
               const std::vector<std::array<double,16>>* pose=nullptr) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
+        Material nail; nail.color=colorHex("#eacabe"); nail.specular=0.18;
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
@@ -724,29 +746,21 @@ public:
                 rasterizer.markSkinOwner();
         }
         for (std::size_t i=0;i<parts_.size();++i) {
-            const auto& name=parts_[i].name;
-            if (name.rfind("FootDistP",0)!=0) continue;
-            const std::string suffix=name.substr(9);
-            const auto findPart=[&](const std::string& partName) {
-                return std::find_if(parts_.begin(),parts_.end(),[&](const Part& p) { return p.name==partName; });
-            };
-            const auto proximal=findPart("FootProxP"+suffix);
-            const auto middle=findPart("FootMidP"+suffix);
-            if (proximal==parts_.end() || (suffix[0]!='1' && middle==parts_.end())) continue;
-            std::vector<std::vector<Vec3>> prisms;
-            std::vector<int> owners;
-            const auto add=[&](const auto& part) {
-                const auto index=static_cast<std::size_t>(part-parts_.begin());
-                prisms.push_back(toePrism(index,origin)); owners.push_back(static_cast<int>(index));
-            };
-            add(proximal); if (suffix[0]!='1') add(middle);
-            auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),static_cast<int>(i));
+            if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
+            auto skin=toeSurface(i,origin);
             if (skin.points.empty()) continue;
             if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
                 if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);
             for (int& owner:skin.owners) owner+=static_cast<int>(idBase);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(3*parts_.size()+i),{},0);
             rasterizer.meshObjectSkinned(skin.points,skin.faces,skin.owners,toe);
+            if (!skin.nailPoints.empty()) {
+                if (!rasterizer.gpu() && pose && i<pose->size())
+                    for (Vec3& p:skin.nailPoints) p=transform((*pose)[i],p);
+                const std::vector<int> nailOwners(skin.nailPoints.size(),static_cast<int>(idBase+i));
+                rasterizer.setObject(idBase+static_cast<std::uint32_t>(4*parts_.size()+i),{},0);
+                rasterizer.meshObjectSkinned(skin.nailPoints,skin.nailFaces,nailOwners,nail);
+            }
         }
     }
 
