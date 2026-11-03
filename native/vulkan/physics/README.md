@@ -89,9 +89,13 @@ calcaneus height, and turn toward those side sheets. Small coplanar side
 extensions join the heel panels where their
 edges would otherwise fall beyond the side-sheet outline. The heel panels are
 fitted outside fixed foot bones and trimmed against the reference ankle bones.
-Toe and leg overlaps are trimmed in the reference pose; the resulting cutouts
-can leave gaps at the dorsal connection. All sheets move with the foot body,
-so independently moving toes or ankle bones can still intersect them.
+A flat sole follows the side and heel sheets and the metatarsal tips, 0.1 mm
+below the lowest fixed foot bone in the reference pose. It is trimmed around
+reference-pose toe skin; the toes keep their independent bone ownership. The
+sole is visual geometry, not a new collision proxy. Toe and leg overlaps are
+trimmed in the reference pose; the resulting cutouts can leave gaps, including
+at the dorsal connection. All sheets move with the foot body, so independently
+moving toes or ankle bones can still intersect them.
 
 The checked-in SPIR-V modules are compiled from the compute shaders with
 glslang for Vulkan. `make_compute_headers.py` regenerates the embedded C++

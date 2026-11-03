@@ -77,7 +77,9 @@ std::array<MetatarsalPlane,2> makeHeelPlanes(const Comparison& comparison, const
         return out;
     };
     const double padding=(high.x-low.x)*.8;
-    // Extend the back panels above the calcaneus, without lowering their base.
+    // Bring the heel's lower edge to the sole while keeping its raised top.
+    double lowerY=low.y;
+    for (Vec3 p:foot) lowerY=std::min(lowerY,p.y-.0001);
     const double upperY=high.y+(high.y-low.y)*.25;
     for (int half=0;half<2;++half) {
         auto& sheet=result[std::size_t(half)];
@@ -90,7 +92,7 @@ std::array<MetatarsalPlane,2> makeHeelPlanes(const Comparison& comparison, const
         const double x1=half==0 ? hinge : high.x+padding;
         // Local coordinates are (world x, outward depth, world y), so the
         // existing polygon helpers operate on the projected x/y footprint.
-        std::vector<Vec3> polygon{{x0,0,low.y},{x1,0,low.y},{x1,0,upperY},{x0,0,upperY}};
+        std::vector<Vec3> polygon{{x0,0,lowerY},{x1,0,lowerY},{x1,0,upperY},{x0,0,upperY}};
         polygon=trim(polygon,[&](Vec3 p){ return dot(medialNormal,world(p)-medialPoint); });
         polygon=trim(polygon,[&](Vec3 p){ return dot(lateralNormal,world(p)-lateralPoint); });
         if (polygon.size()<3) continue;
