@@ -85,11 +85,12 @@ bones. A matching near-vertical lateral sheet follows the little-toe side to
 the heel. Two near-vertical heel panels meet at a rear hinge, and a flat sole
 lies 0.1 mm below the lowest fixed foot bone in the reference pose. The six
 fitted planes are extended to their mutual intersections, clipped to remove
-protruding portions, and welded into one foot-owned indexed mesh. Their fitted
-plane equations are retained. The open front has a separate, sharp limit for
-each toe at 40% of its proximal octagonal prism's length (measured from its
-back ring). Reference-pose bone and toe-skin cross-sections are cut out rather
-than intersected. Those cutouts can leave openings where seams meet the ankle
+protruding portions, and welded into one foot-owned indexed mesh. The dorsal,
+heel and sole equations are retained; a bounded medial continuation follows
+the big-toe width and is trimmed at the sole. The open front has a separate,
+sharp limit for each toe at 40% of its proximal octagonal prism's length
+(measured from its back ring). Disconnected reference-pose bone and toe-skin
+cross-sections are cut separately rather than removing the space between them. Those cutouts can leave openings where seams meet the ankle
 or toes. The sole is visual geometry, not a new collision proxy. The mesh moves
 with the foot body, so independently moving toes or ankle bones can still
 intersect it.
