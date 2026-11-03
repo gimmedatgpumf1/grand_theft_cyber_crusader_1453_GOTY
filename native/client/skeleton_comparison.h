@@ -9,6 +9,7 @@
 #include "client/skeleton_medial_plane.h"
 #include "client/skeleton_heel_planes.h"
 #include "client/skeleton_sole.h"
+#include "client/skeleton_foot_stitch.h"
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
@@ -794,6 +795,7 @@ public:
             auto plane=makeMetatarsalPlane(*this,suffix,origin); if (plane.points.empty()) continue;
             auto medial=makeFootSidePlane(*this,suffix,origin,plane), lateral=makeFootSidePlane(*this,suffix,origin,plane,true);
             auto heel=makeHeelPlanes(*this,suffix,origin,medial,lateral); auto sole=makeFootSole(*this,suffix,origin,medial,lateral,heel);
+            stitchFootPlanes(*this,suffix,origin,plane,medial,lateral,heel,sole);
             const auto drawFootPlane=[&](MetatarsalPlane& sheet,std::size_t objectGroup) {
                 if (sheet.points.empty()) return;
                 if (!rasterizer.gpu() && pose && std::size_t(sheet.owner)<pose->size())
@@ -802,8 +804,7 @@ public:
                 rasterizer.setObject(idBase+static_cast<std::uint32_t>(objectGroup*parts_.size()+side),{},0);
                 rasterizer.meshObjectSkinned(sheet.points,sheet.faces,owners,toe);
             };
-            drawFootPlane(plane,5); drawFootPlane(medial,6); drawFootPlane(lateral,7);
-            drawFootPlane(heel[0],8); drawFootPlane(heel[1],9); drawFootPlane(sole,10);
+            drawFootPlane(plane,5);
         }
         for (std::size_t i=0;i<parts_.size();++i) {
             if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
@@ -823,7 +824,6 @@ public:
             }
         }
     }
-
 private:
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {
         return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
