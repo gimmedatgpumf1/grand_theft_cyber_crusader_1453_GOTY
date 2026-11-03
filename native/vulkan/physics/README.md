@@ -84,6 +84,10 @@ side from the first metatarsal to the heel. It is fitted to the reference foot
 bones and meets the dorsal sheet; any bridging surface stays coplanar with the
 original dorsal plane. A matching near-vertical lateral sheet follows the
 little-toe side to the back of the heel and is fitted to its own foot bones.
+Two nearly vertical heel panels meet at a rear hinge and turn toward those
+side sheets. Small coplanar side extensions join the heel panels where their
+edges would otherwise fall beyond the side-sheet outline. The heel panels are
+fitted outside fixed foot bones and trimmed against the reference ankle bones.
 Toe and leg overlaps are trimmed in the reference pose; the resulting cutouts
 can leave gaps at the dorsal connection. All sheets move with the foot body,
 so independently moving toes or ankle bones can still intersect them.
