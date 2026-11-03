@@ -708,8 +708,9 @@ public:
         }
         return vertices;
     }
-    // Reduce only the big-toe flesh, anchored at its proximal end. Bone
-    // geometry and bone transforms remain unchanged.
+    // Two successive 5% reductions of the big-toe exterior. Bone geometry
+    // and bone transforms remain unchanged.
+    static constexpr double greatToeScale=0.95*0.95;
     bool greatToeAnchor(std::size_t i, Vec3 origin, Vec3& anchor) const {
         const auto& name=parts_[i].name;
         const bool distal=name.rfind("FootDistP1_",0)==0;
@@ -731,7 +732,7 @@ public:
     void resizeGreatToe(std::size_t i, Vec3 origin, std::vector<Vec3>& points) const {
         Vec3 anchor{};
         if (!greatToeAnchor(i,origin,anchor)) return;
-        for (Vec3& p:points) p=anchor+(p-anchor)*0.95;
+        for (Vec3& p:points) p=anchor+(p-anchor)*greatToeScale;
     }
     ToeSkinMesh toeSurface(std::size_t i, Vec3 origin) const {
         const auto& name=parts_[i].name;
@@ -756,7 +757,7 @@ public:
         // pre-scaled frame, then scale the finished toe exterior.
         Vec3 anchor{};
         if (suffix[0]=='1' && greatToeAnchor(i,origin,anchor))
-            for (Vec3& p:tipBone) p=anchor+(p-anchor)/0.95;
+            for (Vec3& p:tipBone) p=anchor+(p-anchor)/greatToeScale;
         auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i));
         if (suffix[0]=='1') {
             resizeGreatToe(i,origin,skin.points);
