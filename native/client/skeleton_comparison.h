@@ -561,8 +561,11 @@ public:
             high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
         }
         const Vec3 mid=(low+high)*0.5;
-        const Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
-        const Vec3 size=(high-low)*0.95;
+        Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
+        // Further reduce the big-toe tip while retaining its forwardmost
+        // point. The prism follows the tip midpoint; its rear stays fixed.
+        if (suffix[0]=='1') center+=forward*((high.z-low.z)*0.95*0.85065080835204*0.05);
+        const Vec3 size=(high-low)*(0.95*(suffix[0]=='1' ? 0.95 : 1.0));
         constexpr double phi=1.618033988749895;
         const Vec3 corners[]={{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
             {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
