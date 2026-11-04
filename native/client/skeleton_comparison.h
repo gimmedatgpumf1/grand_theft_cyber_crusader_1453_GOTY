@@ -11,7 +11,7 @@
 #include "client/skeleton_sole.h"
 #include "client/skeleton_foot_stitch.h"
 #include "client/skeleton_bilateral.h"
-#include "client/skeleton_metatarsal_registration.h"
+#include "client/skeleton_standing_foot.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/vertebra_midplane.h"
@@ -425,7 +425,13 @@ public:
             hipWidth_<=0 || shoulderWidth_<=0) {
             error="Comparison landmarks have an unexpected order"; return false;
         }
+        if (!comparisonFootLandmarks(parts_,floor_,ankleY_,kneeY_)) { error="Foot landmarks invalid"; return false; }
         profile_=Profile{}; profile_.height=defaultHeight();
+        if (!update(error)) return false;
+        if (!fitStandingComparisonFeet(parts_,metatarsalFrames_,[&](Vec3 p,const Part& part) { return mapPart(p,part); })) {
+            error="Standing foot fitting failed"; return false;
+        }
+        floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
         return update(error);
     }
 
@@ -526,8 +532,11 @@ public:
         return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
     }
     Vec3 mapPart(Vec3 p,const Part& part) const {
-        if (!part.vertebra || part.cranial)
-            return map(p,part.armSide,part.cranial,part.girdle,part.humerus);
+        if (!part.vertebra || part.cranial) {
+            Vec3 mapped=map(p,part.armSide,part.cranial,part.girdle,part.humerus);
+            mapped.y=comparisonFootHeight(part.name,p,mapped.y,floor_,ankleY_,kneeY_,hipScale_,[&](double y) {return mapY(y);});
+            return mapped;
+        }
         // Map the retained half through the original body field, then reflect
         // it in the cached mapped 3D plane. This retains the field's actual
         // nonlinear shape at knots without shearing the two sides differently.
@@ -980,7 +989,7 @@ private:
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
-    double initialHeight_=0,shoulderYTarget_=0,shoulderVertical_=1;
+    double initialHeight_=0,shoulderYTarget_=0,shoulderVertical_=1,ankleY_=0,kneeY_=1;
     double heightScale_=1,hipScale_=1,shoulderScale_=1,headScale_=1,armScale_=1,upperArmScale_=1;
     std::array<double,7> sourceY_{}, targetY_{};
     std::array<double,2> hipY_{};

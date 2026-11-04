@@ -186,7 +186,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         const auto& part=comparison->parts()[index];
         const auto& frame=comparison->metatarsalFrame(index);
         const auto registered=[&](Vec3 q) { return frameVector(frame,q)+frame.translation; };
-        const auto mapped=[&](Vec3 q) { return comparison->map(registered(q),part.armSide,part.cranial,part.girdle,part.humerus); };
+        const auto mapped=[&](Vec3 q) { return comparison->mapPart(registered(q),part); };
         return mapped(p)+mappedCenters[index]-mapped(rawCenters[index]);
     };
     std::set<std::pair<int,int>> connected;
