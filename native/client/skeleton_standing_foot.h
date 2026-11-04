@@ -124,6 +124,29 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         double foreMin=1e100,foreMax=-1e100;
         for (Vec3 p:meta[0]->points) {p=map(p,*meta[0]);foreMin=std::min(foreMin,p.z);foreMax=std::max(foreMax,p.z);}
         const double padDifference=.004*std::clamp((foreMax-foreMin)/.065,.5,2.0);
+        // Approximate lateral radiographic landmarks from the bone outlines:
+        // talar body/neck midpoints and the plantar calcaneal tuberosity to
+        // the inferior calcaneocuboid surface. A mesh is not a radiograph, so
+        // these are soft guides, not clinical measurements.
+        // https://www.nature.com/articles/s41598-022-16995-6
+        double tz0=1e100,tz1=-1e100,hz0=1e100,hz1=-1e100;
+        for (Vec3 p:talus->points) {tz0=std::min(tz0,p.z);tz1=std::max(tz1,p.z);}
+        for (Vec3 p:heel->points) {hz0=std::min(hz0,p.z);hz1=std::max(hz1,p.z);}
+        if (tz1-tz0<1e-9 || hz1-hz0<1e-9) return false;
+        const auto talarMiddle=[&](double fraction) {
+            const double z=tz0+fraction*(tz1-tz0);double low=1e100,high=-1e100;
+            for (const auto& face:talus->faces) for(int e=0;e<3;++e) {
+                const Vec3 a=talus->points[face[e]],b=talus->points[face[(e+1)%3]];
+                if ((a.z<z)==(b.z<z) || std::abs(b.z-a.z)<1e-12) continue;
+                const double y=a.y+(b.y-a.y)*(z-a.z)/(b.z-a.z);
+                low=std::min(low,y); high=std::max(high,y);
+            }
+            return low<=high ? (low+high)*.5 : std::numeric_limits<double>::quiet_NaN();
+        };
+        const double body=talarMiddle(.50),neck=talarMiddle(.75);
+        if (!std::isfinite(body) || !std::isfinite(neck)) return false;
+        const Vec3 talarCenter{0,body,tz0+.50*(tz1-tz0)};
+        const Vec3 talarAxis=normalized(Vec3{0,neck-body,.25*(tz1-tz0)});
         const Vec3 ankleContact=contact(*talus,*tibia),subtalar=contact(*talus,*heel);
         const Vec3 navJoint=contact(*nav,*talus),cuneiformJoint=contact(*nav,*tarsal[1]);
         const Vec3 cubJoint=contact(*cub,*heel),crossJoint=contact(*cub,*tarsal[2]);
@@ -142,6 +165,12 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             double y=1e100;
             for (Vec3 p:heel->points) y=std::min(y,map(point(t,p),*heel).y);
             return y;
+        };
+        const auto heelPitch=[&](const Transform& t) {
+            Vec3 back{},front{};double low=1e100,high=1e100,z0=1e100,z1=-1e100;
+            for (Vec3 p:heel->points) {const Vec3 q=map(point(t,p),*heel);if(q.y<low){low=q.y;back=q;}z0=std::min(z0,q.z);z1=std::max(z1,q.z);}
+            for (Vec3 p:heel->points) {const Vec3 q=map(point(t,p),*heel);if(q.z>=z0+.95*(z1-z0) && q.y<high){high=q.y;front=q;}}
+            return std::atan2(front.y-back.y,front.z-back.z);
         };
         // Limit each local rotation rather than flattening or scaling the
         // metatarsals. Mean excursions are only regularising bounds here.
@@ -173,6 +202,15 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const double height=map(point(turn,point(parent,supportPoint[i])),*meta[i]).y-goal;
                 sum+=angle*angle+height*height;
             }
+            const double pitch=heelPitch(c.heel);
+            const double pitchError=pitch-std::clamp(pitch,18*pi/180,30*pi/180);
+            sum+=pitchError*pitchError*.25*.25;
+            const Vec3 ta=map(point(c.talus,talarCenter),*talus),tb=map(point(c.talus,talarCenter+talarAxis*.02),*talus);
+            const auto ray=joint_detail::compose(metaTurn(0,c.cuneiform,ground),c.cuneiform);
+            const Vec3 ma=map(point(ray,centers[0]),*meta[0]),mb=map(point(ray,centers[0]+axes[0]*.02),*meta[0]);
+            const double alignment=std::atan2(tb.y-ta.y,tb.z-ta.z)-std::atan2(mb.y-ma.y,mb.z-ma.z);
+            const double archError=alignment-std::clamp(alignment,-4*pi/180,4*pi/180);
+            sum+=archError*archError*.06*.06;
             // Limit separation where the medial and lateral columns meet.
             const Vec3 gap=point(c.cuneiform,crossJoint)-point(c.cuboid,crossJoint);
             sum+=dot(gap,gap)*.5;
@@ -182,7 +220,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         // Ankle pitch lowers the forefoot while allowing the arch joints to
         // declinate the rays. Optimize all joints together so the heel and
         // both columns stay connected, instead of rotating rays in isolation.
-        const std::array<double,5> bounds{10*pi/180,6*pi/180,7*pi/180,5*pi/180,2.3*pi/180};
+        const std::array<double,5> bounds{14*pi/180,6*pi/180,7*pi/180,5*pi/180,2.3*pi/180};
         std::array<double,5> angles{};double value=cost(angles);
         for (double step=4*pi/180;step>pi/720;step*=.5) {
             for (int pass=0;pass<8;++pass) {
