@@ -332,6 +332,122 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         fitClear(high);
     }
     for (auto& roof:roofs) {roof.point={0,roof.level,0};roof.normal=normalized(Vec3{-roof.slopeU,1,-roof.slopeV});}
+    // Transverse folds run orthogonally across the foot at the tarsal and
+    // metatarsal centers. The same fold angle is applied to every toe sector:
+    // this makes both ends of each cross-cut coincide with its neighbours.
+    double tarsalZ=0,metaZ=0; int tarsalBones=0,metaBones=0;
+    for (const auto& part:comparison.parts()) {
+        if (!part.name.ends_with(suffix) || part.points.empty()) continue;
+        const bool meta=part.name.rfind("FootMeta",0)==0;
+        const bool tarsal=part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 ||
+            part.name.rfind("MedCun_",0)==0 || part.name.rfind("InterCun_",0)==0 || part.name.rfind("LatCun_",0)==0;
+        if (!meta && !tarsal) continue;
+        double lo=1e30,hi=-1e30;
+        for (Vec3 p:part.points) {p=comparison.mapPart(p,part)+origin;lo=std::min(lo,p.z);hi=std::max(hi,p.z);}
+        if (meta) {metaZ+=(lo+hi)*.5;++metaBones;} else {tarsalZ+=(lo+hi)*.5;++tarsalBones;}
+    }
+    if (!tarsalBones || !metaBones) {preserve();return;}
+    tarsalZ/=tarsalBones; metaZ/=metaBones;
+    if (metaZ-tarsalZ<1e-6) {preserve();return;}
+    struct CrossSupport { int sector,band; Vec3 point; };
+    std::vector<CrossSupport> metaSupports,tarsalSupports;
+    // Clip metatarsal triangles at both the longitudinal and transverse
+    // boundaries so an extremum on a new fold is included in the fit.
+    for (const auto& part:comparison.parts()) {
+        if (!part.name.ends_with(suffix) || part.name.rfind("FootMeta",0)!=0) continue;
+        std::vector<Vec3> mapped; mapped.reserve(part.points.size());
+        for (Vec3 p:part.points) mapped.push_back(comparison.mapPart(p,part)+origin);
+        for (auto f:part.faces) {
+            if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=mapped.size() ||
+                std::size_t(f[1])>=mapped.size() || std::size_t(f[2])>=mapped.size()) continue;
+            for (int section=0;section<5;++section) {
+                std::vector<Vec3> poly{mapped[std::size_t(f[0])],mapped[std::size_t(f[1])],mapped[std::size_t(f[2])]};
+                if (section>0) poly=clipBy(poly,[&](Vec3 p){return boundaryX(section,p.z)-p.x;});
+                if (section<4 && !poly.empty()) poly=clipBy(poly,[&](Vec3 p){return p.x-boundaryX(section+1,p.z);});
+                for (int band=0;band<3 && !poly.empty();++band) {
+                    auto partPoly=poly;
+                    if (band>0) partPoly=clipBy(partPoly,[&](Vec3 p){return (band==1?tarsalZ:metaZ)-p.z;});
+                    if (band<2 && !partPoly.empty()) partPoly=clipBy(partPoly,[&](Vec3 p){return p.z-(band==0?tarsalZ:metaZ);});
+                    for (Vec3 p:partPoly) metaSupports.push_back({section,band,p});
+                }
+            }
+        }
+    }
+    for (std::size_t k=metaCount;k<supports.size();++k) {
+        const auto [section,p]=supports[k];
+        tarsalSupports.push_back({section,p.z<tarsalZ?0:(p.z<metaZ?1:2),p});
+    }
+    if (metaSupports.empty()) {preserve();return;}
+    std::array<std::array<Plane,5>,3> crossRoofs{};
+    // A modest sagittal bias supplies room for the front fold to follow the
+    // toes without needing a near-vertical rear section to clear the tarsals.
+    constexpr double sagittalBias=.12;
+    const auto crossFit=[&](double frontSlope,double rearSlope) {
+        for (int band=0;band<3;++band) for (int section=0;section<5;++section) {
+            auto& roof=crossRoofs[std::size_t(band)][std::size_t(section)];
+            roof=roofs[std::size_t(section)];
+            roof.slopeV-=sagittalBias; roof.level+=sagittalBias*tarsalZ;
+            if (band==0) {roof.slopeV-=rearSlope;roof.level+=rearSlope*tarsalZ;}
+            if (band==2) {roof.slopeV+=frontSlope;roof.level-=frontSlope*metaZ;}
+        }
+        std::array<std::array<double,5>,3> normalLengths{};
+        for (int band=0;band<3;++band) for (int section=0;section<5;++section) {
+            const auto& r=crossRoofs[std::size_t(band)][std::size_t(section)];
+            normalLengths[std::size_t(band)][std::size_t(section)]=std::sqrt(1+r.slopeU*r.slopeU+r.slopeV*r.slopeV);
+        }
+        double lift=-1e30;
+        for (const auto& support:metaSupports) {
+            const auto& r=crossRoofs[std::size_t(support.band)][std::size_t(support.sector)];
+            const Vec3 p=support.point;
+            lift=std::max(lift,p.y+.0001*normalLengths[std::size_t(support.band)][std::size_t(support.sector)]-
+                (r.slopeU*p.x+r.slopeV*p.z+r.level));
+        }
+        for (auto& band:crossRoofs) for (auto& r:band) r.level+=lift;
+        for (const auto& support:tarsalSupports) {
+            const auto& r=crossRoofs[std::size_t(support.band)][std::size_t(support.sector)];
+            const Vec3 p=support.point;
+            if (r.slopeU*p.x+r.slopeV*p.z+r.level-p.y <
+                .0001*normalLengths[std::size_t(support.band)][std::size_t(support.sector)]-1e-10) return false;
+        }
+        return true;
+    };
+    const auto fitTarsals=[&](double frontSlope) {
+        if (crossFit(frontSlope,-.12)) return true;
+        double low=-.12,high=.3;
+        if (!crossFit(frontSlope,high)) return false;
+        for (int i=0;i<20;++i) {double mid=(low+high)*.5;
+            if (crossFit(frontSlope,mid)) high=mid; else low=mid;}
+        return crossFit(frontSlope,high);
+    };
+    const auto toeError=[&]() {
+        double error=0;
+        for (const auto& end:ends) {
+            const Vec3 p=end.point; int section=0;
+            while (section<4 && p.x>boundaryX(section+1,p.z)) ++section;
+            const int band=p.z<tarsalZ?0:(p.z<metaZ?1:2);
+            const auto& r=crossRoofs[std::size_t(band)][std::size_t(section)];
+            error+=r.slopeU*p.x+r.slopeV*p.z+r.level-end.upper;
+        }
+        return error/5;
+    };
+    // Fit the toe-directed fold to the mean toe tops while retaining the
+    // exact nearest metatarsal clearance and prior tarsal coverage.
+    double bestSlope=0,bestError=1e30;
+    bool foundFit=false;
+    for (int i=0;i<=32;++i) {
+        const double slope=-.5+double(i)/32;
+        if (!fitTarsals(slope)) continue;
+        const double error=std::abs(toeError());
+        if (error<bestError) {bestError=error;bestSlope=slope;foundFit=true;}
+    }
+    if (!foundFit || !fitTarsals(bestSlope)) {
+        // Keep the fitted five-sector roof for unusual profiles that cannot
+        // satisfy both clearance constraints within the bounded fold angles.
+        for (auto& band:crossRoofs) band=roofs;
+    }
+    for (auto& band:crossRoofs) for (auto& roof:band) {
+        roof.point={0,roof.level,0};roof.normal=normalized(Vec3{-roof.slopeU,1,-roof.slopeV});
+    }
     // The outer segments pass through the 50% ring's outermost vertex as
     // well as its center, continuing to the side sheets. Account for the
     // different roof/side and sole/side intersections of each slanted side.
@@ -342,7 +458,10 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         const double slope=std::abs(dx)<1e-8 ? 0 : (edge.z-end.point.z)/dx;
         const double intercept=end.point.z-slope*end.point.x;
         double extent=outward<0 ? end.left : end.right;
-        std::array<Plane,6> faces{roofs[0],roofs[1],roofs[2],roofs[3],roofs[4],planes[5]};
+        std::array<Plane,16> faces{};
+        for (int band=0;band<3;++band) for (int i=0;i<5;++i)
+            faces[std::size_t(band*5+i)]=crossRoofs[std::size_t(band)][std::size_t(i)];
+        faces[15]=planes[5];
         for (const Plane& face:faces) {
             const double fx=face.normal.x+face.normal.z*slope;
             const double sx=side.normal.x+side.normal.z*slope;
@@ -366,8 +485,8 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     for (const auto* sheet:sheets) bounds.insert(bounds.end(),sheet->points.begin(),sheet->points.end());
     const auto cuts=obstacles(comparison,suffix,origin);
     std::array<MetatarsalPlane,6> rebuilt;
-    for (int index=0;index<6;++index) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
-        const Plane& current=index==0 ? roofs[std::size_t(sectionIndex)] : planes[std::size_t(index)];
+    for (int index=0;index<6;++index) for (int band=0;band<3;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
+        const Plane& current=index==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(index)];
         double loU=1e30,hiU=-1e30,loV=1e30,hiV=-1e30;
         for (Vec3 p:bounds) {
             p=current.local(p);
@@ -377,10 +496,12 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         const double padding=2*std::max(hiU-loU,hiV-loV)+.01;
         std::vector<Vec3> polygon{{loU-padding,0,loV-padding},{hiU+padding,0,loV-padding},
                                   {hiU+padding,0,hiV+padding},{loU-padding,0,hiV+padding}};
-        if (sectionIndex>0) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=current.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
+        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return (band==1?tarsalZ:metaZ)-current.world(p).z;});
+        if (band<2 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return current.world(p).z-(band==0?tarsalZ:metaZ);});
+        if (sectionIndex>0 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=current.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
         if (sectionIndex<4 && polygon.size()>=3) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=current.world(p);return q.x-boundaryX(sectionIndex+1,q.z);});
         for (int other=0;other<6 && polygon.size()>=3;++other) if (other!=index) {
-            const Plane& limit=other==0 ? roofs[std::size_t(sectionIndex)] : planes[std::size_t(other)];
+            const Plane& limit=other==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(other)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,current.world(p)-limit.point);});
         }
         // Clip each segment separately, then weld their common endpoints.
@@ -418,7 +539,7 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     double lowY=1e30,highY=-1e30;
     for (Vec3 p:bounds) { lowY=std::min(lowY,p.y); highY=std::max(highY,p.y); }
     const double yPadding=std::max(highY-lowY,.01)*2;
-    for (std::size_t i=0;i+1<border.size();++i) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
+    for (std::size_t i=0;i+1<border.size();++i) for (int band=0;band<3;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
         const Vec3 a=border[i],b=border[i+1];
         Plane front;
         front.u=normalized(Vec3{b.x-a.x,0,b.z-a.z});
@@ -429,11 +550,13 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         const double lo=dot(front.u,a),hi=dot(front.u,b);
         std::vector<Vec3> polygon{{lo,0,lowY-yPadding},{hi,0,lowY-yPadding},
                                   {hi,0,highY+yPadding},{lo,0,highY+yPadding}};
-        if (sectionIndex>0) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=front.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
+        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return (band==1?tarsalZ:metaZ)-front.world(p).z;});
+        if (band<2 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return front.world(p).z-(band==0?tarsalZ:metaZ);});
+        if (sectionIndex>0 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=front.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
         if (sectionIndex<4 && polygon.size()>=3) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=front.world(p);return q.x-boundaryX(sectionIndex+1,q.z);});
         for (int k=0;k<6;++k) {
             if (polygon.size()<3) break;
-            const Plane& limit=k==0 ? roofs[std::size_t(sectionIndex)] : planes[std::size_t(k)];
+            const Plane& limit=k==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(k)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,front.world(p)-limit.point);});
         }
         std::vector<std::vector<Vec3>> pieces;
