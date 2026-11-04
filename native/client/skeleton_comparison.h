@@ -11,6 +11,7 @@
 #include "client/skeleton_sole.h"
 #include "client/skeleton_foot_stitch.h"
 #include "client/skeleton_bilateral.h"
+#include "client/skeleton_metatarsal_registration.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/vertebra_midplane.h"
@@ -45,11 +46,9 @@ public:
         double height = 0;
         std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
     };
-
     bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
         male_ = male;
-        const auto matrices = model.sourceMatrices({}, 0);
-        referenceMatrices_=matrices;
+        const auto matrices = model.sourceMatrices({}, 0); referenceMatrices_=matrices;
         parts_.clear();
         for (std::size_t i=0; i<matrices.size(); ++i) {
             const auto& source = model.sourceStructures()[i];
@@ -140,6 +139,7 @@ public:
             const double factor=meanLength/(hips[side].y-soles[side]);
             for (Vec3& p:part.points) p.y=hipLevel+(p.y-hips[side].y)*factor;
         }
+        if (!registerComparisonMetatarsals(parts_,metatarsalFrames_)) { error="Comparison metatarsal registration failed"; return false; }
         // Preserve the mean pubic spacing of the two registered innominates.
         double leftPubis=1e30,rightPubis=-1e30;
         for (const auto& part:parts_) {
@@ -589,29 +589,19 @@ public:
     std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin) const {
         const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
         std::vector<std::array<double,16>> result(parts_.size(),identity);
-        if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size()) return result;
+        if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size() || metatarsalFrames_.size()!=parts_.size()) return result;
         for (std::size_t i=0;i<parts_.size();++i) {
             const auto& p=parts_[i];
             if (p.points.empty() || (p.name.rfind("FootProxP",0)!=0 && p.name.rfind("FootMidP",0)!=0 &&
                                      p.name.rfind("FootDistP",0)!=0)) continue;
-            const auto& a=current[i]; const auto& b=referenceMatrices_[i]; auto& m=result[i];
-            for (int col=0;col<3;++col) for (int row=0;row<3;++row) {
-                m[col*4+row]=0;
-                for (int k=0;k<3;++k) m[col*4+row]+=a[k*4+row]*b[k*4+col];
-            }
-            Vec3 raw{}; for (Vec3 q:p.points) raw+=q;
-            raw=raw/static_cast<double>(p.points.size());
-            const Vec3 sourceOrigin{b[12],b[13],b[14]};
-            const Vec3 currentOrigin{a[12],a[13],a[14]};
-            const auto rotation=[&](Vec3 q) { return Vec3{m[0]*q.x+m[4]*q.y+m[8]*q.z,
-                m[1]*q.x+m[5]*q.y+m[9]*q.z,m[2]*q.x+m[6]*q.y+m[10]*q.z}; };
-            const Vec3 mapped=mapPart(raw,p)+origin;
-            const Vec3 moved=mapPart(currentOrigin+rotation(raw-sourceOrigin),p)+origin;
-            const Vec3 offset=moved-rotation(mapped);
-            m[12]=offset.x; m[13]=offset.y; m[14]=offset.z;
+            Vec3 center{}; for (Vec3 q:p.points) center+=q;
+            center=center/static_cast<double>(p.points.size());
+            result[i]=registeredToeDelta(current[i],referenceMatrices_[i],metatarsalFrames_[i],center,
+                                        [&](Vec3 q) {return mapPart(q,p)+origin;});
         }
         return result;
     }
+    const JointRigidTransform& metatarsalFrame(std::size_t i) const { return metatarsalFrames_[i]; }
     // Toe prisms belong to their own phalanges, so the pieces articulate
     // independently. The great toe has only two phalanges.
     std::vector<Vec3> toePrism(std::size_t i, Vec3 origin) const {
@@ -985,7 +975,7 @@ private:
     bool male_=false, feasible_=false, exact_=false;
     BodyProportionCurves curves_;
     Profile profile_;
-    std::vector<Part> parts_;
+    std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
     std::vector<std::array<double,16>> referenceMatrices_;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
