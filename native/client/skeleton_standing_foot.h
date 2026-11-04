@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/skeleton_metatarsal_registration.h"
+#include "client/skeleton_foot_joint_clearance.h"
 #include <limits>
 
 namespace gtc::native {
@@ -59,6 +60,14 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         }
         return result;
     };
+    const auto closest=[](const Part& a,const Part& b) {
+        Vec3 result{};double best=1e100;
+        for(Vec3 x:a.points) for(Vec3 y:b.points) {
+            const Vec3 d=x-y;const double n=dot(d,d);
+            if(n<best) {best=n;result=d;}
+        }
+        return result;
+    };
     const auto apply=[&](Part* p,const JointRigidTransform& t) {
         if (!p) return;
         const std::size_t i=static_cast<std::size_t>(p-parts.data());
@@ -75,8 +84,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
     for (const std::string suffix:{"_L","_R"}) {
         std::array<Part*,5> meta{},tarsal{};
         std::array<Vec3,5> axes{},centers{},pivots{};
-        std::array<double,5> support{};
-        std::array<Vec3,5> supportPoint{};
+        std::array<std::vector<Vec3>,5> supportPoints{};
         Part* nav=find("Nav"+suffix), *talus=find("Tal"+suffix), *cub=find("Cub"+suffix), *heel=find("Cal"+suffix), *tibia=find("Tibia"+suffix);
         if (!nav || !talus || !cub || !heel || !tibia) return false;
         for (int i=0;i<5;++i) {
@@ -108,19 +116,39 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             pivots[i]=contact(*meta[i],*tarsal[i]);
             double z0=1e100,z1=-1e100;
             for (Vec3 p:meta[i]->points) {p=map(p,*meta[i]);z0=std::min(z0,p.z);z1=std::max(z1,p.z);}
-            support[i]=1e100;
-            for (Vec3 p:meta[i]->points) {Vec3 q=map(p,*meta[i]);if (q.z>=z0+.65*(z1-z0) && q.y<support[i]) {support[i]=q.y; supportPoint[i]=p;}}
+            for (Vec3 p:meta[i]->points) {
+                const Vec3 q=map(p,*meta[i]);
+                if (q.z>=z0+.65*(z1-z0)) supportPoints[i].push_back(p);
+            }
+            if (supportPoints[i].empty()) return false;
         }
         // Approximate loaded heel and forefoot pad thicknesses. These are
         // population estimates, not measurements of the source subject.
         // https://www.jfasap.com/doi/10.5005/jp-journals-10040-1246
         // https://onlinelibrary.wiley.com/doi/full/10.1002/jor.21328
-        double sesamoidBottom=1e100;
+        // The first ray bears through the sesamoids, not its metatarsal
+        // head. Keep the actual points so support is recomputed when the ray
+        // turns instead of freezing its original lowest vertex.
+        supportPoints[0].clear();
         for (const char* name:{"FootSesaMed","FootSesaLat"}) {
             const Part* bone=find(std::string(name)+suffix); if (!bone || bone->points.empty()) return false;
-            for (Vec3 p:bone->points) sesamoidBottom=std::min(sesamoidBottom,map(p,*bone).y);
+            supportPoints[0].insert(supportPoints[0].end(),bone->points.begin(),bone->points.end());
         }
-        const double sesamoidOffset=std::max(0.0,support[0]-sesamoidBottom);
+        // Only vertices on the lower sagittal convex hull can become the
+        // support point under the bounded pitch rotations used below.
+        for (auto& points:supportPoints) {
+            std::sort(points.begin(),points.end(),[](Vec3 a,Vec3 b) {return a.z==b.z?a.y<b.y:a.z<b.z;});
+            std::vector<Vec3> hull;
+            for (Vec3 p:points) {
+                while (hull.size()>=2) {
+                    const Vec3 a=hull[hull.size()-2],b=hull.back();
+                    if ((b.z-a.z)*(p.y-a.y)-(b.y-a.y)*(p.z-a.z)>0) break;
+                    hull.pop_back();
+                }
+                hull.push_back(p);
+            }
+            points=std::move(hull);
+        }
         double foreMin=1e100,foreMax=-1e100;
         for (Vec3 p:meta[0]->points) {p=map(p,*meta[0]);foreMin=std::min(foreMin,p.z);foreMax=std::max(foreMax,p.z);}
         const double padDifference=.004*std::clamp((foreMax-foreMin)/.065,.5,2.0);
@@ -150,6 +178,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         const Vec3 ankleContact=contact(*talus,*tibia),subtalar=contact(*talus,*heel);
         const Vec3 navJoint=contact(*nav,*talus),cuneiformJoint=contact(*nav,*tarsal[1]);
         const Vec3 cubJoint=contact(*cub,*heel),crossJoint=contact(*cub,*tarsal[2]);
+        const double originalCrossGap=length(closest(*tarsal[2],*cub));
         using Transform=JointRigidTransform;
         struct Chain { Transform heel,talus,nav,cuneiform,cuboid; };
         const auto chain=[&](const std::array<double,5>& angles) {
@@ -172,6 +201,11 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             for (Vec3 p:heel->points) {const Vec3 q=map(point(t,p),*heel);if(q.z>=z0+.95*(z1-z0) && q.y<high){high=q.y;front=q;}}
             return std::atan2(front.y-back.y,front.z-back.z);
         };
+        const auto headHeight=[&](int i,const Transform& t) {
+            double y=1e100;
+            for (Vec3 p:supportPoints[i]) y=std::min(y,map(point(t,p),*meta[i]).y);
+            return y;
+        };
         // Limit each local rotation rather than flattening or scaling the
         // metatarsals. Mean excursions are only regularising bounds here.
         constexpr double limits[5]={3.5,0.6,1.6,9.6,10.2};
@@ -182,8 +216,8 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const auto t=rotation(pivot,radians);
                 const Vec3 a=map(point(t,center),*meta[i]),b=map(point(t,center+axis*.02),*meta[i]);
                 const double angle=(std::atan2(b.y-a.y,b.z-a.z)-target[i])*.09;
-                const double goal=ground-padDifference+(i==0?sesamoidOffset:0);
-                const double height=map(point(t,point(parent,supportPoint[i])),*meta[i]).y-goal;
+                const double goal=ground-padDifference;
+                const double height=headHeight(i,joint_detail::compose(t,parent))-goal;
                 return angle*angle+height*height;
             };
             double lo=-limit,hi=limit;
@@ -198,8 +232,8 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const Vec3 center=point(parent,centers[i]),axis=frameVector(parent,axes[i]);
                 const Vec3 a=map(point(turn,center),*meta[i]),b=map(point(turn,center+axis*.02),*meta[i]);
                 const double angle=(std::atan2(b.y-a.y,b.z-a.z)-target[i])*.09;
-                const double goal=ground-padDifference+(i==0?sesamoidOffset:0);
-                const double height=map(point(turn,point(parent,supportPoint[i])),*meta[i]).y-goal;
+                const double goal=ground-padDifference;
+                const double height=headHeight(i,joint_detail::compose(turn,parent))-goal;
                 sum+=angle*angle+height*height;
             }
             const double pitch=heelPitch(c.heel);
@@ -257,6 +291,47 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             apply(meta[i],ray);
             for (const char* prefix:{"FootProxP","FootMidP","FootDistP"}) apply(find(std::string(prefix)+n+suffix),toe);
             if(i==0) for(const char* name:{"FootSesaMed","FootSesaLat"}) apply(find(std::string(name)+suffix),ray);
+        }
+        // The source CT can contain intersecting surfaces, and a rotation
+        // about a single closest point can introduce further overlap. Resolve
+        // only actual triangle crossings, translating entire distal branches
+        // by the smallest bounded amount; preserve each bone and toe frame.
+        const auto center=[](const Part& p) {
+            Vec3 c{}; for(Vec3 v:p.points) c+=v; return c/double(p.points.size());
+        };
+        const auto move=[&](Part* p,Vec3 offset) {
+            auto t=rotation({},0);t.translation=offset;apply(p,t);
+        };
+        const auto moveRay=[&](int i,Vec3 offset) {
+            move(meta[i],offset);const std::string n=std::to_string(i+1);
+            for(const char* prefix:{"FootProxP","FootMidP","FootDistP"}) move(find(std::string(prefix)+n+suffix),offset);
+            if(i==0) for(const char* name:{"FootSesaMed","FootSesaLat"}) move(find(std::string(name)+suffix),offset);
+        };
+        const double limit=.002*std::clamp((foreMax-foreMin)/.065,.5,2.0);
+        const Vec3 tn=foot_joint_clearance::separation<Part>({{talus,nav}},center(*nav)-center(*talus),limit);
+        if(length(tn)>0) {
+            move(nav,tn);for(int i=0;i<3;++i) {move(tarsal[i],tn);moveRay(i,tn);}
+        }
+        const Vec3 nc=foot_joint_clearance::separation<Part>({{nav,tarsal[0]},{nav,tarsal[1]},{nav,tarsal[2]}},
+                                                              center(*tarsal[1])-center(*nav),limit);
+        if(length(nc)>0) for(int i=0;i<3;++i) {move(tarsal[i],nc);moveRay(i,nc);}
+        // Keep the lateral column near its original connection to the
+        // cuneiforms after medial joint clearance, without moving it through
+        // the heel or navicular. Carry rays four and five with the cuboid.
+        const Vec3 crossGap=closest(*tarsal[2],*cub);
+        const double excess=length(crossGap)-originalCrossGap;
+        if(excess>0 && length(crossGap)>1e-10) {
+            const Vec3 desired=normalized(crossGap)*std::min(excess,limit*.7);
+            for(double f:{1.0,.75,.5,.25}) {
+                const Vec3 step=desired*f;
+                if(foot_joint_clearance::clear<Part>({{heel,cub},{nav,cub},{tarsal[2],cub}},step)) {
+                    move(cub,step);moveRay(3,step);moveRay(4,step);break;
+                }
+            }
+        }
+        for(int i=0;i<5;++i) {
+            const Vec3 tm=foot_joint_clearance::separation<Part>({{tarsal[i],meta[i]}},center(*meta[i])-center(*tarsal[i]),limit);
+            if(length(tm)>0) moveRay(i,tm);
         }
     }
     return true;
