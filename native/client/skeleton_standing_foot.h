@@ -2,6 +2,7 @@
 
 #include "client/skeleton_metatarsal_registration.h"
 #include "client/skeleton_foot_joint_clearance.h"
+#include "client/skeleton_foot_weightbearing.h"
 #include <limits>
 
 namespace gtc::native {
@@ -291,6 +292,30 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             apply(meta[i],ray);
             for (const char* prefix:{"FootProxP","FootMidP","FootDistP"}) apply(find(std::string(prefix)+n+suffix),toe);
             if(i==0) for(const char* name:{"FootSesaMed","FootSesaLat"}) apply(find(std::string(name)+suffix),ray);
+        }
+        // Loaded forefeet tend to splay relative to the unloaded scan. Use a
+        // directly measured WBCT intermetatarsal angle rather than parallel
+        // rays: 10.43 +/- 2.04 degrees (39 weight-bearing adults; comparison
+        // group 8.10 +/- 2.97). These were demographically matched groups,
+        // not paired scans, so their mean difference is only a modest bound.
+        // https://pmc.ncbi.nlm.nih.gov/articles/PMC13358129/
+        const Vec3 a1=weightBearingBoneAxis(*meta[0],map),a2=weightBearingBoneAxis(*meta[1],map);
+        if(length(a1)>1e-10 && length(a2)>1e-10) {
+            const double side=suffix=="_L"?1.0:-1.0;
+            const double splay=side*(std::atan2(a2.x,a2.z)-std::atan2(a1.x,a1.z));
+            const double change=std::clamp(10.43*pi/180-splay,0.0,2.33*pi/180);
+            // The central TMT joints are relatively stiff. The 85/15 split
+            // is a conservative modelling choice, not a measured joint-axis
+            // ratio. Rotate each full ray about its own contact, preserving
+            // its toe and sesamoid attachments.
+            for(int i=0;i<2;++i) {
+                const Vec3 pivot=contact(*meta[i],*tarsal[i]);
+                auto turn=joint_detail::rotate({0,1,0},side*change*(i==0?-.85:.15));
+                turn.translation=pivot-frameVector(turn,pivot);
+                apply(meta[i],turn);const std::string n=std::to_string(i+1);
+                for(const char* prefix:{"FootProxP","FootMidP","FootDistP"}) apply(find(std::string(prefix)+n+suffix),turn);
+                if(i==0) for(const char* name:{"FootSesaMed","FootSesaLat"}) apply(find(std::string(name)+suffix),turn);
+            }
         }
         // The source CT can contain intersecting surfaces, and a rotation
         // about a single closest point can introduce further overlap. Resolve
