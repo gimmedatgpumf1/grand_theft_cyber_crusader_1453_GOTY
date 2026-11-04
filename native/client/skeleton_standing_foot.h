@@ -84,7 +84,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
     const std::array<double,5> target{-24.7*pi/180,-28*pi/180,-20*pi/180,-12*pi/180,-5*pi/180};
     for (const std::string suffix:{"_L","_R"}) {
         std::array<Part*,5> meta{},tarsal{};
-        std::array<Vec3,5> axes{},centers{},pivots{};
+        std::array<Vec3,5> axes{},lowerAxes{},centers{},pivots{};
         std::array<std::vector<Vec3>,5> supportPoints{};
         Part* nav=find("Nav"+suffix), *talus=find("Tal"+suffix), *cub=find("Cub"+suffix), *heel=find("Cal"+suffix), *tibia=find("Tibia"+suffix);
         if (!nav || !talus || !cub || !heel || !tibia) return false;
@@ -109,11 +109,14 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                     const double y=a.y+(b.y-a.y)*(z-a.z)/(b.z-a.z);
                     low=std::min(low,y);high=std::max(high,y);
                 }
-                return low<=high ? (low+high)*.5 : std::numeric_limits<double>::quiet_NaN();
+                const double invalid=std::numeric_limits<double>::quiet_NaN();
+                return low<=high ? std::array<double,2>{low,high} : std::array<double,2>{invalid,invalid};
             };
-            const double a=bisect(.35),b=bisect(.65);
-            if (!std::isfinite(a) || !std::isfinite(b) || std::abs(a)>1e20 || std::abs(b)>1e20) return false;
-            axes[i]=normalized(Vec3{0,b-a,(s1-s0)*.3});
+            const auto a=bisect(.35),b=bisect(.65);
+            if (!std::isfinite(a[0]) || !std::isfinite(a[1]) || !std::isfinite(b[0]) || !std::isfinite(b[1]) ||
+                std::abs(a[0])>1e20 || std::abs(b[0])>1e20) return false;
+            axes[i]=normalized(Vec3{0,(b[0]+b[1]-a[0]-a[1])*.5,(s1-s0)*.3});
+            lowerAxes[i]=normalized(Vec3{0,b[0]-a[0],(s1-s0)*.3});
             pivots[i]=contact(*meta[i],*tarsal[i]);
             double z0=1e100,z1=-1e100;
             for (Vec3 p:meta[i]->points) {p=map(p,*meta[i]);z0=std::min(z0,p.z);z1=std::max(z1,p.z);}
@@ -210,7 +213,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         // Limit each local rotation rather than flattening or scaling the
         // metatarsals. Mean excursions are only regularising bounds here.
         constexpr double limits[5]={3.5,0.6,1.6,9.6,10.2};
-        const auto metaTurn=[&](int i,const Transform& parent,double ground) {
+        const auto metaTurn=[&](int i,const Transform& parent,double ground,double pitch) {
             const Vec3 center=point(parent,centers[i]),axis=frameVector(parent,axes[i]),pivot=point(parent,pivots[i]);
             const double limit=limits[i]*pi/180;
             const auto cost=[&](double radians) {
@@ -219,7 +222,19 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const double angle=(std::atan2(b.y-a.y,b.z-a.z)-target[i])*.09;
                 const double goal=ground-padDifference;
                 const double height=headHeight(i,joint_detail::compose(t,parent))-goal;
-                return angle*angle+height*height;
+                // The inferior fifth shaft and heel form the lateral
+                // longitudinal arch in a standing lateral radiograph. This
+                // mesh-outline estimate is a soft guide, not a diagnosis.
+                // https://pmc.ncbi.nlm.nih.gov/articles/PMC9600622/
+                double arch=0;
+                if(i==4) {
+                    const Vec3 lower=frameVector(parent,lowerAxes[i]);
+                    const Vec3 p=map(point(t,center+lower*.02),*meta[i]);
+                    const double slope=std::atan2(p.y-a.y,p.z-a.z);
+                    const double deviation=pitch-slope;
+                    arch=(deviation-std::clamp(deviation,10*pi/180,30*pi/180))*.08;
+                }
+                return angle*angle+height*height+arch*arch;
             };
             double lo=-limit,hi=limit;
             for (int k=0;k<28;++k) {double a=(2*lo+hi)/3,b=(lo+2*hi)/3;if(cost(a)<cost(b))hi=b;else lo=a;}
@@ -229,7 +244,7 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             const Chain c=chain(angles); const double ground=heelHeight(c.heel); double sum=0;
             for (int i=0;i<5;++i) {
                 const auto parent=i<3?c.cuneiform:c.cuboid;
-                const auto turn=metaTurn(i,parent,ground);
+                const auto turn=metaTurn(i,parent,ground,heelPitch(c.heel));
                 const Vec3 center=point(parent,centers[i]),axis=frameVector(parent,axes[i]);
                 const Vec3 a=map(point(turn,center),*meta[i]),b=map(point(turn,center+axis*.02),*meta[i]);
                 const double angle=(std::atan2(b.y-a.y,b.z-a.z)-target[i])*.09;
@@ -237,11 +252,18 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const double height=headHeight(i,joint_detail::compose(turn,parent))-goal;
                 sum+=angle*angle+height*height;
             }
+            const auto lateral=joint_detail::compose(metaTurn(4,c.cuboid,ground,heelPitch(c.heel)),c.cuboid);
+            const Vec3 lx=map(point(lateral,centers[4]),*meta[4]);
+            const Vec3 ly=map(point(lateral,centers[4]+lowerAxes[4]*.02),*meta[4]);
+            const double lateralSlope=std::atan2(ly.y-lx.y,ly.z-lx.z);
+            const double lateralAngle=heelPitch(c.heel)-lateralSlope;
+            const double lateralError=lateralAngle-std::clamp(lateralAngle,10*pi/180,30*pi/180);
+            sum+=lateralError*lateralError*.08*.08;
             const double pitch=heelPitch(c.heel);
             const double pitchError=pitch-std::clamp(pitch,18*pi/180,30*pi/180);
             sum+=pitchError*pitchError*.25*.25;
             const Vec3 ta=map(point(c.talus,talarCenter),*talus),tb=map(point(c.talus,talarCenter+talarAxis*.02),*talus);
-            const auto ray=joint_detail::compose(metaTurn(0,c.cuneiform,ground),c.cuneiform);
+            const auto ray=joint_detail::compose(metaTurn(0,c.cuneiform,ground,heelPitch(c.heel)),c.cuneiform);
             const Vec3 ma=map(point(ray,centers[0]),*meta[0]),mb=map(point(ray,centers[0]+axes[0]*.02),*meta[0]);
             const double alignment=std::atan2(tb.y-ta.y,tb.z-ta.z)-std::atan2(mb.y-ma.y,mb.z-ma.z);
             const double archError=alignment-std::clamp(alignment,-4*pi/180,4*pi/180);
@@ -256,24 +278,28 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
         // declinate the rays. Optimize all joints together so the heel and
         // both columns stay connected, instead of rotating rays in isolation.
         const std::array<double,5> bounds{14*pi/180,6*pi/180,7*pi/180,5*pi/180,2.3*pi/180};
-        std::array<double,5> angles{};double value=cost(angles);
-        for (double step=4*pi/180;step>pi/720;step*=.5) {
-            for (int pass=0;pass<8;++pass) {
-                bool changed=false;
-                for (int i=0;i<5;++i) for (int sign:{-1,1}) {
-                    auto trial=angles;trial[i]=std::clamp(trial[i]+sign*step,-bounds[i],bounds[i]);
-                    const double next=cost(trial);
-                    if(next<value) {angles=trial;value=next;changed=true;}
+        std::array<double,5> angles{};double value=1e100;
+        for(double initial:{0.0,7.0,12.0}) {
+            std::array<double,5> state{initial*pi/180,0,0,0,0};double stateValue=cost(state);
+            for (double step=4*pi/180;step>pi/720;step*=.5) {
+                for (int pass=0;pass<8;++pass) {
+                    bool changed=false;
+                    for (int i=0;i<5;++i) for (int sign:{-1,1}) {
+                        auto trial=state;trial[i]=std::clamp(trial[i]+sign*step,-bounds[i],bounds[i]);
+                        const double next=cost(trial);
+                        if(next<stateValue) {state=trial;stateValue=next;changed=true;}
+                    }
+                    if (!changed) break;
                 }
-                if (!changed) break;
             }
+            if(stateValue<value){angles=state;value=stateValue;}
         }
         const Chain c=chain(angles);const double ground=heelHeight(c.heel);
         // Resolve pivots and turns before mutating any of the source meshes.
         std::array<Transform,5> full{};
         for(int i=0;i<5;++i) {
             const auto parent=i<3?c.cuneiform:c.cuboid;
-            full[i]=joint_detail::compose(metaTurn(i,parent,ground),parent);
+            full[i]=joint_detail::compose(metaTurn(i,parent,ground,heelPitch(c.heel)),parent);
         }
         apply(heel,c.heel);apply(talus,c.talus);apply(nav,c.nav);
         for(int i=0;i<3;++i) apply(tarsal[i],c.cuneiform);
@@ -358,6 +384,13 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             const Vec3 tm=foot_joint_clearance::separation<Part>({{tarsal[i],meta[i]}},center(*meta[i])-center(*tarsal[i]),limit);
             if(length(tm)>0) moveRay(i,tm);
         }
+        // The lateral column is one connected unit. Resolve intersections
+        // against all medial neighbours simultaneously, carrying both toes;
+        // independent cuboid or metatarsal shifts can open their own joints.
+        const Vec3 lateralShift=foot_joint_clearance::separateGroups<Part>(
+            {heel,talus,nav,tarsal[0],tarsal[1],tarsal[2],meta[0],meta[1],meta[2]},
+            {cub,meta[3],meta[4]},limit,suffix=="_L"?1.0:-1.0);
+        if(length(lateralShift)>0) {move(cub,lateralShift);moveRay(3,lateralShift);moveRay(4,lateralShift);}
     }
     return true;
 }

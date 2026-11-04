@@ -143,4 +143,36 @@ Vec3 separation(const std::vector<std::pair<const Part*,const Part*>>& pairs,Vec
     }
     return {};
 }
+// Translate a connected branch as a unit. Check every boundary between it
+// and its neighbours, not just the first intersecting joint: clearing the
+// cuboid against the navicular must not drive the fourth ray into the third.
+// The small symmetric search is only run if a boundary already intersects.
+template<class Part>
+Vec3 separateGroups(const std::vector<const Part*>& fixed,const std::vector<const Part*>& moving,
+                    double maximum,double side) {
+    if (maximum<=0) return {};
+    std::vector<Tree> a,b;
+    for (const Part* p:fixed) if(p) a.emplace_back(*p);
+    for (const Part* p:moving) if(p) b.emplace_back(*p);
+    const auto collides=[&](Vec3 shift) {
+        for (const auto& x:a) for (const auto& y:b)
+            if(!x.nodes.empty() && !y.nodes.empty() && overlap(x,0,y,0,shift)) return true;
+        return false;
+    };
+    if(!collides({})) return {};
+    std::vector<Vec3> directions;
+    for(int x=-2;x<=2;++x) for(int y=-2;y<=2;++y) for(int z=-2;z<=2;++z) {
+        if(!x && !y && !z) continue;
+        // Discard repeated parallel directions; mirror enumeration by side so
+        // otherwise equivalent solutions stay bilaterally symmetric.
+        if(std::gcd(std::gcd(std::abs(x),std::abs(y)),std::abs(z))!=1) continue;
+        directions.push_back(normalized(Vec3{side*x,double(y),double(z)}));
+    }
+    constexpr int steps=40;
+    for(int i=1;i<=steps;++i) for(Vec3 direction:directions) {
+        const Vec3 shift=direction*(maximum*double(i)/steps);
+        if(!collides(shift)) return shift;
+    }
+    return {};
+}
 } // namespace gtc::native::foot_joint_clearance
