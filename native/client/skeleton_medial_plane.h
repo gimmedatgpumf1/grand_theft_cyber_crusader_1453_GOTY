@@ -42,6 +42,10 @@ MetatarsalPlane makeFootSidePlane(const Comparison& comparison, const std::strin
     for (Vec3 p:fifth) fifthX+=p.x;
     const double medialOutward=firstX/double(first.size())<fifthX/double(fifth.size()) ? -1.0 : 1.0;
     const double outward=littleToe ? -medialOutward : medialOutward;
+    // Include the posed calcaneus in the slope fit, rather than fitting only
+    // the forefoot and later translating that slope out to clear the heel.
+    // This keeps both side sheets aligned with the whole standing foot.
+    fitted.insert(fitted.end(),heel.begin(),heel.end());
     // Convert to a 2-D (z,y) footprint with the outward coordinate as height.
     const auto local=[&](Vec3 p) { return Vec3{p.z,outward*p.x,p.y}; };
     std::vector<Vec3> candidates;

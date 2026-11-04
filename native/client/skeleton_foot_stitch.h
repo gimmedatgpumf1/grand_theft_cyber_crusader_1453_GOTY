@@ -45,6 +45,7 @@ std::vector<Vec3> clipBy(const std::vector<Vec3>& polygon,const Distance& distan
 }
 
 struct Obstacle {
+    bool leg=false;
     std::vector<Vec3> points;
     std::vector<std::array<int,3>> faces;
 };
@@ -61,6 +62,7 @@ std::vector<Obstacle> obstacles(const Comparison& comparison,const std::string& 
             part.name.rfind("LatCun_",0)==0 || part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0;
         if (bone) {
             Obstacle item;
+            item.leg=part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0;
             for (Vec3 p:part.points) item.points.push_back(comparison.mapPart(p,part)+origin);
             item.faces=part.faces; result.push_back(std::move(item));
         }
@@ -104,6 +106,14 @@ inline void cutObstacles(std::vector<std::vector<Vec3>>& pieces,const Plane& pla
                 overlap.insert(overlap.end(),sections[j].begin(),sections[j].end());
             auto cut=hull(std::move(overlap));
             if (cut.size()<3) continue;
+            // Widen the cut slightly in the plane, so the triangulated border
+            // remains outside the ankle after clipping and vertex welding.
+            if (obstacle.leg) {
+                std::vector<Vec3> expanded;
+                for (Vec3 p:cut) for (int x=-1;x<=1;++x) for (int z=-1;z<=1;++z)
+                    expanded.push_back({p.x+x*.00002,0,p.z+z*.00002});
+                cut=hull(std::move(expanded));
+            }
             std::vector<std::vector<Vec3>> next;
             for (const auto& piece:pieces) {
                 auto remaining=subtract(piece,cut);
@@ -448,6 +458,48 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     for (auto& band:crossRoofs) for (auto& roof:band) {
         roof.point={0,roof.level,0};roof.normal=normalized(Vec3{-roof.slopeU,1,-roof.slopeV});
     }
+    // Behind the ankle the roof must follow the back of the calcaneus, not
+    // extrapolate the instep slope up into a tall wedge. Add one continuous
+    // transverse fold just behind the talus; the five sections retain their
+    // shared edges and the forefoot fit is unchanged.
+    double heelFold=1e30;
+    const typename Comparison::Part* calcaneus=nullptr;
+    for (const auto& part:comparison.parts()) {
+        if (part.name=="Cal"+suffix) calcaneus=&part;
+        if (part.name=="Tal"+suffix)
+            for(Vec3 p:part.points) heelFold=std::min(heelFold,(comparison.mapPart(p,part)+origin).z);
+    }
+    if (!calcaneus || heelFold>=tarsalZ-1e-6) {preserve();return;}
+    std::array<Plane,5> heelRoofs=crossRoofs[0];
+    double heelSlope=1.6;
+    std::vector<Vec3> calcPoints;
+    calcPoints.reserve(calcaneus->points.size());
+    for(Vec3 p:calcaneus->points) calcPoints.push_back(comparison.mapPart(p,*calcaneus)+origin);
+    for(auto f:calcaneus->faces) {
+        if(f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=calcPoints.size() ||
+           std::size_t(f[1])>=calcPoints.size() || std::size_t(f[2])>=calcPoints.size()) continue;
+        for(int section=0;section<5;++section) {
+            std::vector<Vec3> poly{calcPoints[std::size_t(f[0])],calcPoints[std::size_t(f[1])],calcPoints[std::size_t(f[2])]};
+            poly=clipBy(poly,[&](Vec3 p){return p.z-heelFold;});
+            if(section>0 && !poly.empty()) poly=clipBy(poly,[&](Vec3 p){return boundaryX(section,p.z)-p.x;});
+            if(section<4 && !poly.empty()) poly=clipBy(poly,[&](Vec3 p){return p.x-boundaryX(section+1,p.z);});
+            const auto& roof=crossRoofs[0][std::size_t(section)];
+            const double clearance=.0001*std::sqrt(1+roof.slopeU*roof.slopeU+
+                                                   (std::abs(roof.slopeV)+1.6)*(std::abs(roof.slopeV)+1.6));
+            for(Vec3 p:poly) if(heelFold-p.z>1e-8) {
+                const double available=roof.slopeU*p.x+roof.slopeV*p.z+roof.level-p.y-clearance;
+                heelSlope=std::min(heelSlope,std::max(0.0,available/(heelFold-p.z)));
+            }
+        }
+    }
+    for(auto& roof:heelRoofs) {
+        roof.slopeV+=heelSlope;roof.level-=heelSlope*heelFold;
+        roof.point={0,roof.level,0};roof.normal=normalized(Vec3{-roof.slopeU,1,-roof.slopeV});
+    }
+    const auto sectionRoof=[&](int band,int sector)->const Plane& {
+        return band==0 ? heelRoofs[std::size_t(sector)] : crossRoofs[std::size_t(band-1)][std::size_t(sector)];
+    };
+    const std::array<double,3> folds{heelFold,tarsalZ,metaZ};
     // The outer segments pass through the 50% ring's outermost vertex as
     // well as its center, continuing to the side sheets. Account for the
     // different roof/side and sole/side intersections of each slanted side.
@@ -485,8 +537,8 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     for (const auto* sheet:sheets) bounds.insert(bounds.end(),sheet->points.begin(),sheet->points.end());
     const auto cuts=obstacles(comparison,suffix,origin);
     std::array<MetatarsalPlane,6> rebuilt;
-    for (int index=0;index<6;++index) for (int band=0;band<3;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
-        const Plane& current=index==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(index)];
+    for (int index=0;index<6;++index) for (int band=0;band<4;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
+        const Plane& current=index==0 ? sectionRoof(band,sectionIndex) : planes[std::size_t(index)];
         double loU=1e30,hiU=-1e30,loV=1e30,hiV=-1e30;
         for (Vec3 p:bounds) {
             p=current.local(p);
@@ -496,12 +548,12 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         const double padding=2*std::max(hiU-loU,hiV-loV)+.01;
         std::vector<Vec3> polygon{{loU-padding,0,loV-padding},{hiU+padding,0,loV-padding},
                                   {hiU+padding,0,hiV+padding},{loU-padding,0,hiV+padding}};
-        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return (band==1?tarsalZ:metaZ)-current.world(p).z;});
-        if (band<2 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return current.world(p).z-(band==0?tarsalZ:metaZ);});
+        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return folds[std::size_t(band-1)]-current.world(p).z;});
+        if (band<3 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return current.world(p).z-folds[std::size_t(band)];});
         if (sectionIndex>0 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=current.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
         if (sectionIndex<4 && polygon.size()>=3) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=current.world(p);return q.x-boundaryX(sectionIndex+1,q.z);});
         for (int other=0;other<6 && polygon.size()>=3;++other) if (other!=index) {
-            const Plane& limit=other==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(other)];
+            const Plane& limit=other==0 ? sectionRoof(band,sectionIndex) : planes[std::size_t(other)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,current.world(p)-limit.point);});
         }
         // Clip each segment separately, then weld their common endpoints.
@@ -539,7 +591,7 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
     double lowY=1e30,highY=-1e30;
     for (Vec3 p:bounds) { lowY=std::min(lowY,p.y); highY=std::max(highY,p.y); }
     const double yPadding=std::max(highY-lowY,.01)*2;
-    for (std::size_t i=0;i+1<border.size();++i) for (int band=0;band<3;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
+    for (std::size_t i=0;i+1<border.size();++i) for (int band=0;band<4;++band) for (int sectionIndex=0;sectionIndex<5;++sectionIndex) {
         const Vec3 a=border[i],b=border[i+1];
         Plane front;
         front.u=normalized(Vec3{b.x-a.x,0,b.z-a.z});
@@ -550,13 +602,13 @@ void stitchFootPlanes(const Comparison& comparison,const std::string& suffix,Vec
         const double lo=dot(front.u,a),hi=dot(front.u,b);
         std::vector<Vec3> polygon{{lo,0,lowY-yPadding},{hi,0,lowY-yPadding},
                                   {hi,0,highY+yPadding},{lo,0,highY+yPadding}};
-        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return (band==1?tarsalZ:metaZ)-front.world(p).z;});
-        if (band<2 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return front.world(p).z-(band==0?tarsalZ:metaZ);});
+        if (band>0) polygon=clipBy(polygon,[&](Vec3 p){return folds[std::size_t(band-1)]-front.world(p).z;});
+        if (band<3 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){return front.world(p).z-folds[std::size_t(band)];});
         if (sectionIndex>0 && !polygon.empty()) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=front.world(p);return boundaryX(sectionIndex,q.z)-q.x;});
         if (sectionIndex<4 && polygon.size()>=3) polygon=clipBy(polygon,[&](Vec3 p){const Vec3 q=front.world(p);return q.x-boundaryX(sectionIndex+1,q.z);});
         for (int k=0;k<6;++k) {
             if (polygon.size()<3) break;
-            const Plane& limit=k==0 ? crossRoofs[std::size_t(band)][std::size_t(sectionIndex)] : planes[std::size_t(k)];
+            const Plane& limit=k==0 ? sectionRoof(band,sectionIndex) : planes[std::size_t(k)];
             polygon=clipBy(polygon,[&](Vec3 p){return dot(limit.normal,front.world(p)-limit.point);});
         }
         std::vector<std::vector<Vec3>> pieces;
