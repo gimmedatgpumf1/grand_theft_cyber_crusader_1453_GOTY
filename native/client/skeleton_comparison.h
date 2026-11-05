@@ -434,6 +434,7 @@ public:
         floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
         return update(error);
     }
+
     bool loadCurves(const std::string& directory, std::string& error) {
         return curves_.load(directory+"BODY_PART_CURVE_KNOTS.tsv",error) &&
                curves_.loadSelectedModels(directory+"BODY_PART_SELECTED_MODELS.tsv",error);
@@ -481,6 +482,7 @@ public:
         return true;
     }
     void reset(std::string& error) { profile_=Profile{}; profile_.height=defaultHeight(); update(error); }
+
     // The skull, jaw and C1 share a single 3D similarity transform. The torso
     // field meets it at the bottom of C1; the jaw can lie lower than C7 because
     // those are distinct anterior/posterior structures, not one vertical chain.
@@ -740,7 +742,7 @@ public:
         if (!greatToeAnchor(i,origin,anchor)) return;
         for (Vec3& p:points) p=anchor+(p-anchor)*greatToeScale;
     }
-    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin,bool openRoot=false) const {
+    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin) const {
         const auto& name=parts_[i].name;
         if (name.rfind("FootDistP",0)!=0) return {};
         const std::string suffix=name.substr(9);
@@ -764,7 +766,7 @@ public:
         Vec3 anchor{};
         if (suffix[0]=='1' && greatToeAnchor(i,origin,anchor))
             for (Vec3& p:tipBone) p=anchor+(p-anchor)/greatToeScale;
-        auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i),openRoot);
+        auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i));
         if (suffix[0]=='1') {
             resizeGreatToe(i,origin,skin.points);
             resizeGreatToe(i,origin,skin.nailPoints);
@@ -787,20 +789,17 @@ public:
             if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
                 part.name.rfind("FootMeta3_",0)==0) rasterizer.markSkinOwner();
         }
-        std::array<bool,2> joinedToes{};
         for (int side=0;side<2;++side) {
             const std::string suffix=side==0 ? "_L" : "_R";
             auto plane=makeMetatarsalPlane(*this,suffix,origin); if (plane.points.empty()) continue;
             auto medial=makeFootSidePlane(*this,suffix,origin,plane), lateral=makeFootSidePlane(*this,suffix,origin,plane,true);
             auto heel=makeHeelPlanes(*this,suffix,origin,medial,lateral); auto sole=makeFootSole(*this,suffix,origin,medial,lateral,heel);
-            joinedToes[std::size_t(side)]=stitchFootPlanes(*this,suffix,origin,plane,medial,lateral,heel,sole);
+            stitchFootPlanes(*this,suffix,origin,plane,medial,lateral,heel,sole);
             const auto drawFootPlane=[&](MetatarsalPlane& sheet,std::size_t objectGroup) {
                 if (sheet.points.empty()) return;
-                std::vector<int> owners=sheet.owners;
-                if(owners.size()!=sheet.points.size()) owners.assign(sheet.points.size(),sheet.owner);
-                if (!rasterizer.gpu() && pose) for(std::size_t i=0;i<sheet.points.size();++i)
-                    if(owners[i]>=0 && std::size_t(owners[i])<pose->size()) sheet.points[i]=transform((*pose)[owners[i]],sheet.points[i]);
-                for(int& owner:owners) owner+=int(idBase);
+                if (!rasterizer.gpu() && pose && std::size_t(sheet.owner)<pose->size())
+                    for (Vec3& p:sheet.points) p=transform((*pose)[sheet.owner],p);
+                const std::vector<int> owners(sheet.points.size(),int(idBase)+sheet.owner);
                 rasterizer.setObject(idBase+static_cast<std::uint32_t>(objectGroup*parts_.size()+side),{},0);
                 rasterizer.meshObjectSkinned(sheet.points,sheet.faces,owners,toe);
             };
@@ -808,7 +807,7 @@ public:
         }
         for (std::size_t i=0;i<parts_.size();++i) {
             if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
-            auto skin=toeSurface(i,origin,joinedToes[parts_[i].name.ends_with("_L")?0:1]);
+            auto skin=toeSurface(i,origin);
             if (skin.points.empty()) continue;
             if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
                 if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);
