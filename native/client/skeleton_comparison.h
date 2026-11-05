@@ -778,7 +778,6 @@ public:
               const std::vector<std::array<double,16>>* pose=nullptr) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
-        Material nail; nail.color=colorHex("#eacabe"); nail.specular=0.18;
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
@@ -792,7 +791,7 @@ public:
                 part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 || part.name.find("Cun_")!=std::string::npos ||
                 part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0) rasterizer.markSkinOwner();
         }
-        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe,nail);
+        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe);
     }
 private:
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {

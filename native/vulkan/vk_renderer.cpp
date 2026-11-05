@@ -237,7 +237,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             firstVertex_[index] = running;
             firstUv_[index] = coordinates;
             running += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
-            if (texturedMaterial(scene.batches[index].material)) {
+            if (hasVertexUv(scene.batches[index])) {
                 coordinates += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
             }
         }
@@ -357,20 +357,22 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         const GpuBatch& batch = scene.batches[index];
         if (batch.vertices.empty()) continue;
         const bool textured = texturedMaterial(batch.material);
-        if (batch.isUi) {
+        const bool vertexUv = hasVertexUv(batch);
+        const bool localIndexed = vertexUv && !batch.indices.empty() && !batch.isUi;
+        if (batch.isUi || localIndexed) {
             const VkDeviceSize base = static_cast<VkDeviceSize>(firstVertex_[index]) * sizeof(PackedVertex);
             bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &base);
         }
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
-        if (textured) {
+        if (vertexUv) {
             // The coordinates of this batch, and only this batch: a body that
             // samples nothing has eight bytes fewer per vertex to fetch.
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
         const VkPipeline wanted = batch.isUi
-            ? (textured ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
-            : (textured ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
+            ? (vertexUv ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
+            : (vertexUv ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
             bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
             boundPipeline = wanted;
@@ -415,6 +417,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         // triangle, not to the vertex, so the fragment stage derives it.
         const bool indexed = !batch.indices.empty();
         push.extra[0] = indexed ? 1.0f : 0.0f;
+        push.extra[2] = batch.smoothSkin ? 1.0f : 0.0f;
         // A run of rigid batches goes out as one call: the vertex stage reads
         // each vertex's matrix out of the bone array, so fifty-six draws become
         // one. Every batch in the run is pushed with the same colour, which is
@@ -432,11 +435,13 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         } else if (indexed) {
             const std::uint32_t count = index < indexCount_.size() ? indexCount_[index] : 0;
             if (count == 0) continue;
-            drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
+            drawIndexedFn(command_, count, 1, firstIndex_[index],
+                          localIndexed ? -static_cast<std::int32_t>(firstVertex_[index]) : 0, 0);
         } else {
             drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1,
                    batch.isUi ? 0 : firstVertex_[index], 0);
         }
+        if (localIndexed) bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &offset);
     }
     endRenderPass(command_);
 

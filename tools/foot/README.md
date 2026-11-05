@@ -1,33 +1,24 @@
-# MakeHuman foot fitting — visual work in progress
+# MakeHuman feet — work in progress
 
-![Full-resolution fit and post-fit reduction](progress.png)
+The blue skeletons now use the **original-resolution MakeHuman foot cut** in
+the room. Its coordinates are only uniformly scaled and translated (and the
+right foot reflected); no plane fit, per-vertex correction, simplification or
+procedural nail overlay is used. Two bone influences animate the skin; source
+foot-bone influence is distributed to nearby blue foot and ankle bones.
+Smooth vertex-normal shading does not change the geometry.
 
-The blue skeletons in the test room currently show this **experimental**
-MakeHuman replacement. The image above is the earlier CPU fitting comparison;
-the room uses the reduced mesh with two-bone GPU blending. The 0.1 mm gap is
-**not enforced at runtime** and is not guaranteed for arbitrary poses,
-proportions or ragdoll motion. In a SwiftShader Vulkan room capture, ragdoll
-motion exposed bone through the feet: this attachment is not finished.
+This is an initial placement, not a finished fit: the bone shapes do not exactly
+match the MakeHuman foot, and visible intersections remain. In particular,
+**0.1 mm clearance is not guaranteed**, including at rest or in ragdoll. The
+MakeHuman source and its CC0 license are in `tools/human-source/`.
 
-The full-resolution CC0 MakeHuman mesh is fitted and attached to the blue bones
-first; its original rig weights are used for two-influence toe articulation.
-Only after that fit is the mesh reduced. The fitter uses real triangle-mesh
-collision/distance queries (rather than only bone vertices) and checks that all
-foot-bone components are inside the skin. Tibia and fibula are also checked
-against the ankle surface, but are allowed to extend through its open rim. It
-adjusts the reduced mesh again, because
-simplification can reduce the gap. An ankle cap is used for containment checks
-only, not added to the rendered foot. Corrections are stored for each sex and
-mirrored for the other side.
+## Earlier fitting experiment (not the in-game foot)
 
-The current offline pose set includes both sexes and sides, 50 cm, default and
-250 cm heights, rest and simultaneous +20/-20-degree toe-base movements, and
-individual +20/-20-degree toe joints at 50 cm. For each generated full-resolution
-and reduced set, the minimum surface distance was above 0.1 mm with no bone/skin
-intersections. This finite set is **not** proof for other poses, proportions,
-ankle attachment or dynamic ragdolls. The MakeHuman foot influence is distributed
-to nearby metatarsal, tarsal and ankle bones for GPU ragdoll preview, but this
-approximate attachment and the provisional nails remain unfinished.
+![Earlier distorted fitting and reduction experiment](progress.png)
+
+The following historical steps reproduce a **different, deformed and reduced**
+mesh. These offsets and the results of its sampled-pose checks do not apply to
+the current unmodified foot preview.
 
 ## Reproducing the offline data
 

@@ -156,6 +156,10 @@ inline bool texturedMaterial(const Material& material) {
     }
 }
 
+inline bool hasVertexUv(const GpuBatch& batch) {
+    return batch.smoothSkin || texturedMaterial(batch.material);
+}
+
 inline bool isColourFormat(VkFormat format) {
     return sameChannelBytes(format, VK_FORMAT_R8G8B8A8_UNORM) ||
            sameChannelBytes(format, VK_FORMAT_B8G8R8A8_UNORM);

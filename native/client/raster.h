@@ -210,6 +210,7 @@ struct GpuBatch {
     // Toe skin vertices name their owner's object ID rather than a V-view slot.
     bool skinObjectIds = false;
     bool blendedSkin = false;
+    bool smoothSkin = false;
     bool skinOwner = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -323,10 +324,24 @@ public:
         meshSkinned(points,faces,first,material);
         auto& batch=scene_.batches[index];
         if (batch.vertices.size()!=start+points.size()) return;
-        batch.skinObjectIds=true; batch.blendedSkin=true;
+        batch.skinObjectIds=true; batch.blendedSkin=true; batch.smoothSkin=true;
+        // Area-weighted vertex normals, octahedrally packed into the otherwise
+        // unused UV stream. This changes shading only, not the source mesh.
+        std::vector<Vec3> normals(points.size());
+        for (const auto& f:faces) {
+            if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=points.size() ||
+                std::size_t(f[1])>=points.size() || std::size_t(f[2])>=points.size()) continue;
+            const Vec3 n=cross(points[f[1]]-points[f[0]],points[f[2]]-points[f[0]]);
+            for(int v:f)normals[std::size_t(v)]+=n;
+        }
         for (std::size_t i=0;i<points.size();++i) {
             batch.vertices[start+i].ny=float(second[i]);
             batch.vertices[start+i].nz=float(std::clamp(weights[i],0.0,1.0));
+            Vec3 n=normals[i];const double sum=std::abs(n.x)+std::abs(n.y)+std::abs(n.z);
+            if(sum>1e-20)n=n/sum;else n={0,1,0};
+            double x=n.x,y=n.y;
+            if(n.z<0){x=(1-std::abs(n.y))*(n.x<0?-1:1);y=(1-std::abs(n.x))*(n.y<0?-1:1);}
+            batch.vertices[start+i].u=float(x);batch.vertices[start+i].v=float(y);
         }
     }
     bool gpu() const { return gpu_; }

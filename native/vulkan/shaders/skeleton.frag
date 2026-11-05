@@ -73,7 +73,7 @@ void main() {
     const float textured = clamp(batch.flags.x, 0.0, 1.0);
     vec3 base;
     float alpha;
-    if (batch.extra.x > 0.5) {
+    if (batch.extra.x > 0.5 && batch.extra.z < 0.5) {
         // An indexed batch: the vertices are shared between faces, so the normal
         // is the one the triangle itself implies -- exactly the face normal the
         // unrolled version carried three times over, recovered from the screen

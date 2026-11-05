@@ -74,7 +74,7 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     std::uint32_t running = 0, start = 0;
     for (std::size_t i = 0; i < scene.batches.size(); ++i) {
         if (i == first) start = running;
-        if (uvs && !texturedMaterial(scene.batches[i].material)) continue;
+        if (uvs && !hasVertexUv(scene.batches[i])) continue;
         offsets[i] = running;
         running += static_cast<std::uint32_t>(scene.batches[i].vertices.size());
     }
@@ -98,7 +98,7 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     const auto write = [&](char* cursor) {
         for (std::size_t i = first; i < scene.batches.size(); ++i) {
             const GpuBatch& batch = scene.batches[i];
-            if (uvs && !texturedMaterial(batch.material)) continue;
+            if (uvs && !hasVertexUv(batch)) continue;
             for (std::size_t j = 0; j < batch.vertices.size(); ++j) {
                 const GpuVertex& vertex = batch.vertices[j];
                 const VkDeviceSize dest = static_cast<VkDeviceSize>(offsets[i] - start + j) * stride;
@@ -196,7 +196,7 @@ bool Renderer::updateGeometry(const GpuScene& scene) {
     for (std::size_t i = 0; i < scene.batches.size(); ++i) {
         const auto& batch = scene.batches[i];
         next.push_back({batch.revision, scene.revision,
-                        batch.vertices.size(), batch.indices.size(), slots_[i], texturedMaterial(batch.material)});
+                        batch.vertices.size(), batch.indices.size(), slots_[i], hasVertexUv(batch)});
     }
     dirtyBatch_ = 0;
     while (geometryScene_ == &scene && dirtyBatch_ < next.size() && dirtyBatch_ < geometryStamps_.size() &&
@@ -223,7 +223,7 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t total = 0, coordinates = 0;
     for (const GpuBatch& batch : scene.batches) {
         total += batch.vertices.size();
-        if (texturedMaterial(batch.material)) coordinates += batch.vertices.size();
+        if (hasVertexUv(batch)) coordinates += batch.vertices.size();
     }
     if (total == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
@@ -253,7 +253,7 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
             return false;
         }
         positions += batch.vertices.size();
-        if (!texturedMaterial(batch.material)) continue;
+        if (!hasVertexUv(batch)) continue;
         if (firstUv_[index] != coordinatesUsed) {
             std::fprintf(stderr, "[vk] texture coordinate offset %u is not where batch %zu starts\n",
                          firstUv_[index], index);
