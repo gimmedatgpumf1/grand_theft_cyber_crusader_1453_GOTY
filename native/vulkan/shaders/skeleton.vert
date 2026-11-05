@@ -52,7 +52,11 @@ void main() {
     // extra.y is a run: the whole skeleton in one draw call, its matrices read
     // out of the array above instead of one push block per bone.
     vec4 world = batch.model * vec4(inPosition, 1.0);
-    if (batch.extra.y > 0.5) world = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
+    if (batch.extra.y > 1.5) {
+        vec4 first = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
+        vec4 second = bones.bone[int(inNormal.y + 0.5)] * vec4(inPosition, 1.0);
+        world = mix(second, first, clamp(inNormal.z, 0.0, 1.0));
+    } else if (batch.extra.y > 0.5) world = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
     outWorld = world.xyz;
     // A batch with no texture is drawn with a pipeline that carries no texture

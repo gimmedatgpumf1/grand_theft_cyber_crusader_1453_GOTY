@@ -5,6 +5,7 @@
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
 #include "client/skeleton_toe_skin.h"
+#include "client/skeleton_makehuman_draw.h"
 #include "client/skeleton_metatarsal_plane.h"
 #include "client/skeleton_medial_plane.h"
 #include "client/skeleton_heel_planes.h"
@@ -787,41 +788,11 @@ public:
             rasterizer.mesh(points,part.faces,blue);
             if (pose && i<pose->size()) rasterizer.setBatchPose((*pose)[i]);
             if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
-                part.name.rfind("FootMeta3_",0)==0) rasterizer.markSkinOwner();
+                part.name.rfind("FootMeta",0)==0 || part.name.rfind("Cal_",0)==0 || part.name.rfind("Tal_",0)==0 ||
+                part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 || part.name.find("Cun_")!=std::string::npos ||
+                part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0) rasterizer.markSkinOwner();
         }
-        for (int side=0;side<2;++side) {
-            const std::string suffix=side==0 ? "_L" : "_R";
-            auto plane=makeMetatarsalPlane(*this,suffix,origin); if (plane.points.empty()) continue;
-            auto medial=makeFootSidePlane(*this,suffix,origin,plane), lateral=makeFootSidePlane(*this,suffix,origin,plane,true);
-            auto heel=makeHeelPlanes(*this,suffix,origin,medial,lateral); auto sole=makeFootSole(*this,suffix,origin,medial,lateral,heel);
-            stitchFootPlanes(*this,suffix,origin,plane,medial,lateral,heel,sole);
-            const auto drawFootPlane=[&](MetatarsalPlane& sheet,std::size_t objectGroup) {
-                if (sheet.points.empty()) return;
-                if (!rasterizer.gpu() && pose && std::size_t(sheet.owner)<pose->size())
-                    for (Vec3& p:sheet.points) p=transform((*pose)[sheet.owner],p);
-                const std::vector<int> owners(sheet.points.size(),int(idBase)+sheet.owner);
-                rasterizer.setObject(idBase+static_cast<std::uint32_t>(objectGroup*parts_.size()+side),{},0);
-                rasterizer.meshObjectSkinned(sheet.points,sheet.faces,owners,toe);
-            };
-            drawFootPlane(plane,5);
-        }
-        for (std::size_t i=0;i<parts_.size();++i) {
-            if (parts_[i].name.rfind("FootDistP",0)!=0) continue;
-            auto skin=toeSurface(i,origin);
-            if (skin.points.empty()) continue;
-            if (!rasterizer.gpu() && pose) for (std::size_t j=0;j<skin.points.size();++j)
-                if (static_cast<std::size_t>(skin.owners[j])<pose->size()) skin.points[j]=transform((*pose)[skin.owners[j]],skin.points[j]);
-            for (int& owner:skin.owners) owner+=static_cast<int>(idBase);
-            rasterizer.setObject(idBase+static_cast<std::uint32_t>(3*parts_.size()+i),{},0);
-            rasterizer.meshObjectSkinned(skin.points,skin.faces,skin.owners,toe);
-            if (!skin.nailPoints.empty()) {
-                if (!rasterizer.gpu() && pose && i<pose->size())
-                    for (Vec3& p:skin.nailPoints) p=transform((*pose)[i],p);
-                const std::vector<int> nailOwners(skin.nailPoints.size(),static_cast<int>(idBase+i));
-                rasterizer.setObject(idBase+static_cast<std::uint32_t>(4*parts_.size()+i),{},0);
-                rasterizer.meshObjectSkinned(skin.nailPoints,skin.nailFaces,nailOwners,nail);
-            }
-        }
+        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe,nail);
     }
 private:
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {

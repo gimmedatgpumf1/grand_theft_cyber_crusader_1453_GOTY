@@ -87,11 +87,13 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
         for (std::size_t i=0;i<scene.batches.size();++i)
             if (scene.batches[i].skinOwner && slots_[i]>=0) skinSlots.emplace(scene.batches[i].objectId,slots_[i]);
         for (std::size_t i=first;i<scene.batches.size();++i) if (scene.batches[i].skinObjectIds)
-            for (const auto& vertex:scene.batches[i].vertices)
-                if (!skinSlots.count(static_cast<std::uint32_t>(vertex.nx))) {
-                    std::fprintf(stderr,"[vk] missing toe skin bone slot %u\n",static_cast<std::uint32_t>(vertex.nx));
+            for (const auto& vertex:scene.batches[i].vertices) {
+                if (!skinSlots.count(static_cast<std::uint32_t>(vertex.nx)) ||
+                    (scene.batches[i].blendedSkin && !skinSlots.count(static_cast<std::uint32_t>(vertex.ny)))) {
+                    std::fprintf(stderr,"[vk] missing skin bone slot\n");
                     return false;
                 }
+            }
     }
     const auto write = [&](char* cursor) {
         for (std::size_t i = first; i < scene.batches.size(); ++i) {
@@ -107,7 +109,8 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
                     const float boneSlot=batch.skinObjectIds ? skinSlots.at(static_cast<std::uint32_t>(vertex.nx)) :
                         batch.vertexSkinned ? vertex.nx + (batch.objectId==8001 ? float(scene.maleSkinCount) : 0.0f)
                         : (slots_[i] >= 0.0F ? slots_[i] : vertex.nx);
-                    PackedVertex packed{vertex.x, vertex.y, vertex.z, boneSlot, vertex.ny, vertex.nz};
+                    const float secondSlot=batch.blendedSkin ? skinSlots.at(static_cast<std::uint32_t>(vertex.ny)) : vertex.ny;
+                    PackedVertex packed{vertex.x, vertex.y, vertex.z, boneSlot, secondSlot, vertex.nz};
                     std::memcpy(cursor + dest, &packed, sizeof(packed));
                 }
             }

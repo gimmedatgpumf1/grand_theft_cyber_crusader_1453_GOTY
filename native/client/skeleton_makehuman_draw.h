@@ -1,0 +1,46 @@
+#pragma once
+
+// Experimental in-scene preview of the fitted MakeHuman feet. Clearance is
+// checked offline for a finite pose set, not enforced during ragdoll motion.
+#include "../../tools/foot/experimental-fit.h"
+
+namespace gtc::native {
+template<class Comparison>
+void drawMakeHumanFeet(const Comparison& comparison, bool male, Rasterizer& rasterizer,
+                       Vec3 origin, std::uint32_t idBase,
+                       const std::vector<std::array<double,16>>* pose,
+                       const Material& flesh, const Material& nail) {
+    const auto transform=[](const std::array<double,16>& m,Vec3 p) {
+        return Vec3{m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
+                    m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
+    };
+    for(int side=0;side<2;++side) {
+        const std::string suffix=side==0 ? "_L" : "_R";
+        auto foot=makeHumanFootReduced(comparison,male,suffix,origin);
+        if(foot.points.empty())continue;
+        // Nails are generated in the same fitted rest space as the skin.
+        for(std::size_t i=0;i<comparison.parts().size();++i) {
+            const auto& part=comparison.parts()[i];
+            if(!part.name.ends_with(suffix) || !part.name.starts_with("FootDistP"))continue;
+            auto surface=makeHumanNail(foot,static_cast<int>(i));
+            if(surface.nailPoints.empty())continue;
+            if(!rasterizer.gpu() && pose && i<pose->size())
+                for(Vec3& p:surface.nailPoints)p=transform((*pose)[i],p);
+            const std::vector<int> owners(surface.nailPoints.size(),static_cast<int>(idBase+i));
+            rasterizer.setObject(idBase+static_cast<std::uint32_t>(4*comparison.parts().size()+i),{},0);
+            rasterizer.meshObjectSkinned(surface.nailPoints,surface.nailFaces,owners,nail);
+        }
+        if(!rasterizer.gpu() && pose) for(std::size_t i=0;i<foot.points.size();++i) {
+            const auto first=static_cast<std::size_t>(foot.owners[i]);
+            const auto second=static_cast<std::size_t>(foot.secondaryOwners[i]);
+            if(first>=pose->size() || second>=pose->size())continue;
+            const Vec3 p=foot.points[i];const double w=foot.ownerWeights[i];
+            foot.points[i]=transform((*pose)[first],p)*w+transform((*pose)[second],p)*(1-w);
+        }
+        for(int& owner:foot.owners)owner+=static_cast<int>(idBase);
+        for(int& owner:foot.secondaryOwners)owner+=static_cast<int>(idBase);
+        rasterizer.setObject(idBase+static_cast<std::uint32_t>(5*comparison.parts().size()+side),{},0);
+        rasterizer.meshObjectBlended(foot.points,foot.faces,foot.owners,foot.secondaryOwners,foot.ownerWeights,flesh);
+    }
+}
+} // namespace gtc::native

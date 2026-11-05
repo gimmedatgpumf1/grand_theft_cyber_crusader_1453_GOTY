@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "native.h"
 
 #include <array>
@@ -207,6 +209,7 @@ struct GpuBatch {
     bool vertexSkinned = false;
     // Toe skin vertices name their owner's object ID rather than a V-view slot.
     bool skinObjectIds = false;
+    bool blendedSkin = false;
     bool skinOwner = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -306,6 +309,25 @@ public:
                            const std::vector<int>& owners, const Material& material) {
         meshSkinned(points,faces,owners,material);
         if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinObjectIds=true;
+    }
+    // Two bone slots and a blend weight occupy the otherwise unused normal
+    // fields of an indexed skin mesh. Vertices remain on the GPU during motion.
+    void meshObjectBlended(const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
+                           const std::vector<int>& first, const std::vector<int>& second,
+                           const std::vector<double>& weights, const Material& material) {
+        if (!gpu_ || first.size()!=points.size() || second.size()!=points.size() || weights.size()!=points.size()) {
+            mesh(points,faces,material); return;
+        }
+        const auto index=prepareBatch(material);
+        const auto start=scene_.batches[index].vertices.size();
+        meshSkinned(points,faces,first,material);
+        auto& batch=scene_.batches[index];
+        if (batch.vertices.size()!=start+points.size()) return;
+        batch.skinObjectIds=true; batch.blendedSkin=true;
+        for (std::size_t i=0;i<points.size();++i) {
+            batch.vertices[start+i].ny=float(second[i]);
+            batch.vertices[start+i].nz=float(std::clamp(weights[i],0.0,1.0));
+        }
     }
     bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);

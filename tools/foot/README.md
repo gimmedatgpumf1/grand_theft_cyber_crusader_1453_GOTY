@@ -2,10 +2,12 @@
 
 ![Full-resolution fit and post-fit reduction](progress.png)
 
-This is **not yet the in-game foot**. The existing procedural foot remains in
-the game. The images are CPU renders, not Vulkan or gameplay captures. There is
-no runtime clearance solver, so the 0.1 mm gap is **not guaranteed for arbitrary
-poses, proportions or ragdoll motion**. Do not enable this skin on that basis.
+The blue skeletons in the test room currently show this **experimental**
+MakeHuman replacement. The image above is the earlier CPU fitting comparison;
+the room uses the reduced mesh with two-bone GPU blending. The 0.1 mm gap is
+**not enforced at runtime** and is not guaranteed for arbitrary poses,
+proportions or ragdoll motion. In a SwiftShader Vulkan room capture, ragdoll
+motion exposed bone through the feet: this attachment is not finished.
 
 The full-resolution CC0 MakeHuman mesh is fitted and attached to the blue bones
 first; its original rig weights are used for two-influence toe articulation.
@@ -23,7 +25,9 @@ The current offline pose set includes both sexes and sides, 50 cm, default and
 individual +20/-20-degree toe joints at 50 cm. For each generated full-resolution
 and reduced set, the minimum surface distance was above 0.1 mm with no bone/skin
 intersections. This finite set is **not** proof for other poses, proportions,
-ankle attachment or dynamic ragdolls. Nails and GPU attachment remain unfinished.
+ankle attachment or dynamic ragdolls. The MakeHuman foot influence is distributed
+to nearby metatarsal, tarsal and ankle bones for GPU ragdoll preview, but this
+approximate attachment and the provisional nails remain unfinished.
 
 ## Reproducing the offline data
 

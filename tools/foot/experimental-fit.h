@@ -256,7 +256,7 @@ MakeHumanFoot makeHumanFoot(const Comparison& c,bool male,const std::string& sid
 }
 namespace makehuman_foot_detail {
 template<class Comparison,std::size_t N,std::size_t V,std::size_t F>
-MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHumanFoot& high,
+MakeHumanFoot reduce(const Comparison& c,const std::string& side,Vec3 origin,const MakeHumanFoot& high,
                      const std::array<makehuman_foot_data::Vertex,N>& source,
                      const std::array<makehuman_foot_data::ReducedVertex,V>& verts,
                      const std::array<std::array<int,3>,F>& faces,
@@ -264,9 +264,19 @@ MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHuman
     if(high.points.size()!=N)return {};
     MakeHumanFoot low;low.length=high.length;
     int foot=-1;std::array<int,64> ids{};ids.fill(-1);
+    struct Candidate {int owner;std::vector<Vec3> points;};
+    std::vector<Candidate> candidates;
     for(std::size_t i=0;i<c.parts().size();++i) {
         const auto& part=c.parts()[i];if(!part.name.ends_with(side))continue;
         if(part.name=="FootMeta3"+side)foot=static_cast<int>(i);
+        const bool proximal=part.name.starts_with("FootMeta") || part.name.starts_with("Cal_") ||
+            part.name.starts_with("Tal_") || part.name.starts_with("Nav_") || part.name.starts_with("Cub_") ||
+            part.name.find("Cun_")!=std::string::npos || part.name.starts_with("Tibia_") || part.name.starts_with("Fibula_");
+        if(proximal) {
+            Candidate candidate;candidate.owner=static_cast<int>(i);candidate.points.reserve(part.points.size());
+            for(Vec3 p:part.points)candidate.points.push_back(c.mapPart(p,part)+origin);
+            candidates.push_back(std::move(candidate));
+        }
         for(int toe=1;toe<=5;++toe)for(int segment=1;segment<=3;++segment) {
             const std::string prefix=segment==1?"FootProxP":(segment==2 && toe>1?"FootMidP":"FootDistP");
             if(part.name==prefix+std::to_string(toe)+side)ids[toe*10+segment]=static_cast<int>(i);
@@ -286,14 +296,31 @@ MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHuman
         }
         point+=Vec3{(side=="_R"?-1:1)*(vertex.offset[0]+poseFix[0])*high.length,
                     (vertex.offset[1]+poseFix[1])*high.length,(vertex.offset[2]+poseFix[2])*high.length};
-        int first=0,second=0;
-        for(int i=1;i<64;++i)if(weights[i]>weights[first])first=i;
-        for(int i=0;i<64;++i)if(i!=first && (second==first || weights[i]>weights[second]))second=i;
-        const int firstId=first==0 || ids[first]<0 ? foot:ids[first];
-        const int secondId=second==0 || ids[second]<0 ? foot:ids[second];
-        const double sum=weights[first]+weights[second];
-        low.points.push_back(point);low.owners.push_back(firstId);low.secondaryOwners.push_back(secondId);
-        low.ownerWeights.push_back(sum>1e-9?weights[first]/sum:1.0);
+        // MakeHuman's single foot-bone influence is distributed among the
+        // nearest comparison tarsal, metatarsal and ankle bones. This makes the
+        // heel and ankle follow the ragdoll instead of the third metatarsal.
+        std::vector<double> byOwner(c.parts().size(),0);
+        for(int code=1;code<64;++code)
+            byOwner[std::size_t(ids[code]>=0?ids[code]:foot)]+=weights[code];
+        std::array<int,2> closest{{foot,foot}};
+        std::array<double,2> distance{{1e30,1e30}};
+        for(const auto& candidate:candidates) {
+            double best=1e30;
+            for(Vec3 q:candidate.points)best=std::min(best,dot(point-q,point-q));
+            if(best<distance[0]){distance[1]=distance[0];closest[1]=closest[0];distance[0]=best;closest[0]=candidate.owner;}
+            else if(best<distance[1]){distance[1]=best;closest[1]=candidate.owner;}
+        }
+        const double pad=high.length*.025;
+        const double a=1.0/(distance[0]+pad*pad),b=1.0/(distance[1]+pad*pad);
+        const double firstWeight=(a*a)/(a*a+b*b);
+        byOwner[std::size_t(closest[0])]+=weights[0]*firstWeight;
+        byOwner[std::size_t(closest[1])]+=weights[0]*(1-firstWeight);
+        int first=foot,second=foot;
+        for(std::size_t i=0;i<byOwner.size();++i)if(byOwner[i]>byOwner[std::size_t(first)])first=static_cast<int>(i);
+        for(std::size_t i=0;i<byOwner.size();++i)if(int(i)!=first && (second==first || byOwner[i]>byOwner[std::size_t(second)]))second=static_cast<int>(i);
+        const double sum=byOwner[std::size_t(first)]+byOwner[std::size_t(second)];
+        low.points.push_back(point);low.owners.push_back(first);low.secondaryOwners.push_back(second);
+        low.ownerWeights.push_back(sum>1e-9?byOwner[std::size_t(first)]/sum:1.0);
     }
     low.faces.assign(faces.begin(),faces.end());
     if(side=="_R")for(auto& f:low.faces)std::swap(f[1],f[2]);
@@ -305,7 +332,7 @@ MakeHumanFoot makeHumanFootReduced(const Comparison& c,bool male,const std::stri
                                    bool applyReducedPoseCorrection=true) {
     const auto high=makeHumanFoot(c,male,side,origin);
     using namespace makehuman_foot_data;
-    return male ? makehuman_foot_detail::reduce(c,side,high,maleVertices,maleReducedVertices,maleReducedFaces,maleReducedPoseCorrections,applyReducedPoseCorrection)
-                : makehuman_foot_detail::reduce(c,side,high,femaleVertices,femaleReducedVertices,femaleReducedFaces,femaleReducedPoseCorrections,applyReducedPoseCorrection);
+    return male ? makehuman_foot_detail::reduce(c,side,origin,high,maleVertices,maleReducedVertices,maleReducedFaces,maleReducedPoseCorrections,applyReducedPoseCorrection)
+                : makehuman_foot_detail::reduce(c,side,origin,high,femaleVertices,femaleReducedVertices,femaleReducedFaces,femaleReducedPoseCorrections,applyReducedPoseCorrection);
 }
 } // namespace gtc::native

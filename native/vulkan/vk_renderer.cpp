@@ -423,7 +423,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
                              ? std::find_if(runs_.begin(), runs_.end(),
                                             [&](const BatchRun& candidate) { return candidate.first == index; })
                              : runs_.end();
-        push.extra[1] = (run != runs_.end() || batch.vertexSkinned) ? 1.0f : 0.0f;
+        push.extra[1] = batch.blendedSkin ? 2.0f : (run != runs_.end() || batch.vertexSkinned) ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
         if (run != runs_.end()) {
