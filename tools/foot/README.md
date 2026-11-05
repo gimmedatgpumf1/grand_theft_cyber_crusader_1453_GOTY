@@ -15,10 +15,9 @@ point-based clearance adjustment uses a temporarily capped ankle, then saves
 canonical offsets. The temporary cap is not part of the output foot.
 
 Only **after that fit**, `simplify-fitted-foot.py` reduces the fitted result and
-records barycentric correspondence to the original mesh. The experimental
-reduced visualizer samples the full-resolution profile fit and uses two of the
-source influences for toe movement; the full-resolution visualizer uses a single
-dominant influence. The reduced result is not yet integrated or GPU skinned.
+records barycentric correspondence to the original mesh. Both visualizers use two of the source influences for toe movement; the
+reduced visualizer samples the fitted full-resolution profile. The reduced
+result is not yet integrated or GPU skinned.
 Canonical corrections are approximate, not a guarantee of collision-free or
 anatomically accurate skin at other profiles or poses. The former low-poly-first
 asset has been removed; it remains in Git history.

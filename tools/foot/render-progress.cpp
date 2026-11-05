@@ -66,7 +66,7 @@ int main(int argc,char** argv) {
                     for (std::size_t i=0;i<points.size();++i) {
                         const Vec3 p=points[i];
                         points[i]=transform(foot.owners[i],p);
-                        if (reduced) points[i]=points[i]*foot.ownerWeights[i]+
+                        points[i]=points[i]*foot.ownerWeights[i]+
                             transform(foot.secondaryOwners[i],p)*(1-foot.ownerWeights[i]);
                     }
                     r.mesh(points,foot.faces,flesh);

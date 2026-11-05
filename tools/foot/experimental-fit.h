@@ -219,13 +219,18 @@ MakeHumanFoot fit(const Comparison& c,const std::string& suffix,Vec3 origin,
         const auto& fix=correction[pointIndex++];
         if(applyCorrection) p+=Vec3{mirror ? -fix[0]*size : fix[0]*size,fix[1]*size,fix[2]*size};
         result.points.push_back(p);
-        int owner=foot;
-        const int toe=v.influence/10,segment=v.influence%10;
-        if(toe>=1 && toe<=5 && segment>=1 && segment<=3) {
-            const int mapped=(toe==1 && segment==2)?2:segment-1;
-            if(bones[toe*3-3+mapped]>=0)owner=bones[toe*3-3+mapped];
-        }
-        result.owners.push_back(owner);
+        const auto ownerFor=[&](int influence) {
+            const int toe=influence/10,segment=influence%10;
+            if(toe>=1 && toe<=5 && segment>=1 && segment<=3) {
+                const int mapped=(toe==1 && segment==2)?2:segment-1;
+                if(bones[toe*3-3+mapped]>=0)return bones[toe*3-3+mapped];
+            }
+            return foot;
+        };
+        result.owners.push_back(ownerFor(v.bones[0]));
+        result.secondaryOwners.push_back(ownerFor(v.bones[1]));
+        const double totalWeight=v.weights[0]+v.weights[1];
+        result.ownerWeights.push_back(totalWeight>1e-9?v.weights[0]/totalWeight:1.0);
     }
     result.faces.assign(faces.begin(),faces.end());
     if(mirror) for(auto& face:result.faces)std::swap(face[1],face[2]);
