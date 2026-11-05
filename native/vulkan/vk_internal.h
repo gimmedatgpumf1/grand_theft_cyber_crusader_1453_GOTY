@@ -566,6 +566,8 @@ private:
     VkPipeline pipelineUvCovered_ = VK_NULL_HANDLE;
     // The same four again, blended and without depth: the interface, drawn by the
     // device over the scene instead of composited on the host afterwards.
+    VkPipeline pipelineSkin_ = VK_NULL_HANDLE;
+    VkPipeline pipelineSkinCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterface_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceUv_ = VK_NULL_HANDLE;

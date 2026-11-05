@@ -5,7 +5,8 @@ the room. Its coordinates are only uniformly scaled and translated (and the
 right foot reflected); no plane fit, per-vertex correction, simplification or
 procedural nail overlay is used. Two bone influences animate the skin; source
 foot-bone influence is distributed to nearby blue foot and ankle bones.
-Smooth vertex-normal shading does not change the geometry.
+Smooth vertex-normal shading does not change the geometry. The preview skin is
+50% opaque so the blue bones are visible through it.
 
 This is an initial placement, not a finished fit: the bone shapes do not exactly
 match the MakeHuman foot, and visible intersections remain. In particular,

@@ -777,7 +777,7 @@ public:
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
               const std::vector<std::array<double,16>>* pose=nullptr) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
-        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12;
+        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12; toe.opacity=0.5;
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
