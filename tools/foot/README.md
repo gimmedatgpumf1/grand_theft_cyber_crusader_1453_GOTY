@@ -1,9 +1,9 @@
 # MakeHuman feet — work in progress
 
 The blue skeletons now use the **original-resolution MakeHuman foot cut** in
-the room. Its coordinates are only uniformly scaled and translated (and the
-right foot reflected); no plane fit, per-vertex correction, simplification or
-procedural nail overlay is used. Two bone influences animate the skin; source
+the room. Its width is scaled independently to better fit the foot bones; the
+existing length and height are unchanged (and the right foot is reflected). No
+plane fit, per-vertex correction, simplification or procedural nail overlay is used. Two bone influences animate the skin; source
 foot-bone influence is distributed to nearby blue foot and ankle bones.
 Smooth vertex-normal shading does not change the geometry. The preview skin is
 50% opaque so the blue bones are visible through it.

@@ -1,8 +1,8 @@
 #pragma once
 
-// Direct cut from the CC0 MakeHuman body: one uniform scale and translation,
-// with the original vertices and triangles retained. No fitted planes, vertex
-// corrections or mesh simplification are applied.
+// Direct cut from the CC0 MakeHuman body. Width is scaled independently to
+// fit the bones; source vertices and triangles remain at original resolution.
+// No fitted planes, vertex corrections or mesh simplification are applied.
 #include "../../tools/foot/original-foot-male.h"
 #include "../../tools/foot/original-foot-female.h"
 #include <algorithm>
@@ -22,7 +22,7 @@ struct RawMakeHumanFoot {
 template<class Comparison,std::size_t N,std::size_t F>
 RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Vec3 origin,
     const std::array<makehuman_foot_data::Vertex,N>& vertices,
-    const std::array<std::array<int,3>,F>& faces,double lateralShift) {
+    const std::array<std::array<int,3>,F>& faces,double widthPadding,double lateralShift) {
     RawMakeHumanFoot result;
     int fallback=-1;std::array<int,64> ids{};ids.fill(-1);
     struct Candidate {int owner;std::vector<Vec3> points;};
@@ -62,15 +62,16 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         srcHigh.x=std::max(srcHigh.x,p.x);srcHigh.y=std::max(srcHigh.y,p.y);srcHigh.z=std::max(srcHigh.z,p.z);
     }
     const double length=high.z-low.z;
-    // One scalar preserves every source proportion. Small room for skin around
-    // bone is visual padding, not a collision or clearance guarantee.
+    // Keep the existing length and height. Fit the width to the blue bones'
+    // lateral extent with visual padding; this is not a clearance solver.
     const double scale=1.22*std::max(length/(srcHigh.z-srcLow.z),(high.x-low.x)/(srcHigh.x-srcLow.x));
-    const Vec3 shift{(low.x+high.x)*.5-(srcLow.x+srcHigh.x)*.5*scale+(mirror?-1:1)*length*lateralShift,
+    const double widthScale=std::min(scale,widthPadding*(high.x-low.x)/(srcHigh.x-srcLow.x));
+    const Vec3 shift{(low.x+high.x)*.5-(srcLow.x+srcHigh.x)*.5*widthScale+(mirror?-1:1)*length*lateralShift,
                      low.y-length*.02-srcLow.y*scale,
                      (low.z+high.z)*.5-(srcLow.z+srcHigh.z)*.5*scale};
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(const auto& v:vertices) {
-        const Vec3 p=Vec3{mirror?-v.x:v.x,v.y,v.z}*scale+shift;
+        const Vec3 p=Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*scale}+shift;
         result.points.push_back(p);
         std::array<double,64> weights{};
         for(int j=0;j<4;++j)weights[v.bones[j]]+=v.weights[j];
@@ -102,7 +103,7 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
 template<class Comparison>
 RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,bool male,const std::string& side,Vec3 origin) {
     using namespace makehuman_foot_data;
-    return male?rawMakeHumanFoot(c,side,origin,originalMaleVertices,originalMaleFaces,.02):
-                rawMakeHumanFoot(c,side,origin,originalFemaleVertices,originalFemaleFaces,.05);
+    return male?rawMakeHumanFoot(c,side,origin,originalMaleVertices,originalMaleFaces,1.24,.02):
+                rawMakeHumanFoot(c,side,origin,originalFemaleVertices,originalFemaleFaces,1.27,.04);
 }
 } // namespace gtc::native
