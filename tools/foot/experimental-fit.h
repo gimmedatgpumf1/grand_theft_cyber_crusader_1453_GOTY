@@ -8,8 +8,12 @@
 #include "source-foot-female.h"
 #include "correction-male.h"
 #include "correction-female.h"
+#include "pose-correction-male.h"
+#include "pose-correction-female.h"
 #include "reduced-foot-male.h"
 #include "reduced-foot-female.h"
+#include "reduced-pose-correction-male.h"
+#include "reduced-pose-correction-female.h"
 #include "client/skeleton_toe_skin.h"
 #include <algorithm>
 #include <array>
@@ -92,7 +96,8 @@ MakeHumanFoot fit(const Comparison& c,const std::string& suffix,Vec3 origin,
                   const std::array<makehuman_foot_data::Vertex,N>& vertices,
                   const std::array<std::array<int,3>,F>& faces,
                   const std::array<std::array<float,3>,20>& anchors,
-                  const std::array<std::array<float,3>,N>& correction,bool applyCorrection) {
+                  const std::array<std::array<float,3>,N>& correction,
+                  const std::array<std::array<float,3>,N>& poseCorrection,bool applyCorrection,bool applyPoseCorrection) {
     MakeHumanFoot result;
     const bool mirror=suffix=="_R";
     const auto source=[&](float x,float y,float z){return Vec3{mirror?-x:x,y,z};};
@@ -216,8 +221,13 @@ MakeHumanFoot fit(const Comparison& c,const std::string& suffix,Vec3 origin,
         }
         if(total>1e-8) {const double blend=std::min(1.0,total*1.2);p.y+=(targetY/total-p.y)*blend;}
         p.y=std::max(p.y,low.y);
-        const auto& fix=correction[pointIndex++];
-        if(applyCorrection) p+=Vec3{mirror ? -fix[0]*size : fix[0]*size,fix[1]*size,fix[2]*size};
+        const auto& fix=correction[pointIndex];const auto& poseFix=poseCorrection[pointIndex++];
+        if(applyCorrection) {
+            const double x=fix[0]+(applyPoseCorrection?poseFix[0]:0);
+            const double y=fix[1]+(applyPoseCorrection?poseFix[1]:0);
+            const double z=fix[2]+(applyPoseCorrection?poseFix[2]:0);
+            p+=Vec3{(mirror?-1:1)*x*size,y*size,z*size};
+        }
         result.points.push_back(p);
         const auto ownerFor=[&](int influence) {
             const int toe=influence/10,segment=influence%10;
@@ -238,17 +248,19 @@ MakeHumanFoot fit(const Comparison& c,const std::string& suffix,Vec3 origin,
 }
 } // namespace makehuman_foot_detail
 template<class Comparison>
-MakeHumanFoot makeHumanFoot(const Comparison& c,bool male,const std::string& side,Vec3 origin,bool applyCorrection=true) {
+MakeHumanFoot makeHumanFoot(const Comparison& c,bool male,const std::string& side,Vec3 origin,
+                            bool applyCorrection=true,bool applyPoseCorrection=true) {
     using namespace makehuman_foot_data;
-    return male ? makehuman_foot_detail::fit(c,side,origin,maleVertices,maleFaces,maleAnchors,maleCorrections,applyCorrection)
-                : makehuman_foot_detail::fit(c,side,origin,femaleVertices,femaleFaces,femaleAnchors,femaleCorrections,applyCorrection);
+    return male ? makehuman_foot_detail::fit(c,side,origin,maleVertices,maleFaces,maleAnchors,maleCorrections,malePoseCorrections,applyCorrection,applyPoseCorrection)
+                : makehuman_foot_detail::fit(c,side,origin,femaleVertices,femaleFaces,femaleAnchors,femaleCorrections,femalePoseCorrections,applyCorrection,applyPoseCorrection);
 }
 namespace makehuman_foot_detail {
 template<class Comparison,std::size_t N,std::size_t V,std::size_t F>
 MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHumanFoot& high,
                      const std::array<makehuman_foot_data::Vertex,N>& source,
                      const std::array<makehuman_foot_data::ReducedVertex,V>& verts,
-                     const std::array<std::array<int,3>,F>& faces) {
+                     const std::array<std::array<int,3>,F>& faces,
+                     const std::array<std::array<float,3>,V>& poseCorrection,bool applyPoseCorrection) {
     if(high.points.size()!=N)return {};
     MakeHumanFoot low;low.length=high.length;
     int foot=-1;std::array<int,64> ids{};ids.fill(-1);
@@ -261,7 +273,10 @@ MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHuman
         }
     }
     if(foot<0)return {};
+    std::size_t vertexIndex=0;
     for(const auto& vertex:verts) {
+        const auto& correction=poseCorrection[vertexIndex++];
+        const std::array<float,3> zero{};const auto& poseFix=applyPoseCorrection?correction:zero;
         Vec3 point{};std::array<double,64> weights{};
         for(int k=0;k<3;++k) {
             const int index=vertex.source[k];const double weight=vertex.barycentric[k];
@@ -269,8 +284,8 @@ MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHuman
             const auto& v=source[std::size_t(index)];
             for(int t=0;t<4;++t) weights[v.bones[t]]+=weight*v.weights[t];
         }
-        point+=Vec3{(side=="_R"?-1:1)*vertex.offset[0]*high.length,
-                    vertex.offset[1]*high.length,vertex.offset[2]*high.length};
+        point+=Vec3{(side=="_R"?-1:1)*(vertex.offset[0]+poseFix[0])*high.length,
+                    (vertex.offset[1]+poseFix[1])*high.length,(vertex.offset[2]+poseFix[2])*high.length};
         int first=0,second=0;
         for(int i=1;i<64;++i)if(weights[i]>weights[first])first=i;
         for(int i=0;i<64;++i)if(i!=first && (second==first || weights[i]>weights[second]))second=i;
@@ -286,10 +301,11 @@ MakeHumanFoot reduce(const Comparison& c,const std::string& side,const MakeHuman
 }
 } // namespace makehuman_foot_detail
 template<class Comparison>
-MakeHumanFoot makeHumanFootReduced(const Comparison& c,bool male,const std::string& side,Vec3 origin) {
+MakeHumanFoot makeHumanFootReduced(const Comparison& c,bool male,const std::string& side,Vec3 origin,
+                                   bool applyReducedPoseCorrection=true) {
     const auto high=makeHumanFoot(c,male,side,origin);
     using namespace makehuman_foot_data;
-    return male ? makehuman_foot_detail::reduce(c,side,high,maleVertices,maleReducedVertices,maleReducedFaces)
-                : makehuman_foot_detail::reduce(c,side,high,femaleVertices,femaleReducedVertices,femaleReducedFaces);
+    return male ? makehuman_foot_detail::reduce(c,side,high,maleVertices,maleReducedVertices,maleReducedFaces,maleReducedPoseCorrections,applyReducedPoseCorrection)
+                : makehuman_foot_detail::reduce(c,side,high,femaleVertices,femaleReducedVertices,femaleReducedFaces,femaleReducedPoseCorrections,applyReducedPoseCorrection);
 }
 } // namespace gtc::native

@@ -3,12 +3,15 @@
 
 Output is an experimental canonical correction, not proof of collision-free
 skin or clearance at other sizes/poses. Requires numpy, scipy, trimesh, rtree
-and networkx. Run on the left foot exported by export-fit.cpp.
+networkx and python-fcl. Run on the left foot exported by export-fit.cpp.
 """
 import trimesh,numpy as np,networkx as nx
 from pathlib import Path
 from scipy.spatial.distance import cdist
 import sys
+import importlib.util
+spec=importlib.util.spec_from_file_location("surface_clearance",Path(__file__).with_name("surface-clearance.py"))
+clearance=importlib.util.module_from_spec(spec); spec.loader.exec_module(clearance)
 folder=Path(sys.argv[1]); skin=trimesh.load_mesh(folder/'skin.obj',process=False);nv=len(skin.vertices)
 edges=skin.edges[trimesh.grouping.group_rows(skin.edges_sorted,require_count=1)];loops=nx.cycle_basis(nx.from_edgelist(edges));assert len(loops)==1
 loop=loops[0]; edge_set={tuple(e) for e in edges.tolist()}; cap=[]
@@ -34,6 +37,9 @@ for step in range(24):
  # A single damped update avoids large steps and overlapping toe webs.
  vert+=displace*.8
  print(folder.name,step,'outside',len(outside),'max mm',round(max(dist)*1000,2),'move mm',round(np.linalg.norm(displace,axis=1).max()*1000,2),flush=True)
+# The point fit above is only a starting guess. Finish with exact mesh/mesh
+# collision and distance queries; reject output if containment or clearance fails.
+vert=clearance.fit_clearance(vert,skin.faces,clearance.load_bones(folder))
 offsets=vert-skin.vertices
 np.savetxt(folder/'offsets.txt',offsets,fmt='%.12g')
 if folder.name in ('m_L','f_L'):
