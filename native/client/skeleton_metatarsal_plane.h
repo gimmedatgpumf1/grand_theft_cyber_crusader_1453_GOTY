@@ -12,6 +12,7 @@ struct MetatarsalPlane {
     std::vector<Vec3> points;
     std::vector<std::array<int,3>> faces;
     int owner=-1;
+    std::vector<int> owners;
 };
 
 namespace metatarsal_plane_detail {
