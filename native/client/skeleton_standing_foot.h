@@ -445,6 +445,21 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const auto turn=joint_detail::compose(yaw,rotation(base,flex[digit-1]*pi/180));
                 apply(first,turn);apply(middle,turn);apply(last,turn);
             }
+            // Align the great-toe bone frames with the source toe independently
+            // at the MTP and interphalangeal contacts.
+            Part* great=find("FootProxP1"+suffix),*greatTip=find("FootDistP1"+suffix);
+            if(great && greatTip) {
+                const double mirror=suffix=="_L"?1.0:-1.0;
+                const auto turnAt=[&](Vec3 pivot,Vec3 angles) {
+                    const double angle=length(angles);
+                    auto t=joint_detail::rotate(angles/angle,angle);
+                    t.translation=pivot-frameVector(t,pivot);return t;
+                };
+                const Vec3 mtp=contact(*meta[0],*great),ip=contact(*great,*greatTip);
+                apply(greatTip,turnAt(ip,Vec3{3.994,10.12*mirror,0}*(pi/180)));
+                const auto mtpTurn=turnAt(mtp,Vec3{-3.361,-4.637*mirror,14.241*mirror}*(pi/180));
+                apply(great,mtpTurn);apply(greatTip,mtpTurn);
+            }
         }
     }
     return true;

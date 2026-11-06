@@ -187,9 +187,38 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         return fitPivot+fitShift+p*std::cos(fitAngle)+cross(axis,p)*std::sin(fitAngle)
             +axis*(dot(axis,p)*(1-std::cos(fitAngle)));
     };
+    // Successive whole-mesh transforms refined against bone surfaces at rest
+    // and in representative toe poses. Each stage retains the source mesh.
+    struct WholeFootFit {Vec3 scale,rotation,shift;};
+    const std::array<WholeFootFit,3> corrections=male?std::array<WholeFootFit,3>{{
+        {{.97859785,1.00142187,.99539021},{-.00172617,-.00690658*lateral,-.00023237*lateral},{.00321737*lateral,.00007928,-.00222667}},
+        {{.99313868,1.02010852,1.00506043},{-.00000454,-.00152017*lateral,-.01587345*lateral},{.00302022*lateral,.00276445,-.00217476}},
+        {{.99686880,1.01466473,1.00095150},{-.00270637,.00114379*lateral,-.00907142*lateral},{.00058503*lateral,.00022392,-.00087254}}
+    }}:std::array<WholeFootFit,3>{{
+        {{.97067911,1.03067010,1.03789693},{.00710349,-.00225730*lateral,.00214380*lateral},{.00130118*lateral,.00864686,.00312933}},
+        {{1.00955205,.998028,1.00922851},{.00139138,-.00023489*lateral,-.00726774*lateral},{.00114996*lateral,.00259941,-.00037831}},
+        {{1.00816616,1.02939159,1.02685130},{.00834466,.00287617*lateral,.00275625*lateral},{-.00157865*lateral,.00216967,.00669425}}
+    }};
+    std::vector<Vec3> fitted;fitted.reserve(N);
+    for(const auto& v:vertices)fitted.push_back(fineFit(orient(placed(v))));
+    for(const auto& fit:corrections) {
+        Vec3 lo{1e30,1e30,1e30},hi{-1e30,-1e30,-1e30};
+        for(Vec3 p:fitted) {
+            lo.x=std::min(lo.x,p.x);hi.x=std::max(hi.x,p.x);
+            lo.y=std::min(lo.y,p.y);hi.y=std::max(hi.y,p.y);
+            lo.z=std::min(lo.z,p.z);hi.z=std::max(hi.z,p.z);
+        }
+        const Vec3 pivot=(lo+hi)*.5,shift=fit.shift*length;
+        const double angle=std::sqrt(dot(fit.rotation,fit.rotation));
+        const Vec3 axis=fit.rotation/angle;const double cs=std::cos(angle),sn=std::sin(angle);
+        for(Vec3& p:fitted) {
+            p-=pivot;p={p.x*fit.scale.x,p.y*fit.scale.y,p.z*fit.scale.z};
+            p=pivot+shift+p*cs+cross(axis,p)*sn+axis*(dot(axis,p)*(1-cs));
+        }
+    }
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
-    for(const auto& v:vertices) {
-        const Vec3 p=fineFit(orient(placed(v)));
+    for(std::size_t vertexIndex=0;vertexIndex<N;++vertexIndex) {
+        const auto& v=vertices[vertexIndex];const Vec3 p=fitted[vertexIndex];
         result.points.push_back(p);
         std::array<double,64> weights{};
         for(int j=0;j<4;++j)weights[v.bones[j]]+=v.weights[j];

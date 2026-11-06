@@ -3,23 +3,22 @@
 The blue skeletons use the **original-resolution MakeHuman foot cut** in the
 room. Width and heel-to-toe length are fitted separately, then the whole mesh
 is rotated and positioned relative to the heel and the five distal toes. A
-small, sex-specific three-axis scale, rotation and translation was calibrated
-against sampled blue foot-bone surfaces and toe-tip proportions at each default
-profile. The refinements exclude tibia and fibula. Corrections scale with the
-foot and are mirrored on the right. They are a visual fit, not a
-per-vertex deformation or a per-frame optimizer.
+sequence of sex-specific whole-mesh scales, rotations and translations was
+calibrated against blue foot-bone surfaces in the default standing and selected
+toe-bend poses. The refinements exclude tibia and fibula. Corrections scale
+with the foot and are mirrored on the right. They are not per-vertex
+deformation or a per-frame optimizer.
 
-The female blue toes have small individual reference-angle adjustments about
-their bone contacts; distal bones follow the joint rotations. The female mesh
-fit was also refined for the heel and toe-tip proportions. The male and white
-CT are unchanged. Two bone influences animate the skin, and the preview is 50%
-opaque. Original triangles and smooth vertex shading are retained; there is
-no simplification, plane fit or procedural nail overlay.
+The female blue toes have individual reference-angle adjustments about their
+bone contacts; distal bones follow the joint rotations. The white CT is unchanged.
+Two bone influences animate the skin, and the preview is 50% opaque. Original
+triangles and smooth vertex shading are retained; there is no simplification,
+plane fit or procedural nail overlay.
 
-This is an initial placement, not a finished fit: the bone shapes do not exactly
-match the MakeHuman foot, and visible intersections remain. In particular,
-**0.1 mm clearance is not guaranteed**, including at rest or in ragdoll. The
-MakeHuman source and its CC0 license are in `tools/human-source/`.
+This is not a finished fit. Default standing exports of both feet have no
+foot-bone surface crossings, but some female toe bends still cross the skin,
+and **0.1 mm clearance is not guaranteed**, including at rest or in ragdoll.
+The MakeHuman source and its CC0 license are in `tools/human-source/`.
 
 ## Earlier fitting experiment (not the in-game foot)
 
