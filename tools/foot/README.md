@@ -4,9 +4,9 @@ The blue skeletons use the **original-resolution MakeHuman foot cut** in the
 room. Width and heel-to-toe length are fitted separately, then the whole mesh
 is rotated and positioned relative to the heel and the five distal toes. A
 small, sex-specific three-axis scale, rotation and translation was calibrated
-against sampled blue foot-bone surfaces at each default profile. The female
-refinement also considers toe-tip proportions, and excludes tibia and fibula. Corrections scale
-with the foot and are mirrored on the right. They are a visual fit, not a
+against sampled blue foot-bone surfaces and toe-tip proportions at each default
+profile. The refinements exclude tibia and fibula. Corrections scale with the
+foot and are mirrored on the right. They are a visual fit, not a
 per-vertex deformation or a per-frame optimizer.
 
 The female blue second toe has a small MTP and PIP reference adjustment about
