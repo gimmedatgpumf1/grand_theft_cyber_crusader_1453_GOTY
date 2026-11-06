@@ -5,8 +5,10 @@ the room. Its width is scaled independently to align the five source toe
 centres with the corresponding blue distal bones. The heel-to-toe axis is
 shortened separately, while the height is unchanged (and the right foot is
 reflected). Each axis uses one scale and translation for the whole foot, not
-individual toe reshaping. No
-plane fit, per-vertex correction, simplification or procedural nail overlay is used. Two bone influences animate the skin; source
+individual toe reshaping. A rigid yaw and pitch, fitted separately to each
+skeleton's calcaneus and five distal toes, align the heel-to-toe direction
+while pivoting around the fitted toe centres. No plane fit, per-vertex
+correction, simplification or procedural nail overlay is used. Two bone influences animate the skin; source
 foot-bone influence is distributed to nearby blue foot and ankle bones.
 Smooth vertex-normal shading does not change the geometry. The preview skin is
 50% opaque so the blue bones are visible through it.

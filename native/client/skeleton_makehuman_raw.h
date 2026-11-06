@@ -31,6 +31,7 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     for(std::size_t i=0;i<c.parts().size();++i) {
         const auto& part=c.parts()[i];if(!part.name.ends_with(side))continue;
         if(part.name=="FootMeta3"+side)fallback=static_cast<int>(i);
+        if(part.name=="Cal"+side)ids[0]=static_cast<int>(i);
         for(int toe=1;toe<=5;++toe)for(int segment=1;segment<=3;++segment) {
             const std::string prefix=segment==1?"FootProxP":(segment==2 && toe>1?"FootMidP":"FootDistP");
             if(part.name==prefix+std::to_string(toe)+side)ids[toe*10+segment]=static_cast<int>(i);
@@ -110,9 +111,58 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     // visual room beyond the bones at heel and toe, not a clearance guarantee.
     const double lengthScale=std::min(scale,1.10*length/(srcHigh.z-srcLow.z));
     shift.z=(low.z+high.z)*.5-(srcLow.z+srcHigh.z)*.5*lengthScale-length*.0125;
+    const auto placed=[&](const makehuman_foot_data::Vertex& v) {
+        return Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*lengthScale}+shift;
+    };
+    // Fit the heel-to-toe direction to this skeleton, using skin cross-section
+    // centers and the actual calcaneus and distal toe bones. The toe center is
+    // the rotation pivot, preserving the previously fitted toe placement.
+    const auto boneCenter=[&](int id,Vec3& center) {
+        if(id<0)return false;
+        const auto& part=c.parts()[std::size_t(id)];if(part.points.empty())return false;
+        center={};for(Vec3 p:part.points)center+=c.mapPart(p,part)+origin;
+        center=center/double(part.points.size());return true;
+    };
+    const auto skinCenter=[&](int toe,Vec3 bone,Vec3& center) {
+        double sum=0;center={};const double band=std::max((high.z-low.z)*.05,1e-6);
+        for(const auto& v:vertices) {
+            double weight=0;
+            for(int j=0;j<4;++j) {
+                const int code=v.bones[std::size_t(j)];
+                if((toe==0&&code==0)||(toe>0&&code/10==toe&&
+                    (code%10==3||(toe==1&&code%10==2))))weight+=v.weights[std::size_t(j)];
+            }
+            const Vec3 p=placed(v);const double dz=(p.z-bone.z)/band;
+            weight*=std::exp(-dz*dz);center+=p*weight;sum+=weight;
+        }
+        if(sum<1e-8)return false;
+        center=center/sum;return true;
+    };
+    Vec3 heelBone{},heelSkin{},toeBone{},toeSkin{};int fitToes=0;
+    const bool haveHeel=boneCenter(ids[0],heelBone)&&skinCenter(0,heelBone,heelSkin);
+    for(int toe=1;toe<=5;++toe) {
+        Vec3 bone{},skin{};
+        if(boneCenter(ids[toe*10+3],bone)&&skinCenter(toe,bone,skin)) {
+            toeBone+=bone;toeSkin+=skin;++fitToes;
+        }
+    }
+    double yaw=0,pitch=0;Vec3 pivot{};
+    if(haveHeel&&fitToes>=3) {
+        toeBone=toeBone/double(fitToes);toeSkin=toeSkin/double(fitToes);pivot=toeSkin;
+        const Vec3 source=toeSkin-heelSkin,target=toeBone-heelBone;
+        constexpr double limit=.3490658503988659; // 20 degrees
+        yaw=std::clamp(std::atan2(target.x,target.z)-std::atan2(source.x,source.z),-limit,limit);
+        const double sourceZ=std::cos(yaw)*source.z-std::sin(yaw)*source.x;
+        pitch=std::clamp(std::atan2(target.y,target.z)-std::atan2(source.y,sourceZ),-limit,limit);
+    }
+    const double cy=std::cos(yaw),sy=std::sin(yaw),cp=std::cos(pitch),sp=std::sin(pitch);
+    const auto orient=[&](Vec3 p) {
+        p-=pivot;const double x=cy*p.x+sy*p.z,z=cy*p.z-sy*p.x;
+        return pivot+Vec3{x,cp*p.y+sp*z,cp*z-sp*p.y};
+    };
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(const auto& v:vertices) {
-        const Vec3 p=Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*lengthScale}+shift;
+        const Vec3 p=orient(placed(v));
         result.points.push_back(p);
         std::array<double,64> weights{};
         for(int j=0;j<4;++j)weights[v.bones[j]]+=v.weights[j];
