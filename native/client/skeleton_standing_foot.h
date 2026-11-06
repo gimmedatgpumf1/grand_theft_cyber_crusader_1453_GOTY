@@ -425,6 +425,26 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const auto turn=joint_detail::compose(yaw,rotation(base,pitch));
                 apply(first,turn);apply(middle,turn);apply(last,turn);
             }
+            // A second measured pass follows each toe's own direction rather
+            // than turning the entire forefoot to compensate for one ray.
+            constexpr std::array<double,5> flex{-1.76,-2.01,0,.58,-.40};
+            constexpr std::array<double,5> splay{-.82,-.88,-2.93,2.37,.73};
+            constexpr std::array<double,5> interphalangeal{1.76,-.62,0,.05,0};
+            for(int digit=1;digit<=5;++digit) {
+                const std::string n=std::to_string(digit)+suffix;
+                Part* first=find("FootProxP"+n),*last=find("FootDistP"+n);
+                Part* middle=digit==1?nullptr:find("FootMidP"+n);
+                if(!first || !last || (digit!=1 && !middle))continue;
+                Part* next=middle?middle:last;
+                const Vec3 base=contact(*meta[digit-1],*first),joint=contact(*first,*next);
+                const auto hinge=rotation(joint,interphalangeal[digit-1]*pi/180);
+                if(middle)apply(middle,hinge);
+                apply(last,hinge);
+                auto yaw=joint_detail::rotate({0,1,0},splay[digit-1]*(suffix=="_L"?1:-1)*pi/180);
+                yaw.translation=base-frameVector(yaw,base);
+                const auto turn=joint_detail::compose(yaw,rotation(base,flex[digit-1]*pi/180));
+                apply(first,turn);apply(middle,turn);apply(last,turn);
+            }
         }
     }
     return true;

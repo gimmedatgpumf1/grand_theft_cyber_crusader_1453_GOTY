@@ -9,9 +9,10 @@ profile. The refinements exclude tibia and fibula. Corrections scale with the
 foot and are mirrored on the right. They are a visual fit, not a
 per-vertex deformation or a per-frame optimizer.
 
-The female blue great, second and fourth toes have small reference-angle
-adjustments about their bone contacts; distal bones follow the joint rotations. The white CT
-is unchanged. Two bone influences animate the skin, and the preview is 50%
+The female blue toes have small individual reference-angle adjustments about
+their bone contacts; distal bones follow the joint rotations. The female mesh
+fit was also refined for the heel and toe-tip proportions. The male and white
+CT are unchanged. Two bone influences animate the skin, and the preview is 50%
 opaque. Original triangles and smooth vertex shading are retained; there is
 no simplification, plane fit or procedural nail overlay.
 
