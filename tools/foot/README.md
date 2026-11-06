@@ -13,7 +13,10 @@ bones. The male fit is unchanged; there is no per-frame optimizer.
 Individual toe-length ratios are applied to the female skin after the whole-foot
 fit. Original MakeHuman bone weights and a smooth root-to-tip ramp localize the
 deformation, while the connecting foot stays in place. The female great, second
-and third toes were shortened independently for the standing bones. The female
+and third toes were shortened independently for the standing bones. A localized
+female-only adjustment then draws the original four toe webs toward the
+metatarsals, with a small sideways correction to the second web. It leaves the
+toe tips nearly fixed and preserves the mesh topology and skin owners. The female
 blue toes also have reference-angle adjustments about their bone contacts; distal
 bones follow the joint rotations. The white CT is unchanged. Two bone influences
 animate the skin, and the preview is 50% opaque. Original triangles and smooth
@@ -21,8 +24,9 @@ vertex shading are retained; there is no simplification, plane fit or procedural
 nail overlay.
 
 This is not a finished fit. Default standing exports of both feet have no
-foot-bone surface crossings, but some female toe bends still cross the skin,
-and **0.1 mm clearance is not guaranteed**, including at rest or in ragdoll.
+foot-bone surface crossings. Earlier fits had crossings in some female toe bends;
+the current adjustment was evaluated in the standing pose, not those bends.
+**0.1 mm clearance is not guaranteed**, including at rest or in ragdoll.
 The MakeHuman source and its CC0 license are in `tools/human-source/`.
 
 ## Earlier fitting experiment (not the in-game foot)
@@ -31,7 +35,7 @@ The MakeHuman source and its CC0 license are in `tools/human-source/`.
 
 The following historical steps reproduce a **different, deformed and reduced**
 mesh. These offsets and the results of its sampled-pose checks do not apply to
-the current unmodified foot preview.
+the current foot preview.
 
 ## Reproducing the offline data
 

@@ -6,6 +6,7 @@
 #include "../../tools/foot/original-foot-male.h"
 #include "../../tools/foot/original-foot-female.h"
 #include "skeleton_makehuman_toe_length.h"
+#include "skeleton_makehuman_toe_web.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -226,6 +227,7 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     const std::array<double,5> toeLengths=male?std::array<double,5>{1,1,1,1,1}:
                                                std::array<double,5>{.94,.88,.89,1,1};
     fitMakeHumanToeLengths(c,vertices,ids,origin,toeLengths,fitted);
+    if(!male)fitFemaleMakeHumanToeWebs(fitted,length);
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(std::size_t vertexIndex=0;vertexIndex<N;++vertexIndex) {
         const auto& v=vertices[vertexIndex];const Vec3 p=fitted[vertexIndex];
