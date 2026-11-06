@@ -6,8 +6,10 @@ is rotated and positioned relative to the heel and the five distal toes. A
 sequence of sex-specific whole-mesh scales, rotations and translations was
 calibrated against blue foot-bone surfaces in the default standing and selected
 toe-bend poses. The refinements exclude tibia and fibula. Corrections scale
-with the foot and are mirrored on the right. They are not per-vertex
-deformation or a per-frame optimizer.
+with the foot and are mirrored on the right. The most recent female-only adjustment
+shortens the foot by 5% along the heel-to-toe axis and repositions it around
+the standing bones. The male fit is unchanged. The transforms are not
+per-vertex deformation or a per-frame optimizer.
 
 The female blue toes have individual reference-angle adjustments about their
 bone contacts; distal bones follow the joint rotations. The white CT is unchanged.
