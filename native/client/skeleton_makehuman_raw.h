@@ -160,9 +160,10 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         p-=pivot;const double x=cy*p.x+sy*p.z,z=cy*p.z-sy*p.x;
         return pivot+Vec3{x,cp*p.y+sp*z,cp*z-sp*p.y};
     };
-    // Fine fit calibrated separately against sampled blue bone surfaces at the
-    // default male/female profiles. Corrections apply to the whole mesh, not
-    // individual vertices; translations scale with the foot and lateral terms
+    // Fine fit calibrated separately against sampled blue foot-bone surfaces
+    // at the default male/female profiles. The female fit also considers toe-tip
+    // proportions. Tibia and fibula are excluded. Corrections apply to the whole
+    // mesh, not individual vertices; translations scale with the foot and lateral terms
     // mirror on the right. This calibration is not a guarantee for every pose.
     Vec3 fitLow{1e30,1e30,1e30},fitHigh{-1e30,-1e30,-1e30};
     for(const auto& v:vertices) {
@@ -174,11 +175,11 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     const Vec3 fitPivot=(fitLow+fitHigh)*.5;
     const double lateral=mirror?-1.0:1.0;
     const Vec3 fitScale=male?Vec3{1.00358023,1.01687050,.99608884}:
-                             Vec3{1.00117918,1.01537562,1.04288218};
+                             Vec3{.99393692,1.02058613,1.06541202};
     const Vec3 fitRotation=male?Vec3{.01328294,-.00538287*lateral,-.00473021*lateral}:
-                                Vec3{.01916655,-.00293653*lateral,.00529977*lateral};
+                                Vec3{.06469034,.00069694*lateral,.01383702*lateral};
     const Vec3 fitShift=(male?Vec3{.0019576*lateral,-.0039706,-.0007867}:
-                                      Vec3{-.0013632*lateral,.0037312,.0085531})*length;
+                                      Vec3{-.003334*lateral,.02136,.01831})*length;
     const double fitAngle=std::sqrt(dot(fitRotation,fitRotation));
     const Vec3 axis=fitRotation/fitAngle;
     const auto fineFit=[&](Vec3 p) {
