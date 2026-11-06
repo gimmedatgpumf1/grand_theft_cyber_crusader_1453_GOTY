@@ -175,11 +175,11 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     const Vec3 fitPivot=(fitLow+fitHigh)*.5;
     const double lateral=mirror?-1.0:1.0;
     const Vec3 fitScale=male?Vec3{.99295932,1.02926735,.98291640}:
-                             Vec3{.99393692,1.02058613,1.06541202};
+                             Vec3{.98660998,1.03000461,1.02149884};
     const Vec3 fitRotation=male?Vec3{.01198934,-.00786202*lateral,-.01161334*lateral}:
-                                Vec3{.06469034,.00069694*lateral,.01383702*lateral};
+                                Vec3{.08246242,.00494635*lateral,.01768346*lateral};
     const Vec3 fitShift=(male?Vec3{.003597*lateral,-.005054,-.002474}:
-                                      Vec3{-.003334*lateral,.02136,.01831})*length;
+                                      Vec3{-.006019*lateral,.027541,.022343})*length;
     const double fitAngle=std::sqrt(dot(fitRotation,fitRotation));
     const Vec3 axis=fitRotation/fitAngle;
     const auto fineFit=[&](Vec3 p) {

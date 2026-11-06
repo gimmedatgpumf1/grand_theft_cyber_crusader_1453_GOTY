@@ -406,6 +406,25 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
                 const auto turn=joint_detail::compose(yaw,rotation(mtp,-2.17*pi/180));
                 apply(prox,turn);apply(mid,turn);apply(tip,turn);
             }
+            // Fine-tune the great and fourth toes independently at their
+            // actual joints; retain their complete rigid bone segments.
+            for(int digit:{1,4}) {
+                const std::string n=std::to_string(digit)+suffix;
+                Part* first=find("FootProxP"+n),*last=find("FootDistP"+n);
+                Part* middle=digit==1?nullptr:find("FootMidP"+n);
+                if(!first || !last || (digit!=1 && !middle))continue;
+                const Vec3 base=contact(*meta[digit-1],*first);
+                if(digit==1) {
+                    const Vec3 joint=contact(*first,*last);
+                    apply(last,rotation(joint,-1.03*pi/180));
+                }
+                const double pitch=(digit==1?-2.34:1.17)*pi/180;
+                const double lateralAngle=(digit==1?-1.65:2.17)*(suffix=="_L"?1:-1)*pi/180;
+                auto yaw=joint_detail::rotate({0,1,0},lateralAngle);
+                yaw.translation=base-frameVector(yaw,base);
+                const auto turn=joint_detail::compose(yaw,rotation(base,pitch));
+                apply(first,turn);apply(middle,turn);apply(last,turn);
+            }
         }
     }
     return true;
