@@ -1,7 +1,7 @@
 #pragma once
 
-// Direct cut from the CC0 MakeHuman body. Width is scaled independently to
-// fit the bones; source vertices and triangles remain at original resolution.
+// Direct cut from the CC0 MakeHuman body. Width and heel-to-toe length are
+// scaled independently; source vertices and triangles remain at original resolution.
 // No fitted planes, vertex corrections or mesh simplification are applied.
 #include "../../tools/foot/original-foot-male.h"
 #include "../../tools/foot/original-foot-female.h"
@@ -62,8 +62,9 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         srcHigh.x=std::max(srcHigh.x,p.x);srcHigh.y=std::max(srcHigh.y,p.y);srcHigh.z=std::max(srcHigh.z,p.z);
     }
     const double length=high.z-low.z;
-    // Keep the existing length and height. Fit the width to the blue bones'
-    // lateral extent with visual padding; this is not a clearance solver.
+    // Fit width to the blue bones' lateral extent with visual padding. Keep
+    // the original height and preserve the existing width fit while shortening
+    // the heel-to-toe axis independently; this is not a clearance solver.
     const double scale=1.22*std::max(length/(srcHigh.z-srcLow.z),(high.x-low.x)/(srcHigh.x-srcLow.x));
     double widthScale=std::min(scale,widthPadding*(high.x-low.x)/(srcHigh.x-srcLow.x));
     Vec3 shift{(low.x+high.x)*.5-(srcLow.x+srcHigh.x)*.5*widthScale+(mirror?-1:1)*length*lateralShift,
@@ -72,7 +73,8 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     // Match the original toe-surface centres to the actual blue distal bones,
     // not only the outer box of the entire foot. Use a z-local weighted mean
     // for each source toe, then a single width scale and translation for the
-    // whole mesh. This leaves the source topology, length and height unchanged.
+    // whole mesh. This is evaluated in the previous longitudinal placement
+    // so shortening below does not silently change the width fit.
     std::array<double,5> sourceToeX{},boneToeX{};int toes=0;
     for(int toe=1;toe<=5;++toe) {
         const int id=ids[toe*10+(toe==1?2:3)];if(id<0)continue;
@@ -104,9 +106,13 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
             shift.x=shift.x*factor+boneMean-factor*sourceMean;
         }
     }
+    // Shorten around the bone envelope. The extra 10% supplies
+    // visual room beyond the bones at heel and toe, not a clearance guarantee.
+    const double lengthScale=std::min(scale,1.10*length/(srcHigh.z-srcLow.z));
+    shift.z=(low.z+high.z)*.5-(srcLow.z+srcHigh.z)*.5*lengthScale-length*.0125;
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(const auto& v:vertices) {
-        const Vec3 p=Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*scale}+shift;
+        const Vec3 p=Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*lengthScale}+shift;
         result.points.push_back(p);
         std::array<double,64> weights{};
         for(int j=0;j<4;++j)weights[v.bones[j]]+=v.weights[j];
