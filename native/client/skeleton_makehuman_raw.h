@@ -65,10 +65,45 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
     // Keep the existing length and height. Fit the width to the blue bones'
     // lateral extent with visual padding; this is not a clearance solver.
     const double scale=1.22*std::max(length/(srcHigh.z-srcLow.z),(high.x-low.x)/(srcHigh.x-srcLow.x));
-    const double widthScale=std::min(scale,widthPadding*(high.x-low.x)/(srcHigh.x-srcLow.x));
-    const Vec3 shift{(low.x+high.x)*.5-(srcLow.x+srcHigh.x)*.5*widthScale+(mirror?-1:1)*length*lateralShift,
+    double widthScale=std::min(scale,widthPadding*(high.x-low.x)/(srcHigh.x-srcLow.x));
+    Vec3 shift{(low.x+high.x)*.5-(srcLow.x+srcHigh.x)*.5*widthScale+(mirror?-1:1)*length*lateralShift,
                      low.y-length*.02-srcLow.y*scale,
                      (low.z+high.z)*.5-(srcLow.z+srcHigh.z)*.5*scale};
+    // Match the original toe-surface centres to the actual blue distal bones,
+    // not only the outer box of the entire foot. Use a z-local weighted mean
+    // for each source toe, then a single width scale and translation for the
+    // whole mesh. This leaves the source topology, length and height unchanged.
+    std::array<double,5> sourceToeX{},boneToeX{};int toes=0;
+    for(int toe=1;toe<=5;++toe) {
+        const int id=ids[toe*10+(toe==1?2:3)];if(id<0)continue;
+        const auto& bone=c.parts()[std::size_t(id)];if(bone.points.empty())continue;
+        Vec3 target{};for(Vec3 p:bone.points)target+=c.mapPart(p,bone)+origin;
+        target=target/double(bone.points.size());
+        double weightedX=0,total=0;
+        for(const auto& v:vertices) {
+            double weight=0;
+            for(int k=0;k<4;++k)if(v.bones[k]/10==toe &&
+                (v.bones[k]%10==3 || (toe==1 && v.bones[k]%10==2)))weight+=v.weights[k];
+            const double dz=(v.z*scale+shift.z-target.z)/(length*.04);
+            weight*=std::exp(-dz*dz);
+            weightedX+=((mirror?-v.x:v.x)*widthScale+shift.x)*weight;total+=weight;
+        }
+        if(total<1e-9)continue;
+        sourceToeX[toes]=weightedX/total;boneToeX[toes]=target.x;++toes;
+    }
+    if(toes>=3) {
+        double sourceMean=0,boneMean=0;
+        for(int i=0;i<toes;++i){sourceMean+=sourceToeX[i];boneMean+=boneToeX[i];}
+        sourceMean/=toes;boneMean/=toes;
+        double covariance=0,variance=0;
+        for(int i=0;i<toes;++i){const double d=sourceToeX[i]-sourceMean;
+            covariance+=d*(boneToeX[i]-boneMean);variance+=d*d;}
+        if(variance>1e-12) {
+            const double factor=std::clamp(covariance/variance,.7,1.0);
+            widthScale*=factor;
+            shift.x=shift.x*factor+boneMean-factor*sourceMean;
+        }
+    }
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(const auto& v:vertices) {
         const Vec3 p=Vec3{(mirror?-v.x:v.x)*widthScale,v.y*scale,v.z*scale}+shift;

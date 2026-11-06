@@ -1,8 +1,10 @@
 # MakeHuman feet — work in progress
 
 The blue skeletons now use the **original-resolution MakeHuman foot cut** in
-the room. Its width is scaled independently to better fit the foot bones; the
-existing length and height are unchanged (and the right foot is reflected). No
+the room. Its width is scaled independently to align the five source toe
+centres with the corresponding blue distal bones; the existing length and
+height are unchanged (and the right foot is reflected). The alignment uses one
+scale and translation for the whole foot, not individual toe reshaping. No
 plane fit, per-vertex correction, simplification or procedural nail overlay is used. Two bone influences animate the skin; source
 foot-bone influence is distributed to nearby blue foot and ankle bones.
 Smooth vertex-normal shading does not change the geometry. The preview skin is
