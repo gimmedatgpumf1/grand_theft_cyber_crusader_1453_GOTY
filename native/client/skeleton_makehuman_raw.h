@@ -1,10 +1,11 @@
 #pragma once
 
 // Direct cut from the CC0 MakeHuman body. The whole foot is scaled, rotated
-// and positioned as one mesh; source triangles remain at original resolution.
-// No fitted planes, vertex corrections or mesh simplification are applied.
+// and positioned as one mesh, with individual toe-length adjustments. Source
+// triangles remain at original resolution; no fitted planes or simplification.
 #include "../../tools/foot/original-foot-male.h"
 #include "../../tools/foot/original-foot-female.h"
+#include "skeleton_makehuman_toe_length.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -220,6 +221,11 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
             p=pivot+shift+p*cs+cross(axis,p)*sn+axis*(dot(axis,p)*(1-cs));
         }
     }
+    // Ratios are independent per toe, from great to little. The male mesh is
+    // unchanged; female tip lengths are adjusted for the standing bones.
+    const std::array<double,5> toeLengths=male?std::array<double,5>{1,1,1,1,1}:
+                                               std::array<double,5>{.94,.88,.89,1,1};
+    fitMakeHumanToeLengths(c,vertices,ids,origin,toeLengths,fitted);
     result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
     for(std::size_t vertexIndex=0;vertexIndex<N;++vertexIndex) {
         const auto& v=vertices[vertexIndex];const Vec3 p=fitted[vertexIndex];

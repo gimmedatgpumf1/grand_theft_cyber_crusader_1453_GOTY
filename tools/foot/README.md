@@ -6,16 +6,19 @@ is rotated and positioned relative to the heel and the five distal toes. A
 sequence of sex-specific whole-mesh scales, rotations and translations was
 calibrated against blue foot-bone surfaces in the default standing and selected
 toe-bend poses. The refinements exclude tibia and fibula. Corrections scale
-with the foot and are mirrored on the right. The most recent female-only adjustment
-shortens the foot by 5% along the heel-to-toe axis and repositions it around
-the standing bones. The male fit is unchanged. The transforms are not
-per-vertex deformation or a per-frame optimizer.
+with the foot and are mirrored on the right. A female-only adjustment shortens
+the foot by 5% along the heel-to-toe axis and repositions it around the standing
+bones. The male fit is unchanged; there is no per-frame optimizer.
 
-The female blue toes have individual reference-angle adjustments about their
-bone contacts; distal bones follow the joint rotations. The white CT is unchanged.
-Two bone influences animate the skin, and the preview is 50% opaque. Original
-triangles and smooth vertex shading are retained; there is no simplification,
-plane fit or procedural nail overlay.
+Individual toe-length ratios are applied to the female skin after the whole-foot
+fit. Original MakeHuman bone weights and a smooth root-to-tip ramp localize the
+deformation, while the connecting foot stays in place. The female great, second
+and third toes were shortened independently for the standing bones. The female
+blue toes also have reference-angle adjustments about their bone contacts; distal
+bones follow the joint rotations. The white CT is unchanged. Two bone influences
+animate the skin, and the preview is 50% opaque. Original triangles and smooth
+vertex shading are retained; there is no simplification, plane fit or procedural
+nail overlay.
 
 This is not a finished fit. Default standing exports of both feet have no
 foot-bone surface crossings, but some female toe bends still cross the skin,
