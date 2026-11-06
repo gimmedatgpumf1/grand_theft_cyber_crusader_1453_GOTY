@@ -1,7 +1,7 @@
 #pragma once
 
-// Direct cut from the CC0 MakeHuman body. Width and heel-to-toe length are
-// scaled independently; source vertices and triangles remain at original resolution.
+// Direct cut from the CC0 MakeHuman body. The whole foot is scaled, rotated
+// and positioned as one mesh; source triangles remain at original resolution.
 // No fitted planes, vertex corrections or mesh simplification are applied.
 #include "../../tools/foot/original-foot-male.h"
 #include "../../tools/foot/original-foot-female.h"
@@ -22,7 +22,7 @@ struct RawMakeHumanFoot {
 template<class Comparison,std::size_t N,std::size_t F>
 RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Vec3 origin,
     const std::array<makehuman_foot_data::Vertex,N>& vertices,
-    const std::array<std::array<int,3>,F>& faces,double widthPadding,double lateralShift) {
+    const std::array<std::array<int,3>,F>& faces,bool male,double widthPadding,double lateralShift) {
     RawMakeHumanFoot result;
     int fallback=-1;std::array<int,64> ids{};ids.fill(-1);
     struct Candidate {int owner;std::vector<Vec3> points;};
@@ -160,9 +160,35 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         p-=pivot;const double x=cy*p.x+sy*p.z,z=cy*p.z-sy*p.x;
         return pivot+Vec3{x,cp*p.y+sp*z,cp*z-sp*p.y};
     };
-    result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
+    // Fine fit calibrated separately against sampled blue bone surfaces at the
+    // default male/female profiles. Corrections apply to the whole mesh, not
+    // individual vertices; translations scale with the foot and lateral terms
+    // mirror on the right. This calibration is not a guarantee for every pose.
+    Vec3 fitLow{1e30,1e30,1e30},fitHigh{-1e30,-1e30,-1e30};
     for(const auto& v:vertices) {
         const Vec3 p=orient(placed(v));
+        fitLow.x=std::min(fitLow.x,p.x);fitHigh.x=std::max(fitHigh.x,p.x);
+        fitLow.y=std::min(fitLow.y,p.y);fitHigh.y=std::max(fitHigh.y,p.y);
+        fitLow.z=std::min(fitLow.z,p.z);fitHigh.z=std::max(fitHigh.z,p.z);
+    }
+    const Vec3 fitPivot=(fitLow+fitHigh)*.5;
+    const double lateral=mirror?-1.0:1.0;
+    const Vec3 fitScale=male?Vec3{1.00358023,1.01687050,.99608884}:
+                             Vec3{1.00117918,1.01537562,1.04288218};
+    const Vec3 fitRotation=male?Vec3{.01328294,-.00538287*lateral,-.00473021*lateral}:
+                                Vec3{.01916655,-.00293653*lateral,.00529977*lateral};
+    const Vec3 fitShift=(male?Vec3{.0019576*lateral,-.0039706,-.0007867}:
+                                      Vec3{-.0013632*lateral,.0037312,.0085531})*length;
+    const double fitAngle=std::sqrt(dot(fitRotation,fitRotation));
+    const Vec3 axis=fitRotation/fitAngle;
+    const auto fineFit=[&](Vec3 p) {
+        p-=fitPivot;p={p.x*fitScale.x,p.y*fitScale.y,p.z*fitScale.z};
+        return fitPivot+fitShift+p*std::cos(fitAngle)+cross(axis,p)*std::sin(fitAngle)
+            +axis*(dot(axis,p)*(1-std::cos(fitAngle)));
+    };
+    result.points.reserve(N);result.owners.reserve(N);result.secondaryOwners.reserve(N);result.ownerWeights.reserve(N);
+    for(const auto& v:vertices) {
+        const Vec3 p=fineFit(orient(placed(v)));
         result.points.push_back(p);
         std::array<double,64> weights{};
         for(int j=0;j<4;++j)weights[v.bones[j]]+=v.weights[j];
@@ -194,7 +220,7 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
 template<class Comparison>
 RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,bool male,const std::string& side,Vec3 origin) {
     using namespace makehuman_foot_data;
-    return male?rawMakeHumanFoot(c,side,origin,originalMaleVertices,originalMaleFaces,1.24,.02):
-                rawMakeHumanFoot(c,side,origin,originalFemaleVertices,originalFemaleFaces,1.27,.04);
+    return male?rawMakeHumanFoot(c,side,origin,originalMaleVertices,originalMaleFaces,true,1.24,.02):
+                rawMakeHumanFoot(c,side,origin,originalFemaleVertices,originalFemaleFaces,false,1.27,.04);
 }
 } // namespace gtc::native

@@ -42,7 +42,7 @@ double comparisonFootHeight(const std::string& n,Vec3 p,double mapped,double flo
 // Pivot the midfoot at its measured joints, then fit each metatarsal about
 // its tarsal contact. Sesamoids follow the first ray; toes rotate at the MTP.
 template<class Part, class Map>
-bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidTransform>& frames, Map map) {
+bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidTransform>& frames, Map map, bool male) {
     auto find=[&](const std::string& name)->Part* {
         auto it=std::find_if(parts.begin(),parts.end(),[&](const Part& p){return p.name==name;});
         return it==parts.end() ? nullptr : &*it;
@@ -391,6 +391,22 @@ bool fitStandingComparisonFeet(std::vector<Part>& parts, std::vector<JointRigidT
             {heel,talus,nav,tarsal[0],tarsal[1],tarsal[2],meta[0],meta[1],meta[2]},
             {cub,meta[3],meta[4]},limit,suffix=="_L"?1.0:-1.0);
         if(length(lateralShift)>0) {move(cub,lateralShift);moveRay(3,lateralShift);moveRay(4,lateralShift);}
+        // The female second toe in the source points away from the matching
+        // MakeHuman toe. Adjust its blue MTP and PIP reference angles around
+        // the actual contacts, carrying the distal phalanges with each joint.
+        // The white source CT is not modified.
+        if(!male) {
+            Part* prox=find("FootProxP2"+suffix),*mid=find("FootMidP2"+suffix),*tip=find("FootDistP2"+suffix);
+            if(prox && mid && tip) {
+                const Vec3 mtp=contact(*meta[1],*prox),pip=contact(*prox,*mid);
+                auto bend=rotation(pip,-.66*pi/180);
+                apply(mid,bend);apply(tip,bend);
+                auto yaw=joint_detail::rotate({0,1,0},(suffix=="_L"?-2.08:2.08)*pi/180);
+                yaw.translation=mtp-frameVector(yaw,mtp);
+                const auto turn=joint_detail::compose(yaw,rotation(mtp,-2.17*pi/180));
+                apply(prox,turn);apply(mid,turn);apply(tip,turn);
+            }
+        }
     }
     return true;
 }

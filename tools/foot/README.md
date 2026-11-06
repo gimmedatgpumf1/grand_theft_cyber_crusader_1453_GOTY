@@ -1,17 +1,18 @@
 # MakeHuman feet — work in progress
 
-The blue skeletons now use the **original-resolution MakeHuman foot cut** in
-the room. Its width is scaled independently to align the five source toe
-centres with the corresponding blue distal bones. The heel-to-toe axis is
-shortened separately, while the height is unchanged (and the right foot is
-reflected). Each axis uses one scale and translation for the whole foot, not
-individual toe reshaping. A rigid yaw and pitch, fitted separately to each
-skeleton's calcaneus and five distal toes, align the heel-to-toe direction
-while pivoting around the fitted toe centres. No plane fit, per-vertex
-correction, simplification or procedural nail overlay is used. Two bone influences animate the skin; source
-foot-bone influence is distributed to nearby blue foot and ankle bones.
-Smooth vertex-normal shading does not change the geometry. The preview skin is
-50% opaque so the blue bones are visible through it.
+The blue skeletons use the **original-resolution MakeHuman foot cut** in the
+room. Width and heel-to-toe length are fitted separately, then the whole mesh
+is rotated and positioned relative to the heel and the five distal toes. A
+small, sex-specific three-axis scale, rotation and translation was calibrated
+against sampled blue bone surfaces at each default profile. Corrections scale
+with the foot and are mirrored on the right. They are a visual fit, not a
+per-vertex deformation or a per-frame optimizer.
+
+The female blue second toe has a small MTP and PIP reference adjustment about
+its bone contacts; the distal bones follow the joint rotations. The white CT
+is unchanged. Two bone influences animate the skin, and the preview is 50%
+opaque. Original triangles and smooth vertex shading are retained; there is
+no simplification, plane fit or procedural nail overlay.
 
 This is an initial placement, not a finished fit: the bone shapes do not exactly
 match the MakeHuman foot, and visible intersections remain. In particular,

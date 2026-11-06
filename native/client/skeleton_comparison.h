@@ -429,7 +429,7 @@ public:
         if (!comparisonFootLandmarks(parts_,floor_,ankleY_,kneeY_)) { error="Foot landmarks invalid"; return false; }
         profile_=Profile{}; profile_.height=defaultHeight();
         if (!update(error)) return false;
-        if (!fitStandingComparisonFeet(parts_,metatarsalFrames_,[&](Vec3 p,const Part& part) { return mapPart(p,part); })) {
+        if (!fitStandingComparisonFeet(parts_,metatarsalFrames_,[&](Vec3 p,const Part& part) { return mapPart(p,part); },male_)) {
             error="Standing foot fitting failed"; return false;
         }
         floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
