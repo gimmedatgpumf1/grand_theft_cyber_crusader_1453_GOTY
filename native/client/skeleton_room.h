@@ -80,6 +80,7 @@ private:
     SkeletonLines maleLines_, femaleLines_;
     GpuScene lineScene_;
     bool ready_ = false;
+    bool toeReferenceReady_ = false;
     bool lineView_ = false;
     double maleFloor_ = 0, femaleFloor_ = 0;
     bool lineSceneReady_ = false;

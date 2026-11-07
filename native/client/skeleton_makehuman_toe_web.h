@@ -35,6 +35,12 @@ inline void fitFemaleMakeHumanToeWebs(std::vector<Vec3>& points,double footLengt
             if(i==1)side+=lateral*.00393*footLength*weight;
         }
         p.x+=side;p.z-=pull;
+        // Ease the inside of the little toe around its straightened joint.
+        // The small local falloff leaves the web, tip and adjoining toes intact.
+        const double x=(p.x-centers[3].x-lateral*.0073*footLength)/(.0147*footLength);
+        const double y=(p.y-centers[3].y-.014*footLength)/(.0245*footLength);
+        const double z=(p.z-centers[3].z-.042*footLength)/(.0245*footLength);
+        p.x-=lateral*.00196*footLength*std::exp(-.5*(x*x+y*y+z*z));
     }
 }
 } // namespace gtc::native

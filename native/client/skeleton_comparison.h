@@ -13,6 +13,7 @@
 #include "client/skeleton_foot_stitch.h"
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_standing_foot.h"
+#include "client/skeleton_toe_mirror.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/vertebra_midplane.h"
@@ -48,7 +49,7 @@ public:
         std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
     };
     bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
-        male_ = male;
+        male_ = male; correctedToeMatrices_.clear();
         const auto matrices = model.sourceMatrices({}, 0); referenceMatrices_=matrices;
         parts_.clear();
         for (std::size_t i=0; i<matrices.size(); ++i) {
@@ -596,6 +597,7 @@ public:
     // Rigid toe deltas from the source pose used to fit this comparison. The
     // mapped centre anchors each rotation in the scaled blue figure. This is a
     // geometric approximation, not a deformable tissue or clinical fit.
+    void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; }
     std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin) const {
         const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
         std::vector<std::array<double,16>> result(parts_.size(),identity);
@@ -609,6 +611,8 @@ public:
             result[i]=registeredToeDelta(current[i],referenceMatrices_[i],metatarsalFrames_[i],center,
                                         [&](Vec3 q) {return mapPart(q,p)+origin;});
         }
+        mirrorReferenceToePose(parts_,result,referenceMatrices_,correctedToeMatrices_,metatarsalFrames_,origin,
+                               [&](Vec3 q,const Part& p){return mapPart(q,p);});
         return result;
     }
     const JointRigidTransform& metatarsalFrame(std::size_t i) const { return metatarsalFrames_[i]; }
@@ -955,7 +959,7 @@ private:
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
-    std::vector<std::array<double,16>> referenceMatrices_;
+    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
