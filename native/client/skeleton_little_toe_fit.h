@@ -38,12 +38,16 @@ inline bool fitFemaleLittleToe(SkeletonModel& model) {
         const auto middle=vertices(mid,initial);if(middle.empty())return false;
         Vec3 ray=mean(middle)-mean(first);ray.y=0;ray=normalized(ray);
         if(length(ray)<1e-8)return false;
-        const Vec3 target=normalized(ray+Vec3{0,-.05,0});
         for(auto pair:{std::array<int,3>{int(ip),prox,mid},std::array<int,3>{int(dip),mid,tip}}) {
             const auto pose=model.sourceMatrices({},0);
             auto parent=vertices(pair[1],pose),child=vertices(pair[2],pose);
             if(parent.empty() || child.empty())return false;
             const Vec3 center=mean(child);
+            // Keep the individual little toe's ray; the almost round
+            // phalanges should follow a modest natural downward angle rather
+            // than being forced into a single level direction.
+            const double pitch=(pair[2]==mid?-10.0:-15.0)*3.14159265358979323846/180.0;
+            const Vec3 target=normalized(ray*std::cos(pitch)+Vec3{0,std::sin(pitch),0});
             Vec3 shaft=FingerReferenceFrames::shaft(child.data(),child.size(),center,target);
             Vec3 crossAxis=cross(shaft,target);const double sine=length(crossAxis);
             JointRigidTransform correction;
@@ -54,13 +58,13 @@ inline bool fitFemaleLittleToe(SkeletonModel& model) {
             double end=-1e100,begin=1e100;
             for(Vec3 p:parent)end=std::max(end,dot(p,ray));
             for(Vec3 p:child)begin=std::min(begin,dot(frameVector(correction,p)+correction.translation,ray));
-            const double gap=(pair[2]==mid?.0015:.0001)*std::clamp(length(mean(middle)-mean(first))/.015,.5,2.0);
+            const double gap=.0002*std::clamp(length(mean(middle)-mean(first))/.015,.5,2.0);
             correction.translation+=ray*(end+gap-begin);
             if(pair[2]==tip) {
                 // Keep the distal phalanx near the middle one's height.
                 const Vec3 parentCenter=mean(parent),childCenter=frameVector(correction,center)+correction.translation;
-                correction.translation.x+=std::clamp(parentCenter.x-childCenter.x,-.006,.006);
-                correction.translation.y+=std::clamp(parentCenter.y-childCenter.y,-.004,.004);
+                correction.translation.x+=std::clamp(parentCenter.x-(side=='L'?.0005:-.0005)-childCenter.x,-.006,.006);
+                correction.translation.y+=std::clamp(parentCenter.y-.001-childCenter.y,-.004,.004);
             }
             if(!model.adjustReferenceToe(std::size_t(pair[0]),correction))return false;
             // Recenter the hinge on the registered surfaces, preserving the

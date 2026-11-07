@@ -80,7 +80,6 @@ private:
     SkeletonLines maleLines_, femaleLines_;
     GpuScene lineScene_;
     bool ready_ = false;
-    bool toeReferenceReady_ = false;
     bool lineView_ = false;
     double maleFloor_ = 0, femaleFloor_ = 0;
     bool lineSceneReady_ = false;
@@ -98,6 +97,7 @@ private:
     // Rest geometry is emitted once; a pose then costs one matrix per bone. The
     // pair is the batch index each source structure owns, so a pose update
     // changes transforms without re-uploading its mesh vertices.
+    bool littleToeReady_ = false;
     bool restReady_ = false;
     std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches_;
     std::vector<std::array<double, 16>> cachedMaleMatrices_;

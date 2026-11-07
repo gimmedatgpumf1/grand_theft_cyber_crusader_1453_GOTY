@@ -15,22 +15,13 @@ fit. Original MakeHuman bone weights and a smooth root-to-tip ramp localize the
 deformation, while the connecting foot stays in place. The female great, second
 and third toes were shortened independently for the standing bones. A localized
 female-only adjustment then draws the original four toe webs toward the
-metatarsals, with small corrections near the second and fifth toes. It leaves the
-toe tips nearly fixed and preserves the mesh topology and skin owners.
-
-The T-pose now checks each proximal toe shaft against its own metatarsal rather
-than assuming all five toes point in the same direction. Broad dorsal-plane
-alignment guides come from [lesser-toe radiograph assessments](https://pmc.ncbi.nlm.nih.gov/articles/PMC10218812/)
-and the [hallux valgus angle](http://uwmsk.org/footalignment/doku.php?id=hallux_valgus),
-with tolerance for estimating axes from mesh vertices rather than radiographs.
-The sagittal guards are approximate modelling choices, not clinical measurements.
-The blue left and right reference corrections are mirrored, while later toe
-motion stays independent. The female fifth toe's middle and distal CT pieces
-are registered as rigid pieces to the proximal ray, with their hinge pivots
-recentered on the adjusted joints. The little-toe surface is retargeted to
-those frames and its tip is extended locally. The original CT vertices stay
-unchanged, and restoring the original CT pose removes the registration. The female blue toes also have reference-angle adjustments
-about their bone contacts; distal bones follow the joint rotations. Two bone influences
+metatarsals, with a small sideways correction to the second web. It leaves the
+toe tips nearly fixed and preserves the mesh topology and skin owners. The female
+little-toe middle and distal bones have a separate rigid reference adjustment;
+the joints are recentered and the little-toe skin is retargeted and lengthened.
+The other toes retain their previous reference pose. CT mesh vertices are not
+modified, and restoring the original pose removes the reference adjustment. The
+small-bone directions are approximate, not clinically validated. Two bone influences
 animate the skin, and the preview is 50% opaque. Original triangles and smooth
 vertex shading are retained; there is no simplification, plane fit or procedural
 nail overlay.

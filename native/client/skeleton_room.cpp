@@ -1,6 +1,5 @@
-#include "client/skeleton_toe_anatomy.h"
-#include "client/skeleton_little_toe_fit.h"
 #include "client/skeleton_room.h"
+#include "client/skeleton_little_toe_fit.h"
 #include "client/room_freecam.h"
 #include "client/skeleton_rest_toes.h"
 #include "client/skeleton_toe_yaw.h"
@@ -103,7 +102,7 @@ void drawWalls(Rasterizer& rasterizer, const Camera& camera) {
 
 bool SkeletonRoom::load(const std::string& root, std::string& error) {
     ready_ = false;
-    toeReferenceReady_ = false;
+    littleToeReady_ = false;
     lineSceneReady_ = false;
     restReady_ = false;
     sceneReady_ = false;
@@ -134,16 +133,9 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
         !maleComparison_.load(male_,true,directory,error) || !femaleComparison_.load(female_,false,directory,error)) {
         ready_=false; return false;
     }
-    // The comparison and its fitted skin retain the uncorrected reference
-    // frame; the articulated delta carries both along with the corrected pose.
-    if (!alignAnatomicalReferenceToes(male_) || !alignAnatomicalReferenceToes(female_)) {
-        ready_=false; error="Unable to align reference toes"; return false;
-    }
-    femaleComparison_.setLittleToeSkinReference(female_.sourceMatrices({},0));
     if (!fitFemaleLittleToe(female_)) { ready_=false; error="Unable to align the little toes"; return false; }
-    maleComparison_.setCorrectedToeReference(male_.sourceMatrices({},0));
     femaleComparison_.setCorrectedToeReference(female_.sourceMatrices({},0));
-    toeReferenceReady_=true;
+    littleToeReady_=true;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     error_.clear();
     return true;
@@ -249,9 +241,8 @@ bool SkeletonRoom::restoreReferencePose() {
         if (!restToesOnSole(*model)) return false;
         for (int pass=0;pass<2;++pass)
             if (!alignReferenceToeDirections(*model,model==&male_ ? maleLines_ : femaleLines_) || !settleReferenceToes(*model)) return false;
-        if (toeReferenceReady_ && !alignAnatomicalReferenceToes(*model)) return false;
     }
-    if (toeReferenceReady_ && !fitFemaleLittleToe(female_)) return false;
+    if (littleToeReady_ && !fitFemaleLittleToe(female_)) return false;
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
