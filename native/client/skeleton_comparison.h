@@ -49,7 +49,7 @@ public:
         std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
     };
     bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
-        male_ = male; correctedToeMatrices_.clear();
+        male_ = male; correctedToeMatrices_.clear(); littleToeSkinMatrices_.clear();
         const auto matrices = model.sourceMatrices({}, 0); referenceMatrices_=matrices;
         parts_.clear();
         for (std::size_t i=0; i<matrices.size(); ++i) {
@@ -598,7 +598,11 @@ public:
     // mapped centre anchors each rotation in the scaled blue figure. This is a
     // geometric approximation, not a deformable tissue or clinical fit.
     void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; }
-    std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin) const {
+    void setLittleToeSkinReference(const std::vector<std::array<double,16>>& matrices) { littleToeSkinMatrices_=matrices; }
+    const auto& correctedToeReference() const { return correctedToeMatrices_; }
+    const auto& littleToeSkinReference() const { return littleToeSkinMatrices_; }
+    std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin,
+                                               const std::vector<std::array<double,16>>* reference=nullptr) const {
         const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
         std::vector<std::array<double,16>> result(parts_.size(),identity);
         if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size() || metatarsalFrames_.size()!=parts_.size()) return result;
@@ -611,7 +615,7 @@ public:
             result[i]=registeredToeDelta(current[i],referenceMatrices_[i],metatarsalFrames_[i],center,
                                         [&](Vec3 q) {return mapPart(q,p)+origin;});
         }
-        mirrorReferenceToePose(parts_,result,referenceMatrices_,correctedToeMatrices_,metatarsalFrames_,origin,
+        mirrorReferenceToePose(parts_,result,referenceMatrices_,reference?*reference:correctedToeMatrices_,metatarsalFrames_,origin,
                                [&](Vec3 q,const Part& p){return mapPart(q,p);});
         return result;
     }
@@ -959,7 +963,7 @@ private:
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
-    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_;
+    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_, littleToeSkinMatrices_;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;

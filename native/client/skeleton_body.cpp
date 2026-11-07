@@ -839,15 +839,6 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     neutralAlignments_ = std::move(neutralAlignments); disabledAlignments_.assign(neutralAlignments_.size(),false);
     return true;
 }
-bool SkeletonModel::restoreSourcePose() {
-    std::fill(disabledAlignments_.begin(),disabledAlignments_.end(),false);
-    return !referenceBindPose_.empty() && setSourcePose(referenceBindPose_);
-}
-bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates) {
-    if (!sourceRig_ || !sourceRig_->setPose(updates)) return false;
-    ++sourcePoseRevision_;
-    return true;
-}
 std::optional<double> SkeletonModel::referenceBend(std::size_t link) const {
     if (!sourceRig_ || link >= sourceLinks_.size()) return std::nullopt;
     const auto& edge = sourceLinks_[link];

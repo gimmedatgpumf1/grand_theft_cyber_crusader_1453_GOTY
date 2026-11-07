@@ -101,6 +101,17 @@ public:
     const std::vector<double>& angles() const { return angles_; }
     const std::vector<JointRotationalAxis>& axes() const { return axes_; }
     const JointRigidTransform& parentFrame() const { return parentFrame_; }
+    // Move the pivot in parent coordinates without changing the current pose.
+    bool repositionPivot(Vec3 position) {
+        if (!joint_detail::finite(position)) return false;
+        const auto current=childInParent();
+        parentFrame_.translation=position;
+        JointRigidTransform motion;
+        for (std::size_t i=0;i<axes_.size();++i)
+            motion=joint_detail::compose(motion,joint_detail::rotate(axes_[i].direction,angles_[i]));
+        childFrameInverse_=joint_detail::compose(joint_detail::inverse(joint_detail::compose(parentFrame_,motion)),current);
+        return true;
+    }
     JointRigidTransform childInParent() const {
         JointRigidTransform motion;
         for (std::size_t i = 0; i < axes_.size(); ++i)

@@ -80,6 +80,33 @@ public:
         dirty_ = true;
         return true;
     }
+    // A fixed source-to-reference registration on an existing child joint.
+    // Applied after the rotational coordinates, so descendants and controls
+    // follow the registered bone without altering its source mesh.
+    bool appendReferenceAdjustment(std::size_t body,const JointRigidTransform& adjustment) {
+        if(body==0 || body>=nodes_.size() || !nodes_[body].joint || !joint_detail::rigid(adjustment))return false;
+        nodes_[body].reference=joint_detail::compose(nodes_[body].reference,adjustment);
+        dirty_=true;return true;
+    }
+    bool repositionReferenceJoint(std::size_t body,Vec3 worldPivot) {
+        if(body==0 || body>=nodes_.size() || !nodes_[body].joint || !evaluate())return false;
+        auto& node=nodes_[body];
+        if(!node.sourceJoint)node.sourceJoint=node.joint;
+        const auto parentInverse=joint_detail::inverse(absolute_[node.parent]);
+        const auto& r=parentInverse.rotation;
+        const Vec3 local=Vec3{r[0]*worldPivot.x+r[1]*worldPivot.y+r[2]*worldPivot.z,
+                              r[3]*worldPivot.x+r[4]*worldPivot.y+r[5]*worldPivot.z,
+                              r[6]*worldPivot.x+r[7]*worldPivot.y+r[8]*worldPivot.z}+parentInverse.translation;
+        if(!node.joint->repositionPivot(local))return false;
+        dirty_=true;return true;
+    }
+    void clearReferenceAdjustments() {
+        for(auto& node:nodes_) {
+            node.reference={};
+            if(node.sourceJoint) {node.joint=node.sourceJoint;node.sourceJoint.reset();}
+        }
+        dirty_=true;
+    }
     // Freeze the current reference configuration as the mesh's bind pose.
     // This does not change the geometry or replace the joint model's neutral.
     void captureBindPose() {
@@ -106,9 +133,9 @@ public:
 private:
     struct Node {
         std::size_t parent = 0;
-        std::optional<CalibratedRotationalJoint> joint;
+        std::optional<CalibratedRotationalJoint> joint, sourceJoint;
         std::optional<CalibratedSpatialJoint> spatial;
-        JointRigidTransform fixed, bindInverse;
+        JointRigidTransform fixed, bindInverse, reference;
     };
     std::optional<std::size_t> append(Node node) {
         nodes_.push_back(std::move(node));
@@ -126,7 +153,7 @@ private:
             const auto& n = nodes_[i];
             const auto localJoint = n.joint ? n.joint->childInParent() :
                                     n.spatial ? n.spatial->childInParent() : n.fixed;
-            local_[i] = joint_detail::compose(local_[n.parent], localJoint);
+            local_[i] = joint_detail::compose(local_[n.parent],joint_detail::compose(localJoint,n.reference));
         }
         dirty_ = false;
     }

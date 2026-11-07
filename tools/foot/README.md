@@ -25,8 +25,11 @@ and the [hallux valgus angle](http://uwmsk.org/footalignment/doku.php?id=hallux_
 with tolerance for estimating axes from mesh vertices rather than radiographs.
 The sagittal guards are approximate modelling choices, not clinical measurements.
 The blue left and right reference corrections are mirrored, while later toe
-motion stays independent. The CT meshes are unchanged; only their reference
-joint poses change. The female blue toes also have reference-angle adjustments
+motion stays independent. The female fifth toe's middle and distal CT pieces
+are registered as rigid pieces to the proximal ray, with their hinge pivots
+recentered on the adjusted joints. The little-toe surface is retargeted to
+those frames and its tip is extended locally. The original CT vertices stay
+unchanged, and restoring the original CT pose removes the registration. The female blue toes also have reference-angle adjustments
 about their bone contacts; distal bones follow the joint rotations. Two bone influences
 animate the skin, and the preview is 50% opaque. Original triangles and smooth
 vertex shading are retained; there is no simplification, plane fit or procedural
