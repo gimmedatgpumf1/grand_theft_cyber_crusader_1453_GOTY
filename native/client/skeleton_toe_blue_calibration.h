@@ -30,6 +30,36 @@ inline ToeSurfaceMarks mapBlueToeMarks(const SkeletonComparison& c,const Skeleto
         }
         if(mapped.placed)result[name]=mapped;
     }
+    // The blue bones are an averaged left/right pair. Combine both marked
+    // source feet in that same frame, then project onto the actual blue left
+    // surface and reflect the result to its mirrored partner. If only one
+    // source was marked, it still supplies both blue feet.
+    for(int digit=1;digit<=5;++digit)for(int segment=-1;segment<=2;++segment) {
+        ToeEdit e;e.digit=digit;e.segment=segment;if(!validToeEdit(e))continue;
+        e.side='L';const auto leftName=toeEditName(e,segment);
+        e.side='R';const auto rightName=toeEditName(e,segment);
+        const auto l=result.find(leftName),r=result.find(rightName);
+        if(l==result.end() && r==result.end())continue;
+        const int index=model.sourceStructure(leftName);if(index<0 || std::size_t(index)>=c.parts().size())continue;
+        const auto& part=c.parts()[std::size_t(index)];
+        std::vector<Vec3> vertices;vertices.reserve(part.points.size());
+        for(Vec3 p:part.points)vertices.push_back(c.mapPart(p,part));
+        ToeSurfaceMark common{};common.placed=3;
+        for(int k=0;k<2;++k) {
+            Vec3 p=l!=result.end()?l->second.end[k]:Vec3{-r->second.end[k].x,r->second.end[k].y,r->second.end[k].z};
+            if(l!=result.end() && r!=result.end()) {
+                const Vec3 reflected{-r->second.end[k].x,r->second.end[k].y,r->second.end[k].z};
+                p=(p+reflected)*.5;
+            }
+            const auto surface=toeClosestSurface(p,vertices,part.faces);
+            if(!surface){common.placed=0;break;}
+            common.end[k]=*surface;
+        }
+        if(common.placed!=3)continue;
+        result[leftName]=common;
+        for(auto& p:common.end)p.x=-p.x;
+        result[rightName]=common;
+    }
     return result;
 }
 inline std::array<double,16> toeMatrix(const JointRigidTransform& t) {

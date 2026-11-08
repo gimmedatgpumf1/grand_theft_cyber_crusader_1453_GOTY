@@ -9,6 +9,7 @@
 #include "client/skeleton_toe_editor.h"
 #include "client/skeleton_toe_blue_calibration.h"
 #include "client/skeleton_toe_manual_reference.h"
+#include "client/skeleton_toe_blue_reference.h"
 #include <memory>
 
 #include <cstdint>
@@ -109,7 +110,13 @@ private:
     ToeSurfaceMarks maleToeMarks_,femaleToeMarks_;
     struct BlueMarkCache {ToeSurfaceMarks marks;std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{};};
     mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
-    std::uint64_t toeMarksRevision_=0;
+    struct BlueReferenceCache {
+        MarkedBlueToeReference reference;
+        std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{},neutral=~std::uint64_t{};
+        Vec3 origin{};
+    };
+    mutable BlueReferenceCache maleBlueReference_,femaleBlueReference_;
+    std::uint64_t toeMarksRevision_=0,toeReferenceRevision_=0;
     std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_,maleToeBeforeCalibration_,femaleToeBeforeCalibration_;
     ManualToeReference maleManualToes_,femaleManualToes_;
     GpuScene lineScene_;

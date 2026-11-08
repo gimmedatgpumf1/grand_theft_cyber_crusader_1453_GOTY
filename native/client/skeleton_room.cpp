@@ -262,9 +262,11 @@ bool SkeletonRoom::restoreReferencePose() {
                             !fitReferenceToeShafts(female_,femaleLines_,true))) return false;
     for (const auto& edit:toeEdits_) if (!edit.original && !edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit)) return false;
     maleToeBeforeCalibration_=male_.sourceMatrices({},0);femaleToeBeforeCalibration_=female_.sourceMatrices({},0);
-    if(!applyManualToeReference(male_,maleManualToes_,true) || !applyManualToeReference(female_,femaleManualToes_,false) ||
+    if(!applyMarkedToeReference(male_,maleToeMarks_) || !applyMarkedToeReference(female_,femaleToeMarks_) ||
+       !applyManualToeReference(male_,maleManualToes_,true) || !applyManualToeReference(female_,femaleManualToes_,false) ||
        !setMarkedToeSurfacePivots(male_,maleToeMarks_) || !setMarkedToeSurfacePivots(female_,femaleToeMarks_))return false;
     maleToeNeutral_=male_.sourceMatrices({},0);femaleToeNeutral_=female_.sourceMatrices({},0);
+    ++toeReferenceRevision_;
     updateToeSkinCalibration(true);updateToeSkinCalibration(false);
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
@@ -306,6 +308,14 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
     if(!originalToePose_) {
         applyManualBlueReference(c,model,male?maleManualToes_:femaleManualToes_,
             male?maleToeBeforeCalibration_:femaleToeBeforeCalibration_,neutral,origin,pose);
+        const auto& marks=male?maleToeMarks_:femaleToeMarks_;
+        auto& cache=male?maleBlueReference_:femaleBlueReference_;
+        if(cache.source!=toeMarksRevision_ || cache.profile!=c.revision() || cache.neutral!=toeReferenceRevision_ ||
+           cache.origin.x!=origin.x || cache.origin.y!=origin.y || cache.origin.z!=origin.z) {
+            cache.reference=buildMarkedBlueToeReference(c,model,marks,mappedBlueToeMarks(male),neutral,origin);
+            cache.source=toeMarksRevision_;cache.profile=c.revision();cache.neutral=toeReferenceRevision_;cache.origin=origin;
+        }
+        animateMarkedBlueToes(cache.reference,pose);
         if(surfaceJoints)blueToeSurfaceAnchors(model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
     }
     return pose;

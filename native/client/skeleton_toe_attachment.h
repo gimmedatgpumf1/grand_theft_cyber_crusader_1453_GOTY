@@ -17,6 +17,7 @@ struct ComparisonToeAttachment {
     Vec3 pivot{};
     Vec3 childPivot{};
     bool separateSurfacePoints=false;
+    Vec3 parentShaft{}; // posed direction between the user's two parent marks
 };
 inline JointRigidTransform toeRigid(const std::array<double,16>& m) {
     JointRigidTransform t;

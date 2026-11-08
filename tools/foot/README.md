@@ -88,25 +88,25 @@ triangle. Orbit to reach the end faces, and use ONE BONE if handles overlap.
 You can mark either the original or manually adjusted white B bone: marks are
 stored in the original bone's mesh coordinates. When adjacent marked bones are
 visible, selecting a child displays the distance between its green point and its
-parent's red point. Use your own move/rotate controls to bring them together.
-The editor no longer rotates or moves bones merely because marks are placed.
-The marked line supplies endpoints, not a complete hinge frame: the existing
-hinge direction and standing bone orientations are not recalibrated by it.
+parent's red point. The B view remains unchanged while marking. In STAND, the
+marked surface points join adjacent bones and the marked source shaft directions
+are transported into the standing foot. The blue reference uses both marked
+source feet, reflected and averaged, for its individual bone directions and
+surface points. A single marked side still works and is mirrored. The primary
+hinge direction retains its existing flexion sense while being made perpendicular
+to the marked parent shaft; a shaft alone does not specify rotation around itself.
 
 SAVE AXES/LOAD AXES use `toe-bone-axes.txt`, separately from pose SAVE; RESET
 AXIS clears the selected bone's marks. If no local axes file exists, the editor
-starts with the supplied left-foot marks in `tools/foot/user-toe-axes.txt`.
-A local file always takes precedence and is not overwritten on startup. The
-supplied file has both endpoints for all 19 bones of each sex's left foot; its
-marks are mapped onto both blue feet. The independent white right foot is not
-marked by that file. The marks set the white kinematic pivot
-on the parent bone's marked surface. The ragdoll uses the two independently
-marked surface points as its anchors, including mapped and mirrored blue points;
-if those points are apart, physics will pull them together. Joints without both
+starts with the supplied marks in `tools/foot/user-toe-axes.txt`. A local file
+normally takes precedence and is not overwritten on startup. The exact earlier
+38-entry left-only supplied save is upgraded in memory with the newly supplied
+right-side marks; other local edits remain untouched. The supplied file has
+both endpoints for all 19 bones on both feet of each sex. The white kinematic
+pivot and each ragdoll anchor lie on the marked surfaces. Joints without both
 points still use their previous approximate pivots. Blue points are transferred
-onto the averaged blue surface, which can differ from the white surface. Check
-fit, contact and skin visually; the editor does not guarantee collision-free
-alignment or surface pivots for unmarked joints.
+onto the averaged blue surface, which can differ from the white surface; check
+alignment and contact visually.
 
 For blue geometry, the comparison pipeline combines the left scan with the
 reflected right scan and then mirrors that averaged left-side mesh to the

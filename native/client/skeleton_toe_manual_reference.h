@@ -47,8 +47,36 @@ inline bool hasManualToe(const SkeletonModel& model,const ManualToeReference& re
     }
     return false;
 }
-// Place the kinematic pivot on the marked parent surface without moving the
-// bones. Ragdoll anchors retain both independently marked surface points.
+// Transport each individual B-source bone orientation into its standing
+// metatarsal frame. This preserves the marked directions and relative splay,
+// rather than using the old estimated shaft or a common guessed toe direction.
+inline bool applyMarkedToeReference(SkeletonModel& model,const ToeSurfaceMarks& marks) {
+    for(char side:{'L','R'})for(int digit=1;digit<=5;++digit) {
+        ToeEdit e;e.side=side;e.digit=digit;
+        const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
+        const int count=digit==1?3:4;
+        const int meta=model.sourceStructure(toeEditName(e,-1));if(meta<0)return false;
+        for(int s=1;s<count;++s) {
+            const auto parent=toeEditName(e,order[s-1]),child=toeEditName(e,order[s]);
+            const auto a=marks.find(parent),b=marks.find(child);
+            if(a==marks.end() || b==marks.end() || a->second.placed!=3 || b->second.placed!=3)continue;
+            const int i=model.sourceStructure(parent),j=model.sourceStructure(child);
+            const auto link=toeEditLink(model,parent,child);
+            if(i<0 || j<0 || link>=model.sourceLinks().size())return false;
+            const auto pose=model.sourceMatrices({},0);
+            auto target=toeRigid(pose[std::size_t(meta)]),current=toeRigid(pose[std::size_t(j)]);
+            target.translation={};current.translation={};
+            auto correction=joint_detail::compose(target,joint_detail::inverse(current));
+            const Vec3 start=toePoint(pose[std::size_t(j)],b->second.end[0]);
+            const Vec3 contact=toePoint(pose[std::size_t(i)],a->second.end[1]);
+            correction.translation=contact-frameVector(correction,start);
+            if(!model.adjustReferenceToe(link,correction))return false;
+        }
+    }
+    return true;
+}
+// Place the kinematic pivot on the marked parent surface. Ragdoll anchors
+// retain both independently marked surface points.
 inline bool setMarkedToeSurfacePivots(SkeletonModel& model,const ToeSurfaceMarks& marks) {
     for(int digit=1;digit<=5;++digit)for(char side:{'L','R'}) {
         const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
@@ -62,6 +90,10 @@ inline bool setMarkedToeSurfacePivots(SkeletonModel& model,const ToeSurfaceMarks
             const Vec3 p=toePoint(pose[std::size_t(i)],a->second.end[1]);
             const auto link=toeEditLink(model,parent,child);
             if(link>=model.sourceLinks().size() || !model.repositionReferenceToeJoint(link,p))return false;
+            if(a->second.placed==3) {
+                const Vec3 shaft=p-toePoint(pose[std::size_t(i)],a->second.end[0]);
+                if(!model.orientReferenceToeJoint(link,shaft))return false;
+            }
         }
     }
     return true;
@@ -76,8 +108,11 @@ inline std::vector<ComparisonToeAttachment> whiteToeSurfaceAnchors(const Skeleto
             const auto a=marks.find(parent),b=marks.find(child);
             if(a==marks.end() || b==marks.end() || !(a->second.placed&2) || !(b->second.placed&1))continue;
             const int i=model.sourceStructure(parent),j=model.sourceStructure(child);if(i<0 || j<0)continue;
-            result.push_back({std::size_t(i),std::size_t(j),toePoint(pose[std::size_t(i)],a->second.end[1]),
-                              toePoint(pose[std::size_t(j)],b->second.end[0]),true});
+            const Vec3 start=toePoint(pose[std::size_t(i)],a->second.end[0]);
+            const Vec3 end=toePoint(pose[std::size_t(i)],a->second.end[1]);
+            result.push_back({std::size_t(i),std::size_t(j),end,
+                              toePoint(pose[std::size_t(j)],b->second.end[0]),true,
+                              a->second.placed==3?end-start:Vec3{}});
         }
     }
     return result;
@@ -94,9 +129,12 @@ inline void blueToeSurfaceAnchors(const SkeletonModel& model,const ToeSurfaceMar
                 ToeEdit side=e;if(mirror)side.side=e.side=='L'?'R':'L';
                 const int i=model.sourceStructure(toeEditName(side,order[s-1])),j=model.sourceStructure(toeEditName(side,order[s]));
                 if(i<0 || j<0 || std::size_t(i)>=pose.size() || std::size_t(j)>=pose.size())continue;
-                Vec3 p=a->second.end[1],q=b->second.end[0];if(mirror){p=toeMirrorPoint(p);q=toeMirrorPoint(q);}
-                result.push_back({std::size_t(i),std::size_t(j),toePoint(pose[std::size_t(i)],p+origin),
-                                  toePoint(pose[std::size_t(j)],q+origin),true});
+                Vec3 start=a->second.end[0],p=a->second.end[1],q=b->second.end[0];
+                if(mirror){start=toeMirrorPoint(start);p=toeMirrorPoint(p);q=toeMirrorPoint(q);}
+                const Vec3 parentPoint=toePoint(pose[std::size_t(i)],p+origin);
+                result.push_back({std::size_t(i),std::size_t(j),parentPoint,
+                                  toePoint(pose[std::size_t(j)],q+origin),true,
+                                  parentPoint-toePoint(pose[std::size_t(i)],start+origin)});
             }
         }
     }

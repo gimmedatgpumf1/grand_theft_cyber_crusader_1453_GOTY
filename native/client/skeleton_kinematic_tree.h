@@ -100,6 +100,19 @@ public:
         if(!node.joint->repositionPivot(local))return false;
         dirty_=true;return true;
     }
+    bool orientReferenceJoint(std::size_t body,Vec3 worldShaft) {
+        if(body==0 || body>=nodes_.size() || !nodes_[body].joint || !evaluate())return false;
+        auto& node=nodes_[body];
+        if(!node.sourceJoint)node.sourceJoint=node.joint;
+        const auto frame=joint_detail::compose(absolute_[node.parent],node.joint->parentFrame());
+        const auto inverse=joint_detail::inverse(frame);
+        const auto& r=inverse.rotation;
+        const Vec3 shaft{r[0]*worldShaft.x+r[1]*worldShaft.y+r[2]*worldShaft.z,
+                         r[3]*worldShaft.x+r[4]*worldShaft.y+r[5]*worldShaft.z,
+                         r[6]*worldShaft.x+r[7]*worldShaft.y+r[8]*worldShaft.z};
+        if(!node.joint->orientPrimaryPerpendicular(shaft))return false;
+        dirty_=true;return true;
+    }
     void clearReferenceAdjustments() {
         for(auto& node:nodes_) {
             node.reference={};

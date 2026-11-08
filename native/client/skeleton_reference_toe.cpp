@@ -34,4 +34,13 @@ bool SkeletonModel::repositionReferenceToeJoint(std::size_t link,Vec3 pivot) {
     if(!body || !sourceRig_->repositionReferenceJoint(body,pivot))return false;
     ++sourcePoseRevision_;return true;
 }
+bool SkeletonModel::orientReferenceToeJoint(std::size_t link,Vec3 shaft) {
+    if (!sourceRig_ || link>=sourceLinks_.size()) return false;
+    const auto& edge=sourceLinks_[link];
+    if(edge.mobility!="toe_ip_hinge" && edge.mobility!="great_toe_mtp" && edge.mobility!="lesser_toe_mtp")return false;
+    const auto a=sourceBodies_[edge.first],b=sourceBodies_[edge.second];
+    const auto body=sourceRig_->parent(b)==a?b:(sourceRig_->parent(a)==b?a:0);
+    if(!body || !sourceRig_->orientReferenceJoint(body,shaft))return false;
+    ++sourcePoseRevision_;return true;
+}
 } // namespace gtc::native

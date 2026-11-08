@@ -217,7 +217,13 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         Vec3 childPivot=pivot;
         if (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp" || mobility=="toe_ip_hinge") {
             for (const auto& toe:toePivots) if(toe.parent==pi && toe.child==si) {
-                pivot=toe.pivot;childPivot=toe.separateSurfacePoints?toe.childPivot:pivot;break;
+                pivot=toe.pivot;childPivot=toe.separateSurfacePoints?toe.childPivot:pivot;
+                if(length(toe.parentShaft)>1e-8) {
+                    const Vec3 shaft=normalized(toe.parentShaft);
+                    const Vec3 transverse=axis-shaft*dot(axis,shaft);
+                    if(length(transverse)>1e-8)axis=normalized(transverse);
+                }
+                break;
             }
         }
         const bool ball=mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";

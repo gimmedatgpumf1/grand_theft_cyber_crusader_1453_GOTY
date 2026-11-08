@@ -28,10 +28,23 @@ class SkeletonToeWorkspace {
     };
 public:
     explicit SkeletonToeWorkspace(const std::string& root) : path_(root+"/toe-bone-axes.txt") {
-        // A local save always takes precedence and is never overwritten here.
+        const bool supplied=loadFrom(root+"/tools/foot/user-toe-axes.txt");
+        const auto suppliedAxes=axes_;const auto suppliedMarks=marks_;
         std::ifstream local(path_);
-        if(local.good()) load();
-        else loadFrom(root+"/tools/foot/user-toe-axes.txt");
+        if(!local.good())return;
+        // Keep arbitrary local edits authoritative. The one exception is the
+        // exact older supplied file (38 complete left-only entries): add the
+        // newly supplied right side in memory, without overwriting the save.
+        if(!load()) {axes_.clear();marks_.clear();return;}
+        bool oldSupplied=supplied && axes_.size()==38 && suppliedAxes.size()==76;
+        for(const auto& [k,p]:axes_) {
+            const auto base=suppliedAxes.find(k);const auto mask=marks_.find(k);
+            if(k.blue || k.side!='L' || base==suppliedAxes.end() || mask==marks_.end() || mask->second!=3) {oldSupplied=false;break;}
+            for(int n=0;n<2;++n)if(p[n].x!=base->second[n].x || p[n].y!=base->second[n].y || p[n].z!=base->second[n].z)oldSupplied=false;
+        }
+        if(oldSupplied)for(const auto& [k,p]:suppliedAxes)if(k.side=='R' && !k.blue) {
+            axes_[k]=p;marks_[k]=suppliedMarks.at(k);
+        }
     }
     void syncWhiteAxes(SkeletonRoom& room) {
         // Files from older editors were free-floating. Never treat them (or a

@@ -112,6 +112,24 @@ public:
         childFrameInverse_=joint_detail::compose(joint_detail::inverse(joint_detail::compose(parentFrame_,motion)),current);
         return true;
     }
+    // The marked bone shaft fixes the longitudinal direction. Keep the
+    // existing flexion sense, but remove any component along that shaft.
+    // Rebase the joint so calibration never moves the current reference pose.
+    bool orientPrimaryPerpendicular(Vec3 shaft) {
+        if (axes_.empty() || !joint_detail::finite(shaft) || length(shaft)<1e-8) return false;
+        shaft=normalized(shaft);
+        Vec3 axis=axes_[0].direction-shaft*dot(axes_[0].direction,shaft);
+        // A shaft parallel to the old hinge cannot determine a transverse
+        // direction by itself; retain that hinge rather than guessing one.
+        if (length(axis)<1e-8) return true;
+        const auto current=childInParent();
+        axes_[0].direction=normalized(axis);
+        JointRigidTransform motion;
+        for (std::size_t i=0;i<axes_.size();++i)
+            motion=joint_detail::compose(motion,joint_detail::rotate(axes_[i].direction,angles_[i]));
+        childFrameInverse_=joint_detail::compose(joint_detail::inverse(joint_detail::compose(parentFrame_,motion)),current);
+        return true;
+    }
     JointRigidTransform childInParent() const {
         JointRigidTransform motion;
         for (std::size_t i = 0; i < axes_.size(); ++i)
