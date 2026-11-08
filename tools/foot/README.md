@@ -90,9 +90,16 @@ stored in the original bone's mesh coordinates. When adjacent marked bones are
 visible, selecting a child displays the distance between its green point and its
 parent's red point. Use your own move/rotate controls to bring them together.
 The editor no longer rotates or moves bones merely because marks are placed.
+The marked line supplies endpoints, not a complete hinge frame: the existing
+hinge direction and standing bone orientations are not recalibrated by it.
 
 SAVE AXES/LOAD AXES use `toe-bone-axes.txt`, separately from pose SAVE; RESET
-AXIS clears the selected bone's marks. The marks set the white kinematic pivot
+AXIS clears the selected bone's marks. If no local axes file exists, the editor
+starts with the supplied left-foot marks in `tools/foot/user-toe-axes.txt`.
+A local file always takes precedence and is not overwritten on startup. The
+supplied file has both endpoints for all 19 bones of each sex's left foot; its
+marks are mapped onto both blue feet. The independent white right foot is not
+marked by that file. The marks set the white kinematic pivot
 on the parent bone's marked surface. The ragdoll uses the two independently
 marked surface points as its anchors, including mapped and mirrored blue points;
 if those points are apart, physics will pull them together. Joints without both

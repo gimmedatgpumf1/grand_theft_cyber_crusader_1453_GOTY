@@ -27,7 +27,12 @@ class SkeletonToeWorkspace {
         std::vector<std::array<int,3>> faces;
     };
 public:
-    explicit SkeletonToeWorkspace(std::string root) : path_(std::move(root)+"/toe-bone-axes.txt") { load(); }
+    explicit SkeletonToeWorkspace(const std::string& root) : path_(root+"/toe-bone-axes.txt") {
+        // A local save always takes precedence and is never overwritten here.
+        std::ifstream local(path_);
+        if(local.good()) load();
+        else loadFrom(root+"/tools/foot/user-toe-axes.txt");
+    }
     void syncWhiteAxes(SkeletonRoom& room) {
         // Files from older editors were free-floating. Never treat them (or a
         // damaged file) as surface attachments without validating each point.
@@ -207,8 +212,12 @@ public:
             if(dot(dorsal,*shin-*heel)<0)dorsal=dorsal*-1;
             if(length(dorsal)<.5 || length(forward)<.5){lateral={1,0,0};forward={0,0,1};dorsal={0,1,0};}
         }
-        const Vec3 direction=lateral*(std::cos(elevation_)*std::sin(azimuth_))+dorsal*std::sin(elevation_)+forward*(std::cos(elevation_)*std::cos(azimuth_));
-        camera_.position=center+direction;camera_.target=center;camera_.up=dorsal;
+        // Rotate the camera's up vector with the orbit. Keeping a fixed up
+        // vector causes a pole singularity and used to clamp out whole angles.
+        const Vec3 horizontal=lateral*std::sin(azimuth_)+forward*std::cos(azimuth_);
+        const Vec3 direction=horizontal*std::cos(elevation_)+dorsal*std::sin(elevation_);
+        camera_.position=center+direction;camera_.target=center;
+        camera_.up=dorsal*std::cos(elevation_)-horizontal*std::sin(elevation_);
         Vec3 projectedLo{1e30,1e30,1e30},projectedHi{-1e30,-1e30,-1e30};
         for(const auto& bone:bones_)for(Vec3 p:bone.points) {
             const Vec3 q=camera_.view(p);
@@ -244,7 +253,9 @@ public:
         if(e.type==WindowEvent::Type::MouseDown && e.button==3) {orbiting_=true;lastX_=e.x;lastY_=e.y;return true;}
         if(e.type==WindowEvent::Type::MouseUp && e.button==3 && orbiting_){orbiting_=false;return true;}
         if(e.type==WindowEvent::Type::MouseMove && orbiting_) {
-            azimuth_+=(e.x-lastX_)*.008;elevation_=std::clamp(elevation_+(e.y-lastY_)*.008,-1.56,1.56);preset_=false;
+            constexpr double fullTurn=6.28318530717958647692;
+            azimuth_=std::remainder(azimuth_+(e.x-lastX_)*.008,fullTurn);
+            elevation_=std::remainder(elevation_+(e.y-lastY_)*.008,fullTurn);preset_=false;
             lastX_=e.x;lastY_=e.y;cached_=false;return true;
         }
         if(e.type==WindowEvent::Type::Wheel) {zoom_=std::clamp(zoom_*std::pow(.85,e.wheel),.3,4.);cached_=false;return true;}
@@ -269,7 +280,7 @@ public:
         }
         if(e.type!=WindowEvent::Type::MouseDown || e.button!=1)return false;
         if(e.y>=13 && e.y<37) {
-            if(e.x>=14 && e.x<76){top_=true;preset_=true;azimuth_=0;elevation_=1.56;cached_=false;return true;}
+            if(e.x>=14 && e.x<76){top_=true;preset_=true;azimuth_=0;elevation_=1.5707963267948966;cached_=false;return true;}
             if(e.x>=80 && e.x<144){top_=false;preset_=true;azimuth_=1.5707963267948966;elevation_=0;cached_=false;return true;}
             if(e.x>=150 && e.x<258){status_=save()?"Axes saved to toe-bone-axes.txt":"Could not save axes.";return true;}
             if(e.x>=263 && e.x<371){if(load()){syncWhiteAxes(room);if(!room.originalToePose())room.restoreReferencePose();status_="Axes loaded.";}else status_="No valid axes file.";return true;}
@@ -321,8 +332,9 @@ private:
             <<p[0].x<<' '<<p[0].y<<' '<<p[0].z<<' '<<p[1].x<<' '<<p[1].y<<' '<<p[1].z<<'\n';}
         return bool(out);
     }
-    bool load() {
-        std::ifstream in(path_);std::string version;if(!(in>>version) || (version!="toe-axes-v1" && version!="toe-axes-v2"))return false;
+    bool load() { return loadFrom(path_); }
+    bool loadFrom(const std::string& path) {
+        std::ifstream in(path);std::string version;if(!(in>>version) || (version!="toe-axes-v1" && version!="toe-axes-v2"))return false;
         std::map<Key,std::array<Vec3,2>> result;std::map<Key,unsigned> placed;int male,blue;Key k{};std::array<Vec3,2> p;
         while(in>>male) {
             unsigned mask=0;
@@ -344,7 +356,7 @@ private:
     std::uint64_t revision_=0,cachedPose_=0,cachedComparison_=0,cachedEdits_=0;
     Key cachedSelection_{};bool cached_=false,cachedTop_=true,cachedPanel_=true;
     Key dragKey_{};int dragEnd_=0,focus_=0,cachedFocus_=0;double lastX_=0,lastY_=0;
-    double azimuth_=0,elevation_=1.56,zoom_=1;
+    double azimuth_=0,elevation_=1.5707963267948966,zoom_=1;
     bool top_=true,preset_=true,dragging_=false,orbiting_=false,validated_=false;
 };
 } // namespace gtc::native
