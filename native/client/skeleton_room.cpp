@@ -259,8 +259,10 @@ bool SkeletonRoom::restoreReferencePose() {
     if (littleToeReady_ && (!fitManualFemaleLittleToe(female_,femaleLines_) || !fitReferenceToeShafts(male_,maleLines_) ||
                             !fitReferenceToeShafts(female_,femaleLines_,true))) return false;
     for (const auto& edit:toeEdits_) if (!edit.original && !edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit)) return false;
+    maleToeBeforeCalibration_=male_.sourceMatrices({},0);femaleToeBeforeCalibration_=female_.sourceMatrices({},0);
     if(!applySurfaceToeCalibration(male_,maleToeMarks_) || !applySurfaceToeCalibration(female_,femaleToeMarks_))return false;
     maleToeNeutral_=male_.sourceMatrices({},0);femaleToeNeutral_=female_.sourceMatrices({},0);
+    updateToeSkinCalibration(true);updateToeSkinCalibration(false);
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
@@ -269,6 +271,7 @@ bool SkeletonRoom::restoreReferencePose() {
 bool SkeletonRoom::restoreOriginalPose() {
     originalToePose_=true; originalToeEditsVisible_=false;
     maleComparison_.setToeAttachmentsEnabled(false); femaleComparison_.setToeAttachmentsEnabled(false);
+    maleComparison_.setToeSkinCalibration({});femaleComparison_.setToeSkinCalibration({});
     endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
@@ -307,6 +310,23 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
             surfaceJoints->push_back({joint.parent,joint.child,toePoint(pose[joint.parent],joint.parentPoint)});
     }
     return pose;
+}
+void SkeletonRoom::updateToeSkinCalibration(bool male) {
+    auto& c=male?maleComparison_:femaleComparison_;
+    const auto& before=male?maleToeBeforeCalibration_:femaleToeBeforeCalibration_;
+    if(originalToePose_ || before.size()!=c.parts().size() || c.parts().empty()) {
+        c.setToeSkinCalibration({});return;
+    }
+    const auto& neutral=male?maleToeNeutral_:femaleToeNeutral_;
+    if(neutral.size()!=c.parts().size()) {c.setToeSkinCalibration({});return;}
+    auto base=c.toePose(neutral,{}),corrected=base;
+    const auto joints=calibrateBlueToeNeutral(c,mappedBlueToeMarks(male),{},corrected);
+    if(joints.empty()) {c.setToeSkinCalibration({});return;}
+    ToeSkinCalibration ref;ref.before=c.toePose(before,{});ref.after=base;
+    applyBlueToeEdits(c,ref.before,{},toeEdits_,male,false);
+    applyBlueToeEdits(c,ref.after,{},toeEdits_,male,false);
+    animateBlueToeCalibration(base,corrected,ref.after,joints);
+    c.setToeSkinCalibration(std::move(ref));
 }
 bool SkeletonRoom::showOriginalToeEdits() {
     if(!toeEditingAvailable() || !originalToePose_ || !restoreOriginalPose())return false;

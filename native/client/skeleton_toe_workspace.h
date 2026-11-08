@@ -63,7 +63,7 @@ public:
         button(f,150,13,108,"SAVE AXES");button(f,263,13,108,"LOAD AXES");button(f,376,13,122,"RESET AXIS");
         button(f,503,13,130,focus_==0?"ALL BONES":focus_==1?"ONE TOE":"ONE BONE");
         drawTextPixels(f,14,43,status_.empty()?"Green: start. Red: tip. Dim means unset.":status_,colorHex("#e0effb"),20);
-        drawTextPixels(f,14,67,"Drag onto surface. Right: orbit. H: controls.",colorHex("#e0effb"),20);
+        drawTextPixels(f,14,67,"Mark end faces. Right: orbit. H: controls.",colorHex("#e0effb"),20);
         for(const auto& b:bones_) {
             const bool selected=same(b.key,ui.selection());
             auto a=project(b.world[0]),c=project(b.world[1]);
@@ -116,6 +116,24 @@ public:
                 ends=pair;
             }
             if(!ends)continue;
+            if(segment>=0) {
+                // B-line files do not consistently order proximal and distal
+                // ends. Order the *unconfirmed handles* from heel to tip;
+                // the user's own surface picks remain authoritative.
+                const int prev=segment==0?-1:segment==2 && digit==1?0:segment-1;
+                const int next=segment==0?(digit==1?2:1):segment==1?2:3;
+                const auto center=[&](int s)->std::optional<Vec3> {
+                    if(s>2)return std::nullopt;
+                    const int n=model.sourceStructure(toeEditName(e,s));
+                    if(n<0)return std::nullopt;
+                    const auto& p=model.sourceStructures()[std::size_t(n)];if(!p.pointCount)return std::nullopt;
+                    Vec3 c{};for(std::size_t j=0;j<p.pointCount;++j)c+=model.bones()[p.group].points[p.firstPoint+j];
+                    return c/double(p.pointCount);
+                };
+                const auto a=center(prev),b=center(segment),c=center(next);
+                if(b && (c || a)) {const Vec3 forward=c?*c-*b:*b-*a;
+                    if(dot((*ends)[1]-(*ends)[0],forward)<0)std::swap((*ends)[0],(*ends)[1]);}
+            }
             Bone b;b.key={selection.male,selection.blue,selection.side,digit,segment};b.name=name;
             if(selection.blue) {
                 const auto& part=comparison.parts()[i];if(part.points.empty() || i>=bluePose.size())continue;

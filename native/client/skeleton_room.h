@@ -38,13 +38,13 @@ public:
         SkeletonComparison& copy=male ? maleComparison_ : femaleComparison_;
         const auto revision=copy.revision();
         if (!copy.setProfile(profile,error)) return false;
-        if (revision!=copy.revision()) lineSceneReady_=false;
+        if (revision!=copy.revision()) { updateToeSkinCalibration(male); lineSceneReady_=false; }
         return true;
     }
     void resetComparison(bool male) {
         if (physicsRig_ && !restoreReferencePose()) return;
         std::string error; (male ? maleComparison_ : femaleComparison_).reset(error);
-        lineSceneReady_=false;
+        updateToeSkinCalibration(male); lineSceneReady_=false;
     }
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
@@ -93,6 +93,7 @@ public:
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
+    void updateToeSkinCalibration(bool male);
     const ToeSurfaceMarks& mappedBlueToeMarks(bool male) const;
     std::unique_ptr<GpuSkeletonRig> physicsRig_;
     std::uint64_t physicsGeneration_=0, physicsSteps_=0;
@@ -108,7 +109,7 @@ private:
     struct BlueMarkCache {ToeSurfaceMarks marks;std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{};};
     mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
     std::uint64_t toeMarksRevision_=0;
-    std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_;
+    std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_,maleToeBeforeCalibration_,femaleToeBeforeCalibration_;
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;

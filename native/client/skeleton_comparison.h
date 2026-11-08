@@ -593,6 +593,7 @@ public:
     // geometric approximation, not a deformable tissue or clinical fit.
     void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; toeAttachmentRevision_=0; }
     void setToeStandingReference(const std::vector<std::array<double,16>>& matrices) { standingToeMatrices_=matrices; toeAttachmentRevision_=0; }
+    const ToeSkinCalibration& toeSkinCalibration() const { return toeSkinCalibration_; } void setToeSkinCalibration(ToeSkinCalibration c) { if(c.before!=toeSkinCalibration_.before || c.after!=toeSkinCalibration_.after) { toeSkinCalibration_=std::move(c); ++revision_; } }
     bool toeAttachmentsEnabled() const { return toeAttachmentsEnabled_; } void setToeAttachmentsEnabled(bool enabled) { if (toeAttachmentsEnabled_!=enabled) { toeAttachmentsEnabled_=enabled; ++revision_; toeAttachmentRevision_=0; } }
     const auto& correctedToeReference() const { if(!toeAttachmentsEnabled_ && !male_ && originalSkinToeMatrices_.size()==parts_.size())return originalSkinToeMatrices_;
         return standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:correctedToeMatrices_; }
@@ -980,7 +981,7 @@ private:
         }
         ++revision_; error.clear(); return true;
     }
-    bool male_=false, feasible_=false, exact_=false, toeAttachmentsEnabled_=true;
+    bool male_=false, feasible_=false, exact_=false, toeAttachmentsEnabled_=true; ToeSkinCalibration toeSkinCalibration_;
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;

@@ -91,14 +91,17 @@ joint; these older +/- controls are separate from surface calibration.
 Each metatarsal and phalanx has a stick. In the unmoved white B source, drag
 the green start (nearer the heel) and red end (nearer the toe tip) onto the
 actual surface of each bone. Dim markers are unconfirmed estimates; bright
-markers were placed on a triangle. Orbit to see the end faces: a click from
-above selects the surface facing the camera, which may not be the end face.
+markers were placed on a triangle. Unconfirmed handles are ordered heel-to-tip
+where the source line's ordering is reversed; they are still only placeholders.
+Orbit to see the end faces: a click from above selects the surface facing the
+camera, which may not be the end face.
 Use ONE BONE to separate overlapping handles. Mark both ends of adjacent bones;
 then **STAND** or closing T aligns their marked axes and brings their marked
 surfaces together, setting the white joint pivot there. Unmarked links retain
 the old pose and joint estimates. This straight-axis alignment is a geometric
-starting point, not anatomical verification; inspect the resulting bones and
-skin for overlap or stretching.
+starting point, not anatomical verification. The fitted skin is rebound when
+calibration changes and remains attached to its bone owners, but moving bones
+can still make the skin or neighbouring bones overlap; inspect the result.
 
 **SAVE AXES** writes `toe-bone-axes.txt`, separately from pose SAVE. **LOAD
 AXES** restores it and **RESET AXIS** resets the selected bone. Older v1
