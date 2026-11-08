@@ -211,6 +211,8 @@ struct GpuBatch {
     bool skinObjectIds = false;
     bool blendedSkin = false;
     bool smoothSkin = false;
+    // Standalone translucent geometry, independent of skinning.
+    bool translucent = false;
     bool skinOwner = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};

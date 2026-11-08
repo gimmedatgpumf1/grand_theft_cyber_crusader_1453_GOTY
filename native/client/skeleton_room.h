@@ -60,8 +60,16 @@ public:
     bool showOriginalToeEdits();
     bool toeEditingAvailable() const { return ready_ && !physicsRig_; }
     bool originalToePose() const { return originalToePose_; }
+    std::optional<std::array<Vec3,2>> toeAxis(bool male,const std::string& name) const {
+        return (male?maleLines_:femaleLines_).sourceBoneEndpoints(name);
+    }
+    void resetDisplayToeAxes() { maleDisplayLines_=maleLines_;femaleDisplayLines_=femaleLines_;lineSceneReady_=false; }
+    void setDisplayToeAxis(bool male,const std::string& name,const std::array<Vec3,2>& ends) {
+        (male?maleDisplayLines_:femaleDisplayLines_).setBoneEndpoints(name,ends);lineSceneReady_=false;
+    }
     const std::string& toeEditError() const { return toeEditError_; }
     std::size_t toeEditCount() const { return toeEdits_.size(); }
+    std::uint64_t toeEditRevision() const { return toeEditRevision_; }
     std::vector<std::array<double,16>> comparisonToePose(bool male,Vec3 origin) const;
     bool toggleRagdoll();
     void advanceRagdoll(double seconds);
@@ -89,7 +97,7 @@ private:
     SkeletonModel male_;
     SkeletonModel female_;
     SkeletonComparison maleComparison_, femaleComparison_;
-    SkeletonLines maleLines_, femaleLines_;
+    SkeletonLines maleLines_, femaleLines_, maleDisplayLines_, femaleDisplayLines_;
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;
@@ -98,6 +106,7 @@ private:
     std::uint64_t lineMalePoseRevision_ = 0, lineFemalePoseRevision_ = 0;
     std::string error_, toeEditsPath_, toeEditError_;
     std::vector<ToeEdit> toeEdits_;
+    std::uint64_t toeEditRevision_=0;
     bool originalToePose_=false, originalToeEditsVisible_=false;
     // The room's geometry is kept between frames when the GPU path draws it:
     // two skeletons are three hundred thousand triangles, and re-sending them

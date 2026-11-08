@@ -62,16 +62,17 @@ variable requests the original-pose view.
 
 ## Manual toe bone editor
 
-In the skeleton room, press **T** to show the editor, then **Esc** to release
-the mouse. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
+In the skeleton room, press **T** to open the isolated toe workspace (the
+mouse is released automatically). It shows just one chosen foot's phalanges,
+not the whole skeleton. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
 middle or distal phalanx (the great toe has no middle bone). The +/- buttons
 rotate around the selected bone's centre or translate it along world X, Y and Z.
 The normal step is 5 degrees / 1 mm; **FINE** changes it to 1 degree / 0.2 mm.
 Each click moves only the selected white bone, not its descendants. The blue
 skin follows its existing bone weights; white edits also feed the comparison
-rig, so inspect blue separately and use its controls as needed. V changes the
-visualization; move the camera for top and side views. Click outside the panel
-to capture the mouse again.
+rig, so inspect blue separately and use its controls as needed. **TOP** and
+**SIDE** change the view; the **ALL BONES / ONE TOE / ONE BONE** button cycles
+between those isolation levels. Press T to return to the room.
 
 **UNDO** removes the last edit in the current pose. **RESET BONE** removes the
 selected bone's edits in that pose. **SAVE** writes `toe-bone-edits.txt` in the
@@ -83,6 +84,19 @@ you can also edit that pose, separately from standing. **APPLY B** reapplies
 saved B-pose edits after B has restored the untouched source; the first edit in
 the B pose does so automatically. These controls do not automatically fix any
 joint, and the resulting pose is not yet verified for bending or ragdoll.
+
+Each translucent phalanx has an editable stick. Drag its green start or red end;
+the top view edits X/Z and the side view edits Z/Y. The stick moves with its
+bone. **SAVE AXES** writes `toe-bone-axes.txt`, separately from the pose SAVE;
+**LOAD AXES** restores it and **RESET AXIS** resets the selected stick. White
+stick edits also appear in the room's V-view. These are manually chosen visual
+landmarks; changing them does **not** yet change the skeleton's joint pivots or
+automatically align bones. The default sticks are estimates, not ground truth.
+
+For blue geometry, the existing comparison pipeline combines the left scan
+with the reflected right scan and then mirrors that averaged left-side mesh to
+the right. The white CT meshes stay separate and unchanged. The workspace
+edits only the selected side; axis edits are not automatically mirrored.
 
 ## Earlier fitting experiment (not the in-game foot)
 

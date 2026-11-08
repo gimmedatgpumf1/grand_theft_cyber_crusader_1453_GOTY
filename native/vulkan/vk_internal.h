@@ -568,6 +568,8 @@ private:
     // device over the scene instead of composited on the host afterwards.
     VkPipeline pipelineSkin_ = VK_NULL_HANDLE;
     VkPipeline pipelineSkinCovered_ = VK_NULL_HANDLE;
+    VkPipeline pipelineTranslucent_ = VK_NULL_HANDLE;
+    VkPipeline pipelineTranslucentCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterface_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceUv_ = VK_NULL_HANDLE;

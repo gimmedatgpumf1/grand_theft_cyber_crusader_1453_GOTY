@@ -5,6 +5,7 @@
 #include "client/skeleton_room.h"
 #include "client/skeleton_comparison_ui.h"
 #include "client/skeleton_toe_editor_ui.h"
+#include "client/skeleton_toe_workspace.h"
 #include "client/room_freecam.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
@@ -41,7 +42,7 @@ enum class Overlay { None, Wheel, Cheats, Help };
 
 class App {
 public:
-    explicit App(InteractiveOptions options) : options_(std::move(options)) {}
+    explicit App(InteractiveOptions options) : options_(std::move(options)), toeWorkspace_(options_.root) {}
 
     int run() {
         std::string error;
@@ -55,6 +56,7 @@ public:
         }
         std::string roomError;
         if (!room_.load(options_.root, roomError)) std::cerr << "Test room unavailable: " << roomError << '\n';
+        else toeWorkspace_.syncWhiteAxes(room_);
         if (!window_.open("GRAND THEFT CYBER CRUSADER 1453 - Native", error)) {
             std::cerr << error << '\n';
             return 1;
@@ -112,9 +114,13 @@ public:
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
                 // Room controls are GPU batches, just like the normal HUD.
                 frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
+                if (toeEditorUi_.open() && !toeWorkspace_.prepare(frame,room_,toeEditorUi_)) {
+                    std::cerr << "Unable to prepare toe editor\n"; return 1;
+                }
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                roomUi_.draw(frame,room_); toeEditorUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
+                if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
+                else { roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps); }
                 if (captured_) {
                     const int x=int(std::lround(roomDragging_ ? roomDragX_ : view_.width*0.5));
                     const int y=int(std::lround(roomDragging_ ? roomDragY_ : view_.height*0.5));
@@ -123,7 +129,11 @@ public:
                 }
                 frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
                 frame.wantPixels = screenshot_;
-                room_.render(frame, view_, seconds, &roomCamera_);
+                if (toeEditorUi_.open()) {
+                    if (!toeWorkspace_.render(frame)) {
+                        std::cerr << "Unable to draw toe editor\n"; return 1;
+                    }
+                } else room_.render(frame, view_, seconds, &roomCamera_);
                 frame.uiLayer=nullptr;
                 if (!frame.interfaceInFrame || (!frame.presented && !screenshot_)) {
                     std::cerr << "Vulkan did not present the room interface on the device\n";
@@ -526,7 +536,13 @@ private:
             roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
             updateRoomDragRay(); return;
         }
-        if (toeEditorUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
+        if (toeEditorUi_.handle(event,captured_,view_.width,view_.height,room_)) {
+            if (event.type==WindowEvent::Type::KeyDown && event.key=='t' && toeEditorUi_.open()) {
+                stopRoomDrag(); roomCamera_.clear(); window_.captureMouse(false); captured_=false;
+            }
+            return;
+        }
+        if (toeWorkspace_.handle(event,toeEditorUi_,room_)) return;
         if (roomUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
         if (event.type==WindowEvent::Type::MouseDown && event.button==1 && room_.ragdollActive()) {
             roomDragging_=true;
@@ -829,6 +845,7 @@ private:
     double snapshotInterval_ = 0.05;
     bool presentationReady_ = false;
     InteractiveOptions options_;
+    SkeletonToeWorkspace toeWorkspace_;
     NativeClient client_;
     WorldRenderer renderer_;
     NativeWindow window_;

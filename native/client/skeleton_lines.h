@@ -45,6 +45,16 @@ public:
         return result;
     }
 
+    bool setBoneEndpoints(const std::string& name,const std::array<Vec3,2>& ends) {
+        std::size_t count=0;for(const auto& segment:segments_)if(segment.kind=='B' && segment.first==name)++count;
+        if(!count || !joint_detail::finite(ends[0]) || !joint_detail::finite(ends[1]))return false;
+        std::size_t i=0;for(auto& segment:segments_)if(segment.kind=='B' && segment.first==name) {
+            segment.a=ends[0]+(ends[1]-ends[0])*(double(i)/count);
+            segment.b=ends[0]+(ends[1]-ends[0])*(double(i+1)/count);++i;
+        }
+        return true;
+    }
+
     bool load(const std::string& path, std::string& error) {
         std::ifstream input(path);
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }

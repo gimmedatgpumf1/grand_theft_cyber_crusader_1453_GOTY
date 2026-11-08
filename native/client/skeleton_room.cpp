@@ -128,6 +128,7 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     if (!maleLines_.load(directory + "skeleton-male.lines", error)) return false;
     if (!femaleLines_.load(directory + "skeleton-female.lines", error)) return false;
     if (!maleLines_.bind(male_, error) || !femaleLines_.bind(female_, error)) return false;
+    resetDisplayToeAxes();
     ready_ = true;
     if (!restoreReferencePose()) { ready_ = false; error = "Unable to pose skeletons"; return false; }
     const std::string curves=directory+"anthropometry/";
@@ -292,7 +293,7 @@ bool SkeletonRoom::editToe(const ToeEdit& input) {
         if(originalToePose_) showOriginalToeEdits(); else restoreReferencePose();
         return false;
     }
-    toeEdits_.push_back(edit);lineSceneReady_=false;cachedPose_=-1;return true;
+    toeEdits_.push_back(edit);++toeEditRevision_;lineSceneReady_=false;cachedPose_=-1;return true;
 }
 bool SkeletonRoom::undoToeEdit() {
     if(!toeEditingAvailable())return false;
@@ -301,7 +302,7 @@ bool SkeletonRoom::undoToeEdit() {
     const bool original=originalToePose_;const auto old=toeEdits_;toeEdits_.erase(std::next(it).base());
     const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
     if(!rebuild()) { toeEdits_=old; rebuild(); return false; }
-    cachedPose_=-1;return true;
+    ++toeEditRevision_;cachedPose_=-1;return true;
 }
 bool SkeletonRoom::resetToeEdits(const ToeEdit& selected) {
     if(!toeEditingAvailable())return false;
@@ -310,7 +311,7 @@ bool SkeletonRoom::resetToeEdits(const ToeEdit& selected) {
         e.side==selected.side && e.digit==selected.digit && e.segment==selected.segment;});
     const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
     if(!rebuild()) { toeEdits_=old; rebuild(); return false; }
-    cachedPose_=-1;return true;
+    ++toeEditRevision_;cachedPose_=-1;return true;
 }
 bool SkeletonRoom::saveToeEdits() const { return gtc::native::saveToeEdits(toeEditsPath_,toeEdits_); }
 bool SkeletonRoom::loadToeEdits() {
@@ -320,7 +321,7 @@ bool SkeletonRoom::loadToeEdits() {
     const bool original=originalToePose_;toeEdits_=std::move(loaded);
     const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
     if(!rebuild()) { toeEdits_=std::move(old); rebuild(); return false; }
-    toeEditError_.clear();cachedPose_=-1;return true;
+    toeEditError_.clear();++toeEditRevision_;cachedPose_=-1;return true;
 }
 
 bool SkeletonRoom::toggleRagdoll() {
@@ -385,8 +386,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
-                femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
+                maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
+                femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
                 const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
                 const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
                 maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose);
@@ -409,8 +410,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
         raster.setCamera(camera);
         drawFloor(raster, camera); drawWalls(raster, camera);
-        maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
-        femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
+        maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
+        femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
         const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
         const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
         maleComparison_.draw(raster,-2.85,12000,&maleToePose);

@@ -10,11 +10,16 @@ namespace gtc::native {
 // Manual, per-phalanx editor. No fitting or automatic alignment is performed.
 class SkeletonToeEditorUi {
 public:
+    bool open() const { return open_; }
+    const ToeEdit& selection() const { return edit_; }
+    void select(bool male,bool blue,char side,int digit,int segment) {
+        edit_.male=male;edit_.blue=blue;edit_.side=side;edit_.digit=digit;edit_.segment=segment;
+    }
     void draw(NativeFrame& f,const SkeletonRoom& room) const {
         if(!open_)return;
         const auto l=layout(f.width,f.height);
         f.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.88);
-        text(f,l,10,5,"TOE BONE EDITOR  |  T: hide  Esc: cursor");
+        text(f,l,10,5,"TOE BONE EDITOR  |  T: close");
         button(f,l,10,31,90,edit_.male?"MALE *":"MALE");
         button(f,l,105,31,105,!edit_.male?"FEMALE *":"FEMALE");
         button(f,l,218,31,90,!edit_.blue?"WHITE *":"WHITE");
@@ -40,7 +45,7 @@ public:
         button(f,l,10,276,90,"APPLY B");
         text(f,l,110,279,room.originalToePose()?"B: ORIGINAL POSE":"STANDING POSE");
         const auto message=!status_.empty()?status_:!room.toeEditError().empty()?room.toeEditError():
-            room.toeEditingAvailable()?"V: shapes/lines   B: untouched original":"Press STAND to exit ragdoll.";
+            room.toeEditingAvailable()?"B: original pose   STAND: resting pose":"Press STAND to exit ragdoll.";
         text(f,l,10,305,message);
         text(f,l,10,329,"Reset affects the selected bone.");
     }

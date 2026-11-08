@@ -536,14 +536,14 @@ bool Renderer::createPipeline() {
         return false;
     }
 
-    // Eight world/UI variants and two depth-tested translucent skin variants.
-    VkGraphicsPipelineCreateInfo info[10]{};
-    for (int index = 0; index < 10; ++index) {
+    // Eight world/UI variants plus translucent UV and non-UV geometry.
+    VkGraphicsPipelineCreateInfo info[12]{};
+    for (int index = 0; index < 12; ++index) {
         VkGraphicsPipelineCreateInfo& entry = info[index];
         entry.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         entry.stageCount = 2;
         const bool skinPass = index >= 8;
-        const int uvVariant = skinPass ? 1 : ((index / 2) % 2);
+        const int uvVariant = skinPass ? (index < 10 ? 1 : 0) : ((index / 2) % 2);
         entry.pStages = uvVariant ? stages : stagesNoUv;
         entry.pVertexInputState = &vertexInput[uvVariant];
         entry.pInputAssemblyState = &assembly;
@@ -558,8 +558,8 @@ bool Renderer::createPipeline() {
         entry.subpass = 0;
         entry.renderPass = index % 2 == 0 ? renderPass_ : renderPassCovered_;
     }
-    VkPipeline built[10] = {};
-    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 10, info, nullptr, built);
+    VkPipeline built[12] = {};
+    const VkResult result = createGraphicsPipelines(device_, VK_NULL_HANDLE, 12, info, nullptr, built);
     destroyShaderModule(device_, vertexModule, nullptr);
     destroyShaderModule(device_, vertexNoUv, nullptr);
     destroyShaderModule(device_, fragmentModule, nullptr);
@@ -578,6 +578,8 @@ bool Renderer::createPipeline() {
     pipelineInterfaceUvCovered_ = built[7];
     pipelineSkin_ = built[8];
     pipelineSkinCovered_ = built[9];
+    pipelineTranslucent_ = built[10];
+    pipelineTranslucentCovered_ = built[11];
     return true;
 }
 
@@ -838,6 +840,8 @@ void Renderer::stop() {
         if (pipelineUvCovered_) destroyPipeline(device_, pipelineUvCovered_, nullptr);
         if (pipelineSkin_) destroyPipeline(device_, pipelineSkin_, nullptr);
         if (pipelineSkinCovered_) destroyPipeline(device_, pipelineSkinCovered_, nullptr);
+        if (pipelineTranslucent_) destroyPipeline(device_, pipelineTranslucent_, nullptr);
+        if (pipelineTranslucentCovered_) destroyPipeline(device_, pipelineTranslucentCovered_, nullptr);
         if (pipelineInterface_) destroyPipeline(device_, pipelineInterface_, nullptr);
         if (pipelineInterfaceCovered_) destroyPipeline(device_, pipelineInterfaceCovered_, nullptr);
         if (pipelineInterfaceUv_) destroyPipeline(device_, pipelineInterfaceUv_, nullptr);
@@ -874,6 +878,8 @@ void Renderer::stop() {
     pipelineUvCovered_ = VK_NULL_HANDLE;
     pipelineSkin_ = VK_NULL_HANDLE;
     pipelineSkinCovered_ = VK_NULL_HANDLE;
+    pipelineTranslucent_ = VK_NULL_HANDLE;
+    pipelineTranslucentCovered_ = VK_NULL_HANDLE;
     pipelineLayout_ = VK_NULL_HANDLE;
     renderPass_ = VK_NULL_HANDLE;
     renderPassCovered_ = VK_NULL_HANDLE;

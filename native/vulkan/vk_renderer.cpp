@@ -357,8 +357,9 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     for (int pass=0;pass<3;++pass) for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
         const bool transparentSkin=batch.blendedSkin && batch.smoothSkin && batch.material.opacity<0.999;
-        if (batch.vertices.empty() || (pass==0 && (batch.isUi || transparentSkin)) ||
-            (pass==1 && !transparentSkin) || (pass==2 && !batch.isUi)) continue;
+        const bool transparent=transparentSkin || batch.translucent;
+        if (batch.vertices.empty() || (pass==0 && (batch.isUi || transparent)) ||
+            (pass==1 && !transparent) || (pass==2 && !batch.isUi)) continue;
         const bool textured = texturedMaterial(batch.material);
         const bool vertexUv = hasVertexUv(batch);
         const bool localIndexed = vertexUv && !batch.indices.empty() && !batch.isUi;
@@ -373,7 +374,8 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
-        const VkPipeline wanted = transparentSkin ? (covered ? pipelineSkinCovered_ : pipelineSkin_) : batch.isUi
+        const VkPipeline wanted = transparent ? (vertexUv ? (covered ? pipelineSkinCovered_ : pipelineSkin_) :
+            (covered ? pipelineTranslucentCovered_ : pipelineTranslucent_)) : batch.isUi
             ? (vertexUv ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
             : (vertexUv ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
