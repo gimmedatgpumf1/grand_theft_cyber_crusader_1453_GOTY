@@ -4,6 +4,7 @@
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
 #include "client/skeleton_comparison_ui.h"
+#include "client/skeleton_toe_editor_ui.h"
 #include "client/room_freecam.h"
 #include "client/view_controls.h"
 #include "client/diagnostics.h"
@@ -113,7 +114,7 @@ public:
                 frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
+                roomUi_.draw(frame,room_); toeEditorUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps);
                 if (captured_) {
                     const int x=int(std::lround(roomDragging_ ? roomDragX_ : view_.width*0.5));
                     const int y=int(std::lround(roomDragging_ ? roomDragY_ : view_.height*0.5));
@@ -525,6 +526,7 @@ private:
             roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
             updateRoomDragRay(); return;
         }
+        if (toeEditorUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
         if (roomUi_.handle(event,captured_,view_.width,view_.height,room_)) return;
         if (event.type==WindowEvent::Type::MouseDown && event.button==1 && room_.ragdollActive()) {
             roomDragging_=true;
@@ -816,6 +818,7 @@ private:
     SkeletonRoom room_;
     RoomFreecam roomCamera_;
     SkeletonComparisonUi roomUi_;
+    SkeletonToeEditorUi toeEditorUi_;
     bool testRoom_ = false;
     bool roomRestoreCapture_ = false;
     bool roomDragging_ = false;

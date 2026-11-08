@@ -60,6 +60,30 @@ Run it from the repository root after linking the native client objects:
 `inspect-toes OUTPUT female L 5 isolated`. The `ORIGINAL=1` environment
 variable requests the original-pose view.
 
+## Manual toe bone editor
+
+In the skeleton room, press **T** to show the editor, then **Esc** to release
+the mouse. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
+middle or distal phalanx (the great toe has no middle bone). The +/- buttons
+rotate around the selected bone's centre or translate it along world X, Y and Z.
+The normal step is 5 degrees / 1 mm; **FINE** changes it to 1 degree / 0.2 mm.
+Each click moves only the selected white bone, not its descendants. The blue
+skin follows its existing bone weights; white edits also feed the comparison
+rig, so inspect blue separately and use its controls as needed. V changes the
+visualization; move the camera for top and side views. Click outside the panel
+to capture the mouse again.
+
+**UNDO** removes the last edit in the current pose. **RESET BONE** removes the
+selected bone's edits in that pose. **SAVE** writes `toe-bone-edits.txt` in the
+repository/game root; **LOAD** reloads it, and saved standing edits load when
+the room starts. Save again after undo/reset to keep that change. This local
+file is ignored by Git and can be shared separately. **STAND** restores the
+standing pose with its edits. **B** still restores the untouched source pose;
+you can also edit that pose, separately from standing. **APPLY B** reapplies
+saved B-pose edits after B has restored the untouched source; the first edit in
+the B pose does so automatically. These controls do not automatically fix any
+joint, and the resulting pose is not yet verified for bending or ragdoll.
+
 ## Earlier fitting experiment (not the in-game foot)
 
 ![Earlier distorted fitting and reduction experiment](progress.png)

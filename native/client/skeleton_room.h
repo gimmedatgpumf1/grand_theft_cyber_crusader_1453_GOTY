@@ -6,6 +6,7 @@
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_lines.h"
 #include "client/skeleton_gpu_rig.h"
+#include "client/skeleton_toe_editor.h"
 #include <memory>
 
 #include <cstdint>
@@ -51,6 +52,17 @@ public:
     bool adjustReferenceGroup(int key, double degrees, int fingerJoint = 0);
     bool restoreReferencePose(); // straight-arm, straight-leg reference pose
     bool restoreOriginalPose(); // original registered CT pose
+    bool editToe(const ToeEdit& edit);
+    bool undoToeEdit();
+    bool resetToeEdits(const ToeEdit& selection);
+    bool saveToeEdits() const;
+    bool loadToeEdits();
+    bool showOriginalToeEdits();
+    bool toeEditingAvailable() const { return ready_ && !physicsRig_; }
+    bool originalToePose() const { return originalToePose_; }
+    const std::string& toeEditError() const { return toeEditError_; }
+    std::size_t toeEditCount() const { return toeEdits_.size(); }
+    std::vector<std::array<double,16>> comparisonToePose(bool male,Vec3 origin) const;
     bool toggleRagdoll();
     void advanceRagdoll(double seconds);
     bool ragdollActive() const { return bool(physicsRig_); }
@@ -84,7 +96,9 @@ private:
     double maleFloor_ = 0, femaleFloor_ = 0;
     bool lineSceneReady_ = false;
     std::uint64_t lineMalePoseRevision_ = 0, lineFemalePoseRevision_ = 0;
-    std::string error_;
+    std::string error_, toeEditsPath_, toeEditError_;
+    std::vector<ToeEdit> toeEdits_;
+    bool originalToePose_=false, originalToeEditsVisible_=false;
     // The room's geometry is kept between frames when the GPU path draws it:
     // two skeletons are three hundred thousand triangles, and re-sending them
     // every frame is the cost this path exists to remove.

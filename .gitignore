@@ -20,3 +20,6 @@ __pycache__/
 
 # Node dependencies fetched by the asset tools
 node_modules/
+
+# Locally saved toe alignment edits
+toe-bone-edits.txt

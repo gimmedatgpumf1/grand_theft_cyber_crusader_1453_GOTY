@@ -103,6 +103,7 @@ void drawWalls(Rasterizer& rasterizer, const Camera& camera) {
 
 bool SkeletonRoom::load(const std::string& root, std::string& error) {
     ready_ = false;
+    toeEdits_.clear(); toeEditError_.clear(); toeEditsPath_=root+"/toe-bone-edits.txt";
     littleToeReady_ = false;
     lineSceneReady_ = false;
     restReady_ = false;
@@ -143,6 +144,9 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
     maleComparison_.setCorrectedToeReference(male_.sourceMatrices({},0));
     femaleComparison_.setCorrectedToeReference(female_.sourceMatrices({},0));
     littleToeReady_=true;
+    // A missing file is normal. Explicit Load reports invalid files in the UI.
+    std::ifstream saved(toeEditsPath_);
+    if (saved.good() && !loadToeEdits()) toeEditError_="Cannot load toe-bone-edits.txt";
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     error_.clear();
     return true;
@@ -230,6 +234,7 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
+    originalToePose_=false; originalToeEditsVisible_=false;
     maleComparison_.setToeAttachmentsEnabled(true); femaleComparison_.setToeAttachmentsEnabled(true);
     endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
@@ -252,18 +257,70 @@ bool SkeletonRoom::restoreReferencePose() {
     }
     if (littleToeReady_ && (!fitManualFemaleLittleToe(female_,femaleLines_) || !fitReferenceToeShafts(male_,maleLines_) ||
                             !fitReferenceToeShafts(female_,femaleLines_,true))) return false;
+    for (const auto& edit:toeEdits_) if (!edit.original && !edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit)) return false;
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
+    originalToePose_=true; originalToeEditsVisible_=false;
     maleComparison_.setToeAttachmentsEnabled(false); femaleComparison_.setToeAttachmentsEnabled(false);
     endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
+}
+
+std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec3 origin) const {
+    const auto& c=male?maleComparison_:femaleComparison_;
+    auto pose=c.toePose((male?male_:female_).sourceMatrices({},0),origin);
+    if(!originalToePose_ || originalToeEditsVisible_) applyBlueToeEdits(c,pose,origin,toeEdits_,male,originalToePose_);
+    return pose;
+}
+bool SkeletonRoom::showOriginalToeEdits() {
+    if(!toeEditingAvailable() || !originalToePose_ || !restoreOriginalPose())return false;
+    for(const auto& edit:toeEdits_) if(edit.original && !edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit))return false;
+    originalToeEditsVisible_=true;lineSceneReady_=false;cachedPose_=-1;return true;
+}
+bool SkeletonRoom::editToe(const ToeEdit& input) {
+    if(!toeEditingAvailable() || !validToeEdit(input) || toeEdits_.size()>=10000) return false;
+    if(originalToePose_ && !originalToeEditsVisible_ && !showOriginalToeEdits())return false;
+    auto edit=input;edit.original=originalToePose_;
+    if(!edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit)) {
+        if(originalToePose_) showOriginalToeEdits(); else restoreReferencePose();
+        return false;
+    }
+    toeEdits_.push_back(edit);lineSceneReady_=false;cachedPose_=-1;return true;
+}
+bool SkeletonRoom::undoToeEdit() {
+    if(!toeEditingAvailable())return false;
+    auto it=std::find_if(toeEdits_.rbegin(),toeEdits_.rend(),[&](const ToeEdit& e){return e.original==originalToePose_;});
+    if(it==toeEdits_.rend())return false;
+    const bool original=originalToePose_;const auto old=toeEdits_;toeEdits_.erase(std::next(it).base());
+    const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
+    if(!rebuild()) { toeEdits_=old; rebuild(); return false; }
+    cachedPose_=-1;return true;
+}
+bool SkeletonRoom::resetToeEdits(const ToeEdit& selected) {
+    if(!toeEditingAvailable())return false;
+    const bool original=originalToePose_;const auto old=toeEdits_;
+    std::erase_if(toeEdits_,[&](const ToeEdit& e){return e.original==original && e.male==selected.male && e.blue==selected.blue &&
+        e.side==selected.side && e.digit==selected.digit && e.segment==selected.segment;});
+    const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
+    if(!rebuild()) { toeEdits_=old; rebuild(); return false; }
+    cachedPose_=-1;return true;
+}
+bool SkeletonRoom::saveToeEdits() const { return gtc::native::saveToeEdits(toeEditsPath_,toeEdits_); }
+bool SkeletonRoom::loadToeEdits() {
+    if(!toeEditingAvailable())return false;
+    auto old=toeEdits_, loaded=toeEdits_;
+    if(!gtc::native::loadToeEdits(toeEditsPath_,loaded))return false;
+    const bool original=originalToePose_;toeEdits_=std::move(loaded);
+    const auto rebuild=[&] {return original?showOriginalToeEdits():restoreReferencePose();};
+    if(!rebuild()) { toeEdits_=std::move(old); rebuild(); return false; }
+    toeEditError_.clear();cachedPose_=-1;return true;
 }
 
 bool SkeletonRoom::toggleRagdoll() {
@@ -330,8 +387,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
                 femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
-                const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
-                const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+                const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
+                const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
                 maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose);
                 femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose);
                 lineScene_ = raster.takeGpuScene();
@@ -354,8 +411,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-        const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
-        const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+        const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
+        const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
         maleComparison_.draw(raster,-2.85,12000,&maleToePose);
         femaleComparison_.draw(raster,2.85,14000,&femaleToePose);
         const UiLayer* ui=frame.uiLayer;
@@ -456,8 +513,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         }
         const std::vector<std::array<double, 16>>& maleMatrices = cachedMaleMatrices_;
         const std::vector<std::array<double, 16>>& femaleMatrices = cachedFemaleMatrices_;
-        const auto maleToePose=poseMoved ? maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0}) : std::vector<std::array<double,16>>{};
-        const auto femaleToePose=poseMoved ? femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0}) : std::vector<std::array<double,16>>{};
+        const auto maleToePose=poseMoved ? comparisonToePose(true,{-2.85,0.10,0}) : std::vector<std::array<double,16>>{};
+        const auto femaleToePose=poseMoved ? comparisonToePose(false,{2.85,0.10,0}) : std::vector<std::array<double,16>>{};
         for (const std::pair<std::uint32_t, std::size_t>& entry : boneBatches_) {
             if (!poseMoved) break;
             const int id = static_cast<int>(entry.first);
@@ -509,8 +566,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     male_.draw(room, camera, {-0.95, maleFloor_, 0}, 0.0);
     worker.join();
     second.drain(room);
-    const auto maleToePose=maleComparison_.toePose(male_.sourceMatrices({},0),{-2.85,0.10,0});
-    const auto femaleToePose=femaleComparison_.toePose(female_.sourceMatrices({},0),{2.85,0.10,0});
+    const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
+    const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
     maleComparison_.draw(room,-2.85,12000,&maleToePose);
     femaleComparison_.draw(room,2.85,14000,&femaleToePose);
     const UiLayer* ui=frame.uiLayer;
