@@ -91,6 +91,34 @@ inline std::vector<ComparisonToeAttachment> posedToeAttachments(std::vector<Comp
     }
     return joints;
 }
+// Close the female comparison's fifth-toe joints independently of the CT
+// registration. The averaged phalanges have different contours from the CT;
+// a small longitudinal adjustment avoids moving the skin with a rigid turn.
+template<class Part,class Map>
+void fitComparisonLittleToe(const std::vector<Part>& parts,std::vector<std::array<double,16>>& pose,Map map) {
+    double scale=1;
+    for(const auto& p:parts)if(p.name=="FootMeta5_L" && !p.points.empty()) {
+        double lo=1e30,hi=-1e30;
+        for(Vec3 v:p.points){const double z=map(v,p).z;lo=std::min(lo,z);hi=std::max(hi,z);}
+        scale=(hi-lo)/.06528;break;
+    }
+    for(std::size_t i=0;i<parts.size();++i) {
+        const auto& n=parts[i].name;
+        if(n.starts_with("FootMidP5_"))pose[i][14]-=.0002*scale;
+        else if(n.starts_with("FootDistP5_"))pose[i][14]-=.0012*scale;
+    }
+}
+inline std::vector<std::array<double,16>> rebaseComparisonToePose(
+    const std::vector<std::array<double,16>>& posed,const std::vector<std::array<double,16>>& changed,
+    const std::vector<std::array<double,16>>& standing) {
+    auto result=posed;
+    for(std::size_t i=0;i<result.size();++i) {
+        const auto t=joint_detail::compose(joint_detail::compose(toeRigid(posed[i]),joint_detail::inverse(toeRigid(changed[i]))),toeRigid(standing[i]));
+        const auto& r=t.rotation;
+        result[i]={r[0],r[3],r[6],0,r[1],r[4],r[7],0,r[2],r[5],r[8],0,t.translation.x,t.translation.y,t.translation.z,1};
+    }
+    return result;
+}
 inline void attachComparisonToes(const std::vector<ComparisonToeAttachment>& joints,
     const std::vector<std::array<double,16>>& neutral,std::vector<std::array<double,16>>& current,Vec3 origin) {
     // Parent-before-child order carries each correction through the chain.

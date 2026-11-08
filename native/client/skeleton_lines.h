@@ -37,6 +37,14 @@ public:
         return std::nullopt;
     }
 
+    std::optional<std::array<Vec3,2>> sourceBoneEndpoints(const std::string& name) const {
+        std::optional<std::array<Vec3,2>> result;
+        for(const auto& segment:segments_) if(segment.kind=='B' && segment.first==name) {
+            if(!result)result=std::array<Vec3,2>{segment.a,segment.b};else (*result)[1]=segment.b;
+        }
+        return result;
+    }
+
     bool load(const std::string& path, std::string& error) {
         std::ifstream input(path);
         if (!input) { error = "Cannot open skeleton lines " + path; return false; }

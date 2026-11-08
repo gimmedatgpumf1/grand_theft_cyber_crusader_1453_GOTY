@@ -1,5 +1,15 @@
 # MakeHuman feet — work in progress
 
+The standing CT reference also checks each rendered V-view phalanx shaft, not
+just the line between toe centres. Outlying shafts are turned as rigid source
+bones and their IP hinges are moved with them; distant unchanged segments are
+brought closer at their visible surfaces. A small female left third-MTP turn
+separates adjacent rays. The blue comparison retains its independently fitted
+standing reference and retargeted little-toe skin rather than copying those CT
+corrections directly. This is visual registration, not anatomical ground
+truth: some blue joints and bent skin still need refinement. Original-pose
+restore retains the prior source/comparison appearance.
+
 The blue skeletons use the **original-resolution MakeHuman foot cut** in the
 room. Width and heel-to-toe length are fitted separately, then the whole mesh
 is rotated and positioned relative to the heel and the five distal toes. A

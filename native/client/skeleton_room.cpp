@@ -1,5 +1,6 @@
 #include "client/skeleton_room.h"
 #include "client/skeleton_little_toe_fit.h"
+#include "client/skeleton_toe_shaft_fit.h"
 #include "client/room_freecam.h"
 #include "client/skeleton_rest_toes.h"
 #include "client/skeleton_toe_yaw.h"
@@ -134,6 +135,12 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
         ready_=false; return false;
     }
     if (!fitFemaleLittleToe(female_)) { ready_=false; error="Unable to align the little toes"; return false; }
+    maleComparison_.setToeStandingReference(male_.sourceMatrices({},0));
+    femaleComparison_.setToeStandingReference(female_.sourceMatrices({},0));
+    if (!fitReferenceToeShafts(male_,maleLines_) || !fitReferenceToeShafts(female_,femaleLines_,true)) {
+        ready_=false; error="Unable to align toe shafts"; return false;
+    }
+    maleComparison_.setCorrectedToeReference(male_.sourceMatrices({},0));
     femaleComparison_.setCorrectedToeReference(female_.sourceMatrices({},0));
     littleToeReady_=true;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
@@ -243,7 +250,8 @@ bool SkeletonRoom::restoreReferencePose() {
         for (int pass=0;pass<2;++pass)
             if (!alignReferenceToeDirections(*model,model==&male_ ? maleLines_ : femaleLines_) || !settleReferenceToes(*model)) return false;
     }
-    if (littleToeReady_ && !fitFemaleLittleToe(female_)) return false;
+    if (littleToeReady_ && (!fitFemaleLittleToe(female_) || !fitReferenceToeShafts(male_,maleLines_) ||
+                            !fitReferenceToeShafts(female_,femaleLines_,true))) return false;
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;

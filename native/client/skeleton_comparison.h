@@ -1,5 +1,4 @@
 #pragma once
-
 // A visual comparison, not an anatomical reconstruction. The reference curves
 // describe skin landmarks; the available landmarks below are skeletal proxies.
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
@@ -23,7 +22,6 @@
 #include "client/male_comparison_formulas.h"
 #include "client/female_comparison_formulas.h"
 #include "client/comparison_standard_deviations.h"
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -32,9 +30,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
 namespace gtc::native {
-
 class SkeletonComparison {
 public:
     enum Dimension { Height, Head, Neck, Torso, Arm, Leg, Hip, Shoulder, Count };
@@ -50,7 +46,7 @@ public:
         std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
     };
     bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
-        male_ = male; correctedToeMatrices_.clear();
+        male_ = male; correctedToeMatrices_.clear(); standingToeMatrices_.clear();
         const auto matrices = model.sourceMatrices({}, 0); referenceMatrices_=matrices;
         parts_.clear();
         for (std::size_t i=0; i<matrices.size(); ++i) {
@@ -437,7 +433,6 @@ public:
         floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
         return update(error);
     }
-
     bool loadCurves(const std::string& directory, std::string& error) {
         return curves_.load(directory+"BODY_PART_CURVE_KNOTS.tsv",error) &&
                curves_.loadSelectedModels(directory+"BODY_PART_SELECTED_MODELS.tsv",error);
@@ -485,7 +480,6 @@ public:
         return true;
     }
     void reset(std::string& error) { profile_=Profile{}; profile_.height=defaultHeight(); update(error); }
-
     // The skull, jaw and C1 share a single 3D similarity transform. The torso
     // field meets it at the bottom of C1; the jaw can lie lower than C7 because
     // those are distinct anterior/posterior structures, not one vertical chain.
@@ -599,8 +593,9 @@ public:
     // mapped centre anchors each rotation in the scaled blue figure. This is a
     // geometric approximation, not a deformable tissue or clinical fit.
     void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; toeAttachmentRevision_=0; }
-    void setToeAttachmentsEnabled(bool enabled) { toeAttachmentsEnabled_=enabled; }
-    const auto& correctedToeReference() const { return correctedToeMatrices_; }
+    void setToeStandingReference(const std::vector<std::array<double,16>>& matrices) { standingToeMatrices_=matrices; toeAttachmentRevision_=0; }
+    void setToeAttachmentsEnabled(bool enabled) { if (toeAttachmentsEnabled_!=enabled) { toeAttachmentsEnabled_=enabled; ++revision_; toeAttachmentRevision_=0; } }
+    const auto& correctedToeReference() const { return standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:correctedToeMatrices_; }
     const auto& littleToeSkinReference() const { return referenceMatrices_; }
     std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin,
                                                const std::vector<std::array<double,16>>* reference=nullptr) const {
@@ -616,14 +611,20 @@ public:
             result[i]=registeredToeDelta(current[i],referenceMatrices_[i],metatarsalFrames_[i],center,
                                         [&](Vec3 q) {return mapPart(q,p)+origin;});
         }
-        mirrorReferenceToePose(parts_,result,referenceMatrices_,reference?*reference:correctedToeMatrices_,metatarsalFrames_,origin,
+        mirrorReferenceToePose(parts_,result,referenceMatrices_,reference?*reference:(!toeAttachmentsEnabled_ && standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:correctedToeMatrices_),metatarsalFrames_,origin,
                                [&](Vec3 q,const Part& p){return mapPart(q,p);});
+        if (reference && toeAttachmentsEnabled_ && !male_ && standingToeMatrices_.size()==parts_.size() && *reference==standingToeMatrices_) fitComparisonLittleToe(parts_,result,[&](Vec3 q,const Part& p){return mapPart(q,p);});
         // Explicit references are static snapshots used to retarget the skin.
         // They must remain unchanged; only subsequent animation needs hinges.
         if (!reference && toeAttachmentsEnabled_) {
             const auto& rest=correctedToeMatrices_.size()==parts_.size() ? correctedToeMatrices_ : referenceMatrices_;
             const auto map=[&](Vec3 q,const Part& p){return mapPart(q,p);};
-            const auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,map);
+            auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,map);
+            if (standingToeMatrices_.size()==parts_.size()) {
+                auto standing=comparisonToeNeutral(parts_,referenceMatrices_,standingToeMatrices_,standingToeMatrices_,metatarsalFrames_,origin,map);
+                if (!male_) fitComparisonLittleToe(parts_,standing,map);
+                result=rebaseComparisonToePose(result,neutral,standing);neutral=standing;
+            }
             if (toeAttachmentRevision_!=revision_) {
                 toeAttachments_=comparisonToeAttachments(parts_,localToeMatrices(neutral,origin),map);
                 toeAttachmentRevision_=revision_;
@@ -634,9 +635,10 @@ public:
     }
     std::vector<ComparisonToeAttachment> toePivots(const std::vector<std::array<double,16>>& posed,Vec3 origin) const {
         if(!toeAttachmentsEnabled_ || posed.size()!=parts_.size() || toeAttachmentRevision_!=revision_)return {};
-        const auto& rest=correctedToeMatrices_.size()==parts_.size()?correctedToeMatrices_:referenceMatrices_;
-        const auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,
-                                                [&](Vec3 q,const Part& p){return mapPart(q,p);});
+        const auto& rest=standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:
+                         correctedToeMatrices_.size()==parts_.size()?correctedToeMatrices_:referenceMatrices_;
+        auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,rest,metatarsalFrames_,origin,[&](Vec3 q,const Part& p){return mapPart(q,p);});
+        if (!male_ && standingToeMatrices_.size()==parts_.size()) fitComparisonLittleToe(parts_,neutral,[&](Vec3 q,const Part& p){return mapPart(q,p);});
         return posedToeAttachments(toeAttachments_,neutral,posed,origin);
     }
     const JointRigidTransform& metatarsalFrame(std::size_t i) const { return metatarsalFrames_[i]; }
@@ -983,9 +985,8 @@ private:
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
-    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_;
-    mutable std::vector<ComparisonToeAttachment> toeAttachments_;
-    mutable std::uint64_t toeAttachmentRevision_=0;
+    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_, standingToeMatrices_;
+    mutable std::vector<ComparisonToeAttachment> toeAttachments_; mutable std::uint64_t toeAttachmentRevision_=0;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
