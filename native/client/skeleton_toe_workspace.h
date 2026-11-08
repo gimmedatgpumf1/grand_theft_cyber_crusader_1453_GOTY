@@ -35,11 +35,12 @@ public:
     }
     void drawUi(NativeFrame& f,const SkeletonToeEditorUi& ui) const {
         if(!ui.open())return;
-        f.blendRectangle(8,8,630,70,colorHex("#10212c"),.88);
-        button(f,14,13,62,top_?"TOP *":"TOP");button(f,80,13,64,!top_?"SIDE *":"SIDE");
+        f.blendRectangle(8,8,630,94,colorHex("#10212c"),.88);
+        button(f,14,13,62,preset_ && top_?"TOP *":"TOP");button(f,80,13,64,preset_ && !top_?"SIDE *":"SIDE");
         button(f,150,13,108,"SAVE AXES");button(f,263,13,108,"LOAD AXES");button(f,376,13,122,"RESET AXIS");
         button(f,503,13,130,focus_==0?"ALL BONES":focus_==1?"ONE TOE":"ONE BONE");
-        drawTextPixels(f,14,43,status_.empty()?"Green: start. Red: end. Drag to mark; not joints.":status_,colorHex("#e0effb"),20);
+        drawTextPixels(f,14,43,status_.empty()?"Left drag: landmarks (not joints). Right: orbit.":status_,colorHex("#e0effb"),20);
+        drawTextPixels(f,14,67,"TOP/SIDE reset. Wheel: zoom. H: controls.",colorHex("#e0effb"),20);
         for(const auto& b:bones_) {
             const bool selected=same(b.key,ui.selection());
             auto a=project(b.world[0]),c=project(b.world[1]);
@@ -60,7 +61,7 @@ public:
         const auto& model=selection.male?room.male():room.female();
         const auto& comparison=room.comparison(selection.male);
         if(cached_ && key(selection)==cachedSelection_ && cachedPose_==model.sourcePoseRevision() &&
-           cachedComparison_==comparison.revision() && cachedEdits_==room.toeEditRevision() && cachedTop_==top_ && cachedFocus_==focus_ &&
+           cachedComparison_==comparison.revision() && cachedEdits_==room.toeEditRevision() && cachedTop_==top_ && cachedFocus_==focus_ && cachedPanel_==ui.panelVisible() &&
            scene_.width==frame.width && scene_.height==frame.height) {
             refreshAxes();return true;
         }
@@ -113,14 +114,39 @@ public:
         if(bones_.empty())return false;
         const Vec3 center=(lo+hi)*.5;
         camera_=Camera{};camera_.width=frame.width;camera_.height=frame.height;camera_.fovDegrees=34;camera_.worldSpaceGpu=true;
-        const int available=std::max(120,frame.width-430);
-        const double spanX=top_?hi.x-lo.x:hi.z-lo.z,spanY=top_?hi.z-lo.z:hi.y-lo.y;
+        const int available=std::max(120,frame.width-(ui.panelVisible()?430:20));
+        // Orient the camera to the selected foot, not the world's vertical:
+        // the original CT foot may be rotated even though it is unmodified.
+        const auto boneCenter=[&](const std::string& name)->std::optional<Vec3> {
+            const int index=model.sourceStructure(name);if(index<0)return std::nullopt;
+            const auto& part=model.sourceStructures()[std::size_t(index)];if(!part.pointCount)return std::nullopt;
+            Vec3 c{};for(std::size_t j=0;j<part.pointCount;++j)c+=model.bones()[part.group].points[part.firstPoint+j];
+            return toePoint(whitePose[std::size_t(index)],c/double(part.pointCount));
+        };
+        const std::string side=std::string("_")+selection.side;
+        const auto heel=boneCenter("Cal"+side),first=boneCenter("FootMeta1"+side),fifth=boneCenter("FootMeta5"+side),shin=boneCenter("Tibia"+side);
+        Vec3 lateral{1,0,0},forward{0,0,1},dorsal{0,1,0};
+        if(heel && first && fifth && shin) {
+            lateral=normalized(*first-*fifth);forward=normalized((*first+*fifth)*.5-*heel);
+            forward=normalized(forward-lateral*dot(forward,lateral));dorsal=normalized(cross(lateral,forward));
+            if(dot(dorsal,*shin-*heel)<0)dorsal=dorsal*-1;
+            if(length(dorsal)<.5 || length(forward)<.5){lateral={1,0,0};forward={0,0,1};dorsal={0,1,0};}
+        }
+        const Vec3 direction=lateral*(std::cos(elevation_)*std::sin(azimuth_))+dorsal*std::sin(elevation_)+forward*(std::cos(elevation_)*std::cos(azimuth_));
+        camera_.position=center+direction;camera_.target=center;camera_.up=dorsal;
+        Vec3 projectedLo{1e30,1e30,1e30},projectedHi{-1e30,-1e30,-1e30};
+        for(const auto& bone:bones_)for(Vec3 p:bone.points) {
+            const Vec3 q=camera_.view(p);
+            projectedLo.x=std::min(projectedLo.x,q.x);projectedHi.x=std::max(projectedHi.x,q.x);
+            projectedLo.y=std::min(projectedLo.y,q.y);projectedHi.y=std::max(projectedHi.y,q.y);
+            projectedLo.z=std::min(projectedLo.z,q.z);projectedHi.z=std::max(projectedHi.z,q.z);
+        }
+        const double spanX=projectedHi.x-projectedLo.x,spanY=projectedHi.y-projectedLo.y;
         const double margin=focus_==2?.003:focus_==1?.010:.035;
-        const double depth=top_?hi.y-lo.y:hi.x-lo.x;
+        const double depth=projectedHi.z-projectedLo.z;
         const double distance=std::max(.040+depth*.5,std::max(camera_.focal()*(spanX+margin)/available,
-            camera_.focal()*(spanY+margin)/std::max(120,frame.height-100))*1.20);
-        camera_.position=center+(top_?Vec3{0,distance,0}:Vec3{distance,0,0});camera_.target=center;
-        if(top_)camera_.up={0,0,-1};
+            camera_.focal()*(spanY+margin)/std::max(120,frame.height-120))*1.20*zoom_);
+        camera_.position=center+direction*distance;camera_.target=center;
         const Vec3 right=camera_.world({1,0,0})-camera_.position;
         const Vec3 shift=right*((frame.width-available)*.5*distance/camera_.focal());
         camera_.position+=shift;camera_.target+=shift;
@@ -133,13 +159,20 @@ public:
         for(auto& b:scene_.batches)b.translucent=true;
         scene_.covered=false;scene_.width=frame.width;scene_.height=frame.height;scene_.focal=camera_.focal();scene_.viewMatrix=camera_.viewMatrix();
         cached_=true;cachedSelection_=key(selection);cachedPose_=model.sourcePoseRevision();
-        cachedComparison_=comparison.revision();cachedEdits_=room.toeEditRevision();cachedTop_=top_;cachedFocus_=focus_;
+        cachedComparison_=comparison.revision();cachedEdits_=room.toeEditRevision();cachedTop_=top_;cachedFocus_=focus_;cachedPanel_=ui.panelVisible();
         return true;
     }
     bool render(NativeFrame& frame) { return cached_ && submit(frame); }
     bool handle(const WindowEvent& e,SkeletonToeEditorUi& ui,SkeletonRoom& room) {
         if(!ui.open())return false;
-        if(e.type==WindowEvent::Type::FocusLoss){dragging_=false;return false;}
+        if(e.type==WindowEvent::Type::FocusLoss){dragging_=false;orbiting_=false;return false;}
+        if(e.type==WindowEvent::Type::MouseDown && e.button==3) {orbiting_=true;lastX_=e.x;lastY_=e.y;return true;}
+        if(e.type==WindowEvent::Type::MouseUp && e.button==3 && orbiting_){orbiting_=false;return true;}
+        if(e.type==WindowEvent::Type::MouseMove && orbiting_) {
+            azimuth_+=(e.x-lastX_)*.008;elevation_=std::clamp(elevation_+(e.y-lastY_)*.008,-1.56,1.56);preset_=false;
+            lastX_=e.x;lastY_=e.y;cached_=false;return true;
+        }
+        if(e.type==WindowEvent::Type::Wheel) {zoom_=std::clamp(zoom_*std::pow(.85,e.wheel),.3,4.);cached_=false;return true;}
         if(e.type==WindowEvent::Type::MouseUp && e.button==1 && dragging_){dragging_=false;return true;}
         if(e.type==WindowEvent::Type::MouseMove && dragging_) {
             auto it=std::find_if(bones_.begin(),bones_.end(),[&](const Bone& b){return b.key==dragKey_;});
@@ -155,8 +188,8 @@ public:
         }
         if(e.type!=WindowEvent::Type::MouseDown || e.button!=1)return false;
         if(e.y>=13 && e.y<37) {
-            if(e.x>=14 && e.x<76){top_=true;return true;}
-            if(e.x>=80 && e.x<144){top_=false;return true;}
+            if(e.x>=14 && e.x<76){top_=true;preset_=true;azimuth_=0;elevation_=1.56;cached_=false;return true;}
+            if(e.x>=80 && e.x<144){top_=false;preset_=true;azimuth_=1.5707963267948966;elevation_=0;cached_=false;return true;}
             if(e.x>=150 && e.x<258){status_=save()?"Axes saved to toe-bone-axes.txt":"Could not save axes.";return true;}
             if(e.x>=263 && e.x<371){if(load()){syncWhiteAxes(room);status_="Axes loaded.";}else status_="No valid axes file.";return true;}
             if(e.x>=376 && e.x<498){axes_.erase(key(ui.selection()));syncWhiteAxes(room);status_="Selected axis reset.";return true;}
@@ -168,6 +201,7 @@ public:
             if(d<best){best=d;hit=&b;end=k;}
         }
         if(hit) {ui.select(hit->key.male,hit->key.blue,hit->key.side,hit->key.digit,hit->key.segment);
+            if(hit->key.blue || !room.unmodifiedToeSource()) {status_="Mark on the unmoved WHITE B source.";return true;}
             dragKey_=hit->key;dragEnd_=end;lastX_=e.x;lastY_=e.y;dragging_=true;status_.clear();}
         return true;
     }
@@ -217,8 +251,9 @@ private:
     std::vector<Bone> bones_;
     Camera camera_{};GpuScene scene_;
     std::uint64_t revision_=0,cachedPose_=0,cachedComparison_=0,cachedEdits_=0;
-    Key cachedSelection_{};bool cached_=false,cachedTop_=true;
+    Key cachedSelection_{};bool cached_=false,cachedTop_=true,cachedPanel_=true;
     Key dragKey_{};int dragEnd_=0,focus_=0,cachedFocus_=0;double lastX_=0,lastY_=0;
-    bool top_=true,dragging_=false;
+    double azimuth_=0,elevation_=1.56,zoom_=1;
+    bool top_=true,preset_=true,dragging_=false,orbiting_=false;
 };
 } // namespace gtc::native

@@ -539,6 +539,9 @@ private:
         if (toeEditorUi_.handle(event,captured_,view_.width,view_.height,room_)) {
             if (event.type==WindowEvent::Type::KeyDown && event.key=='t' && toeEditorUi_.open()) {
                 stopRoomDrag(); roomCamera_.clear(); window_.captureMouse(false); captured_=false;
+                const auto selection=toeEditorUi_.selection();
+                toeEditorUi_.select(selection.male,false,'L',selection.digit,selection.segment);
+                room_.restoreOriginalPose();
             }
             return;
         }

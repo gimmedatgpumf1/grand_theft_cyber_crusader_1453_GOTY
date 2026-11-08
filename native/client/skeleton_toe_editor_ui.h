@@ -11,12 +11,13 @@ namespace gtc::native {
 class SkeletonToeEditorUi {
 public:
     bool open() const { return open_; }
+    bool panelVisible() const { return panelVisible_; }
     const ToeEdit& selection() const { return edit_; }
     void select(bool male,bool blue,char side,int digit,int segment) {
         edit_.male=male;edit_.blue=blue;edit_.side=side;edit_.digit=digit;edit_.segment=segment;
     }
     void draw(NativeFrame& f,const SkeletonRoom& room) const {
-        if(!open_)return;
+        if(!open_ || !panelVisible_)return;
         const auto l=layout(f.width,f.height);
         f.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.88);
         text(f,l,10,5,"TOE BONE EDITOR  |  T: close");
@@ -50,8 +51,9 @@ public:
         text(f,l,10,329,"Reset affects the selected bone.");
     }
     bool handle(const WindowEvent& e,bool captured,int width,int height,SkeletonRoom& room) {
-        if(e.type==WindowEvent::Type::KeyDown && e.key=='t' && !e.repeat) {open_=!open_;return true;}
-        if(!open_ || captured || e.type!=WindowEvent::Type::MouseDown || e.button!=1)return false;
+        if(e.type==WindowEvent::Type::KeyDown && e.key=='t' && !e.repeat) {open_=!open_;if(open_)panelVisible_=width>=1000;return true;}
+        if(open_ && e.type==WindowEvent::Type::KeyDown && e.key=='h' && !e.repeat){panelVisible_=!panelVisible_;return true;}
+        if(!open_ || !panelVisible_ || captured || e.type!=WindowEvent::Type::MouseDown || e.button!=1)return false;
         const auto l=layout(width,height);const int x=int(e.x)-l.x,y=int(e.y)-l.y;
         if(x<0 || x>=l.w || y<0 || y>=l.h)return false;
         status_.clear();
@@ -96,7 +98,7 @@ private:
         button(f,l,x+44,y,38,"-");button(f,l,x+86,y,38,"+");
     }
     ToeEdit edit_{};
-    bool open_=false,fine_=false;
+    bool open_=false,fine_=false,panelVisible_=true;
     std::string status_;
 };
 } // namespace gtc::native

@@ -153,7 +153,7 @@ struct NativeWindow::Impl {
                 click.x = GET_X_LPARAM(lParam);
                 click.y = GET_Y_LPARAM(lParam);
                 // Keep receiving the release if an uncaptured drag leaves the window.
-                if (click.button == 1 && !self->captured) {
+                if ((click.button == 1 || click.button == 3) && !self->captured) {
                     if (down) SetCapture(hwnd);
                     else if (GetCapture() == hwnd) ReleaseCapture();
                 }

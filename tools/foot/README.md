@@ -64,7 +64,8 @@ variable requests the original-pose view.
 
 In the skeleton room, press **T** to open the isolated toe workspace (the
 mouse is released automatically). It shows just one chosen foot's phalanges,
-not the whole skeleton. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
+not the whole skeleton. It opens on the unmoved white B source and the left
+foot. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
 middle or distal phalanx (the great toe has no middle bone). The +/- buttons
 rotate around the selected bone's centre or translate it along world X, Y and Z.
 The normal step is 5 degrees / 1 mm; **FINE** changes it to 1 degree / 0.2 mm.
@@ -72,7 +73,9 @@ Each click moves only the selected white bone, not its descendants. The blue
 skin follows its existing bone weights; white edits also feed the comparison
 rig, so inspect blue separately and use its controls as needed. **TOP** and
 **SIDE** change the view; the **ALL BONES / ONE TOE / ONE BONE** button cycles
-between those isolation levels. Press T to return to the room.
+between those isolation levels. Right-drag to orbit and use the wheel to zoom;
+TOP and SIDE reset to foot-relative views. Press H to hide/show the controls
+panel (it starts hidden on smaller windows). Press T to return to the room.
 
 **UNDO** removes the last edit in the current pose. **RESET BONE** removes the
 selected bone's edits in that pose. **SAVE** writes `toe-bone-edits.txt` in the
@@ -85,9 +88,10 @@ saved B-pose edits after B has restored the untouched source; the first edit in
 the B pose does so automatically. These controls do not automatically fix any
 joint, and the resulting pose is not yet verified for bending or ragdoll.
 
-Each translucent phalanx has an editable stick. Drag its green start or red end;
-the top view edits X/Z and the side view edits Z/Y. The stick moves with its
-bone. **SAVE AXES** writes `toe-bone-axes.txt`, separately from the pose SAVE;
+Each translucent phalanx has an editable stick. Drag its green start or red end
+on the unmoved white B source. Dragging moves a point in the current view
+plane, retaining its depth; rotate the view to set the remaining dimension.
+The stick moves with its bone. **SAVE AXES** writes `toe-bone-axes.txt`, separately from the pose SAVE;
 **LOAD AXES** restores it and **RESET AXIS** resets the selected stick. White
 stick edits also appear in the room's V-view. These are manually chosen visual
 landmarks; changing them does **not** yet change the skeleton's joint pivots or

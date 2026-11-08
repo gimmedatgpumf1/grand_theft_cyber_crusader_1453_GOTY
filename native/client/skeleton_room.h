@@ -60,6 +60,7 @@ public:
     bool showOriginalToeEdits();
     bool toeEditingAvailable() const { return ready_ && !physicsRig_; }
     bool originalToePose() const { return originalToePose_; }
+    bool unmodifiedToeSource() const { return originalToePose_ && !originalToeEditsVisible_; }
     std::optional<std::array<Vec3,2>> toeAxis(bool male,const std::string& name) const {
         return (male?maleLines_:femaleLines_).sourceBoneEndpoints(name);
     }
