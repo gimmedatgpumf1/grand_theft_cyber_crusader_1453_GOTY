@@ -14,18 +14,7 @@ class SkeletonComparisonUi {
 public:
     void draw(NativeFrame& frame, const SkeletonRoom& room) const {
         const Layout l=layout(frame.width,frame.height);
-        if (room.lineView()) {
-            const int width=std::min(frame.width-16,680), x=(frame.width-width)/2;
-            const int y=std::max(0,(open_?l.y:frame.height-37)-28);
-            frame.blendRectangle(x,y,width,25,colorHex(hexRgb("#142632")),0.78);
-            drawTextPixels(frame,x+8,y+2,"RED: JOINTS / PRIMARY RANGE  |  TICKS: LIMITS  |  PALE: HINGE",colorHex(hexRgb("#ffd9d9")),20);
-        }
-        if (!open_) {
-            const int x=(frame.width-420)/2, y=std::max(0,frame.height-37);
-            frame.blendRectangle(x,y,420,29,colorHex(hexRgb("#142632")),0.78);
-            drawTextPixels(frame,x+10,y+4,room.ragdollActive()?"LMB: drag  Esc: cursor  T: toes":"T: toes  P: sliders  Esc: cursor",colorHex(hexRgb("#d4e9ff")),20);
-            return;
-        }
+        if (!open_) return;
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex(hexRgb("#10212c")),0.83);
         drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex(hexRgb("#9dceff")),20);
         if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,room.ragdollActive()?"Esc: cursor   P: hide   RMB: look   LMB: drag":"Esc: cursor   P: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
@@ -80,11 +69,7 @@ public:
             change(room,l,dragging_,e.x,0); return true;
         }
         if (e.type!=WindowEvent::Type::MouseDown || e.button!=1) return false;
-        if (!open_) {
-            const int x=(width-420)/2, y=std::max(0,height-37);
-            if (e.x>=x && e.x<x+420 && e.y>=y && e.y<y+29) { open_=true; return true; }
-            return false;
-        }
+        if (!open_) return false;
         if (e.x<l.x || e.x>=l.x+l.w || e.y<l.y || e.y>=l.y+l.h) return false;
         const double x=e.x-l.x,y=e.y-l.y;
         if (y>=30 && y<55) {

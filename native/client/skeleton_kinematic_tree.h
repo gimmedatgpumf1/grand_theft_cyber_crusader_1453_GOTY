@@ -113,6 +113,19 @@ public:
         if(!node.joint->orientPrimaryPerpendicular(shaft))return false;
         dirty_=true;return true;
     }
+    bool calibrateReferenceJoint(std::size_t body,Vec3 worldAxis,double angle) {
+        if(body==0 || body>=nodes_.size() || !nodes_[body].joint || !evaluate())return false;
+        auto& node=nodes_[body];
+        if(!node.sourceJoint)node.sourceJoint=node.joint;
+        const auto frame=joint_detail::compose(absolute_[node.parent],node.joint->parentFrame());
+        const auto inverse=joint_detail::inverse(frame);
+        const auto& r=inverse.rotation;
+        const Vec3 axis{r[0]*worldAxis.x+r[1]*worldAxis.y+r[2]*worldAxis.z,
+                        r[3]*worldAxis.x+r[4]*worldAxis.y+r[5]*worldAxis.z,
+                        r[6]*worldAxis.x+r[7]*worldAxis.y+r[8]*worldAxis.z};
+        if(!node.joint->calibratePrimary(axis,angle))return false;
+        dirty_=true;return true;
+    }
     void clearReferenceAdjustments() {
         for(auto& node:nodes_) {
             node.reference={};

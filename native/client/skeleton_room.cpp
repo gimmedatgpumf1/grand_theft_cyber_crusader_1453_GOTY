@@ -317,8 +317,8 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
             cache.source=toeMarksRevision_;cache.profile=c.revision();cache.neutral=toeReferenceRevision_;cache.origin=origin;
         }
         animateMarkedBlueToes(cache.reference,pose);
-        if(surfaceJoints)blueToeSurfaceAnchors(model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
     }
+    if(surfaceJoints)blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
     return pose;
 }
 void SkeletonRoom::updateToeSkinCalibration(bool male) {
@@ -456,8 +456,8 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
                 maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose,bool(physicsRig_));
                 femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose,bool(physicsRig_));
-                const auto maleWhite=physicsRig_?whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0}):std::vector<ComparisonToeAttachment>{};
-                const auto femaleWhite=physicsRig_?whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0}):std::vector<ComparisonToeAttachment>{};
+                const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
+                const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
                 joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite,physicsRig_.get());
                 joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001,nullptr,nullptr,&femaleWhite,physicsRig_.get());
                 joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints,physicsRig_.get());
@@ -487,8 +487,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
         maleComparison_.draw(raster,-2.85,12000,&maleToePose);
         femaleComparison_.draw(raster,2.85,14000,&femaleToePose);
-        joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001);
-        joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001);
+        const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
+        const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
+        joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite);
+        joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001,nullptr,nullptr,&femaleWhite);
         joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints);
         joint_view::draw(raster,female_,{2.85,0.10,0},14000,&femaleComparison_,&femaleToePose,&femaleJoints);
         const UiLayer* ui=frame.uiLayer;

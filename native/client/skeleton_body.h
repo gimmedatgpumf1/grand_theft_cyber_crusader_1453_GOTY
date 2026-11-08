@@ -215,6 +215,7 @@ public:
     bool adjustReferenceToe(std::size_t link,const JointRigidTransform& correction);
     bool repositionReferenceToeJoint(std::size_t link,Vec3 pivot);
     bool orientReferenceToeJoint(std::size_t link,Vec3 shaft);
+    bool calibrateReferenceToeBend(std::size_t link,Vec3 axis,double angle);
     // Preserve an individual toe's source frame when straightening it would
     // push its proximal bone through the standing sole.
     bool setReferenceToeAlignment(std::size_t link, bool enabled) {

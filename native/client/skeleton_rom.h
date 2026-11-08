@@ -67,7 +67,7 @@ inline std::optional<ReferenceBendRange> referenceBendRange(
     const auto has = [&](std::string_view fragment) {
         return first.find(fragment) != std::string_view::npos || second.find(fragment) != std::string_view::npos;
     };
-    if (has("FootProxP1")) return ReferenceBendRange{0,50};
+    if (has("FootProxP1")) return ReferenceBendRange{0,90};
     if (has("FootMidP")) {
         if (has("FootDistP")) return ReferenceBendRange{-30,60};
         if (has("FootProxP")) return ReferenceBendRange{0,35};

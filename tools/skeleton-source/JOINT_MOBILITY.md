@@ -229,20 +229,12 @@ A fixed source-to-neutral alignment is kept separate from flexion so the
 original CT pose can be restored. Interactive flexion clamps to the cited range.
 The same palm-relative convention is mirrored for left and right; it does not
 replace either subject's source bone geometry.
-Toe reference directions use the actual neighbouring joint locations, rather
-than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
-DIP reference alignment is separate from bounded toe flexion; positive flexion
-moves toward the sole. The resting pose uses each toe's source vertices and
-joint pivots to select bounded flexion toward the heel's support plane. A
-separate source-to-reference yaw aligns each toe with the foot in the ground
-plane, without turning plantar flexion into an abduction control. The large
-toe's source shaft is also aligned; for the smaller, nearly round phalanges,
-the relative bone centres provide a more stable direction than PCA. If
-straightening the source phalanges would put a toe below the sole, its source
-joint frames are retained and the bounded hinges are flexed instead. Resting IP
-flexion is capped at 20° (the controls still allow the full range). These are
-geometric pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
-mesh and V view, and the source pose is restorable.
+For toes with complete user marks, the marked bone shafts provide adjacent
+segment directions and their marked endpoints define surface attachments.
+Where marks are incomplete, the older geometric reference is retained. Positive
+flexion moves toward the sole. The original B pose remains the CT reference;
+standing and blue fitting are geometric approximations, not subject-specific
+clinical measurements.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
 hip axial rotation has a separate approximate ±45° range. Hip abduction is
@@ -272,11 +264,30 @@ limits for the CT subjects, and passive limits do not imply that all joints
 normally reach their maxima together. Whole-toe extension therefore lifts at
 MTP and returns a flexed lesser DIP toward neutral, rather than automatically
 hyperextending that DIP as well. Individual joint control still permits its
-separate 30° bound. The joint-axis and neutral-frame estimates are approximate;
-when a source toe cannot be straightened without crossing the sole, the source
-frame is retained, so the nominal zero is not a validated anatomical neutral.
-Lesser PIP flexion remains 35°, DIP flexion 60°, and great-toe IP flexion 50°;
-other references report different values, including 90° for great-toe IP flexion.
+separate 30° bound. The joint-axis and neutral-frame estimates are approximate,
+not validated anatomical measurements.
+The runtime's sagittal ranges (extension to plantar flexion) are: great MTP
+−70° to +45°, great IP 0° to +90°, lesser MTP −40° to +40°, lesser PIP
+0° to +35°, and lesser DIP −30° to +60°. These are general non-weightbearing
+references, not limits measured on either CT subject. The [lesser-toe
+examination](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/)
+and [foot ROM table](https://www.physio-pedia.com/Lower_Extremity_Range_of_Motion)
+report those IP and MTP figures; the latter distinguishes them from active
+motion, for which it lists IP extension to neutral. Different sources and
+individuals vary. Loaded motion and coupled tendon effects are not modelled.
+
+For complete user-marked toe shafts, the neutral for each displayed hinge is
+the adjacent marked parent shaft projected into the foot's sagittal plane;
+positive motion is toward the sole. The registered CT pose is not treated as
+zero flexion. Re-expressing the standing joint coordinate does not move the
+bones, and B retains its original source geometry and pose. V and R use
+the blue feet's mapped, mirrored marked shafts independently. A pre-existing
+marked pose outside the general interval is left as-is; white keyboard motion
+can recover it toward the interval without snapping, while the R solver enforces
+the limits. In non-physics mode the blue bones still follow the white animation;
+their differing marked neutral angles can therefore overshoot their own limits.
+This one-axis representation and the foot-plane estimate cannot capture
+coupled or person-specific motion.
 
 This remains a **partial** implementation: a single-axis tree cannot represent
 all three-dimensional ball-joint motion, pronation/supination with both

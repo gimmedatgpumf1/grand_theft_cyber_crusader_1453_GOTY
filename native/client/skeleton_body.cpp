@@ -867,7 +867,9 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
     if (!joint || joint->angles().empty()) return false;
     constexpr double radiansPerDegree = 3.14159265358979323846 / 180.0;
     auto angles = joint->angles();
-    angles[0] = *bounded * radiansPerDegree;
+    // A marked reference can already be outside a normal range. Let the
+    // joint recover toward it incrementally, without snapping the bone pose.
+    angles[0] = (joint->measuredPrimary() ? degrees : *bounded) * radiansPerDegree;
     if (body<neutralAlignments_.size() && neutralAlignments_[body]>=0 && !disabledAlignments_[body] && angles.size()>1)
         angles[relationship.mobility=="hip_ball_socket" || relationship.mobility=="sternoclavicular" || relationship.mobility=="acromioclavicular" ? 3 : 1]=neutralAlignments_[body];
     std::vector<AnatomicalKinematicTree::PoseUpdate> updates{{body, angles}};

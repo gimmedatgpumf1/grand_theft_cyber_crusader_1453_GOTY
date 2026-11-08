@@ -94,12 +94,16 @@ public:
     bool setAngles(const std::vector<double>& requested) {
         if (requested.size() != axes_.size()) return false;
         for (double q : requested) if (!std::isfinite(q)) return false;
-        for (std::size_t i = 0; i < requested.size(); ++i)
-            angles_[i] = std::clamp(requested[i], axes_[i].minimum, axes_[i].maximum);
+        for (std::size_t i = 0; i < requested.size(); ++i) {
+            const double low=i==0 && measuredPrimary_ ? std::min(axes_[i].minimum,angles_[i]) : axes_[i].minimum;
+            const double high=i==0 && measuredPrimary_ ? std::max(axes_[i].maximum,angles_[i]) : axes_[i].maximum;
+            angles_[i] = std::clamp(requested[i],low,high);
+        }
         return true;
     }
     const std::vector<double>& angles() const { return angles_; }
     const std::vector<JointRotationalAxis>& axes() const { return axes_; }
+    bool measuredPrimary() const { return measuredPrimary_; }
     const JointRigidTransform& parentFrame() const { return parentFrame_; }
     // Move the pivot in parent coordinates without changing the current pose.
     bool repositionPivot(Vec3 position) {
@@ -130,6 +134,19 @@ public:
         childFrameInverse_=joint_detail::compose(joint_detail::inverse(joint_detail::compose(parentFrame_,motion)),current);
         return true;
     }
+    // Re-express the current pose in a measured primary coordinate without
+    // moving the body. The present reference can itself be outside the normal
+    // range; future requested motion is still clamped by the existing bounds.
+    bool calibratePrimary(Vec3 axis, double angle) {
+        if (axes_.empty() || !joint_detail::finite(axis) || length(axis)<1e-8 || !std::isfinite(angle)) return false;
+        const auto current=childInParent();
+        axes_[0].direction=normalized(axis); angles_[0]=angle; measuredPrimary_=true;
+        JointRigidTransform motion;
+        for (std::size_t i=0;i<axes_.size();++i)
+            motion=joint_detail::compose(motion,joint_detail::rotate(axes_[i].direction,angles_[i]));
+        childFrameInverse_=joint_detail::compose(joint_detail::inverse(joint_detail::compose(parentFrame_,motion)),current);
+        return true;
+    }
     JointRigidTransform childInParent() const {
         JointRigidTransform motion;
         for (std::size_t i = 0; i < axes_.size(); ++i)
@@ -145,6 +162,7 @@ private:
     JointRigidTransform parentFrame_, childFrameInverse_;
     std::vector<JointRotationalAxis> axes_;
     std::vector<double> angles_;
+    bool measuredPrimary_=false;
 };
 
 } // namespace gtc::native

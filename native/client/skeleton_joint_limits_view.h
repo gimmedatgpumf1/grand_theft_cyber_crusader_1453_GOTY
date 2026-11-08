@@ -3,6 +3,7 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_toe_attachment.h"
+#include "client/skeleton_toe_limits.h"
 #include "client/skeleton_gpu_rig.h"
 #include <algorithm>
 #include <cmath>
@@ -86,17 +87,22 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const Vec3 sourceAxis=normalized(frameVector(frame,range.direction));
         Vec3 center=anchor(pi,frame.translation),axis=anchor(pi,frame.translation+sourceAxis*.01)-center;
         if(blue)center=(center+anchor(ci,frame.translation))*.5;
+        std::optional<MarkedToeBend> toeBend;
+        double markedChildLength=0;
         for(const auto& mark:pivots)if(mark.parent==pi && mark.child==ci) {
             center=mark.pivot;
-            if(length(mark.parentShaft)>1e-8) {
+            markedChildLength=length(mark.childShaft);
+            toeBend=markedToeBend(mark.parentShaft,mark.childShaft,mark.dorsal);
+            if(toeBend)axis=toeBend->axis;
+            else if(length(mark.parentShaft)>1e-8) {
                 const Vec3 shaft=normalized(mark.parentShaft),candidate=axis-shaft*dot(axis,shaft);
                 if(length(candidate)>1e-8)axis=candidate;
             }
             break;
         }
-        const double angle=joint->angles().empty()?0:joint->angles()[0];
+        const double angle=toeBend ? toeBend->flexion : joint->angles().empty()?0:joint->angles()[0];
         double minimum=range.minimum,maximum=range.maximum;
-        bool hinge=joint->axes().size()==1;
+        bool hinge=bool(toeBend) || joint->axes().size()==1;
         if(physics) {
             const int a=physicsBody[pi],b=physicsBody[ci];
             if(a<0 || b<0 || a==b || !shown.insert(std::minmax(a,b)).second)continue;
@@ -115,13 +121,16 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         if(length(axis)<1e-8)continue;
         axis=normalized(axis);
         const Vec3 target=blue?blueCenter[ci]:rawCenter[ci]+origin;
-        Vec3 current=target-center;current-=axis*dot(current,axis);
+        Vec3 current=toeBend ? toeBend->current : target-center;current-=axis*dot(current,axis);
         if(length(current)<1e-8)current=cross(axis,std::abs(axis.y)<.9?Vec3{0,1,0}:Vec3{1,0,0});
         if(length(current)<1e-8)continue;
         current=normalized(current);
-        const double radius=std::clamp(length(target-center)*.55,.006,.075);
+        // The untouched B reference can have separated surface marks. Its
+        // attachment gap must not inflate the arc to the size of the foot.
+        const double radius=toeBend ? std::clamp(markedChildLength*.55,.006,.025)
+                                    : std::clamp(length(target-center)*.55,.006,.075);
         const double width=std::clamp(radius*.07,.0007,.0018);
-        const Vec3 zero=turn(axis,-angle,current);
+        const Vec3 zero=toeBend ? toeBend->neutral : turn(axis,-angle,current);
         const int owner=blue?int(id+pi):int(pi),childOwner=blue?int(id+ci):int(ci);
         const int segments=std::clamp(int(std::ceil((maximum-minimum)*12)),4,64);
         const auto radial=[&](double a){return turn(axis,a,zero);};

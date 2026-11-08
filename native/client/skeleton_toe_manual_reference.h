@@ -1,5 +1,7 @@
 #pragma once
 #include "client/skeleton_toe_blue_calibration.h"
+#include "client/skeleton_toe_limits.h"
+#include "client/skeleton_leg_frame.h"
 #include <algorithm>
 
 namespace gtc::native {
@@ -78,6 +80,7 @@ inline bool applyMarkedToeReference(SkeletonModel& model,const ToeSurfaceMarks& 
 // Place the kinematic pivot on the marked parent surface. Ragdoll anchors
 // retain both independently marked surface points.
 inline bool setMarkedToeSurfacePivots(SkeletonModel& model,const ToeSurfaceMarks& marks) {
+    const auto left=sourceLegFrame(model,0),right=sourceLegFrame(model,1);
     for(int digit=1;digit<=5;++digit)for(char side:{'L','R'}) {
         const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
         const int count=digit==1?3:4;ToeEdit e;e.side=side;e.digit=digit;
@@ -90,9 +93,15 @@ inline bool setMarkedToeSurfacePivots(SkeletonModel& model,const ToeSurfaceMarks
             const Vec3 p=toePoint(pose[std::size_t(i)],a->second.end[1]);
             const auto link=toeEditLink(model,parent,child);
             if(link>=model.sourceLinks().size() || !model.repositionReferenceToeJoint(link,p))return false;
-            if(a->second.placed==3) {
-                const Vec3 shaft=p-toePoint(pose[std::size_t(i)],a->second.end[0]);
-                if(!model.orientReferenceToeJoint(link,shaft))return false;
+            if(a->second.placed==3 && b->second.placed==3) {
+                const auto& leg=side=='L'?left:right;
+                const int meta=model.sourceStructure("FootMeta"+std::to_string(digit)+"_"+side);
+                if(!leg || meta<0)continue;
+                const Vec3 parent=p-toePoint(pose[std::size_t(i)],a->second.end[0]);
+                const Vec3 child=toePoint(pose[std::size_t(j)],b->second.end[1])-toePoint(pose[std::size_t(j)],b->second.end[0]);
+                const Vec3 dorsal=frameVector(toeRigid(pose[std::size_t(meta)]),leg->soleNormal);
+                const auto bend=markedToeBend(parent,child,dorsal);
+                if(bend && !model.calibrateReferenceToeBend(link,bend->axis,bend->flexion))return false;
             }
         }
     }
@@ -100,6 +109,7 @@ inline bool setMarkedToeSurfacePivots(SkeletonModel& model,const ToeSurfaceMarks
 }
 inline std::vector<ComparisonToeAttachment> whiteToeSurfaceAnchors(const SkeletonModel& model,const ToeSurfaceMarks& marks,Vec3 origin) {
     std::vector<ComparisonToeAttachment> result;const auto pose=model.sourceMatrices(origin,0);
+    const auto left=sourceLegFrame(model,0),right=sourceLegFrame(model,1);
     for(int digit=1;digit<=5;++digit)for(char side:{'L','R'}) {
         const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
         const int count=digit==1?3:4;ToeEdit e;e.side=side;e.digit=digit;
@@ -110,16 +120,41 @@ inline std::vector<ComparisonToeAttachment> whiteToeSurfaceAnchors(const Skeleto
             const int i=model.sourceStructure(parent),j=model.sourceStructure(child);if(i<0 || j<0)continue;
             const Vec3 start=toePoint(pose[std::size_t(i)],a->second.end[0]);
             const Vec3 end=toePoint(pose[std::size_t(i)],a->second.end[1]);
-            result.push_back({std::size_t(i),std::size_t(j),end,
-                              toePoint(pose[std::size_t(j)],b->second.end[0]),true,
-                              a->second.placed==3?end-start:Vec3{}});
+            const Vec3 childStart=toePoint(pose[std::size_t(j)],b->second.end[0]);
+            const auto& leg=side=='L'?left:right;
+            const int meta=model.sourceStructure("FootMeta"+std::to_string(digit)+"_"+side);
+            const Vec3 dorsal=leg && meta>=0 ? frameVector(toeRigid(pose[std::size_t(meta)]),leg->soleNormal) : Vec3{};
+            result.push_back({std::size_t(i),std::size_t(j),end,childStart,true,
+                              a->second.placed==3?end-start:Vec3{},
+                              b->second.placed==3?toePoint(pose[std::size_t(j)],b->second.end[1])-childStart:Vec3{},dorsal});
         }
     }
     return result;
 }
-inline void blueToeSurfaceAnchors(const SkeletonModel& model,const ToeSurfaceMarks& marks,Vec3 origin,
-    const std::vector<std::array<double,16>>& pose,std::vector<ComparisonToeAttachment>& result) {
+inline void blueToeSurfaceAnchors(const SkeletonComparison& comparison,const SkeletonModel& model,
+    const ToeSurfaceMarks& marks,Vec3 origin,const std::vector<std::array<double,16>>& pose,
+    std::vector<ComparisonToeAttachment>& result) {
+    const auto left=sourceLegFrame(model,0),right=sourceLegFrame(model,1);
     for(int digit=1;digit<=5;++digit) {
+        // Map both source sole normals through the same registration and
+        // profile scaling as the marked metatarsals, then mirror their mean.
+        Vec3 blueDorsal{};int normals=0;
+        for(int side=0;side<2;++side) {
+            const auto& leg=side?right:left;
+            const int index=model.sourceStructure("FootMeta"+std::to_string(digit)+(side?"_R":"_L"));
+            if(!leg || index<0 || std::size_t(index)>=comparison.parts().size() ||
+               std::size_t(index)>=comparison.littleToeSkinReference().size())continue;
+            const auto i=std::size_t(index);const auto& part=comparison.parts()[i];
+            if(part.points.empty())continue;
+            const Vec3 direction=frameVector(comparison.metatarsalFrame(i),
+                frameVector(toeRigid(comparison.littleToeSkinReference()[i]),leg->soleNormal));
+            const Vec3 point=part.points.front();
+            Vec3 mapped=comparison.mapPart(point+direction*.01,part)-comparison.mapPart(point,part);
+            if(length(mapped)<1e-8)continue;
+            mapped=normalized(mapped);if(side)mapped=toeMirrorPoint(mapped);
+            blueDorsal+=mapped;++normals;
+        }
+        if(normals && length(blueDorsal)>1e-8)blueDorsal=normalized(blueDorsal);
         const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
         const int count=digit==1?3:4;ToeEdit e;e.digit=digit;e.side=blueToeMarkedSide(marks,digit);
         for(int s=1;s<count;++s) {
@@ -129,12 +164,16 @@ inline void blueToeSurfaceAnchors(const SkeletonModel& model,const ToeSurfaceMar
                 ToeEdit side=e;if(mirror)side.side=e.side=='L'?'R':'L';
                 const int i=model.sourceStructure(toeEditName(side,order[s-1])),j=model.sourceStructure(toeEditName(side,order[s]));
                 if(i<0 || j<0 || std::size_t(i)>=pose.size() || std::size_t(j)>=pose.size())continue;
-                Vec3 start=a->second.end[0],p=a->second.end[1],q=b->second.end[0];
-                if(mirror){start=toeMirrorPoint(start);p=toeMirrorPoint(p);q=toeMirrorPoint(q);}
+                Vec3 start=a->second.end[0],p=a->second.end[1],q=b->second.end[0],tip=b->second.end[1];
+                if(mirror){start=toeMirrorPoint(start);p=toeMirrorPoint(p);q=toeMirrorPoint(q);tip=toeMirrorPoint(tip);}
                 const Vec3 parentPoint=toePoint(pose[std::size_t(i)],p+origin);
-                result.push_back({std::size_t(i),std::size_t(j),parentPoint,
-                                  toePoint(pose[std::size_t(j)],q+origin),true,
-                                  parentPoint-toePoint(pose[std::size_t(i)],start+origin)});
+                const Vec3 childPoint=toePoint(pose[std::size_t(j)],q+origin);
+                const int meta=model.sourceStructure("FootMeta"+std::to_string(digit)+"_"+side.side);
+                const Vec3 localDorsal=side.side=='R'?toeMirrorPoint(blueDorsal):blueDorsal;
+                const Vec3 dorsal=meta>=0 && std::size_t(meta)<pose.size() ? frameVector(toeRigid(pose[std::size_t(meta)]),localDorsal) : Vec3{};
+                result.push_back({std::size_t(i),std::size_t(j),parentPoint,childPoint,true,
+                                  a->second.placed==3?parentPoint-toePoint(pose[std::size_t(i)],start+origin):Vec3{},
+                                  b->second.placed==3?toePoint(pose[std::size_t(j)],tip+origin)-childPoint:Vec3{},dorsal});
             }
         }
     }

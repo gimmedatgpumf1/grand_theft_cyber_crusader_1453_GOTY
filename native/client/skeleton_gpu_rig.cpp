@@ -1,6 +1,7 @@
 #include "client/skeleton_gpu_rig.h"
 #include "client/skeleton_body.h"
 #include "client/skeleton_comparison.h"
+#include "client/skeleton_toe_limits.h"
 #include <algorithm>
 #include <cmath>
 #include <future>
@@ -215,10 +216,13 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         std::string mobility;
         for (const auto& link:model.sourceLinks()) if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { mobility=link.mobility; break; }
         Vec3 childPivot=pivot;
+        std::optional<MarkedToeBend> toeBend;
         if (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp" || mobility=="toe_ip_hinge") {
             for (const auto& toe:toePivots) if(toe.parent==pi && toe.child==si) {
                 pivot=toe.pivot;childPivot=toe.separateSurfacePoints?toe.childPivot:pivot;
-                if(length(toe.parentShaft)>1e-8) {
+                toeBend=markedToeBend(toe.parentShaft,toe.childShaft,toe.dorsal);
+                if(toeBend)axis=toeBend->axis;
+                else if(length(toe.parentShaft)>1e-8) {
                     const Vec3 shaft=normalized(toe.parentShaft);
                     const Vec3 transverse=axis-shaft*dot(axis,shaft);
                     if(length(transverse)>1e-8)axis=normalized(transverse);
@@ -242,8 +246,9 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
         joint.childAnchor=packed(childPivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         const double piValue=3.14159265358979323846;
-        const auto lower=[&](std::size_t k) { return float(std::clamp(source->axes()[k].minimum-source->angles()[k],-piValue,piValue)); };
-        const auto upper=[&](std::size_t k) { return float(std::clamp(source->axes()[k].maximum-source->angles()[k],-piValue,piValue)); };
+        const auto coordinate=[&](std::size_t k) { return k==0 && toeBend ? toeBend->flexion : source->angles()[k]; };
+        const auto lower=[&](std::size_t k) { return float(std::clamp(source->axes()[k].minimum-coordinate(k),-piValue,piValue)); };
+        const auto upper=[&](std::size_t k) { return float(std::clamp(source->axes()[k].maximum-coordinate(k),-piValue,piValue)); };
         joint.parentAxis=packed(axis,lower(0)); joint.childAxis=packed(axis,upper(0));
         joint.parentTangent=joint.childTangent=packed(tangent);
         joint.lowerAngles={lower(0),float(-piValue/2),float(-piValue/2),0};
