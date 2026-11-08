@@ -357,7 +357,9 @@ public:
                 for (const auto& f : unitFaces) faces.push_back({start+f[0], start+f[1], start+f[2]});
             }
             Material material;
-            material.color = colorHex("#e9dfbd");
+            // V-view joint balls are a visual overlay; source bones and the B
+            // reference pose remain unchanged.
+            material.color = colorHex("#ff3845");
             emit(points,faces,owners,material);
         }
         // Palms, paired limbs, shoulder girdle and rib cage are thin surfaces;

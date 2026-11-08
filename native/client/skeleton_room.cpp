@@ -4,6 +4,7 @@
 #include "client/room_freecam.h"
 #include "client/skeleton_rest_toes.h"
 #include "client/skeleton_toe_yaw.h"
+#include "client/skeleton_joint_limits_view.h"
 #include "client/threadpool.h"
 #include "client/ui_layer.h"
 #include "vulkan/physics/rigid_timing.h"
@@ -450,10 +451,17 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 drawFloor(raster, camera); drawWalls(raster, camera);
                 maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
                 femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
-                const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
-                const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
-                maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose);
-                femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose);
+                std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
+                const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
+                const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
+                maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose,bool(physicsRig_));
+                femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose,bool(physicsRig_));
+                const auto maleWhite=physicsRig_?whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0}):std::vector<ComparisonToeAttachment>{};
+                const auto femaleWhite=physicsRig_?whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0}):std::vector<ComparisonToeAttachment>{};
+                joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite,physicsRig_.get());
+                joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001,nullptr,nullptr,&femaleWhite,physicsRig_.get());
+                joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints,physicsRig_.get());
+                joint_view::draw(raster,female_,{2.85,0.10,0},14000,&femaleComparison_,&femaleToePose,&femaleJoints,physicsRig_.get());
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();
@@ -474,10 +482,15 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         drawFloor(raster, camera); drawWalls(raster, camera);
         maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
-        const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0});
-        const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0});
+        std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
+        const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
+        const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
         maleComparison_.draw(raster,-2.85,12000,&maleToePose);
         femaleComparison_.draw(raster,2.85,14000,&femaleToePose);
+        joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001);
+        joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001);
+        joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints);
+        joint_view::draw(raster,female_,{2.85,0.10,0},14000,&femaleComparison_,&femaleToePose,&femaleJoints);
         const UiLayer* ui=frame.uiLayer;
         frame = raster.finish();
         if (ui) compositeUi(frame,*ui);

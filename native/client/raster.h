@@ -205,6 +205,8 @@ struct GpuBatch {
     // its colour arrives already prepared for the display. Drawn last, so what it
     // covers it covers.
     bool isUi = false;
+    // World-space inspection geometry drawn without depth after the scene.
+    bool isOverlay = false;
     // V-view indexed vertices carry source-structure indices in nx for GPU skinning.
     bool vertexSkinned = false;
     // Toe skin vertices name their owner's object ID rather than a V-view slot.
@@ -307,6 +309,9 @@ public:
     }
     void markSkinOwner() {
         if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinOwner=true;
+    }
+    void markOverlay() {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].isOverlay=true;
     }
     void meshObjectSkinned(const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
                            const std::vector<int>& owners, const Material& material) {

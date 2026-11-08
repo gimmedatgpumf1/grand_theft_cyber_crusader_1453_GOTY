@@ -1,5 +1,19 @@
 # Joint movement reference for the OpenSkeleton graph
 
+## V-view joint limits
+
+Press V in the skeleton room to show red joint markers. Red arcs and their end
+marks depict the configured **first rotational coordinate** and its bounds;
+the pale radial needle is shown only for a hinge. Other coordinates of a
+multi-axis joint are not depicted, and an arc is not a full anatomical limit
+surface. The white-skeleton joint balls are fitted visual proxies; the smaller red
+points and arcs use the rig's joint anchors and are drawn through bones for
+visibility. In R physics mode, arcs follow the
+parent body and hinge needles follow the child on the GPU; joints merged into a
+single rigid body and positional-only connections have no angular arc. These
+are runtime constraints, not patient-specific measurements or injury limits.
+The visualization does not edit the B reference skeleton or its source pose.
+
 The table below classifies **every one of the 209 relationships** in
 `04-line-graph.py`; `openskeleton/joint_mobility.py` assigns the class from the
 actual source labels, including each finger and toe on both sides. The graph

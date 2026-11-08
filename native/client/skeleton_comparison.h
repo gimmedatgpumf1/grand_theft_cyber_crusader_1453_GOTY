@@ -806,7 +806,7 @@ public:
         return skin;
     }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
-              const std::vector<std::array<double,16>>* pose=nullptr) const {
+              const std::vector<std::array<double,16>>* pose=nullptr, bool jointViewOwners=false) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12; toe.opacity=0.5;
         const Vec3 origin{x,0.10,0};
@@ -817,7 +817,7 @@ public:
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
             if (pose && i<pose->size()) rasterizer.setBatchPose((*pose)[i]);
-            if (part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
+            if (jointViewOwners || part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
                 part.name.rfind("FootMeta",0)==0 || part.name.rfind("Cal_",0)==0 || part.name.rfind("Tal_",0)==0 ||
                 part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 || part.name.find("Cun_")!=std::string::npos ||
                 part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0) rasterizer.markSkinOwner();

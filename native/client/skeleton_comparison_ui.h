@@ -14,6 +14,12 @@ class SkeletonComparisonUi {
 public:
     void draw(NativeFrame& frame, const SkeletonRoom& room) const {
         const Layout l=layout(frame.width,frame.height);
+        if (room.lineView()) {
+            const int width=std::min(frame.width-16,680), x=(frame.width-width)/2;
+            const int y=std::max(0,(open_?l.y:frame.height-37)-28);
+            frame.blendRectangle(x,y,width,25,colorHex(hexRgb("#142632")),0.78);
+            drawTextPixels(frame,x+8,y+2,"RED: JOINTS / PRIMARY RANGE  |  TICKS: LIMITS  |  PALE: HINGE",colorHex(hexRgb("#ffd9d9")),20);
+        }
         if (!open_) {
             const int x=(frame.width-420)/2, y=std::max(0,frame.height-37);
             frame.blendRectangle(x,y,420,29,colorHex(hexRgb("#142632")),0.78);
