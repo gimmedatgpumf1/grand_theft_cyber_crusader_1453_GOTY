@@ -8,6 +8,7 @@
 #include "client/skeleton_gpu_rig.h"
 #include "client/skeleton_toe_editor.h"
 #include "client/skeleton_toe_blue_calibration.h"
+#include "client/skeleton_toe_manual_reference.h"
 #include <memory>
 
 #include <cstdint>
@@ -54,8 +55,8 @@ public:
     bool restoreReferencePose(); // straight-arm, straight-leg reference pose
     bool restoreOriginalPose(); // original registered CT pose
     bool editToe(const ToeEdit& edit);
-    bool undoToeEdit();
-    bool resetToeEdits(const ToeEdit& selection);
+    bool undoToeEdit(bool sourceEdits=false);
+    bool resetToeEdits(const ToeEdit& selection,bool sourceEdits=false);
     bool saveToeEdits() const;
     bool loadToeEdits();
     bool showOriginalToeEdits();
@@ -110,6 +111,7 @@ private:
     mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
     std::uint64_t toeMarksRevision_=0;
     std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_,maleToeBeforeCalibration_,femaleToeBeforeCalibration_;
+    ManualToeReference maleManualToes_,femaleManualToes_;
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;

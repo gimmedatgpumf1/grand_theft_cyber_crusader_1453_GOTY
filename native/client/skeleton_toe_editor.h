@@ -13,13 +13,13 @@ namespace gtc::native {
 struct ToeEdit {
     bool male=true, blue=false;
     char side='L';
-    int digit=1, segment=0, axis=0; // proximal/middle/distal; rotate XYZ, move XYZ
+    int digit=1, segment=0, axis=0; // metatarsal/proximal/middle/distal; rotate XYZ, move XYZ
     double amount=0;                // degrees or metres
     bool original=false;           // edits on B's original pose are separate
 };
 inline bool validToeEdit(const ToeEdit& e) {
     return (e.side=='L' || e.side=='R') && e.digit>=1 && e.digit<=5 &&
-        e.segment>=0 && e.segment<=2 && !(e.digit==1 && e.segment==1) &&
+        e.segment>=-1 && e.segment<=2 && !(e.digit==1 && e.segment==1) &&
         e.axis>=0 && e.axis<6 && std::isfinite(e.amount) &&
         std::abs(e.amount)<=(e.axis<3?180.0:0.1);
 }
@@ -43,26 +43,36 @@ inline JointRigidTransform toeEditTransform(const ToeEdit& e,Vec3 center) {
     auto turn=joint_detail::rotate(axis,e.amount*3.14159265358979323846/180.0);
     turn.translation=center-frameVector(turn,center);return turn;
 }
-inline bool applyWhiteToeEdit(SkeletonModel& model,const ToeEdit& e) {
+inline bool applyWhiteToeTransform(SkeletonModel& model,const ToeEdit& e,const JointRigidTransform& turn) {
     if(!validToeEdit(e) || e.blue)return false;
     const std::string name=toeEditName(e,e.segment);
-    const std::string parent=e.segment==0?"FootMeta"+std::to_string(e.digit)+"_"+e.side:
-        toeEditName(e,e.segment==2 && e.digit==1?0:e.segment-1);
+    const std::string parent=e.segment==-1?std::string(e.digit==1?"MedCun":e.digit==2?"InterCun":e.digit==3?"LatCun":"Cub")+"_"+e.side:
+        e.segment==0?"FootMeta"+std::to_string(e.digit)+"_"+e.side:toeEditName(e,e.segment==2 && e.digit==1?0:e.segment-1);
     const auto edge=toeEditLink(model,parent,name);
     const int index=model.sourceStructure(name);
     if(index<0 || edge==model.sourceLinks().size())return false;
-    const auto& part=model.sourceStructures()[std::size_t(index)];
-    if(!part.pointCount)return false;
-    Vec3 center{};for(std::size_t i=0;i<part.pointCount;++i)center+=model.bones()[part.group].points[part.firstPoint+i];
-    center=toePoint(model.sourceMatrices({},0)[std::size_t(index)],center/double(part.pointCount));
-    const auto turn=toeEditTransform(e,center);
     // Counter-transform the next bone so each button moves only the selected
     // phalanx, even though the underlying rig is a parent/child chain.
-    const int next=e.segment==0?(e.digit==1?2:1):e.segment==1?2:-1;
+    const int next=e.segment==-1?0:e.segment==0?(e.digit==1?2:1):e.segment==1?2:-1;
     const auto child=next<0?model.sourceLinks().size():toeEditLink(model,name,toeEditName(e,next));
     if(next>=0 && child==model.sourceLinks().size())return false;
     if(!model.adjustReferenceToe(edge,turn))return false;
-    return next<0 || model.adjustReferenceToe(child,joint_detail::inverse(turn));
+    const auto reverse=joint_detail::inverse(turn);
+    if(next>=0 && !model.adjustReferenceToe(child,reverse))return false;
+    if(e.segment==-1 && e.digit==1)for(const char* sesamoid:{"FootSesaMed_","FootSesaLat_"}) {
+        const auto link=toeEditLink(model,name,std::string(sesamoid)+e.side);
+        if(link<model.sourceLinks().size() && !model.adjustReferenceToe(link,reverse))return false;
+    }
+    return true;
+}
+inline bool applyWhiteToeEdit(SkeletonModel& model,const ToeEdit& e) {
+    if(!validToeEdit(e) || e.blue)return false;
+    const int index=model.sourceStructure(toeEditName(e,e.segment));
+    if(index<0)return false;
+    const auto& part=model.sourceStructures()[std::size_t(index)];if(!part.pointCount)return false;
+    Vec3 center{};for(std::size_t i=0;i<part.pointCount;++i)center+=model.bones()[part.group].points[part.firstPoint+i];
+    center=toePoint(model.sourceMatrices({},0)[std::size_t(index)],center/double(part.pointCount));
+    return applyWhiteToeTransform(model,e,toeEditTransform(e,center));
 }
 inline void applyBlueToeEdits(const SkeletonComparison& c,std::vector<std::array<double,16>>& pose,
                               Vec3 origin,const std::vector<ToeEdit>& edits,bool male,bool original) {

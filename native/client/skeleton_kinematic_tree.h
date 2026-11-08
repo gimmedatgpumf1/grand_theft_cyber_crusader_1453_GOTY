@@ -84,7 +84,7 @@ public:
     // Applied after the rotational coordinates, so descendants and controls
     // follow the registered bone without altering its source mesh.
     bool appendReferenceAdjustment(std::size_t body,const JointRigidTransform& adjustment) {
-        if(body==0 || body>=nodes_.size() || !nodes_[body].joint || !joint_detail::rigid(adjustment))return false;
+        if(body==0 || body>=nodes_.size() || !joint_detail::rigid(adjustment))return false;
         nodes_[body].reference=joint_detail::compose(nodes_[body].reference,adjustment);
         dirty_=true;return true;
     }

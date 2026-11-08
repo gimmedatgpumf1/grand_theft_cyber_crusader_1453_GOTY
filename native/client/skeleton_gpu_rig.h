@@ -39,5 +39,7 @@ bool buildGpuSkeletonRig(const SkeletonModel& male, Vec3 maleOrigin,
                          const std::vector<std::array<double,16>>& femaleBluePose,
                          const std::vector<ComparisonToeAttachment>& maleSurfaceJoints,
                          const std::vector<ComparisonToeAttachment>& femaleSurfaceJoints,
+                         const std::vector<ComparisonToeAttachment>& maleWhiteSurfaceJoints,
+                         const std::vector<ComparisonToeAttachment>& femaleWhiteSurfaceJoints,
                          GpuSkeletonRig& out, std::string& error);
 } // namespace gtc::native

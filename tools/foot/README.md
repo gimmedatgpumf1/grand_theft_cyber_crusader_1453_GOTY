@@ -62,56 +62,44 @@ variable requests the original-pose view.
 
 ## Manual toe bone editor
 
-In the skeleton room, press **T** to open the isolated toe workspace (the
-mouse is released automatically). It shows one foot's metatarsals and
-phalanges, not the whole skeleton. It opens on the unmoved white B source and
-the left foot. Choose male/female, white/blue, left/right, digit 1–5, and META,
-PROX, MID or DIST (the great toe has no middle bone). The +/- buttons
-rotate around the selected bone's centre or translate it along world X, Y and Z.
-The normal step is 5 degrees / 1 mm; **FINE** changes it to 1 degree / 0.2 mm.
-Each click moves only the selected white bone, not its descendants. The blue
-skin follows its existing bone weights; white edits also feed the comparison
-rig, so inspect blue separately and use its controls as needed. **TOP** and
-**SIDE** change the view; the **ALL BONES / ONE TOE / ONE BONE** button cycles
-between those isolation levels. Right-drag to orbit and use the wheel to zoom;
-TOP and SIDE reset to foot-relative views. Press H to hide/show the controls
-panel (it starts hidden on smaller windows). Press T to return to the room.
+In the skeleton room press **T**. The isolated workspace opens on the white B
+source, one foot at a time. Pick male/female, left/right, toe 1–5 and PROX,
+MID or DIST (the big toe has no MID). With WHITE and B selected, use the
+ROTATE XYZ and MOVE XYZ +/- controls to position that individual bone. The
+steps cycle between STEP (5 degrees / 1 mm), FINE (1 degree / 0.2 mm), and
+MICRO (0.1 degrees / 0.02 mm). Descendant bones are counter-moved, so the
+selected bone can be adjusted independently.
 
-**UNDO** removes the last edit in the current pose. **RESET BONE** removes the
-selected bone's edits in that pose. **SAVE** writes `toe-bone-edits.txt` in the
-repository/game root; **LOAD** reloads it, and saved standing edits load when
-the room starts. Save again after undo/reset to keep that change. This local
-file is ignored by Git and can be shared separately. **STAND** restores the
-standing pose with its edits. **B** still restores the untouched source pose;
-you can also edit that pose, separately from standing. **APPLY B** reapplies
-saved B-pose edits after B has restored the untouched source; the first edit in
-the B pose does so automatically. These controls do not automatically fix any
-joint; these older +/- controls are separate from surface calibration.
+TOP/SIDE, right-drag orbit and wheel zoom let you inspect from different angles.
+ALL BONES / ONE TOE / ONE BONE changes isolation. H hides/shows the controls.
+STAND previews your source edits on the standing figure; the selected source
+foot's edits are also reflected to both blue feet. Select BLUE and LEFT/RIGHT to
+inspect each blue foot. Male and female need separate edits. Press T to return
+to the room. The source CT mesh vertices are unchanged. B restores the original
+source view; EDITS reapplies your current B edits to that view.
 
-Each metatarsal and phalanx has a stick. In the unmoved white B source, drag
-the green start (nearer the heel) and red end (nearer the toe tip) onto the
-actual surface of each bone. Dim markers are unconfirmed estimates; bright
-markers were placed on a triangle. Unconfirmed handles are ordered heel-to-tip
-where the source line's ordering is reversed; they are still only placeholders.
-Orbit to see the end faces: a click from above selects the surface facing the
-camera, which may not be the end face.
-Use ONE BONE to separate overlapping handles. Mark both ends of adjacent bones;
-then **STAND** or closing T aligns their marked axes and brings their marked
-surfaces together, setting the white joint pivot there. Unmarked links retain
-the old pose and joint estimates. This straight-axis alignment is a geometric
-starting point, not anatomical verification. The fitted skin is rebound when
-calibration changes and remains attached to its bone owners, but moving bones
-can still make the skin or neighbouring bones overlap; inspect the result.
+UNDO and RESET remove adjustments; SAVE and LOAD use `toe-bone-edits.txt` in
+the game root. Save after undo/reset to retain it. Edits on the B source are
+applied to standing when the workspace closes or STAND is selected.
 
-**SAVE AXES** writes `toe-bone-axes.txt`, separately from pose SAVE. **LOAD
-AXES** restores it and **RESET AXIS** resets the selected bone. Older v1
-free-floating axes remain unconfirmed and must be placed again on the surface.
-The blue comparison transfers the chosen points onto its averaged surfaces,
-then mirrors that toe's correction to the other blue foot. Male and female
-still require separate markings. The original white CT mesh vertices are not
-changed; B restores their original pose. This only calibrates marked toe links,
-not every other joint in the body. Extreme selections and skin/ragdoll motion
-still need visual inspection.
+Drag the green start and red end handles onto the actual surface of each bone.
+Dim handles are unconfirmed placeholders; bright handles have been placed on a
+triangle. Orbit to reach the end faces, and use ONE BONE if handles overlap.
+You can mark either the original or manually adjusted white B bone: marks are
+stored in the original bone's mesh coordinates. When adjacent marked bones are
+visible, selecting a child displays the distance between its green point and its
+parent's red point. Use your own move/rotate controls to bring them together.
+The editor no longer rotates or moves bones merely because marks are placed.
+
+SAVE AXES/LOAD AXES use `toe-bone-axes.txt`, separately from pose SAVE; RESET
+AXIS clears the selected bone's marks. The marks set the white kinematic pivot
+on the parent bone's marked surface. The ragdoll uses the two independently
+marked surface points as its anchors, including mapped and mirrored blue points;
+if those points are apart, physics will pull them together. Joints without both
+points still use their previous approximate pivots. Blue points are transferred
+onto the averaged blue surface, which can differ from the white surface. Check
+fit, contact and skin visually; the editor does not guarantee collision-free
+alignment or surface pivots for unmarked joints.
 
 For blue geometry, the comparison pipeline combines the left scan with the
 reflected right scan and then mirrors that averaged left-side mesh to the

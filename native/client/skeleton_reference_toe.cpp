@@ -15,7 +15,8 @@ bool SkeletonModel::setSourcePose(const std::vector<AnatomicalKinematicTree::Pos
 bool SkeletonModel::adjustReferenceToe(std::size_t link,const JointRigidTransform& correction) {
     if (!sourceRig_ || link>=sourceLinks_.size() || !joint_detail::rigid(correction)) return false;
     const auto& edge=sourceLinks_[link];
-    if(edge.mobility!="great_toe_mtp" && edge.mobility!="lesser_toe_mtp" && edge.mobility!="toe_ip_hinge")return false;
+    if(edge.mobility!="great_toe_mtp" && edge.mobility!="lesser_toe_mtp" && edge.mobility!="toe_ip_hinge" &&
+       edge.mobility!="tarsal_glide" && edge.mobility!="sesamoid_glide")return false;
     const auto a=sourceBodies_[edge.first],b=sourceBodies_[edge.second];
     const auto body=sourceRig_->parent(b)==a?b:(sourceRig_->parent(a)==b?a:0);
     if(!body || !sourceRig_->evaluate())return false;

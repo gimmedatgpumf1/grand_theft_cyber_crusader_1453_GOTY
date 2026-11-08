@@ -35,21 +35,21 @@ public:
         button(f,l,80,87,74,edit_.segment==0?"PROX *":"PROX");
         button(f,l,158,87,70,edit_.segment==1?"MID *":"MID");
         button(f,l,232,87,75,edit_.segment==2?"DIST *":"DIST");
-        button(f,l,312,87,80,fine_?"FINE *":"FINE");
+        button(f,l,312,87,80,precision_==0?"STEP":precision_==1?"FINE":"MICRO");
         text(f,l,10,116,"ROTATE XYZ");
         axisRow(f,l,140,"X",0);axisRow(f,l,166,"Y",1);axisRow(f,l,192,"Z",2);
         text(f,l,205,116,"MOVE XYZ");
         axisRow(f,l,140,"X",3);axisRow(f,l,166,"Y",4);axisRow(f,l,192,"Z",5);
-        char step[96];std::snprintf(step,sizeof step,"Step: %.0f deg / %.1f mm  |  %zu edits",fine_?1.:5.,fine_?.2:1.,room.toeEditCount());
+        char step[96];std::snprintf(step,sizeof step,"Step: %.1f deg / %.2f mm  |  %zu edits",rotationStep(),moveStep()*1000,room.toeEditCount());
         text(f,l,10,222,step);
         button(f,l,10,248,80,"UNDO");button(f,l,94,248,108,"RESET");
         button(f,l,206,248,65,"SAVE");button(f,l,275,248,65,"LOAD");button(f,l,344,248,70,"STAND");
-        button(f,l,10,276,90,"APPLY B");
-        text(f,l,110,279,room.originalToePose()?"B: ORIGINAL POSE":"STANDING POSE");
+        button(f,l,10,276,90,"EDITS");
+        text(f,l,110,279,room.originalToePose()?"B: SOURCE EDITOR":"STAND: PREVIEW");
         const auto message=!status_.empty()?status_:!room.toeEditError().empty()?room.toeEditError():
-            room.toeEditingAvailable()?"B: original pose   STAND: resting pose":"Press STAND to exit ragdoll.";
+            room.toeEditingAvailable()?"Edit WHITE B; STAND previews both blue feet.":"Press STAND to exit ragdoll.";
         text(f,l,10,305,message);
-        text(f,l,10,329,"Reset affects the selected bone.");
+        text(f,l,10,329,"B: original. EDITS: show your saved edits.");
     }
     bool handle(const WindowEvent& e,bool captured,int width,int height,SkeletonRoom& room) {
         if(e.type==WindowEvent::Type::KeyDown && e.key=='t' && !e.repeat) {open_=!open_;if(open_)panelVisible_=width>=1000;return true;}
@@ -67,18 +67,24 @@ public:
         else if(hit(80,87,74))edit_.segment=0;
         else if(hit(158,87,70)) {if(edit_.digit!=1)edit_.segment=1;else status_="The big toe has no middle phalanx.";}
         else if(hit(232,87,75))edit_.segment=2;
-        else if(hit(312,87,80))fine_=!fine_;
+        else if(hit(312,87,80))precision_=(precision_+1)%3;
         else if(y>=140 && y<216) {
             const int row=(y-140)/26, local=(y-140)%26;
             if(row<3 && local<24) {
                 int axis=-1,sign=0;
                 if(x>=54 && x<92){axis=row;sign=-1;}else if(x>=96 && x<134){axis=row;sign=1;}
                 else if(x>=249 && x<287){axis=row+3;sign=-1;}else if(x>=291 && x<329){axis=row+3;sign=1;}
-                if(axis>=0) {auto edit=edit_;edit.axis=axis;edit.amount=sign*(axis<3?(fine_?1.:5.):(fine_?.0002:.001));
-                    if(!room.editToe(edit))status_="Cannot edit bone (check ragdoll).";}
+                if(axis>=0) {
+                    if(edit_.blue || !room.originalToePose())status_="Edit WHITE in B, then preview STAND.";
+                    else {auto edit=edit_;edit.axis=axis;edit.amount=sign*(axis<3?rotationStep():moveStep());
+                        if(!room.editToe(edit))status_="Cannot edit bone (check ragdoll).";}
+                }
             }
-        } else if(hit(10,248,80)) {if(!room.undoToeEdit())status_="Nothing to undo in this pose.";}
-        else if(hit(94,248,108)) {if(!room.resetToeEdits(edit_))status_="Cannot reset during ragdoll.";}
+        } else if(hit(10,248,80)) {if(!room.undoToeEdit(true))status_="No source edits to undo.";}
+        else if(hit(94,248,108)) {
+            if(edit_.blue)status_="Select the edited WHITE foot to reset.";
+            else if(!room.resetToeEdits(edit_,true))status_="Cannot reset during ragdoll.";
+        }
         else if(hit(206,248,65)) status_=room.saveToeEdits()?"Saved toe-bone-edits.txt":"Save failed: check folder permissions.";
         else if(hit(275,248,65)) status_=room.loadToeEdits()?"Loaded toe-bone-edits.txt":"Load failed: check file or ragdoll.";
         else if(hit(344,248,70)) {if(!room.restoreReferencePose())status_="Could not restore standing pose.";}
@@ -99,8 +105,11 @@ private:
         const int x=axis<3?10:205;text(f,l,x,y+3,name);
         button(f,l,x+44,y,38,"-");button(f,l,x+86,y,38,"+");
     }
+    double rotationStep() const { return precision_==0?5.:precision_==1?1.:.1; }
+    double moveStep() const { return precision_==0?.001:precision_==1?.0002:.00002; }
     ToeEdit edit_{};
-    bool open_=false,fine_=false,panelVisible_=true;
+    int precision_=0;
+    bool open_=false,panelVisible_=true;
     std::string status_;
 };
 } // namespace gtc::native

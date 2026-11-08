@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -13,8 +14,8 @@
 #include <vector>
 
 namespace gtc::native {
-// User-placed surface landmarks in the unmodified CT bone frame. Complete
-// pairs calibrate the adjacent toe joint when the standing pose is restored.
+// The user edits individual bones and places landmarks on their surfaces.
+// Marks stay in the original CT mesh frame when the displayed bone is moved.
 class SkeletonToeWorkspace {
     struct Key {
         bool male,blue; char side; int digit,segment;
@@ -63,7 +64,17 @@ public:
         button(f,150,13,108,"SAVE AXES");button(f,263,13,108,"LOAD AXES");button(f,376,13,122,"RESET AXIS");
         button(f,503,13,130,focus_==0?"ALL BONES":focus_==1?"ONE TOE":"ONE BONE");
         drawTextPixels(f,14,43,status_.empty()?"Green: start. Red: tip. Dim means unset.":status_,colorHex("#e0effb"),20);
-        drawTextPixels(f,14,67,"Mark end faces. Right: orbit. H: controls.",colorHex("#e0effb"),20);
+        std::string hint="Mark end faces. Right: orbit. H: controls.";
+        const auto selected=std::find_if(bones_.begin(),bones_.end(),[&](const Bone& b){return same(b.key,ui.selection());});
+        if(selected!=bones_.end() && !selected->key.blue && selected->key.segment>=0) {
+            Key parent=selected->key;parent.segment=parent.segment==0?-1:parent.segment==2 && parent.digit==1?0:parent.segment-1;
+            const auto neighbour=std::find_if(bones_.begin(),bones_.end(),[&](const Bone& b){return b.key==parent;});
+            const auto a=marks_.find(parent),b=marks_.find(selected->key);
+            if(neighbour!=bones_.end() && a!=marks_.end() && b!=marks_.end() && (a->second&2) && (b->second&1)) {
+                char gap[96];std::snprintf(gap,sizeof gap,"Joint gap: %.2f mm. Move/rotate the bone.",1000*length(neighbour->world[1]-selected->world[0]));hint=gap;
+            }
+        }
+        drawTextPixels(f,14,67,hint,colorHex("#e0effb"),20);
         for(const auto& b:bones_) {
             const bool selected=same(b.key,ui.selection());
             auto a=project(b.world[0]),c=project(b.world[1]);
@@ -274,7 +285,7 @@ public:
             if(d<best){best=d;hit=&b;end=k;}
         }
         if(hit) {ui.select(hit->key.male,hit->key.blue,hit->key.side,hit->key.digit,hit->key.segment);
-            if(hit->key.blue || !room.unmodifiedToeSource()) {status_="Mark on the unmoved WHITE B source.";return true;}
+            if(hit->key.blue || !room.originalToePose()) {status_="Mark on WHITE in B; STAND is a preview.";return true;}
             dragKey_=hit->key;dragEnd_=end;lastX_=e.x;lastY_=e.y;dragging_=true;status_.clear();}
         return true;
     }

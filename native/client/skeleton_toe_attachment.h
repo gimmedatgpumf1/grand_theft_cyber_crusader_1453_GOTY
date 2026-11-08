@@ -15,6 +15,8 @@ namespace gtc::native {
 struct ComparisonToeAttachment {
     std::size_t parent=0, child=0;
     Vec3 pivot{};
+    Vec3 childPivot{};
+    bool separateSurfacePoints=false;
 };
 inline JointRigidTransform toeRigid(const std::array<double,16>& m) {
     JointRigidTransform t;

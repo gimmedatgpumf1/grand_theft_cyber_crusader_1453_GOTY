@@ -25,7 +25,7 @@ void rebindCalibratedToeSkin(const Comparison& c,Vec3 origin,
     std::vector<Vec3> movement(c.parts().size());
     for(std::size_t i=0;i<c.parts().size();++i) {
         const auto& part=c.parts()[i];
-        if(part.points.empty() || !(part.name.starts_with("FootProxP") || part.name.starts_with("FootMidP") || part.name.starts_with("FootDistP")))continue;
+        if(part.points.empty() || !(part.name.starts_with("FootMeta") || part.name.starts_with("FootProxP") || part.name.starts_with("FootMidP") || part.name.starts_with("FootDistP")))continue;
         Vec3 center{};for(Vec3 p:part.points)center+=p;center=c.mapPart(center/double(part.points.size()),part);
         movement[i]=toeSkinPoint(ref.after[i],center)-toeSkinPoint(ref.before[i],center);
     }

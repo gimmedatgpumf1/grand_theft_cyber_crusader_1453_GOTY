@@ -214,8 +214,11 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         axis=normalized(axis);
         std::string mobility;
         for (const auto& link:model.sourceLinks()) if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { mobility=link.mobility; break; }
-        if (comparison && (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp" || mobility=="toe_ip_hinge")) {
-            for (const auto& toe:toePivots) if(toe.parent==pi && toe.child==si) { pivot=toe.pivot; break; }
+        Vec3 childPivot=pivot;
+        if (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp" || mobility=="toe_ip_hinge") {
+            for (const auto& toe:toePivots) if(toe.parent==pi && toe.child==si) {
+                pivot=toe.pivot;childPivot=toe.separateSurfacePoints?toe.childPivot:pivot;break;
+            }
         }
         const bool ball=mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";
         const bool fitted=ball && mobility!="shoulder_ball_socket" && source->axes().size()>2;
@@ -231,7 +234,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         tangent=normalized(tangent);
         Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,0};
         joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
-        joint.childAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
+        joint.childAnchor=packed(childPivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         const double piValue=3.14159265358979323846;
         const auto lower=[&](std::size_t k) { return float(std::clamp(source->axes()[k].minimum-source->angles()[k],-piValue,piValue)); };
         const auto upper=[&](std::size_t k) { return float(std::clamp(source->axes()[k].maximum-source->angles()[k],-piValue,piValue)); };
@@ -333,19 +336,21 @@ bool buildGpuSkeletonRig(const SkeletonModel& male, Vec3 maleOrigin, const Skele
                          const SkeletonModel& female, Vec3 femaleOrigin, const SkeletonComparison& blueFemale,
                          const std::vector<std::array<double,16>>& maleBluePose,const std::vector<std::array<double,16>>& femaleBluePose,
                          const std::vector<ComparisonToeAttachment>& maleSurfaceJoints,const std::vector<ComparisonToeAttachment>& femaleSurfaceJoints,
+                         const std::vector<ComparisonToeAttachment>& maleWhiteSurfaceJoints,const std::vector<ComparisonToeAttachment>& femaleWhiteSurfaceJoints,
                          GpuSkeletonRig& out, std::string& error) {
     struct Chunk { GpuSkeletonRig rig; std::string error; bool ok=false; };
     auto build=[](const SkeletonModel& model, Vec3 origin, const SkeletonComparison& blue, bool maleFigure,
-                  const std::vector<std::array<double,16>>& pose,const std::vector<ComparisonToeAttachment>& joints) {
+                  const std::vector<std::array<double,16>>& pose,const std::vector<ComparisonToeAttachment>& joints,
+                  const std::vector<ComparisonToeAttachment>& whiteJoints) {
         Chunk chunk;
-        const FigureInput white{&model,nullptr,origin,maleFigure ? 9001u : 8001u};
+        const FigureInput white{&model,nullptr,origin,maleFigure ? 9001u : 8001u,nullptr,&whiteJoints};
         const FigureInput comparison{&model,&blue,{maleFigure ? -2.85 : 2.85,0.10,0},maleFigure ? 12000u : 14000u,&pose,&joints};
         chunk.ok=appendFigure(white,chunk.rig,chunk.error) && appendFigure(comparison,chunk.rig,chunk.error);
         return chunk;
     };
     try {
-        auto maleWork=std::async(std::launch::async,build,std::cref(male),maleOrigin,std::cref(blueMale),true,std::cref(maleBluePose),std::cref(maleSurfaceJoints));
-        Chunk femaleChunk=build(female,femaleOrigin,blueFemale,false,femaleBluePose,femaleSurfaceJoints);
+        auto maleWork=std::async(std::launch::async,build,std::cref(male),maleOrigin,std::cref(blueMale),true,std::cref(maleBluePose),std::cref(maleSurfaceJoints),std::cref(maleWhiteSurfaceJoints));
+        Chunk femaleChunk=build(female,femaleOrigin,blueFemale,false,femaleBluePose,femaleSurfaceJoints,femaleWhiteSurfaceJoints);
         Chunk maleChunk=maleWork.get();
         if (!maleChunk.ok || !femaleChunk.ok) { error=maleChunk.ok ? femaleChunk.error : maleChunk.error; return false; }
         GpuSkeletonRig next;
