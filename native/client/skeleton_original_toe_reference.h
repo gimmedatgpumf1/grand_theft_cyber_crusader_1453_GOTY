@@ -1,0 +1,26 @@
+#pragma once
+
+#include <array>
+#include <vector>
+
+namespace gtc::native {
+// Skin-reference frames saved from the previous registered female source pose.
+// These are used ONLY by original-pose restore, never to align the standing rig.
+// Keeping them separate prevents a standing-pose edit from changing the old
+// MakeHuman surface when the user asks to restore the original registration.
+template<class Part>
+std::vector<std::array<double,16>> originalLittleToeSkinReference(
+    const std::vector<Part>& parts,const std::vector<std::array<double,16>>& reference) {
+    auto result=reference;
+    constexpr const char* names[]={"FootMidP5_L","FootDistP5_L","FootMidP5_R","FootDistP5_R"};
+    constexpr std::array<double,16> saved[]={
+        {0.15236871102274205,0.74503493619339489,0.64938949772272581,0,0.88377409832325704,0.19141466130853488,-0.42697045631876374,0,-0.44241057744383011,0.63897055588457596,-0.62927697373920666,0,0.0050859802777134195,0.042352892780605826,0.041612639176835983,1},
+        {0.6155884726976627,0.7796373906538725,0.11496247812302125,0,0.21860269458402051,-0.028777612622993564,-0.97538951754277636,0,-0.7571417926665841,0.62556965088321426,-0.18814600099786569,0,-0.056074532093404177,0.04206051090116307,0.15793877051130373,1},
+        {0.40765964481711825,-0.57540569553290966,-0.70902884252748666,0,-0.56336330763317599,0.45260062593166323,-0.69121230965519898,0,0.71863439772960369,0.68122019858086558,-0.13965544545508071,0,0.068510263426671505,0.051303350783383432,0.073382492228654964,1},
+        {-0.039914672480373212,-0.99411950086705525,-0.10066398023433765,0,-0.15767600474160232,0.1057485807791339,-0.98181236251736259,0,0.98668388881622926,-0.023316424662320485,-0.16096971109949557,0,0.00068719447290005453,-0.087302571989370428,0.19405483408486138,1}
+    };
+    for(std::size_t i=0;i<parts.size() && i<result.size();++i)
+        for(std::size_t j=0;j<4;++j)if(parts[i].name==names[j])result[i]=saved[j];
+    return result;
+}
+} // namespace gtc::native

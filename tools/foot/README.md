@@ -29,8 +29,10 @@ metatarsals, with a small sideways correction to the second web. It leaves the
 toe tips nearly fixed and preserves the mesh topology and skin owners. The female
 little-toe middle and distal bones have a separate rigid reference adjustment;
 the joints are recentered and the little-toe skin is retargeted and lengthened.
-The other toes retain their previous reference pose. CT mesh vertices are not
-modified, and restoring the original pose removes the reference adjustment. The
+Other individually selected phalanges also have rigid resting adjustments;
+blue fourth and little toes and the female third toes have separate placements.
+CT mesh vertices are not modified, and restoring the original pose removes the
+reference adjustment. The
 small-bone directions are approximate, not clinically validated. Two bone influences
 animate the skin, and the preview is 50% opaque. Original triangles and smooth
 vertex shading are retained; there is no simplification, plane fit or procedural
@@ -40,15 +42,23 @@ Each MTP and IP joint was inspected in both sexes and on both sides, at rest
 and with its individual control bent. The blue bones had particularly visible
 separation during motion because each segment used a different rotation centre.
 Their motion now carries a shared, estimated contact point through each toe
-chain; the ragdoll uses the same contact estimate. The standing geometry and
-white CT surfaces are unchanged, and original-pose restore retains its former
-behaviour. These contacts are geometric estimates, not anatomical landmarks.
+chain; the ragdoll uses the same contact estimate. The underlying white CT surfaces are unchanged, and original-pose restore
+retains its former skin reference. These contacts are geometric estimates, not anatomical landmarks.
 
-This is not a finished fit: some standing joints still overlap or look poorly
-aligned, including the female little toe. Some bent and ragdoll poses expose
+This remains an approximate fit: the source meshes and B-view lines use
+estimated bone landmarks, not anatomical joint surfaces. Resting phalanges were
+reviewed individually in top, oblique and side Vulkan views. Some joints may
+still overlap or look poorly aligned, including the little toes. Some bent and ragdoll poses expose
 bone through the skin, and the ragdoll can distort the toes. Further work is
 needed on the resting joints, skin and dynamics; this is not clinical validation.
 The MakeHuman source and its CC0 license are in `tools/human-source/`.
+
+`inspect-toes.cpp` is an off-screen **visualization** utility; it does not
+choose bone corrections. It can display one digit's B lines (`isolated`), the
+white scan (`solid`), blue scan (`bluebones`) or blue scan with skin (`blue`).
+Run it from the repository root after linking the native client objects:
+`inspect-toes OUTPUT female L 5 isolated`. The `ORIGINAL=1` environment
+variable requests the original-pose view.
 
 ## Earlier fitting experiment (not the in-game foot)
 

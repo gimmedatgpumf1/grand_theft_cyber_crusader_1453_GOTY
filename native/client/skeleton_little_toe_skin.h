@@ -46,4 +46,31 @@ void fitLittleToeSkin(const Comparison& c,const Vertices& vertices,double length
                    dot(value,cross(x,y))/determinant};
     }
 }
+// Keep the fitted neutral skin surface in place when manually moving the
+// comparison phalanges, while retaining its two bone-owner weights.
+template<class Comparison>
+void fitPlacedToeSkin(const Comparison& c,bool male,Vec3 origin,std::vector<Vec3>& points,
+    const std::vector<int>& owners,const std::vector<int>& secondary,const std::vector<double>& weights) {
+    if(!c.toeAttachmentsEnabled())return;
+    const auto& rest=c.correctedToeReference();if(rest.size()!=c.parts().size())return;
+    const auto corrected=c.toePose(rest,origin,&rest);auto previous=corrected;
+    fitComparisonToePlacement(c.parts(),previous,[&](Vec3 q,const auto& p){return c.mapPart(q,p);},male,origin,-1);
+    const auto affected=[&](int i){const auto& name=c.parts()[std::size_t(i)].name;
+        return name.starts_with("FootMidP4_") || name.starts_with("FootDistP4_") ||
+               (male ? name.starts_with("FootDistP2_") || name.starts_with("FootMidP5_") || name.starts_with("FootDistP5_") :
+                       name.starts_with("FootMidP3_") || name.starts_with("FootDistP3_"));};
+    for(std::size_t i=0;i<previous.size();++i)if(!affected(static_cast<int>(i)))previous[i]=corrected[i];
+    for(std::size_t i=0;i<points.size();++i) {
+        const auto a=std::size_t(owners[i]),b=std::size_t(secondary[i]);
+        if(!affected(owners[i]) && !affected(secondary[i]))continue;
+        const double w=weights[i];const Vec3 goal=toePoint(previous[a],points[i])*w+toePoint(previous[b],points[i])*(1-w);
+        const auto& x=corrected[a];const auto& y=corrected[b];
+        const Vec3 X{x[0]*w+y[0]*(1-w),x[1]*w+y[1]*(1-w),x[2]*w+y[2]*(1-w)};
+        const Vec3 Y{x[4]*w+y[4]*(1-w),x[5]*w+y[5]*(1-w),x[6]*w+y[6]*(1-w)};
+        const Vec3 Z{x[8]*w+y[8]*(1-w),x[9]*w+y[9]*(1-w),x[10]*w+y[10]*(1-w)};
+        const Vec3 offset{x[12]*w+y[12]*(1-w),x[13]*w+y[13]*(1-w),x[14]*w+y[14]*(1-w)};
+        const double det=dot(X,cross(Y,Z));if(std::abs(det)<1e-10)continue;
+        const Vec3 q=goal-offset;points[i]={dot(q,cross(Y,Z))/det,dot(q,cross(Z,X))/det,dot(q,cross(X,Y))/det};
+    }
+}
 } // namespace gtc::native

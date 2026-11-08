@@ -256,6 +256,7 @@ RawMakeHumanFoot rawMakeHumanFoot(const Comparison& c,const std::string& side,Ve
         result.ownerWeights.push_back(sum>1e-9?byOwner[std::size_t(first)]/sum:1.0);
     }
     if(!male)fitLittleToeSkin(c,vertices,length,origin,result.points,result.owners,result.secondaryOwners,result.ownerWeights);
+    fitPlacedToeSkin(c,male,origin,result.points,result.owners,result.secondaryOwners,result.ownerWeights);
     result.faces.assign(faces.begin(),faces.end());
     if(mirror)for(auto& f:result.faces)std::swap(f[1],f[2]);
     return result;

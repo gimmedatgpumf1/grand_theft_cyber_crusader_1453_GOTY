@@ -91,21 +91,37 @@ inline std::vector<ComparisonToeAttachment> posedToeAttachments(std::vector<Comp
     }
     return joints;
 }
-// Close the female comparison's fifth-toe joints independently of the CT
+// Adjust individually inspected comparison joints independently of the CT
 // registration. The averaged phalanges have different contours from the CT;
-// a small longitudinal adjustment avoids moving the skin with a rigid turn.
+// rotations and translations below were chosen from resting close-ups.
 template<class Part,class Map>
-void fitComparisonLittleToe(const std::vector<Part>& parts,std::vector<std::array<double,16>>& pose,Map map) {
+void fitComparisonToePlacement(const std::vector<Part>& parts,std::vector<std::array<double,16>>& pose,Map map,bool male,Vec3 origin,double amount=1) {
     double scale=1;
-    for(const auto& p:parts)if(p.name=="FootMeta5_L" && !p.points.empty()) {
+    for(const auto& p:parts)if(p.name==(male?"FootMeta2_L":"FootMeta5_L") && !p.points.empty()) {
         double lo=1e30,hi=-1e30;
         for(Vec3 v:p.points){const double z=map(v,p).z;lo=std::min(lo,z);hi=std::max(hi,z);}
         scale=(hi-lo)/.06528;break;
     }
     for(std::size_t i=0;i<parts.size();++i) {
         const auto& n=parts[i].name;
-        if(n.starts_with("FootMidP5_"))pose[i][14]-=.0002*scale;
-        else if(n.starts_with("FootDistP5_"))pose[i][14]-=.0012*scale;
+        if(male && n.starts_with("FootDistP2_"))pose[i][14]-=.0025*scale*amount;
+        else if(male && (n.starts_with("FootMidP5_") || n.starts_with("FootDistP5_")))pose[i][14]-=.0012*scale*amount;
+        else if(n.starts_with("FootMidP4_"))pose[i][14]-=(male?.0015:.0010)*scale*amount;
+        else if(n.starts_with("FootDistP4_"))pose[i][14]-=(male?.0020:.0015)*scale*amount;
+        else if(!male && n.starts_with("FootMidP3_")) {pose[i][14]-=.0015*scale*amount;pose[i][13]+=.0006*scale*amount;}
+        else if(!male && n.starts_with("FootDistP3_")) {pose[i][14]-=.0025*scale*amount;pose[i][13]+=.0008*scale*amount;}
+        else if(!male && n.starts_with("FootMidP5_"))pose[i][14]-=.0012*scale*amount;
+        else if(!male && n.starts_with("FootDistP5_"))pose[i][14]-=.0022*scale*amount;
+        if(!male && !parts[i].points.empty() && (n.starts_with("FootMidP5_") || n.starts_with("FootDistP5_"))) {
+            Vec3 center{};for(Vec3 q:parts[i].points)center+=map(q,parts[i])+origin;
+            center=toePoint(pose[i],center/double(parts[i].points.size()));
+            const double side=n.ends_with("_L")?1:-1;
+            const double angle=(n.starts_with("FootMidP5_")?-20:20)*side*amount*3.14159265358979323846/180;
+            auto turn=joint_detail::rotate({0,1,0},angle);
+            turn.translation=center-frameVector(turn,center);
+            const auto t=joint_detail::compose(turn,toeRigid(pose[i]));const auto& r=t.rotation;
+            pose[i]={r[0],r[3],r[6],0,r[1],r[4],r[7],0,r[2],r[5],r[8],0,t.translation.x,t.translation.y,t.translation.z,1};
+        }
     }
 }
 inline std::vector<std::array<double,16>> rebaseComparisonToePose(
