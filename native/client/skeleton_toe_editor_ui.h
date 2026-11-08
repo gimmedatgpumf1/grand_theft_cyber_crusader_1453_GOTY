@@ -29,20 +29,20 @@ public:
         button(f,l,126,87,103,edit_.segment==1?"MIDDLE *":"MIDDLE");
         button(f,l,233,87,90,edit_.segment==2?"DISTAL *":"DISTAL");
         button(f,l,328,87,70,fine_?"FINE *":"FINE");
-        text(f,l,10,116,"ROTATE WORLD AXES");
+        text(f,l,10,116,"ROTATE XYZ");
         axisRow(f,l,140,"X",0);axisRow(f,l,166,"Y",1);axisRow(f,l,192,"Z",2);
-        text(f,l,205,116,"MOVE WORLD AXES");
+        text(f,l,205,116,"MOVE XYZ");
         axisRow(f,l,140,"X",3);axisRow(f,l,166,"Y",4);axisRow(f,l,192,"Z",5);
         char step[96];std::snprintf(step,sizeof step,"Step: %.0f deg / %.1f mm  |  %zu edits",fine_?1.:5.,fine_?.2:1.,room.toeEditCount());
         text(f,l,10,222,step);
-        button(f,l,10,248,80,"UNDO");button(f,l,94,248,108,"RESET BONE");
+        button(f,l,10,248,80,"UNDO");button(f,l,94,248,108,"RESET");
         button(f,l,206,248,65,"SAVE");button(f,l,275,248,65,"LOAD");button(f,l,344,248,70,"STAND");
         button(f,l,10,276,90,"APPLY B");
         text(f,l,110,279,room.originalToePose()?"B: ORIGINAL POSE":"STANDING POSE");
         const auto message=!status_.empty()?status_:!room.toeEditError().empty()?room.toeEditError():
             room.toeEditingAvailable()?"V: shapes/lines   B: untouched original":"Press STAND to exit ragdoll.";
         text(f,l,10,305,message);
-        text(f,l,10,329,"Rotate/move one bone. Skin follows blue bones.");
+        text(f,l,10,329,"Reset affects the selected bone.");
     }
     bool handle(const WindowEvent& e,bool captured,int width,int height,SkeletonRoom& room) {
         if(e.type==WindowEvent::Type::KeyDown && e.key=='t' && !e.repeat) {open_=!open_;return true;}
@@ -80,7 +80,8 @@ private:
     struct Layout {int x,y,w,h;};
     static Layout layout(int w,int h) {return {std::max(0,w-430),std::max(0,(h-354)/2),420,354};}
     static void text(NativeFrame& f,Layout l,int x,int y,const std::string& s) {
-        drawTextPixels(f,l.x+x,l.y+y,s,colorHex("#e0effb"),18);
+        // The Vulkan glyph atlas starts at 20 px; smaller sizes render as empty boxes.
+        drawTextPixels(f,l.x+x,l.y+y,s,colorHex("#e0effb"),20);
     }
     static void button(NativeFrame& f,Layout l,int x,int y,int w,const char* s) {
         f.blendRectangle(l.x+x,l.y+y,w,24,colorHex("#44657b"),0.78);text(f,l,x+4,y+3,s);
