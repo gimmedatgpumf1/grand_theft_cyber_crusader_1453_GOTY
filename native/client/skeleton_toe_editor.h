@@ -24,7 +24,7 @@ inline bool validToeEdit(const ToeEdit& e) {
         std::abs(e.amount)<=(e.axis<3?180.0:0.1);
 }
 inline std::string toeEditName(const ToeEdit& e,int segment) {
-    const char* prefix=segment==0?"FootProxP":segment==1?"FootMidP":"FootDistP";
+    const char* prefix=segment<0?"FootMeta":segment==0?"FootProxP":segment==1?"FootMidP":"FootDistP";
     return std::string(prefix)+std::to_string(e.digit)+"_"+e.side;
 }
 inline std::size_t toeEditLink(const SkeletonModel& model,const std::string& a,const std::string& b) {

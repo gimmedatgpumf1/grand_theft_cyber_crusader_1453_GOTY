@@ -31,10 +31,11 @@ public:
             char name[8];std::snprintf(name,sizeof name,"%d%s",i,edit_.digit==i?" *":"");
             button(f,l,178+(i-1)*43,59,40,name);
         }
-        button(f,l,10,87,112,edit_.segment==0?"PROXIMAL *":"PROXIMAL");
-        button(f,l,126,87,103,edit_.segment==1?"MIDDLE *":"MIDDLE");
-        button(f,l,233,87,90,edit_.segment==2?"DISTAL *":"DISTAL");
-        button(f,l,328,87,70,fine_?"FINE *":"FINE");
+        button(f,l,10,87,66,edit_.segment==-1?"META *":"META");
+        button(f,l,80,87,74,edit_.segment==0?"PROX *":"PROX");
+        button(f,l,158,87,70,edit_.segment==1?"MID *":"MID");
+        button(f,l,232,87,75,edit_.segment==2?"DIST *":"DIST");
+        button(f,l,312,87,80,fine_?"FINE *":"FINE");
         text(f,l,10,116,"ROTATE XYZ");
         axisRow(f,l,140,"X",0);axisRow(f,l,166,"Y",1);axisRow(f,l,192,"Z",2);
         text(f,l,205,116,"MOVE XYZ");
@@ -62,10 +63,11 @@ public:
         else if(hit(218,31,90))edit_.blue=false;else if(hit(313,31,85))edit_.blue=true;
         else if(hit(10,59,75))edit_.side='L';else if(hit(90,59,80))edit_.side='R';
         else if(y>=59 && y<83 && x>=178 && x<393) {edit_.digit=(x-178)/43+1;if(edit_.digit==1 && edit_.segment==1)edit_.segment=2;}
-        else if(hit(10,87,112))edit_.segment=0;
-        else if(hit(126,87,103)) {if(edit_.digit!=1)edit_.segment=1;else status_="The big toe has no middle phalanx.";}
-        else if(hit(233,87,90))edit_.segment=2;
-        else if(hit(328,87,70))fine_=!fine_;
+        else if(hit(10,87,66))edit_.segment=-1;
+        else if(hit(80,87,74))edit_.segment=0;
+        else if(hit(158,87,70)) {if(edit_.digit!=1)edit_.segment=1;else status_="The big toe has no middle phalanx.";}
+        else if(hit(232,87,75))edit_.segment=2;
+        else if(hit(312,87,80))fine_=!fine_;
         else if(y>=140 && y<216) {
             const int row=(y-140)/26, local=(y-140)%26;
             if(row<3 && local<24) {

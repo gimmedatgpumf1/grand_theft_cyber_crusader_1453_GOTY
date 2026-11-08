@@ -10,6 +10,7 @@
 namespace gtc::native {
 class SkeletonModel;
 class SkeletonComparison;
+struct ComparisonToeAttachment;
 
 // Startup data for the experimental GPU solver.
 // A binding's matrix maps the batch's original vertices into body-local space;
@@ -34,5 +35,9 @@ bool buildGpuSkeletonRig(const SkeletonModel& male, Vec3 maleOrigin,
                          const SkeletonComparison& blueMale,
                          const SkeletonModel& female, Vec3 femaleOrigin,
                          const SkeletonComparison& blueFemale,
+                         const std::vector<std::array<double,16>>& maleBluePose,
+                         const std::vector<std::array<double,16>>& femaleBluePose,
+                         const std::vector<ComparisonToeAttachment>& maleSurfaceJoints,
+                         const std::vector<ComparisonToeAttachment>& femaleSurfaceJoints,
                          GpuSkeletonRig& out, std::string& error);
 } // namespace gtc::native

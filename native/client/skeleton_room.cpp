@@ -259,6 +259,8 @@ bool SkeletonRoom::restoreReferencePose() {
     if (littleToeReady_ && (!fitManualFemaleLittleToe(female_,femaleLines_) || !fitReferenceToeShafts(male_,maleLines_) ||
                             !fitReferenceToeShafts(female_,femaleLines_,true))) return false;
     for (const auto& edit:toeEdits_) if (!edit.original && !edit.blue && !applyWhiteToeEdit(edit.male?male_:female_,edit)) return false;
+    if(!applySurfaceToeCalibration(male_,maleToeMarks_) || !applySurfaceToeCalibration(female_,femaleToeMarks_))return false;
+    maleToeNeutral_=male_.sourceMatrices({},0);femaleToeNeutral_=female_.sourceMatrices({},0);
     // Lift the whole reference bodies ten centimetres above the floor.
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
     return true;
@@ -274,10 +276,36 @@ bool SkeletonRoom::restoreOriginalPose() {
     return true;
 }
 
-std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec3 origin) const {
-    const auto& c=male?maleComparison_:femaleComparison_;
-    auto pose=c.toePose((male?male_:female_).sourceMatrices({},0),origin);
+const ToeSurfaceMarks& SkeletonRoom::mappedBlueToeMarks(bool male) const {
+    const auto& c=male?maleComparison_:femaleComparison_;const auto& model=male?male_:female_;
+    const auto& marks=male?maleToeMarks_:femaleToeMarks_;auto& cache=male?maleBlueMarks_:femaleBlueMarks_;
+    if(cache.source!=toeMarksRevision_ || cache.profile!=c.revision()) {
+        cache.marks=mapBlueToeMarks(c,model,marks);cache.source=toeMarksRevision_;cache.profile=c.revision();
+    }
+    return cache.marks;
+}
+std::optional<std::array<Vec3,2>> SkeletonRoom::blueToeAxis(bool male,char side,int digit,int segment) const {
+    const auto& marks=mappedBlueToeMarks(male);ToeEdit e;e.digit=digit;e.side=blueToeMarkedSide(marks,digit);
+    const auto found=marks.find(toeEditName(e,segment));if(found==marks.end())return std::nullopt;
+    auto result=found->second.end;
+    if(side!=e.side){result[0]=toeMirrorPoint(result[0]);result[1]=toeMirrorPoint(result[1]);}
+    return result;
+}
+std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec3 origin,
+    std::vector<ComparisonToeAttachment>* surfaceJoints) const {
+    const auto& c=male?maleComparison_:femaleComparison_;const auto& model=male?male_:female_;
+    auto pose=c.toePose(model.sourceMatrices({},0),origin);
     if(!originalToePose_ || originalToeEditsVisible_) applyBlueToeEdits(c,pose,origin,toeEdits_,male,originalToePose_);
+    const auto& marks=male?maleToeMarks_:femaleToeMarks_;
+    const auto& neutral=male?maleToeNeutral_:femaleToeNeutral_;
+    if(!originalToePose_ && !marks.empty() && neutral.size()==c.parts().size()) {
+        const auto& blueMarks=mappedBlueToeMarks(male);
+        auto base=c.toePose(neutral,origin);auto corrected=base;
+        const auto joints=calibrateBlueToeNeutral(c,blueMarks,origin,corrected);
+        animateBlueToeCalibration(base,corrected,pose,joints);
+        if(surfaceJoints)for(const auto& joint:joints)
+            surfaceJoints->push_back({joint.parent,joint.child,toePoint(pose[joint.parent],joint.parentPoint)});
+    }
     return pose;
 }
 bool SkeletonRoom::showOriginalToeEdits() {
@@ -328,8 +356,11 @@ bool SkeletonRoom::toggleRagdoll() {
     if (!ready_) return false;
     if (physicsRig_) return restoreReferencePose();
     auto simulation=std::make_unique<GpuSkeletonRig>();
+    std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
+    const auto maleBluePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
+    const auto femaleBluePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
     if (!buildGpuSkeletonRig(male_,{-0.95,maleFloor_,0},maleComparison_,
-                             female_,{0.95,femaleFloor_,0},femaleComparison_,*simulation,error_)) return false;
+                             female_,{0.95,femaleFloor_,0},femaleComparison_,maleBluePose,femaleBluePose,maleJoints,femaleJoints,*simulation,error_)) return false;
     static std::atomic<std::uint64_t> nextGeneration{1};
     physicsGeneration_=nextGeneration.fetch_add(1,std::memory_order_relaxed);
     physicsSteps_=0; physicsTime_=0; physicsRig_=std::move(simulation);

@@ -63,10 +63,10 @@ variable requests the original-pose view.
 ## Manual toe bone editor
 
 In the skeleton room, press **T** to open the isolated toe workspace (the
-mouse is released automatically). It shows just one chosen foot's phalanges,
-not the whole skeleton. It opens on the unmoved white B source and the left
-foot. Choose male/female, white/blue, left/right, digit 1–5, and proximal,
-middle or distal phalanx (the great toe has no middle bone). The +/- buttons
+mouse is released automatically). It shows one foot's metatarsals and
+phalanges, not the whole skeleton. It opens on the unmoved white B source and
+the left foot. Choose male/female, white/blue, left/right, digit 1–5, and META,
+PROX, MID or DIST (the great toe has no middle bone). The +/- buttons
 rotate around the selected bone's centre or translate it along world X, Y and Z.
 The normal step is 5 degrees / 1 mm; **FINE** changes it to 1 degree / 0.2 mm.
 Each click moves only the selected white bone, not its descendants. The blue
@@ -86,21 +86,33 @@ standing pose with its edits. **B** still restores the untouched source pose;
 you can also edit that pose, separately from standing. **APPLY B** reapplies
 saved B-pose edits after B has restored the untouched source; the first edit in
 the B pose does so automatically. These controls do not automatically fix any
-joint, and the resulting pose is not yet verified for bending or ragdoll.
+joint; these older +/- controls are separate from surface calibration.
 
-Each translucent phalanx has an editable stick. Drag its green start or red end
-on the unmoved white B source. Dragging moves a point in the current view
-plane, retaining its depth; rotate the view to set the remaining dimension.
-The stick moves with its bone. **SAVE AXES** writes `toe-bone-axes.txt`, separately from the pose SAVE;
-**LOAD AXES** restores it and **RESET AXIS** resets the selected stick. White
-stick edits also appear in the room's V-view. These are manually chosen visual
-landmarks; changing them does **not** yet change the skeleton's joint pivots or
-automatically align bones. The default sticks are estimates, not ground truth.
+Each metatarsal and phalanx has a stick. In the unmoved white B source, drag
+the green start (nearer the heel) and red end (nearer the toe tip) onto the
+actual surface of each bone. Dim markers are unconfirmed estimates; bright
+markers were placed on a triangle. Orbit to see the end faces: a click from
+above selects the surface facing the camera, which may not be the end face.
+Use ONE BONE to separate overlapping handles. Mark both ends of adjacent bones;
+then **STAND** or closing T aligns their marked axes and brings their marked
+surfaces together, setting the white joint pivot there. Unmarked links retain
+the old pose and joint estimates. This straight-axis alignment is a geometric
+starting point, not anatomical verification; inspect the resulting bones and
+skin for overlap or stretching.
 
-For blue geometry, the existing comparison pipeline combines the left scan
-with the reflected right scan and then mirrors that averaged left-side mesh to
-the right. The white CT meshes stay separate and unchanged. The workspace
-edits only the selected side; axis edits are not automatically mirrored.
+**SAVE AXES** writes `toe-bone-axes.txt`, separately from pose SAVE. **LOAD
+AXES** restores it and **RESET AXIS** resets the selected bone. Older v1
+free-floating axes remain unconfirmed and must be placed again on the surface.
+The blue comparison transfers the chosen points onto its averaged surfaces,
+then mirrors that toe's correction to the other blue foot. Male and female
+still require separate markings. The original white CT mesh vertices are not
+changed; B restores their original pose. This only calibrates marked toe links,
+not every other joint in the body. Extreme selections and skin/ragdoll motion
+still need visual inspection.
+
+For blue geometry, the comparison pipeline combines the left scan with the
+reflected right scan and then mirrors that averaged left-side mesh to the
+right; it does not simply copy one unmodified white foot.
 
 ## Earlier fitting experiment (not the in-game foot)
 

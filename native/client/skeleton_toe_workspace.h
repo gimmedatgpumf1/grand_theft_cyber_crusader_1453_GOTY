@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/skeleton_toe_editor_ui.h"
+#include "client/skeleton_toe_surface.h"
 #include "client/ui_layer.h"
 #include <algorithm>
 #include <array>
@@ -12,8 +13,8 @@
 #include <vector>
 
 namespace gtc::native {
-// A landmark is attached to one bone's mesh frame. It is not a joint or an
-// automatic fit: the user places each end and can save those choices separately.
+// User-placed surface landmarks in the unmodified CT bone frame. Complete
+// pairs calibrate the adjacent toe joint when the standing pose is restored.
 class SkeletonToeWorkspace {
     struct Key {
         bool male,blue; char side; int digit,segment;
@@ -21,16 +22,38 @@ class SkeletonToeWorkspace {
     };
     struct Bone {
         Key key; std::string name; std::array<Vec3,2> local,world,baseLocal;
-        std::array<double,16> pose; std::vector<Vec3> points;
+        std::array<double,16> pose; bool blueMarked=false; std::vector<Vec3> points;
         std::vector<std::array<int,3>> faces;
     };
 public:
     explicit SkeletonToeWorkspace(std::string root) : path_(std::move(root)+"/toe-bone-axes.txt") { load(); }
-    void syncWhiteAxes(SkeletonRoom& room) const {
+    void syncWhiteAxes(SkeletonRoom& room) {
+        // Files from older editors were free-floating. Never treat them (or a
+        // damaged file) as surface attachments without validating each point.
+        if(!validated_) {
+            for(auto& [k,mask]:marks_) {
+                if(k.blue || !mask)continue;
+                ToeEdit e;e.male=k.male;e.side=k.side;e.digit=k.digit;e.segment=k.segment;
+                const auto& model=k.male?room.male():room.female();const int index=model.sourceStructure(toeEditName(e,k.segment));
+                const auto found=axes_.find(k);if(index<0 || found==axes_.end()){mask=0;continue;}
+                const auto& part=model.sourceStructures()[std::size_t(index)];const auto& group=model.bones()[part.group];
+                std::vector<Vec3> points;std::vector<std::array<int,3>> faces;
+                for(std::size_t j=0;j<part.pointCount;++j)points.push_back(group.points[part.firstPoint+j]);
+                for(std::size_t j=0;j<part.triangleCount;++j) {const auto f=group.triangles[part.firstTriangle+j];
+                    faces.push_back({f[0]-int(part.firstPoint),f[1]-int(part.firstPoint),f[2]-int(part.firstPoint)});}
+                for(int j=0;j<2;++j)if(mask&(1u<<j)) {
+                    const auto p=toeClosestSurface(found->second[j],points,faces);
+                    if(!p || length(*p-found->second[j])>1e-6)mask&=~(1u<<j);
+                }
+                if(mask==3 && length(found->second[1]-found->second[0])<1e-5)mask=0;
+            }
+            validated_=true;
+        }
         room.resetDisplayToeAxes();
         for(const auto& [k,p]:axes_)if(!k.blue) {
             ToeEdit e;e.male=k.male;e.side=k.side;e.digit=k.digit;e.segment=k.segment;
-            room.setDisplayToeAxis(k.male,toeEditName(e,k.segment),p);
+            const auto mark=marks_.find(k);const unsigned mask=mark==marks_.end()?0:mark->second;
+            room.setDisplayToeAxis(k.male,toeEditName(e,k.segment),p,mask);
         }
     }
     void drawUi(NativeFrame& f,const SkeletonToeEditorUi& ui) const {
@@ -39,8 +62,8 @@ public:
         button(f,14,13,62,preset_ && top_?"TOP *":"TOP");button(f,80,13,64,preset_ && !top_?"SIDE *":"SIDE");
         button(f,150,13,108,"SAVE AXES");button(f,263,13,108,"LOAD AXES");button(f,376,13,122,"RESET AXIS");
         button(f,503,13,130,focus_==0?"ALL BONES":focus_==1?"ONE TOE":"ONE BONE");
-        drawTextPixels(f,14,43,status_.empty()?"Left drag: landmarks (not joints). Right: orbit.":status_,colorHex("#e0effb"),20);
-        drawTextPixels(f,14,67,"TOP/SIDE reset. Wheel: zoom. H: controls.",colorHex("#e0effb"),20);
+        drawTextPixels(f,14,43,status_.empty()?"Green: start. Red: tip. Dim means unset.":status_,colorHex("#e0effb"),20);
+        drawTextPixels(f,14,67,"Drag onto surface. Right: orbit. H: controls.",colorHex("#e0effb"),20);
         for(const auto& b:bones_) {
             const bool selected=same(b.key,ui.selection());
             auto a=project(b.world[0]),c=project(b.world[1]);
@@ -51,8 +74,9 @@ public:
                 const double t=double(i)/steps;
                 f.blendRectangle(int(a->x+(c->x-a->x)*t)-1,int(a->y+(c->y-a->y)*t)-1,3,3,line,.95);
             }
-            f.blendRectangle(int(a->x)-5,int(a->y)-5,10,10,colorHex("#58f5ad"),1);
-            f.blendRectangle(int(c->x)-5,int(c->y)-5,10,10,colorHex("#ff7664"),1);
+            const auto mark=marks_.find(b.key);const unsigned mask=b.blueMarked?3:mark==marks_.end()?0:mark->second;
+            f.blendRectangle(int(a->x)-5,int(a->y)-5,10,10,colorHex(mask&1?"#58f5ad":"#3b8c69"),1);
+            f.blendRectangle(int(c->x)-5,int(c->y)-5,10,10,colorHex(mask&2?"#ff7664":"#a34b40"),1);
         }
     }
     // Build just one selected foot; no skin, other foot, room or body geometry.
@@ -69,15 +93,30 @@ public:
         const auto whitePose=model.sourceMatrices({},0);
         const auto bluePose=selection.blue?room.comparisonToePose(selection.male,{}):std::vector<std::array<double,16>>{};
         Vec3 lo{1e30,1e30,1e30},hi{-1e30,-1e30,-1e30};
-        for(int digit=1;digit<=5;++digit) for(int segment=0;segment<3;++segment) {
+        for(int digit=1;digit<=5;++digit) for(int segment=-1;segment<3;++segment) {
             if((digit==1 && segment==1) || (focus_>=1 && digit!=selection.digit) ||
                (focus_>=2 && segment!=selection.segment))continue;
             ToeEdit e=selection;e.digit=digit;e.segment=segment;
             const std::string name=toeEditName(e,segment);const int idx=model.sourceStructure(name);
-            const auto ends=room.toeAxis(selection.male,name);
-            if(idx<0 || !ends)continue;
-            Bone b;b.key={selection.male,selection.blue,selection.side,digit,segment};b.name=name;
+            auto ends=room.toeAxis(selection.male,name);
+            if(idx<0)continue;
             const auto i=std::size_t(idx);
+            if(!ends && segment==-1) {
+                const auto& part=model.sourceStructures()[i];const auto& group=model.bones()[part.group];
+                const int proximal=model.sourceStructure(toeEditName(e,0));
+                if(!part.pointCount || proximal<0)continue;
+                const auto& tip=model.sourceStructures()[std::size_t(proximal)];if(!tip.pointCount)continue;
+                Vec3 center{},next{};
+                for(std::size_t j=0;j<part.pointCount;++j)center+=group.points[part.firstPoint+j];
+                for(std::size_t j=0;j<tip.pointCount;++j)next+=model.bones()[tip.group].points[tip.firstPoint+j];
+                center=center/double(part.pointCount);next=next/double(tip.pointCount);
+                const Vec3 direction=normalized(next-center);double low=1e30,high=-1e30;std::array<Vec3,2> pair{};
+                for(std::size_t j=0;j<part.pointCount;++j) {const Vec3 p=group.points[part.firstPoint+j];const double d=dot(p-center,direction);
+                    if(d<low){low=d;pair[0]=p;}if(d>high){high=d;pair[1]=p;}}
+                ends=pair;
+            }
+            if(!ends)continue;
+            Bone b;b.key={selection.male,selection.blue,selection.side,digit,segment};b.name=name;
             if(selection.blue) {
                 const auto& part=comparison.parts()[i];if(part.points.empty() || i>=bluePose.size())continue;
                 b.pose=bluePose[i];b.faces=part.faces;
@@ -94,6 +133,7 @@ public:
                 const auto registered=[&](Vec3 p){return frameVector(reg,toePoint(ref,p))+reg.translation;};
                 const Vec3 offset=blueCenter-registered(rawCenter);
                 b.local={comparison.mapPart(registered((*ends)[0])+offset,part),comparison.mapPart(registered((*ends)[1])+offset,part)};
+                if(auto calibrated=room.blueToeAxis(selection.male,selection.side,digit,segment)){b.local=*calibrated;b.blueMarked=true;}
             } else {
                 const auto& part=model.sourceStructures()[i];const auto& group=model.bones()[part.group];
                 b.pose=whitePose[i];
@@ -104,8 +144,14 @@ public:
                 }
                 b.local=*ends;
             }
+            // Unconfirmed handles start on the displayed surface, but do not
+            // become calibration data until explicitly placed by the user.
+            const auto inverse=joint_detail::inverse(toeRigid(b.pose));
+            for(int k=0;k<2;++k)if(auto surface=toeClosestSurface(toePoint(b.pose,b.local[k]),b.points,b.faces))
+                b.local[k]=frameVector(inverse,*surface)+inverse.translation;
             b.baseLocal=b.local;
-            if(auto found=axes_.find(b.key);found!=axes_.end())b.local=found->second;
+            if(auto found=axes_.find(b.key);!b.key.blue && found!=axes_.end())for(int k=0;k<2;++k)
+                if(marks_[b.key]&(1u<<k))b.local[k]=found->second[k];
             for(int k=0;k<2;++k)b.world[k]=toePoint(b.pose,b.local[k]);
             for(Vec3 p:b.points) {lo.x=std::min(lo.x,p.x);lo.y=std::min(lo.y,p.y);lo.z=std::min(lo.z,p.z);
                 hi.x=std::max(hi.x,p.x);hi.y=std::max(hi.y,p.y);hi.z=std::max(hi.z,p.z);}
@@ -177,13 +223,19 @@ public:
         if(e.type==WindowEvent::Type::MouseMove && dragging_) {
             auto it=std::find_if(bones_.begin(),bones_.end(),[&](const Bone& b){return b.key==dragKey_;});
             if(it==bones_.end()){dragging_=false;return true;}
-            const double depth=camera_.view(it->world[dragEnd_]).z;
-            const Vec3 right=camera_.world({1,0,0})-camera_.position,up=camera_.world({0,1,0})-camera_.position;
-            const Vec3 delta=(right*(e.x-lastX_)-up*(e.y-lastY_))*(depth/camera_.focal());
-            auto pair=it->local;const auto inv=joint_detail::inverse(toeRigid(it->pose));
-            pair[dragEnd_]+=frameVector(inv,delta);
-            axes_[it->key]=pair;
-            if(!it->key.blue)room.setDisplayToeAxis(it->key.male,it->name,pair);
+            const Vec3 ray=normalized(camera_.world({(e.x-camera_.width*.5)/camera_.focal(),
+                (camera_.height*.5-e.y)/camera_.focal(),1})-camera_.position);
+            if(auto point=toeSurfaceRay(camera_.position,ray,it->points,it->faces)) {
+                auto pair=it->local;
+                if(auto found=axes_.find(it->key);found!=axes_.end())for(int i=0;i<2;++i)
+                    if(marks_[it->key]&(1u<<i))pair[i]=found->second[i];
+                const auto inv=joint_detail::inverse(toeRigid(it->pose));
+                pair[dragEnd_]=frameVector(inv,*point)+inv.translation;
+                axes_[it->key]=pair;marks_[it->key]|=1u<<dragEnd_;
+                if(length(pair[1]-pair[0])<1e-5) {marks_[it->key]&=~(1u<<dragEnd_);status_="Place the two ends apart on the bone.";}
+                else status_.clear();
+                syncWhiteAxes(room);
+            } else status_="Move over the selected bone surface.";
             lastX_=e.x;lastY_=e.y;return true;
         }
         if(e.type!=WindowEvent::Type::MouseDown || e.button!=1)return false;
@@ -191,8 +243,11 @@ public:
             if(e.x>=14 && e.x<76){top_=true;preset_=true;azimuth_=0;elevation_=1.56;cached_=false;return true;}
             if(e.x>=80 && e.x<144){top_=false;preset_=true;azimuth_=1.5707963267948966;elevation_=0;cached_=false;return true;}
             if(e.x>=150 && e.x<258){status_=save()?"Axes saved to toe-bone-axes.txt":"Could not save axes.";return true;}
-            if(e.x>=263 && e.x<371){if(load()){syncWhiteAxes(room);status_="Axes loaded.";}else status_="No valid axes file.";return true;}
-            if(e.x>=376 && e.x<498){axes_.erase(key(ui.selection()));syncWhiteAxes(room);status_="Selected axis reset.";return true;}
+            if(e.x>=263 && e.x<371){if(load()){syncWhiteAxes(room);if(!room.originalToePose())room.restoreReferencePose();status_="Axes loaded.";}else status_="No valid axes file.";return true;}
+            if(e.x>=376 && e.x<498){if(ui.selection().blue){status_="Reset the axis on the white source.";return true;}
+                axes_.erase(key(ui.selection()));marks_.erase(key(ui.selection()));syncWhiteAxes(room);
+                if(!room.originalToePose())room.restoreReferencePose();
+                status_="Selected axis reset.";return true;}
             if(e.x>=503 && e.x<633){focus_=(focus_+1)%3;return true;}
         }
         double best=15*15;const Bone* hit=nullptr;int end=0;
@@ -208,7 +263,8 @@ public:
 private:
     void refreshAxes() {
         for(auto& b:bones_) {
-            const auto found=axes_.find(b.key);b.local=found==axes_.end()?b.baseLocal:found->second;
+            const auto found=axes_.find(b.key);b.local=b.baseLocal;
+            if(!b.key.blue && found!=axes_.end())for(int i=0;i<2;++i)if(marks_[b.key]&(1u<<i))b.local[i]=found->second[i];
             for(int i=0;i<2;++i)b.world[i]=toePoint(b.pose,b.local[i]);
         }
     }
@@ -230,30 +286,36 @@ private:
     }
     bool save() const {
         std::ofstream out(path_,std::ios::trunc);if(!out)return false;
-        out<<"toe-axes-v1\n"<<std::setprecision(17);
-        for(const auto& [k,p]:axes_)out<<k.male<<' '<<k.blue<<' '<<k.side<<' '<<k.digit<<' '<<k.segment<<' '
-            <<p[0].x<<' '<<p[0].y<<' '<<p[0].z<<' '<<p[1].x<<' '<<p[1].y<<' '<<p[1].z<<'\n';
+        out<<"toe-axes-v2\n"<<std::setprecision(17);
+        for(const auto& [k,p]:axes_) {const auto mark=marks_.find(k);const unsigned mask=mark==marks_.end()?0:mark->second;
+            out<<k.male<<' '<<k.blue<<' '<<k.side<<' '<<k.digit<<' '<<k.segment<<' '<<mask<<' '
+            <<p[0].x<<' '<<p[0].y<<' '<<p[0].z<<' '<<p[1].x<<' '<<p[1].y<<' '<<p[1].z<<'\n';}
         return bool(out);
     }
     bool load() {
-        std::ifstream in(path_);std::string version;if(!(in>>version) || version!="toe-axes-v1")return false;
-        std::map<Key,std::array<Vec3,2>> result;int male,blue;Key k{};std::array<Vec3,2> p;
+        std::ifstream in(path_);std::string version;if(!(in>>version) || (version!="toe-axes-v1" && version!="toe-axes-v2"))return false;
+        std::map<Key,std::array<Vec3,2>> result;std::map<Key,unsigned> placed;int male,blue;Key k{};std::array<Vec3,2> p;
         while(in>>male) {
-            if(!(in>>blue>>k.side>>k.digit>>k.segment>>p[0].x>>p[0].y>>p[0].z>>p[1].x>>p[1].y>>p[1].z))return false;
-            ToeEdit e;e.male=male==1;e.blue=blue==1;e.side=k.side;e.digit=k.digit;e.segment=k.segment;
-            if((male!=0&&male!=1)||(blue!=0&&blue!=1)||!validToeEdit(e)||!joint_detail::finite(p[0])||!joint_detail::finite(p[1])||result.size()>=112)return false;
-            k.male=e.male;k.blue=e.blue;result[k]=p;
+            unsigned mask=0;
+            if(!(in>>blue>>k.side>>k.digit>>k.segment))return false;
+            if(version=="toe-axes-v2" && !(in>>mask))return false;
+            if(!(in>>p[0].x>>p[0].y>>p[0].z>>p[1].x>>p[1].y>>p[1].z))return false;
+            if((male!=0&&male!=1)||(blue!=0&&blue!=1)||(k.side!='L'&&k.side!='R')||k.digit<1||k.digit>5||
+               k.segment< -1||k.segment>2||(k.digit==1&&k.segment==1)||mask>3||!joint_detail::finite(p[0])||!joint_detail::finite(p[1])||result.size()>=152)return false;
+            k.male=male==1;k.blue=blue==1;result[k]=p;placed[k]=mask;
         }
-        if(!in.eof())return false;axes_=std::move(result);return true;
+        if(!in.eof())return false;
+        axes_=std::move(result);marks_=std::move(placed);validated_=false;return true;
     }
     std::string path_,status_;
     std::map<Key,std::array<Vec3,2>> axes_;
+    std::map<Key,unsigned> marks_;
     std::vector<Bone> bones_;
     Camera camera_{};GpuScene scene_;
     std::uint64_t revision_=0,cachedPose_=0,cachedComparison_=0,cachedEdits_=0;
     Key cachedSelection_{};bool cached_=false,cachedTop_=true,cachedPanel_=true;
     Key dragKey_{};int dragEnd_=0,focus_=0,cachedFocus_=0;double lastX_=0,lastY_=0;
     double azimuth_=0,elevation_=1.56,zoom_=1;
-    bool top_=true,preset_=true,dragging_=false,orbiting_=false;
+    bool top_=true,preset_=true,dragging_=false,orbiting_=false,validated_=false;
 };
 } // namespace gtc::native

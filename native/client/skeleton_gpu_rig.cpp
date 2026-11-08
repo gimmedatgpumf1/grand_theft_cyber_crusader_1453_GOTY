@@ -87,6 +87,8 @@ struct FigureInput {
     const SkeletonComparison* comparison=nullptr;
     Vec3 origin{};
     std::uint32_t idBase=0;
+    const std::vector<std::array<double,16>>* bluePose=nullptr;
+    const std::vector<ComparisonToeAttachment>* surfaceJoints=nullptr;
 };
 
 bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string& error) {
@@ -100,8 +102,12 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
     }
     const auto matrices=model.sourceMatrices(comparison ? Vec3{} : input.origin,0);
     if (matrices.size()!=parts.size()) { error="Cannot evaluate skeleton pose"; return false; }
-    const auto bluePose=comparison ? comparison->toePose(matrices,input.origin) : std::vector<std::array<double,16>>{};
-    const auto toePivots=comparison ? comparison->toePivots(bluePose,input.origin) : std::vector<ComparisonToeAttachment>{};
+    const auto bluePose=comparison ? (input.bluePose?*input.bluePose:comparison->toePose(matrices,input.origin)) : std::vector<std::array<double,16>>{};
+    auto toePivots=comparison ? comparison->toePivots(bluePose,input.origin) : std::vector<ComparisonToeAttachment>{};
+    if(input.surfaceJoints)for(const auto& marked:*input.surfaceJoints) {
+        std::erase_if(toePivots,[&](const auto& old){return old.parent==marked.parent && old.child==marked.child;});
+        toePivots.push_back(marked);
+    }
     std::vector<int> structureForNode(rig->size(),-1), groupForNode(rig->size(),-1);
     for (std::size_t i=0;i<mapping.size();++i) {
         if (mapping[i]>=rig->size() || structureForNode[mapping[i]]>=0 || !parts[i].pointCount ||
@@ -325,18 +331,21 @@ void fillExclusions(GpuSkeletonRig& rig) {
 
 bool buildGpuSkeletonRig(const SkeletonModel& male, Vec3 maleOrigin, const SkeletonComparison& blueMale,
                          const SkeletonModel& female, Vec3 femaleOrigin, const SkeletonComparison& blueFemale,
+                         const std::vector<std::array<double,16>>& maleBluePose,const std::vector<std::array<double,16>>& femaleBluePose,
+                         const std::vector<ComparisonToeAttachment>& maleSurfaceJoints,const std::vector<ComparisonToeAttachment>& femaleSurfaceJoints,
                          GpuSkeletonRig& out, std::string& error) {
     struct Chunk { GpuSkeletonRig rig; std::string error; bool ok=false; };
-    auto build=[](const SkeletonModel& model, Vec3 origin, const SkeletonComparison& blue, bool maleFigure) {
+    auto build=[](const SkeletonModel& model, Vec3 origin, const SkeletonComparison& blue, bool maleFigure,
+                  const std::vector<std::array<double,16>>& pose,const std::vector<ComparisonToeAttachment>& joints) {
         Chunk chunk;
         const FigureInput white{&model,nullptr,origin,maleFigure ? 9001u : 8001u};
-        const FigureInput comparison{&model,&blue,{maleFigure ? -2.85 : 2.85,0.10,0},maleFigure ? 12000u : 14000u};
+        const FigureInput comparison{&model,&blue,{maleFigure ? -2.85 : 2.85,0.10,0},maleFigure ? 12000u : 14000u,&pose,&joints};
         chunk.ok=appendFigure(white,chunk.rig,chunk.error) && appendFigure(comparison,chunk.rig,chunk.error);
         return chunk;
     };
     try {
-        auto maleWork=std::async(std::launch::async,build,std::cref(male),maleOrigin,std::cref(blueMale),true);
-        Chunk femaleChunk=build(female,femaleOrigin,blueFemale,false);
+        auto maleWork=std::async(std::launch::async,build,std::cref(male),maleOrigin,std::cref(blueMale),true,std::cref(maleBluePose),std::cref(maleSurfaceJoints));
+        Chunk femaleChunk=build(female,femaleOrigin,blueFemale,false,femaleBluePose,femaleSurfaceJoints);
         Chunk maleChunk=maleWork.get();
         if (!maleChunk.ok || !femaleChunk.ok) { error=maleChunk.ok ? femaleChunk.error : maleChunk.error; return false; }
         GpuSkeletonRig next;

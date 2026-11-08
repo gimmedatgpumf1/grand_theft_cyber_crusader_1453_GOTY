@@ -56,7 +56,7 @@ public:
         }
         std::string roomError;
         if (!room_.load(options_.root, roomError)) std::cerr << "Test room unavailable: " << roomError << '\n';
-        else toeWorkspace_.syncWhiteAxes(room_);
+        else {toeWorkspace_.syncWhiteAxes(room_);room_.restoreReferencePose();}
         if (!window_.open("GRAND THEFT CYBER CRUSADER 1453 - Native", error)) {
             std::cerr << error << '\n';
             return 1;
@@ -542,6 +542,8 @@ private:
                 const auto selection=toeEditorUi_.selection();
                 toeEditorUi_.select(selection.male,false,'L',selection.digit,selection.segment);
                 room_.restoreOriginalPose();
+            } else if (event.type==WindowEvent::Type::KeyDown && event.key=='t' && !toeEditorUi_.open()) {
+                if(!room_.restoreReferencePose())std::cerr << "Unable to apply toe calibration\n";
             }
             return;
         }

@@ -7,6 +7,7 @@
 #include "client/skeleton_lines.h"
 #include "client/skeleton_gpu_rig.h"
 #include "client/skeleton_toe_editor.h"
+#include "client/skeleton_toe_blue_calibration.h"
 #include <memory>
 
 #include <cstdint>
@@ -64,14 +65,17 @@ public:
     std::optional<std::array<Vec3,2>> toeAxis(bool male,const std::string& name) const {
         return (male?maleLines_:femaleLines_).sourceBoneEndpoints(name);
     }
-    void resetDisplayToeAxes() { maleDisplayLines_=maleLines_;femaleDisplayLines_=femaleLines_;lineSceneReady_=false; }
-    void setDisplayToeAxis(bool male,const std::string& name,const std::array<Vec3,2>& ends) {
-        (male?maleDisplayLines_:femaleDisplayLines_).setBoneEndpoints(name,ends);lineSceneReady_=false;
+    void resetDisplayToeAxes() { maleDisplayLines_=maleLines_;femaleDisplayLines_=femaleLines_;maleToeMarks_.clear();femaleToeMarks_.clear();++toeMarksRevision_;lineSceneReady_=false; }
+    void setDisplayToeAxis(bool male,const std::string& name,const std::array<Vec3,2>& ends,unsigned placed) {
+        (male?maleDisplayLines_:femaleDisplayLines_).setBoneEndpoints(name,ends);
+        (male?maleToeMarks_:femaleToeMarks_)[name]={ends,placed};++toeMarksRevision_;lineSceneReady_=false;
     }
     const std::string& toeEditError() const { return toeEditError_; }
     std::size_t toeEditCount() const { return toeEdits_.size(); }
     std::uint64_t toeEditRevision() const { return toeEditRevision_; }
-    std::vector<std::array<double,16>> comparisonToePose(bool male,Vec3 origin) const;
+    std::vector<std::array<double,16>> comparisonToePose(bool male,Vec3 origin,
+        std::vector<ComparisonToeAttachment>* surfaceJoints=nullptr) const;
+    std::optional<std::array<Vec3,2>> blueToeAxis(bool male,char side,int digit,int segment) const;
     bool toggleRagdoll();
     void advanceRagdoll(double seconds);
     bool ragdollActive() const { return bool(physicsRig_); }
@@ -89,6 +93,7 @@ public:
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
+    const ToeSurfaceMarks& mappedBlueToeMarks(bool male) const;
     std::unique_ptr<GpuSkeletonRig> physicsRig_;
     std::uint64_t physicsGeneration_=0, physicsSteps_=0;
     double physicsTime_=0;
@@ -99,6 +104,11 @@ private:
     SkeletonModel female_;
     SkeletonComparison maleComparison_, femaleComparison_;
     SkeletonLines maleLines_, femaleLines_, maleDisplayLines_, femaleDisplayLines_;
+    ToeSurfaceMarks maleToeMarks_,femaleToeMarks_;
+    struct BlueMarkCache {ToeSurfaceMarks marks;std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{};};
+    mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
+    std::uint64_t toeMarksRevision_=0;
+    std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_;
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;
