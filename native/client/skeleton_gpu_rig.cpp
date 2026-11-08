@@ -101,6 +101,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
     const auto matrices=model.sourceMatrices(comparison ? Vec3{} : input.origin,0);
     if (matrices.size()!=parts.size()) { error="Cannot evaluate skeleton pose"; return false; }
     const auto bluePose=comparison ? comparison->toePose(matrices,input.origin) : std::vector<std::array<double,16>>{};
+    const auto toePivots=comparison ? comparison->toePivots(bluePose,input.origin) : std::vector<ComparisonToeAttachment>{};
     std::vector<int> structureForNode(rig->size(),-1), groupForNode(rig->size(),-1);
     for (std::size_t i=0;i<mapping.size();++i) {
         if (mapping[i]>=rig->size() || structureForNode[mapping[i]]>=0 || !parts[i].pointCount ||
@@ -207,6 +208,9 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         axis=normalized(axis);
         std::string mobility;
         for (const auto& link:model.sourceLinks()) if ((link.first==si && link.second==pi) || (link.first==pi && link.second==si)) { mobility=link.mobility; break; }
+        if (comparison && (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp" || mobility=="toe_ip_hinge")) {
+            for (const auto& toe:toePivots) if(toe.parent==pi && toe.child==si) { pivot=toe.pivot; break; }
+        }
         const bool ball=mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";
         const bool fitted=ball && mobility!="shoulder_ball_socket" && source->axes().size()>2;
         Vec3 tangent=cross(axis,{0,1,0});

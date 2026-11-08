@@ -223,6 +223,7 @@ bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint
 
 bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
+    maleComparison_.setToeAttachmentsEnabled(true); femaleComparison_.setToeAttachmentsEnabled(true);
     endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     for (SkeletonModel* model : {&male_,&female_}) {
@@ -249,6 +250,7 @@ bool SkeletonRoom::restoreReferencePose() {
 }
 
 bool SkeletonRoom::restoreOriginalPose() {
+    maleComparison_.setToeAttachmentsEnabled(false); femaleComparison_.setToeAttachmentsEnabled(false);
     endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;

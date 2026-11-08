@@ -14,6 +14,7 @@
 #include "client/skeleton_bilateral.h"
 #include "client/skeleton_standing_foot.h"
 #include "client/skeleton_toe_mirror.h"
+#include "client/skeleton_toe_attachment.h"
 #include "client/skeleton_surface_average.h"
 #include "client/skull_midplane.h"
 #include "client/vertebra_midplane.h"
@@ -597,7 +598,8 @@ public:
     // Rigid toe deltas from the source pose used to fit this comparison. The
     // mapped centre anchors each rotation in the scaled blue figure. This is a
     // geometric approximation, not a deformable tissue or clinical fit.
-    void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; }
+    void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; toeAttachmentRevision_=0; }
+    void setToeAttachmentsEnabled(bool enabled) { toeAttachmentsEnabled_=enabled; }
     const auto& correctedToeReference() const { return correctedToeMatrices_; }
     const auto& littleToeSkinReference() const { return referenceMatrices_; }
     std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin,
@@ -616,7 +618,26 @@ public:
         }
         mirrorReferenceToePose(parts_,result,referenceMatrices_,reference?*reference:correctedToeMatrices_,metatarsalFrames_,origin,
                                [&](Vec3 q,const Part& p){return mapPart(q,p);});
+        // Explicit references are static snapshots used to retarget the skin.
+        // They must remain unchanged; only subsequent animation needs hinges.
+        if (!reference && toeAttachmentsEnabled_) {
+            const auto& rest=correctedToeMatrices_.size()==parts_.size() ? correctedToeMatrices_ : referenceMatrices_;
+            const auto map=[&](Vec3 q,const Part& p){return mapPart(q,p);};
+            const auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,map);
+            if (toeAttachmentRevision_!=revision_) {
+                toeAttachments_=comparisonToeAttachments(parts_,localToeMatrices(neutral,origin),map);
+                toeAttachmentRevision_=revision_;
+            }
+            attachComparisonToes(toeAttachments_,neutral,result,origin);
+        }
         return result;
+    }
+    std::vector<ComparisonToeAttachment> toePivots(const std::vector<std::array<double,16>>& posed,Vec3 origin) const {
+        if(!toeAttachmentsEnabled_ || posed.size()!=parts_.size() || toeAttachmentRevision_!=revision_)return {};
+        const auto& rest=correctedToeMatrices_.size()==parts_.size()?correctedToeMatrices_:referenceMatrices_;
+        const auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,
+                                                [&](Vec3 q,const Part& p){return mapPart(q,p);});
+        return posedToeAttachments(toeAttachments_,neutral,posed,origin);
     }
     const JointRigidTransform& metatarsalFrame(std::size_t i) const { return metatarsalFrames_[i]; }
     // Toe prisms belong to their own phalanges, so the pieces articulate
@@ -958,11 +979,13 @@ private:
         }
         ++revision_; error.clear(); return true;
     }
-    bool male_=false, feasible_=false, exact_=false;
+    bool male_=false, feasible_=false, exact_=false, toeAttachmentsEnabled_=true;
     BodyProportionCurves curves_;
     Profile profile_;
     std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
     std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_;
+    mutable std::vector<ComparisonToeAttachment> toeAttachments_;
+    mutable std::uint64_t toeAttachmentRevision_=0;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;

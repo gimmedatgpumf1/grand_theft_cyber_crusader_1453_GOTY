@@ -26,10 +26,18 @@ animate the skin, and the preview is 50% opaque. Original triangles and smooth
 vertex shading are retained; there is no simplification, plane fit or procedural
 nail overlay.
 
-This is not a finished fit. Default standing exports of both feet have no
-foot-bone surface crossings. Earlier fits had crossings in some female toe bends;
-the current adjustment was evaluated in the standing pose, not those bends.
-**0.1 mm clearance is not guaranteed**, including at rest or in ragdoll.
+Each MTP and IP joint was inspected in both sexes and on both sides, at rest
+and with its individual control bent. The blue bones had particularly visible
+separation during motion because each segment used a different rotation centre.
+Their motion now carries a shared, estimated contact point through each toe
+chain; the ragdoll uses the same contact estimate. The standing geometry and
+white CT surfaces are unchanged, and original-pose restore retains its former
+behaviour. These contacts are geometric estimates, not anatomical landmarks.
+
+This is not a finished fit: some standing joints still overlap or look poorly
+aligned, including the female little toe. Some bent and ragdoll poses expose
+bone through the skin, and the ragdoll can distort the toes. Further work is
+needed on the resting joints, skin and dynamics; this is not clinical validation.
 The MakeHuman source and its CC0 license are in `tools/human-source/`.
 
 ## Earlier fitting experiment (not the in-game foot)
