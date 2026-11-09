@@ -139,3 +139,23 @@ The preserved browser implementation is a legacy checkpoint only. Native network
 ## Vendored decoder
 
 `native/vendor/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are from `nothings/stb`, commit `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5`. stb is dual-licensed under MIT or public domain; see `native/vendor/README.md`. These third-party headers are exempt from the authored-file line nagger. `native/assets/ui-sans.ttf` is unmodified DejaVu Sans; its Bitstream Vera/DejaVu redistribution notice is retained in `native/assets/FONT-LICENSE.txt`.
+
+### R-mode seesaw diagnostic
+
+The back-right corner of the skeleton room contains a seesaw. In R mode it is
+part of the same Vulkan simulation as the skeletons; toggle R off and back on
+to reset it. The grey triangular support is immovable and connected to the
+board by a hinge. The blue and orange boxes are separate loose bodies, not
+attached to the board. Their dimensions are 0.24 m and 0.40 m cubes; at the
+shared 500 kg/m³ density their masses are about 6.9 kg and 32 kg. The board is
+2.0 × 0.10 × 0.20 m and has a 20 kg mass. Box centres and inertias use those
+uniform volumes. The simulation applies gravity at 9.81 m/s².
+
+The visible rectangular surfaces are approximated by overlapping sphere
+collision proxies, not exact box contacts. The diagnostic deliberately uses
+the existing general contact, hinge, damping and sleep code; it is not scripted
+or a separate reference implementation. It does not establish that contacts,
+sleep, floor settling or the skeleton physics are physically accurate. Bone
+masses in the existing skeleton rig are currently bounding-box volume estimates
+with per-bone minimums and a maximum, and their centres are bounding-box centres,
+not measured anatomical mass distributions.
