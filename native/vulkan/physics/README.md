@@ -25,6 +25,17 @@ joint drift and overlap without adding the projection directly to velocity.
 All of these are finite-iteration approximations, not an exact simultaneous
 constraint solution.
 
+Before integration, non-overlapping convex pairs are also checked for predicted
+impacts over the step. Constant-orientation motion uses swept separating-axis
+intervals. For rotating polygons, conservative advancement uses separating-axis
+gaps and a linear-plus-angular speed bound (up to 24 iterations). A predicted
+impact adds a velocity constraint, restitution and friction; the impulse's
+position and angle effects are weighted by the remaining time after impact.
+These predictions assume unchanged velocities during the step. They are not an
+event-ordered continuous solver: other contacts, joints and forces can change
+the motion, and convergence is limited. Impacts can still be missed or occur
+at the wrong time, especially in coupled or rapidly rotating configurations.
+
 The planar polygons represent prisms with an explicit depth. Buoyancy is the
 weight of the displaced air and liquid and acts through each displaced-volume
 centroid. The liquid is a horizontal half-plane; clipping the polygon gives the
@@ -44,19 +55,23 @@ References:
 - https://interactivecomputergraphics.github.io/physics-simulation/examples/rigid_body_collision.html
 - https://files.slembcke.net/misc/RigidBodies.pdf
 - https://www.slideshare.net/slideshow/gpu-rigid-body-simulation-gdc-2013/20212240
+- https://box2d.org/posts/2023/01/starting-box2d-3.0/
+- https://www.gamedevs.org/uploads/continuous-collision-detection-and-physics.pdf
 
 ## Remaining limitations
 
 This is not yet a general, complete physics engine. It has a 24-body limit per
 world and supports single convex polygons of up to 16 vertices, not arbitrary
-concave or compound shapes. Collision detection is discrete: fast bodies may
-tunnel. Fixed iterations and position projection can introduce energy and
-multi-contact errors. Only pin joints are implemented. There is no full fluid
-solver. At most eight physics steps are submitted per rendered frame; up to a
-quarter-second backlog is retained, after which excess time is dropped. Windows,
-integrated-GPU performance and long-term stability are unverified. SwiftShader
-Vulkan images were inspected for the dry and flooded seesaw, drag and reset;
-these observations are not proof of general correctness.
+concave or compound shapes. The approximate continuous collision handling does
+not guarantee against tunneling. Fixed iterations and position projection can
+introduce energy and multi-contact errors. Only pin joints are implemented.
+There is no full fluid solver. At most eight physics steps are submitted per
+rendered frame; up to a quarter-second backlog is retained, after which excess
+time is dropped. The workgroup uses close to the Vulkan minimum shared-memory
+limit; real device compatibility, Windows, integrated-GPU performance and
+long-term stability are unverified. SwiftShader Vulkan images were inspected for
+the dry and flooded seesaw, drag, reset, and two fast-impact scenarios; these
+observations are not proof of general correctness.
 
 Rebuild shader modules with a Vulkan GLSL compiler, then run
 `python3 native/vulkan/physics/make_compute_headers.py`.
