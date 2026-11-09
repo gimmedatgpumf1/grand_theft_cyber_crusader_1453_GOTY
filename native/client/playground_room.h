@@ -26,6 +26,9 @@ public:
     void beginDrag();
     void endDrag() { dragging_ = false; }
     bool render(NativeFrame& frame, const ViewState& view, const RoomFreecam& camera);
+    // What is on screen this frame: the point interpolated between the two
+    // ticks that bracket it, at the fraction of the tick the frame falls on.
+    Vec3 displayed() const { return shown_; }
     // Where the point is and how fast it is moving, for the visual harness.
     Vec3 point() const { return point_; }
     Vec3 velocity() const { return velocity_; }
@@ -36,8 +39,9 @@ private:
     void updateDrag();
     void buildScene(const Camera& camera);
     void placeMarkers();
+    void interpolate();
 
-    Vec3 point_{0, 2, 0};
+    Vec3 point_{0, 2, 0}, previous_{0, 2, 0}, shown_{0, 2, 0};
     Vec3 velocity_{};
     Vec3 traceFrom_{0, 2, 0}, traceTo_{0, 2, 0};
     std::array<Vec3, 40> ghosts_{};

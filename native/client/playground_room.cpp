@@ -82,7 +82,7 @@ std::size_t findBatch(const GpuScene& scene, std::uint32_t objectId) {
 } // namespace
 
 bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
-    point_ = start;
+    point_ = previous_ = shown_ = start;
     velocity_ = startVelocity;
     traceFrom_ = traceTo_ = point_;
     ghostCount_ = ghostNext_ = 0;
@@ -114,12 +114,29 @@ void PlaygroundRoom::updateDrag() {
     if (!(distance > 0.0)) return;
     const Vec3 hit = origin + direction * distance;
     point_ = {std::clamp(hit.x, -5.0, 5.0), std::max(kSurfaceY, hit.y), 0};
+    // A dragged point is not a simulated one: it belongs to the mouse and has
+    // no previous tick to glide away from.
+    previous_ = point_;
     velocity_ = {};
     resting_ = point_.y <= kSurfaceY;
     haveTrace_ = false;
 }
 
+// Ticks happen twenty times a second and frames happen as often as the screen
+// allows, so a tick's worth of motion is spread over every frame that falls in
+// it. The screen shows the point between the position it had at the previous
+// tick and the position the last tick left it in, at the fraction of a tick the
+// frame has reached. Nothing is moved by the renderer; this is only what is
+// drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
+void PlaygroundRoom::interpolate() {
+    const double alpha = dragging_ || !sceneReady_
+                             ? 1.0
+                             : std::clamp(accumulator_ / kTick, 0.0, 1.0);
+    shown_ = previous_ + (point_ - previous_) * alpha;
+}
+
 void PlaygroundRoom::tick() {
+    previous_ = point_;
     const Vec3 from = point_;
     // Forces: gravity, m*g, points down in the air. On the plane the surface
     // pushes back with exactly that weight, so the net force is zero and the
@@ -213,9 +230,14 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
 }
 
 void PlaygroundRoom::placeMarkers() {
-    scene_.batches[pointBatch_].modelMatrix = translation(point_);
+    scene_.batches[pointBatch_].modelMatrix = translation(shown_);
+    // The trace belongs to the tick that is being drawn: while the point is
+    // still gliding through the last tick, the line runs from the previous
+    // position to where that tick's travel was allowed to reach, so the point on
+    // screen always sits on the line that was walked.
+    const Vec3 traceStart = dragging_ || !sceneReady_ ? traceFrom_ : previous_;
     scene_.batches[traceBatch_].modelMatrix =
-        haveTrace_ ? segment(traceFrom_, traceTo_, kTraceHalfWidth) : translation({0, -1000, 0});
+        haveTrace_ ? segment(traceStart, traceTo_, kTraceHalfWidth) : translation({0, -1000, 0});
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         scene_.batches[ghostBatches_[i]].modelMatrix =
             i < ghostCount_ ? translation(ghosts_[i]) : translation({0, -1000, 0});
@@ -228,6 +250,7 @@ bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const Roo
         buildScene(camera);
         sceneReady_ = true;
     }
+    interpolate();
     placeMarkers();
     scene_.width = camera.width;
     scene_.height = camera.height;

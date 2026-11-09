@@ -162,6 +162,12 @@ one plane at y = 0.
 - A faint dot marks the position at each past tick, so the 20 Hz cadence and the
   shrinking gaps between ticks are visible. The blue line is the current tick's
   trace; it ends where the point was allowed to reach.
+- Physics stays at 20 Hz and the screen is not: each frame draws the point
+  between the position it had at the previous tick and the position the last
+  tick left it in, at the fraction of a tick that frame has reached. The trace
+  is drawn across the same two positions, so the point on screen always sits on
+  the line that was walked. This is Minecraft's partial-tick interpolation; it
+  changes only what is drawn, never what is simulated.
 
 The room draws through the same Vulkan backend as everything else. Body
 positions reach the device as batch model matrices, so nothing is uploaded or
