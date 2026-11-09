@@ -13,20 +13,22 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
     // device state so returning to the room resumes instead of replaying every
     // elapsed step in one submission. A new generation replaces it safely.
     if (!scene.physicsRig) return true;
+    if (scene.physicsWorld>=physicsWorlds_.size()) return false;
+    auto& world=physicsWorlds_[scene.physicsWorld];
     const auto& rig=*scene.physicsRig;
     if (!scene.physicsGeneration) return false;
-    if (scene.physicsGeneration!=physicsGeneration_) {
-        if (physicsGeneration_ && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
-        physics_.reset(); physicsMatrixSlots_.clear(); physicsPlan_.clear(); physicsStep_=0; physicsGeneration_=0;
+    if (scene.physicsGeneration!=world.generation) {
+        if (world.generation && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
+        world.physics.reset(); world.matrixSlots.clear(); world.plan.clear(); world.step=0; world.generation=0;
         const auto getDevice=reinterpret_cast<PFN_vkGetDeviceProcAddr>(getInstanceProcAddr_(instance_,"vkGetDeviceProcAddr"));
-        if (!physics_.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,
+        if (!world.physics.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,
                              gpu_physics::rigid_solver_spirv,rig.bodies,rig.joints,rig.spheres,rig.exclusions,rig.batches)) {
             std::fprintf(stderr,"[vk] unable to initialize compute physics\n"); return false;
         }
-        physicsGeneration_=scene.physicsGeneration;
+        world.generation=scene.physicsGeneration;
     }
-    if (scene.physicsSteps<physicsStep_) return false;
-    auto& plan=physicsNextPlan_;
+    if (scene.physicsSteps<world.step) return false;
+    auto& plan=world.nextPlan;
     plan.clear();
     plan.reserve(scene.batches.size()+2);
     plan.push_back((std::uint64_t(scene.maleSkinCount)<<32)|scene.femaleSkinCount);
@@ -34,7 +36,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
     for (std::size_t i=0;i<scene.batches.size();++i)
         if (i<slots_.size() && slots_[i]>=0)
             plan.push_back((std::uint64_t(scene.batches[i].objectId)<<32)|std::uint32_t(slots_[i]));
-    if (plan==physicsPlan_ && !physicsMatrixSlots_.empty()) return true;
+    if (plan==world.plan && !world.matrixSlots.empty()) return true;
     std::unordered_map<std::uint32_t,std::uint32_t> byObject;
     byObject.reserve(scene.batches.size());
     for (std::size_t i=0;i<scene.batches.size();++i) {
@@ -65,28 +67,30 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
         skin.indices={binding.body,slot,0,0};
         bindings.push_back(skin);
     }
-    if (matrixSlots!=physicsMatrixSlots_ || scene.physicsLineView!=physicsLineView_) {
-        if (!physicsMatrixSlots_.empty() && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
+    if (matrixSlots!=world.matrixSlots || scene.physicsLineView!=world.lineView) {
+        if (!world.matrixSlots.empty() && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
         std::array<VkDescriptorBufferInfo,kFramesInFlight> outputs{};
         for (int slot=0;slot<kFramesInFlight;++slot) outputs[slot]={frameBuffers_[slot],kSlotOffset,kSlotBlock};
-        if (!physics_.createSkin(gpu_physics::rigid_skin_spirv,bindings,outputs)) {
+        if (!world.physics.createSkin(gpu_physics::rigid_skin_spirv,bindings,outputs)) {
             std::fprintf(stderr,"[vk] unable to initialize compute skinning\n"); return false;
         }
-        physicsMatrixSlots_=std::move(matrixSlots);
-        physicsLineView_=scene.physicsLineView;
+        world.matrixSlots=std::move(matrixSlots);
+        world.lineView=scene.physicsLineView;
     }
-    physicsPlan_.swap(plan);
+    world.plan.swap(plan);
     return true;
 }
 
 bool Renderer::recordPhysics(const GpuScene& scene, VkCommandBuffer command, int frameSlot) {
     if (!scene.physicsRig) return true;
-    if (physicsStep_==0 && !physics_.projectInitialJoints(command)) return false;
-    while (physicsStep_<scene.physicsSteps) {
-        if (!physics_.record(command,gpu_physics::kPhysicsStep,8,scene.physicsDragOrigin,scene.physicsDragDirection,
+    if (scene.physicsWorld>=physicsWorlds_.size()) return false;
+    auto& world=physicsWorlds_[scene.physicsWorld];
+    if (world.step==0 && !world.physics.projectInitialJoints(command)) return false;
+    while (world.step<scene.physicsSteps) {
+        if (!world.physics.record(command,gpu_physics::kPhysicsStep,8,scene.physicsDragOrigin,scene.physicsDragDirection,
                              scene.physicsDragging,scene.physicsDragSequence)) return false;
-        ++physicsStep_;
+        ++world.step;
     }
-    return physics_.recordSkin(command,std::size_t(frameSlot));
+    return world.physics.recordSkin(command,std::size_t(frameSlot));
 }
 } // namespace gtc::native::detail

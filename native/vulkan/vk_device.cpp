@@ -792,8 +792,10 @@ void Renderer::stop() {
     destroySwapchain();
     if (device_ != VK_NULL_HANDLE) {
         deviceWaitIdle(device_);
-        physics_.reset(); physicsGeneration_=0; physicsStep_=0; physicsMatrixSlots_.clear();
-        physicsPlan_.clear(); physicsNextPlan_.clear();
+        for (auto& world:physicsWorlds_) {
+            world.physics.reset(); world.generation=world.step=0; world.matrixSlots.clear();
+            world.plan.clear(); world.nextPlan.clear();
+        }
         for (DeviceArray* array : {&vertex_, &uv_, &index_}) {
             if (array->buffer) destroyBuffer(device_, array->buffer, nullptr);
             if (array->memory) freeMemory(device_, array->memory, nullptr);

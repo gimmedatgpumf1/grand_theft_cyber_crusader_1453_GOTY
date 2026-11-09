@@ -5,10 +5,9 @@
 #include <cmath>
 
 namespace gtc::native::seesaw {
-// This is a diagnostic in the back-right corner of the room, not a separate
-// simulation. Dimensions are metres; the three moving parts use the room's
-// regular GPU bodies, contacts, gravity and joint solver.
-inline constexpr Vec3 pivot{4.25,0.75,-4.40};
+// Playground dimensions are metres; its moving parts use the same GPU
+// bodies, contacts, gravity and joint solver as the skeleton room.
+inline constexpr Vec3 pivot{0,0.75,0};
 inline constexpr Vec3 beamSize{2.0,0.10,0.20};
 inline constexpr Vec3 smallSize{0.24,0.24,0.24};
 inline constexpr Vec3 largeSize{0.40,0.40,0.40};
@@ -30,10 +29,10 @@ inline gpu_physics::Body box(GpuSkeletonRig& rig,Vec3 center,Vec3 size) {
     const int nx=std::max(1,int(std::ceil((size.x-2*radius)/(2*radius)))+1);
     const int ny=std::max(1,int(std::ceil((size.y-2*radius)/(2*radius)))+1);
     const int nz=std::max(1,int(std::ceil((size.z-2*radius)/(2*radius)))+1);
-    const auto coord=[](int i,int n,double length) { return n==1 ? 0.0 : -length*0.5+radius+(length-2*radius)*i/(n-1); };
+    const auto coord=[](int i,int n,double extent,double r) { return n==1 ? 0.0 : -extent*0.5+r+(extent-2*r)*i/(n-1); };
     b.samples[0]=static_cast<std::uint32_t>(rig.spheres.size());
     for (int x=0;x<nx;++x) for (int y=0;y<ny;++y) for (int z=0;z<nz;++z) {
-        Vec3 p{coord(x,nx,size.x),coord(y,ny,size.y),coord(z,nz,size.z)};
+        Vec3 p{coord(x,nx,size.x,radius),coord(y,ny,size.y,radius),coord(z,nz,size.z,radius)};
         rig.spheres.push_back(pack(p,float(radius)));
         b.inverseInertia[3]=std::max(b.inverseInertia[3],float(length(p)+radius+0.0001));
         b.bounds[0]=std::max(b.bounds[0],float(std::abs(p.x)+radius));
@@ -74,9 +73,9 @@ inline void append(GpuSkeletonRig& rig) {
     hinge.parentAxis=pack({0,0,1},-3.14159265f); hinge.childAxis=pack({0,0,1},3.14159265f);
     hinge.parentTangent=hinge.childTangent=pack({1,0,0}); rig.joints.push_back(hinge);
     bind(rig,beamId,plank,pivot);
-    const auto small=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(box(rig,smallCenter,smallSize));
-    const auto large=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(box(rig,largeCenter,largeSize));
-    bind(rig,smallId,small,smallCenter); bind(rig,largeId,large,largeCenter);
+    const auto smallBox=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(box(rig,smallCenter,smallSize));
+    const auto largeBox=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(box(rig,largeCenter,largeSize));
+    bind(rig,smallId,smallBox,smallCenter); bind(rig,largeId,largeBox,largeCenter);
 }
 inline void drawBoxMesh(Rasterizer& raster,Vec3 center,Vec3 size,const Material& material) {
     Vec3 h=size*0.5;
@@ -99,11 +98,11 @@ inline void draw(Rasterizer& raster,const Camera& camera) {
         raster.triangle({cameraVertex(camera,a,n,a),cameraVertex(camera,b,n,b),cameraVertex(camera,c,n,c)},support);
     }
     Material beam; beam.color=colorHex("#c8a56b");
-    Material small; small.color=colorHex("#66aed2");
-    Material large; large.color=colorHex("#df765a");
+    Material smallBox; smallBox.color=colorHex("#66aed2");
+    Material largeBox; largeBox.color=colorHex("#df765a");
     raster.setObject(beamId,{0,0},0); drawBoxMesh(raster,pivot,beamSize,beam);
-    raster.setObject(smallId,{0,0},0); drawBoxMesh(raster,smallCenter,smallSize,small);
-    raster.setObject(largeId,{0,0},0); drawBoxMesh(raster,largeCenter,largeSize,large);
+    raster.setObject(smallId,{0,0},0); drawBoxMesh(raster,smallCenter,smallSize,smallBox);
+    raster.setObject(largeId,{0,0},0); drawBoxMesh(raster,largeCenter,largeSize,largeBox);
     raster.setObject(0,{0,0},0);
 }
 } // namespace gtc::native::seesaw

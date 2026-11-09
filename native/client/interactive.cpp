@@ -3,6 +3,7 @@
 #include "client/client.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
+#include "client/playground_room.h"
 #include "client/skeleton_comparison_ui.h"
 #include "client/skeleton_toe_editor_ui.h"
 #include "client/skeleton_toe_workspace.h"
@@ -89,7 +90,7 @@ public:
                 std::cerr << error << '\n';
                 return 1;
             }
-            if (testRoom_) bodyTrackReady_ = false;
+            if (testRoom_ || playgroundMode_) bodyTrackReady_ = false;
             else trackBodyTurn();
             events_.clear();
             if (!window_.poll(events_)) break;
@@ -98,7 +99,11 @@ public:
                 if (event.type == WindowEvent::Type::Close) running = false;
                 else handle(event);
             }
-            if (testRoom_) {
+            if (playgroundMode_) {
+                playgroundCamera_.move(dt);
+                if (playgroundDragging_) updatePlaygroundDragRay();
+                playground_.advance(dt);
+            } else if (testRoom_) {
                 roomCamera_.move(dt);
                 if (roomDragging_) updateRoomDragRay();
                 room_.advanceRagdoll(dt);
@@ -110,26 +115,34 @@ public:
             updatePresentation();
             updateHighlight();
             updateReticle();
-            if (testRoom_ && room_.ready()) {
+            if (playgroundMode_ || (testRoom_ && room_.ready())) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
                 // Room controls are GPU batches, just like the normal HUD.
                 frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
-                if (toeEditorUi_.open() && !toeWorkspace_.prepare(frame,room_,toeEditorUi_)) {
+                if (!playgroundMode_ && toeEditorUi_.open() && !toeWorkspace_.prepare(frame,room_,toeEditorUi_)) {
                     std::cerr << "Unable to prepare toe editor\n"; return 1;
                 }
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
+                if (playgroundMode_) {
+                    drawTextPixels(frame,16,16,"PLAYGROUND  |  P: EXIT  |  R: RESET",colorHex("#f2f7ea"),20);
+                    drawTextPixels(frame,16,42,"WASD: MOVE  |  LMB: DRAG  |  ESC: RELEASE MOUSE",colorHex("#f2f7ea"),20);
+                    drawFpsCounter(frame,view_.fps);
+                } else if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
                 else { roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps); }
                 if (captured_) {
-                    const int x=int(std::lround(roomDragging_ ? roomDragX_ : view_.width*0.5));
-                    const int y=int(std::lround(roomDragging_ ? roomDragY_ : view_.height*0.5));
+                    const bool dragging=playgroundMode_ ? playgroundDragging_ : roomDragging_;
+                    const int x=int(std::lround(dragging ? roomDragX_ : view_.width*0.5));
+                    const int y=int(std::lround(dragging ? roomDragY_ : view_.height*0.5));
                     const Color ink=colorHex("#d7ff54");
                     frame.rectangle(x-5,y,11,1,ink); frame.rectangle(x,y-5,1,11,ink);
                 }
                 frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
                 frame.wantPixels = screenshot_;
-                if (toeEditorUi_.open()) {
+                if (playgroundMode_) {
+                    if (!playground_.render(frame,view_,playgroundCamera_)) { std::cerr << "Unable to draw playground\n"; return 1; }
+                    frame.logicalUi();
+                } else if (toeEditorUi_.open()) {
                     if (!toeWorkspace_.render(frame)) {
                         std::cerr << "Unable to draw toe editor\n"; return 1;
                     }
@@ -591,9 +604,55 @@ private:
         }
     }
 
+    void updatePlaygroundDragRay() {
+        const Camera camera=playgroundCamera_.camera(view_.width,view_.height,view_.gpu);
+        const double x=(roomDragX_-camera.width*0.5)/camera.focal(),y=(camera.height*0.5-roomDragY_)/camera.focal();
+        playground_.setDragRay(camera.position,normalized(camera.world({x,y,1.0})-camera.position));
+    }
+    void stopPlaygroundDrag() { playgroundDragging_=false; playground_.endDrag(); }
+    void enterPlayground() {
+        if (!playground_.reset()) { std::cerr << "Unable to start playground\n"; return; }
+        playgroundReturnToRoom_=testRoom_; stopRoomDrag(); roomCamera_.clear(); endOrbit();
+        playgroundRestoreCapture_=captured_; keys_.clear(); leftDown_=rightDown_=false;
+        testRoom_=false; playgroundMode_=true;
+        playgroundCamera_.reset({0,1.35,3.5},0,-std::atan2(0.60,3.5));
+        window_.captureMouse(true); captured_=true; sendInput();
+    }
+    void leavePlayground() {
+        stopPlaygroundDrag(); playgroundCamera_.clear(); playgroundMode_=false;
+        testRoom_=playgroundReturnToRoom_; playgroundReturnToRoom_=false;
+        window_.captureMouse(playgroundRestoreCapture_); captured_=playgroundRestoreCapture_;
+        playgroundRestoreCapture_=false; keys_.clear(); sendInput();
+    }
+    void handlePlayground(const WindowEvent& event) {
+        if (event.type==WindowEvent::Type::KeyDown && event.key=='p') { if (!event.repeat) leavePlayground(); return; }
+        if (playgroundDragging_ && event.type==WindowEvent::Type::MouseUp && event.button==1) { stopPlaygroundDrag(); return; }
+        if (playgroundDragging_ && event.type==WindowEvent::Type::MouseMove) {
+            roomDragX_=std::clamp(captured_ ? roomDragX_+event.dx : event.x,0.0,double(std::max(1,view_.width)-1));
+            roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
+            updatePlaygroundDragRay(); return;
+        }
+        if (event.type==WindowEvent::Type::MouseDown && event.button==1) {
+            playgroundDragging_=true; roomDragX_=captured_ ? view_.width*0.5 : event.x;
+            roomDragY_=captured_ ? view_.height*0.5 : event.y;
+            updatePlaygroundDragRay(); playground_.beginDrag(); return;
+        }
+        if (event.type==WindowEvent::Type::MouseDown && event.button==3 && !captured_) {
+            window_.captureMouse(true); captured_=true; return;
+        }
+        const auto action=playgroundCamera_.handle(event,captured_);
+        if (action==RoomFreecam::Action::Exit) leavePlayground();
+        else if (action==RoomFreecam::Action::Capture) { window_.captureMouse(true); captured_=true; }
+        else if (action==RoomFreecam::Action::Release) { stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; }
+        else if (action==RoomFreecam::Action::Screenshot) screenshot_=true;
+        else if (action==RoomFreecam::Action::RestorePose) {
+            stopPlaygroundDrag(); if (!playground_.reset()) std::cerr << "Unable to reset playground\n";
+        }
+    }
+
     void handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
-            stopRoomDrag();
+            stopRoomDrag(); stopPlaygroundDrag(); playgroundCamera_.clear(); playgroundRestoreCapture_=false;
             roomUi_.handle(event,captured_,view_.width,view_.height,room_);
             roomCamera_.clear();
             roomRestoreCapture_ = false;
@@ -605,7 +664,12 @@ private:
             restoreMouseCapture_ = false;
             return;
         }
-        if (testRoom_) { handleRoom(event); return; }
+        if (playgroundMode_) { handlePlayground(event); return; }
+        if (testRoom_) {
+            if (event.type==WindowEvent::Type::KeyDown && event.key=='p' && !event.repeat) enterPlayground();
+            else handleRoom(event);
+            return;
+        }
         if (event.type == WindowEvent::Type::MouseMove) {
             mouseX_ = event.x;
             mouseY_ = event.y;
@@ -746,6 +810,7 @@ private:
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
         else if (event.key == 'c') { if (!event.repeat) enterRoom(); }
+        else if (event.key == 'p') { if (!event.repeat) enterPlayground(); }
         else if (event.key == 'h') openOverlay(Overlay::Help);
         else {
             keys_.insert(event.key);
@@ -801,7 +866,7 @@ private:
         const ViewState control = controlView();
         float yaw = local() ? local()->yaw : control.yaw;
         view_.aiming = false;
-        const bool gameControls = !testRoom_ && overlay_ == Overlay::None;
+        const bool gameControls = !testRoom_ && !playgroundMode_ && overlay_ == Overlay::None;
         crouch = gameControls && keys_.count(kKeyAlt) != 0;
         if (gameControls && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
@@ -819,7 +884,7 @@ private:
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
         float aimHeight = 0.0F;
-        const bool hasAimTarget = !testRoom_ && ranged && view_.mode != ViewMode::God &&
+        const bool hasAimTarget = !testRoom_ && !playgroundMode_ && ranged && view_.mode != ViewMode::God &&
             crosshairTarget(control, aimTarget, aimHeight);
         client_.sendInput(move, sprint, piss, yaw, control.pitch, slowWalk_, crouch, grab, jump, block,
                           aimTarget, aimHeight, hasAimTarget);
@@ -837,7 +902,9 @@ private:
     }
 
     SkeletonRoom room_;
-    RoomFreecam roomCamera_;
+    PlaygroundRoom playground_;
+    RoomFreecam roomCamera_,playgroundCamera_;
+    bool playgroundMode_=false,playgroundDragging_=false,playgroundReturnToRoom_=false,playgroundRestoreCapture_=false;
     SkeletonComparisonUi roomUi_;
     SkeletonToeEditorUi toeEditorUi_;
     bool testRoom_ = false;

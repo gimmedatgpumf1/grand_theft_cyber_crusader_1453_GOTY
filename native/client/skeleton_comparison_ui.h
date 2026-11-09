@@ -17,7 +17,7 @@ public:
         if (!open_) return;
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex(hexRgb("#10212c")),0.83);
         drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex(hexRgb("#9dceff")),20);
-        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,room.ragdollActive()?"Esc: cursor   P: hide   RMB: look   LMB: drag":"Esc: cursor   P: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
+        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,room.ragdollActive()?"Esc: cursor   Tab: hide   RMB: look   LMB: drag":"Esc: cursor   Tab: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
         button(frame,l.x+l.w-84,l.y+30,74,"RESET");
@@ -51,13 +51,13 @@ public:
                           fitted[SkeletonComparison::Leg],wanted[SkeletonComparison::Leg]);
             text=message;
         } else if (!c.exact()) text="Fitted values (cm).";
-        else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   P: hide";
+        else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   Tab: hide";
         drawTextPixels(frame,l.x+10,l.y+l.h-24,text,colorHex(hexRgb("#c0d7e7")),20);
     }
 
     bool handle(const WindowEvent& e, bool captured, int width, int height, SkeletonRoom& room) {
         if (e.type==WindowEvent::Type::FocusLoss) { dragging_=-1; return false; }
-        if (e.type==WindowEvent::Type::KeyDown && e.key=='p' && !e.repeat) {
+        if (e.type==WindowEvent::Type::KeyDown && e.key==kKeyTab && !e.repeat) {
             open_=!open_; dragging_=-1; return true;
         }
         if (captured) { dragging_=-1; return false; }

@@ -3,6 +3,7 @@
 #include "client/raster.h"
 #include "vulkan/physics/rigid_solver_data.h"
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,6 +12,12 @@ namespace gtc::native {
 class SkeletonModel;
 class SkeletonComparison;
 struct ComparisonToeAttachment;
+
+// Generations must be unique across every independent room sharing a renderer.
+inline std::uint64_t nextPhysicsGeneration() {
+    static std::atomic<std::uint64_t> next{1};
+    return next.fetch_add(1,std::memory_order_relaxed);
+}
 
 // Startup data for the experimental GPU solver.
 // A binding's matrix maps the batch's original vertices into body-local space;

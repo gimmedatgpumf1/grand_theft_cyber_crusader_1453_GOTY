@@ -227,6 +227,7 @@ struct GpuScene {
     const GpuSkeletonRig* physicsRig = nullptr;
     std::uint64_t physicsGeneration = 0;
     std::uint64_t physicsSteps = 0;
+    std::uint32_t physicsWorld = 0; // independent GPU state for each room
     std::array<float,4> physicsDragOrigin{}, physicsDragDirection{};
     std::uint32_t physicsDragSequence = 0;
     bool physicsDragging = false;

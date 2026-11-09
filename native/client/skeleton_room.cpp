@@ -1,5 +1,4 @@
 #include "client/skeleton_room.h"
-#include "client/skeleton_seesaw.h"
 #include "client/skeleton_little_toe_fit.h"
 #include "client/skeleton_toe_shaft_fit.h"
 #include "client/room_freecam.h"
@@ -12,7 +11,6 @@
 #include "vulkan/physics/rigid_timing.h"
 
 #include <thread>
-#include <atomic>
 
 #include <algorithm>
 #include <cmath>
@@ -411,8 +409,7 @@ bool SkeletonRoom::toggleRagdoll() {
     const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
     if (!buildGpuSkeletonRig(male_,{-0.95,maleFloor_,0},maleComparison_,
                              female_,{0.95,femaleFloor_,0},femaleComparison_,maleBluePose,femaleBluePose,maleJoints,femaleJoints,maleWhite,femaleWhite,*simulation,error_)) return false;
-    static std::atomic<std::uint64_t> nextGeneration{1};
-    physicsGeneration_=nextGeneration.fetch_add(1,std::memory_order_relaxed);
+    physicsGeneration_=nextPhysicsGeneration();
     physicsSteps_=0; physicsTime_=0; physicsRig_=std::move(simulation);
     lineSceneReady_=false;
     return true;
@@ -466,7 +463,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 lineFemalePoseRevision_ != female_.sourcePoseRevision()) {
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
-                drawFloor(raster, camera); drawWalls(raster, camera); seesaw::draw(raster,camera);
+                drawFloor(raster, camera); drawWalls(raster, camera);
                 maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
                 femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
                 std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
@@ -497,7 +494,7 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         }
         Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
         raster.setCamera(camera);
-        drawFloor(raster, camera); drawWalls(raster, camera); seesaw::draw(raster,camera);
+        drawFloor(raster, camera); drawWalls(raster, camera);
         maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0));
         femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0));
         std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
@@ -573,7 +570,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             room.setCamera(camera);
             drawFloor(room, camera);
             drawWalls(room, camera);
-            seesaw::draw(room,camera);
             room.setObject(0, {0.0, 0.0}, 0.0F);
             GpuScene parts = room.takeGpuScene();
             male_.buildSourceRestGeometry(room, maleBase);
@@ -657,7 +653,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
     room.setCamera(camera);
     drawFloor(room, camera);
     drawWalls(room, camera);
-    seesaw::draw(room,camera);
     Rasterizer second(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), false);
     second.setCamera(camera);
     std::thread worker([&] { female_.draw(second, camera, {0.95, femaleFloor_, 0}, 0.0); });

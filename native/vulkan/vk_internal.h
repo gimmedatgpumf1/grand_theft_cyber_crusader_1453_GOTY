@@ -378,12 +378,15 @@ private:
 
     bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
 
-    gpu_physics::RigidRuntime physics_;
-    std::uint64_t physicsGeneration_=0, physicsStep_=0;
-    bool physicsLineView_=false;
-    std::vector<std::uint32_t> physicsMatrixSlots_;
-    // Reuse the binding plan when the rigid batches and their slots are unchanged.
-    std::vector<std::uint64_t> physicsPlan_, physicsNextPlan_;
+    struct PhysicsWorld {
+        gpu_physics::RigidRuntime physics;
+        std::uint64_t generation=0, step=0;
+        bool lineView=false;
+        std::vector<std::uint32_t> matrixSlots;
+        // Reuse the binding plan when the rigid batches and their slots are unchanged.
+        std::vector<std::uint64_t> plan, nextPlan;
+    };
+    std::array<PhysicsWorld,2> physicsWorlds_;
 
     template <class Function>
     bool resolve(Function& slot, const char* name) {

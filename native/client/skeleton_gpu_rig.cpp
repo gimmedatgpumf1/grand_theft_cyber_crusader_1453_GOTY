@@ -1,5 +1,4 @@
 #include "client/skeleton_gpu_rig.h"
-#include "client/skeleton_seesaw.h"
 #include "client/skeleton_body.h"
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_toe_limits.h"
@@ -378,7 +377,6 @@ bool buildGpuSkeletonRig(const SkeletonModel& male, Vec3 maleOrigin, const Skele
         if (!maleChunk.ok || !femaleChunk.ok) { error=maleChunk.ok ? femaleChunk.error : maleChunk.error; return false; }
         GpuSkeletonRig next;
         appendChunk(next,std::move(maleChunk.rig)); appendChunk(next,std::move(femaleChunk.rig));
-        seesaw::append(next);
         if (next.bodies.empty() || next.bodies.size()>8192) { error="Too many GPU skeleton bodies"; return false; }
         fillExclusions(next);
         std::vector<Joint> ordered;
