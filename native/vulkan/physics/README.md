@@ -31,16 +31,24 @@ joint drift and overlap without adding the projection directly to velocity.
 All of these are finite-iteration approximations, not an exact simultaneous
 constraint solution.
 
-Before integration, non-overlapping convex pairs are also checked for predicted
-impacts over the step. Constant-orientation motion uses swept separating-axis
-intervals. For rotating polygons, conservative advancement uses separating-axis
-gaps and a linear-plus-angular speed bound (up to 24 iterations). A predicted
-impact adds a velocity constraint, restitution and friction; the impulse's
-position and angle effects are weighted by the remaining time after impact.
-These predictions assume unchanged velocities during the step. They are not an
-event-ordered continuous solver: other contacts, joints and forces can change
-the motion, and convergence is limited. Impacts can still be missed or occur
-at the wrong time, especially in coupled or rapidly rotating configurations.
+Within each physics step, the workgroup scans non-overlapping convex pairs for
+the earliest predicted impact, advances the whole world to just before it,
+applies an impact impulse, solves current contacts and joints, and repeats
+collision discovery with the updated velocities. Constant-orientation motion
+uses swept separating-axis intervals. Rotating polygons use conservative
+advancement with separating-axis gaps and a linear-plus-angular speed bound.
+The sweep assumes velocities are constant between events; forces are integrated
+at the beginning of the step. Events are ordered globally, while detection and
+non-conflicting constraint pairs still use the 32 lanes.
+
+There is a 64-event budget per physics step. On exhaustion, or when the
+rotational query fails to converge in 24 iterations, the unresolved portion of
+that step is dropped rather than advanced blindly. A contact with excessive
+residual closing velocity also stops the remaining advance. This is a safety
+fallback, but it slows or freezes the *whole* world and can become expensive in
+crowded or repeated-impact situations. A 1-micrometre contact envelope helps
+solve simultaneous resting contacts rather than repeatedly selecting zero-time
+impacts.
 
 The planar polygons represent prisms with an explicit depth. Buoyancy is the
 weight of the displaced air and liquid and acts through each displaced-volume
@@ -74,18 +82,20 @@ References:
 
 This is not yet a general, complete physics engine. It supports single convex
 polygons of up to 16 vertices, not arbitrary concave or compound shapes. The
-approximate continuous collision handling does not guarantee against tunneling,
-including when a collision changes another body's motion within the same step.
-It needs event-ordered collision resolution with recomputation and a conservative
-fallback when rotation queries do not converge. Fixed iterations and position
-projection can introduce energy and multi-contact errors. Only pin joints are
-implemented. There is no full fluid solver. At most eight physics steps are
-submitted per rendered frame; up to a quarter-second backlog is retained, after
-which excess time is dropped. Real device compatibility, Windows, integrated-GPU
-performance and long-term stability are unverified. SwiftShader Vulkan images
-were inspected for dry and flooded seesaws, a 41-body world and an isolated
-100 km/s, zero-restitution box striking a thin platform in vacuum. These
-observations are not proof of general correctness.
+continuous collision handling still does not guarantee against tunneling in all
+cases. In particular, initially touching or overlapping pairs are handled by
+finite contact constraints rather than a complete continuous rotational query;
+position projection can move shapes without a swept check. Floating-point
+precision, simultaneous impacts, numerical tolerances and limited iterations
+also affect correctness. Fixed iterations and position projection can introduce
+energy and multi-contact errors. Only pin joints are implemented. There is no
+full fluid solver. At most eight physics steps are submitted per rendered frame;
+up to a quarter-second backlog is retained, after which excess time is dropped.
+Real device compatibility, Windows, integrated-GPU performance and long-term
+stability are unverified. SwiftShader Vulkan images were inspected for the dry
+and flooded seesaw, drag and reset, a 41-body world, a rotating impact, an
+isolated 100 km/s impact, a 100 km/s two-body impact chain, and repeated bounces
+between thin walls. These observations are not proof of general correctness.
 
 Rebuild shader modules with a Vulkan GLSL compiler, then run
 `python3 native/vulkan/physics/make_compute_headers.py`.

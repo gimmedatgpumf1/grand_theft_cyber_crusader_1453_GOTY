@@ -58,20 +58,11 @@ void storePair(int index,PairContact p) {
     scratch.word[o+8]=floatBitsToUint(p.normalImpulse.x);scratch.word[o+9]=floatBitsToUint(p.normalImpulse.y);
     scratch.word[o+10]=floatBitsToUint(p.tangentImpulse.x);scratch.word[o+11]=floatBitsToUint(p.tangentImpulse.y);
 }
-uint impactOffset(int index) { uint n=step.first; return 4u+(n*(n-1u)/2u)*12u+uint(index)*4u; }
-vec3 loadImpact(int index) {
-    uint o=impactOffset(index);
-    return vec3(uintBitsToFloat(scratch.word[o]),uintBitsToFloat(scratch.word[o+1]),uintBitsToFloat(scratch.word[o+2]));
-}
-void storeImpact(int index,vec3 v) {
-    uint o=impactOffset(index);scratch.word[o]=floatBitsToUint(v.x);
-    scratch.word[o+1]=floatBitsToUint(v.y);scratch.word[o+2]=floatBitsToUint(v.z);
-}
-void addImpact(int index,vec2 displacement,float angle) {
-    storeImpact(index,loadImpact(index)+vec3(displacement,angle));
-}
 shared int dragged;
 shared vec2 dragAnchor,dragTarget;
+struct Event { float time; int a,c,kind; vec2 normal,anchorA,anchorB; };
+shared Event candidates[32],event;
+shared float remaining;
 float cross2(vec2 a,vec2 c) { return a.x*c.y-a.y*c.x; }
 vec2 perp(vec2 a) { return vec2(-a.y,a.x); }
 vec2 rot(Body a,vec2 p) {
@@ -123,7 +114,10 @@ bool collision(int ia,int ib,out vec2 normal,out float depth,out vec2 p0,out vec
         for(int i=1;i<na;++i){float x=dot(a[i],axis);alo=min(alo,x);ahi=max(ahi,x);}
         for(int i=1;i<nb;++i){float x=dot(c[i],axis);blo=min(blo,x);bhi=max(bhi,x);}
         float positive=bhi-alo,negative=ahi-blo;
-        if(positive<=0.0 || negative<=0.0)return false;
+        // Keep a microscopic contact envelope for bodies at a time of impact.
+        // This lets simultaneous/resting contacts participate together in the
+        // constraint solve instead of repeatedly selecting zero-time events.
+        if(positive < -1e-6 || negative < -1e-6)return false;
         float overlap=min(positive,negative);
         if(overlap<depth){depth=overlap;normal=positive<negative ? axis : -axis;}
     }
@@ -161,23 +155,30 @@ float separationAtTime(int ia,int ib,float time,out vec2 normal,out vec2 a[16],o
     }
     return separation;
 }
-bool rotationalSweep(int ia,int ib,out vec2 n,out vec2 anchorA,out vec2 anchorB,out float gap,out float impactTime) {
+int rotationalSweep(int ia,int ib,float duration,out vec2 n,out vec2 anchorA,out vec2 anchorB,out float gap,out float impactTime) {
     int na=int(b[ia].shapes.y),nb=int(b[ib].shapes.y);vec2 initialA[16],initialB[16];
     vertices(ia,initialA);vertices(ib,initialB);float ra=0.0,rb=0.0;
     for(int i=0;i<na;++i)ra=max(ra,length(initialA[i]-b[ia].positionMass.xy));
     for(int i=0;i<nb;++i)rb=max(rb,length(initialB[i]-b[ib].positionMass.xy));
     vec2 va=b[ia].linearVelocity.xy,vb=b[ib].linearVelocity.xy;
-    float bound=length(va-vb)+abs(b[ia].angularVelocity.z)*ra+abs(b[ib].angularVelocity.z)*rb;
-    if(bound<1e-8)return false;
+    vec2 relativePosition=b[ia].positionMass.xy-b[ib].positionMass.xy,relativeVelocity=va-vb;
+    float speed2=dot(relativeVelocity,relativeVelocity);
+    float closest=speed2>0.0?clamp(-dot(relativePosition,relativeVelocity)/speed2,0.0,duration):0.0;
+    if(length(relativePosition+relativeVelocity*closest)>ra+rb+1e-5)return 0;
+    float bound=length(relativeVelocity)+abs(b[ia].angularVelocity.z)*ra+abs(b[ib].angularVelocity.z)*rb;
+    if(bound<1e-8)return 0;
     vec2 a[16],c[16];float time=0.0;bool hit=false;
     for(int iteration=0;iteration<24;++iteration){
         float separation=separationAtTime(ia,ib,time,n,a,c);
         if(separation<=1e-5){hit=true;break;}
         float advance=separation/bound;
-        if(time+advance>step.dt)return false;
+        if(time+advance>duration)return 0;
+        if(time+advance<=time){impactTime=time;return 2;}
         time+=advance;
     }
-    if(!hit)return false;
+    // Exhaustion is not a no-hit result. The caller will advance no further
+    // than this conservative lower bound and discard the unresolved remainder.
+    if(!hit){impactTime=time;return 2;}
     float amin=dot(a[0],n),cmax=dot(c[0],n),initialMin=dot(initialA[0],n),initialMax=dot(initialB[0],n);
     for(int i=1;i<na;++i){amin=min(amin,dot(a[i],n));initialMin=min(initialMin,dot(initialA[i],n));}
     for(int i=1;i<nb;++i){cmax=max(cmax,dot(c[i],n));initialMax=max(initialMax,dot(initialB[i],n));}
@@ -189,12 +190,12 @@ bool rotationalSweep(int ia,int ib,out vec2 n,out vec2 anchorA,out vec2 anchorB,
     vec2 pointA=n*amin+tangent*u,pointB=n*cmax+tangent*u;
     // Preserve the lever arm at impact orientation for angular impulse.
     anchorA=pointA-va*time;anchorB=pointB-vb*time;
-    impactTime=time;return true;
+    impactTime=time;return 1;
 }
-// Continuous SAT for convex polygons translating at constant velocity during
-// this step. Rotations are integrated separately; this sweep does not include
-// angular motion. It returns one speculative normal constraint.
-bool sweptContact(int ia,int ib,out vec2 n,out vec2 anchorA,out vec2 anchorB,out float gap,out float impactTime) {
+// Continuous SAT for convex polygons translating at constant velocity over
+// the remaining interval. Rotating pairs use conservative advancement above.
+// Return the time of impact and support points for an impulse at that time.
+bool sweptContact(int ia,int ib,float duration,out vec2 n,out vec2 anchorA,out vec2 anchorB,out float gap,out float impactTime) {
     vec2 a[16],c[16];int na=int(b[ia].shapes.y),nb=int(b[ib].shapes.y);
     vertices(ia,a);vertices(ib,c);
     vec2 va=b[ia].linearVelocity.xy,vc=b[ib].linearVelocity.xy,relative=va-vc;
@@ -213,7 +214,7 @@ bool sweptContact(int ia,int ib,out vec2 n,out vec2 anchorA,out vec2 anchorB,out
         exit=min(exit,farTime);
         if(enter>exit)return false;
     }
-    if(!haveAxis || enter<0.0 || enter>step.dt || exit<0.0)return false;
+    if(!haveAxis || enter<0.0 || enter>duration || exit<0.0)return false;
     float amin=dot(a[0],n),cmax=dot(c[0],n);
     for(int i=1;i<na;++i)amin=min(amin,dot(a[i],n));
     for(int i=1;i<nb;++i)cmax=max(cmax,dot(c[i],n));
@@ -243,51 +244,13 @@ void makeContact(int a,int c,int count) {
             // Resting impulses are not bounced merely due to gravity over a step.
             float threshold=2.0*length(step.gravityFloor.xy)*step.dt;
             p.bounce=vn < -threshold ? -max(b[a].material.w,b[c].material.w)*vn : 0.0;
-        } else {
-            float gap,impactTime;vec2 anchorA,anchorB;
-            bool rotating=abs(b[a].angularVelocity.z*step.dt)>1e-6 || abs(b[c].angularVelocity.z*step.dt)>1e-6;
-            bool hit=rotating ? rotationalSweep(a,c,n,anchorA,anchorB,gap,impactTime) :
-                                sweptContact(a,c,n,anchorA,anchorB,gap,impactTime);
-            if(hit){
-                p.count=3u;p.n=n;p.p0=anchorA;p.p1=anchorB;
-                float speed=dot(velocity(b[a],anchorA-b[a].positionMass.xy)-velocity(b[c],anchorB-b[c].positionMass.xy),n);
-                float threshold=2.0*length(step.gravityFloor.xy)*step.dt;
-                p.bounce=speed < -threshold ? -max(b[a].material.w,b[c].material.w)*speed : 0.0;
-                p.normalImpulse.y=-gap/step.dt;p.tangentImpulse.y=impactTime;
-            }
+
         }
     }
     storePair(pairIndex(a,c,count),p);
 }
 void solveContact(int a,int c,int index) {
     PairContact p=loadPair(index);
-    if(p.count==3u){
-        vec2 ra=p.p0-b[a].positionMass.xy,rb=p.p1-b[c].positionMass.xy;
-        vec2 relative=velocity(b[a],ra)-velocity(b[c],rb);
-        float k=effective(a,c,ra,rb,p.n);
-        if(k>1e-12){
-            float old=p.normalImpulse.x,normalSpeed=dot(relative,p.n);
-            float target=(old==0.0 && normalSpeed>=p.normalImpulse.y) ? p.normalImpulse.y : p.bounce;
-            p.normalImpulse.x=max(0.0,old-(normalSpeed-target)/k);
-            vec2 impulse=p.n*(p.normalImpulse.x-old);
-            applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
-            // The velocity change happens at the predicted impact time, not
-            // at the beginning of the step. Retain that portion of the path.
-            float t=p.tangentImpulse.y;
-            addImpact(a,-impulse*b[a].positionMass.w*t,-cross2(ra,impulse)*b[a].inverseInertia.z*t);
-            addImpact(c,impulse*b[c].positionMass.w*t,cross2(rb,impulse)*b[c].inverseInertia.z*t);
-            vec2 tangent=perp(p.n);relative=velocity(b[a],ra)-velocity(b[c],rb);
-            k=effective(a,c,ra,rb,tangent);
-            if(k>1e-12){
-                old=p.tangentImpulse.x;float limit=sqrt(b[a].material.x*b[c].material.x)*p.normalImpulse.x;
-                p.tangentImpulse.x=clamp(old-dot(relative,tangent)/k,-limit,limit);
-                impulse=tangent*(p.tangentImpulse.x-old);applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
-                addImpact(a,-impulse*b[a].positionMass.w*t,-cross2(ra,impulse)*b[a].inverseInertia.z*t);
-                addImpact(c,impulse*b[c].positionMass.w*t,cross2(rb,impulse)*b[c].inverseInertia.z*t);
-            }
-        }
-        storePair(index,p);return;
-    }
     for(int i=0;i<int(p.count);++i){
         vec2 point=i==0?p.p0:p.p1,ra=point-b[a].positionMass.xy,rb=point-b[c].positionMass.xy;
         vec2 relative=velocity(b[a],ra)-velocity(b[c],rb);
@@ -303,6 +266,26 @@ void solveContact(int a,int c,int index) {
         }
     }
     storePair(index,p);
+}
+void solveImpact(Event e,float advance) {
+    int a=e.a,c=e.c;
+    vec2 ra=e.anchorA+b[a].linearVelocity.xy*advance-b[a].positionMass.xy;
+    vec2 rb=e.anchorB+b[c].linearVelocity.xy*advance-b[c].positionMass.xy;
+    vec2 relative=velocity(b[a],ra)-velocity(b[c],rb);
+    float vn=dot(relative,e.normal),k=effective(a,c,ra,rb,e.normal);
+    if(vn>=0.0 || k<=1e-12)return;
+    float threshold=2.0*length(step.gravityFloor.xy)*step.dt;
+    float restitution=vn < -threshold ? max(b[a].material.w,b[c].material.w) : 0.0;
+    float magnitude=-(1.0+restitution)*vn/k;
+    vec2 impulse=e.normal*magnitude;
+    applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
+    vec2 tangent=perp(e.normal);k=effective(a,c,ra,rb,tangent);
+    if(k>1e-12){
+        relative=velocity(b[a],ra)-velocity(b[c],rb);
+        float limit=sqrt(b[a].material.x*b[c].material.x)*magnitude;
+        impulse=tangent*clamp(-dot(relative,tangent)/k,-limit,limit);
+        applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
+    }
 }
 void solveJointVelocity(Joint j) {
     int a=int(j.bodies.x),c=int(j.bodies.y);
@@ -400,8 +383,6 @@ ivec2 scheduledPair(int lane,int round,int count) {
 }
 void main(){
     int lane=int(gl_LocalInvocationIndex),count=int(step.first),jointCount=int(step.count);
-    for(int i=lane;i<count;i+=32)storeImpact(i,vec3(0));
-    memoryBarrierBuffer();barrier();
     if(lane==0){
         dragged=-1;dragTarget=vec2(0);dragAnchor=vec2(0);
         if(step.dragControl.x!=0u && abs(step.dragDirection.z)>1e-6){
@@ -432,26 +413,88 @@ void main(){
         b[i].angularVelocity.z+=torque*b[i].inverseInertia.z*step.dt;
     }
     memoryBarrierBuffer();barrier();
-    for(int a=lane;a<count;a+=32)for(int c=a+1;c<count;++c)makeContact(a,c,count);
-    memoryBarrierBuffer();barrier();
     int n=count+(count%2);
-    for(int iteration=0;iteration<32;++iteration)for(int round=0;round<n-1;++round){
-        for(int slot=lane;slot<n/2;slot+=32){ivec2 pair=scheduledPair(slot,round,count);int a=pair.x,c=pair.y;
-            if(c<count){
-                for(int j=0;j<jointCount;++j){Joint joint=joints.joint[j];
-                    if(min(joint.bodies.x,joint.bodies.y)==uint(a) && max(joint.bodies.x,joint.bodies.y)==uint(c))solveJointVelocity(joint);
+    if(lane==0)remaining=step.dt;
+    barrier();
+    // Each pass resolves constraints at the current time, finds the globally
+    // earliest predicted impact, advances the entire world to that instant,
+    // resolves the impact and then re-runs detection with the new velocities.
+    // If the event budget or rotational convergence is exhausted, do not
+    // integrate the unresolved remainder of this step.
+    for(int eventNumber=0;eventNumber<64;++eventNumber){
+        for(int a=lane;a<count;a+=32)for(int c=a+1;c<count;++c)makeContact(a,c,count);
+        memoryBarrierBuffer();barrier();
+        for(int iteration=0;iteration<32;++iteration)for(int round=0;round<n-1;++round){
+            for(int slot=lane;slot<n/2;slot+=32){ivec2 pair=scheduledPair(slot,round,count);int a=pair.x,c=pair.y;
+                if(c<count){
+                    for(int j=0;j<jointCount;++j){Joint joint=joints.joint[j];
+                        if(min(joint.bodies.x,joint.bodies.y)==uint(a) && max(joint.bodies.x,joint.bodies.y)==uint(c))solveJointVelocity(joint);
+                    }
+                    solveContact(a,c,pairIndex(a,c,count));
                 }
-                solveContact(a,c,pairIndex(a,c,count));
+            }
+            memoryBarrierBuffer();barrier();
+        }
+        Event best;best.time=remaining;best.kind=0;best.a=-1;best.c=-1;
+        best.normal=vec2(0);best.anchorA=vec2(0);best.anchorB=vec2(0);
+        for(int a=lane;a<count;a+=32)for(int c=a+1;c<count;++c){
+            if(b[a].shapes.y<3u || b[c].shapes.y<3u || b[a].positionMass.w+b[c].positionMass.w<=0.0)continue;
+            PairContact current=loadPair(pairIndex(a,c,count));
+            if(current.count>0u){
+                // A finite simultaneous solve may leave closing velocity on an
+                // existing contact. Never integrate a large unresolved closing
+                // displacement through that contact: stop this step instead.
+                float worst=0.0;
+                for(int point=0;point<int(current.count);++point){
+                    vec2 p=point==0?current.p0:current.p1;
+                    float vn=dot(velocity(b[a],p-b[a].positionMass.xy)-velocity(b[c],p-b[c].positionMass.xy),current.n);
+                    worst=min(worst,vn);
+                }
+                if(-worst*remaining>1e-6){
+                    best.time=0.0;best.a=a;best.c=c;best.kind=2;
+                }
+                continue;
+            }
+            vec2 normal,anchorA,anchorB;float gap,time;
+            // Do not ignore a small angle: a long shape can still sweep a
+            // substantial distance at its tip.
+            bool rotating=b[a].angularVelocity.z!=0.0 || b[c].angularVelocity.z!=0.0;
+            int kind=rotating ? rotationalSweep(a,c,remaining,normal,anchorA,anchorB,gap,time) :
+                               (sweptContact(a,c,remaining,normal,anchorA,anchorB,gap,time)?1:0);
+            if(kind==1){
+                vec2 ra=anchorA-b[a].positionMass.xy,rb=anchorB-b[c].positionMass.xy;
+                float closing=dot(velocity(b[a],ra)-velocity(b[c],rb),normal);
+                if(closing>=-1e-5)kind=0;
+            }
+            if(kind!=0 && (time<best.time || (time==best.time && best.kind==0))){
+                best.time=time;best.a=a;best.c=c;best.kind=kind;
+                if(kind==1){best.normal=normal;best.anchorA=anchorA;best.anchorB=anchorB;}
             }
         }
+        candidates[lane]=best;barrier();
+        if(lane==0){
+            event=candidates[0];
+            for(int i=1;i<32;++i)if(candidates[i].kind!=0 &&
+               (event.kind==0 || candidates[i].time<event.time))event=candidates[i];
+        }
+        barrier();
+        // Stay infinitesimally before an impact rather than stepping beyond it
+        // due to rounding. No-hit intervals are integrated in full.
+        float advance=event.kind==0?remaining:max(0.0,event.time*0.999999);
+        for(int i=lane;i<count;i+=32)if(b[i].positionMass.w>0.0){
+            b[i].positionMass.xy+=b[i].linearVelocity.xy*advance;
+            turn(b[i],b[i].angularVelocity.z*advance);
+        }
         memoryBarrierBuffer();barrier();
+        if(lane==0){
+            remaining=max(0.0,remaining-advance);
+            if(event.kind==1)solveImpact(event,advance);
+        }
+        memoryBarrierBuffer();barrier();
+        if(event.kind==0 || event.kind==2 || remaining<=0.0)break;
     }
-    for(int i=lane;i<count;i+=32)if(b[i].positionMass.w>0.0){
-        vec3 impact=loadImpact(i);
-        b[i].positionMass.xy+=b[i].linearVelocity.xy*step.dt+impact.xy;
-        turn(b[i],b[i].angularVelocity.z*step.dt+impact.z);
-    }
-    memoryBarrierBuffer();barrier();
+    // Projection is still a finite-iteration approximation for joints and
+    // existing overlaps; it does not grant a general no-penetration guarantee.
     for(int iteration=0;iteration<12;++iteration)for(int round=0;round<n-1;++round){
         for(int slot=lane;slot<n/2;slot+=32){ivec2 pair=scheduledPair(slot,round,count);int a=pair.x,c=pair.y;
             if(c<count){

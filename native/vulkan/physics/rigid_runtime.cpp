@@ -75,11 +75,11 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     }
     for (const Joint& j:joints) if (j.bodies[0]>=bodies.size() || j.bodies[1]>=bodies.size() || j.bodies[0]==j.bodies[1]) return false;
     const auto count=bodies.size();
-    // Scratch contains a four-word drag state, twelve words per unordered
-    // pair and four per body. Reject only arithmetic/device resource limits.
+    // Scratch contains a four-word drag state and twelve words per unordered
+    // pair. Reject only arithmetic/device resource limits.
     const std::uint64_t n=count;
     if (n*(n-1)>std::numeric_limits<std::uint32_t>::max()) return false;
-    const std::uint64_t words=4+n*(n-1)/2*12+n*4;
+    const std::uint64_t words=4+n*(n-1)/2*12;
     if (words>std::numeric_limits<std::uint32_t>::max()) return false;
     VkPhysicalDeviceProperties properties{};getProperties(physical,&properties);
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),vertices.size_bytes(),words*sizeof(std::uint32_t)};
