@@ -284,10 +284,16 @@ bones, and B retains its original source geometry and pose. V and R use
 the blue feet's mapped, mirrored marked shafts independently. A pre-existing
 marked pose outside the general interval is left as-is; white keyboard motion
 can recover it toward the interval without snapping, while the R solver enforces
-the limits. In non-physics mode the blue bones still follow the white animation;
-their differing marked neutral angles can therefore overshoot their own limits.
-This one-axis representation and the foot-plane estimate cannot capture
-coupled or person-specific motion.
+the limits. Non-physics blue toe motion is measured against its own marked
+standing pose, limited for each MTP and IP joint, and applied symmetrically to
+both sides; distal bones follow their proximal joint. If a saved standing pose
+is already outside a reference interval, its initial angle is preserved rather
+than forcing it into range. Motion can recover toward the interval, and the
+outward allowance shrinks as it recovers, rather than letting it extend past
+the recovered angle again. Restoring or editing the reference resets that
+allowance. This is not a clinical diagnosis:
+a shaft-based neutral and one approximate hinge axis cannot represent cartilage,
+translation, coupled tendon motion, or patient-specific joint limits.
 
 This remains a **partial** implementation: a single-axis tree cannot represent
 all three-dimensional ball-joint motion, pronation/supination with both

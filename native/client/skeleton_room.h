@@ -112,7 +112,9 @@ private:
     mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
     struct BlueReferenceCache {
         MarkedBlueToeReference reference;
-        std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{},neutral=~std::uint64_t{};
+        std::vector<ComparisonToeAttachment> standingJoints;
+        std::vector<std::array<double,2>> recoveryBounds;
+        std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{},neutral=~std::uint64_t{},edits=~std::uint64_t{};
         Vec3 origin{};
     };
     mutable BlueReferenceCache maleBlueReference_,femaleBlueReference_;

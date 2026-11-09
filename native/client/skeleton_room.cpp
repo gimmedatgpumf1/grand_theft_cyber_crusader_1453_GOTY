@@ -5,6 +5,7 @@
 #include "client/skeleton_rest_toes.h"
 #include "client/skeleton_toe_yaw.h"
 #include "client/skeleton_joint_limits_view.h"
+#include "client/skeleton_blue_toe_motion.h"
 #include "client/threadpool.h"
 #include "client/ui_layer.h"
 #include "vulkan/physics/rigid_timing.h"
@@ -311,14 +312,28 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
             male?maleToeBeforeCalibration_:femaleToeBeforeCalibration_,neutral,origin,pose);
         const auto& marks=male?maleToeMarks_:femaleToeMarks_;
         auto& cache=male?maleBlueReference_:femaleBlueReference_;
-        if(cache.source!=toeMarksRevision_ || cache.profile!=c.revision() || cache.neutral!=toeReferenceRevision_ ||
-           cache.origin.x!=origin.x || cache.origin.y!=origin.y || cache.origin.z!=origin.z) {
+        const bool newReference=cache.source!=toeMarksRevision_ || cache.profile!=c.revision() ||
+                                cache.neutral!=toeReferenceRevision_ || cache.edits!=toeEditRevision_;
+        if(newReference || cache.origin.x!=origin.x || cache.origin.y!=origin.y || cache.origin.z!=origin.z) {
             cache.reference=buildMarkedBlueToeReference(c,model,marks,mappedBlueToeMarks(male),neutral,origin);
-            cache.source=toeMarksRevision_;cache.profile=c.revision();cache.neutral=toeReferenceRevision_;cache.origin=origin;
+            auto standing=c.toePose(neutral,origin);
+            applyBlueToeEdits(c,standing,origin,toeEdits_,male,false);
+            applyManualBlueReference(c,model,male?maleManualToes_:femaleManualToes_,
+                male?maleToeBeforeCalibration_:femaleToeBeforeCalibration_,neutral,origin,standing);
+            animateMarkedBlueToes(cache.reference,standing);
+            cache.standingJoints.clear();
+            blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,standing,cache.standingJoints);
+            if(newReference || cache.recoveryBounds.size()!=cache.standingJoints.size())
+                cache.recoveryBounds.assign(cache.standingJoints.size(),{-3.14159265358979323846,3.14159265358979323846});
+            cache.source=toeMarksRevision_;cache.profile=c.revision();cache.neutral=toeReferenceRevision_;
+            cache.edits=toeEditRevision_;cache.origin=origin;
         }
         animateMarkedBlueToes(cache.reference,pose);
-    }
-    if(surfaceJoints)blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
+        std::vector<ComparisonToeAttachment> joints;
+        blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,joints);
+        constrainBlueToeMotion(model,cache.standingJoints,cache.recoveryBounds,joints,pose);
+        if(surfaceJoints)*surfaceJoints=std::move(joints);
+    } else if(surfaceJoints)blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
     return pose;
 }
 void SkeletonRoom::updateToeSkinCalibration(bool male) {
