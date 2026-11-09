@@ -169,7 +169,38 @@ one plane at y = 0.
   the line that was walked. This is Minecraft's partial-tick interpolation; it
   changes only what is drawn, never what is simulated.
 
+### The cube: four points at four corners
+
+The second body is a 0.70 m square made of four points of equal mass, one at each
+corner, 1 kg each. It is four points, exactly as specified, not a rigid body.
+
+- Each corner gets gravity on its own and is asked to travel its own v/20.
+- Each corner traces its own segment against the plane before it is allowed to
+  move, so there is one hitscan per corner, not one per body.
+- When one corner moves, the others are affected through the six distances that
+  are not allowed to change: four edges and two diagonals. Every distance is
+  pushed back to its original length, splitting the error between its two
+  corners, with the plane clamp applied between passes so satisfying a distance
+  cannot push a corner through the floor.
+- A corner the plane is holding cannot still be travelling into it, so its
+  downward speed is removed at the end of the tick.
+- Once it rests on the plane and no corner moved this tick, the cube freezes.
+
+Two honest limits. Whether the cube tips over when it lands on a corner is
+decided by those distance pushes and by how many passes are run
+(`kDistancePasses`), not by a moment of inertia. And because a corner the plane
+holds is clamped rather than impulsed, a resting cube is being held by the
+plane, not balanced by the three corners that are not touching it.
+
+### Freezing
+
+A body with no velocity and no net force is frozen and not stepped at all. The
+tick still counts, since it has already passed, but there is no force, no
+motion and no contact work for a frozen body. Freezing also ends the drawing
+interpolation for that body, so a frozen body is drawn exactly where it is
+instead of part of the way along a tick. R resets; dragging the point wakes it.
+
 The room draws through the same Vulkan backend as everything else. Body
 positions reach the device as batch model matrices, so nothing is uploaded or
-read back per frame. Only a point and a plane exist here: no boxes, no joints,
-no solver, and no hidden extra substeps.
+read back per frame. There is one tick per 20 Hz interval and no hidden extra
+update.
