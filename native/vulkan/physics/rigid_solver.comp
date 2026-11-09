@@ -127,8 +127,27 @@ bool collision(int ia,int ib,out vec2 normal,out float depth,out vec2 p0,out vec
     for(int i=0;i<na;++i)for(int j=0;j<nb;++j){vec2 p;if(segment(a[i],a[(i+1)%na],c[j],c[(j+1)%nb],p)){
         float t=dot(p,tangent);if(t<lo){lo=t;p0=p;}if(t>hi){hi=t;p1=p;}++points;
     }}
-    if(points==0)return false;
-    points=(hi-lo>1e-5)?2:1;return true;
+    if(points==0){
+        // At the contact envelope the polygons may be microscopically
+        // separated, so there is no intersection polygon to enumerate. Use
+        // their support features as a manifold instead of losing the contact
+        // and repeatedly selecting the same zero-time impact.
+        float amin=dot(a[0],normal),cmax=dot(c[0],normal);
+        for(int i=1;i<na;++i)amin=min(amin,dot(a[i],normal));
+        for(int i=1;i<nb;++i)cmax=max(cmax,dot(c[i],normal));
+        float al=1e30,ah=-1e30,cl=1e30,ch=-1e30;
+        for(int i=0;i<na;++i)if(dot(a[i],normal)<=amin+1e-5){float u=dot(a[i],tangent);al=min(al,u);ah=max(ah,u);}
+        for(int i=0;i<nb;++i)if(dot(c[i],normal)>=cmax-1e-5){float u=dot(c[i],tangent);cl=min(cl,u);ch=max(ch,u);}
+        float low=max(al,cl),high=min(ah,ch);
+        if(high<low){float u=(low+high)*0.5;low=u;high=u;}
+        float plane=(amin+cmax)*0.5;
+        p0=normal*plane+tangent*low;p1=normal*plane+tangent*high;
+        points=high-low>1e-5?2:1;
+        return true;
+    }
+    points=(hi-lo>1e-5)?2:1;
+    if(points==1)p1=p0;
+    return true;
 }
 // Conservative advancement for rotating convex polygons. SAT provides a
 // separating-plane lower bound; the relative linear speed plus the angular
@@ -372,6 +391,27 @@ void applyFluidForces(int index,inout vec2 force,inout float torque) {
         }
     }
 }
+// Scale the residual-velocity fallback by the narrowest cross-section.
+// Ordinary resting contacts can then use the iterative solver without
+// stalling the entire world for a micrometre of unresolved motion.
+void shapeMetrics(int i,out float radius,out float width) {
+    int n=int(b[i].shapes.y);radius=0.0;width=1e30;
+    for(int k=0;k<n;++k){
+        vec2 p=shapes.point[b[i].shapes.x+uint(k)].xy;
+        vec2 q=shapes.point[b[i].shapes.x+uint((k+1)%n)].xy;
+        radius=max(radius,length(p));vec2 normal=normalize(perp(q-p));
+        float lo=dot(p,normal),hi=lo;
+        for(int j=1;j<n;++j){float d=dot(shapes.point[b[i].shapes.x+uint(j)].xy,normal);lo=min(lo,d);hi=max(hi,d);}
+        width=min(width,hi-lo);
+    }
+}
+bool needsContinuous(int a,int c,float duration,out float scale) {
+    float ra,rc,wa,wc;shapeMetrics(a,ra,wa);shapeMetrics(c,rc,wc);
+    scale=min(wa,wc)*0.25;
+    float speed=length(b[a].linearVelocity.xy-b[c].linearVelocity.xy)+
+        abs(b[a].angularVelocity.z)*ra+abs(b[c].angularVelocity.z)*rc;
+    return speed*duration>scale;
+}
 // Round-robin edge coloring of the complete body graph. Each round pairs
 // every body at most once; all pairs in the round safely solve concurrently.
 ivec2 scheduledPair(int lane,int round,int count) {
@@ -439,6 +479,8 @@ void main(){
         best.normal=vec2(0);best.anchorA=vec2(0);best.anchorB=vec2(0);
         for(int a=lane;a<count;a+=32)for(int c=a+1;c<count;++c){
             if(b[a].shapes.y<3u || b[c].shapes.y<3u || b[a].positionMass.w+b[c].positionMass.w<=0.0)continue;
+            float motionScale;
+            bool continuous=needsContinuous(a,c,remaining,motionScale);
             PairContact current=loadPair(pairIndex(a,c,count));
             if(current.count>0u){
                 // A finite simultaneous solve may leave closing velocity on an
@@ -450,15 +492,16 @@ void main(){
                     float vn=dot(velocity(b[a],p-b[a].positionMass.xy)-velocity(b[c],p-b[c].positionMass.xy),current.n);
                     worst=min(worst,vn);
                 }
-                if(-worst*remaining>1e-6){
+                if(continuous && -worst*remaining>motionScale){
                     best.time=0.0;best.a=a;best.c=c;best.kind=2;
                 }
                 continue;
             }
             vec2 normal,anchorA,anchorB;float gap,time;
-            // Do not ignore a small angle: a long shape can still sweep a
-            // substantial distance at its tip.
-            bool rotating=b[a].angularVelocity.z!=0.0 || b[c].angularVelocity.z!=0.0;
+            // Always sweep translation. Use rotational advancement when the
+            // maximum point displacement is significant relative to shape
+            // thickness; slow rotations use the discrete substep contacts.
+            bool rotating=continuous && (b[a].angularVelocity.z!=0.0 || b[c].angularVelocity.z!=0.0);
             int kind=rotating ? rotationalSweep(a,c,remaining,normal,anchorA,anchorB,gap,time) :
                                (sweptContact(a,c,remaining,normal,anchorA,anchorB,gap,time)?1:0);
             if(kind==1){

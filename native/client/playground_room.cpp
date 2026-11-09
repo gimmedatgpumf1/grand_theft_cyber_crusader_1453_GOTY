@@ -51,7 +51,7 @@ void PlaygroundRoom::advance(double seconds) {
     if (!planar_ || !generation_ || !std::isfinite(seconds) || seconds<=0) return;
     constexpr double hz=gpu_physics::kPhysicsHz;
     time_=std::min(time_+seconds,0.25);
-    const auto steps=std::min<std::uint64_t>(static_cast<std::uint64_t>(time_*hz),8);
+    const auto steps=std::min<std::uint64_t>(static_cast<std::uint64_t>(time_*hz),gpu_physics::kSubstepsPerTick);
     time_-=double(steps)/hz; steps_+=steps;
 }
 void PlaygroundRoom::setDragRay(Vec3 origin,Vec3 direction) {

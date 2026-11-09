@@ -34,21 +34,26 @@ constraint solution.
 Within each physics step, the workgroup scans non-overlapping convex pairs for
 the earliest predicted impact, advances the whole world to just before it,
 applies an impact impulse, solves current contacts and joints, and repeats
-collision discovery with the updated velocities. Constant-orientation motion
-uses swept separating-axis intervals. Rotating polygons use conservative
-advancement with separating-axis gaps and a linear-plus-angular speed bound.
-The sweep assumes velocities are constant between events; forces are integrated
-at the beginning of the step. Events are ordered globally, while detection and
-non-conflicting constraint pairs still use the 32 lanes.
+collision discovery with the updated velocities. Translation uses swept
+separating-axis intervals. Rotating polygons use conservative advancement with
+separating-axis gaps and a linear-plus-angular speed bound when the maximum
+relative point displacement exceeds one quarter of the narrower polygon's
+minimum width. Below that threshold the translation sweep holds orientation
+fixed and the regular discrete contacts handle rotation; this avoids repeated
+zero-time rotational events in slow resting contacts, but can miss rotational
+collisions. Sweeps assume velocities are constant between events; forces are
+integrated at the beginning of the step. Events are ordered globally, while
+detection and non-conflicting constraint pairs still use the 32 lanes.
 
 There is a 64-event budget per physics step. On exhaustion, or when the
 rotational query fails to converge in 24 iterations, the unresolved portion of
-that step is dropped rather than advanced blindly. A contact with excessive
-residual closing velocity also stops the remaining advance. This is a safety
-fallback, but it slows or freezes the *whole* world and can become expensive in
-crowded or repeated-impact situations. A 1-micrometre contact envelope helps
-solve simultaneous resting contacts rather than repeatedly selecting zero-time
-impacts.
+that step is dropped rather than advanced blindly. For existing contacts, the
+remaining advance is also stopped when residual closing displacement exceeds
+one quarter of the narrower shape's minimum width. Smaller residuals are left
+to the finite contact and position solvers; they are not a zero-penetration
+guarantee. These fallbacks can still slow or freeze the *whole* world and become
+expensive in crowded or repeated-impact situations. A 1-micrometre contact
+envelope and support-feature fallback help solve near-touching contacts.
 
 The planar polygons represent prisms with an explicit depth. Buoyancy is the
 weight of the displaced air and liquid and acts through each displaced-volume
@@ -89,9 +94,10 @@ position projection can move shapes without a swept check. Floating-point
 precision, simultaneous impacts, numerical tolerances and limited iterations
 also affect correctness. Fixed iterations and position projection can introduce
 energy and multi-contact errors. Only pin joints are implemented. There is no
-full fluid solver. At most eight physics steps are submitted per rendered frame;
-up to a quarter-second backlog is retained, after which excess time is dropped.
-Real device compatibility, Windows, integrated-GPU performance and long-term
+full fluid solver. At most twelve physics steps are submitted per rendered frame,
+so a 50 ms frame can process a full 20 Hz tick. Up to a quarter-second backlog
+is retained, after which excess time is dropped. Real device compatibility,
+Windows, integrated-GPU performance and long-term
 stability are unverified. SwiftShader Vulkan images were inspected for the dry
 and flooded seesaw, drag and reset, a 41-body world, a rotating impact, an
 isolated 100 km/s impact, a 100 km/s two-body impact chain, and repeated bounces
