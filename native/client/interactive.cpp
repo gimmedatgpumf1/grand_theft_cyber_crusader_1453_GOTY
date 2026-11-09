@@ -124,11 +124,8 @@ public:
                 }
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                if (playgroundMode_) {
-                    drawTextPixels(frame,16,16,"PLAYGROUND  |  P: EXIT  |  R: RESET",colorHex("#f2f7ea"),20);
-                    drawTextPixels(frame,16,42,"WASD: MOVE  |  LMB: DRAG  |  ESC: RELEASE MOUSE",colorHex("#f2f7ea"),20);
-                    drawFpsCounter(frame,view_.fps);
-                } else if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
+                if (playgroundMode_) { drawFpsCounter(frame,view_.fps); }
+                else if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
                 else { roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps); }
                 if (captured_) {
                     const bool dragging=playgroundMode_ ? playgroundDragging_ : roomDragging_;
