@@ -321,6 +321,7 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
             applyManualBlueReference(c,model,male?maleManualToes_:femaleManualToes_,
                 male?maleToeBeforeCalibration_:femaleToeBeforeCalibration_,neutral,origin,standing);
             animateMarkedBlueToes(cache.reference,standing);
+            cache.standingPose=standing;
             cache.standingJoints.clear();
             blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,standing,cache.standingJoints);
             if(newReference || cache.recoveryBounds.size()!=cache.standingJoints.size())
@@ -329,10 +330,11 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
             cache.edits=toeEditRevision_;cache.origin=origin;
         }
         animateMarkedBlueToes(cache.reference,pose);
-        std::vector<ComparisonToeAttachment> joints;
-        blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,joints);
-        constrainBlueToeMotion(model,cache.standingJoints,cache.recoveryBounds,joints,pose);
-        if(surfaceJoints)*surfaceJoints=std::move(joints);
+        constrainBlueToeMotion(model,cache.standingPose,cache.standingJoints,cache.recoveryBounds,pose);
+        if(surfaceJoints) {
+            surfaceJoints->clear();
+            blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
+        }
     } else if(surfaceJoints)blueToeSurfaceAnchors(c,model,mappedBlueToeMarks(male),origin,pose,*surfaceJoints);
     return pose;
 }

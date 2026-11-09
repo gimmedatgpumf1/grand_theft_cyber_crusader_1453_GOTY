@@ -284,14 +284,19 @@ bones, and B retains its original source geometry and pose. V and R use
 the blue feet's mapped, mirrored marked shafts independently. A pre-existing
 marked pose outside the general interval is left as-is; white keyboard motion
 can recover it toward the interval without snapping, while the R solver enforces
-the limits. Non-physics blue toe motion is measured against its own marked
-standing pose, limited for each MTP and IP joint, and applied symmetrically to
-both sides; distal bones follow their proximal joint. If a saved standing pose
-is already outside a reference interval, its initial angle is preserved rather
-than forcing it into range. Motion can recover toward the interval, and the
-outward allowance shrinks as it recovers, rather than letting it extend past
-the recovered angle again. Restoring or editing the reference resets that
-allowance. This is not a clinical diagnosis:
+the limits. Non-physics blue toe motion is reconstructed from each standing
+parent/child frame using only one bounded hinge coordinate per MTP or IP joint.
+Retargeted translation and off-axis swing are not applied to the joint; missing
+or degenerate marks freeze the joint in its standing frame. Both blue sides use
+the same coordinate, and distal bones follow their parent. This deliberately
+restricts the MTP to a hinge in this view even though real MTP joints also have
+limited abduction/adduction. If a saved standing pose is already outside a
+reference interval, its initial angle is preserved rather than forcing it into
+range. Motion can recover toward the interval, and the outward allowance shrinks
+as it recovers, rather than letting it extend past the recovered angle again.
+Restoring or editing the reference resets that allowance. The R-mode GPU solver
+uses iterative hinge and position constraints, so residual error is possible.
+This is not a clinical diagnosis:
 a shaft-based neutral and one approximate hinge axis cannot represent cartilage,
 translation, coupled tendon motion, or patient-specific joint limits.
 

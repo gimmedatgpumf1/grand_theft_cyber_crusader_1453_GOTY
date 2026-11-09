@@ -112,6 +112,7 @@ private:
     mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
     struct BlueReferenceCache {
         MarkedBlueToeReference reference;
+        std::vector<std::array<double,16>> standingPose;
         std::vector<ComparisonToeAttachment> standingJoints;
         std::vector<std::array<double,2>> recoveryBounds;
         std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{},neutral=~std::uint64_t{},edits=~std::uint64_t{};
