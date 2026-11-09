@@ -22,6 +22,7 @@ struct GpuPlanarBinding {
     std::array<float,16> localFromMesh{};
 };
 struct GpuPlanarRig {
+    gpu_physics::FluidEnvironment environment;
     std::vector<gpu_physics::Body> bodies;
     std::vector<gpu_physics::Joint> joints;
     std::vector<std::array<float,4>> vertices;

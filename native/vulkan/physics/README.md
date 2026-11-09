@@ -1,39 +1,62 @@
-# Planar Vulkan rigid-body prototype
+# Planar Vulkan physics
 
-The old three-dimensional ragdoll solver and unused Bullet sources have been removed.
-Historical Bullet-based scripts and tests still need migration. Press P and then 2
-for the planar room; R resets it. The skeleton room no longer has R-mode
-ragdolls. The planar bodies and transforms remain on the GPU: there is no
-per-frame physics readback or CPU pixel upload. Dragging applies a damped spring
-at the picked point, with GPU-side picking. The seesaw axle is a generic pin
-joint; its triangular support and floor are static collision polygons (the
-slender axle is a visual pin).
+Press P then 2 for the planar room. R resets it, and W toggles water and resets
+the simulation. Drag with the left mouse button. The old 3D ragdoll solver and
+Bullet sources are removed; historical Bullet-based scripts still need migration.
+The skeleton room has no R-mode ragdolls.
 
-Each body has mass, planar moment of inertia, linear and angular velocity. A
-fixed 1/240 s semi-implicit step integrates gravity, finds overlaps between
-convex polygons, and applies sequential equal-and-opposite impulses. Point
-velocity is v + ω×r. Normal impulses are unilateral, and tangential impulses
-are clamped to ±μ times the accumulated normal impulse; μ is the geometric mean
-of the two bodies' coefficients. The pin solves its two point-velocity
-constraints. Separate position projection reduces accumulated overlap and
-pin drift without directly adding that correction to kinetic velocity. This
-is an iterative approximation to constrained Newton–Euler dynamics, not an
-exact solution of the simultaneous contact problem.
+The simulation and picking are GPU-resident; the renderer consumes body
+transforms without a per-frame physics readback or CPU pixel upload. A Vulkan
+workgroup uses 32 lanes: body integration and collision discovery run in
+parallel. A round-robin edge coloring groups pairs that share no bodies, so
+contacts and joints in a group can update velocities and positions in parallel
+without floating-point atomic writes. Groups execute in order with barriers;
+constraint solving is therefore not fully parallel. Small worlds expose only a
+few simultaneous pairs, and the current code does not distribute one world
+across multiple workgroups.
+
+A 1/240 s semi-implicit step uses mass, planar moment of inertia, gravity,
+unilateral contact impulses, Coulomb friction and point-to-point pin joints.
+Contacts use at most two points per pair. The friction coefficient for a pair
+is the geometric mean of the two surface coefficients. Restitution uses the
+larger coefficient and is suppressed for contact speeds below two gravity
+steps, to prevent gravity-induced resting jitter. Position projection reduces
+joint drift and overlap without adding the projection directly to velocity.
+All of these are finite-iteration approximations, not an exact simultaneous
+constraint solution.
+
+The planar polygons represent prisms with an explicit depth. Buoyancy is the
+weight of the displaced air and liquid and acts through each displaced-volume
+centroid. The liquid is a horizontal half-plane; clipping the polygon gives the
+submerged area and centroid. Fluid density and flow velocity are parameters.
+Pressure drag on each exposed edge uses a quadratic law and the rigid-body
+velocity at that edge, including rotation; two-point quadrature integrates its
+force and torque. This is an empirical pressure-drag approximation, not a
+fluid simulation: it does not model viscosity, wakes, splashes or waves. The
+seesaw scene uses air density 1.225 kg/m³, water density 1000 kg/m³ when
+selected, friction 0.5, pressure coefficient 1.05, restitution 0.15, and solid
+density 500 kg/m³; the coefficients are illustrative, not measured material
+properties.
 
 References:
+- https://www.grc.nasa.gov/www/k-12/VirtualAero/BottleRocket/airplane/drageq.html
+- https://openstax.org/books/college-physics-2e/pages/11-7-archimedes-principle
 - https://interactivecomputergraphics.github.io/physics-simulation/examples/rigid_body_collision.html
 - https://files.slembcke.net/misc/RigidBodies.pdf
-- https://web.cels.anl.gov/~anitescu/Presentations/2003/mihaiICIAMJul03.pdf
+- https://www.slideshare.net/slideshow/gpu-rigid-body-simulation-gdc-2013/20212240
 
-Limitations: this is a small, serial-per-world GPU prototype, not a parallel
-large-world solver. It permits up to 16 bodies and 8 vertices per convex
-polygon. Contacts are discrete (no continuous collision detection), perfectly
-inelastic, and bounded to two points per pair. Projection and finite iterations
-are approximate; tunnelling, accumulated energy errors, and difficult
-multi-contact configurations are not guaranteed solved. When rendering below
-30 FPS, the per-frame step limit deliberately slows simulated time.
-The 2D scene has been inspected using SwiftShader Vulkan, not Windows or an
-integrated GPU. Frame rate and long-term stability are not established.
+## Remaining limitations
 
-Rebuild the shader modules with a Vulkan GLSL compiler, then run
+This is not yet a general, complete physics engine. It has a 24-body limit per
+world and supports single convex polygons of up to 16 vertices, not arbitrary
+concave or compound shapes. Collision detection is discrete: fast bodies may
+tunnel. Fixed iterations and position projection can introduce energy and
+multi-contact errors. Only pin joints are implemented. There is no full fluid
+solver. At most eight physics steps are submitted per rendered frame; up to a
+quarter-second backlog is retained, after which excess time is dropped. Windows,
+integrated-GPU performance and long-term stability are unverified. SwiftShader
+Vulkan images were inspected for the dry and flooded seesaw, drag and reset;
+these observations are not proof of general correctness.
+
+Rebuild shader modules with a Vulkan GLSL compiler, then run
 `python3 native/vulkan/physics/make_compute_headers.py`.

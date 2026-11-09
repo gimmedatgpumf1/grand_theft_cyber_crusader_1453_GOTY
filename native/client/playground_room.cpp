@@ -16,7 +16,7 @@ void polygonBox(GpuPlanarRig& rig, Vec3 center, Vec3 size, bool movable) {
     const double mass=seesaw::density*size.x*size.y*size.z;
     body.positionMass={float(center.x),float(center.y),0,movable ? float(1.0/mass) : 0};
     body.inverseInertia[2]=movable ? float(12.0/(mass*(size.x*size.x+size.y*size.y))) : 0;
-    body.material[0]=0.5f;
+    body.material={0.5f,float(size.z),1.05f,0.15f};
     body.shapes={static_cast<std::uint32_t>(rig.vertices.size()),4,0,0};
     const float x=float(size.x*0.5),y=float(size.y*0.5);
     rig.vertices.push_back({-x,-y,0,0}); rig.vertices.push_back({x,-y,0,0});
@@ -26,6 +26,7 @@ void polygonBox(GpuPlanarRig& rig, Vec3 center, Vec3 size, bool movable) {
 }
 bool PlaygroundRoom::reset() {
     GpuPlanarRig next;
+    if(water_) next.environment.medium={1.225f,1000.0f,1.15f,0};
     gpu_physics::Body pin; pin.positionMass={float(seesaw::pivot.x),float(seesaw::pivot.y),0,0};
     pin.shapes={0,3,0,0};pin.material[0]=0.5f;
     next.vertices.push_back({-0.33f,-0.75f,0,0});
@@ -44,12 +45,13 @@ bool PlaygroundRoom::reset() {
     generation_=nextPhysicsGeneration(); steps_=0; time_=0; dragging_=false;
     return true;
 }
-void PlaygroundRoom::open2d() { planar_=true;sceneReady_=false;reset(); }
+void PlaygroundRoom::open2d() { planar_=true;water_=false;sceneReady_=false;reset(); }
+void PlaygroundRoom::toggleWater() { water_=!water_;sceneReady_=false;reset(); }
 void PlaygroundRoom::advance(double seconds) {
     if (!planar_ || !generation_ || !std::isfinite(seconds) || seconds<=0) return;
     constexpr double hz=gpu_physics::kPhysicsHz;
-    time_+=std::min(seconds,8.0/hz);
-    const auto steps=static_cast<std::uint64_t>(time_*hz);
+    time_=std::min(time_+seconds,0.25);
+    const auto steps=std::min<std::uint64_t>(static_cast<std::uint64_t>(time_*hz),8);
     time_-=double(steps)/hz; steps_+=steps;
 }
 void PlaygroundRoom::setDragRay(Vec3 origin,Vec3 direction) {
@@ -81,6 +83,12 @@ bool PlaygroundRoom::render(NativeFrame& frame,const ViewState& view,const RoomF
             };
             floor.unlit=true;wall.unlit=true;
             background(-4,0,floor);background(0,4,wall);
+            if(water_) {
+                Material water;water.color=colorHex("#315c70");water.unlit=true;
+                std::vector<Vec3> p={{-6,0,-0.00005},{6,0,-0.00005},{6,1.15,-0.00005},{-6,1.15,-0.00005}};
+                const std::vector<std::array<int,3>> f={{0,1,2},{0,2,3}};
+                raster.mesh(p,f,water);
+            }
         }
         if (planar_) {
             Material support; support.color=colorHex("#78827c"); support.constantLighting=true;

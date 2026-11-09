@@ -616,6 +616,7 @@ private:
         if (playground_.is2d()) {
             if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') leavePlayground();
             else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') { stopPlaygroundDrag();playground_.reset(); }
+            else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='w') { stopPlaygroundDrag();playground_.toggleWater(); }
             else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) screenshot_=true;
             else if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) { stopPlaygroundDrag();window_.captureMouse(false);captured_=false; }
             return;

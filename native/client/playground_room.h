@@ -12,6 +12,7 @@ class PlaygroundRoom {
 public:
     bool reset();
     void open2d();
+    void toggleWater();
     void open3d() { planar_=false; sceneReady_=false; }
     bool is2d() const { return planar_; }
     void advance(double seconds);
@@ -26,6 +27,6 @@ private:
     double time_=0;
     std::array<float,4> dragOrigin_{},dragDirection_{};
     std::uint32_t dragSequence_=0;
-    bool dragging_=false,sceneReady_=false,planar_=false;
+    bool dragging_=false,sceneReady_=false,planar_=false,water_=false;
 };
 } // namespace gtc::native

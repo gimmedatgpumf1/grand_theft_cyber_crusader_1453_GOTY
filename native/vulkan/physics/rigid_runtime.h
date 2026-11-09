@@ -28,7 +28,7 @@ public:
                 PFN_vkGetPhysicalDeviceMemoryProperties getMemoryProperties,
                 std::span<const std::uint32_t> shader,
                 std::span<const Body> bodies, std::span<const Joint> joints,
-                std::span<const std::array<float,4>> vertices);
+                std::span<const std::array<float,4>> vertices, const FluidEnvironment& environment);
     // command must be recording on a compute-capable queue, outside a render
     // pass. Call once per fixed step. The owner must serialize uses of this
     // state across submissions and apply a vertex-stage dependency before draw.
@@ -60,6 +60,7 @@ private:
     VkPipelineLayout layout_=VK_NULL_HANDLE;
     VkPipeline pipeline_=VK_NULL_HANDLE;
     std::uint32_t bodyCount_=0, jointCount_=0;
+    FluidEnvironment environment_{};
     Buffer skinBindings_{};
     VkDescriptorSetLayout skinSetLayout_=VK_NULL_HANDLE;
     VkDescriptorPool skinPool_=VK_NULL_HANDLE;

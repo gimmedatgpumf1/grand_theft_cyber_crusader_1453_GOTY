@@ -45,12 +45,31 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
                           PFN_vkGetPhysicalDeviceMemoryProperties getMemoryProperties,
                           std::span<const std::uint32_t> shader,
                           std::span<const Body> bodies, std::span<const Joint> joints,
-                          std::span<const std::array<float,4>> vertices) {
+                          std::span<const std::array<float,4>> vertices, const FluidEnvironment& environment) {
     reset();
     if (!physical || !device || !getDeviceProcAddr || !getMemoryProperties ||
-        shader.size()<5 || shader[0]!=0x07230203u || bodies.empty() || bodies.size()>16 || joints.size()>16) return false;
+        shader.size()<5 || shader[0]!=0x07230203u || bodies.empty() || bodies.size()>24 || joints.size()>256) return false;
+    for (float v:environment.medium) if (!std::isfinite(v)) return false;
+    for (float v:environment.velocity) if (!std::isfinite(v)) return false;
+    if (environment.medium[0]<0 || environment.medium[1]<0) return false;
     for (const Body& b:bodies) {
-        if (b.shapes[1] && (b.shapes[1]<3 || b.shapes[1]>8 || std::size_t(b.shapes[0])+b.shapes[1]>vertices.size())) return false;
+        for (const auto* data:{&b.positionMass,&b.rotation,&b.linearVelocity,&b.angularVelocity,&b.inverseInertia,&b.material})
+            for (float value:*data) if (!std::isfinite(value)) return false;
+        if (b.positionMass[3]<0 || b.inverseInertia[2]<0 || b.material[0]<0 || b.material[1]<0 ||
+            b.material[2]<0 || b.material[3]<0 || b.material[3]>1 ||
+            (b.positionMass[3]>0 && (b.inverseInertia[2]<=0 || b.material[1]<=0))) return false;
+        if (!b.shapes[1]) continue;
+        const auto n=b.shapes[1];const auto start=std::size_t(b.shapes[0]);
+        if (n<3 || n>16 || start+n>vertices.size()) return false;
+        double area=0;
+        for (std::uint32_t i=0;i<n;++i) {
+            const auto& a=vertices[start+i];const auto& p=vertices[start+(i+1)%n];const auto& q=vertices[start+(i+2)%n];
+            if (!std::isfinite(a[0]) || !std::isfinite(a[1])) return false;
+            const double dx=double(p[0])-a[0],dy=double(p[1])-a[1];
+            if (dx*dx+dy*dy<1e-16 || dx*(double(q[1])-p[1])-dy*(double(q[0])-p[0]) < -1e-10) return false;
+            area+=double(a[0])*p[1]-double(a[1])*p[0];
+        }
+        if (!(area>1e-12)) return false;
     }
     for (const Joint& j:joints) if (j.bodies[0]>=bodies.size() || j.bodies[1]>=bodies.size() || j.bodies[0]==j.bodies[1]) return false;
     const auto count=bodies.size();
@@ -137,6 +156,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     const VkResult result=createComputePipelines_(device_,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&pipeline_);
     destroyShaderModule_(device_,module,nullptr);
     if (result!=VK_SUCCESS) { reset(); return false; }
+    environment_=environment;
     bodyCount_=static_cast<std::uint32_t>(count);
     jointCount_=static_cast<std::uint32_t>(joints.size());
     return true;
@@ -166,6 +186,7 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
     cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
     Step step{}; step.dt=dt; step.first=bodyCount_; step.count=jointCount_;
+    step.medium=environment_.medium; step.fluidVelocity=environment_.velocity;
     step.dragOrigin=dragOrigin; step.dragDirection=dragDirection;
     step.dragControl={dragging ? 1u : 0u,dragSequence,0u,0u};
     cmdPushConstants_(command,layout_,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(step),&step);

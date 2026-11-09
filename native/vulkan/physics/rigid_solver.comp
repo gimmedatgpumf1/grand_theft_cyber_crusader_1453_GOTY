@@ -1,7 +1,7 @@
 #version 450
-// Planar Newton-Euler dynamics. One invocation owns the complete small world;
-// body and constraint impulses are applied symmetrically and in sequence.
-layout(local_size_x=1) in;
+// Planar Newton-Euler dynamics. One workgroup owns a world; body updates
+// and disjoint constraint pairs run on separate synchronized GPU lanes.
+layout(local_size_x=32) in;
 struct Body {
     vec4 positionMass;
     vec4 rotation;
@@ -25,12 +25,20 @@ layout(push_constant) uniform Step {
     uint phase,first,count; float dt;
     vec4 gravityFloor,dragOrigin,dragDirection;
     uvec4 dragControl;
+    vec4 medium; // air density, liquid density, liquid level, reserved
+    vec4 fluidVelocity; // air xy, liquid xy
 } step;
-const int MAX_BODIES=16,MAX_CONTACTS=240;
-Body b[16];
-struct Contact { int a,b; vec2 p,n; float depth,normalImpulse,tangentImpulse; };
-Contact contacts[240];
-int contactCount;
+const int MAX_BODIES=24,MAX_VERTICES=16,MAX_PAIRS=276;
+shared Body b[MAX_BODIES];
+struct PairContact {
+    vec2 p0,p1,n;
+    float bounce;
+    uint count;
+    vec2 normalImpulse,tangentImpulse;
+};
+shared PairContact pairs[MAX_PAIRS];
+shared int dragged;
+shared vec2 dragAnchor,dragTarget;
 float cross2(vec2 a,vec2 c) { return a.x*c.y-a.y*c.x; }
 vec2 perp(vec2 a) { return vec2(-a.y,a.x); }
 vec2 rot(Body a,vec2 p) {
@@ -58,11 +66,11 @@ float effective(int a,int c,vec2 ra,vec2 rb,vec2 n) {
     float x=cross2(ra,n),y=cross2(rb,n);
     return b[a].positionMass.w+b[c].positionMass.w+x*x*b[a].inverseInertia.z+y*y*b[c].inverseInertia.z;
 }
-void vertices(int i,out vec2 v[8]) {
+void vertices(int i,out vec2 v[16]) {
     for(int j=0;j<int(b[i].shapes.y);++j)
         v[j]=b[i].positionMass.xy+rot(b[i],shapes.point[b[i].shapes.x+uint(j)].xy);
 }
-bool inside(vec2 p,vec2 v[8],int n) {
+bool inside(vec2 p,vec2 v[16],int n) {
     for(int i=0;i<n;++i) if(cross2(v[(i+1)%n]-v[i],p-v[i]) < -1e-6) return false;
     return true;
 }
@@ -74,7 +82,7 @@ bool segment(vec2 a,vec2 c,vec2 d,vec2 e,out vec2 p) {
     p=a+t*r;return true;
 }
 bool collision(int ia,int ib,out vec2 normal,out float depth,out vec2 p0,out vec2 p1,out int points) {
-    vec2 a[8],c[8];int na=int(b[ia].shapes.y),nb=int(b[ib].shapes.y); vertices(ia,a);vertices(ib,c); depth=1e30;
+    vec2 a[16],c[16];int na=int(b[ia].shapes.y),nb=int(b[ib].shapes.y); vertices(ia,a);vertices(ib,c); depth=1e30;
     for(int k=0;k<na+nb;++k) {
         vec2 edge=k<na ? a[(k+1)%na]-a[k] : c[(k-na+1)%nb]-c[k-na];
         vec2 axis=normalize(perp(edge));
@@ -95,32 +103,41 @@ bool collision(int ia,int ib,out vec2 normal,out float depth,out vec2 p0,out vec
     if(points==0)return false;
     points=(hi-lo>1e-5)?2:1;return true;
 }
-void findContacts(int count) {
-    contactCount=0;
-    for(int a=0;a<count;++a)for(int c=a+1;c<count;++c){
-        if(b[a].shapes.y==0u || b[c].shapes.y==0u || b[a].positionMass.w+b[c].positionMass.w==0.0)continue;
-        vec2 n,p0,p1;float depth;int points;
-        if(!collision(a,c,n,depth,p0,p1,points))continue;
-        for(int i=0;i<points && contactCount<MAX_CONTACTS;++i){
-            Contact item;item.a=a;item.b=c;item.p=i==0?p0:p1;item.n=n;item.depth=depth;
-            item.normalImpulse=0.0;item.tangentImpulse=0.0;contacts[contactCount++]=item;
+// Pair storage uses a triangular array, independent of the scheduling order.
+int pairIndex(int a,int c,int count) { return a*(2*count-a-1)/2+(c-a-1); }
+void makeContact(int a,int c,int count) {
+    PairContact p;p.p0=vec2(0);p.p1=vec2(0);p.n=vec2(0);p.bounce=0.0;
+    p.count=0u;p.normalImpulse=vec2(0);p.tangentImpulse=vec2(0);
+    if(b[a].shapes.y>=3u && b[c].shapes.y>=3u && b[a].positionMass.w+b[c].positionMass.w>0.0){
+        int points;vec2 n,p0,p1;float depth;
+        if(collision(a,c,n,depth,p0,p1,points)){
+            p.count=uint(points);p.n=n;p.p0=p0;p.p1=p1;
+            vec2 mid=(p0+p1)*0.5;
+            float vn=dot(velocity(b[a],mid-b[a].positionMass.xy)-velocity(b[c],mid-b[c].positionMass.xy),n);
+            // Resting impulses are not bounced merely due to gravity over a step.
+            float threshold=2.0*length(step.gravityFloor.xy)*step.dt;
+            p.bounce=vn < -threshold ? -max(b[a].material.w,b[c].material.w)*vn : 0.0;
         }
     }
+    pairs[pairIndex(a,c,count)]=p;
 }
-void solveContact(int i) {
-    Contact c=contacts[i];vec2 ra=c.p-b[c.a].positionMass.xy,rb=c.p-b[c.b].positionMass.xy;
-    vec2 relative=velocity(b[c.a],ra)-velocity(b[c.b],rb);
-    float k=effective(c.a,c.b,ra,rb,c.n);if(k<1e-12)return;
-    float old=c.normalImpulse;c.normalImpulse=max(0.0,old-dot(relative,c.n)/k);
-    vec2 impulse=c.n*(c.normalImpulse-old);
-    applyImpulse(c.a,ra,impulse);applyImpulse(c.b,rb,-impulse);
-    vec2 tangent=perp(c.n);relative=velocity(b[c.a],ra)-velocity(b[c.b],rb);
-    k=effective(c.a,c.b,ra,rb,tangent);if(k>1e-12){
-        old=c.tangentImpulse;float limit=sqrt(b[c.a].material.x*b[c.b].material.x)*c.normalImpulse;
-        c.tangentImpulse=clamp(old-dot(relative,tangent)/k,-limit,limit);
-        impulse=tangent*(c.tangentImpulse-old);applyImpulse(c.a,ra,impulse);applyImpulse(c.b,rb,-impulse);
+void solveContact(int a,int c,int index) {
+    PairContact p=pairs[index];
+    for(int i=0;i<int(p.count);++i){
+        vec2 point=i==0?p.p0:p.p1,ra=point-b[a].positionMass.xy,rb=point-b[c].positionMass.xy;
+        vec2 relative=velocity(b[a],ra)-velocity(b[c],rb);
+        float k=effective(a,c,ra,rb,p.n);if(k<1e-12)continue;
+        float old=p.normalImpulse[i];p.normalImpulse[i]=max(0.0,old-(dot(relative,p.n)-p.bounce)/k);
+        vec2 impulse=p.n*(p.normalImpulse[i]-old);
+        applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
+        vec2 tangent=perp(p.n);relative=velocity(b[a],ra)-velocity(b[c],rb);
+        k=effective(a,c,ra,rb,tangent);if(k>1e-12){
+            old=p.tangentImpulse[i];float limit=sqrt(b[a].material.x*b[c].material.x)*p.normalImpulse[i];
+            p.tangentImpulse[i]=clamp(old-dot(relative,tangent)/k,-limit,limit);
+            impulse=tangent*(p.tangentImpulse[i]-old);applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
+        }
     }
-    contacts[i]=c;
+    pairs[index]=p;
 }
 void solveJointVelocity(Joint j) {
     int a=int(j.bodies.x),c=int(j.bodies.y);
@@ -130,56 +147,147 @@ void solveJointVelocity(Joint j) {
         applyImpulse(a,ra,impulse);applyImpulse(c,rb,-impulse);
     }
 }
-void solvePositions(int count,int jointCount) {
-    for(int iteration=0;iteration<12;++iteration){
-        for(int i=0;i<jointCount;++i){Joint j=joints.joint[i];int a=int(j.bodies.x),c=int(j.bodies.y);
-            for(int k=0;k<2;++k){vec2 ra=rot(b[a],j.parentAnchor.xy),rb=rot(b[c],j.childAnchor.xy);
-                vec2 n=k==0?vec2(1,0):vec2(0,1);float eff=effective(a,c,ra,rb,n);if(eff<1e-12)continue;
-                vec2 error=b[a].positionMass.xy+ra-b[c].positionMass.xy-rb;
-                vec2 impulse=-dot(error,n)*n/eff;applyPosition(a,ra,impulse);applyPosition(c,rb,-impulse);
-            }
-        }
-        for(int a=0;a<count;++a)for(int c=a+1;c<count;++c){
-            if(b[a].shapes.y==0u||b[c].shapes.y==0u||b[a].positionMass.w+b[c].positionMass.w==0.0)continue;
-            vec2 n,p0,p1;float depth;int points;if(!collision(a,c,n,depth,p0,p1,points))continue;
-            vec2 p=(p0+p1)*0.5,ra=p-b[a].positionMass.xy,rb=p-b[c].positionMass.xy;
-            float eff=effective(a,c,ra,rb,n);if(eff<1e-12)continue;
-            vec2 impulse=n*(0.8*max(depth-0.00001,0.0)/eff);
-            applyPosition(a,ra,impulse);applyPosition(c,rb,-impulse);
+void solveJointPosition(Joint j) {
+    int a=int(j.bodies.x),c=int(j.bodies.y);
+    for(int k=0;k<2;++k){vec2 ra=rot(b[a],j.parentAnchor.xy),rb=rot(b[c],j.childAnchor.xy);
+        vec2 n=k==0?vec2(1,0):vec2(0,1);float eff=effective(a,c,ra,rb,n);if(eff<1e-12)continue;
+        vec2 error=b[a].positionMass.xy+ra-b[c].positionMass.xy-rb;
+        vec2 impulse=-dot(error,n)*n/eff;applyPosition(a,ra,impulse);applyPosition(c,rb,-impulse);
+    }
+}
+void solvePosition(int a,int c) {
+    if(b[a].shapes.y<3u||b[c].shapes.y<3u||b[a].positionMass.w+b[c].positionMass.w==0.0)return;
+    vec2 n,p0,p1;float depth;int points;if(!collision(a,c,n,depth,p0,p1,points))return;
+    vec2 p=(p0+p1)*0.5,ra=p-b[a].positionMass.xy,rb=p-b[c].positionMass.xy;
+    float eff=effective(a,c,ra,rb,n);if(eff<1e-12)return;
+    vec2 impulse=n*(0.8*max(depth-0.00001,0.0)/eff);
+    applyPosition(a,ra,impulse);applyPosition(c,rb,-impulse);
+}
+// Clip the convex cross-section by a flat liquid surface, then calculate
+// signed area and the centerOfArea of the displaced extruded volume.
+void submerged(int index,bool below,out float area,out vec2 centerOfArea) {
+    vec2 src[16],v[17];vertices(index,src);int n=int(b[index].shapes.y),m=0;
+    float level=step.medium.z;
+    for(int i=0;i<n;++i){
+        vec2 p=src[i],q=src[(i+1)%n];
+        bool pin=below?p.y<=level:p.y>=level, qin=below?q.y<=level:q.y>=level;
+        if(pin)v[m++]=p;
+        if(pin!=qin)v[m++]=mix(p,q,(level-p.y)/(q.y-p.y));
+    }
+    float twice=0;centerOfArea=vec2(0);
+    for(int i=0;i<m;++i){vec2 p=v[i],q=v[(i+1)%m];float k=cross2(p,q);twice+=k;centerOfArea+=(p+q)*k;}
+    area=max(0.0,twice*0.5);
+    if(twice>1e-10)centerOfArea/=3.0*twice;else centerOfArea=b[index].positionMass.xy;
+}
+// Integrate pressure drag on each wetted edge. A Cd is supplied by the
+// material; the law is quadratic and neglects wake and fluid displacement.
+void edgeDrag(int index,vec2 p,vec2 q,float density,vec2 flow,inout vec2 force,inout float torque) {
+    vec2 edge=q-p;float len=length(edge);if(len<1e-8 || density<=0.0)return;
+    vec2 normal=vec2(edge.y,-edge.x)/len,center=b[index].positionMass.xy;
+    float v0=dot(velocity(b[index],p-center)-flow,normal);
+    float v1=dot(velocity(b[index],q-center)-flow,normal);
+    if(v0<=0.0 && v1<=0.0)return;
+    float lo=0.0,hi=1.0;
+    if(v0<0.0)lo=-v0/(v1-v0);
+    if(v1<0.0)hi=-v0/(v1-v0);
+    float wetLength=len*(hi-lo);
+    // Two-point Gauss integration is exact for the normal-velocity-squared
+    // force and its torque along this linearly moving rigid edge.
+    for(int i=0;i<2;++i){
+        float t=mix(lo,hi,i==0?0.2113248654:0.7886751346);
+        vec2 r=p+edge*t-center;float vn=max(0.0,dot(velocity(b[index],r)-flow,normal));
+        vec2 f=-0.25*density*b[index].material.z*b[index].material.y*wetLength*vn*vn*normal;
+        force+=f;torque+=cross2(r,f);
+    }
+}
+void applyFluidForces(int index,inout vec2 force,inout float torque) {
+    Body body=b[index];if(body.shapes.y<3u || body.material.y<=0.0)return;
+    float belowArea,aboveArea;vec2 belowCenter,aboveCenter;
+    submerged(index,true,belowArea,belowCenter);submerged(index,false,aboveArea,aboveCenter);
+    vec2 fb=-step.gravityFloor.xy*(step.medium.x*aboveArea+step.medium.y*belowArea)*body.material.y;
+    vec2 airForce=-step.gravityFloor.xy*(step.medium.x*aboveArea)*body.material.y;
+    vec2 waterForce=-step.gravityFloor.xy*(step.medium.y*belowArea)*body.material.y;
+    force+=fb;torque+=cross2(aboveCenter-body.positionMass.xy,airForce)+cross2(belowCenter-body.positionMass.xy,waterForce);
+    vec2 v[16];vertices(index,v);int n=int(body.shapes.y);float level=step.medium.z;
+    for(int i=0;i<n;++i){vec2 p=v[i],q=v[(i+1)%n];
+        bool pBelow=p.y<level,qBelow=q.y<level;
+        if(pBelow==qBelow)edgeDrag(index,p,q,pBelow?step.medium.y:step.medium.x,pBelow?step.fluidVelocity.zw:step.fluidVelocity.xy,force,torque);
+        else {vec2 cut=mix(p,q,(level-p.y)/(q.y-p.y));
+            edgeDrag(index,p,cut,pBelow?step.medium.y:step.medium.x,pBelow?step.fluidVelocity.zw:step.fluidVelocity.xy,force,torque);
+            edgeDrag(index,cut,q,qBelow?step.medium.y:step.medium.x,qBelow?step.fluidVelocity.zw:step.fluidVelocity.xy,force,torque);
         }
     }
 }
+// Round-robin edge coloring of the complete body graph. Each round pairs
+// every body at most once; all pairs in the round safely solve concurrently.
+ivec2 scheduledPair(int lane,int round,int count) {
+    int n=count+(count%2), ring=n-1;
+    int a=lane==0?n-1:(round+lane)%ring;
+    int c=(round+ring-lane)%ring;
+    if(a>c){int t=a;a=c;c=t;}
+    return ivec2(a,c);
+}
 void main(){
-    int count=int(step.first),jointCount=int(step.count);
-    if(count>MAX_BODIES)return;
-    for(int i=0;i<count;++i)b[i]=bodies.body[i];
-    if(step.dragControl.x!=0u && abs(step.dragDirection.z)>1e-6){
-        vec2 target=step.dragOrigin.xy-step.dragDirection.xy*(step.dragOrigin.z/step.dragDirection.z);
-        if(scratch.word[0]!=step.dragControl.y){
-            scratch.word[0]=step.dragControl.y;scratch.word[1]=0u;
-            for(int i=count-1;i>=0;--i) if(b[i].positionMass.w>0.0 && b[i].shapes.y>=3u){
-                vec2 v[8];vertices(i,v);
-                if(inside(target,v,int(b[i].shapes.y))){vec2 anchor=unrot(b[i],target-b[i].positionMass.xy);
-                    scratch.word[1]=uint(i+1);scratch.word[2]=floatBitsToUint(anchor.x);scratch.word[3]=floatBitsToUint(anchor.y);break;}
+    int lane=int(gl_LocalInvocationIndex),count=int(step.first),jointCount=int(step.count);
+    if(count>MAX_BODIES)return; // uniform over the workgroup
+    if(lane<count)b[lane]=bodies.body[lane];
+    barrier();
+    if(lane==0){
+        dragged=-1;dragTarget=vec2(0);dragAnchor=vec2(0);
+        if(step.dragControl.x!=0u && abs(step.dragDirection.z)>1e-6){
+            dragTarget=step.dragOrigin.xy-step.dragDirection.xy*(step.dragOrigin.z/step.dragDirection.z);
+            if(scratch.word[0]!=step.dragControl.y){
+                scratch.word[0]=step.dragControl.y;scratch.word[1]=0u;
+                for(int i=count-1;i>=0;--i)if(b[i].positionMass.w>0.0 && b[i].shapes.y>=3u){
+                    vec2 v[16];vertices(i,v);
+                    if(inside(dragTarget,v,int(b[i].shapes.y))){vec2 anchor=unrot(b[i],dragTarget-b[i].positionMass.xy);
+                        scratch.word[1]=uint(i+1);scratch.word[2]=floatBitsToUint(anchor.x);scratch.word[3]=floatBitsToUint(anchor.y);break;}
+                }
+            }
+            if(scratch.word[1]>0u && scratch.word[1]<=uint(count)){
+                dragged=int(scratch.word[1]-1u);
+                dragAnchor=vec2(uintBitsToFloat(scratch.word[2]),uintBitsToFloat(scratch.word[3]));
             }
         }
-        if(scratch.word[1]>0u && scratch.word[1]<=uint(count)){
-            int i=int(scratch.word[1]-1u);vec2 r=rot(b[i],vec2(uintBitsToFloat(scratch.word[2]),uintBitsToFloat(scratch.word[3])));
-            float mass=1.0/b[i].positionMass.w,frequency=15.0;
-            vec2 force=mass*(frequency*frequency*(target-b[i].positionMass.xy-r)-2.0*frequency*velocity(b[i],r));
-            applyImpulse(i,r,force*step.dt);
+    }
+    barrier();
+    if(lane<count && b[lane].positionMass.w>0.0){
+        float mass=1.0/b[lane].positionMass.w;vec2 force=mass*step.gravityFloor.xy;float torque=0.0;
+        applyFluidForces(lane,force,torque);
+        if(lane==dragged){vec2 r=rot(b[lane],dragAnchor);float omega=15.0;
+            vec2 f=mass*(omega*omega*(dragTarget-b[lane].positionMass.xy-r)-2.0*omega*velocity(b[lane],r));
+            force+=f;torque+=cross2(r,f);
         }
+        b[lane].linearVelocity.xy+=force*b[lane].positionMass.w*step.dt;
+        b[lane].angularVelocity.z+=torque*b[lane].inverseInertia.z*step.dt;
+        b[lane].positionMass.xy+=b[lane].linearVelocity.xy*step.dt;
+        turn(b[lane],b[lane].angularVelocity.z*step.dt);
     }
-    for(int i=0;i<count;++i)if(b[i].positionMass.w>0.0){
-        b[i].linearVelocity.xy+=step.gravityFloor.xy*step.dt;
-        b[i].positionMass.xy+=b[i].linearVelocity.xy*step.dt;
-        turn(b[i],b[i].angularVelocity.z*step.dt);
+    barrier();
+    if(lane<count)for(int c=lane+1;c<count;++c)makeContact(lane,c,count);
+    barrier();
+    int n=count+(count%2);
+    for(int iteration=0;iteration<32;++iteration)for(int round=0;round<n-1;++round){
+        if(lane<n/2){ivec2 pair=scheduledPair(lane,round,count);int a=pair.x,c=pair.y;
+            if(c<count){
+                for(int j=0;j<jointCount;++j){Joint joint=joints.joint[j];
+                    if(min(joint.bodies.x,joint.bodies.y)==uint(a) && max(joint.bodies.x,joint.bodies.y)==uint(c))solveJointVelocity(joint);
+                }
+                solveContact(a,c,pairIndex(a,c,count));
+            }
+        }
+        barrier();
     }
-    findContacts(count);
-    for(int iteration=0;iteration<32;++iteration){
-        for(int j=0;j<jointCount;++j)solveJointVelocity(joints.joint[j]);
-        for(int c=0;c<contactCount;++c)solveContact(c);
+    for(int iteration=0;iteration<12;++iteration)for(int round=0;round<n-1;++round){
+        if(lane<n/2){ivec2 pair=scheduledPair(lane,round,count);int a=pair.x,c=pair.y;
+            if(c<count){
+                for(int j=0;j<jointCount;++j){Joint joint=joints.joint[j];
+                    if(min(joint.bodies.x,joint.bodies.y)==uint(a) && max(joint.bodies.x,joint.bodies.y)==uint(c))solveJointPosition(joint);
+                }
+                solvePosition(a,c);
+            }
+        }
+        barrier();
     }
-    solvePositions(count,jointCount);
-    for(int i=0;i<count;++i)bodies.body[i]=b[i];
+    if(lane<count)bodies.body[lane]=b[lane];
 }
