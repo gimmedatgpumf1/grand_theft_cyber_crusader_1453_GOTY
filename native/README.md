@@ -169,7 +169,39 @@ one plane at y = 0.
   the line that was walked. This is Minecraft's partial-tick interpolation; it
   changes only what is drawn, never what is simulated.
 
+### A square, not four points
+
+The second body is a 0.70 m square of four one-kilogram corners, 4 kg in total.
+It is **one** body: a centre of mass, an angle, and a moment of inertia
+m·(w²+h²)/12 = 0.163 kg·m². The four corners are computed from those three
+numbers, so the distance between any two of them is exact by construction and
+there is no constraint to violate.
+
+Why not four independent points held at fixed distances? That is what physics
+calls position-based dynamics with particle shape matching, and it does work for
+cloth. For a rigid body it is the expensive wrong tool: the corners only stay
+rigid if the distances are re-imposed every iteration, the body has no single
+inertia to reason about, and it cannot tell a settled box from one balanced on
+an edge. That was tried first in this room: the square landed on an edge and
+stood there indefinitely with 11.8 mm of violated edge length, because nothing
+in the model knew the push needed to hold it up would have to be a pull.
+
+The centre of mass version is also cheaper: four corners cost eight numbers and
+a distance solve per tick, the body costs five numbers and a 2×2 effective-mass
+evaluation per contact.
+
+What the square does now: falls under m·g, its corners each carry their own
+speed (v + ω×r), and the tick is split at the first corner to reach the plane.
+The contact there gets an impulse that stops that corner approaching, applied at
+a lever arm, so it also turns the body. Friction along the plane is limited by
+μN at each contacted corner. An edge-balanced square cannot be held up by a
+push at the lifted corner, so it tips and falls flat instead of standing on its
+corner. Once it lies flat, with no velocity and no turning, it freezes.
+
+Press P to enter, R to drop both bodies again, LMB drags the point. The point
+freezes as soon as it rests; the square freezes once it is flat and still.
+
 The room draws through the same Vulkan backend as everything else. Body
-positions reach the device as batch model matrices, so nothing is uploaded or
-read back per frame. Only a point and a plane exist here: no boxes, no joints,
-no solver, and no hidden extra substeps.
+positions and the square's angle reach the device as batch model matrices, so
+nothing is uploaded or read back per frame. There is no solver, no substep, and
+no hidden extra update: one tick, one contact pass.
