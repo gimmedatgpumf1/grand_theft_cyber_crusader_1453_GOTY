@@ -162,12 +162,15 @@ one plane at y = 0.
 - A faint dot marks the position at each past tick, so the 20 Hz cadence and the
   shrinking gaps between ticks are visible. The blue line is the current tick's
   trace; it ends where the point was allowed to reach.
-- Physics stays at 20 Hz and the screen is not: each frame draws the point
+- Physics stays at 20 Hz and the screen is not: each frame draws a moving body
   between the position it had at the previous tick and the position the last
   tick left it in, at the fraction of a tick that frame has reached. The trace
   is drawn across the same two positions, so the point on screen always sits on
   the line that was walked. This is Minecraft's partial-tick interpolation; it
   changes only what is drawn, never what is simulated.
+- Each body decides this for itself. A frozen body is drawn exactly where it is,
+  and the body the mouse is holding is drawn exactly where the mouse put it, but
+  neither of those may switch the interpolation off for anything else.
 
 ### The cube: four points at four corners
 
@@ -199,6 +202,14 @@ tick still counts, since it has already passed, but there is no force, no
 motion and no contact work for a frozen body. Freezing also ends the drawing
 interpolation for that body, so a frozen body is drawn exactly where it is
 instead of part of the way along a tick. R resets; dragging the point wakes it.
+
+### Grabbing
+
+The left mouse button takes whichever body is under the ray: the point, or the
+cube. The cube is taken by its centre, so all four corners move by the same
+amount and none of the six distances it is made of are asked to stretch; it is
+placed rather than simulated while it is held, and released with no velocity.
+Dragging the point still moves only the point.
 
 The room draws through the same Vulkan backend as everything else. Body
 positions reach the device as batch model matrices, so nothing is uploaded or

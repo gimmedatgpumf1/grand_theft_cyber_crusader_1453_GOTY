@@ -23,6 +23,8 @@ constexpr double kCornerRadius = 0.045;
 constexpr double kEdgeHalfWidth = 0.008;
 constexpr double kHalfSize = 0.35;    // the cube is 0.70 m on a side
 constexpr double kStartAngle = 0.30;  // radians, so a corner leads the landing
+constexpr double kPointGrabRadius = 0.14;  // how close the mouse has to be to take it
+constexpr double kGrabMargin = 0.06;       // and to take the cube by its edge
 constexpr int kDistancePasses = 24;   // how hard the corners are pushed apart
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 constexpr std::uint32_t kCubeFaceId = 200, kCubeEdgeId = 210, kCubeCornerId = 220;
@@ -95,6 +97,12 @@ std::size_t findBatch(const GpuScene& scene, std::uint32_t objectId) {
 // are what keeps the cube square instead of letting it fold into a diamond.
 constexpr std::array<std::array<int, 2>, 6> kPairs{{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 2}, {1, 3}}};
 
+// The middle of the four corners. The cube is only its corners, so this is
+// worked out from them rather than stored and kept in step.
+Vec3 centroid(const std::array<Vec3, 4>& corners) {
+    return (corners[0] + corners[1] + corners[2] + corners[3]) * 0.25;
+}
+
 } // namespace
 
 bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
@@ -103,7 +111,7 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     traceFrom_ = traceTo_ = point_;
     ghostCount_ = ghostNext_ = 0;
     accumulator_ = 0;
-    dragging_ = false;
+    dragTarget_ = DragTarget::None;
     resting_ = false;
     haveTrace_ = false;
     pointFrozen_ = false;
@@ -132,22 +140,66 @@ void PlaygroundRoom::setDragRay(Vec3 origin, Vec3 direction) {
     dragDirection_ = {float(direction.x), float(direction.y), float(direction.z), 0};
 }
 
+// Whichever body is under the ray is the one the mouse takes. The point and the
+// cube are both picked by the same rule: the nearest one to where the ray meets
+// the demo plane. Grabbing the cube moves all four of its corners together, so
+// the distances it is made of are never asked to stretch.
 void PlaygroundRoom::beginDrag() {
-    dragging_ = true;
-    pointFrozen_ = false;
-    updateDrag();
-}
-
-// The mouse is a held force, not a physics push: while it holds the point, the
-// point is placed where the ray meets the demo plane and gravity does nothing.
-void PlaygroundRoom::updateDrag() {
-    if (!dragging_) return;
     const Vec3 origin{dragOrigin_[0], dragOrigin_[1], dragOrigin_[2]};
     const Vec3 direction{dragDirection_[0], dragDirection_[1], dragDirection_[2]};
     if (std::abs(direction.z) < 1e-9) return;
     const double distance = (0.0 - origin.z) / direction.z;
     if (!(distance > 0.0)) return;
     const Vec3 hit = origin + direction * distance;
+    const double toPoint = length(Vec3{hit.x - point_.x, hit.y - point_.y, 0});
+    double toCube = 1e9;
+    for (const Vec3& corner : cubePosition_) {
+        toCube = std::min(toCube, length(Vec3{hit.x - corner.x, hit.y - corner.y, 0}));
+    }
+    const Vec3 middle = centroid(cubePosition_);
+    const double toMiddle = length(Vec3{hit.x - middle.x, hit.y - middle.y, 0});
+    if (std::min(toCube, toMiddle) < kHalfSize + kGrabMargin && toCube < toPoint) {
+        dragTarget_ = DragTarget::Cube;
+        planeGrab_ = hit;
+        grabOffset_ = Vec3{middle.x - hit.x, middle.y - hit.y, 0};
+        cubeFrozen_ = false;
+        for (std::size_t i = 0; i < 4; ++i) cubeVelocity_[i] = {};
+    } else if (toPoint < kPointGrabRadius) {
+        dragTarget_ = DragTarget::Point;
+        pointFrozen_ = false;
+    } else {
+        dragTarget_ = DragTarget::None;
+        return;
+    }
+    updateDrag();
+}
+
+// The mouse is a held force, not a physics push: while it holds the point, the
+// point is placed where the ray meets the demo plane and gravity does nothing.
+void PlaygroundRoom::updateDrag() {
+    if (dragTarget_ == DragTarget::None) return;
+    const Vec3 origin{dragOrigin_[0], dragOrigin_[1], dragOrigin_[2]};
+    const Vec3 direction{dragDirection_[0], dragDirection_[1], dragDirection_[2]};
+    if (std::abs(direction.z) < 1e-9) return;
+    const double distance = (0.0 - origin.z) / direction.z;
+    if (!(distance > 0.0)) return;
+    Vec3 hit = origin + direction * distance;
+    if (dragTarget_ == DragTarget::Cube) {
+        // The cube follows the mouse by its centre, so every corner moves by the
+        // same amount and no distance changes. A dragged body has no previous
+        // tick to glide away from.
+        const Vec3 middle = centroid(cubePosition_);
+        const Vec3 center{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
+                          std::max(kSurfaceY, hit.y + grabOffset_.y), 0};
+        const Vec3 move{center.x - middle.x, center.y - middle.y, 0};
+        for (std::size_t i = 0; i < 4; ++i) {
+            cubePosition_[i] += move;
+            cubePrevious_[i] = cubePosition_[i];
+            cubeShown_[i] = cubePosition_[i];
+        }
+        for (std::size_t i = 0; i < 4; ++i) cubeVelocity_[i] = {};
+        return;
+    }
     point_ = {std::clamp(hit.x, -5.0, 5.0), std::max(kSurfaceY, hit.y), 0};
     // A dragged point is not a simulated one: it belongs to the mouse and has
     // no previous tick to glide away from.
@@ -164,12 +216,16 @@ void PlaygroundRoom::updateDrag() {
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
 void PlaygroundRoom::interpolate() {
-    const double alpha = dragging_ || pointFrozen_ || cubeFrozen_ || !sceneReady_
-                             ? 1.0
-                             : std::clamp(accumulator_ / kTick, 0.0, 1.0);
-    shown_ = previous_ + (point_ - previous_) * alpha;
+    // Each body is interpolated on its own. A frozen body is drawn where it is,
+    // but that must never stop a body that is still falling from being spread
+    // over the frames: one shared switch here is exactly what made the point
+    // snap from tick to tick again the moment the cube settled.
+    const double fraction = !sceneReady_ ? 1.0 : std::clamp(accumulator_ / kTick, 0.0, 1.0);
+    const double pointAlpha = pointFrozen_ || dragTarget_ == DragTarget::Point ? 1.0 : fraction;
+    const double cubeAlpha = cubeFrozen_ || dragTarget_ == DragTarget::Cube ? 1.0 : fraction;
+    shown_ = previous_ + (point_ - previous_) * pointAlpha;
     for (std::size_t i = 0; i < 4; ++i) {
-        cubeShown_[i] = cubePrevious_[i] + (cubePosition_[i] - cubePrevious_[i]) * alpha;
+        cubeShown_[i] = cubePrevious_[i] + (cubePosition_[i] - cubePrevious_[i]) * cubeAlpha;
     }
 }
 
@@ -179,7 +235,7 @@ void PlaygroundRoom::tick() {
     // Forces: gravity, m*g, points down in the air. On the plane the surface
     // pushes back with exactly that weight, so the net force is zero and the
     // point stays where it is instead of sinking.
-    const bool supported = dragging_ || resting_;
+    const bool supported = dragTarget_ == DragTarget::Point || resting_;
     const double force = supported ? 0.0 : -kMass * kGravity;
     const double acceleration = force / kMass;
     velocity_.y += acceleration * kTick;
@@ -202,7 +258,7 @@ void PlaygroundRoom::tick() {
         resting_ = point_.y <= kSurfaceY + 1e-9 && velocity_.y <= 0.0;
         traceTo_ = to;
     }
-    if (!dragging_ && resting_ && length(velocity_) < 1e-9) {
+    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9) {
         // No speed and no net force: this point cannot do anything next tick.
         // Freezing also ends the interpolation, so what is drawn is the resting
         // position and not some fraction of the way down the last tick.
@@ -227,6 +283,16 @@ void PlaygroundRoom::tick() {
 // the other three through those distances: that is the whole of the coupling.
 void PlaygroundRoom::tickCube() {
     cubePrevious_ = cubePosition_;
+    if (dragTarget_ == DragTarget::Cube) {
+        // The mouse owns the cube: it is placed, not simulated, so nothing here
+        // may move it or decide it has come to rest.
+        for (std::size_t i = 0; i < 4; ++i) {
+            cubeVelocity_[i] = {};
+            cubePrevious_[i] = cubePosition_[i];
+        }
+        cubeFrozen_ = false;
+        return;
+    }
     std::array<bool, 4> onPlane{};
     for (std::size_t i = 0; i < 4; ++i) {
         const Vec3 from = cubePosition_[i];
@@ -278,7 +344,7 @@ void PlaygroundRoom::tickCube() {
     }
     // Resting on the plane and not moving: there is no force left to resolve, so
     // the cube is frozen and its ticks stop costing anything.
-    if (touching && !moving) {
+    if (touching && !moving && dragTarget_ != DragTarget::Cube) {
         cubeFrozen_ = true;
         for (std::size_t i = 0; i < 4; ++i) {
             cubeVelocity_[i] = {};
@@ -289,7 +355,7 @@ void PlaygroundRoom::tickCube() {
 }
 
 void PlaygroundRoom::freezeCheck() {
-    if (!pointFrozen_ && !dragging_ && resting_ && length(velocity_) < 1e-9 && point_.y <= kSurfaceY) {
+    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 && point_.y <= kSurfaceY) {
         pointFrozen_ = true;
         velocity_ = {};
     }
@@ -297,7 +363,7 @@ void PlaygroundRoom::freezeCheck() {
 
 void PlaygroundRoom::advance(double seconds) {
     if (!(seconds > 0.0) || !std::isfinite(seconds)) return;
-    if (dragging_) updateDrag();
+    if (dragTarget_ != DragTarget::None) updateDrag();
     // One fixed tick per 20 Hz interval, never more than five after a stall.
     accumulator_ = std::min(accumulator_ + seconds, 0.25);
     int ticks = 0;
@@ -305,7 +371,7 @@ void PlaygroundRoom::advance(double seconds) {
         accumulator_ -= kTick;
         // A frozen body has nothing to do: no force, no motion, no work.
         if (!pointFrozen_) tick();
-        else if (!cubeFrozen_) tickCube();
+        else if (!cubeFrozen_ && dragTarget_ != DragTarget::Cube) tickCube();
         ++ticks;
     }
 }
@@ -385,7 +451,7 @@ void PlaygroundRoom::placeMarkers() {
     // still gliding through the last tick, the line runs from the previous
     // position to where that tick's travel was allowed to reach, so the point on
     // screen always sits on the line that was walked.
-    const Vec3 traceStart = dragging_ || !sceneReady_ ? traceFrom_ : previous_;
+    const Vec3 traceStart = dragTarget_ == DragTarget::Point || !sceneReady_ ? traceFrom_ : previous_;
     scene_.batches[traceBatch_].modelMatrix =
         haveTrace_ ? segment(traceStart, traceTo_, kTraceHalfWidth) : translation({0, -1000, 0});
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {

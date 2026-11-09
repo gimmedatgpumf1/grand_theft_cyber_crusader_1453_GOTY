@@ -26,7 +26,7 @@ public:
     void advance(double seconds);
     void setDragRay(Vec3 origin, Vec3 direction);
     void beginDrag();
-    void endDrag() { dragging_ = false; }
+    void endDrag() { dragTarget_ = DragTarget::None; }
     bool render(NativeFrame& frame, const ViewState& view, const RoomFreecam& camera);
     // What is on screen this frame: the point interpolated between the two
     // ticks that bracket it, at the fraction of the tick the frame falls on.
@@ -43,6 +43,8 @@ public:
     bool cubeSettled() const { return cubeFrozen_; }
 
 private:
+    // What the mouse is holding, if anything.
+    enum class DragTarget { None, Point, Cube };
     void tick();
     void tickCube();
     void freezeCheck();
@@ -66,7 +68,9 @@ private:
     std::array<std::size_t, 4> cubeEdgeBatches_{}, cubeCornerBatches_{};
     std::array<std::size_t, 40> ghostBatches_{};
     double accumulator_ = 0;
-    bool sceneReady_ = false, dragging_ = false, resting_ = false, haveTrace_ = false;
+    DragTarget dragTarget_ = DragTarget::None;
+    Vec3 planeGrab_{}, grabOffset_{};
+    bool sceneReady_ = false, resting_ = false, haveTrace_ = false;
     bool pointFrozen_ = false, cubeFrozen_ = false;
 };
 } // namespace gtc::native
