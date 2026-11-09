@@ -21,7 +21,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
         if (world.generation && deviceWaitIdle(device_)!=VK_SUCCESS) return false;
         world.physics.reset(); world.matrixSlots.clear(); world.plan.clear(); world.step=0; world.generation=0;
         const auto getDevice=reinterpret_cast<PFN_vkGetDeviceProcAddr>(getInstanceProcAddr_(instance_,"vkGetDeviceProcAddr"));
-        if (!world.physics.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,
+        if (!world.physics.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,getPhysicalDeviceProperties,
                              gpu_physics::rigid_solver_spirv,rig.bodies,rig.joints,rig.vertices,rig.environment)) {
             std::fprintf(stderr,"[vk] unable to initialize compute physics\n"); return false;
         }

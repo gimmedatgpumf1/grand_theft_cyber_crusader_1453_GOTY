@@ -13,9 +13,15 @@ contacts and joints in a group can update velocities and positions in parallel
 without floating-point atomic writes. Groups execute in order with barriers;
 constraint solving is therefore not fully parallel. Small worlds expose only a
 few simultaneous pairs, and the current code does not distribute one world
-across multiple workgroups.
+across multiple workgroups. Bodies and contact scratch now live in sized storage
+buffers rather than fixed-size workgroup arrays. The former 24-body ceiling is
+removed, but each world still allocates all unordered pairs and processes all
+colors: memory and collision work grow quadratically, and buffer-size limits,
+GPU memory, dispatch time and watchdogs constrain feasible world sizes.
 
-A 1/240 s semi-implicit step uses mass, planar moment of inertia, gravity,
+The intended server tick is 20 Hz (50 ms). This local room subdivides each
+such interval into twelve 1/240 s physics steps; it is not server-authoritative.
+Each semi-implicit step uses mass, planar moment of inertia, gravity,
 unilateral contact impulses, Coulomb friction and point-to-point pin joints.
 Contacts use at most two points per pair. The friction coefficient for a pair
 is the geometric mean of the two surface coefficients. Restitution uses the
@@ -41,9 +47,13 @@ weight of the displaced air and liquid and acts through each displaced-volume
 centroid. The liquid is a horizontal half-plane; clipping the polygon gives the
 submerged area and centroid. Fluid density and flow velocity are parameters.
 Pressure drag on each exposed edge uses a quadratic law and the rigid-body
-velocity at that edge, including rotation; two-point quadrature integrates its
-force and torque. This is an empirical pressure-drag approximation, not a
-fluid simulation: it does not model viscosity, wakes, splashes or waves. The
+velocity at that edge, including rotation. Two quadrature points apply local
+quadratic-drag impulses sequentially, using the exact normal-speed decay with
+frozen coefficient at each point to avoid explicit-Euler reversal at high
+speeds. The splitting and frozen geometry are approximations. This empirical
+pressure-drag model is not a fluid simulation: it does not model viscosity,
+compressibility, wakes, splashes or waves, and is not a validated model at
+100 km/s. The
 seesaw scene uses air density 1.225 kg/m³, water density 1000 kg/m³ when
 selected, friction 0.5, pressure coefficient 1.05, restitution 0.15, and solid
 density 500 kg/m³; the coefficients are illustrative, not measured material
@@ -57,20 +67,24 @@ References:
 - https://www.slideshare.net/slideshow/gpu-rigid-body-simulation-gdc-2013/20212240
 - https://box2d.org/posts/2023/01/starting-box2d-3.0/
 - https://www.gamedevs.org/uploads/continuous-collision-detection-and-physics.pdf
+- https://box2d.org/files/ErinCatto_ContinuousCollision_GDC2013.pdf
+- https://www.sfu.ca/~boal/211lecs/211lec4.pdf
 
 ## Remaining limitations
 
-This is not yet a general, complete physics engine. It has a 24-body limit per
-world and supports single convex polygons of up to 16 vertices, not arbitrary
-concave or compound shapes. The approximate continuous collision handling does
-not guarantee against tunneling. Fixed iterations and position projection can
-introduce energy and multi-contact errors. Only pin joints are implemented.
-There is no full fluid solver. At most eight physics steps are submitted per
-rendered frame; up to a quarter-second backlog is retained, after which excess
-time is dropped. The workgroup uses close to the Vulkan minimum shared-memory
-limit; real device compatibility, Windows, integrated-GPU performance and
-long-term stability are unverified. SwiftShader Vulkan images were inspected for
-the dry and flooded seesaw, drag, reset, and two fast-impact scenarios; these
+This is not yet a general, complete physics engine. It supports single convex
+polygons of up to 16 vertices, not arbitrary concave or compound shapes. The
+approximate continuous collision handling does not guarantee against tunneling,
+including when a collision changes another body's motion within the same step.
+It needs event-ordered collision resolution with recomputation and a conservative
+fallback when rotation queries do not converge. Fixed iterations and position
+projection can introduce energy and multi-contact errors. Only pin joints are
+implemented. There is no full fluid solver. At most eight physics steps are
+submitted per rendered frame; up to a quarter-second backlog is retained, after
+which excess time is dropped. Real device compatibility, Windows, integrated-GPU
+performance and long-term stability are unverified. SwiftShader Vulkan images
+were inspected for dry and flooded seesaws, a 41-body world and an isolated
+100 km/s, zero-restitution box striking a thin platform in vacuum. These
 observations are not proof of general correctness.
 
 Rebuild shader modules with a Vulkan GLSL compiler, then run

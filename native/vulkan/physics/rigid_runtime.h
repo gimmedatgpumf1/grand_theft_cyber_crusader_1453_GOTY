@@ -26,6 +26,7 @@ public:
     bool create(VkPhysicalDevice physical, VkDevice device,
                 PFN_vkGetDeviceProcAddr getDeviceProcAddr,
                 PFN_vkGetPhysicalDeviceMemoryProperties getMemoryProperties,
+                PFN_vkGetPhysicalDeviceProperties getProperties,
                 std::span<const std::uint32_t> shader,
                 std::span<const Body> bodies, std::span<const Joint> joints,
                 std::span<const std::array<float,4>> vertices, const FluidEnvironment& environment);

@@ -43,12 +43,14 @@ bool RigidRuntime::makeBuffer(Buffer& out, VkDeviceSize size, const void* data, 
 bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
                           PFN_vkGetDeviceProcAddr getDeviceProcAddr,
                           PFN_vkGetPhysicalDeviceMemoryProperties getMemoryProperties,
+                          PFN_vkGetPhysicalDeviceProperties getProperties,
                           std::span<const std::uint32_t> shader,
                           std::span<const Body> bodies, std::span<const Joint> joints,
                           std::span<const std::array<float,4>> vertices, const FluidEnvironment& environment) {
     reset();
-    if (!physical || !device || !getDeviceProcAddr || !getMemoryProperties ||
-        shader.size()<5 || shader[0]!=0x07230203u || bodies.empty() || bodies.size()>24 || joints.size()>256) return false;
+    if (!physical || !device || !getDeviceProcAddr || !getMemoryProperties || !getProperties ||
+        shader.size()<5 || shader[0]!=0x07230203u || bodies.empty() ||
+        bodies.size()>std::numeric_limits<std::int32_t>::max() || joints.size()>std::numeric_limits<std::int32_t>::max()) return false;
     for (float v:environment.medium) if (!std::isfinite(v)) return false;
     for (float v:environment.velocity) if (!std::isfinite(v)) return false;
     if (environment.medium[0]<0 || environment.medium[1]<0) return false;
@@ -73,6 +75,15 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     }
     for (const Joint& j:joints) if (j.bodies[0]>=bodies.size() || j.bodies[1]>=bodies.size() || j.bodies[0]==j.bodies[1]) return false;
     const auto count=bodies.size();
+    // Scratch contains a four-word drag state, twelve words per unordered
+    // pair and four per body. Reject only arithmetic/device resource limits.
+    const std::uint64_t n=count;
+    if (n*(n-1)>std::numeric_limits<std::uint32_t>::max()) return false;
+    const std::uint64_t words=4+n*(n-1)/2*12+n*4;
+    if (words>std::numeric_limits<std::uint32_t>::max()) return false;
+    VkPhysicalDeviceProperties properties{};getProperties(physical,&properties);
+    const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),vertices.size_bytes(),words*sizeof(std::uint32_t)};
+    for (VkDeviceSize size:sizes) if (std::max<VkDeviceSize>(size,16)>properties.limits.maxStorageBufferRange) return false;
     device_=device;
 #define LOAD(member, name) member=reinterpret_cast<decltype(member)>(getDeviceProcAddr(device_,name)); if (!member) { reset(); return false; }
     LOAD(createBuffer_,"vkCreateBuffer")
@@ -103,9 +114,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     LOAD(cmdPipelineBarrier_,"vkCmdPipelineBarrier")
 #undef LOAD
     getMemoryProperties(physical,&memory_);
-    const std::array<std::uint32_t,4> scratch{};
-    const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),vertices.size_bytes(),sizeof(scratch)};
-    const void* data[4]={bodies.data(),joints.data(),vertices.data(),scratch.data()};
+    const void* data[4]={bodies.data(),joints.data(),vertices.data(),nullptr};
     for (std::size_t i=0;i<buffers_.size();++i)
         if (!makeBuffer(buffers_[i],sizes[i],data[i])) { reset(); return false; }
 
