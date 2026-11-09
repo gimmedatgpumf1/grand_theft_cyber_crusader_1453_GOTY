@@ -8,7 +8,6 @@
 #include "client/skeleton_blue_toe_motion.h"
 #include "client/threadpool.h"
 #include "client/ui_layer.h"
-#include "vulkan/physics/rigid_timing.h"
 
 #include <thread>
 
@@ -26,13 +25,7 @@ constexpr double kRoomHalf = 6.0;
 constexpr double kRoomHeight = 3.0;
 constexpr double kTile = 1.0;
 
-Vec3 structureCenter(const SkeletonModel& model, int index) {
-    if (index<0) return {};
-    const auto& part=model.sourceStructures()[static_cast<std::size_t>(index)];
-    const auto& points=model.bones()[part.group].points; Vec3 result;
-    for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) result+=points[i];
-    return part.pointCount ? result/static_cast<double>(part.pointCount) : result;
-}
+
 Vec3 transformed(const std::array<double,16>& m, Vec3 p) {
     return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
             m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
@@ -155,7 +148,7 @@ bool SkeletonRoom::load(const std::string& root, std::string& error) {
 }
 
 bool SkeletonRoom::adjustReferenceGroup(int key, double degrees, int fingerJoint) {
-    if (!ready_ || physicsRig_ || !std::isfinite(degrees)) return false;
+    if (!ready_ || !std::isfinite(degrees)) return false;
     // Keys select concrete anatomical groups; there is no hidden joint-selection
     // mode. Every finger/toe can be moved independently of its neighbours.
     int digit = key >= '1' && key <= '5' ? key-'0' :
@@ -238,7 +231,7 @@ bool SkeletonRoom::restoreReferencePose() {
     if (!ready_) return false;
     originalToePose_=false; originalToeEditsVisible_=false;
     maleComparison_.setToeAttachmentsEnabled(true); femaleComparison_.setToeAttachmentsEnabled(true);
-    endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if(!captureManualToeReference(male_,toeEdits_,true,maleManualToes_) ||
        !captureManualToeReference(female_,toeEdits_,false,femaleManualToes_))return false;
@@ -278,7 +271,7 @@ bool SkeletonRoom::restoreOriginalPose() {
     originalToePose_=true; originalToeEditsVisible_=false;
     maleComparison_.setToeAttachmentsEnabled(false); femaleComparison_.setToeAttachmentsEnabled(false);
     maleComparison_.setToeSkinCalibration({});femaleComparison_.setToeSkinCalibration({});
-    endDrag(); physicsRig_.reset(); physicsSteps_=0; physicsTime_=0; lineSceneReady_=false;
+    lineSceneReady_=false;
     male_.clearDynamicSourcePose(); female_.clearDynamicSourcePose();
     if (!ready_ || !male_.restoreSourcePose() || !female_.restoreSourcePose()) return false;
     maleFloor_=0.10-minimumY(male_); femaleFloor_=0.10-minimumY(female_);
@@ -398,33 +391,6 @@ bool SkeletonRoom::loadToeEdits() {
     toeEditError_.clear();++toeEditRevision_;cachedPose_=-1;return true;
 }
 
-bool SkeletonRoom::toggleRagdoll() {
-    if (!ready_) return false;
-    if (physicsRig_) return restoreReferencePose();
-    auto simulation=std::make_unique<GpuSkeletonRig>();
-    std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
-    const auto maleBluePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
-    const auto femaleBluePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
-    const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
-    const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
-    if (!buildGpuSkeletonRig(male_,{-0.95,maleFloor_,0},maleComparison_,
-                             female_,{0.95,femaleFloor_,0},femaleComparison_,maleBluePose,femaleBluePose,maleJoints,femaleJoints,maleWhite,femaleWhite,*simulation,error_)) return false;
-    physicsGeneration_=nextPhysicsGeneration();
-    physicsSteps_=0; physicsTime_=0; physicsRig_=std::move(simulation);
-    lineSceneReady_=false;
-    return true;
-}
-
-void SkeletonRoom::advanceRagdoll(double seconds) {
-    if (!physicsRig_ || !std::isfinite(seconds) || seconds<=0) return;
-    // At most two steps per rendered frame: otherwise a slow GPU causes a
-    // catch-up spiral in which each late frame queues even more physics work.
-    constexpr double hz=gpu_physics::kPhysicsHz;
-    physicsTime_+=std::min(seconds,2.0/hz);
-    const auto steps=static_cast<std::uint64_t>(physicsTime_*hz);
-    physicsTime_-=double(steps)/hz;
-    physicsSteps_+=steps;
-}
 
 void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam) {
     Camera camera = freecam ? freecam->camera(view.width, view.height, view.gpu) : Camera{};
@@ -438,12 +404,6 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         camera.worldSpaceGpu = view.gpu;
     }
     const auto submit = [&](GpuScene& scene) {
-        scene.physicsRig=physicsRig_.get();
-        scene.physicsGeneration=physicsGeneration_; scene.physicsSteps=physicsSteps_;
-        scene.physicsDragging=dragging_ && bool(physicsRig_);
-        scene.physicsDragSequence=dragSequence_;
-        scene.physicsDragOrigin=dragOrigin_; scene.physicsDragDirection=dragDirection_;
-        scene.physicsLineView=lineView_ && bool(physicsRig_);
         scene.maleSkinCount=static_cast<std::uint32_t>(male_.sourceStructures().size());
         scene.femaleSkinCount=static_cast<std::uint32_t>(female_.sourceStructures().size());
         const std::size_t worldCount=scene.batches.size();
@@ -464,19 +424,19 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 Rasterizer raster(camera.width, camera.height, colorHex("#0d1210"), camera.focal(), true);
                 raster.setCamera(camera);
                 drawFloor(raster, camera); drawWalls(raster, camera);
-                maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),bool(physicsRig_));
-                femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),bool(physicsRig_));
+                maleDisplayLines_.draw(raster, {-0.95, maleFloor_, 0}, 0.0, 9001, male_.sourceMatrices({},0),false);
+                femaleDisplayLines_.draw(raster, {0.95, femaleFloor_, 0}, 0.0, 8001, female_.sourceMatrices({},0),false);
                 std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
                 const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
                 const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
-                maleComparison_.draw(raster,-2.85,12000,physicsRig_ ? nullptr : &maleToePose,bool(physicsRig_));
-                femaleComparison_.draw(raster,2.85,14000,physicsRig_ ? nullptr : &femaleToePose,bool(physicsRig_));
+                maleComparison_.draw(raster,-2.85,12000,&maleToePose,false);
+                femaleComparison_.draw(raster,2.85,14000,&femaleToePose,false);
                 const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
                 const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
-                joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite,physicsRig_.get());
-                joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001,nullptr,nullptr,&femaleWhite,physicsRig_.get());
-                joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints,physicsRig_.get());
-                joint_view::draw(raster,female_,{2.85,0.10,0},14000,&femaleComparison_,&femaleToePose,&femaleJoints,physicsRig_.get());
+                joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite);
+                joint_view::draw(raster,female_,{0.95,femaleFloor_,0},8001,nullptr,nullptr,&femaleWhite);
+                joint_view::draw(raster,male_, {-2.85,0.10,0},12000,&maleComparison_,&maleToePose,&maleJoints);
+                joint_view::draw(raster,female_,{2.85,0.10,0},14000,&femaleComparison_,&femaleToePose,&femaleJoints);
                 lineScene_ = raster.takeGpuScene();
                 lineScene_.revision = ++revision_;
                 lineMalePoseRevision_=male_.sourcePoseRevision();

@@ -47,7 +47,7 @@ public:
         button(f,l,10,276,90,"EDITS");
         text(f,l,110,279,room.originalToePose()?"B: SOURCE EDITOR":"STAND: PREVIEW");
         const auto message=!status_.empty()?status_:!room.toeEditError().empty()?room.toeEditError():
-            room.toeEditingAvailable()?"Edit WHITE B; STAND previews both blue feet.":"Press STAND to exit ragdoll.";
+            room.toeEditingAvailable()?"Edit WHITE B; STAND previews both blue feet.":"Skeleton room unavailable.";
         text(f,l,10,305,message);
         text(f,l,10,329,"B: original. EDITS: show your saved edits.");
     }
@@ -77,16 +77,16 @@ public:
                 if(axis>=0) {
                     if(edit_.blue || !room.originalToePose())status_="Edit WHITE in B, then preview STAND.";
                     else {auto edit=edit_;edit.axis=axis;edit.amount=sign*(axis<3?rotationStep():moveStep());
-                        if(!room.editToe(edit))status_="Cannot edit bone (check ragdoll).";}
+                        if(!room.editToe(edit))status_="Cannot edit bone.";}
                 }
             }
         } else if(hit(10,248,80)) {if(!room.undoToeEdit(true))status_="No source edits to undo.";}
         else if(hit(94,248,108)) {
             if(edit_.blue)status_="Select the edited WHITE foot to reset.";
-            else if(!room.resetToeEdits(edit_,true))status_="Cannot reset during ragdoll.";
+            else if(!room.resetToeEdits(edit_,true))status_="Cannot reset bone.";
         }
         else if(hit(206,248,65)) status_=room.saveToeEdits()?"Saved toe-bone-edits.txt":"Save failed: check folder permissions.";
-        else if(hit(275,248,65)) status_=room.loadToeEdits()?"Loaded toe-bone-edits.txt":"Load failed: check file or ragdoll.";
+        else if(hit(275,248,65)) status_=room.loadToeEdits()?"Loaded toe-bone-edits.txt":"Load failed: check file.";
         else if(hit(344,248,70)) {if(!room.restoreReferencePose())status_="Could not restore standing pose.";}
         else if(hit(10,276,90)) {if(!room.showOriginalToeEdits())status_="Press B first to show original edits.";}
         return true;

@@ -1,5 +1,5 @@
 #include "vk_internal.h"
-#include "../client/skeleton_gpu_rig.h"
+#include "../client/planar_gpu_scene.h"
 #include "physics/rigid_solver_spirv.h"
 #include "physics/rigid_skin_spirv.h"
 #include "physics/rigid_timing.h"
@@ -22,7 +22,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
         world.physics.reset(); world.matrixSlots.clear(); world.plan.clear(); world.step=0; world.generation=0;
         const auto getDevice=reinterpret_cast<PFN_vkGetDeviceProcAddr>(getInstanceProcAddr_(instance_,"vkGetDeviceProcAddr"));
         if (!world.physics.create(physical_,device_,getDevice,getPhysicalDeviceMemoryProperties,
-                             gpu_physics::rigid_solver_spirv,rig.bodies,rig.joints,rig.spheres,rig.exclusions,rig.batches)) {
+                             gpu_physics::rigid_solver_spirv,rig.bodies,rig.joints,rig.vertices)) {
             std::fprintf(stderr,"[vk] unable to initialize compute physics\n"); return false;
         }
         world.generation=scene.physicsGeneration;
@@ -47,23 +47,13 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
     matrixSlots.reserve(rig.bindings.size()); bindings.reserve(rig.bindings.size());
     for (const auto& binding:rig.bindings) {
         std::uint32_t slot=0;
-        const bool maleLine=scene.physicsLineView && binding.objectId>=9001 && binding.objectId<9001+scene.maleSkinCount;
-        const bool femaleLine=scene.physicsLineView && binding.objectId>=8001 && binding.objectId<8001+scene.femaleSkinCount;
-        if (maleLine) slot=binding.objectId-9001;
-        else if (femaleLine) slot=scene.maleSkinCount+binding.objectId-8001;
-        else {
-            const auto found=byObject.find(binding.objectId);
-            if (found==byObject.end()) { std::fprintf(stderr,"[vk] missing physics batch %u\n",binding.objectId); return false; }
-            slot=found->second;
-        }
+        const auto found=byObject.find(binding.objectId);
+        if (found==byObject.end()) { std::fprintf(stderr,"[vk] missing physics batch %u\n",binding.objectId); return false; }
+        slot=found->second;
         if (slot>=kBatchSlots) return false;
         matrixSlots.push_back(slot);
         gpu_physics::SkinBinding skin;
         skin.localFromMesh=binding.localFromMesh;
-        if (maleLine || femaleLine) {
-            const auto& p=rig.bodies[binding.body].positionMass;
-            skin.localFromMesh={1,0,0,0,0,1,0,0,0,0,1,0,-p[0],-p[1],-p[2],1};
-        }
         skin.indices={binding.body,slot,0,0};
         bindings.push_back(skin);
     }

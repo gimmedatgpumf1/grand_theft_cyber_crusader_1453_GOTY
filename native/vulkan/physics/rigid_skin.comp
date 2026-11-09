@@ -9,11 +9,8 @@ struct Body {
     vec4 linearVelocity;
     vec4 angularVelocity;
     vec4 inverseInertia;
-    vec4 previousPosition;
-    vec4 previousRotation;
-    uvec4 samples;
-    vec4 bounds;
     uvec4 shapes;
+    vec4 material;
 };
 struct Binding {
     mat4 localFromMesh;

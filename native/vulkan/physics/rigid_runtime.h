@@ -28,9 +28,7 @@ public:
                 PFN_vkGetPhysicalDeviceMemoryProperties getMemoryProperties,
                 std::span<const std::uint32_t> shader,
                 std::span<const Body> bodies, std::span<const Joint> joints,
-                std::span<const std::array<float,4>> spheres,
-                std::span<const std::uint32_t> exclusions,
-                std::span<const JointBatch> batches);
+                std::span<const std::array<float,4>> vertices);
     // command must be recording on a compute-capable queue, outside a render
     // pass. Call once per fixed step. The owner must serialize uses of this
     // state across submissions and apply a vertex-stage dependency before draw.
@@ -53,7 +51,6 @@ private:
     bool makeBuffer(Buffer& out, VkDeviceSize size, const void* data, VkBufferUsageFlags extraUsage=0);
     void resetSkin();
     void barrier(VkCommandBuffer command, VkPipelineStageFlags destination, bool indirectSource=false) const;
-    void dispatch(VkCommandBuffer command, const Step& step) const;
     VkDevice device_=VK_NULL_HANDLE;
     VkPhysicalDeviceMemoryProperties memory_{};
     std::array<Buffer,4> buffers_{};
@@ -62,9 +59,7 @@ private:
     VkDescriptorSet set_=VK_NULL_HANDLE;
     VkPipelineLayout layout_=VK_NULL_HANDLE;
     VkPipeline pipeline_=VK_NULL_HANDLE;
-    std::uint32_t bodyCount_=0, islandCount_=0;
-    VkDeviceSize indirectOffset_=0;
-    std::vector<JointBatch> batches_;
+    std::uint32_t bodyCount_=0, jointCount_=0;
     Buffer skinBindings_{};
     VkDescriptorSetLayout skinSetLayout_=VK_NULL_HANDLE;
     VkDescriptorPool skinPool_=VK_NULL_HANDLE;

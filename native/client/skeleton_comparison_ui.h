@@ -17,7 +17,7 @@ public:
         if (!open_) return;
         frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex(hexRgb("#10212c")),0.83);
         drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex(hexRgb("#9dceff")),20);
-        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,room.ragdollActive()?"Esc: cursor   Tab: hide   RMB: look   LMB: drag":"Esc: cursor   Tab: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
+        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   Tab: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
         button(frame,l.x+l.w-84,l.y+30,74,"RESET");

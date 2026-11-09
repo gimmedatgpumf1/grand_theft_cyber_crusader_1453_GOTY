@@ -7,7 +7,7 @@
 // with the matrix read out of a device buffer.
 
 #include "vk_internal.h"
-#include "../client/skeleton_gpu_rig.h"
+#include "../client/planar_gpu_scene.h"
 
 #include <cstdio>
 #include <cstring>
@@ -101,7 +101,7 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         // alone rather than split: a body of bones is one draw or no draw.
         const bool physicsSingle=last==index && scene.physicsRig &&
             std::any_of(scene.physicsRig->bindings.begin(),scene.physicsRig->bindings.end(),
-                        [&](const GpuSkeletonBinding& binding) { return binding.objectId==scene.batches[index].objectId; });
+                        [&](const GpuPlanarBinding& binding) { return binding.objectId==scene.batches[index].objectId; });
         const bool skinSingle=last==index && scene.batches[index].skinOwner;
         if ((last == index && !physicsSingle && !skinSingle) || slot + (last - index + 1) > kBatchSlots) {
             index = last + 1;

@@ -4,7 +4,6 @@
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_toe_attachment.h"
 #include "client/skeleton_toe_limits.h"
-#include "client/skeleton_gpu_rig.h"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -43,7 +42,7 @@ inline Vec3 point(const std::array<double,16>& m,Vec3 p) {
 inline Vec3 turn(Vec3 axis,double angle,Vec3 p) {return frameVector(joint_detail::rotate(axis,angle),p);}
 inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uint32_t id,
                  const SkeletonComparison* blue=nullptr,const std::vector<std::array<double,16>>* bluePose=nullptr,
-                 const std::vector<ComparisonToeAttachment>* toeJoints=nullptr,const GpuSkeletonRig* physics=nullptr) {
+                 const std::vector<ComparisonToeAttachment>* toeJoints=nullptr) {
     const auto* rig=model.sourceRig();const auto& parts=model.sourceStructures();const auto& mapping=model.sourceBodyMap();
     if(!rig || mapping.size()!=parts.size() || (blue && (!bluePose || bluePose->size()!=parts.size())))return;
     const auto pose=model.sourceMatrices({},0);if(pose.size()!=parts.size())return;
@@ -72,11 +71,6 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         std::erase_if(pivots,[&](const auto& old){return old.parent==mark.parent && old.child==mark.child;});
         pivots.push_back(mark);
     }
-    std::vector<int> physicsBody(parts.size(),-1);
-    if(physics)for(const auto& binding:physics->bindings)
-        if(binding.objectId>=id && binding.objectId-id<parts.size())
-            physicsBody[binding.objectId-id]=int(binding.body);
-    std::set<std::pair<int,int>> shown;
     Mesh arcs,needles;
     for(std::size_t node=1;node<rig->size();++node) {
         const auto parent=rig->parent(node);const auto* joint=rig->joint(node);
@@ -103,21 +97,6 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const double angle=toeBend ? toeBend->flexion : joint->angles().empty()?0:joint->angles()[0];
         double minimum=range.minimum,maximum=range.maximum;
         bool hinge=bool(toeBend) || joint->axes().size()==1;
-        if(physics) {
-            const int a=physicsBody[pi],b=physicsBody[ci];
-            if(a<0 || b<0 || a==b || !shown.insert(std::minmax(a,b)).second)continue;
-            const gpu_physics::Joint* actual=nullptr;
-            for(const auto& candidate:physics->joints)
-                if(candidate.bodies[0]==std::uint32_t(a) && candidate.bodies[1]==std::uint32_t(b) && candidate.bodies[2]<2) {
-                    actual=&candidate;break;
-                }
-            if(!actual)continue;
-            const auto& position=physics->bodies[std::size_t(a)].positionMass;
-            center={position[0]+actual->parentAnchor[0],position[1]+actual->parentAnchor[1],position[2]+actual->parentAnchor[2]};
-            axis={actual->parentAxis[0],actual->parentAxis[1],actual->parentAxis[2]};
-            minimum=angle+actual->parentAxis[3];maximum=angle+actual->childAxis[3];
-            hinge=actual->bodies[2]==1;
-        }
         if(length(axis)<1e-8)continue;
         axis=normalized(axis);
         const Vec3 target=blue?blueCenter[ci]:rawCenter[ci]+origin;
@@ -154,17 +133,7 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
     Material active;active.color=colorHex("#fff0be");active.unlit=true;
     const auto emit=[&](Mesh& mesh,const Material& material) {
         if(mesh.vertices.empty())return;
-        if(physics && blue) {
-            // Blue rigid-body matrices accept unposed comparison coordinates.
-            for(std::size_t i=0;i<mesh.vertices.size();++i) {
-                const auto owner=std::size_t(mesh.owners[i]-int(id));
-                const auto inverse=joint_detail::inverse(toeRigid((*bluePose)[owner]));
-                mesh.vertices[i]=frameVector(inverse,mesh.vertices[i])+inverse.translation;
-            }
-            out.setObject(0,{},0);out.meshObjectSkinned(mesh.vertices,mesh.faces,mesh.owners,material);
-        } else if(physics) {
-            out.setObject(id,{},0);out.meshSkinned(mesh.vertices,mesh.faces,mesh.owners,material);
-        } else {out.setObject(0,{},0);out.mesh(mesh.vertices,mesh.faces,material);}
+        out.setObject(0,{},0);out.mesh(mesh.vertices,mesh.faces,material);
         // Inspection markers must remain visible even when the calibrated
         // pivot lies inside an opaque bone or a fitted V-view joint ball.
         out.markOverlay();
