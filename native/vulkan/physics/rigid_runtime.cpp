@@ -64,12 +64,20 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         if (excluded(a,b)!=excluded(b,a)) return false;
     for (const Body& body:bodies) {
         if (std::uint64_t(body.samples[0])+body.samples[1]>spheres.size() ||
-            (body.positionMass[3]>0 && !body.samples[1])) return false;
+            (body.positionMass[3]>0 && !body.samples[1]) || !body.shapes[1] ||
+            std::uint64_t(body.shapes[0])+std::uint64_t(body.shapes[1])*2>spheres.size()) return false;
         for (const auto* values:{&body.positionMass,&body.rotation,&body.linearVelocity,
                                  &body.angularVelocity,&body.inverseInertia})
             for (float value:*values) if (!std::isfinite(value)) return false;
         if (body.positionMass[3]<0 || body.inverseInertia[0]<0 || body.inverseInertia[1]<0 ||
             body.inverseInertia[2]<0 || body.inverseInertia[3]<0) return false;
+        for (std::size_t i=body.shapes[0];i<std::size_t(body.shapes[0])+2u*body.shapes[1];i+=2) {
+            const auto& p=spheres[i]; const auto& e=spheres[i+1];
+            for (int k=0;k<3;++k) if (!std::isfinite(p[k]) || !std::isfinite(e[k]) || e[k]<0) return false;
+            const float x=std::abs(p[0])+e[0],y=std::abs(p[1])+e[1],z=std::abs(p[2])+e[2];
+            const float radius=std::sqrt(x*x+y*y+z*z);
+            if (radius>body.inverseInertia[3]+1e-4f) return false;
+        }
         const auto& q=body.rotation;
         const float q2=q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3];
         if (std::abs(q2-1.0f)>1e-3f) return false;
@@ -222,7 +230,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     // Build an independent, local-axis-sorted sample range for each body.
     // Ranges provided by callers may overlap, so never sort them in place.
     std::uint64_t sampleCount=0;
-    for (const Body& body:prepared) sampleCount+=body.samples[1];
+    for (const Body& body:prepared) sampleCount+=body.samples[1]+2u*body.shapes[1];
     if (sampleCount>std::numeric_limits<std::uint32_t>::max()) { reset(); return false; }
     std::vector<std::array<float,4>> sortedSamples;
     sortedSamples.reserve(static_cast<std::size_t>(sampleCount));
@@ -243,6 +251,20 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         body.samples[0]=static_cast<std::uint32_t>(sortedSamples.size()-body.samples[1]);
         auto begin=sortedSamples.begin()+body.samples[0];
         std::stable_sort(begin,sortedSamples.end(),[axis](const auto& a,const auto& b) { return a[axis]<b[axis]; });
+        const auto shapeFirst=body.shapes[0];
+        body.shapes[0]=static_cast<std::uint32_t>(sortedSamples.size());
+        std::vector<std::uint32_t> cells(body.shapes[1]);
+        for (std::uint32_t i=0;i<body.shapes[1];++i) cells[i]=i;
+        std::stable_sort(cells.begin(),cells.end(),[&](auto a,auto b) {
+            return spheres[shapeFirst+2u*a][axis]<spheres[shapeFirst+2u*b][axis];
+        });
+        body.bounds[3]=0;
+        for (auto cell:cells) {
+            const auto& p=spheres[shapeFirst+2u*cell]; const auto& e=spheres[shapeFirst+2u*cell+1u];
+            for (int k=0;k<3;++k) body.bounds[k]=std::max(body.bounds[k],std::abs(p[k])+e[k]);
+            body.bounds[3]=std::max(body.bounds[3],e[axis]);
+            sortedSamples.push_back(p); sortedSamples.push_back(e);
+        }
     }
     // Scratch corrections and exclusions share one storage descriptor so the
     // shader fits the Vulkan 1.0 minimum of four per-stage storage buffers.

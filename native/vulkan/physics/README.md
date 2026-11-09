@@ -9,51 +9,35 @@ older Bullet sources and Bullet-specific historical tooling remain in the tree.
 The historical test and measurement build commands still reference the old room
 API and source lists and need migration to the new GPU path.
 
-This is **not a PhysX-equivalent engine**. The solver uses graph-coloured joint
-constraints, approximate angular limits, floor support and sphere-proxy contacts.
-Room rigs use a coarser proxy grid with at most 64 cells per body; rendered bones
-are unchanged, but collision shapes are less precise. Contact search uses four
-GPU lanes per body, conservative world-space bounds, and a parallel bitset broad
-phase to avoid repeatedly searching distant proxies.
-Sphere proxies are sorted once along each body's longest local axis; the narrow
-phase searches only a conservative interval without changing the proxy shapes.
-Pair transforms are composed once per candidate rather than twice per proxy,
-floor scanning projects proxy centres directly onto the floor normal instead
-of rotating every point in full, and per-step damping factors are computed once
-on the host instead of as exponentials for every body.
-It runs two contact searches per eight joint iterations, halving contact searches
-and their associated dispatches relative to the previous schedule. Independent joint
-islands execute two coloured joint/floor passes per workgroup dispatch, using
-workgroup barriers between colours; cross-island contacts remain global. This
-reduces dispatch overhead, but limits parallelism when there are few islands;
-its effect on integrated-GPU frame rate is not yet measured. An ordinary
-per-colour dispatch path remains for unsupported schedules. Fewer contact
-iterations reduce work but can reduce contact convergence. Toe hinges receive a
-final parent-to-child projection on the GPU after contacts, and before the first
-rendered R frame as well as after each simulation step. This reconstructs the
-child rotation within its hinge bounds and joins its marked anchors to float
-precision; other joint types still use the iterative solve. Toe projection takes
-priority over contact separation, so a collision can remain penetrating. The
-shaft-derived hinge direction is an approximation rather than a measured joint
-axis. The solver dissipates
-velocity from projection corrections and uses a non-bouncing floor. Floor and
-body contacts apply bounded friction. Body penetration correction is capped and
-kept out of reconstructed velocity to reduce energy injected into piles. A
-sleeping body acts immovable until it is woken. Joint islands supported by the
-floor or another figure can sleep on the GPU after two quiet half-second windows;
-the quiet threshold is deliberately tolerant of small solver jitter. An approaching
-impact or a grab can wake them, and resetting R rebuilds the rig. Sleeping bodies
-skip joint and contact work, and GPU-generated indirect
-dispatches skip those phases altogether while every island sleeps. The friction,
-impact damping, sleep thresholds and wake-up heuristic are approximations, not
-a general-purpose contact-island sleep system; slow impacts can fail to wake a
-sleeper. In the room, after R starts the ragdolls, left-click and drag a bone; with
-the cursor released, right-click returns to camera look. Picking and the drag
-constraint execute on the GPU without per-frame pose readback.
-The broad phase still scans all body pairs; it and the overlapping-proxy exclusions
-need further work. Limits, collisions, settling and body stability have not been
-fully validated. The current approximation can produce contorted poses. Replacing
-or expanding this solver requires further visual and physical validation.
+This is **not a PhysX-equivalent engine**. The shared Vulkan contact path uses
+oriented box cells, the same code for all bodies. The Playground beam and loose
+blocks use their actual box dimensions; the triangular support is a stepped
+approximation. Skeleton collision cells are fitted to occupied mesh-vertex
+cells (up to 64 per body), not an exact triangle mesh or a volumetric anatomical
+model. Rig construction still uses spheres for its initial overlap exclusions
+and approximate rib attachment search, not for runtime body or floor contacts.
+The broad phase uses conservative bounds and a per-body bitset; cell ranges are
+sorted by their longest axis for narrow-phase culling. Picking uses the same
+oriented cells. No CPU pose readback is required for simulation or picking.
+
+Every simulation step uses eight joint/floor passes and two contact searches.
+Body contacts use one representative point per pair, bounded position
+correction and friction; they are not a full contact manifold or continuous
+collision detection. The final articulated graph reconstruction enforces the
+existing joint constraints, then adjusts the previous pose by the reconstruction
+correction so that this repair is not treated as extra velocity. This does not
+make the solver physically exact or guarantee stability. SwiftShader Vulkan
+captures showed improved initial cube/plank contact and fewer violent early
+skeleton kicks, but the fallen skeletons continued drifting and interacting
+unnaturally after several seconds. Settling and energy behavior remain open.
+Dragging and releasing a block and a skeleton were inspected visually. No
+claim is made that fast impacts, all contact configurations, strict joints,
+concave bone shapes or long-term stability are solved.
+
+The checked-in SPIR-V can be rebuilt with a Vulkan GLSL compiler. For example,
+`glslangValidator -V --target-env vulkan1.0 -Inative/vulkan/physics -o native/vulkan/physics/rigid_solver.comp.spv native/vulkan/physics/rigid_solver.comp`
+and the corresponding command for `rigid_skin.comp`, followed by
+`python3 native/vulkan/physics/make_compute_headers.py`.
 
 The room path was inspected using SwiftShader's software Vulkan implementation,
 not a physical GPU. Windows/MSVC, integrated-GPU compatibility and performance

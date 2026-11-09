@@ -27,9 +27,9 @@ Vec3 direction(const JointRigidTransform& t, Vec3 p) {
             t.rotation[6]*p.x+t.rotation[7]*p.y+t.rotation[8]*p.z};
 }
 
-// Approximate a body's collision mesh by small spheres covering occupied cells.
-// These are deliberately proxies, not a triangle-accurate collision model.
-// Original bone vertices remain unchanged for drawing.
+// Derive occupied collision cells from each body's mesh vertices. Cell boxes
+// are shape-following approximations, not triangle-accurate collision meshes.
+// Sphere samples are retained only for rig setup and pre-existing exclusions.
 bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& center, double minimumMass) {
     if (points.empty()) return false;
     Vec3 low=points.front(), high=low;
@@ -79,6 +79,19 @@ bool makeBody(const std::vector<Vec3>& points, GpuSkeletonRig& result, Vec3& cen
         body.bounds[2]=std::max(body.bounds[2],float(std::abs(local.z)+radius));
     }
     body.samples[1]=static_cast<std::uint32_t>(result.spheres.size()-body.samples[0]);
+    // Collision cells use their local extents rather than rounded spheres.
+    // The bone's detailed surface is approximated by this occupied-cell grid.
+    body.shapes[0]=static_cast<std::uint32_t>(result.spheres.size());
+    for (const auto& cell:cells) if (cell.used) {
+        const Vec3 local=(cell.low+cell.high)*0.5-center;
+        const Vec3 e=(cell.high-cell.low)*0.5+Vec3{0.001,0.001,0.001};
+        result.spheres.push_back(packed(local)); result.spheres.push_back(packed(e));
+        body.inverseInertia[3]=std::max(body.inverseInertia[3],float(length(local)+length(e)+0.0001));
+        body.bounds[0]=std::max(body.bounds[0],float(std::abs(local.x)+e.x));
+        body.bounds[1]=std::max(body.bounds[1],float(std::abs(local.y)+e.y));
+        body.bounds[2]=std::max(body.bounds[2],float(std::abs(local.z)+e.z));
+    }
+    body.shapes[1]=static_cast<std::uint32_t>((result.spheres.size()-body.shapes[0])/2);
     result.bodies.push_back(body);
     return true;
 }
@@ -311,7 +324,7 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
 void appendChunk(GpuSkeletonRig& output, GpuSkeletonRig&& chunk) {
     const auto base=static_cast<std::uint32_t>(output.bodies.size());
     const auto sampleBase=static_cast<std::uint32_t>(output.spheres.size());
-    for (Body& body:chunk.bodies) body.samples[0]+=sampleBase;
+    for (Body& body:chunk.bodies) { body.samples[0]+=sampleBase; body.shapes[0]+=sampleBase; }
     for (Joint& joint:chunk.joints) { joint.bodies[0]+=base; joint.bodies[1]+=base; }
     for (GpuSkeletonBinding& binding:chunk.bindings) binding.body+=base;
     output.bodies.insert(output.bodies.end(),chunk.bodies.begin(),chunk.bodies.end());

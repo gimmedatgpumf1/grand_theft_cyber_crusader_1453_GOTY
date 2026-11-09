@@ -18,8 +18,9 @@ struct alignas(16) Body {
     std::array<float,4> previousPosition{};
     std::array<float,4> previousRotation{0,0,0,1};
     std::array<std::uint32_t,4> samples{};
-    // Local proxy AABB half-extents and maximum sphere radius, filled by the runtime.
+    // Local AABB half-extents and maximum cell extent on the sorted axis, set by the runtime.
     std::array<float,4> bounds{};
+    std::array<std::uint32_t,4> shapes{}; // offset and count of local box cells
 };
 struct alignas(16) Joint {
     // bodies.z: 0 = limited ball, 1 = hinge, 2 = positional only.
@@ -57,7 +58,7 @@ struct alignas(16) Step {
     std::array<float,4> damping{};       // free linear/angular, contact linear/angular
     std::array<float,4> floorDamping{};  // floor tangential and angular
 };
-static_assert(sizeof(Body)==144 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==112);
+static_assert(sizeof(Body)==160 && sizeof(Joint)==144 && sizeof(ContactDelta)==32 && sizeof(SkinBinding)==80 && sizeof(Step)==112);
 static_assert(offsetof(Body,samples)==112 && offsetof(Step,gravityFloor)==16);
 
 struct JointBatch { std::uint32_t first=0, count=0; };

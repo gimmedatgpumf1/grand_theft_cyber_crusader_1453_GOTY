@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Experimental Vulkan rigid-body solver used by the test room. Joint batches must be graph-coloured: no two joints in one batch may
 // reference the same body. Synchronize between batches and solver phases. Coordinates are metres, seconds, and radians.
 layout(local_size_x = 64) in;
@@ -11,7 +12,8 @@ struct Body {
     vec4 previousPosition; // w is set when a floor contact is resolved
     vec4 previousRotation;
     uvec4 samples;        // x: first sphere, y: count, z: island+1, w: sleeping
-    vec4 bounds;          // local proxy AABB half-extents, maximum sphere radius
+    vec4 bounds;          // local AABB half-extents, maximum cell extent on sorted axis
+    uvec4 shapes;
 };
 struct Joint {
     uvec4 bodies;         // x = parent body, y = child body
@@ -60,7 +62,6 @@ void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
     rotateBy(a,ia*impulse);
     rotateBy(b,-ib*impulse);
 }
-// Hinge: align its two axes, then clamp the signed twist. Axis and tangent frames are captured from the initial calibrated rig.
 void solveHinge(inout Body a, inout Body b, Joint j) {
     vec3 axisA=normalize(rotate(a.rotation,j.parentAxis.xyz)); vec3 axisB=normalize(rotate(b.rotation,j.childAxis.xyz));
     vec3 crossAxis=cross(axisA,axisB); float sine=length(crossAxis), cosine=clamp(dot(axisA,axisB),-1.0,1.0);
@@ -194,7 +195,6 @@ void saveRestReference(uint count, uint index, Body b) {
     for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
     for (uint k=0u;k<4u;++k) scratch.word[offset+4u+k]=floatBitsToUint(b.rotation[k]);
 }
-// One invocation owns one 32-body word. The broad phase is independently parallel and writes a compact list of candidates for the narrow phase.
 void findCandidates(uint wordIndex) {
     uint count=step.first, stride=(count+31u)/32u;
     uint index=wordIndex/stride, word=wordIndex%stride;
@@ -220,7 +220,7 @@ void findCandidates(uint wordIndex) {
 void solveFloor(uint index, bool saveBounds) {
     Body b=bodies.body[index];
     if (b.samples.w!=0u) return;
-    // The enclosing sphere is conservative for all proxies. Most bodies are nowhere near the floor during a drop, so do not scan all their samples.
+    // The enclosing bound skips floor work for bodies far above the floor.
     if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=step.gravityFloor.w) {
         if (saveBounds) storeBounds(index,step.first,b);
         return;
@@ -230,12 +230,11 @@ void solveFloor(uint index, bool saveBounds) {
     vec3 upLocal=rotate(vec4(-b.rotation.xyz,b.rotation.w),vec3(0.0,1.0,0.0));
     vec3 arm=vec3(0.0), localPoint=vec3(0.0);
     float pointRadius=0.0;
-    for (uint i=0u;i<b.samples.y;++i) {
-        vec4 sphere=samples.point[b.samples.x+i];
-        float y=b.positionMass.y+dot(upLocal,sphere.xyz)-sphere.w;
-        if (y<lowest) {
-            lowest=y; localPoint=sphere.xyz; pointRadius=sphere.w;
-        }
+    for (uint i=0u;i<b.shapes.y;++i) {
+        vec3 center=samples.point[b.shapes.x+2u*i].xyz, extent=samples.point[b.shapes.x+2u*i+1u].xyz;
+        vec3 point=center-sign(upLocal)*extent;
+        float y=b.positionMass.y+dot(upLocal,point);
+        if (y<lowest) { lowest=y; localPoint=point; }
     }
     if (lowest<step.gravityFloor.w) {
         arm=rotate(b.rotation,localPoint)-vec3(0.0,pointRadius,0.0);
@@ -268,7 +267,6 @@ void solveFloor(uint index, bool saveBounds) {
     bodies.body[index]=b;
     if (saveBounds) storeBounds(index,step.first,b);
 }
-// Pick directly from the current GPU proxies; the host never reads body poses.
 shared float pickDistance[64];
 shared uint pickBody[64];
 float raySphere(vec3 origin, vec3 direction, vec3 center, float radius) {
@@ -279,6 +277,17 @@ float raySphere(vec3 origin, vec3 direction, vec3 center, float radius) {
     float t=-along-sqrt(discriminant);
     if (t<0.0) t=-along+sqrt(discriminant);
     return t>=0.0 ? t : 1e30;
+}
+float rayCell(vec3 origin,vec3 direction,vec3 center,vec3 extent) {
+    vec3 p=origin-center; float near=0.0,far=1e30;
+    for (int k=0;k<3;++k) {
+        if (abs(direction[k])<1e-8) { if (abs(p[k])>extent[k]) return 1e30; }
+        else {
+            float a=(-extent[k]-p[k])/direction[k],b=(extent[k]-p[k])/direction[k];
+            near=max(near,min(a,b)); far=min(far,max(a,b));
+        }
+    }
+    return near<=far && far>=0.0 ? near : 1e30;
 }
 void pickDrag(uint lane) {
     uint count=step.first, offset=dragOffset(count);
@@ -294,10 +303,11 @@ void pickDrag(uint lane) {
     for (uint index=lane;index<count;index+=64u) {
         Body b=bodies.body[index];
         if (b.positionMass.w<=0.0 || raySphere(origin,direction,b.positionMass.xyz,b.inverseInertia.w+0.012)>=best) continue;
-        for (uint i=0u;i<b.samples.y;++i) {
-            vec4 sphere=samples.point[b.samples.x+i];
-            vec3 center=b.positionMass.xyz+rotate(b.rotation,sphere.xyz);
-            float t=raySphere(origin,direction,center,sphere.w+0.012);
+        vec4 inverse=vec4(-b.rotation.xyz,b.rotation.w);
+        vec3 localOrigin=rotate(inverse,origin-b.positionMass.xyz),localDirection=rotate(inverse,direction);
+        for (uint i=0u;i<b.shapes.y;++i) {
+            vec3 center=samples.point[b.shapes.x+2u*i].xyz,extent=samples.point[b.shapes.x+2u*i+1u].xyz;
+            float t=rayCell(localOrigin,localDirection,center,extent);
             if (t<best) { best=t; selected=index+1u; }
         }
     }
@@ -391,7 +401,6 @@ void solveIsland(uint island, uint lane) {
         memoryBarrierBuffer(); barrier();
     }
 }
-// The current and accepted world rotations are scratch data, independent of the sleep reference and indirect commands. All work is island-local.
 uint jointPoseOffset(uint count,uint index) { return dragOffset(count)+8u+index*16u; }
 vec4 loadJointRotation(uint count,uint index,uint slot) {
     uint p=jointPoseOffset(count,index)+slot*4u;
@@ -404,7 +413,6 @@ void storeJointRotation(uint count,uint index,uint slot,vec4 q) {
 }
 vec4 conjugateQ(vec4 q) { return vec4(-q.xyz,q.w); }
 vec4 axisTurn(vec3 axis,float angle) { return vec4(axis*sin(angle*0.5),cos(angle*0.5)); }
-// Columns are an orthonormal joint frame, in body-local coordinates.
 vec4 frameRotation(vec3 x,vec3 y) {
     x=normalize(x); y=normalize(y-x*dot(x,y));
     mat3 m=mat3(x,y,cross(x,y));
@@ -577,9 +585,9 @@ void projectJointIsland(uint island,uint lane) {
         Body b=bodies.body[scratch.word[firstBody+i]];
         if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=lowest) continue;
         vec3 up=rotate(conjugateQ(b.rotation),vec3(0,1,0));
-        for (uint k=0u;k<b.samples.y;++k) {
-            vec4 sphere=samples.point[b.samples.x+k];
-            lowest=min(lowest,b.positionMass.y+dot(up,sphere.xyz)-sphere.w);
+        for (uint k=0u;k<b.shapes.y;++k) {
+            vec3 center=samples.point[b.shapes.x+2u*k].xyz,extent=samples.point[b.shapes.x+2u*k+1u].xyz;
+            lowest=min(lowest,b.positionMass.y+dot(up,center)-dot(abs(up),extent));
         }
     }
     graphFloor[lane]=lowest; barrier();
@@ -591,13 +599,20 @@ void projectJointIsland(uint island,uint lane) {
     for (uint i=lane;i<nBody;i+=64u) {
         uint index=scratch.word[firstBody+i]; Body b=bodies.body[index];
         if (b.positionMass.w>0.0) {
-            b.positionMass.y+=lift; b.previousPosition.y+=lift; b.previousPosition.w=0.0;
-            // Re-evaluate support after the graph projection, not before it.
+            b.positionMass.y+=lift; b.previousPosition.w=0.0;
+            if (!initial) {
+                uint target=jointPoseOffset(count,index)+12u;
+                vec3 prior=vec3(uintBitsToFloat(scratch.word[target]),uintBitsToFloat(scratch.word[target+1u]),uintBitsToFloat(scratch.word[target+2u]));
+                b.previousPosition.xyz+=b.positionMass.xyz-prior;
+                vec4 correction=qmul(b.rotation,conjugateQ(loadJointRotation(count,index,1u)));
+                b.previousRotation=normalize(qmul(correction,b.previousRotation));
+            }
+            // Re-evaluate support after the graph projection.
             if (b.positionMass.y-b.inverseInertia.w<=step.gravityFloor.w+0.001) {
                 vec3 up=rotate(conjugateQ(b.rotation),vec3(0,1,0));
-                for (uint k=0u;k<b.samples.y;++k) {
-                    vec4 sphere=samples.point[b.samples.x+k];
-                    if (b.positionMass.y+dot(up,sphere.xyz)-sphere.w<=step.gravityFloor.w+0.001) { b.previousPosition.w=1.0; break; }
+                for (uint k=0u;k<b.shapes.y;++k) {
+                    vec3 center=samples.point[b.shapes.x+2u*k].xyz,extent=samples.point[b.shapes.x+2u*k+1u].xyz;
+                    if (b.positionMass.y+dot(up,center)-dot(abs(up),extent)<=step.gravityFloor.w+0.001) { b.previousPosition.w=1.0; break; }
                 }
             }
             bodies.body[index]=b;
@@ -757,6 +772,7 @@ void settleIsland(uint island, uint lane) {
         }
     }
 }
+#include "rigid_cells.glsl"
 // Four lanes search candidate bodies for one body, with sixteen bodies per workgroup. Each lane writes to private shared-memory slots before reduction,
 // so no float atomics or inter-workgroup writes are needed. Broad phase remains all-pairs; a spatial accelerator is needed for larger scenes.
 shared vec4 contactPosition[64];
@@ -778,54 +794,39 @@ void findContacts(uint index, uint lane, uint localIndex) {
         uint other=word*32u+bit;
         Body b=bodies.body[other];
         vec3 separation=a.positionMass.xyz-b.positionMass.xyz;
-        float depth=0.0;
-        vec3 bestLocal=vec3(0.0), bestA=vec3(0.0), bestB=vec3(0.0);
-        float bestRadiusA=0.0, bestRadiusB=0.0, bestDistance=0.0;
-        vec4 inverseB=vec4(-b.rotation.xyz,b.rotation.w);
-        // Transform A directly into B's frame. Compose the rotations and transform the centre once per pair, not twice for every proxy.
-        vec4 relativeRotation=qmul(inverseB,a.rotation);
-        vec3 localSeparation=rotate(inverseB,separation);
-        for (uint i=0u;i<a.samples.y;++i) {
-            vec4 sa=samples.point[a.samples.x+i];
-            vec3 localCenter=localSeparation+rotate(relativeRotation,sa.xyz);
-            float candidateRadius=b.inverseInertia.w+sa.w;
-            if (dot(localCenter,localCenter)>candidateRadius*candidateRadius) continue;
-            if (any(greaterThan(abs(localCenter),b.bounds.xyz+vec3(sa.w+1e-5)))) continue;
-            // B's proxies are sorted once along its longest local axis. Find the first possible overlap, then stop at the far end of the conservative sphere interval instead of scanning every proxy.
-            uint axis=uint(b.angularVelocity.w);
-            float reach=sa.w+b.bounds.w+1e-5;
-            float lo=localCenter[axis]-reach, hi=localCenter[axis]+reach;
-            uint left=0u, right=b.samples.y;
+        vec3 bestNormal=vec3(0),armA=vec3(0),armB=vec3(0); float depth=0.0;
+        vec4 invB=vec4(-b.rotation.xyz,b.rotation.w);
+        vec4 relative=qmul(invB,a.rotation);
+        vec3 localSeparation=rotate(invB,separation);
+        for (uint i=0u;i<a.shapes.y;++i) {
+            vec3 ca=samples.point[a.shapes.x+i*2u].xyz, ea=samples.point[a.shapes.x+i*2u+1u].xyz;
+            vec3 localCenter=localSeparation+rotate(relative,ca);
+            vec3 localExtent=abs(rotate(relative,vec3(ea.x,0,0)))+abs(rotate(relative,vec3(0,ea.y,0)))+abs(rotate(relative,vec3(0,0,ea.z)));
+            if (any(greaterThan(abs(localCenter),b.bounds.xyz+localExtent))) continue;
+            uint axis=uint(b.angularVelocity.w),left=0u,right=b.shapes.y;
+            float reach=localExtent[axis]+b.bounds.w,lo=localCenter[axis]-reach,hi=localCenter[axis]+reach;
             while (left<right) {
-                uint middle=(left+right)/2u;
-                if (samples.point[b.samples.x+middle][axis]<lo) left=middle+1u;
-                else right=middle;
+                uint mid=(left+right)/2u;
+                if (samples.point[b.shapes.x+mid*2u][axis]<lo) left=mid+1u; else right=mid;
             }
-            for (uint j=left;j<b.samples.y;++j) {
-                vec4 sb=samples.point[b.samples.x+j];
-                if (sb[axis]>hi) break;
-                vec3 d=localCenter-sb.xyz;
-                float radius=sa.w+sb.w, distanceSquared=dot(d,d);
-                if (distanceSquared>=radius*radius) continue;
-                float distance=sqrt(distanceSquared), overlap=radius-distance;
-                if (overlap<=depth) continue;
-                depth=overlap; bestLocal=d; bestA=sa.xyz; bestB=sb.xyz;
-                bestRadiusA=sa.w; bestRadiusB=sb.w; bestDistance=distance;
+            for (uint j=left;j<b.shapes.y;++j) {
+                vec3 cb=samples.point[b.shapes.x+j*2u].xyz,eb=samples.point[b.shapes.x+j*2u+1u].xyz;
+                if (cb[axis]>hi) break;
+                if (any(greaterThan(abs(localCenter-cb),localExtent+eb))) continue;
+                vec3 n,aa,bb; float overlap;
+                if (cellContact(a,b,ca,ea,cb,eb,n,aa,bb,overlap) && overlap>depth) {
+                    depth=overlap; bestNormal=n; armA=aa; armB=bb;
+                }
             }
         }
         if (depth<=0.0) continue;
-        vec3 bestNormal=bestDistance>1e-7 ? rotate(b.rotation,bestLocal/bestDistance)
-                                           : vec3(index<other ? -1.0 : 1.0,0.0,0.0);
-        // A sleeping body is immovable until an actual wake decision. Using its dynamic mass here would leave half the penetration unresolved.
         float massB=b.samples.w!=0u ? 0.0 : b.positionMass.w;
-        vec3 armA=rotate(a.rotation,bestA)-bestNormal*bestRadiusA;
-        vec3 armB=rotate(b.rotation,bestB)+bestNormal*bestRadiusB;
         vec3 ta=cross(armA,bestNormal), tb=cross(armB,bestNormal);
         vec3 ia=invInertia(a,ta), ib=massB>0.0 ? invInertia(b,tb) : vec3(0.0);
         float effective=a.positionMass.w+massB+dot(ta,ia)+dot(tb,ib);
         if (effective<=1e-12) continue;
-        // Proxy surfaces may overlap at rest. A small slop and bounded correction stop them pumping energy into the joint chains.
-        float impulse=min(max(depth-0.001,0.0),0.012)/effective;
+        // Allow small slop and bound correction to limit projection shocks.
+        float impulse=min(max(depth-0.0002,0.0),0.04)/effective;
         positionDelta+=bestNormal*(impulse*a.positionMass.w);
         rotationDelta+=ia*impulse;
         if (a.samples.z!=b.samples.z && bestNormal.y>0.35) flags|=1u;
@@ -876,7 +877,6 @@ void findContacts(uint index, uint lane, uint localIndex) {
         }
     }
 }
-// The following indirect dispatches can be empty while the whole world is asleep. Wake detection still executes every step and re-enables them.
 void scheduleAwakeWork() {
     uint count=step.first, base=islandBase(count), hasAwake=0u;
     for (uint island=0u;island<step.count;++island) {

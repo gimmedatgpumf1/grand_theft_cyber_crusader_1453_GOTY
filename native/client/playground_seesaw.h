@@ -23,8 +23,8 @@ inline gpu_physics::Body box(GpuSkeletonRig& rig,Vec3 center,Vec3 size) {
     b.inverseInertia={float(12.0/(mass*(size.y*size.y+size.z*size.z))),
                       float(12.0/(mass*(size.x*size.x+size.z*size.z))),
                       float(12.0/(mass*(size.x*size.x+size.y*size.y))),0};
-    // The existing rigid solver uses sphere proxies, not actual box contacts.
-    // Fill each box with overlapping spheres whose outside bounds match it.
+    // Retain proxy points for rig setup; the shared collision and picking
+    // solver below receives the actual local box extent.
     constexpr double radius=0.05;
     const int nx=std::max(1,int(std::ceil((size.x-2*radius)/(2*radius)))+1);
     const int ny=std::max(1,int(std::ceil((size.y-2*radius)/(2*radius)))+1);
@@ -40,6 +40,9 @@ inline gpu_physics::Body box(GpuSkeletonRig& rig,Vec3 center,Vec3 size) {
         b.bounds[2]=std::max(b.bounds[2],float(std::abs(p.z)+radius));
     }
     b.samples[1]=static_cast<std::uint32_t>(rig.spheres.size()-b.samples[0]);
+    b.shapes[0]=static_cast<std::uint32_t>(rig.spheres.size()); b.shapes[1]=1;
+    rig.spheres.push_back(pack({0,0,0})); rig.spheres.push_back(pack(size*0.5));
+    b.inverseInertia[3]=float(length(size*0.5)+0.0001);
     return b;
 }
 inline void bind(GpuSkeletonRig& rig,std::uint32_t id,std::uint32_t body,Vec3 center) {
@@ -48,8 +51,8 @@ inline void bind(GpuSkeletonRig& rig,std::uint32_t id,std::uint32_t body,Vec3 ce
     rig.bindings.push_back(b);
 }
 inline void append(GpuSkeletonRig& rig) {
-    // The support is an immovable body. Its sphere proxies approximate the
-    // triangular prism; the hinge keeps the board attached at the apex.
+    // The support is an immovable body. Its seven local collision cells
+    // approximate the triangular prism; the hinge fixes the axle.
     gpu_physics::Body base; base.positionMass=pack({pivot.x,0.35,pivot.z});
     base.samples[0]=static_cast<std::uint32_t>(rig.spheres.size());
     constexpr float r=0.075f;
@@ -66,6 +69,14 @@ inline void append(GpuSkeletonRig& rig) {
         }
     }
     base.samples[1]=static_cast<std::uint32_t>(rig.spheres.size()-base.samples[0]);
+    base.shapes[0]=static_cast<std::uint32_t>(rig.spheres.size());
+    for (int y=0;y<7;++y) {
+        const double bottom=y*0.1, top=(y+1)*0.1;
+        const double width=0.33*(1.0-top/0.70);
+        rig.spheres.push_back(pack({0,(bottom+top)*0.5-0.35,0}));
+        rig.spheres.push_back(pack({std::max(0.001,width),0.05,0.14}));
+    }
+    base.shapes[1]=7; base.inverseInertia[3]=float(length(Vec3{0.33,0.35,0.14})+0.0001);
     const auto root=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(base);
     const auto plank=static_cast<std::uint32_t>(rig.bodies.size()); rig.bodies.push_back(box(rig,pivot,beamSize));
     gpu_physics::Joint hinge; hinge.bodies={root,plank,1,0};
