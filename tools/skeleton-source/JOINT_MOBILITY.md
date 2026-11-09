@@ -294,9 +294,15 @@ limited abduction/adduction. If a saved standing pose is already outside a
 reference interval, its initial angle is preserved rather than forcing it into
 range. Motion can recover toward the interval, and the outward allowance shrinks
 as it recovers, rather than letting it extend past the recovered angle again.
-Restoring or editing the reference resets that allowance. The R-mode GPU solver
-uses iterative hinge and position constraints, so residual error is possible.
-This is not a clinical diagnosis:
+Restoring or editing the reference resets that allowance. In R mode, each toe
+chain is projected in parent-to-child order after contacts and before rendering:
+its child frame is reconstructed at the shared marked surface anchor with a
+clamped hinge coordinate. This enforces those modelled toe hinges to GPU float
+precision, including the first displayed R frame. Other R-mode joints and
+contacts still use the iterative solver. A toe projection takes priority over
+contact separation and can therefore leave collision penetration. The axis is
+still an estimate from shaft marks and dorsal direction, not a measured joint
+axis. This is not a clinical diagnosis:
 a shaft-based neutral and one approximate hinge axis cannot represent cartilage,
 translation, coupled tendon motion, or patient-specific joint limits.
 

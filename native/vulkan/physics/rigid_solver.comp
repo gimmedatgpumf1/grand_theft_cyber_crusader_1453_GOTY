@@ -431,6 +431,45 @@ void solveIsland(uint island, uint lane) {
     }
 }
 
+// The room's toe joint frames start aligned in each body's identity frame.
+// Keep the simulated hinge coordinate, clamp it, then reconstruct the child
+// orientation and its marked anchor exactly (up to float rounding). Unlike
+// the iterative impulse solve, no off-axis rotation or anchor gap survives.
+void projectToe(uint index) {
+    Joint j=joints.joint[index];
+    Body a=bodies.body[j.bodies.x], b=bodies.body[j.bodies.y];
+    vec3 axis=normalize(j.parentAxis.xyz);
+    vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
+    float p=dot(relative.xyz,axis);
+    float angle=(abs(p)+abs(relative.w)>1e-8) ? 2.0*atan(p,relative.w) : 0.0;
+    angle=atan(sin(angle),cos(angle));
+    angle=clamp(angle,j.parentAxis.w,j.childAxis.w);
+    vec4 turn=vec4(axis*sin(angle*0.5),cos(angle*0.5));
+    b.rotation=normalize(qmul(a.rotation,turn));
+    b.positionMass.xyz=a.positionMass.xyz+rotate(a.rotation,j.parentAnchor.xyz)-rotate(b.rotation,j.childAnchor.xyz);
+    bodies.body[j.bodies.y]=b;
+}
+
+// Independent toe chains project in parallel. A barrier separates the base,
+// middle and distal depths so no later projection can move an earlier parent.
+void projectToeIsland(uint island, uint lane) {
+    uint count=step.first, base=islandBase(count), colours=scratch.word[base];
+    uint record=islandRecord(count,island);
+    uint bodyFirst=base+scratch.word[record], bodyCount=scratch.word[record+1u];
+    if (bodyCount==0u || bodies.body[scratch.word[bodyFirst]].samples.w!=0u) return;
+    for(uint depth=1u;depth<=3u;++depth) {
+        for(uint colour=0u;colour<colours;++colour) {
+            uint first=base+scratch.word[record+2u+colour*2u];
+            uint n=scratch.word[record+3u+colour*2u];
+            for(uint i=lane;i<n;i+=64u) {
+                uint index=scratch.word[first+i];
+                if(joints.joint[index].bodies.w==depth) projectToe(index);
+            }
+        }
+        memoryBarrierBuffer(); barrier();
+    }
+}
+
 // Sleeping is an island decision: connected bodies never freeze individually.
 // Wake decisions read last step's immutable sleep flags and are committed by
 // the following prediction dispatch, avoiding inter-workgroup races. A moving
@@ -737,6 +776,10 @@ void scheduleAwakeWork() {
 }
 
 void main() {
+    if (step.phase==13u || step.phase==14u) {
+        projectToeIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
+        return;
+    }
     if (step.phase==12u) {
         dragIsland(gl_LocalInvocationIndex);
         return;

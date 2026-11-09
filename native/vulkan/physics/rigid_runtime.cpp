@@ -108,6 +108,25 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         }
     }
     if (cursor!=joints.size()) return false;
+    // Final toe projection is parallel within each depth: no two joints may
+    // write the same child, and a parent must come from an earlier depth.
+    std::vector<std::uint32_t> toeDepth(count,0);
+    bool strictToes=false;
+    for (const Joint& j:joints) if (j.bodies[3]) {
+        const auto depth=j.bodies[3],a=j.bodies[0],b=j.bodies[1];
+        if (depth>3 || j.bodies[2]!=1 || toeDepth[b]) return false;
+        for (int k=0;k<3;++k)
+            if (std::abs(j.parentAxis[k]-j.childAxis[k])>1e-5f ||
+                std::abs(j.parentTangent[k]-j.childTangent[k])>1e-5f) return false;
+        // The matching joint frames are expressed in the identity initial
+        // body orientations used by the room's rigid rig.
+        for (auto i:{a,b}) {
+            const auto& q=bodies[i].rotation;
+            if (std::abs(q[0])+std::abs(q[1])+std::abs(q[2])+std::abs(q[3]-1)>1e-5f) return false;
+        }
+        toeDepth[b]=depth;strictToes=true;
+    }
+    for (const Joint& j:joints) if (j.bodies[3] && toeDepth[j.bodies[0]]>=j.bodies[3]) return false;
     device_=device;
 #define LOAD(member, name) member=reinterpret_cast<decltype(member)>(getDeviceProcAddr(device_,name)); if (!member) { reset(); return false; }
     LOAD(createBuffer_,"vkCreateBuffer")
@@ -171,7 +190,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     // Corrections, static exclusions, world bounds/centres, and a transient
     // broad-phase bitset all share one Vulkan 1.0 storage binding.
     IslandPlan islands;
-    makeIslandPlan(count,joints,batches,islands);
+    if (!makeIslandPlan(count,joints,batches,islands) && strictToes) { reset(); return false; }
     for (std::size_t i=0;i<count;++i) {
         // Zero means the ordinary non-island fallback. samples.w is the
         // GPU-owned sleep flag and is always reset for a fresh simulation.
@@ -244,6 +263,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     if (result!=VK_SUCCESS) { reset(); return false; }
     bodyCount_=static_cast<std::uint32_t>(count);
     islandCount_=islands.count;
+    strictToes_=strictToes;
     indirectOffset_=islandCount_ ? (islandBase+islands.words[1]+count*8u)*sizeof(std::uint32_t) : 0;
     batches_.assign(batches.begin(),batches.end());
     return true;
@@ -270,19 +290,30 @@ void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
     int indirect=-1;
     if (islandCount_) {
         if (step.phase==0 || step.phase==3 || step.phase==5) indirect=0;
-        else if (step.phase==7 || step.phase==9) indirect=1;
+        else if (step.phase==7 || step.phase==9 || step.phase==13) indirect=1;
         else if (step.phase==6) indirect=2;
         else if (step.phase==4) indirect=3;
     }
     if (indirect>=0) cmdDispatchIndirect_(command,buffers_[3].buffer,indirectOffset_+VkDeviceSize(indirect)*12);
     else {
-        const auto groups=step.phase==10 ? 1u : (step.phase==8 ? step.count :
+        const auto groups=step.phase==10 ? 1u : ((step.phase==8 || step.phase==14) ? step.count :
                           (step.phase==4 ? (step.count+15u)/16u : (step.count+63u)/64u));
         cmdDispatch_(command,groups,1,1);
     }
     const auto destination=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
         (step.phase==10 ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0);
     barrier(command,destination,step.phase==8);
+}
+bool RigidRuntime::projectInitialToes(VkCommandBuffer command) const {
+    if (!command || !pipeline_) return false;
+    if (!strictToes_) return true;
+    barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
+    cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
+    Step step{};step.phase=14;step.first=bodyCount_;step.count=islandCount_;
+    dispatch(command,step);
+    barrier(command,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+    return true;
 }
 bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t iterations,
                           const std::array<float,4>& dragOrigin, const std::array<float,4>& dragDirection,
@@ -331,6 +362,11 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
             step.count=bodyCount_; step.phase=4; dispatch(command,step);
             step.first=0; step.phase=5; dispatch(command,step);
         }
+    }
+    // Contacts are allowed to perturb the iterative solve, so finish with an
+    // exact parent-to-child toe projection before velocity and skinning.
+    if (strictToes_) {
+        step.first=bodyCount_; step.count=islandCount_; step.phase=13; dispatch(command,step);
     }
     step.first=bodyCount_; step.count=bodyCount_; step.phase=3; dispatch(command,step);
     if (islandCount_) {
@@ -451,7 +487,7 @@ void RigidRuntime::reset() {
     }
     pipeline_=VK_NULL_HANDLE; layout_=VK_NULL_HANDLE; pool_=VK_NULL_HANDLE;
     setLayout_=VK_NULL_HANDLE; set_=VK_NULL_HANDLE; device_=VK_NULL_HANDLE;
-    bodyCount_=0; islandCount_=0; indirectOffset_=0; batches_.clear();
+    bodyCount_=0; islandCount_=0; strictToes_=false; indirectOffset_=0; batches_.clear();
 }
 
 } // namespace gtc::native::gpu_physics

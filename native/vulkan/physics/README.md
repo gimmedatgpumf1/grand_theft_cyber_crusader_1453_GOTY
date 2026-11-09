@@ -28,7 +28,14 @@ workgroup barriers between colours; cross-island contacts remain global. This
 reduces dispatch overhead, but limits parallelism when there are few islands;
 its effect on integrated-GPU frame rate is not yet measured. An ordinary
 per-colour dispatch path remains for unsupported schedules. Fewer contact
-iterations reduce work but can reduce contact convergence. The solver dissipates
+iterations reduce work but can reduce contact convergence. Toe hinges receive a
+final parent-to-child projection on the GPU after contacts, and before the first
+rendered R frame as well as after each simulation step. This reconstructs the
+child rotation within its hinge bounds and joins its marked anchors to float
+precision; other joint types still use the iterative solve. Toe projection takes
+priority over contact separation, so a collision can remain penetrating. The
+shaft-derived hinge direction is an approximation rather than a measured joint
+axis. The solver dissipates
 velocity from projection corrections and uses a non-bouncing floor. Floor and
 body contacts apply bounded friction. Body penetration correction is capped and
 kept out of reconstructed velocity to reduce energy injected into piles. A

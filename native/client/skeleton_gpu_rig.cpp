@@ -242,7 +242,12 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         if (length(tangent)<1e-6) tangent=cross(axis,{1,0,0});
         if (length(tangent)<1e-6) tangent=cross(axis,{0,0,1});
         tangent=normalized(tangent);
-        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,0};
+        // Toe chains receive a final GPU projection in parent-before-child
+        // order. This marks hierarchy depth, not an additional degree of freedom.
+        unsigned toeDepth=0;
+        if (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp") toeDepth=1;
+        else if (mobility=="toe_ip_hinge") toeDepth=parts[si].name.rfind("FootMidP",0)==0 ? 2u : 3u;
+        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,toeDepth};
         joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
         joint.childAnchor=packed(childPivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         const double piValue=3.14159265358979323846;

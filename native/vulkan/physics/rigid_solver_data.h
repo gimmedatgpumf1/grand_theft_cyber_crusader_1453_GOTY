@@ -23,6 +23,7 @@ struct alignas(16) Body {
 };
 struct alignas(16) Joint {
     // bodies.z: 0 = limited ball, 1 = hinge, 2 = positional only.
+    // bodies.w: 0 = ordinary joint, 1..3 = toe chain projection depth.
     std::array<std::uint32_t,4> bodies{};
     std::array<float,4> parentAnchor{};
     std::array<float,4> childAnchor{};

@@ -37,6 +37,8 @@ public:
     bool record(VkCommandBuffer command, float dt, std::uint32_t iterations,
                 const std::array<float,4>& dragOrigin, const std::array<float,4>& dragDirection,
                 bool dragging, std::uint32_t dragSequence) const;
+    // Enforce toe joints even before the first simulation step is due.
+    bool projectInitialToes(VkCommandBuffer command) const;
     // Output buffers are renderer-owned storage-buffer ranges, one per
     // in-flight frame. Retire previous uses before replacing these bindings.
     bool createSkin(std::span<const std::uint32_t> shader,
@@ -61,6 +63,7 @@ private:
     VkPipelineLayout layout_=VK_NULL_HANDLE;
     VkPipeline pipeline_=VK_NULL_HANDLE;
     std::uint32_t bodyCount_=0, islandCount_=0;
+    bool strictToes_=false;
     VkDeviceSize indirectOffset_=0;
     std::vector<JointBatch> batches_;
     Buffer skinBindings_{};
