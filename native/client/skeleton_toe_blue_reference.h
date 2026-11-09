@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/skeleton_toe_manual_reference.h"
+#include "client/skeleton_toe_limits.h"
 
 namespace gtc::native {
 // A marked surface point remains in the corresponding blue bone's local mesh
@@ -43,7 +44,7 @@ inline std::optional<Vec3> markedBlueDirection(const SkeletonComparison& c,const
     return normalized(sum);
 }
 inline MarkedBlueToeReference buildMarkedBlueToeReference(const SkeletonComparison& c,const SkeletonModel& model,
-    const ToeSurfaceMarks& source,const ToeSurfaceMarks& mapped,const std::vector<std::array<double,16>>& white,Vec3 origin) {
+    const ToeSurfaceMarks& source,const ToeSurfaceMarks& mapped,const std::vector<std::array<double,16>>& white,Vec3 origin,bool male) {
     MarkedBlueToeReference result;result.base=c.toePose(white,origin);result.corrected=result.base;
     for(int digit=1;digit<=5;++digit) {
         ToeEdit e;e.digit=digit;e.side='L';
@@ -77,6 +78,58 @@ inline MarkedBlueToeReference buildMarkedBlueToeReference(const SkeletonComparis
             result.corrected[i]=toeMatrix(joint_detail::compose(turn,toeRigid(result.corrected[i])));
             result.corrected[j]=toeMatrix(toeMirrorTransform(toeRigid(result.corrected[i]),origin));
             result.bones.push_back(i);result.bones.push_back(j);
+        }
+    }
+    // Individually adjusted from side and top Vulkan views of each marked
+    // digit, in degrees: MTP, then IP (or PIP and DIP). These are changes to
+    // the blue standing pose, not replacement axes or edits to the CT source.
+    // Carry descendants about the user's surface hinge rather than translating
+    // individual bones or forcing their marked shafts parallel.
+    constexpr double bends[2][5][3]={
+        {{22,15,0},{35,-20,0},{26,-17,-3},{26,-16,-10},{8,-10,0}},
+        {{5,13,0},{12,-5,0},{0,-8,-5},{0,-15,-8},{2,-12,-15}}
+    };
+    std::vector<ComparisonToeAttachment> joints;
+    blueToeSurfaceAnchors(c,model,mapped,origin,result.corrected,joints);
+    for(int digit=1;digit<=5;++digit)for(char side:{'L','R'}) {
+        ToeEdit e;e.digit=digit;e.side=side;
+        const std::array<int,4> order=digit==1?std::array<int,4>{-1,0,2,3}:std::array<int,4>{-1,0,1,2};
+        const int count=digit==1?3:4;
+        for(int step=1;step<count;++step) {
+            const double degrees=bends[male?0:1][digit-1][step-1];
+            if(degrees==0)continue;
+            const int parent=model.sourceStructure(toeEditName(e,order[step-1]));
+            const int child=model.sourceStructure(toeEditName(e,order[step]));
+            if(parent<0 || child<0)continue;
+            auto found=std::find_if(joints.begin(),joints.end(),[&](const auto& j) {
+                return j.parent==std::size_t(parent) && j.child==std::size_t(child);
+            });
+            if(found==joints.end())continue;
+            const auto bend=markedToeBend(found->parentShaft,found->childShaft,found->dorsal);
+            if(!bend)continue;
+            auto turn=joint_detail::rotate(bend->axis,degrees*3.14159265358979323846/180.0);
+            turn.translation=found->pivot-frameVector(turn,found->pivot);
+            std::array<std::size_t,3> distal{};int n=0;
+            for(int s=step;s<count;++s) {
+                const int index=model.sourceStructure(toeEditName(e,order[s]));
+                if(index>=0 && std::size_t(index)<result.corrected.size()) {
+                    distal[n++]=std::size_t(index);
+                    result.corrected[std::size_t(index)]=toeMatrix(joint_detail::compose(turn,toeRigid(result.corrected[std::size_t(index)])));
+                }
+            }
+            const auto contains=[&](std::size_t index) {
+                return std::find(distal.begin(),distal.begin()+n,index)!=distal.begin()+n;
+            };
+            for(auto& j:joints) {
+                if(contains(j.parent)) {
+                    j.pivot=frameVector(turn,j.pivot)+turn.translation;
+                    j.parentShaft=frameVector(turn,j.parentShaft);
+                }
+                if(contains(j.child)) {
+                    j.childPivot=frameVector(turn,j.childPivot)+turn.translation;
+                    j.childShaft=frameVector(turn,j.childShaft);
+                }
+            }
         }
     }
     return result;

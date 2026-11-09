@@ -291,7 +291,13 @@ is already outside a reference interval, its initial angle is preserved rather
 than forcing it into range. Motion can recover toward the interval, and the
 outward allowance shrinks as it recovers, rather than letting it extend past
 the recovered angle again. Restoring or editing the reference resets that
-allowance. This is not a clinical diagnosis:
+allowance. The blue standing reference also has individually chosen sagittal
+adjustments at the marked toe joints, selected from side and overhead Vulkan
+views of the two feet; both sides use the same adjustments. These are a visual
+approximation of a less raised, resting toe posture, not a measured weight-bearing
+pose. They do not change B or the white reference. The room's existing 10 cm
+body offset remains, so this posture does not itself place the feet on the room
+floor. This is not a clinical diagnosis:
 a shaft-based neutral and one approximate hinge axis cannot represent cartilage,
 translation, coupled tendon motion, or patient-specific joint limits.
 

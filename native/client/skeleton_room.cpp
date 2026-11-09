@@ -315,7 +315,7 @@ std::vector<std::array<double,16>> SkeletonRoom::comparisonToePose(bool male,Vec
         const bool newReference=cache.source!=toeMarksRevision_ || cache.profile!=c.revision() ||
                                 cache.neutral!=toeReferenceRevision_ || cache.edits!=toeEditRevision_;
         if(newReference || cache.origin.x!=origin.x || cache.origin.y!=origin.y || cache.origin.z!=origin.z) {
-            cache.reference=buildMarkedBlueToeReference(c,model,marks,mappedBlueToeMarks(male),neutral,origin);
+            cache.reference=buildMarkedBlueToeReference(c,model,marks,mappedBlueToeMarks(male),neutral,origin,male);
             auto standing=c.toePose(neutral,origin);
             applyBlueToeEdits(c,standing,origin,toeEdits_,male,false);
             applyManualBlueReference(c,model,male?maleManualToes_:femaleManualToes_,
