@@ -23,7 +23,7 @@ struct alignas(16) Body {
 };
 struct alignas(16) Joint {
     // bodies.z: 0 = limited ball, 1 = hinge, 2 = positional only.
-    // bodies.w: 0 = ordinary joint, 1..3 = toe chain projection depth.
+    // bodies.w: runtime hierarchy depth; high bit marks a closed-loop path.
     std::array<std::uint32_t,4> bodies{};
     std::array<float,4> parentAnchor{};
     std::array<float,4> childAnchor{};
@@ -33,7 +33,7 @@ struct alignas(16) Joint {
     std::array<float,4> childAxis{};
     std::array<float,4> parentTangent{};
     std::array<float,4> childTangent{};
-    // Approximate XYZ angles relative to the calibrated initial ball frame.
+    // XYZ rotational limits for a ball, or local translation limits for a positional joint.
     std::array<float,4> lowerAngles{};
     std::array<float,4> upperAngles{};
 };

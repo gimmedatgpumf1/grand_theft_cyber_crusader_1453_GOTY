@@ -81,7 +81,7 @@ bool Renderer::preparePhysics(const GpuScene& scene) {
 
 bool Renderer::recordPhysics(const GpuScene& scene, VkCommandBuffer command, int frameSlot) {
     if (!scene.physicsRig) return true;
-    if (physicsStep_==0 && scene.physicsSteps==0 && !physics_.projectInitialToes(command)) return false;
+    if (physicsStep_==0 && !physics_.projectInitialJoints(command)) return false;
     while (physicsStep_<scene.physicsSteps) {
         if (!physics_.record(command,gpu_physics::kPhysicsStep,8,scene.physicsDragOrigin,scene.physicsDragDirection,
                              scene.physicsDragging,scene.physicsDragSequence)) return false;

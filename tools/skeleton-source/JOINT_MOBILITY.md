@@ -155,29 +155,14 @@ alignments, not measurements of individual neutral joint angles. Each whole
 body is translated down to the floor. Heel, medial sesamoid and lateral
 metatarsal support points define each sole; the pelvis is levelled against
 both feet while hip and trunk compensation preserves straight legs and spine.
-`R` starts gravity-driven ragdolls for both subjects; pressing it again restores the
-T-pose. `B` stops the simulation and returns the original source pose. Bullet 3.25
-uses bone-derived convex collision proxies and a shared floor/world, not exact
-CT-surface collision. Rib proxies are split along the source-derived arc instead
-of filling the space inside each curved rib. Fixed tree structures share rigid
-bodies; each radius/ulna pair also shares a compound body, as in the existing
-grouped forearm model, so individual radioulnar rotation is not simulated.
-Linked carpal groups in each palm likewise share a rigid compound body rather
-than simulating individual carpal glides. Thumb and finger bones remain separate
-hinged bodies with their own collision proxies and bounded angular motion. A
-post-substep correction keeps their hinge anchors together during impacts by
-moving the physics bodies as well as their visible meshes. This correction can
-temporarily push a finger proxy into the floor or another collider during hard
-contact; Bullet resolves contacts in subsequent steps. This is stabilization,
-not a model of hand ligaments or clinically validated hand dynamics.
-Subject-specific rib/sternum and neighbouring-rib links inferred from the
-anatomical graph are retained as limited-displacement positional constraints;
-their attachment locations are approximate, because the source has no cartilage.
-Other joints use fitted pivots and bounded hinges, with approximate three-axis
-hip and shoulder constraints. Neighbouring or initially overlapping proxies
-are filtered to avoid joint-contact conflicts; other bones and the two figures
-can collide. This is a game-physics approximation, not a validated biomechanical
-simulation.
+`R` starts gravity-driven Vulkan ragdolls for all four figures; pressing it
+again restores the T-pose. `B` stops the simulation and returns the original
+source pose. Bone-derived sphere proxies approximate collision; they are not
+exact CT surfaces. Fixed tree structures share rigid bodies; each radius/ulna
+pair and linked carpal groups are grouped rather than simulating individual
+glides. Neighbouring or initially overlapping proxies are filtered to avoid
+joint-contact conflicts; other bodies can collide. This is game physics, not a
+clinically validated biomechanical simulation.
 Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
@@ -294,22 +279,28 @@ limited abduction/adduction. If a saved standing pose is already outside a
 reference interval, its initial angle is preserved rather than forcing it into
 range. Motion can recover toward the interval, and the outward allowance shrinks
 as it recovers, rather than letting it extend past the recovered angle again.
-Restoring or editing the reference resets that allowance. In R mode, each toe
-chain is projected in parent-to-child order after contacts and before rendering:
-its child frame is reconstructed at the shared marked surface anchor with a
-clamped hinge coordinate. This enforces those modelled toe hinges to GPU float
-precision, including the first displayed R frame. Other R-mode joints and
-contacts still use the iterative solver. A toe projection takes priority over
-contact separation and can therefore leave collision penetration. The axis is
-still an estimate from shaft marks and dorsal direction, not a measured joint
-axis. This is not a clinical diagnosis:
-a shaft-based neutral and one approximate hinge axis cannot represent cartilage,
-translation, coupled tendon motion, or patient-specific joint limits.
+Restoring or editing the reference resets that allowance.
 
-This remains a **partial** implementation: a single-axis tree cannot represent
-all three-dimensional ball-joint motion, pronation/supination with both
-radioulnar articulations, translation, coordinated scapular rhythm, closed loops,
-ligament constraints, cartilage, collision-free motion, or subject-specific
+In R mode, one graph-wide reconstruction applies the configured hinge and
+bounded multi-axis coordinates to every rotational link after contact solving,
+including the first displayed frame. It reconstructs child anchors from their
+parent frames rather than leaving off-axis swing or anchor gaps to the
+iterative solver. Positional closure links are checked as well; if a proposed
+pose exceeds a closure limit, motion along the corresponding graph paths is
+backtracked, with the last accepted pose retained as a numerical fallback.
+The inferred rib/sternum cartilage links use the previous room model's ±4 mm
+local displacement approximation, not subject-fitted cartilage measurements.
+The graph reconstruction takes priority over inter-body collision separation;
+a whole-island floor lift prevents projected floor-proxy penetration, but
+inter-body penetration may remain until a later contact pass. These constraints
+are applied to GPU floating-point precision, and the XYZ multi-axis model has
+an Euler singularity at a 90-degree middle angle. Toe hinge axes remain estimates
+from the marked shafts and dorsal direction, not measured clinical axes.
+
+This remains a **partial** implementation: the present joint model cannot represent
+all anatomical joint motion, pronation/supination with both radioulnar
+articulations, coordinated scapular rhythm, deformable cartilage and ligaments,
+collision-free motion, or subject-specific
 neutral and limits. Some source links are redundant in the spanning tree and
 some small bones intentionally grouped. It should not be described as every
 joint working or medically validated.

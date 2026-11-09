@@ -14,7 +14,7 @@ for name in ('rigid_solver', 'rigid_skin'):
     lines = [f'// Generated from {name}.comp.spv; do not edit.', '#pragma once',
              '#include <cstdint>', 'namespace gtc::native::gpu_physics {',
              f'inline constexpr std::uint32_t {name}_spirv[] = {{']
-    words_per_line = 40 if name == 'rigid_solver' else 16
+    words_per_line = 48 if name == 'rigid_solver' else 16
     for offset in range(0, len(words), words_per_line):
         lines.append('    ' + ', '.join(f'0x{x:08x}u' for x in words[offset:offset + words_per_line]) + ',')
     lines += ['};', '}', '']

@@ -108,25 +108,84 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
         }
     }
     if (cursor!=joints.size()) return false;
-    // Final toe projection is parallel within each depth: no two joints may
-    // write the same child, and a parent must come from an earlier depth.
-    std::vector<std::uint32_t> toeDepth(count,0);
-    bool strictToes=false;
-    for (const Joint& j:joints) if (j.bodies[3]) {
-        const auto depth=j.bodies[3],a=j.bodies[0],b=j.bodies[1];
-        if (depth>3 || j.bodies[2]!=1 || toeDepth[b]) return false;
-        for (int k=0;k<3;++k)
-            if (std::abs(j.parentAxis[k]-j.childAxis[k])>1e-5f ||
-                std::abs(j.parentTangent[k]-j.childTangent[k])>1e-5f) return false;
-        // The matching joint frames are expressed in the identity initial
-        // body orientations used by the room's rigid rig.
-        for (auto i:{a,b}) {
-            const auto& q=bodies[i].rotation;
-            if (std::abs(q[0])+std::abs(q[1])+std::abs(q[2])+std::abs(q[3]-1)>1e-5f) return false;
+    // The rotational links form an oriented forest. Positional links close
+    // paths in that forest; retain every closure when computing a valid pose.
+    // No anatomy names or per-bone rules are needed here.
+    std::vector<Joint> preparedJoints(joints.begin(),joints.end());
+    const auto none=std::numeric_limits<std::uint32_t>::max();
+    std::vector<std::uint32_t> parent(count,none), parentJoint(count,none), depth(count,0);
+    for (std::uint32_t i=0;i<preparedJoints.size();++i) {
+        auto& j=preparedJoints[i]; j.bodies[3]=0;
+        if (j.bodies[2]==2) {
+            for (int k=0;k<3;++k) if (j.lowerAngles[k]>j.upperAngles[k]) return false;
+            continue;
         }
-        toeDepth[b]=depth;strictToes=true;
+        const auto child=j.bodies[1];
+        if (parent[child]!=none || bodies[child].positionMass[3]<=0) return false;
+        parent[child]=j.bodies[0]; parentJoint[child]=i;
     }
-    for (const Joint& j:joints) if (j.bodies[3] && toeDepth[j.bodies[0]]>=j.bodies[3]) return false;
+    std::uint32_t maxDepth=0;
+    for (std::uint32_t i=0;i<count;++i) {
+        std::uint32_t n=i, d=0;
+        while (parent[n]!=none) {
+            if (++d>count) return false;
+            n=parent[n];
+        }
+        depth[i]=d; maxDepth=std::max(maxDepth,d);
+        if (parentJoint[i]!=none) preparedJoints[parentJoint[i]].bodies[3]=d;
+    }
+    for (const auto& j:preparedJoints) if (j.bodies[2]==2) {
+        auto a=j.bodies[0], b=j.bodies[1];
+        while (a!=b) {
+            if (depth[a]>=depth[b]) {
+                if (parentJoint[a]==none) return false;
+                preparedJoints[parentJoint[a]].bodies[3]|=0x80000000u;
+                a=parent[a];
+            } else {
+                if (parentJoint[b]==none) return false;
+                preparedJoints[parentJoint[b]].bodies[3]|=0x80000000u;
+                b=parent[b];
+            }
+        }
+    }
+    // A previous feasible pose is the backtracking seed. The room's closed
+    // paths start in their aligned reference frames; reject a non-feasible
+    // seed rather than silently publishing a broken loop.
+    const auto identity=[&](std::uint32_t i) {
+        const auto& q=bodies[i].rotation;
+        return q[0]==0 && q[1]==0 && q[2]==0 && q[3]==1;
+    };
+    for (const auto& j:preparedJoints) {
+        if ((j.bodies[3]&0x80000000u)!=0u) {
+            if (!identity(j.bodies[0]) || !identity(j.bodies[1])) return false;
+            for (int k=0;k<3;++k) {
+                if (j.parentAxis[k]!=j.childAxis[k] || j.parentTangent[k]!=j.childTangent[k] ||
+                    std::abs(bodies[j.bodies[0]].positionMass[k]+j.parentAnchor[k]-
+                             bodies[j.bodies[1]].positionMass[k]-j.childAnchor[k])>1e-5f) return false;
+                if (j.bodies[2]==0 && (j.lowerAngles[k]>0 || j.upperAngles[k]<0)) return false;
+            }
+            if (j.bodies[2]==1 && (j.parentAxis[3]>0 || j.childAxis[3]<0)) return false;
+        } else if (j.bodies[2]==2) {
+            if (!identity(j.bodies[0]) || !identity(j.bodies[1])) return false;
+            std::array<double,3> correctionA{},correctionB{};
+            auto a=j.bodies[0],b=j.bodies[1];
+            const auto accumulate=[&](std::uint32_t node,std::array<double,3>& correction) {
+                const Joint& edge=preparedJoints[parentJoint[node]];
+                for (int k=0;k<3;++k)
+                    correction[k]+=double(bodies[edge.bodies[0]].positionMass[k])+edge.parentAnchor[k]-
+                                   bodies[node].positionMass[k]-edge.childAnchor[k];
+            };
+            while (a!=b) {
+                if (depth[a]>=depth[b]) { accumulate(a,correctionA); a=parent[a]; }
+                else { accumulate(b,correctionB); b=parent[b]; }
+            }
+            for (int k=0;k<3;++k) {
+                const double d=double(bodies[j.bodies[1]].positionMass[k])+j.childAnchor[k]-
+                               bodies[j.bodies[0]].positionMass[k]-j.parentAnchor[k]+correctionB[k]-correctionA[k];
+                if (d<j.lowerAngles[k]+1e-5 || d>j.upperAngles[k]-1e-5) return false;
+            }
+        }
+    }
     device_=device;
 #define LOAD(member, name) member=reinterpret_cast<decltype(member)>(getDeviceProcAddr(device_,name)); if (!member) { reset(); return false; }
     LOAD(createBuffer_,"vkCreateBuffer")
@@ -190,12 +249,13 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     // Corrections, static exclusions, world bounds/centres, and a transient
     // broad-phase bitset all share one Vulkan 1.0 storage binding.
     IslandPlan islands;
-    if (!makeIslandPlan(count,joints,batches,islands) && strictToes) { reset(); return false; }
+    if (!makeIslandPlan(count,preparedJoints,batches,maxDepth,islands)) { reset(); return false; }
     for (std::size_t i=0;i<count;++i) {
         // Zero means the ordinary non-island fallback. samples.w is the
         // GPU-owned sleep flag and is always reset for a fresh simulation.
         prepared[i].samples[2]=islands.count ? islands.bodyIsland[i]+1u : 0u;
         prepared[i].samples[3]=0u;
+        prepared[i].linearVelocity[3]=parent[i]==none ? 1.0f : 0.0f;
     }
     std::vector<std::uint32_t> scratch(count*16+exclusions.size()*2,0);
     std::copy(exclusions.begin(),exclusions.end(),scratch.begin()+count*8);
@@ -208,7 +268,7 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     }
     const VkDeviceSize sizes[4]={bodies.size_bytes(),joints.size_bytes(),sortedSamples.size()*sizeof(sortedSamples[0]),
                                  scratch.size()*sizeof(std::uint32_t)};
-    const void* data[4]={prepared.data(),joints.data(),sortedSamples.data(),scratch.data()};
+    const void* data[4]={prepared.data(),preparedJoints.data(),sortedSamples.data(),scratch.data()};
     for (std::size_t i=0;i<buffers_.size();++i) {
         const VkBufferUsageFlags usage=i==3 ? VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT : 0;
         if (!makeBuffer(buffers_[i],sizes[i],data[i],usage)) { reset(); return false; }
@@ -263,7 +323,6 @@ bool RigidRuntime::create(VkPhysicalDevice physical, VkDevice device,
     if (result!=VK_SUCCESS) { reset(); return false; }
     bodyCount_=static_cast<std::uint32_t>(count);
     islandCount_=islands.count;
-    strictToes_=strictToes;
     indirectOffset_=islandCount_ ? (islandBase+islands.words[1]+count*8u)*sizeof(std::uint32_t) : 0;
     batches_.assign(batches.begin(),batches.end());
     return true;
@@ -304,9 +363,9 @@ void RigidRuntime::dispatch(VkCommandBuffer command, const Step& step) const {
         (step.phase==10 ? VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT : 0);
     barrier(command,destination,step.phase==8);
 }
-bool RigidRuntime::projectInitialToes(VkCommandBuffer command) const {
+bool RigidRuntime::projectInitialJoints(VkCommandBuffer command) const {
     if (!command || !pipeline_) return false;
-    if (!strictToes_) return true;
+    if (!islandCount_) return true;
     barrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     cmdBindPipeline_(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_);
     cmdBindDescriptorSets_(command,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
@@ -363,10 +422,11 @@ bool RigidRuntime::record(VkCommandBuffer command, float dt, std::uint32_t itera
             step.first=0; step.phase=5; dispatch(command,step);
         }
     }
-    // Contacts are allowed to perturb the iterative solve, so finish with an
-    // exact parent-to-child toe projection before velocity and skinning.
-    if (strictToes_) {
-        step.first=bodyCount_; step.count=islandCount_; step.phase=13; dispatch(command,step);
+    // Reconstruct all articulated coordinates after contacts, and retain all
+    // positional closures when accepting the resulting graph pose.
+    if (islandCount_) {
+        step.first=bodyCount_; step.count=islandCount_; step.phase=13;
+        dispatch(command,step);
     }
     step.first=bodyCount_; step.count=bodyCount_; step.phase=3; dispatch(command,step);
     if (islandCount_) {
@@ -487,7 +547,7 @@ void RigidRuntime::reset() {
     }
     pipeline_=VK_NULL_HANDLE; layout_=VK_NULL_HANDLE; pool_=VK_NULL_HANDLE;
     setLayout_=VK_NULL_HANDLE; set_=VK_NULL_HANDLE; device_=VK_NULL_HANDLE;
-    bodyCount_=0; islandCount_=0; strictToes_=false; indirectOffset_=0; batches_.clear();
+    bodyCount_=0; islandCount_=0; indirectOffset_=0; batches_.clear();
 }
 
 } // namespace gtc::native::gpu_physics

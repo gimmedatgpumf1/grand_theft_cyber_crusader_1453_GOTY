@@ -1,11 +1,7 @@
 #version 450
-
-// Experimental Vulkan rigid-body solver used by the test room.
-// Joint batches must be graph-coloured: no two joints in one batch may
-// reference the same body. Synchronize between batches and solver phases.
-// Coordinates are metres, seconds, and radians.
+// Experimental Vulkan rigid-body solver used by the test room. Joint batches must be graph-coloured: no two joints in one batch may
+// reference the same body. Synchronize between batches and solver phases. Coordinates are metres, seconds, and radians.
 layout(local_size_x = 64) in;
-
 struct Body {
     vec4 positionMass;    // world centre, inverse mass
     vec4 rotation;        // local-to-world quaternion, xyzw
@@ -31,11 +27,9 @@ struct Joint {
 layout(std430, set=0, binding=0) coherent buffer Bodies { Body body[]; } bodies;
 layout(std430, set=0, binding=1) readonly buffer Joints { Joint joint[]; } joints;
 layout(std430, set=0, binding=2) readonly buffer Samples { vec4 point[]; } samples;
-// Scratch: eight correction words per body, the symmetric exclusion bitset,
-// four world-bound words and four centre/radius words per body, a transient
-// broad-phase bitset, then island schedules, sleep state and indirect commands.
-// Four storage buffers fit Vulkan 1.0.
-layout(std430, set=0, binding=3) buffer Scratch { uint word[]; } scratch;
+// Scratch: eight correction words per body, the symmetric exclusion bitset, four world-bound words and four centre/radius words per body, a transient
+// broad-phase bitset, then island schedules, sleep state and indirect commands. Four storage buffers fit Vulkan 1.0.
+layout(std430, set=0, binding=3) coherent buffer Scratch { uint word[]; } scratch;
 layout(push_constant) uniform Step {
     uint phase;           // predict, joint, floor, velocity, contacts, apply
     uint first;           // joint offset, or body count in contacts phase
@@ -48,26 +42,17 @@ layout(push_constant) uniform Step {
     vec4 damping;         // free linear/angular, contact linear/angular
     vec4 floorDamping;    // floor tangential/angular
 } step;
-
-vec4 qmul(vec4 a, vec4 b) {
-    return vec4(a.w*b.xyz+b.w*a.xyz+cross(a.xyz,b.xyz), a.w*b.w-dot(a.xyz,b.xyz));
+float angle2(float y,float x) {
+    if (x==0.0) return y>0.0 ? 1.57079633 : (y<0.0 ? -1.57079633 : 0.0);
+    float a=atan(y/x); return x<0.0 ? a+(y<0.0 ? -3.14159265 : 3.14159265) : a;
 }
-vec3 rotate(vec4 q, vec3 v) {
-    return v + 2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);
-}
+vec4 qmul(vec4 a, vec4 b) { return vec4(a.w*b.xyz+b.w*a.xyz+cross(a.xyz,b.xyz),a.w*b.w-dot(a.xyz,b.xyz)); }
+vec3 rotate(vec4 q,vec3 v) { return v+2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v); }
 vec3 worldBounds(Body b) {
-    return abs(rotate(b.rotation,vec3(b.bounds.x,0,0))) +
-           abs(rotate(b.rotation,vec3(0,b.bounds.y,0))) +
-           abs(rotate(b.rotation,vec3(0,0,b.bounds.z)));
+    return abs(rotate(b.rotation,vec3(b.bounds.x,0,0)))+abs(rotate(b.rotation,vec3(0,b.bounds.y,0)))+abs(rotate(b.rotation,vec3(0,0,b.bounds.z)));
 }
-vec3 invInertia(Body b, vec3 worldVector) {
-    vec4 inverseQ=vec4(-b.rotation.xyz,b.rotation.w);
-    return rotate(b.rotation,rotate(inverseQ,worldVector)*b.inverseInertia.xyz);
-}
-void rotateBy(inout Body b, vec3 delta) {
-    b.rotation=normalize(b.rotation+0.5*qmul(vec4(delta,0.0),b.rotation));
-}
-
+vec3 invInertia(Body b,vec3 v) { return rotate(b.rotation,rotate(vec4(-b.rotation.xyz,b.rotation.w),v)*b.inverseInertia.xyz); }
+void rotateBy(inout Body b,vec3 delta) { b.rotation=normalize(b.rotation+0.5*qmul(vec4(delta,0.0),b.rotation)); }
 void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
     vec3 ia=invInertia(a,axis), ib=invInertia(b,axis);
     float effective=dot(axis,ia+ib);
@@ -76,15 +61,13 @@ void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
     rotateBy(a,ia*impulse);
     rotateBy(b,-ib*impulse);
 }
-
-// Hinge: align its two axes, then clamp the signed twist. Axis and tangent
-// frames are captured from the initial calibrated rig.
+// Hinge: align its two axes, then clamp the signed twist. Axis and tangent frames are captured from the initial calibrated rig.
 void solveHinge(inout Body a, inout Body b, Joint j) {
     vec3 axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
     vec3 axisB=normalize(rotate(b.rotation,j.childAxis.xyz));
     vec3 crossAxis=cross(axisA,axisB);
     float sine=length(crossAxis), cosine=clamp(dot(axisA,axisB),-1.0,1.0);
-    if (sine>1e-6) solveAngular(a,b,crossAxis/sine,atan(sine,cosine));
+    if (sine>1e-6) solveAngular(a,b,crossAxis/sine,angle2(sine,cosine));
     else if (cosine<0.0) solveAngular(a,b,normalize(rotate(a.rotation,j.parentTangent.xyz)),3.14159265);
     axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
     vec3 tangentA=rotate(a.rotation,j.parentTangent.xyz);
@@ -94,19 +77,17 @@ void solveHinge(inout Body a, inout Body b, Joint j) {
     float aa=length(tangentA), bb=length(tangentB);
     if (aa<1e-6 || bb<1e-6) return;
     tangentA/=aa; tangentB/=bb;
-    float angle=atan(dot(axisA,cross(tangentA,tangentB)),dot(tangentA,tangentB));
+    float angle=angle2(dot(axisA,cross(tangentA,tangentB)),dot(tangentA,tangentB));
     float error=angle-clamp(angle,j.parentAxis.w,j.childAxis.w);
     if (abs(error)>1e-6) solveAngular(a,b,axisA,error);
 }
-
-// Approximate the three angular coordinates by intrinsic XYZ angles in the
-// fitted joint frame. This is not a coupled anatomical limit surface and has
+// Approximate the three angular coordinates by intrinsic XYZ angles in the fitted joint frame. This is not a coupled anatomical limit surface and has
 // the usual Euler singularity near 90 degrees of the middle coordinate.
 vec3 ballAngles(Body a, Body b, vec3 x, vec3 y, vec3 z, vec3 bx, vec3 by, vec3 bz) {
     vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
     vec3 rx=rotate(relative,bx), ry=rotate(relative,by), rz=rotate(relative,bz);
-    return vec3(atan(-dot(y,rz),dot(z,rz)),asin(clamp(dot(x,rz),-1.0,1.0)),
-                atan(-dot(x,ry),dot(x,rx)));
+    return vec3(angle2(-dot(y,rz),dot(z,rz)),asin(clamp(dot(x,rz),-1.0,1.0)),
+                angle2(-dot(x,ry),dot(x,rx)));
 }
 void solveBall(inout Body a, inout Body b, Joint j) {
     vec3 x=normalize(j.parentAxis.xyz), y=normalize(j.parentTangent.xyz), z=normalize(cross(x,y));
@@ -114,8 +95,7 @@ void solveBall(inout Body a, inout Body b, Joint j) {
     vec3 angles=ballAngles(a,b,x,y,z,bx,by,bz);
     bool changed=false;
     for (int k=0;k<3;++k) {
-        // Most coordinates are already within their limits. Recompute the
-        // expensive trigonometry only after a previous axis changed the pose.
+        // Most coordinates are already within their limits. Recompute the expensive trigonometry only after a previous axis changed the pose.
         if (changed) { angles=ballAngles(a,b,x,y,z,bx,by,bz); changed=false; }
         float error=angles[k]-clamp(angles[k],j.lowerAngles[k],j.upperAngles[k]);
         if (abs(error)<1e-6) continue;
@@ -133,18 +113,17 @@ void solveBall(inout Body a, inout Body b, Joint j) {
         solveAngular(a,b,axis,error); changed=true;
     }
 }
-
-// Corrects the separation of the two calibrated anchors. A coloured batch
-// makes each body writable by just one invocation, without float atomics.
+// Corrects the separation of the two calibrated anchors. A coloured batch makes each body writable by just one invocation, without float atomics.
 void solveJoint(uint index) {
     Joint j=joints.joint[index];
     Body a=bodies.body[j.bodies.x], b=bodies.body[j.bodies.y];
     if (a.samples.w!=0u) return;
     for (int k=0;k<3;++k) {
-        vec3 n=vec3(k==0 ? 1.0 : 0.0,k==1 ? 1.0 : 0.0,k==2 ? 1.0 : 0.0);
+        vec3 n=rotate(a.rotation,vec3(k==0 ? 1.0 : 0.0,k==1 ? 1.0 : 0.0,k==2 ? 1.0 : 0.0));
         vec3 ra=rotate(a.rotation,j.parentAnchor.xyz);
         vec3 rb=rotate(b.rotation,j.childAnchor.xyz);
         float error=dot((b.positionMass.xyz+rb)-(a.positionMass.xyz+ra),n);
+        if (j.bodies.z==2u) error-=clamp(error,j.lowerAngles[k],j.upperAngles[k]);
         if (abs(error)<1e-8) continue;
         vec3 aa=cross(ra,n), ab=cross(rb,n);
         vec3 ia=invInertia(a,aa), ib=invInertia(b,ab);
@@ -158,22 +137,22 @@ void solveJoint(uint index) {
     }
     if (j.bodies.z==0u) solveBall(a,b,j);
     else if (j.bodies.z==1u) solveHinge(a,b,j);
-    // Angular correction can move anchors apart again. Close the remaining
-    // gap by inverse-mass weighted translation, just as the old hand solver
-    // projected tiny finger anchors after constraint solving.
+    // Angular correction can move anchors apart again. Close the remaining gap by inverse-mass weighted translation, just as the old hand solver projected tiny finger anchors after constraint solving.
     float weight=a.positionMass.w+b.positionMass.w;
     if (weight>1e-12) {
         vec3 separation=(b.positionMass.xyz+rotate(b.rotation,j.childAnchor.xyz))-
                         (a.positionMass.xyz+rotate(a.rotation,j.parentAnchor.xyz));
+        if (j.bodies.z==2u) {
+            vec3 local=rotate(vec4(-a.rotation.xyz,a.rotation.w),separation);
+            separation=rotate(a.rotation,local-clamp(local,j.lowerAngles.xyz,j.upperAngles.xyz));
+        }
         a.positionMass.xyz+=separation*(a.positionMass.w/weight);
         b.positionMass.xyz-=separation*(b.positionMass.w/weight);
     }
     bodies.body[j.bodies.x]=a;
     bodies.body[j.bodies.y]=b;
 }
-
-// Floor support points are local to their rigid body. A body owns all its
-// support points, so this phase is also one writer per body.
+// Floor support points are local to their rigid body. A body owns all its support points, so this phase is also one writer per body.
 void storeBounds(uint index, uint count, Body b) {
     uint offset=count*8u+count*((count+31u)/32u)+index*4u;
     uint centerOffset=offset+count*4u;
@@ -198,7 +177,7 @@ uint candidateOffset(uint count) { return count*16u+count*((count+31u)/32u); }
 uint islandBase(uint count) { return count*16u+2u*count*((count+31u)/32u); }
 uint islandRecord(uint count, uint island) {
     uint base=islandBase(count), colours=scratch.word[base];
-    return base+2u+island*(5u+2u*colours);
+    return base+2u+island*(7u+2u*colours);
 }
 uint islandState(uint count, uint island) {
     uint base=islandBase(count);
@@ -220,9 +199,7 @@ void saveRestReference(uint count, uint index, Body b) {
     for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
     for (uint k=0u;k<4u;++k) scratch.word[offset+4u+k]=floatBitsToUint(b.rotation[k]);
 }
-
-// One invocation owns one 32-body word. The broad phase is independently
-// parallel and writes a compact list of candidates for the narrow phase.
+// One invocation owns one 32-body word. The broad phase is independently parallel and writes a compact list of candidates for the narrow phase.
 void findCandidates(uint wordIndex) {
     uint count=step.first, stride=(count+31u)/32u;
     uint index=wordIndex/stride, word=wordIndex%stride;
@@ -248,8 +225,7 @@ void findCandidates(uint wordIndex) {
 void solveFloor(uint index, bool saveBounds) {
     Body b=bodies.body[index];
     if (b.samples.w!=0u) return;
-    // The enclosing sphere is conservative for all proxies. Most bodies are
-    // nowhere near the floor during a drop, so do not scan all their samples.
+    // The enclosing sphere is conservative for all proxies. Most bodies are nowhere near the floor during a drop, so do not scan all their samples.
     if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=step.gravityFloor.w) {
         if (saveBounds) storeBounds(index,step.first,b);
         return;
@@ -275,9 +251,7 @@ void solveFloor(uint index, bool saveBounds) {
             float impulse=(step.gravityFloor.w-lowest)/effective;
             b.positionMass.xyz+=n*(impulse*b.positionMass.w);
             rotateBy(b,angular*impulse);
-            // Resist tangential movement of the actual contact point, not
-            // only translation of the body's centre. This gives the floor
-            // leverage against spinning and is bounded by the normal impulse.
+            // Resist tangential movement of the actual contact point, not only translation of the body's centre. This gives the floor leverage against spinning and is bounded by the normal impulse.
             arm=rotate(b.rotation,localPoint)-vec3(0.0,pointRadius,0.0);
             vec3 previousArm=rotate(b.previousRotation,localPoint)-vec3(0.0,pointRadius,0.0);
             vec3 slip=(b.positionMass.xyz+arm)-(b.previousPosition.xyz+previousArm);
@@ -299,7 +273,6 @@ void solveFloor(uint index, bool saveBounds) {
     bodies.body[index]=b;
     if (saveBounds) storeBounds(index,step.first,b);
 }
-
 // Pick directly from the current GPU proxies; the host never reads body poses.
 shared float pickDistance[64];
 shared uint pickBody[64];
@@ -354,7 +327,6 @@ void pickDrag(uint lane) {
         }
     }
 }
-
 void solveDrag(uint index, uint count) {
     uint offset=dragOffset(count);
     Body b=bodies.body[index];
@@ -377,10 +349,7 @@ void solveDrag(uint index, uint count) {
     }
     bodies.body[index]=b;
 }
-
-// Give the connected figure a bounded translation toward the pointer before
-// solving its joints, then pull at the actual grabbed point. This avoids
-// tearing a small bone away from a much heavier articulated body.
+// Give the connected figure a bounded translation toward the pointer before solving its joints, then pull at the actual grabbed point. This avoids tearing a small bone away from a much heavier articulated body.
 shared vec3 dragShift;
 void dragIsland(uint lane) {
     uint count=step.first, held=draggedBody(count);
@@ -409,10 +378,7 @@ void dragIsland(uint lane) {
     memoryBarrierBuffer(); barrier();
     if (lane==0u) solveDrag(held-1u,count);
 }
-
-// Joint islands have disjoint bodies. Their graph-coloured constraints and
-// floor corrections can be ordered with workgroup barriers rather than one
-// global Vulkan dispatch and pipeline barrier per colour.
+// Joint islands have disjoint bodies. Their graph-coloured constraints and floor corrections can be ordered with workgroup barriers rather than one global Vulkan dispatch and pipeline barrier per colour.
 void solveIsland(uint island, uint lane) {
     uint count=step.first;
     uint base=islandBase(count), colours=scratch.word[base];
@@ -430,50 +396,214 @@ void solveIsland(uint island, uint lane) {
         memoryBarrierBuffer(); barrier();
     }
 }
-
-// The room's toe joint frames start aligned in each body's identity frame.
-// Keep the simulated hinge coordinate, clamp it, then reconstruct the child
-// orientation and its marked anchor exactly (up to float rounding). Unlike
-// the iterative impulse solve, no off-axis rotation or anchor gap survives.
-void projectToe(uint index) {
+// The current and accepted world rotations are scratch data, independent of the sleep reference and indirect commands. All work is island-local.
+uint jointPoseOffset(uint count,uint index) { return dragOffset(count)+8u+index*16u; }
+vec4 loadJointRotation(uint count,uint index,uint slot) {
+    uint p=jointPoseOffset(count,index)+slot*4u;
+    return vec4(uintBitsToFloat(scratch.word[p]),uintBitsToFloat(scratch.word[p+1u]),
+                uintBitsToFloat(scratch.word[p+2u]),uintBitsToFloat(scratch.word[p+3u]));
+}
+void storeJointRotation(uint count,uint index,uint slot,vec4 q) {
+    uint p=jointPoseOffset(count,index)+slot*4u;
+    for (uint k=0u;k<4u;++k) scratch.word[p+k]=floatBitsToUint(q[k]);
+}
+vec4 conjugateQ(vec4 q) { return vec4(-q.xyz,q.w); }
+vec4 axisTurn(vec3 axis,float angle) { return vec4(axis*sin(angle*0.5),cos(angle*0.5)); }
+// Columns are an orthonormal joint frame, in body-local coordinates.
+vec4 frameRotation(vec3 x,vec3 y) {
+    x=normalize(x); y=normalize(y-x*dot(x,y));
+    mat3 m=mat3(x,y,cross(x,y));
+    float trace=m[0][0]+m[1][1]+m[2][2];
+    vec4 q;
+    if (trace>0.0) {
+        float t=2.0*sqrt(trace+1.0);
+        q=vec4((m[1][2]-m[2][1])/t,(m[2][0]-m[0][2])/t,
+               (m[0][1]-m[1][0])/t,0.25*t);
+    } else if (m[0][0]>m[1][1] && m[0][0]>m[2][2]) {
+        float t=2.0*sqrt(max(1.0+m[0][0]-m[1][1]-m[2][2],0.0));
+        q=vec4(0.25*t,(m[1][0]+m[0][1])/t,(m[2][0]+m[0][2])/t,(m[1][2]-m[2][1])/t);
+    } else if (m[1][1]>m[2][2]) {
+        float t=2.0*sqrt(max(1.0+m[1][1]-m[0][0]-m[2][2],0.0));
+        q=vec4((m[1][0]+m[0][1])/t,0.25*t,(m[2][1]+m[1][2])/t,(m[2][0]-m[0][2])/t);
+    } else {
+        float t=2.0*sqrt(max(1.0+m[2][2]-m[0][0]-m[1][1],0.0));
+        q=vec4((m[2][0]+m[0][2])/t,(m[2][1]+m[1][2])/t,0.25*t,(m[0][1]-m[1][0])/t);
+    }
+    return normalize(q);
+}
+vec4 relativeAt(uint count,Joint j,uint slot) {
+    vec4 a=loadJointRotation(count,j.bodies.x,slot), b=loadJointRotation(count,j.bodies.y,slot);
+    return normalize(qmul(conjugateQ(a),b));
+}
+void projectJoint(uint index,uint count,float fraction,bool initial) {
     Joint j=joints.joint[index];
     Body a=bodies.body[j.bodies.x], b=bodies.body[j.bodies.y];
-    vec3 axis=normalize(j.parentAxis.xyz);
-    vec4 relative=qmul(vec4(-a.rotation.xyz,a.rotation.w),b.rotation);
-    float p=dot(relative.xyz,axis);
-    float angle=(abs(p)+abs(relative.w)>1e-8) ? 2.0*atan(p,relative.w) : 0.0;
-    angle=atan(sin(angle),cos(angle));
-    angle=clamp(angle,j.parentAxis.w,j.childAxis.w);
-    vec4 turn=vec4(axis*sin(angle*0.5),cos(angle*0.5));
-    b.rotation=normalize(qmul(a.rotation,turn));
+    vec4 target=relativeAt(count,j,1u);
+    if (!initial && (j.bodies.w&0x80000000u)!=0u) {
+        vec4 previous=relativeAt(count,j,0u);
+        if (dot(previous,target)<0.0) target=-target;
+        target=normalize(mix(previous,target,fraction));
+    }
+    vec4 parentFrame=frameRotation(j.parentAxis.xyz,j.parentTangent.xyz);
+    vec4 childFrame=frameRotation(j.childAxis.xyz,j.childTangent.xyz);
+    vec4 q=normalize(qmul(qmul(conjugateQ(parentFrame),target),childFrame));
+    vec4 turn;
+    if (j.bodies.z==1u) {
+        float angle=(abs(q.x)+abs(q.w)>1e-8) ? 2.0*angle2(q.x,q.w) : 0.0;
+        angle=clamp(angle2(sin(angle),cos(angle)),j.parentAxis.w,j.childAxis.w);
+        turn=axisTurn(vec3(1,0,0),angle);
+    } else {
+        vec3 rx=rotate(q,vec3(1,0,0)), ry=rotate(q,vec3(0,1,0)), rz=rotate(q,vec3(0,0,1));
+        vec3 angles=vec3(angle2(-rz.y,rz.z),asin(clamp(rz.x,-1.0,1.0)),angle2(-ry.x,rx.x));
+        angles=clamp(angles,j.lowerAngles.xyz,j.upperAngles.xyz);
+        turn=qmul(qmul(axisTurn(vec3(1,0,0),angles.x),axisTurn(vec3(0,1,0),angles.y)),
+                  axisTurn(vec3(0,0,1),angles.z));
+    }
+    b.rotation=normalize(qmul(qmul(qmul(a.rotation,parentFrame),turn),conjugateQ(childFrame)));
     b.positionMass.xyz=a.positionMass.xyz+rotate(a.rotation,j.parentAnchor.xyz)-rotate(b.rotation,j.childAnchor.xyz);
     bodies.body[j.bodies.y]=b;
 }
-
-// Independent toe chains project in parallel. A barrier separates the base,
-// middle and distal depths so no later projection can move an earlier parent.
-void projectToeIsland(uint island, uint lane) {
-    uint count=step.first, base=islandBase(count), colours=scratch.word[base];
-    uint record=islandRecord(count,island);
-    uint bodyFirst=base+scratch.word[record], bodyCount=scratch.word[record+1u];
-    if (bodyCount==0u || bodies.body[scratch.word[bodyFirst]].samples.w!=0u) return;
-    for(uint depth=1u;depth<=3u;++depth) {
-        for(uint colour=0u;colour<colours;++colour) {
-            uint first=base+scratch.word[record+2u+colour*2u];
-            uint n=scratch.word[record+3u+colour*2u];
-            for(uint i=lane;i<n;i+=64u) {
-                uint index=scratch.word[first+i];
-                if(joints.joint[index].bodies.w==depth) projectToe(index);
+shared uint graphRoot;
+shared float graphError[64];
+shared float graphFloor[64];
+shared vec4 fitPosition[64],fitTarget[64],fitTorque[64],fitInertia[64];
+// Reconstruct each rotational joint from bounded coordinates. The backtrack affects only paths belonging to a positional cycle; all other joints keep
+// their requested motion. A previously accepted graph pose is always retained as a final candidate, rather than publishing a broken loop.
+void projectJointIsland(uint island,uint lane) {
+    uint count=step.first,base=islandBase(count),colours=scratch.word[base];
+    uint record=islandRecord(count,island),firstBody=base+scratch.word[record];
+    uint nBody=scratch.word[record+1u];
+    if (nBody==0u || bodies.body[scratch.word[firstBody]].samples.w!=0u) return;
+    bool initial=step.phase==14u;
+    if (lane==0u) {
+        graphRoot=scratch.word[firstBody];
+        for (uint i=0u;i<nBody;++i) {
+            uint index=scratch.word[firstBody+i];
+            if (bodies.body[index].linearVelocity.w>0.5) { graphRoot=index; break; }
+        }
+    }
+    barrier();
+    for (uint i=lane;i<nBody;i+=64u) {
+        uint index=scratch.word[firstBody+i];
+        Body b=bodies.body[index];
+        storeJointRotation(count,index,1u,b.rotation);
+        uint offset=jointPoseOffset(count,index)+12u;
+        for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
+    }
+    memoryBarrierBuffer(); barrier();
+    float fraction=1.0; bool failed=false;
+    for (uint attempt=0u;attempt<21u;++attempt) {
+        if (attempt==20u) fraction=0.0;
+        uint table=base+scratch.word[record+5u+2u*colours], maxDepth=scratch.word[record+6u+2u*colours];
+        for (uint depth=0u;depth<maxDepth;++depth) {
+            uint first=base+scratch.word[table+2u*depth],n=scratch.word[table+2u*depth+1u];
+            for (uint i=lane;i<n;i+=64u) projectJoint(scratch.word[first+i],count,fraction,initial);
+            memoryBarrierBuffer(); barrier();
+        }
+        float error=0.0;
+        for (uint colour=0u;colour<colours;++colour) {
+            uint first=base+scratch.word[record+2u+colour*2u], n=scratch.word[record+3u+colour*2u];
+            for (uint i=lane;i<n;i+=64u) {
+                Joint j=joints.joint[scratch.word[first+i]];
+                if (j.bodies.z!=2u) continue;
+                Body a=bodies.body[j.bodies.x],b=bodies.body[j.bodies.y];
+                vec3 delta=b.positionMass.xyz+rotate(b.rotation,j.childAnchor.xyz)-
+                           a.positionMass.xyz-rotate(a.rotation,j.parentAnchor.xyz);
+                vec3 local=rotate(conjugateQ(a.rotation),delta);
+                vec3 excess=max(j.lowerAngles.xyz-local,local-j.upperAngles.xyz);
+                error=max(error,max(excess.x,max(excess.y,excess.z)));
             }
+        }
+        graphError[lane]=error; barrier();
+        for (uint width=32u;width>0u;width>>=1u) {
+            if (lane<width) graphError[lane]=max(graphError[lane],graphError[lane+width]);
+            barrier();
+        }
+        if (graphError[0]<=0.0000001 || initial) break;
+        if (attempt==20u) { failed=true; break; }
+        fraction*=0.5;
+    }
+    // Restore the last accepted graph rigidly relative to its current root if numerical drift prevents even the zero-fraction candidate from closing.
+    if (failed) {
+        Body root=bodies.body[graphRoot];
+        uint rootOffset=jointPoseOffset(count,graphRoot)+8u;
+        vec3 oldRoot=vec3(uintBitsToFloat(scratch.word[rootOffset]),uintBitsToFloat(scratch.word[rootOffset+1u]),
+                          uintBitsToFloat(scratch.word[rootOffset+2u]));
+        vec4 turn=normalize(qmul(root.rotation,conjugateQ(loadJointRotation(count,graphRoot,0u))));
+        for (uint i=lane;i<nBody;i+=64u) {
+            uint index=scratch.word[firstBody+i], offset=jointPoseOffset(count,index)+8u;
+            Body b=bodies.body[index];
+            vec3 oldPosition=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),
+                                  uintBitsToFloat(scratch.word[offset+2u]));
+            b.positionMass.xyz=root.positionMass.xyz+rotate(turn,oldPosition-oldRoot);
+            b.rotation=normalize(qmul(turn,loadJointRotation(count,index,0u)));
+            bodies.body[index]=b;
         }
         memoryBarrierBuffer(); barrier();
     }
+    // Match the constrained graph to the mass-weighted contact solution with one rigid island correction. Unlike moving a root alone, this transmits the other bodies' momentum without changing any joint coordinate.
+    vec3 sumP=vec3(0),sumQ=vec3(0); float totalMass=0.0;
+    for (uint i=lane;i<nBody;i+=64u) {
+        uint index=scratch.word[firstBody+i],offset=jointPoseOffset(count,index)+12u;
+        Body b=bodies.body[index]; if (b.positionMass.w<=0.0) continue;
+        float mass=1.0/b.positionMass.w;
+        vec3 target=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),uintBitsToFloat(scratch.word[offset+2u]));
+        sumP+=mass*b.positionMass.xyz; sumQ+=mass*target; totalMass+=mass;
+    }
+    fitPosition[lane]=vec4(sumP,totalMass); fitTarget[lane]=vec4(sumQ,0); barrier();
+    for(uint width=32u;width>0u;width>>=1u) {
+        if(lane<width){fitPosition[lane]+=fitPosition[lane+width];fitTarget[lane]+=fitTarget[lane+width];} barrier();
+    }
+    vec3 center=fitPosition[0].xyz/max(fitPosition[0].w,1e-10), targetCenter=fitTarget[0].xyz/max(fitPosition[0].w,1e-10);
+    vec3 torque=vec3(0),inertia=vec3(0);
+    for (uint i=lane;i<nBody;i+=64u) {
+        uint index=scratch.word[firstBody+i],offset=jointPoseOffset(count,index)+12u;
+        Body b=bodies.body[index]; if (b.positionMass.w<=0.0) continue;
+        float mass=1.0/b.positionMass.w; vec3 r=b.positionMass.xyz-center;
+        vec3 target=vec3(uintBitsToFloat(scratch.word[offset]),uintBitsToFloat(scratch.word[offset+1u]),uintBitsToFloat(scratch.word[offset+2u]))-targetCenter;
+        torque+=mass*cross(r,target); inertia+=mass*(vec3(dot(r,r))-r*r);
+    }
+    fitTorque[lane]=vec4(torque,0); fitInertia[lane]=vec4(inertia,0); barrier();
+    for(uint width=32u;width>0u;width>>=1u) {
+        if(lane<width){fitTorque[lane]+=fitTorque[lane+width];fitInertia[lane]+=fitInertia[lane+width];} barrier();
+    }
+    bool anchored=bodies.body[graphRoot].positionMass.w<=0.0;
+    vec3 correction=fitTorque[0].xyz/max(fitInertia[0].xyz,vec3(1e-8));
+    float magnitude=length(correction); if(magnitude>0.2) correction*=0.2/magnitude;
+    vec4 correctionQ=normalize(vec4(correction*0.5,1.0));
+    for(uint i=lane;i<nBody;i+=64u){
+        uint index=scratch.word[firstBody+i]; Body b=bodies.body[index];
+        if(!anchored && b.positionMass.w>0.0){b.positionMass.xyz=targetCenter+rotate(correctionQ,b.positionMass.xyz-center);b.rotation=normalize(qmul(correctionQ,b.rotation));bodies.body[index]=b;}
+    }
+    memoryBarrierBuffer(); barrier();
+    // A rigid vertical island translation preserves all joint coordinates and closure errors while preventing a projected support proxy crossing the floor.
+    float lowest=step.gravityFloor.w;
+    for (uint i=lane;i<nBody;i+=64u) {
+        Body b=bodies.body[scratch.word[firstBody+i]];
+        if (b.positionMass.w<=0.0 || b.positionMass.y-b.inverseInertia.w>=lowest) continue;
+        vec3 up=rotate(conjugateQ(b.rotation),vec3(0,1,0));
+        for (uint k=0u;k<b.samples.y;++k) {
+            vec4 sphere=samples.point[b.samples.x+k];
+            lowest=min(lowest,b.positionMass.y+dot(up,sphere.xyz)-sphere.w);
+        }
+    }
+    graphFloor[lane]=lowest; barrier();
+    for (uint width=32u;width>0u;width>>=1u) {
+        if (lane<width) graphFloor[lane]=min(graphFloor[lane],graphFloor[lane+width]);
+        barrier();
+    }
+    float lift=anchored ? 0.0 : max(0.0,step.gravityFloor.w-graphFloor[0]);
+    for (uint i=lane;i<nBody;i+=64u) {
+        uint index=scratch.word[firstBody+i]; Body b=bodies.body[index];
+        if (b.positionMass.w>0.0) { b.positionMass.y+=lift; b.previousPosition.y+=lift; bodies.body[index]=b; }
+        storeJointRotation(count,index,0u,b.rotation);
+        uint offset=jointPoseOffset(count,index)+8u;
+        for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
+    }
+    memoryBarrierBuffer(); barrier();
 }
-
-// Sleeping is an island decision: connected bodies never freeze individually.
-// Wake decisions read last step's immutable sleep flags and are committed by
-// the following prediction dispatch, avoiding inter-workgroup races. A moving
-// neighbouring island wakes a resting one before it can strike its proxies.
+// Sleeping is an island decision: connected bodies never freeze individually. Wake decisions read last step's immutable sleep flags and are committed by
+// the following prediction dispatch, avoiding inter-workgroup races. A moving neighbouring island wakes a resting one before it can strike its proxies.
 shared uint wakeLanes[64];
 shared float motionLanes[64];
 shared float maxMotionLanes[64];
@@ -510,9 +640,7 @@ void wakeIsland(uint island, uint lane) {
         for (uint j=0u;j<count;++j) {
             Body b=bodies.body[j];
             if (b.samples.w!=0u || b.samples.z==a.samples.z || b.positionMass.w<=0.0) continue;
-            // Cull distant pairs before calculating speeds or transformed
-            // bounds. Only an approaching impact (or deliberate grab) wakes
-            // a pile; jitter on a neighbouring bone is not enough.
+            // Cull distant pairs before calculating speeds or transformed bounds. Only an approaching impact (or deliberate grab) wakes a pile; jitter on a neighbouring bone is not enough.
             vec3 delta=a.positionMass.xyz-b.positionMass.xyz;
             float reach=a.inverseInertia.w+b.inverseInertia.w+0.165;
             float distanceSquared=dot(delta,delta);
@@ -543,7 +671,6 @@ void wakeIsland(uint island, uint lane) {
         if (wakeLanes[0]!=0u) { scratch.word[state]=0u; scratch.word[state+2u]=0u; }
     }
 }
-
 void settleIsland(uint island, uint lane) {
     uint count=step.first, base=islandBase(count), record=islandRecord(count,island);
     uint first=base+scratch.word[record], n=scratch.word[record+1u];
@@ -554,8 +681,7 @@ void settleIsland(uint island, uint lane) {
         if (lane==0u) { scratch.word[state]=0u; scratch.word[state+2u]=0u; }
         return;
     }
-    // Inspect displacement against a half-second-old reference pose. This
-    // recognizes small oscillations even when per-step reconstructed velocity
+    // Inspect displacement against a half-second-old reference pose. This recognizes small oscillations even when per-step reconstructed velocity
     // is noisy, without sleeping a figure that is still travelling or falling.
     float elapsed=uintBitsToFloat(scratch.word[state])+step.dt;
     barrier();
@@ -613,8 +739,7 @@ void settleIsland(uint island, uint lane) {
     for (uint i=lane;i<n;i+=64u) {
         uint index=scratch.word[first+i];
         if (sleep) {
-            // Contacts are the last ordinary projection, so make sure the
-            // resting pose is above the floor before freezing it.
+            // Contacts are the last ordinary projection, so make sure the resting pose is above the floor before freezing it.
             solveFloor(index,true);
             Body b=bodies.body[index];
             b.linearVelocity.xyz=vec3(0.0); b.angularVelocity.xyz=vec3(0.0);
@@ -625,11 +750,8 @@ void settleIsland(uint island, uint lane) {
         }
     }
 }
-
-// Four lanes search candidate bodies for one body, with sixteen bodies per
-// workgroup. Each lane writes to private shared-memory slots before reduction,
-// so no float atomics or inter-workgroup writes are needed. Broad phase
-// remains all-pairs; a spatial accelerator is needed for larger scenes.
+// Four lanes search candidate bodies for one body, with sixteen bodies per workgroup. Each lane writes to private shared-memory slots before reduction,
+// so no float atomics or inter-workgroup writes are needed. Broad phase remains all-pairs; a spatial accelerator is needed for larger scenes.
 shared vec4 contactPosition[64];
 shared vec4 contactRotation[64];
 shared uint contactFlags[64];
@@ -653,8 +775,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
         vec3 bestLocal=vec3(0.0), bestA=vec3(0.0), bestB=vec3(0.0);
         float bestRadiusA=0.0, bestRadiusB=0.0, bestDistance=0.0;
         vec4 inverseB=vec4(-b.rotation.xyz,b.rotation.w);
-        // Transform A directly into B's frame. Compose the rotations and
-        // transform the centre once per pair, not twice for every proxy.
+        // Transform A directly into B's frame. Compose the rotations and transform the centre once per pair, not twice for every proxy.
         vec4 relativeRotation=qmul(inverseB,a.rotation);
         vec3 localSeparation=rotate(inverseB,separation);
         for (uint i=0u;i<a.samples.y;++i) {
@@ -663,9 +784,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
             float candidateRadius=b.inverseInertia.w+sa.w;
             if (dot(localCenter,localCenter)>candidateRadius*candidateRadius) continue;
             if (any(greaterThan(abs(localCenter),b.bounds.xyz+vec3(sa.w+1e-5)))) continue;
-            // B's proxies are sorted once along its longest local axis. Find
-            // the first possible overlap, then stop at the far end of the
-            // conservative sphere interval instead of scanning every proxy.
+            // B's proxies are sorted once along its longest local axis. Find the first possible overlap, then stop at the far end of the conservative sphere interval instead of scanning every proxy.
             uint axis=uint(b.angularVelocity.w);
             float reach=sa.w+b.bounds.w+1e-5;
             float lo=localCenter[axis]-reach, hi=localCenter[axis]+reach;
@@ -690,8 +809,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
         if (depth<=0.0) continue;
         vec3 bestNormal=bestDistance>1e-7 ? rotate(b.rotation,bestLocal/bestDistance)
                                            : vec3(index<other ? -1.0 : 1.0,0.0,0.0);
-        // A sleeping body is immovable until an actual wake decision. Using
-        // its dynamic mass here would leave half the penetration unresolved.
+        // A sleeping body is immovable until an actual wake decision. Using its dynamic mass here would leave half the penetration unresolved.
         float massB=b.samples.w!=0u ? 0.0 : b.positionMass.w;
         vec3 armA=rotate(a.rotation,bestA)-bestNormal*bestRadiusA;
         vec3 armB=rotate(b.rotation,bestB)+bestNormal*bestRadiusB;
@@ -699,15 +817,13 @@ void findContacts(uint index, uint lane, uint localIndex) {
         vec3 ia=invInertia(a,ta), ib=massB>0.0 ? invInertia(b,tb) : vec3(0.0);
         float effective=a.positionMass.w+massB+dot(ta,ia)+dot(tb,ib);
         if (effective<=1e-12) continue;
-        // Proxy surfaces may overlap at rest. A small slop and bounded
-        // correction stop them pumping energy into the joint chains.
+        // Proxy surfaces may overlap at rest. A small slop and bounded correction stop them pumping energy into the joint chains.
         float impulse=min(max(depth-0.001,0.0),0.012)/effective;
         positionDelta+=bestNormal*(impulse*a.positionMass.w);
         rotationDelta+=ia*impulse;
         if (a.samples.z!=b.samples.z && bestNormal.y>0.35) flags|=1u;
         flags|=2u;
-        // Coulomb-like positional friction at the actual contact point. The
-        // same pair is solved from both bodies without cross-workgroup writes.
+        // Coulomb-like positional friction at the actual contact point. The same pair is solved from both bodies without cross-workgroup writes.
         vec3 prevA=rotate(a.previousRotation,rotate(vec4(-a.rotation.xyz,a.rotation.w),armA));
         vec3 slip=(a.positionMass.xyz+armA)-(a.previousPosition.xyz+prevA);
         if (massB>0.0) {
@@ -753,9 +869,7 @@ void findContacts(uint index, uint lane, uint localIndex) {
         }
     }
 }
-
-// The following indirect dispatches can be empty while the whole world is
-// asleep. Wake detection still executes every step and re-enables them.
+// The following indirect dispatches can be empty while the whole world is asleep. Wake detection still executes every step and re-enables them.
 void scheduleAwakeWork() {
     uint count=step.first, base=islandBase(count), hasAwake=0u;
     for (uint island=0u;island<step.count;++island) {
@@ -774,10 +888,9 @@ void scheduleAwakeWork() {
         scratch.word[offset+i*3u+2u]=1u;
     }
 }
-
 void main() {
     if (step.phase==13u || step.phase==14u) {
-        projectToeIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
+        projectJointIsland(gl_WorkGroupID.x,gl_LocalInvocationIndex);
         return;
     }
     if (step.phase==12u) {
@@ -824,11 +937,8 @@ void main() {
                            uintBitsToFloat(scratch.word[offset+6u]));
         b.positionMass.xyz+=translation;
         rotateBy(b,rotation);
-        // Penetration repair is not physical travel. Keep it out of the
-        // velocity reconstruction, otherwise overlapping figures kick each
-        // other back into the air every frame. Remove inward normal velocity
-        // as a deliberately inelastic impact; tangential motion is handled
-        // by the bounded contact friction above.
+        // Penetration repair is not physical travel. Keep it out of the velocity reconstruction, otherwise overlapping figures kick each other back into the air every frame. Remove inward normal velocity
+        // as a deliberately inelastic impact; tangential motion is handled by the bounded contact friction above.
         b.previousPosition.xyz+=translation;
         b.previousRotation=normalize(b.previousRotation+0.5*qmul(vec4(rotation,0.0),b.previousRotation));
         float correctionLength=length(translation);
@@ -860,13 +970,10 @@ void main() {
         vec4 dq=qmul(b.rotation,vec4(-b.previousRotation.xyz,b.previousRotation.w));
         if (dq.w<0.0) dq=-dq;
         vec3 projectedAngular=2.0*dq.xyz/step.dt;
-        // Constraint projections repair positions, but feeding all their
-        // correction back into velocity injects energy into the ragdoll.
+        // Constraint projections repair positions, but feeding all their correction back into velocity injects energy into the ragdoll.
         b.linearVelocity.xyz=mix(b.linearVelocity.xyz,projectedLinear,0.35);
         b.angularVelocity.xyz=mix(b.angularVelocity.xyz,projectedAngular,0.35);
-        // Position projection can otherwise turn tiny constraint errors into
-        // kinetic energy on every step. Damping and a non-bouncing floor let
-        // the articulated body dissipate that energy instead of dancing.
+        // Position projection can otherwise turn tiny constraint errors into kinetic energy on every step. Damping and a non-bouncing floor let the articulated body dissipate that energy instead of dancing.
         b.linearVelocity.xyz*=step.damping.x;
         b.angularVelocity.xyz*=step.damping.y;
         if ((scratch.word[index*8u+3u]&2u)!=0u) {

@@ -230,24 +230,23 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
                 break;
             }
         }
-        const bool ball=mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";
-        const bool fitted=ball && mobility!="shoulder_ball_socket" && source->axes().size()>2;
+        // The source elbow stores its roll after a fixed pose-alignment axis.
+        // Keep both flexion and that roll in the same bounded joint primitive.
+        const bool elbowRoll=mobility=="elbow_hinge" && source->axes().size()>2;
+        const bool ball=elbowRoll || mobility=="hip_ball_socket" || mobility=="shoulder_ball_socket" || mobility=="sternoclavicular" || mobility=="acromioclavicular";
+        const bool fitted=ball && !elbowRoll && mobility!="shoulder_ball_socket" && source->axes().size()>2;
         Vec3 tangent=cross(axis,{0,1,0});
-        if (fitted) {
-            const auto rotation=joint_detail::rotate(source->axes()[0].direction,source->angles()[0]);
-            tangent=direction(transform,direction(rotation,source->axes()[1].direction));
+        if (fitted || elbowRoll) {
+            auto rotation=joint_detail::rotate(source->axes()[0].direction,source->angles()[0]);
+            if (elbowRoll) rotation=joint_detail::compose(rotation,joint_detail::rotate(source->axes()[1].direction,source->angles()[1]));
+            tangent=direction(transform,direction(rotation,source->axes()[elbowRoll ? 2 : 1].direction));
             if (comparison) tangent=anchor(pi,transform.translation+tangent*0.01)-anchor(pi,transform.translation);
             tangent-=axis*dot(axis,tangent);
         }
         if (length(tangent)<1e-6) tangent=cross(axis,{1,0,0});
         if (length(tangent)<1e-6) tangent=cross(axis,{0,0,1});
         tangent=normalized(tangent);
-        // Toe chains receive a final GPU projection in parent-before-child
-        // order. This marks hierarchy depth, not an additional degree of freedom.
-        unsigned toeDepth=0;
-        if (mobility=="great_toe_mtp" || mobility=="lesser_toe_mtp") toeDepth=1;
-        else if (mobility=="toe_ip_hinge") toeDepth=parts[si].name.rfind("FootMidP",0)==0 ? 2u : 3u;
-        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,toeDepth};
+        Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),ball ? 0u : 1u,0u};
         joint.parentAnchor=packed(pivot-vectorOf(result.bodies[std::size_t(a)].positionMass));
         joint.childAnchor=packed(childPivot-vectorOf(result.bodies[std::size_t(b)].positionMass));
         const double piValue=3.14159265358979323846;
@@ -258,7 +257,10 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         joint.parentTangent=joint.childTangent=packed(tangent);
         joint.lowerAngles={lower(0),float(-piValue/2),float(-piValue/2),0};
         joint.upperAngles={upper(0),float(piValue/2),float(piValue/2),0};
-        if (fitted) {
+        if (elbowRoll) {
+            joint.lowerAngles[1]=lower(2); joint.upperAngles[1]=upper(2);
+            joint.lowerAngles[2]=joint.upperAngles[2]=0;
+        } else if (fitted) {
             joint.lowerAngles[1]=lower(1); joint.upperAngles[1]=upper(1);
             joint.lowerAngles[2]=lower(2); joint.upperAngles[2]=upper(2);
             const auto first=joint_detail::rotate(source->axes()[0].direction,source->angles()[0]);
@@ -292,6 +294,10 @@ bool appendFigure(const FigureInput& input, GpuSkeletonRig& result, std::string&
         if (!std::isfinite(best)) { error="Missing rib contact proxy"; return false; }
         Joint joint; joint.bodies={std::uint32_t(a),std::uint32_t(b),2,0};
         joint.parentAnchor=packed(pivot-ca); joint.childAnchor=packed(pivot-cb);
+        // Same approximate four-millimetre cartilage travel as the former
+        // room model; rotations are unrestricted. This is not a fitted limit.
+        joint.lowerAngles={-0.004f,-0.004f,-0.004f,0};
+        joint.upperAngles={0.004f,0.004f,0.004f,0};
         result.joints.push_back(joint);
     }
     // Break the exactly balanced stance in the same direction as the old drop.
