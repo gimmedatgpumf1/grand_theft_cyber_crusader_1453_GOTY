@@ -294,8 +294,14 @@ The graph reconstruction takes priority over inter-body collision separation;
 a whole-island floor lift prevents projected floor-proxy penetration, but
 inter-body penetration may remain until a later contact pass. These constraints
 are applied to GPU floating-point precision, and the XYZ multi-axis model has
-an Euler singularity at a 90-degree middle angle. Toe hinge axes remain estimates
-from the marked shafts and dorsal direction, not measured clinical axes.
+an Euler singularity at a 90-degree middle angle. Floor support is re-evaluated
+after the whole-island projection; the sleep transition keeps that joint-valid
+pose rather than correcting individual bodies again. This does not solve the
+reported long-term floor instability: positional corrections still feed the
+velocity update and can create nonphysical motion. The floor response and joint
+velocity constraints need further work; stable settling is not established.
+Toe hinge axes remain estimates from the marked shafts and dorsal direction,
+not measured clinical axes.
 
 This remains a **partial** implementation: the present joint model cannot represent
 all anatomical joint motion, pronation/supination with both radioulnar

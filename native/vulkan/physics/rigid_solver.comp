@@ -54,8 +54,7 @@ vec3 worldBounds(Body b) {
 vec3 invInertia(Body b,vec3 v) { return rotate(b.rotation,rotate(vec4(-b.rotation.xyz,b.rotation.w),v)*b.inverseInertia.xyz); }
 void rotateBy(inout Body b,vec3 delta) { b.rotation=normalize(b.rotation+0.5*qmul(vec4(delta,0.0),b.rotation)); }
 void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
-    vec3 ia=invInertia(a,axis), ib=invInertia(b,axis);
-    float effective=dot(axis,ia+ib);
+    vec3 ia=invInertia(a,axis), ib=invInertia(b,axis); float effective=dot(axis,ia+ib);
     if (effective<=1e-12) return;
     float impulse=error/effective;
     rotateBy(a,ia*impulse);
@@ -63,15 +62,12 @@ void solveAngular(inout Body a, inout Body b, vec3 axis, float error) {
 }
 // Hinge: align its two axes, then clamp the signed twist. Axis and tangent frames are captured from the initial calibrated rig.
 void solveHinge(inout Body a, inout Body b, Joint j) {
-    vec3 axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
-    vec3 axisB=normalize(rotate(b.rotation,j.childAxis.xyz));
-    vec3 crossAxis=cross(axisA,axisB);
-    float sine=length(crossAxis), cosine=clamp(dot(axisA,axisB),-1.0,1.0);
+    vec3 axisA=normalize(rotate(a.rotation,j.parentAxis.xyz)); vec3 axisB=normalize(rotate(b.rotation,j.childAxis.xyz));
+    vec3 crossAxis=cross(axisA,axisB); float sine=length(crossAxis), cosine=clamp(dot(axisA,axisB),-1.0,1.0);
     if (sine>1e-6) solveAngular(a,b,crossAxis/sine,angle2(sine,cosine));
     else if (cosine<0.0) solveAngular(a,b,normalize(rotate(a.rotation,j.parentTangent.xyz)),3.14159265);
     axisA=normalize(rotate(a.rotation,j.parentAxis.xyz));
-    vec3 tangentA=rotate(a.rotation,j.parentTangent.xyz);
-    vec3 tangentB=rotate(b.rotation,j.childTangent.xyz);
+    vec3 tangentA=rotate(a.rotation,j.parentTangent.xyz); vec3 tangentB=rotate(b.rotation,j.childTangent.xyz);
     tangentA-=axisA*dot(axisA,tangentA);
     tangentB-=axisA*dot(axisA,tangentB);
     float aa=length(tangentA), bb=length(tangentB);
@@ -92,8 +88,7 @@ vec3 ballAngles(Body a, Body b, vec3 x, vec3 y, vec3 z, vec3 bx, vec3 by, vec3 b
 void solveBall(inout Body a, inout Body b, Joint j) {
     vec3 x=normalize(j.parentAxis.xyz), y=normalize(j.parentTangent.xyz), z=normalize(cross(x,y));
     vec3 bx=normalize(j.childAxis.xyz), by=normalize(j.childTangent.xyz), bz=normalize(cross(bx,by));
-    vec3 angles=ballAngles(a,b,x,y,z,bx,by,bz);
-    bool changed=false;
+    vec3 angles=ballAngles(a,b,x,y,z,bx,by,bz); bool changed=false;
     for (int k=0;k<3;++k) {
         // Most coordinates are already within their limits. Recompute the expensive trigonometry only after a previous axis changed the pose.
         if (changed) { angles=ballAngles(a,b,x,y,z,bx,by,bz); changed=false; }
@@ -595,7 +590,18 @@ void projectJointIsland(uint island,uint lane) {
     float lift=anchored ? 0.0 : max(0.0,step.gravityFloor.w-graphFloor[0]);
     for (uint i=lane;i<nBody;i+=64u) {
         uint index=scratch.word[firstBody+i]; Body b=bodies.body[index];
-        if (b.positionMass.w>0.0) { b.positionMass.y+=lift; b.previousPosition.y+=lift; bodies.body[index]=b; }
+        if (b.positionMass.w>0.0) {
+            b.positionMass.y+=lift; b.previousPosition.y+=lift; b.previousPosition.w=0.0;
+            // Re-evaluate support after the graph projection, not before it.
+            if (b.positionMass.y-b.inverseInertia.w<=step.gravityFloor.w+0.001) {
+                vec3 up=rotate(conjugateQ(b.rotation),vec3(0,1,0));
+                for (uint k=0u;k<b.samples.y;++k) {
+                    vec4 sphere=samples.point[b.samples.x+k];
+                    if (b.positionMass.y+dot(up,sphere.xyz)-sphere.w<=step.gravityFloor.w+0.001) { b.previousPosition.w=1.0; break; }
+                }
+            }
+            bodies.body[index]=b;
+        }
         storeJointRotation(count,index,0u,b.rotation);
         uint offset=jointPoseOffset(count,index)+8u;
         for (uint k=0u;k<3u;++k) scratch.word[offset+k]=floatBitsToUint(b.positionMass[k]);
@@ -739,9 +745,10 @@ void settleIsland(uint island, uint lane) {
     for (uint i=lane;i<n;i+=64u) {
         uint index=scratch.word[first+i];
         if (sleep) {
-            // Contacts are the last ordinary projection, so make sure the resting pose is above the floor before freezing it.
-            solveFloor(index,true);
+            // The graph has already cleared the floor as a unit. Moving individual
+            // bodies here would reopen their joints in the sleeping pose.
             Body b=bodies.body[index];
+            storeBounds(index,count,b);
             b.linearVelocity.xyz=vec3(0.0); b.angularVelocity.xyz=vec3(0.0);
             b.samples.w=1u;
             bodies.body[index]=b;
@@ -981,7 +988,7 @@ void main() {
             b.angularVelocity.xyz*=step.damping.w;
         }
         if (b.previousPosition.w>0.0) {
-            b.linearVelocity.y=0.0;
+            b.linearVelocity.y=max(b.linearVelocity.y,0.0);
             b.linearVelocity.xz*=step.floorDamping.x;
             b.angularVelocity.xyz*=step.floorDamping.y;
         }
