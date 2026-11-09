@@ -225,7 +225,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
 
     // Keep the stable prefix resident even when water or the interface changes.
     if (!updateGeometry(scene)) return false;
-    if (!preparePhysics(scene)) return false;
     // The offsets are indexed by batch below, so they are made to fit the batch
     // list that is actually being recorded rather than the one that was
     // uploaded.
@@ -285,7 +284,6 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // more than recording the commands was ever worth.
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (beginCommandBuffer(command_, &begin) != VK_SUCCESS) { tracef("vk: frame %d begin failed", frames_); return false; }
-    if (!recordPhysics(scene,command_,slot)) return false;
 
     // The vertex and uniform buffers were written from the host this frame.
     // Host writes to coherent memory are made available by queue submission;

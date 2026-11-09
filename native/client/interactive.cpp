@@ -100,7 +100,6 @@ public:
                 else handle(event);
             }
             if (playgroundMode_) {
-                if (!playground_.is2d()) playgroundCamera_.move(dt);
                 if (playgroundDragging_) updatePlaygroundDragRay();
                 playground_.advance(dt);
             } else if (testRoom_) {
@@ -575,12 +574,11 @@ private:
     }
     void stopPlaygroundDrag() { playgroundDragging_=false; playground_.endDrag(); }
     void enterPlayground() {
-        playground_.open3d();
         if (!playground_.reset()) { std::cerr << "Unable to start playground\n"; return; }
         playgroundReturnToRoom_=testRoom_; roomCamera_.clear(); endOrbit();
         playgroundRestoreCapture_=captured_; keys_.clear(); leftDown_=rightDown_=false;
         testRoom_=false; playgroundMode_=true;
-        playgroundCamera_.reset({0,1.35,3.5},0,-std::atan2(0.60,3.5));
+        playgroundCamera_.reset({0,1.4,3.2},0,0);
         window_.captureMouse(true); captured_=true; sendInput();
     }
     void leavePlayground() {
@@ -591,21 +589,13 @@ private:
     }
     void handlePlayground(const WindowEvent& event) {
         if (event.type==WindowEvent::Type::KeyDown && event.key=='p') { if (!event.repeat) leavePlayground(); return; }
-        if (event.type==WindowEvent::Type::KeyDown && event.key=='1' && playground_.is2d()) {
-            if (!event.repeat) { stopPlaygroundDrag(); playground_.open3d(); playgroundCamera_.reset({0,1.35,3.5},0,-std::atan2(0.60,3.5)); }
-            return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && event.key=='2') {
-            if (!event.repeat) { stopPlaygroundDrag(); playground_.open2d(); playgroundCamera_.reset({0,0.85,3.5},0,0); }
-            return;
-        }
         if (playgroundDragging_ && event.type==WindowEvent::Type::MouseUp && event.button==1) { stopPlaygroundDrag(); return; }
         if (playgroundDragging_ && event.type==WindowEvent::Type::MouseMove) {
             roomDragX_=std::clamp(captured_ ? roomDragX_+event.dx : event.x,0.0,double(std::max(1,view_.width)-1));
             roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
             updatePlaygroundDragRay(); return;
         }
-        if (playground_.is2d() && event.type==WindowEvent::Type::MouseDown && event.button==1) {
+        if (event.type==WindowEvent::Type::MouseDown && event.button==1) {
             playgroundDragging_=true; roomDragX_=captured_ ? view_.width*0.5 : event.x;
             roomDragY_=captured_ ? view_.height*0.5 : event.y;
             updatePlaygroundDragRay(); playground_.beginDrag(); return;
@@ -613,13 +603,11 @@ private:
         if (event.type==WindowEvent::Type::MouseDown && event.button==3 && !captured_) {
             window_.captureMouse(true); captured_=true; return;
         }
-        if (playground_.is2d()) {
-            if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') leavePlayground();
-            else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') { stopPlaygroundDrag();playground_.reset(); }
-            else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='w') { stopPlaygroundDrag();playground_.toggleWater(); }
-            else if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) screenshot_=true;
-            else if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) { stopPlaygroundDrag();window_.captureMouse(false);captured_=false; }
-            return;
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') { leavePlayground(); return; }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') { stopPlaygroundDrag(); playground_.reset(); return; }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) { screenshot_=true; return; }
+        if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) {
+            stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; return;
         }
         const auto action=playgroundCamera_.handle(event,captured_);
         if (action==RoomFreecam::Action::Exit) leavePlayground();

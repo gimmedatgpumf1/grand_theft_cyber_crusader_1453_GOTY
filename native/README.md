@@ -140,22 +140,30 @@ The preserved browser implementation is a legacy checkpoint only. Native network
 
 `native/vendor/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are from `nothings/stb`, commit `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5`. stb is dual-licensed under MIT or public domain; see `native/vendor/README.md`. These third-party headers are exempt from the authored-file line nagger. `native/assets/ui-sans.ttf` is unmodified DejaVu Sans; its Bitstream Vera/DejaVu redistribution notice is retained in `native/assets/FONT-LICENSE.txt`.
 
-### Playground seesaw diagnostic
+### P: one point, one plane, one tick
 
-Press P to enter or leave the separate Playground, and R to reset its seesaw.
-In the skeleton room, Tab now shows or hides the comparison panel (P opens
-the Playground). Its independent simulation uses the same Vulkan solver as the skeletons.
-The grey triangular support is immovable and connected to the board by a hinge. The blue and orange boxes are separate loose bodies, not
-attached to the board. Their dimensions are 0.24 m and 0.40 m cubes; at the
-shared 500 kg/m³ density their masses are about 6.9 kg and 32 kg. The board is
-2.0 × 0.10 × 0.20 m and has a 20 kg mass. Box centres and inertias use those
-uniform volumes. The simulation applies gravity at 9.81 m/s².
+The physics rebuild starts from the smallest case that can be checked by eye.
+Press P to enter the room, R to drop the point again, and hold the left mouse
+button to move the point. The world contains one point with a mass of 1 kg and
+one plane at y = 0.
 
-The visible rectangular surfaces are approximated by overlapping sphere
-collision proxies, not exact box contacts. The diagnostic deliberately uses
-the existing general contact, hinge, damping and sleep code; it is not scripted
-or a separate reference implementation. It does not establish that contacts,
-sleep, floor settling or the skeleton physics are physically accurate. Bone
-masses in the existing skeleton rig are currently bounding-box volume estimates
-with per-bone minimums and a maximum, and their centres are bounding-box centres,
-not measured anatomical mass distributions.
+- The only time step is the 20 Hz tick: one twentieth of a second. A velocity of
+  v metres per second carries the point v/20 metres in a tick.
+- Gravity is 9.8 m/s² downwards, so the force is m·g and the acceleration is
+  F/m. The point's speed changes by that acceleration each tick; nothing else
+  sets its velocity.
+- Before the point is allowed to travel, the segment from where it is to where
+  that speed would take it is walked. If the segment meets the plane, the point
+  stops at the crossing. At 100 km/s one tick covers 5 km and the point is still
+  stopped by the plane, because the plane is found before the step is taken.
+- While the point rests on the plane, the plane pushes back with the point's
+  weight, exactly cancelling gravity, so the net force is zero and the
+  acceleration is zero. That is why the point stays put instead of sinking.
+- A faint dot marks the position at each past tick, so the 20 Hz cadence and the
+  shrinking gaps between ticks are visible. The blue line is the current tick's
+  trace; it ends where the point was allowed to reach.
+
+The room draws through the same Vulkan backend as everything else. Body
+positions reach the device as batch model matrices, so nothing is uploaded or
+read back per frame. Only a point and a plane exist here: no boxes, no joints,
+no solver, and no hidden extra substeps.

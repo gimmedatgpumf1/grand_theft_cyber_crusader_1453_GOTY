@@ -7,7 +7,6 @@
 // with the matrix read out of a device buffer.
 
 #include "vk_internal.h"
-#include "../client/planar_gpu_scene.h"
 
 #include <cstdio>
 #include <cstring>
@@ -83,7 +82,7 @@ void Renderer::findRuns(const GpuScene& scene) {
 void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<float>& slots) {
     runs.clear();
     slots.assign(scene.batches.size(), -1.0F);
-    std::size_t slot = scene.physicsLineView ? std::size_t(scene.maleSkinCount)+scene.femaleSkinCount : 0;
+    std::size_t slot = 0;
     std::size_t index = 0;
     while (index < scene.batches.size()) {
         if (!coalescable(scene.batches[index])) {
@@ -99,11 +98,8 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         // One batch on its own is a draw either way, and there is no point
         // spending a slot on it. A run that would run past the array is left
         // alone rather than split: a body of bones is one draw or no draw.
-        const bool physicsSingle=last==index && scene.physicsRig &&
-            std::any_of(scene.physicsRig->bindings.begin(),scene.physicsRig->bindings.end(),
-                        [&](const GpuPlanarBinding& binding) { return binding.objectId==scene.batches[index].objectId; });
         const bool skinSingle=last==index && scene.batches[index].skinOwner;
-        if ((last == index && !physicsSingle && !skinSingle) || slot + (last - index + 1) > kBatchSlots) {
+        if ((last == index && !skinSingle) || slot + (last - index + 1) > kBatchSlots) {
             index = last + 1;
             continue;
         }

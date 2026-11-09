@@ -10,7 +10,6 @@
 #include "../vendor/vulkan/include/vulkan/vulkan.h"
 
 #include "vk_renderer.h"
-#include "physics/rigid_runtime.h"
 
 #include <algorithm>
 #include <array>
@@ -363,8 +362,6 @@ private:
     // here draws: the run list is what the draw loop walks.
     void findRuns(const GpuScene& scene);
     void fillBones(const GpuScene& scene);
-    bool preparePhysics(const GpuScene& scene);
-    bool recordPhysics(const GpuScene& scene, VkCommandBuffer command, int frameSlot);
     bool uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::function<void(char*)>& write, VkDeviceSize offset = 0);
     void destroyTargets();
     // -- swapchain ---------------------------------------------------------
@@ -377,16 +374,6 @@ private:
     bool presentImage(int imageIndex);
 
     bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
-
-    struct PhysicsWorld {
-        gpu_physics::RigidRuntime physics;
-        std::uint64_t generation=0, step=0;
-        bool lineView=false;
-        std::vector<std::uint32_t> matrixSlots;
-        // Reuse the binding plan when the rigid batches and their slots are unchanged.
-        std::vector<std::uint64_t> plan, nextPlan;
-    };
-    std::array<PhysicsWorld,2> physicsWorlds_;
 
     template <class Function>
     bool resolve(Function& slot, const char* name) {

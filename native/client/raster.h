@@ -220,18 +220,7 @@ struct GpuBatch {
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
-struct GpuPlanarRig;
 struct GpuScene {
-    // A live rig is simulated and skinned by the Vulkan backend. The rig is
-    // immutable for this generation; physicsSteps counts fixed 60 Hz steps.
-    const GpuPlanarRig* physicsRig = nullptr;
-    std::uint64_t physicsGeneration = 0;
-    std::uint64_t physicsSteps = 0;
-    std::uint32_t physicsWorld = 0; // independent GPU state for each room
-    std::array<float,4> physicsDragOrigin{}, physicsDragDirection{};
-    std::uint32_t physicsDragSequence = 0;
-    bool physicsDragging = false;
-    bool physicsLineView = false;
     std::uint32_t maleSkinCount = 0, femaleSkinCount = 0;
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
