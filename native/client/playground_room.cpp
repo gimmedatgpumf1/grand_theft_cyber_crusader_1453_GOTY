@@ -19,7 +19,13 @@ constexpr double kSurfaceY = 0.0;  // the plane, y = 0
 constexpr double kPointRadius = 0.07;
 constexpr double kGhostRadius = 0.032;
 constexpr double kTraceHalfWidth = 0.010;
+constexpr double kCornerRadius = 0.045;
+constexpr double kEdgeHalfWidth = 0.008;
+constexpr double kHalfSize = 0.35;    // the cube is 0.70 m on a side
+constexpr double kStartAngle = 0.30;  // radians, so a corner leads the landing
+constexpr int kDistancePasses = 24;   // how hard the corners are pushed apart
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
+constexpr std::uint32_t kCubeFaceId = 200, kCubeEdgeId = 210, kCubeCornerId = 220;
 constexpr const char* kSky = "#101c22";
 
 // Batches carry a model matrix that the renderer reads every frame, so the
@@ -72,12 +78,22 @@ void disc(std::vector<Vec3>& points, std::vector<std::array<int, 3>>& faces, dou
     for (int i = 0; i < kSegments; ++i) faces.push_back({0, 1 + i, 1 + (i + 1) % kSegments});
 }
 
+// The unit square (0,0)-(1,1) mapped onto three corners of the cube.
+std::array<double, 16> corners(Vec3 a, Vec3 b, Vec3 c) {
+    const Vec3 u = b - a, v = c - a;
+    return {u.x, u.y, 0, 0, v.x, v.y, 0, 0, 0, 0, 1, 0, a.x, a.y, a.z, 1};
+}
+
 std::size_t findBatch(const GpuScene& scene, std::uint32_t objectId) {
     for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         if (scene.batches[index].objectId == objectId) return index;
     }
     return 0;
 }
+
+// The six distances that are held: four edges and two diagonals. The diagonals
+// are what keeps the cube square instead of letting it fold into a diamond.
+constexpr std::array<std::array<int, 2>, 6> kPairs{{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 2}, {1, 3}}};
 
 } // namespace
 
@@ -90,6 +106,24 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     dragging_ = false;
     resting_ = false;
     haveTrace_ = false;
+    pointFrozen_ = false;
+    // The cube starts beside the point, turned so a corner leads: it lands on a
+    // corner and has to be held up by the other three.
+    const Vec3 center{1.20, 2.05, 0};
+    const double c = std::cos(kStartAngle), s = std::sin(kStartAngle);
+    const std::array<Vec2, 4> local{{{-kHalfSize, -kHalfSize}, {kHalfSize, -kHalfSize},
+                                    {kHalfSize, kHalfSize}, {-kHalfSize, kHalfSize}}};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const Vec3 corner{center.x + local[i].x * c - local[i].y * s,
+                          center.y + local[i].x * s + local[i].y * c, 0};
+        cubePosition_[i] = cubePrevious_[i] = cubeShown_[i] = corner;
+        cubeVelocity_[i] = {};
+    }
+    for (std::size_t i = 0; i < kPairs.size(); ++i) {
+        cubeRest_[i] = length(cubePosition_[std::size_t(kPairs[i][1])] -
+                              cubePosition_[std::size_t(kPairs[i][0])]);
+    }
+    cubeFrozen_ = false;
     return true;
 }
 
@@ -100,6 +134,7 @@ void PlaygroundRoom::setDragRay(Vec3 origin, Vec3 direction) {
 
 void PlaygroundRoom::beginDrag() {
     dragging_ = true;
+    pointFrozen_ = false;
     updateDrag();
 }
 
@@ -129,10 +164,13 @@ void PlaygroundRoom::updateDrag() {
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
 void PlaygroundRoom::interpolate() {
-    const double alpha = dragging_ || !sceneReady_
+    const double alpha = dragging_ || pointFrozen_ || cubeFrozen_ || !sceneReady_
                              ? 1.0
                              : std::clamp(accumulator_ / kTick, 0.0, 1.0);
     shown_ = previous_ + (point_ - previous_) * alpha;
+    for (std::size_t i = 0; i < 4; ++i) {
+        cubeShown_[i] = cubePrevious_[i] + (cubePosition_[i] - cubePrevious_[i]) * alpha;
+    }
 }
 
 void PlaygroundRoom::tick() {
@@ -164,11 +202,96 @@ void PlaygroundRoom::tick() {
         resting_ = point_.y <= kSurfaceY + 1e-9 && velocity_.y <= 0.0;
         traceTo_ = to;
     }
+    if (!dragging_ && resting_ && length(velocity_) < 1e-9) {
+        // No speed and no net force: this point cannot do anything next tick.
+        // Freezing also ends the interpolation, so what is drawn is the resting
+        // position and not some fraction of the way down the last tick.
+        pointFrozen_ = true;
+        velocity_ = {};
+        previous_ = point_;
+        shown_ = point_;
+    }
+    tickCube();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
         ghostNext_ = (ghostNext_ + 1) % ghosts_.size();
         ghostCount_ = std::min(ghostCount_ + 1, ghosts_.size());
+    }
+}
+
+// The cube is four points of equal mass, one at each corner. Every tick each
+// corner is given gravity and asked to travel its own v/20, its own hitscan
+// segment is traced against the plane, and then the six fixed distances are
+// pushed back to what they were. A corner that moves therefore pulls and pushes
+// the other three through those distances: that is the whole of the coupling.
+void PlaygroundRoom::tickCube() {
+    cubePrevious_ = cubePosition_;
+    std::array<bool, 4> onPlane{};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const Vec3 from = cubePosition_[i];
+        cubeVelocity_[i].y -= kGravity * kTick;
+        const Vec3 to = from + cubeVelocity_[i] * kTick;
+        if (to.y < kSurfaceY) {
+            // The same hitscan the point uses, once per corner: the crossing is
+            // where that corner stops, however far the tick would have carried it.
+            const double fraction = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
+            cubePosition_[i] = from + (to - from) * fraction;
+            cubePosition_[i].y = kSurfaceY;
+        } else {
+            cubePosition_[i] = to;
+        }
+        onPlane[i] = cubePosition_[i].y <= kSurfaceY + 1e-12;
+    }
+    // Each pass walks every fixed distance once and splits the error evenly
+    // between its two corners. Interleaving the plane clamp keeps the solve from
+    // pushing a corner through the floor to satisfy a distance.
+    for (int pass = 0; pass < kDistancePasses; ++pass) {
+        for (std::size_t pair = 0; pair < kPairs.size(); ++pair) {
+            const std::size_t a = std::size_t(kPairs[pair][0]), b = std::size_t(kPairs[pair][1]);
+            const Vec3 delta = cubePosition_[b] - cubePosition_[a];
+            const double current = length(delta);
+            if (!(current > 1e-12)) continue;
+            const Vec3 direction = delta / current;
+            const double error = (current - cubeRest_[pair]) * 0.5;
+            cubePosition_[a] += direction * error;
+            cubePosition_[b] -= direction * error;
+        }
+        for (std::size_t i = 0; i < 4; ++i) {
+            if (cubePosition_[i].y < kSurfaceY) {
+                cubePosition_[i].y = kSurfaceY;
+                onPlane[i] = true;
+            }
+        }
+    }
+    for (std::size_t i = 0; i < 4; ++i) {
+        cubeVelocity_[i] = (cubePosition_[i] - cubePrevious_[i]) / kTick;
+        // A corner the plane is holding cannot still be travelling into it.
+        if (onPlane[i] && cubeVelocity_[i].y < 0.0) cubeVelocity_[i].y = 0.0;
+    }
+    bool touching = false, moving = false;
+    for (std::size_t i = 0; i < 4; ++i) {
+        touching = touching || onPlane[i];
+        // What matters is whether a corner actually moved this tick, not whether
+        // the leftover velocity after the distance solve reads as zero.
+        moving = moving || length(cubePosition_[i] - cubePrevious_[i]) > 1e-6;
+    }
+    // Resting on the plane and not moving: there is no force left to resolve, so
+    // the cube is frozen and its ticks stop costing anything.
+    if (touching && !moving) {
+        cubeFrozen_ = true;
+        for (std::size_t i = 0; i < 4; ++i) {
+            cubeVelocity_[i] = {};
+            cubePrevious_[i] = cubePosition_[i];
+            cubeShown_[i] = cubePosition_[i];
+        }
+    }
+}
+
+void PlaygroundRoom::freezeCheck() {
+    if (!pointFrozen_ && !dragging_ && resting_ && length(velocity_) < 1e-9 && point_.y <= kSurfaceY) {
+        pointFrozen_ = true;
+        velocity_ = {};
     }
 }
 
@@ -180,7 +303,9 @@ void PlaygroundRoom::advance(double seconds) {
     int ticks = 0;
     while (accumulator_ >= kTick && ticks < 5) {
         accumulator_ -= kTick;
-        tick();
+        // A frozen body has nothing to do: no force, no motion, no work.
+        if (!pointFrozen_) tick();
+        else if (!cubeFrozen_) tickCube();
         ++ticks;
     }
 }
@@ -220,12 +345,37 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     raster.setObject(kPointId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#ffd24a"));
 
+    // The cube: a face, four edges, and the four corner points it is made of.
+    points.clear();
+    faces.clear();
+    quad(points, faces, 0, 0, 1, 1, 0.002);
+    raster.setObject(kCubeFaceId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#2c5f74"));
+
+    points.clear();
+    faces.clear();
+    quad(points, faces, 0, -1, 1, 1, 0.005);
+    for (std::size_t i = 0; i < cubeEdgeBatches_.size(); ++i) {
+        raster.setObject(kCubeEdgeId + static_cast<std::uint32_t>(i), {0, 0}, 0);
+        raster.mesh(points, faces, flat("#9fd8e8"));
+    }
+    disc(points, faces, kCornerRadius);
+    for (std::size_t i = 0; i < cubeCornerBatches_.size(); ++i) {
+        raster.setObject(kCubeCornerId + static_cast<std::uint32_t>(i), {0, 0}, 0);
+        raster.mesh(points, faces, flat("#ff8a4c"));
+    }
+
     scene_ = raster.takeGpuScene();
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
     traceBatch_ = findBatch(scene_, kTraceId);
+    cubeFaceBatch_ = findBatch(scene_, kCubeFaceId);
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         ghostBatches_[i] = findBatch(scene_, kGhostId + static_cast<std::uint32_t>(i));
+    }
+    for (std::size_t i = 0; i < cubeEdgeBatches_.size(); ++i) {
+        cubeEdgeBatches_[i] = findBatch(scene_, kCubeEdgeId + static_cast<std::uint32_t>(i));
+        cubeCornerBatches_[i] = findBatch(scene_, kCubeCornerId + static_cast<std::uint32_t>(i));
     }
 }
 
@@ -241,6 +391,12 @@ void PlaygroundRoom::placeMarkers() {
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         scene_.batches[ghostBatches_[i]].modelMatrix =
             i < ghostCount_ ? translation(ghosts_[i]) : translation({0, -1000, 0});
+    }
+    scene_.batches[cubeFaceBatch_].modelMatrix = corners(cubeShown_[0], cubeShown_[1], cubeShown_[3]);
+    for (std::size_t i = 0; i < cubeEdgeBatches_.size(); ++i) {
+        scene_.batches[cubeEdgeBatches_[i]].modelMatrix =
+            segment(cubeShown_[i], cubeShown_[(i + 1) % 4], kEdgeHalfWidth);
+        scene_.batches[cubeCornerBatches_[i]].modelMatrix = translation(cubeShown_[i]);
     }
 }
 

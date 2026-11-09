@@ -10,10 +10,12 @@ namespace gtc::native {
 class RoomFreecam;
 struct ViewState;
 
-// Step one of the physics rebuild: a single point with a mass, gravity, and one
-// plane. There is exactly one update per 20 Hz tick. The travel of that tick is
-// tested with a hitscan segment before the point is allowed to move, and the
-// plane stops it by pushing back with the weight it carries.
+// The physics rebuild, one step at a time. A point with a mass, gravity and one
+// plane; then a cube made of four such points, one at each corner, held at a
+// fixed distance from each other. There is exactly one update per 20 Hz tick.
+// The travel of that tick is tested with a hitscan segment before anything is
+// allowed to move, and the plane stops what reaches it by pushing back with the
+// weight it carries. A body with no velocity and no net force is frozen.
 class PlaygroundRoom {
 public:
     // Puts the point back at the top of the room, with the velocity it starts
@@ -33,9 +35,17 @@ public:
     Vec3 point() const { return point_; }
     Vec3 velocity() const { return velocity_; }
     bool resting() const { return resting_; }
+    bool pointFrozen() const { return pointFrozen_; }
+    // The cube: four corners, as drawn and as simulated.
+    Vec3 cubeCorner(std::size_t index) const { return index < 4 ? cubeShown_[index] : Vec3{}; }
+    std::array<Vec3, 4> cubeCorners() const { return cubePosition_; }
+    bool cubeFrozen() const { return cubeFrozen_; }
+    bool cubeSettled() const { return cubeFrozen_; }
 
 private:
     void tick();
+    void tickCube();
+    void freezeCheck();
     void updateDrag();
     void buildScene(const Camera& camera);
     void placeMarkers();
@@ -46,11 +56,17 @@ private:
     Vec3 traceFrom_{0, 2, 0}, traceTo_{0, 2, 0};
     std::array<Vec3, 40> ghosts_{};
     std::size_t ghostCount_ = 0, ghostNext_ = 0;
+    // The cube: four corners of equal mass, and the six distances between them
+    // that are not allowed to change.
+    std::array<Vec3, 4> cubePosition_{}, cubePrevious_{}, cubeShown_{}, cubeVelocity_{};
+    std::array<double, 6> cubeRest_{};
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
-    std::size_t pointBatch_ = 0, traceBatch_ = 0;
+    std::size_t pointBatch_ = 0, traceBatch_ = 0, cubeFaceBatch_ = 0;
+    std::array<std::size_t, 4> cubeEdgeBatches_{}, cubeCornerBatches_{};
     std::array<std::size_t, 40> ghostBatches_{};
     double accumulator_ = 0;
     bool sceneReady_ = false, dragging_ = false, resting_ = false, haveTrace_ = false;
+    bool pointFrozen_ = false, cubeFrozen_ = false;
 };
 } // namespace gtc::native
