@@ -52,6 +52,8 @@ private:
     enum class DragTarget { None, Point, Cube };
     void tick();
     void tickCube();
+    bool supportedByCube() const;
+    bool cubeTopAt(double x, double& height) const;
     // The point meets the square: energy into the corner it struck, a push back
     // along the normal.
     void hitCube(Vec3 from, Vec3 to, double hit);
@@ -79,7 +81,7 @@ private:
     DragTarget dragTarget_ = DragTarget::None;
     Vec3 planeGrab_{}, grabOffset_{};
     bool sceneReady_ = false, resting_ = false, haveTrace_ = false;
-    bool pointFrozen_ = false, cubeFrozen_ = false;
+    bool pointFrozen_ = false, cubeFrozen_ = false, restingOnCube_ = false;
     int cubeQuietTicks_ = 0, pointCubeContacts_ = 0;
 };
 } // namespace gtc::native

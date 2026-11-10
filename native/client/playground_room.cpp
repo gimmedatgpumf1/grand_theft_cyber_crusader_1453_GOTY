@@ -35,13 +35,7 @@ constexpr double kDistanceTolerance = 1e-9;  // metres
 // is asleep rather than moving. Two ticks of it and the body is frozen.
 constexpr double kSleepSpeed = 0.08;  // m/s
 constexpr int kSleepTicks = 2;
-// How much of the closing speed comes back along the contact normal, and how
-// much sliding the plane resists. Both are properties of the two surfaces.
-constexpr double kRestitution = 0.25;
-// Below this closing speed a contact does not bounce. Gravity alone gives a
-// resting object 0.49 m/s each tick, and giving that back at 25% every tick
-// leaves it visibly trembling on the surface forever.
-constexpr double kBounceThreshold = 0.6;  // m/s
+// How much sliding the plane resists.
 constexpr double kFriction = 0.5;
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 constexpr std::uint32_t kCubeFaceId = 200, kCubeEdgeId = 210, kCubeCornerId = 220;
@@ -220,6 +214,7 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
     velocity_ = startVelocity;
     traceFrom_ = traceTo_ = point_;
     resting_ = false;
+    restingOnCube_ = false;
     haveTrace_ = false;
     pointFrozen_ = false;
 }
@@ -354,6 +349,7 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
     if (along <= 0.0) contact = from + normal * 1e-4;
     point_ = contact;
     ++pointCubeContacts_;
+    restingOnCube_ = false;
     // Which corner carries the blow: the nearest one. The square is four points,
     // so the momentum goes into those points and the fixed distances pass it on.
     std::size_t struck = 0;
@@ -374,7 +370,10 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
     const Vec3 cornerVelocity = blocked ? Vec3{} : cubeVelocity_[struck];
     const double closing = dot(velocity_ - cornerVelocity, normal);
     if (closing < 0.0) {
-        const double restitution = -closing > kBounceThreshold ? kRestitution : 0.0;
+        // The contact takes exactly the approach speed and gives none of it
+        // back, which is what the plane does to the point. Two surfaces that
+        // stop the same point differently is the reason it bounced on the cube
+        // and only sat down on the plane.
         // Equal and opposite impulses. The struck corner takes half of what the
         // square receives and the other three share the rest, so the square as a
         // whole gains exactly the momentum the point loses and is set turning by
@@ -382,8 +381,7 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
         constexpr double kStruckShare = 0.5;
         constexpr double kOtherShare = (1.0 - kStruckShare) / 3.0;
         const double cornerInverseMass = blocked ? 0.0 : kStruckShare / kMass;
-        const double impulse = -(1.0 + restitution) * closing /
-                               (1.0 / kMass + cornerInverseMass);
+        const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
         // The normal points out of the square, towards the point: the point is
         // pushed along it and the square is pushed the other way. Getting this
         // sign backwards drove the point into the surface instead of away from
@@ -407,12 +405,70 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
     point_ = point_ - normal * 1e-6;
     resting_ = false;
     pointFrozen_ = false;
+    // If the contact has taken all the speed there was, the square is holding
+    // the point up exactly as the plane would, and it is allowed to stay there.
+    // The same "slow enough to be at rest" rule the plane uses. Testing for an
+    // exact zero is wrong: the impulse leaves a few billionths of a metre per
+    // second behind, and that is not motion, it is rounding.
+    if (length(velocity_) < kSleepSpeed && normal.y > 0.5) {
+        double height = 0.0;
+        if (cubeTopAt(point_.x, height)) {
+            // Sit exactly on the face that stopped it, so the next tick starts
+            // on the surface instead of inside it.
+            velocity_ = {};
+            resting_ = true;
+            restingOnCube_ = true;
+            point_ = {point_.x, height, 0};
+        }
+    }
     traceTo_ = point_;
+}
+
+// The height of the square's top surface directly above a given x, taken from
+// the two upper corners of whichever side is on top. False when that x is not
+// over the square at all.
+bool PlaygroundRoom::cubeTopAt(double x, double& height) const {
+    for (int side = 0; side < 4; ++side) {
+        const Vec3 a = cubePosition_[std::size_t(side)];
+        const Vec3 b = cubePosition_[std::size_t((side + 1) % 4)];
+        const Vec3 along = b - a;
+        const double span = along.x;
+        if (std::abs(span) < 1e-12) continue;
+        // A side is the top only if it faces upwards. Comparing heights against
+        // the corners instead never works on a face that is the slightest bit
+        // tilted, and the top of a settled square is exactly that.
+        const double normalY = -along.x / std::sqrt(along.x * along.x + along.y * along.y);
+        if (normalY < 0.5) continue;
+        const double position = (x - a.x) / span;
+        if (position < 0.0 || position > 1.0) continue;
+        height = a.y + along.y * position;
+        return true;
+    }
+    return false;
+}
+
+// Whether the square is still directly under the point, close enough to be
+// holding it up. Used to decide whether a point resting on the square stays
+// supported or has to start falling again.
+bool PlaygroundRoom::supportedByCube() const {
+    const bool onGround = cubePosition_[0].y <= kSurfaceY + 1e-6 || cubePosition_[1].y <= kSurfaceY + 1e-6 ||
+                          cubePosition_[2].y <= kSurfaceY + 1e-6 || cubePosition_[3].y <= kSurfaceY + 1e-6;
+    if (!onGround) return false;
+    double height = 0.0;
+    if (!cubeTopAt(point_.x, height)) return false;
+    return std::abs(point_.y - height) < 1e-4;
 }
 
 void PlaygroundRoom::tick() {
     previous_ = point_;
     const Vec3 from = point_;
+    // A point resting on the square stays there only while the square is still
+    // under it. Move the square away and the point falls.
+    if (restingOnCube_ && dragTarget_ != DragTarget::Point && !supportedByCube()) {
+        restingOnCube_ = false;
+        resting_ = false;
+        pointFrozen_ = false;
+    }
     // Forces: gravity, m*g, points down in the air. On the plane the surface
     // pushes back with exactly that weight, so the net force is zero and the
     // point stays where it is instead of sinking.
@@ -446,15 +502,22 @@ void PlaygroundRoom::tick() {
         point_.y = kSurfaceY;
         velocity_ = {};
         resting_ = true;
+        restingOnCube_ = false;
         // The line stops at the contact, so what is drawn is the trace that was
         // actually walked rather than the travel that was refused.
+        traceTo_ = point_;
+    } else if (resting_ && restingOnCube_) {
+        // Standing on the square with nothing pushing it: keep the position and
+        // stay supported, the same way the plane holds it.
+        point_ = from;
+        velocity_ = {};
         traceTo_ = point_;
     } else {
         point_ = to;
         resting_ = point_.y <= kSurfaceY + 1e-9 && velocity_.y <= 0.0;
         traceTo_ = to;
     }
-    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9) {
+    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < kSleepSpeed) {
         // No speed and no net force: this point cannot do anything next tick.
         // Freezing also ends the interpolation, so what is drawn is the resting
         // position and not some fraction of the way down the last tick.
@@ -586,7 +649,8 @@ void PlaygroundRoom::tickCube() {
 }
 
 void PlaygroundRoom::freezeCheck() {
-    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 && point_.y <= kSurfaceY) {
+    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
+        (point_.y <= kSurfaceY || restingOnCube_)) {
         pointFrozen_ = true;
         velocity_ = {};
     }
@@ -600,9 +664,18 @@ void PlaygroundRoom::advance(double seconds) {
     int ticks = 0;
     while (accumulator_ >= kTick && ticks < 5) {
         accumulator_ -= kTick;
+        // A point parked on the square is only held up by the square. Take the
+        // square away -- drag it, or let it slide -- and the support is gone,
+        // so the point goes back to being a falling body.
+        if (pointFrozen_ && restingOnCube_ && !supportedByCube()) {
+            pointFrozen_ = false;
+            resting_ = false;
+            restingOnCube_ = false;
+        }
         // A frozen body has nothing to do: no force, no motion, no work.
         if (!pointFrozen_) tick();
         else if (!cubeFrozen_ && dragTarget_ != DragTarget::Cube) tickCube();
+        freezeCheck();
         ++ticks;
     }
 }
