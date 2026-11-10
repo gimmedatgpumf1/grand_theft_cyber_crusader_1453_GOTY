@@ -135,7 +135,7 @@ private:
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
     void ballContact(Vec3 normal, int bodyIndex, double along = 1.0, bool ballHeld = false,
-                     Vec3 contactPoint = {}, double depth = 0.0);
+                     Vec3 contactPoint = {}, double depth = 0.0, bool exchange = true);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);

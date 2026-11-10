@@ -27,4 +27,5 @@ toe-bone-axes.txt
 # Harness binaries built from the scratch sources
 scratch/base
 scratch/drop
+scratch/dropboth
 scratch/shot
