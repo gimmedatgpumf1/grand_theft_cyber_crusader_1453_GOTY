@@ -65,20 +65,18 @@ bool insideOutline(Vec3 point, const Vec3* corners, std::size_t count) {
     return true;
 }
 
-// One meeting of the ball's circle with one edge of a body's outline.
+// One meeting of the ball's circle with a body's outline.
 //
 // This is the whole of the ball's collision detection, and it is a hitscan: the
-// circle is walked along the tick against the body as it moves through that tick,
-// and what comes back is the first instant the two touch. The body is taken as
-// moving, not as somewhere at the start of the tick: its corners travel in
-// straight lines, so the outline at any fraction of the tick is the corners at
-// that fraction. Treating the body as one average motion let a triangle falling
-// flat sweep its side through the ball.
+// circle is walked along the tick against the outline where the body is, and what
+// comes back is the first instant the two touch. The body is where it is, not where
+// it was: the bodies are stepped before the ball and each already swept itself
+// against it, so interpolating the body across the ball's sweep as well counted
+// that step twice and left the ball reading itself inside a shape that had already
+// been pushed clear of it.
 //
 // How close two surfaces have to be before they are touching rather than merely
-// near. It is a rounding allowance, not a distance anything may sink: a ball whose
-// surface is on a face sits at exactly one radius from it, and the arithmetic that
-// got it there is good to about this much.
+// near. It is a rounding allowance, not a distance anything may sink.
 constexpr double kTouch = 1e-9;
 // And how far inside counts as inside: a micrometre. The sweep closes in by
 // bisection, so where it stops is good to a fraction of the step, not to the last
@@ -96,6 +94,10 @@ struct OutlineHit {
     Vec3 normal{0, 1, 0};  // which way the surface faces, out of the body
     Vec3 contact{};        // where the two surfaces touch
     double depth = 0.0;    // how far the ball's surface is already through it
+    // The ball was already on this surface when the tick began. It is not on its
+    // way into it, it is on it: the ball rolls along, and the surface is a contact
+    // for the whole tick rather than a meeting part-way through it.
+    bool resting = false;
 };
 
 // How far a point is from a body's outline as it stands at one fraction of the
@@ -183,43 +185,49 @@ OutlineGap outlineGap(Vec3 point, const Vec3* previous, const Vec3* current, std
     return result;
 }
 
-bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* previous, const Vec3* current, std::size_t count,
-                    double radius, OutlineHit& hit) {
-    const OutlineGap atStart = outlineGap(from, previous, current, count, 0.0);
+bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double radius,
+                    OutlineHit& hit) {
+    const OutlineGap atStart = outlineGap(from, corners, corners, count, 1.0);
+    hit.resting = atStart.gap <= radius + kTouch;
+    // On the surface already. That is a contact for the whole tick however the
+    // ball spends it, and a ball rolling down a face spends every tick of it
+    // touching: there is no meeting to find, and looking for one found nothing at
+    // all -- so the surface was never asked about friction, and the ball ran down
+    // the face with its seam standing still.
+    if (hit.resting) {
+        hit.along = 0.0;
+        hit.normal = atStart.normal;
+        hit.contact = from - atStart.normal * radius;
+        hit.depth = std::max(0.0, radius - atStart.gap);
+        return true;
+    }
     if (atStart.gap <= radius - kSkin) {
-        // Already through the outline before anything moved. There is nothing to
-        // interpolate: the answer is where it is now, and how far through it is.
-        // Merely touching is not this -- a ball at rest on a face is at one radius
-        // from it to the bit, and taking that for being inside stopped the walk at
-        // zero distance every tick, so a ball could never spend a tick's travel and
-        // never left the slope it was on.
+        // Already through the outline: there is nothing to interpolate, the answer
+        // is where the ball is now and how far through it is.
         hit.along = 0.0;
         hit.normal = atStart.normal;
         hit.contact = from - atStart.normal * radius;
         hit.depth = radius - atStart.gap;
         return true;
     }
-    // Not through it yet. Whether the ball reaches it is then a question about the
-    // whole tick, and about the body's whole tick too: a body that is only turning
-    // has an average motion of nothing, while the piece of it nearest the ball is
-    // on its way in. What is walked is the two moving together, sample by sample,
-    // against the outline as it is at that instant.
+    // Not through it. Whether the ball reaches it is a question about the tick:
+    // the circle is walked along its travel, sample by sample, and the first
+    // sample that finds it inside brackets the meeting.
     double before = 0.0;
     OutlineGap touched = atStart;
     for (int sample = 1; sample <= kSweepSamples; ++sample) {
         const double fraction = static_cast<double>(sample) / kSweepSamples;
-        const OutlineGap now = outlineGap(from + travel * fraction, previous, current, count, fraction);
+        const OutlineGap now = outlineGap(from + travel * fraction, corners, corners, count, 1.0);
         if (now.gap <= radius - kSkin) {
             // The meeting is somewhere between the last sample and this one. Close
-            // in on the touch itself, not on the point where it counts as a touch:
-            // stopping short of that leaves the ball a micrometre inside the
-            // surface every time it meets one, and a hair inside is what the next
-            // tick has to answer before it can go anywhere.
+            // in on the touch itself, and answer with the last fraction at which
+            // the ball is still clear: stopping a hair inside leaves the ball being
+            // put back out of the surface before it can spend the next tick.
             double clear = before, met = fraction;
             touched = now;
             for (int step = 0; step < kBisections; ++step) {
                 const double middle = 0.5 * (clear + met);
-                const OutlineGap mid = outlineGap(from + travel * middle, previous, current, count, middle);
+                const OutlineGap mid = outlineGap(from + travel * middle, corners, corners, count, 1.0);
                 if (mid.gap <= radius) {
                     met = middle;
                     touched = mid;
@@ -227,9 +235,9 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* previous, const Vec3* cu
                     clear = middle;
                 }
             }
-            hit.along = met;
+            hit.along = clear;
             hit.normal = touched.normal;
-            hit.contact = from + travel * met - touched.normal * radius;
+            hit.contact = from + travel * clear - touched.normal * radius;
             hit.depth = 0.0;
             return true;
         }
@@ -361,6 +369,10 @@ void PlaygroundRoom::tickBall() {
     // on every tick, and answering that over and over used up the walk before it
     // ever got to the thing that was actually arriving.
     bool floorAnswered = false;
+    // The bodies the ball is already resting on, one answer each for the same
+    // reason: being on a surface is not arriving at it, and a ball that answered
+    // that touch every time the walk looked at it would never spend a tick.
+    std::array<bool, kBodyCount> restingAnswered{};
     const auto anybodyMoving = [this]() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].frozen) continue;
@@ -397,9 +409,26 @@ void PlaygroundRoom::tickBall() {
             // against the whole outline as the body moves through the tick, and
             // answers with the first piece of it the ball's surface reaches.
             OutlineHit hit;
-            if (!circleHitsBody(ball.position, travel, body.previous.data(), body.position.data(), body.count,
-                                ball.radius, hit))
+            if (!circleHitsBody(ball.position, travel, body.position.data(), body.count, ball.radius, hit))
                 continue;
+            // Already on this surface when the tick began: a contact for the whole
+            // tick, answered here and then travelled along, not a meeting to stop
+            // at. Stopping there eats every tick's travel and the ball sits
+            // gathering speed and spinning instead of rolling.
+            if (hit.depth <= 0.0 && hit.resting && !restingAnswered[index]) {
+                restingAnswered[index] = true;
+                const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
+                                                 body.count, 1.0);
+                if (on.gap < ball.radius) ball.position = ball.position + on.normal * (ball.radius - on.gap);
+                ball.touching = true;
+                const bool answer = !answered[index];
+                if (answer) answered[index] = true;
+                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer);
+                // Answered, not skipped. What is left of the tick is still the
+                // ball's to spend, and the face is still a face: it is tested again
+                // below, so a ball that gravity has driven into it mid-tick is
+                // stopped at the surface instead of ending the tick buried in it.
+            }
             // Touching and getting no closer is touching, not arriving. A ball
             // already through the outline is never skipped: that is inside, and it
             // has to be answered. What the body did this tick is its actual step,
@@ -446,13 +475,9 @@ void PlaygroundRoom::tickBall() {
         // and the arithmetic that got it there is good to about kTouch. Taken for a
         // ball inside, it would stop the walk dead every tick, and a ball that
         // cannot spend a tick's travel never leaves the slope it is on.
-        // The floor is the one thing that cannot be given way to. Nothing that
-        // happens above it -- a shape resting on the ball, a blow with a downward
-        // part -- can press the ball through it, so the floor answers at once,
-        // where and when it is pressed: the ball keeps its height and loses the
-        // speed that was pointing into the floor. Left for the next tick to notice,
-        // that speed is spent first and the ball spends the tick buried in the
-        // floor before anything puts it back.
+        // The floor cannot be given way to. Nothing above it can press the ball
+        // through it, so it answers at once, where and when it is pressed: the ball
+        // keeps its height and loses the speed that was pointing into the floor.
         if (ball.position.y <= ball.radius + kTouch) {
             ball.position.y = std::max(ball.position.y, ball.radius);
             if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
@@ -694,11 +719,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface, measured against what the
-    // ball arrived with rather than the speed gravity lent it on the way: a ball
-    // lying on the floor gets that every tick, and bouncing it would be bouncing it
-    // off nothing. The surface's own motion is taken out first, so what is left is
-    // how hard it was actually hit, and the exchange below is solved against both
-    // masses -- a light shape takes the blow, a solid that cannot move takes none.
+    // ball arrived with rather than the speed gravity lent it on the way: a ball on
+    // the floor gets that every tick, and bouncing it would be bouncing it off
+    // nothing.
     const double rebound = arrivedSpeed < 0.0 ? -kBallRestitution * arrivedSpeed : 0.0;
     double pressed = 0.0;
     if (closing < 0.0) {
@@ -777,6 +800,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     if (normal.y > 1e-9)
         ball.standing = ball.standing &&
                         kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+
+    // A contact that is not a blow is still a contact. The surface carries the
+    // ball's weight for as long as the ball is on it, and friction is that weight
+    // times mu -- the same thing the floor already answers, because gravity drives
+    // the ball into the floor and the ball loses that speed to it every tick. A
+    // slope is not that: the ball runs *along* the face, so nothing drives it into
+    // the face and the blow is nothing, and with no normal force there was no
+    // friction at all. The seam stood still while the ball ran away down the face
+    // and then jumped when the next blow arrived. What the surface carries when it
+    // is only holding the ball up is the weight pressed into it, over the tick.
+    if (!(pressed > 0.0)) pressed = kGravity * ball.mass * std::max(0.0, normal.y) * kTick;
 
     // Contact friction and rolling resistance take energy out of a ball, they never
     // put it in: they are losses, and a solve that handed a ball more energy than it
