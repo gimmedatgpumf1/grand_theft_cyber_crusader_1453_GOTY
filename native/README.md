@@ -172,34 +172,53 @@ one plane at y = 0.
   and the body the mouse is holding is drawn exactly where the mouse put it, but
   neither of those may switch the interpolation off for anything else.
 
-### The cube: four points at four corners
+### The bodies: points at corners
 
-The second body is a 0.70 m square made of four points of equal mass, one at each
-corner, 1 kg each. It is four points, exactly as specified, not a rigid body.
+There are two solids in the room, and they are the same thing at different
+sizes: a body is a set of corner points of equal mass, 1 kg each, plus the
+distances between those points that are not allowed to change. Nothing in the
+room asks which body it is looking at, so both go through one piece of code.
+
+- The cube: a 0.70 m square made of four points, one at each corner. Six
+  distances are held -- four edges and two diagonals -- because a square can fold
+  into a diamond without the diagonals.
+- The triangle: a right isosceles triangle with two 2.10 m legs and a 2.97 m
+  hypotenuse, made of three points, one at each corner. That is three times the
+  cube's side, exactly as asked. It stands on its two base corners, and a
+  triangle is already rigid with its three edges, so it holds three distances.
 
 - Each corner gets gravity on its own and is asked to travel its own v/20.
 - Each corner traces its own segment against the plane before it is allowed to
   move, so there is one hitscan per corner, not one per body.
-- When one corner moves, the others are affected through the six distances that
-  are not allowed to change: four edges and two diagonals. Every distance is
-  pushed back to its original length, splitting the error between its two
-  corners, with the plane clamp applied between passes so satisfying a distance
-  cannot push a corner through the floor.
+- When one corner moves, the others are affected through the distances that are
+  not allowed to change. Every distance is pushed back to its original length,
+  splitting the error between its two corners, with the plane clamp applied
+  between passes so satisfying a distance cannot push a corner through the
+  floor.
+- A corner the plane is holding cannot be pushed down into it, so any distance
+  that wants to move such a corner downwards puts that motion into the corner at
+  the other end instead. It is still free to slide along the floor. Sharing the
+  correction equally instead is what lets a tall body balance in mid-air on a
+  corner the floor cannot carry.
+- The distances are swept forwards and then backwards every pass. Pushing them
+  back in one fixed order lets the order itself move the body, and over a second
+  that steady lean adds up.
 - A corner the plane is holding cannot still be travelling into it, so its
   downward speed is removed at the end of the tick.
-- Once it rests on the plane and no corner moved this tick, the cube freezes.
+- A body is frozen only when its weight passes between the corners that are
+  touching the floor, so nothing is ever frozen balanced on a single corner.
 
-The shape is not approximated. Each tick, the six distances and the plane are
+The shape is not approximated. Each tick, the distances and the plane are
 solved together -- push the distances straight, put any corner that went through
 the plane back on it, check both again -- until neither is out by more than a
 nanometre. The order matters: the plane is what opens the distance error, so the
 distance solve has to see the plane. What is drawn is then rebuilt from where the
-square is and how far round it has turned, never by sliding four corners along
-straight lines between ticks, so a turning square cannot look squashed. A corner the plane holds loses its
+body is and how far round it has turned, never by sliding four corners along
+straight lines between ticks, so a turning body cannot look squashed. A corner the plane holds loses its
 downward velocity and has friction taken off its sliding, and a constraint is
 not allowed to hand a corner more speed than it already had, so the push-back
-and the plane cannot pump energy into the cube. Once the corners are on the
-plane and no longer moving, the cube is frozen.
+and the plane cannot pump energy into a body. The worst distance error measured
+across every run is 0.00000 mm.
 
 ### Freezing
 
@@ -209,11 +228,11 @@ motion and no contact work for a frozen body. Freezing also ends the drawing
 interpolation for that body, so a frozen body is drawn exactly where it is
 instead of part of the way along a tick. R resets; dragging the point wakes it.
 
-### The point and the cube
+### The point and the bodies
 
-Before the point travels, its segment is walked against the square's four edges
-as well as the plane, and whichever it reaches first is where it stops. A hit on
-the square exchanges momentum: the point carries m·v, the corner it struck
+Before the point travels, its segment is walked against every body's edges as
+well as the plane, and whichever it reaches first is where it stops. A hit on a
+body exchanges momentum: the point carries m·v, the corner it struck
 takes half of the impulse and the other three corners share the rest, so the
 square as a whole gains exactly what the point loses and is set turning by the
 uneven share. The square pushes back along the face normal and takes the whole
@@ -221,18 +240,24 @@ approach speed, giving none of it back -- the same thing the plane does to the
 point. Nothing bounces off anything in this room: a contact stops what ran into
 it and passes the momentum on.
 
-A point that has spent its speed on the square sits on the face that stopped
-it, exactly where it would sit on the plane, and freezes there on the same rule:
+A point that has spent its speed on a body sits on the face that stopped it,
+exactly where it would sit on the plane, and freezes there on the same rule:
 no velocity, no net force. It is held up by the square and by nothing else, so
-taking the square away -- dragging it out from under the point, or letting it
+taking the body away -- dragging it out from under the point, or letting it
 slide -- drops the point back into free fall. A drop onto the plane and the same
-drop onto the square give the same trace: the falling speed builds tick by tick
+drop onto a flat face give the same trace: the falling speed builds tick by tick
 and the last tick ends at rest, not at a bounce.
 
-A square standing on the plane cannot be pushed down into it, so a blow from
-above is answered by the plane and the square does not move at all. A blow from
-the side is not blocked, and it shoves the square along the plane: a 1 kg point
-at 12 m/s sends a 4 kg square 87 mm sideways, which is the momentum ratio.
+A body standing on the plane cannot be pushed down into it, so a blow from
+above is answered by the plane and the body does not move at all. A blow from
+the side is not blocked, and it shoves the body along the plane: a 1 kg point at
+12 m/s sends the 4 kg square 66 mm and the 3 kg triangle 49 mm sideways, which
+is the momentum ratio.
+
+What is left of a tick after a contact is walked with the speed the contact left
+behind. That is what lets the point run down the triangle's 45 degree face
+instead of being parked at the contact and creeping, and the walk stops at
+anything it runs into, so nothing is passed through.
 
 Because the crossing is found before the point moves, none of this depends on
 how fast the point was going. A point arriving at 100 km/s is stopped at the
@@ -240,11 +265,13 @@ surface in the same tick.
 
 ### Grabbing
 
-The left mouse button takes whichever body is under the ray: the point, or the
-cube. The cube is taken by its centre, so all four corners move by the same
-amount and none of the six distances it is made of are asked to stretch; it is
-placed rather than simulated while it is held, and released with no velocity.
-Dragging the point still moves only the point.
+The left mouse button takes whichever body is under the ray: the point, the cube
+or the triangle. A click near the point takes the point even when it is sitting
+on a body, so it can always be picked up off a face. A body is taken by its
+middle, so all of its corners move by the same amount and none of the distances
+it is made of are asked to stretch; it is placed rather than simulated while it
+is held, and released with no velocity. Dragging the point still moves only the
+point.
 
 The room draws through the same Vulkan backend as everything else. Body
 positions reach the device as batch model matrices, so nothing is uploaded or
