@@ -236,7 +236,13 @@ Two coefficients, as asked:
   `v -= mu_k * g * dt`.
 
 `N` is the part of the weight the surface carries, so a 45 degree face grips less
-than the floor does and the point keeps most of the speed it built falling. The
+than the floor does and the point keeps most of the speed it built falling. A
+surface answers only the force that drives into it: the rest still acts on the
+point, so on a slope there is a real force down the slope and the point
+accelerates down it at `g * sin(theta)`. Static friction holds a point still only
+while it is being pushed weakly enough and is not already moving; on a 45 degree
+face `mu_s * N` is nowhere near enough, so it slides, and that is the whole
+difference between sliding and creeping. The
 point is smooth: `mu_s` 0.40, `mu_k` 0.30, so it runs a long way and then stops.
 Each solid carries its own pair, 0.70 and 0.55, and that coefficient is scaled by
 the length of the contact it actually has with the floor -- a body standing on a
@@ -293,6 +299,15 @@ does not move -- which is the same reason it does not hop. A drop from 20 m onto
 the square's top face moves the square 0.0000 mm; the same drop onto the
 triangle's slope moves it 81 mm sideways at the impulse, and hitting a corner of
 the square moves the square 25 mm sideways.
+
+The tick's travel is walked from contact to contact: the segment is tested
+against every body and the plane, the point is moved to the first thing it
+meets, that contact is answered, and it carries on with the time that is left,
+for up to four contacts. Nothing is passed through however fast the point goes,
+and it never loses speed it did not spend on a contact. A point left a hair
+inside a body is put back onto the nearest point of its boundary rather than
+nudged out along an edge, because nudging leaves it a centimetre deep and it
+creeps along the inside of the face it is stuck in.
 
 What is left of a tick after a contact is walked with the speed the contact left
 behind. That is what lets the point run down the triangle's 45 degree face

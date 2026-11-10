@@ -156,4 +156,36 @@ inline Vec3 centroid(const Vec3* corners, std::size_t count) {
     return sum / static_cast<double>(count);
 }
 
+// A point found inside a body is put back onto the boundary, at the closest
+// point of it. Nudging it out along an edge normal by a hair is not enough --
+// a point that is a centimetre deep stays a centimetre deep, gets nudged again
+// next tick, and creeps instead of sliding. Returns true when it had to move.
+inline bool pushOutOfPolygon(Vec3& point, const Vec3* corners, std::size_t count) {
+    bool inside = true;
+    for (std::size_t edge = 0; edge < count; ++edge) {
+        const Vec3 a = corners[edge];
+        const Vec3 b = corners[(edge + 1) % count];
+        const Vec3 side = b - a;
+        const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
+        if (!(sideLength > 1e-12)) return false;
+        const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        if (dot(point - a, outward) > 0.0) { inside = false; break; }
+    }
+    if (!inside) return false;
+    Vec3 closest = corners[0];
+    double nearest = 1e30;
+    for (std::size_t edge = 0; edge < count; ++edge) {
+        const Vec3 a = corners[edge];
+        const Vec3 b = corners[(edge + 1) % count];
+        const Vec3 side = b - a;
+        const double length2 = dot(side, side);
+        const double along = length2 > 1e-12 ? std::clamp(dot(point - a, side) / length2, 0.0, 1.0) : 0.0;
+        const Vec3 candidate = a + side * along;
+        const double distance = length(candidate - point);
+        if (distance < nearest) { nearest = distance; closest = candidate; }
+    }
+    point = closest;
+    return true;
+}
+
 } // namespace gtc::native::playground_detail

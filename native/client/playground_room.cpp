@@ -33,6 +33,7 @@ constexpr double kContactTolerance = 1e-9;   // metres
 // is asleep rather than moving. Two ticks of it and the body is frozen.
 constexpr double kSleepSpeed = 0.08;  // m/s
 constexpr int kSleepTicks = 2;
+constexpr int kMaxContacts = 4;
 // Friction, in the two forms it actually has. A surface holds a body still as
 // long as mu_s * N is enough to answer the sideways force; that is static
 // friction, and while it holds, nothing moves. Once the pull beats it, the body
@@ -102,6 +103,22 @@ bool segmentHitsPolygon(Vec3 from, Vec3 to, const Vec3* corners, std::size_t cou
 }
 
 } // namespace
+
+Vec3 PlaygroundRoom::outwardNormalAt(const Body& body, Vec3 point) {
+    Vec3 result{0, 1, 0};
+    double nearest = 1e30;
+    for (std::size_t edge = 0; edge < body.count; ++edge) {
+        const Vec3 a = body.position[edge];
+        const Vec3 b = body.position[(edge + 1) % body.count];
+        const Vec3 side = b - a;
+        const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
+        if (!(sideLength > 1e-12)) continue;
+        const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        const double gap = std::abs(dot(point - a, outward));
+        if (gap < nearest) { nearest = gap; result = outward; }
+    }
+    return result;
+}
 
 Vec3 PlaygroundRoom::bodyCorner(std::size_t body, std::size_t index) const {
     return body < kBodyCount && index < bodies_[body].count ? bodies_[body].shown[index] : Vec3{};
@@ -273,30 +290,18 @@ void PlaygroundRoom::updateDrag() {
 // tick and the position the last tick left it in, at the fraction of a tick the
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
-// The point meets a body. The hit is found by walking this tick's segment
-// against the body's edges, before the point is allowed to move, so a fast point
-// cannot pass through it. The corner it struck takes the momentum and the body
-// gives back a push along the normal, so the point is stopped and the body is
-// set turning.
-void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) {
+// The point meets a body. The position has already been put at the contact by
+// the walk; this is the momentum exchange there, and the friction of sliding
+// along the face it met.
+void PlaygroundRoom::hitBody(std::size_t index, Vec3 normal, double into) {
     Body& body = bodies_[index];
-    double along = hit;
-    Vec3 normal{0, 1, 0};
-    if (!segmentHitsPolygon(from, to, body.position.data(), body.count, along, normal)) return;
-    // A point that begins the tick already inside is put back outside along the
-    // nearest face, so it can never sit inside a body collecting speed. The
-    // normal points out of the body, so getting out means moving along it.
-    Vec3 contact = from + (to - from) * along;
-    if (along <= 0.0) contact = from + normal * 1e-4;
-    point_ = contact;
     ++body.contacts;
-    restingBody_ = -1;
     // Which corner carries the blow: the nearest one. The body is its points, so
     // the momentum goes into those points and the fixed distances pass it on.
     std::size_t struck = 0;
     double nearest = 1e30;
     for (std::size_t i = 0; i < body.count; ++i) {
-        const double distance = length(contact - body.position[i]);
+        const double distance = length(point_ - body.position[i]);
         if (distance < nearest) { nearest = distance; struck = i; }
     }
     // A body on the plane cannot be pushed down into it -- the plane only
@@ -309,31 +314,20 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
     bool supported = false;
     for (std::size_t i = 0; i < body.count; ++i) supported = supported || body.position[i].y <= kSurfaceY + 1e-9;
     const bool held = dragTarget_ == DragTarget::Body;
-    // The direction the body is actually free to move in. A held body moves
-    // nowhere; a body standing on the plane can only move across the plane.
     const Vec3 answer = held ? Vec3{} : (supported ? Vec3{normal.x, 0, 0} : normal);
     const bool canMove = length(answer) > 1e-9;
     const Vec3 cornerVelocity = canMove ? body.velocity[struck] : Vec3{};
+    const double closing = dot(velocity_ - cornerVelocity, normal);
     // The struck corner takes half of what the body receives and the other
-    // corners share the rest, so the body as a whole gains exactly the momentum
-    // the point loses and is set turning by the uneven share.
+    // corners share the rest, so the body gains exactly the momentum the point
+    // loses and is set turning by the uneven share.
     constexpr double kStruckShare = 0.5;
     const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
-    const double closing = dot(velocity_ - cornerVelocity, normal);
     if (closing < 0.0) {
-        // The contact takes exactly the approach speed and gives none of it
-        // back, which is what the plane does to the point. Two surfaces that
-        // stop the same point differently is the reason it bounced on the square
-        // and only sat down on the plane.
-        // Equal and opposite impulses. A body that cannot move takes none, and
-        // then the point stops on it exactly as it stops on the floor.
+        // The contact takes exactly the approach speed and gives none of it back,
+        // which is what the plane does to the point: nothing bounces in this room.
         const double cornerInverseMass = canMove ? kStruckShare / kMass : 0.0;
         const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
-        // The normal points out of the body, towards the point: the point is
-        // pushed along it and the body is pushed the other way. Getting this
-        // sign backwards drove the point into the surface instead of away from
-        // it, which is why it never bounced and why the square was shoved into
-        // the floor hard enough to hop.
         velocity_ = velocity_ + normal * (impulse / kMass);
         if (canMove) {
             for (std::size_t i = 0; i < body.count; ++i) {
@@ -342,58 +336,8 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
             }
             body.frozen = false;
         }
-        // If the exchange still leaves the point heading into the body -- two
-        // equal masses cannot both bounce apart -- the surface simply holds it.
-        const double still = dot(velocity_, normal);
-        if (still < 0.0) velocity_ = velocity_ - normal * still;
     }
-    // Nothing may be left sitting exactly on the surface, or the next tick's
-    // segment starts inside the body and the point never gets out.
-    point_ = point_ - normal * 1e-6;
-    resting_ = false;
-    pointFrozen_ = false;
-    // Sliding along the face it just met: the face holds it up across itself and
-    // rubs it along itself. N across a tilted face is only the part of the weight
-    // pressing into that face, so a 45 degree slope grips less than the floor
-    // does, and the point keeps most of the speed it built falling.
-    {
-        const Vec3 across = velocity_ - normal * dot(velocity_, normal);
-        const double speed = length(across);
-        const double span = kTick * std::clamp(1.0 - along, 0.0, 1.0);
-        const double pressed = kGravity * std::clamp(std::abs(normal.y), 0.0, 1.0);
-        const double hold = kPointStaticFriction * pressed * span;
-        const double slide = kPointKineticFriction * pressed * span;
-        const Vec3 lost = speed <= hold ? across : across * std::min(1.0, slide / speed);
-        velocity_ = velocity_ - lost;
-        // Friction has two ends. The face rubs the point, so the point rubs the
-        // face, and the momentum the point loses along the face is pushed into
-        // the body. It goes in horizontally, because that is the only way a body
-        // standing on the plane can go: the floor takes the rest.
-        if (canMove && std::abs(lost.x) > 1e-12) {
-            for (std::size_t i = 0; i < body.count; ++i) {
-                const double share = i == struck ? kStruckShare : otherShare;
-                body.velocity[i] = body.velocity[i] - Vec3{lost.x, 0, 0} * (share * kMass / kMass);
-            }
-        }
-    }
-    // If the contact has taken all the speed there was, the body is holding the
-    // point up exactly as the plane would, and it is allowed to stay there. The
-    // same "slow enough to be at rest" rule the plane uses. Testing for an exact
-    // zero is wrong: the impulse leaves a few billionths of a metre per second
-    // behind, and that is not motion, it is rounding.
-    if (length(velocity_) < kSleepSpeed && normal.y > 0.5) {
-        double height = 0.0;
-        if (bodyTopAt(index, point_.x, height)) {
-            // Sit exactly on the face that stopped it, so the next tick starts
-            // on the surface instead of inside it.
-            velocity_ = {};
-            resting_ = true;
-            restingBody_ = int(index);
-            supportNormalY_ = std::abs(normal.y);
-            point_ = {point_.x, height, 0};
-        }
-    }
-    traceTo_ = point_;
+    (void)into;
 }
 
 // The height of a body's top surface directly above a given x, taken from the
@@ -444,139 +388,188 @@ void PlaygroundRoom::tick() {
         resting_ = false;
         pointFrozen_ = false;
     }
-    // Forces: gravity, m*g, points down in the air. On the plane the surface
-    // pushes back with exactly that weight, so the net force is zero and the
-    // point stays where it is instead of sinking.
-    const bool supported = dragTarget_ == DragTarget::Point || resting_;
-    const double force = supported ? 0.0 : -kMass * kGravity;
-    const double acceleration = force / kMass;
-    velocity_.y += acceleration * kTick;
-    Vec3 to = from + velocity_ * kTick;
-    traceFrom_ = from;
-    // The hitscan checks every body as well as the plane, and whichever comes
-    // first is where the point stops.
-    double bodyHit = 2.0;
-    Vec3 bodyNormal{0, 1, 0};
-    std::size_t hitIndex = kBodyCount;
+    // A point that ended the last tick inside a body is put back on its
+    // boundary. The sweep cannot do that itself -- it reports a crossing and
+    // stops -- so a point already inside would be nudged out by a hair each tick
+    // and creep along the face it is inside instead of sliding down it.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        double along = 2.0;
-        Vec3 normal{0, 1, 0};
         const Body& body = bodies_[index];
-        if (segmentHitsPolygon(from, to, body.position.data(), body.count, along, normal) && along < bodyHit) {
-            bodyHit = along;
-            bodyNormal = normal;
-            hitIndex = index;
+        if (!pushOutOfPolygon(point_, body.position.data(), body.count)) continue;
+        restingBody_ = int(index);
+        resting_ = true;
+        supportNormal_ = outwardNormalAt(body, point_);
+    }
+    // Forces: gravity is m*g downwards, always. What is holding the point up
+    // answers only the part of that force which drives into it; whatever is left
+    // over still acts, and on a slope that is a real force down the slope. The
+    // surface holds the point only if static friction can answer what is left --
+    // mu_s * N -- and on a 45 degree face it cannot, which is why a point on a
+    // slope slides instead of creeping to a stop.
+    Vec3 force{0.0, -kMass * kGravity, 0};
+    heldStill_ = false;
+    if (dragTarget_ == DragTarget::Point) {
+        force = Vec3{};
+        heldStill_ = true;
+    } else if (resting_) {
+        const Vec3 normal = supportNormal_;
+        const double into = dot(force, normal);       // negative when pressing in
+        const Vec3 along = force - normal * into;     // what the surface cannot answer
+        const double carried = -into;                 // N, how hard it is pressed
+        // Static friction holds a surface only against something that is not
+        // already moving. A point with sideways speed is sliding, and sliding is
+        // kinetic friction's business however weakly it is being pushed.
+        const Vec3 sliding = velocity_ - normal * dot(velocity_, normal);
+        if (length(along) <= kPointStaticFriction * carried && length(sliding) < 1e-9) {
+            force = Vec3{};
+            heldStill_ = true;
+        } else {
+            force = along;                            // it slides
         }
     }
-    (void)bodyNormal;
-    const bool meetsPlane = to.y < kSurfaceY;
-    const double planeHit = meetsPlane ? std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0) : 2.0;
-    if (hitIndex < kBodyCount && bodyHit <= planeHit) {
-        // The body is in the way first. The point is placed at the contact and
-        // the momentum is exchanged there rather than at the end of the tick.
-        point_ = from + (to - from) * bodyHit;
-        hitBody(hitIndex, from, to, bodyHit);
-        // The contact has only used part of the tick, and what is left of it
-        // belongs to the speed the contact left behind. Walking it is what lets
-        // a point stopped by a tilted face run on down the face instead of being
-        // parked at the contact and creeping; the walk still stops at anything
-        // it runs into, so nothing is passed through.
-        double remaining = 1.0 - bodyHit;
-        for (int step = 0; step < 3 && remaining > 1e-9; ++step) {
-            const Vec3 next = point_ + velocity_ * (kTick * remaining);
-            double first = 2.0;
-            Vec3 normal{0, 1, 0};
+    velocity_ = velocity_ + force * (kTick / kMass);
+    traceFrom_ = point_;
+    resting_ = false;
+    restingBody_ = -1;
+    slideSpan_ = 0.0;
+    // The tick's travel, walked from contact to contact: find where the segment
+    // meets something, move to it, answer it, and carry on with the time that is
+    // left. However much time is left and however fast the point is going, it
+    // cannot pass through anything, and it never loses speed it did not spend on
+    // a contact.
+    double remaining = 1.0;
+    for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
+        const Vec3 next = point_ + velocity_ * (kTick * remaining);
+        // Whichever surface is met first: the plane, or an edge of a body.
+        double first = 2.0;
+        std::size_t hitIndex = kBodyCount;
+        Vec3 normal{0, 1, 0};
+        bool wall = false;
+        if (next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
+            first = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
+            wall = true;
+        }
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            double along = 2.0;
+            Vec3 facing{0, 1, 0};
+            if (!segmentHitsPolygon(point_, next, body.position.data(), body.count, along, facing)) continue;
+            // A point lying on a face and moving along it is touching, not
+            // arriving. Answering that as a contact would stop the walk dead at
+            // the very start, every tick, and the point would stutter downhill.
+            if (along <= 1e-9 && dot(velocity_, facing) >= 0.0) continue;
+            if (along < first) {
+                first = along;
+                hitIndex = index;
+                normal = facing;
+                wall = false;
+            }
+        }
+        if (!(first <= 1.0)) {
+            point_ = next;
+            break;
+        }
+        point_ = point_ + (next - point_) * first;
+        remaining *= 1.0 - first;
+        if (wall) {
+            // The plane answers only what drives into it. What is running along
+            // it is the point's kinetic energy and friction is what takes that.
+            if (velocity_.y < 0.0) velocity_.y = 0.0;
+            resting_ = true;
+            restingBody_ = -1;
+            supportNormal_ = {0, 1, 0};
+            slideSpan_ += kTick * remaining;
+            continue;
+        }
+        // The same rule for a body: only the part of the speed that drives into
+        // the face is answered here.
+        const Vec3 along = velocity_ - normal * dot(velocity_, normal);
+        const double into = dot(velocity_, normal);
+        if (into < 0.0) {
+            hitBody(hitIndex, normal, into);
+        }
+        velocity_ = along;
+        resting_ = true;
+        restingBody_ = int(hitIndex);
+        supportNormal_ = normal;
+        slideSpan_ += kTick * remaining;
+        if (!(length(velocity_) > 1e-12)) break;
+    }
+    // Still touching something when the tick ends means it was touching all
+    // along: the walk only reports an arrival, and a point that is already lying
+    // on the floor never arrives at it. Without this it kept its sideways speed
+    // forever, because nothing ever told friction there was a surface.
+    if (slideSpan_ <= 0.0) {
+        if (point_.y <= kSurfaceY + 1e-9) {
+            resting_ = true;
+            restingBody_ = -1;
+            supportNormal_ = {0, 1, 0};
+            slideSpan_ = kTick;
+        } else {
             for (std::size_t index = 0; index < kBodyCount; ++index) {
-                const Body& other = bodies_[index];
-                double along = 2.0;
-                Vec3 facing{0, 1, 0};
-                if (segmentHitsPolygon(point_, next, other.position.data(), other.count, along, facing) &&
-                    along < first) {
-                    first = along;
-                    normal = facing;
+                const Body& body = bodies_[index];
+                Vec3 normal{0, 1, 0};
+                double nearest = 1e30;
+                for (std::size_t edge = 0; edge < body.count; ++edge) {
+                    const Vec3 a = body.position[edge];
+                    const Vec3 b = body.position[(edge + 1) % body.count];
+                    const Vec3 side = b - a;
+                    const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
+                    if (!(sideLength > 1e-12)) continue;
+                    const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+                    const double gap = std::abs(dot(point_ - a, outward));
+                    if (gap < nearest) { nearest = gap; normal = outward; }
                 }
-            }
-            if (next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
-                const double part = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
-                if (part < first) {
-                    point_ = point_ + (next - point_) * part;
-                    point_.y = kSurfaceY;
-                    // The floor answers the part of the motion that is into it.
-                    // What is running along it is the point's own kinetic
-                    // energy and the floor does not get to delete it: friction
-                    // takes it away, and friction takes time.
-                    velocity_.y = 0.0;
-                    resting_ = true;
-                    restingBody_ = -1;
-                    supportNormalY_ = 1.0;
-                    slideSpan_ += kTick * remaining * (1.0 - part);
-                    break;
-                }
-            }
-            if (first > 1.0) {
-                point_ = next;
+                // Only a face that can carry weight counts as standing on it.
+                if (nearest > 1e-6 || normal.y < 0.5) continue;
+                resting_ = true;
+                restingBody_ = int(index);
+                supportNormal_ = normal;
+                slideSpan_ = kTick;
                 break;
             }
-            point_ = point_ + (next - point_) * first;
-            velocity_ = velocity_ - normal * dot(velocity_, normal);
-            remaining *= 1.0 - first;
         }
-        to = point_;
-        traceTo_ = point_;
-    } else if (to.y < kSurfaceY) {
-        // Hitscan: walk the segment from here to where the speed would carry
-        // the point and find where it meets the plane. The point stops at that
-        // crossing. It cannot pass through, however far one tick takes it.
-        const double fraction = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
-        point_ = from + (to - from) * fraction;
-        point_.y = kSurfaceY;
-        // Only the speed into the floor is answered here. Everything running
-        // along the floor is left alone; that is the point's kinetic energy and
-        // it is friction's job to take it, not the contact's.
-        velocity_.y = 0.0;
-        resting_ = true;
-        restingBody_ = -1;
-        supportNormalY_ = 1.0;
-        slideSpan_ = kTick * (1.0 - fraction);
-        // The line stops at the contact, so what is drawn is the trace that was
-        // actually walked rather than the travel that was refused.
-        traceTo_ = point_;
-    } else if (resting_ && restingBody_ >= 0) {
-        // Standing on a body with nothing pushing it: the body holds its weight,
-        // and it keeps whatever sideways motion it has. Friction takes that.
-        point_ = from + Vec3{velocity_.x, 0, 0} * kTick;
-        velocity_.y = 0.0;
-        slideSpan_ = kTick;
-        traceTo_ = point_;
-    } else {
-        point_ = to;
-        resting_ = point_.y <= kSurfaceY + 1e-9 && velocity_.y <= 0.0;
-        if (resting_) {
-            // Already down and staying down: it is in contact for the whole
-            // tick, so friction acts for the whole tick.
-            slideSpan_ = kTick;
-            supportNormalY_ = 1.0;
-        }
-        traceTo_ = to;
     }
-    // Friction on the point, applied for the part of the tick it was actually
-    // touching something. N is the part of its weight the surface carries: all
-    // of it on the floor or on a flat face, less across a tilted one. If mu_s * N
-    // can answer the sideways motion it is held still; otherwise mu_k * N takes
-    // speed away over time, tick after tick, which is the whole point.
-    if (slideSpan_ > 0.0 && dragTarget_ != DragTarget::Point) {
-        const double pressed = kGravity * std::clamp(std::abs(supportNormalY_), 0.0, 1.0);
-        const double hold = kPointStaticFriction * pressed * slideSpan_;
+    // Nothing may be left inside a body: a contact is found just before it, and
+    // the walk stops there, but rounding can leave a point a hair deep.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        pushOutOfPolygon(point_, bodies_[index].position.data(), bodies_[index].count);
+    }
+    // Kinetic friction over the part of the tick the point spent on something.
+    // The line that is drawn is the travel that was actually walked this tick.
+    traceTo_ = point_;
+    // Kinetic friction, once, for the part of the tick the point was actually
+    // touching something, and only across the surface -- never into it, which the
+    // contact has already answered. It slows sliding; it does not decide whether
+    // there is sliding, because that is static friction's job above, done with
+    // the forces. Doing both jobs with a leftover velocity is what used to catch
+    // a point on a slope and hold it there, creeping.
+    if (slideSpan_ > 0.0 && !heldStill_ && dragTarget_ != DragTarget::Point) {
+        const Vec3 normal = supportNormal_;
+        const Vec3 across = velocity_ - normal * dot(velocity_, normal);
+        const double speed = length(across);
+        const double pressed = kGravity * std::abs(normal.y);
         const double slide = kPointKineticFriction * pressed * slideSpan_;
-        if (std::abs(velocity_.x) <= hold) {
-            velocity_.x = 0.0;
-        } else {
-            const double lost = std::copysign(slide, velocity_.x);
-            velocity_.x = std::abs(velocity_.x) <= slide ? 0.0 : velocity_.x - lost;
+        if (speed > 1e-12) {
+            const double keep = speed <= slide ? 0.0 : (speed - slide) / speed;
+            const Vec3 lost = across * (1.0 - keep);
+            velocity_ = velocity_ - lost;
+            // Friction has two ends: the surface rubs the point, so the point
+            // rubs the surface, and the momentum does not vanish. It goes in
+            // horizontally, the only way a body on the plane can go.
+            if (restingBody_ >= 0 && dragTarget_ != DragTarget::Body && std::abs(lost.x) > 1e-12) {
+                Body& body = bodies_[std::size_t(restingBody_)];
+                constexpr double kStruckShare = 0.5;
+                const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
+                for (std::size_t i = 0; i < body.count; ++i) {
+                    const double share = i == 0 ? kStruckShare : otherShare;
+                    body.velocity[i] = body.velocity[i] - Vec3{lost.x, 0, 0} * share;
+                }
+                body.frozen = false;
+            }
         }
     }
     slideSpan_ = 0.0;
-    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < kSleepSpeed) {
+    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < kSleepSpeed && heldStill_) {
         // No speed and no net force: this point cannot do anything next tick.
         // Freezing also ends the interpolation, so what is drawn is the resting
         // position and not some fraction of the way down the last tick.

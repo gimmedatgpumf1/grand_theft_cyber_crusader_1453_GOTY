@@ -84,7 +84,8 @@ private:
     bool bodyHeld(std::size_t body) const { return dragTarget_ == DragTarget::Body && dragBody_ == body; }
     // The point meets a body: energy into the corner it struck, a push back
     // along the normal.
-    void hitBody(std::size_t body, Vec3 from, Vec3 to, double hit);
+    void hitBody(std::size_t body, Vec3 normal, double into);
+    static Vec3 outwardNormalAt(const Body& body, Vec3 point);
     void freezeCheck();
     void updateDrag();
     void buildScene(const Camera& camera);
@@ -110,8 +111,12 @@ private:
     // over that time and no more, so a contact made late in a tick does not
     // brake the point for the whole tick.
     double slideSpan_ = 0.0;
-    // How much of the point's weight the surface it is resting on is carrying.
-    double supportNormalY_ = 1.0;
+    // The outward normal of whatever is holding the point up. The surface
+    // answers only the force into itself; the rest still acts on the point,
+    // which is why a point on a slope slides down it.
+    Vec3 supportNormal_{0, 1, 0};
+    // True when nothing is left to move the point: it is held, not merely slow.
+    bool heldStill_ = false;
     bool sceneReady_ = false, resting_ = false, haveTrace_ = false;
     bool pointFrozen_ = false;
     // Which body is holding the point up, or -1 when none is.
