@@ -113,6 +113,9 @@ private:
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
     void tickBall();
     void settleBallIntoRoom();
+    // Whether anything else in the room is moving enough to reach the ball. A
+    // ball asleep on the floor still has to be hit by whatever is falling on it.
+    bool ballNeighboursMoving() const;
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.

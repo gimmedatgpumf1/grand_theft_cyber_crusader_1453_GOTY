@@ -323,40 +323,57 @@ surface in the same tick.
 A basketball is in the room too: 0.24 m across, 0.62 kg, drawn as one disc. It is
 not built from corner points like the solids and nothing is sampled on its
 surface -- it is one point with a radius, and that radius is all the shape it
-has. Every contact is still found before it moves, from the geometry:
+has. There is one piece of ball code and no shape is named anywhere in it: the
+cube and the triangle are the same two-or-more-sided outline, and both are met by
+the same test.
 
-- Against a flat side, the ball touches when its middle is one radius from that
-  side, so the side is tested where the ball's own surface would meet it, not
-  where the middle would cross it. Against a corner it touches when its middle is
-  one radius from the corner. Those two cases are the whole of a circle meeting a
-  polygon, so nothing is stepped or guessed.
-- The ball turns as well as travels. Friction acts at the bottom of the ball,
-  which is a lever arm from its middle, so the same force that slows it down also
-  spins it: the moment of inertia of a solid sphere is `0.4 * m * r^2`, and the
-  grip is limited by `mu_k * N` like everywhere else. A ball that could only
-  slide would be slowed like a brick, which is not what a ball does.
-- The spin is not assumed: the contact answers the slip at the bottom of the
+- A contact is found before the ball moves, and the test is exact. A flat side is
+  met where the ball's own surface would reach it, so the side is looked at one
+  radius further out and not where the ball's middle would cross it; a corner is
+  met when the middle is one radius from it. Both cases cover a circle against a
+  polygon completely, so nothing is stepped or guessed.
+- The other side's motion is in the test. Taking the body's travel off the
+  ball's leaves the same question -- do these two things meet -- and because a
+  body's corners travel in straight lines within a tick, the answer stays exact.
+  This is what finds a body falling onto a ball that is lying still: the ball's
+  own travel cannot, because there is none. The ball is stepped before the bodies
+  for the same reason. The test is run whichever of the two is awake.
+- The ball turns as well as travels. Friction acts at the bottom of the ball, one
+  radius from its middle, so the same force that slows it also spins it: the
+  moment of inertia of a solid sphere is `0.4 * m * r^2`, and the grip is
+  limited by `mu_k * N` like everywhere else.
+- The spin is not assumed. The contact answers the slip at the bottom of the
   ball, so a ball dropped flat starts skidding, the skid drives the spin up, and
-  it reaches rolling when the bottom stops slipping. From there the roll is held
-  by the surface, and rolling resistance -- 0.015 of gravity, the price a real
-  ball pays for being round -- slows the travel and the spin by the same
-  proportion. It cannot turn into a skid on its own.
-- Nothing bounces. A ball dropped on the floor, the cube or the triangle ends at
-  rest, on the floor at exactly its radius, on the cube's top at 0.82 m (0.70 of
-  cube plus 0.12 of ball).
-- A slope is never a place to stop: on the triangle's 45 degree face the ball
-  accelerates down the face and turns as it goes, and it only freezes where what
-  it stands on is level. It comes off the slope at 3.7 m/s and rolls 4.4 m across
-  the floor -- the length of the room -- and is still rolling when it reaches the
-  cube.
-- The ball is one more thing for the point and the solids to meet. Its momentum
-  is shared with the corner it struck, exactly as the point's is, so a ball rolled
-  into the cube pushes it and gives up what it handed over; a point dropped on the
-  ball rolls off it.
-- A ball that has ended up inside a solid -- dragged into one with the mouse, or
-  shoved through by a hit from the far side -- is put back out the shortest way
-  that does not go through the floor. That is geometry undoing a placement, not a
-  physics answer.
+  it settles into rolling. From there rolling resistance -- 0.015 of gravity --
+  slows the travel and the spin by the same proportion, so a roll cannot turn
+  back into a skid on its own.
+- A ball touches things all the way round. A body lying on a ball is touching the
+  ball's top; the ball on top of the cube is touching the cube's face; a ball
+  resting exactly on a face is at the surface and not outside it, so that counts
+  as touching too. There is no preferred side in the code, and the measurements
+  below are all eight approaches: both faces, both corners and the top of each
+  body, and the underside.
+- Bouncing is the ball's own: it gives back 0.75 of the speed it lands with, so
+  it keeps 56 percent of the height of a bounce. Nothing else in the room bounces
+  and nothing else got a bounce -- the solids still take the whole approach
+  speed, as before. Below 1 m/s there is no bounce left to give, which is what
+  lets a ball lie still instead of trembling.
+- Air acts on it: `0.5 * rho * Cd * A * v^2` against the direction of travel,
+  with a sphere's drag coefficient. A hard knock decays instead of rolling out of
+  the room for ever.
+- A ball squeezed between the floor and a face coming down on it cannot stay and
+  cannot go down, so it leaves sideways at the speed of the thing pressing it.
+  That is the only answer that is not a teleport with no momentum; held by the
+  mouse it is placed rather than squeezed, so it is just put outside.
+- `R` puts a fresh ball back where it started, and `R` is where the ball starts:
+  0.28 m up, dropped, bouncing and coming to rest at exactly its radius.
+
+Measured: 4.8 m/s onto the floor rebounds at 4.3 m/s and peaks at 1.15 m; a ball
+dropped on the cube's top rests at 0.82 m (0.70 of cube plus 0.12 of ball); a
+point dropped on a resting ball rests on it at 0.31 m (ball, its radius, and the
+dot's); rolling off the triangle's slope into the cube's side moves the cube by
+29 mm and stops; the closest approach between the ball and any body in every one
+of those runs is 0.0000 m, meaning touching and never inside.
 
 ### Grabbing
 

@@ -629,10 +629,21 @@ void PlaygroundRoom::tick() {
     // A frozen body is not stepped at all. It has no velocity and no force to
     // resolve, and stepping it anyway let gravity and the floor clamp nibble at
     // it tick after tick, which drifted a body that was supposed to be asleep.
+    // The ball is stepped before the bodies, and the result is handed to them.
+    // Each body is a set of corners that travel in straight lines within a tick,
+    // so the ball's swept contact can take the body's own travel off its own and
+    // still be exact -- which is how a body dropped onto a resting ball is found
+    // at all. Stepping the bodies first would have the ball chasing a shape that
+    // had already gone past it.
+    if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         if (!bodies_[index].frozen) tickBody(index);
     }
-    if (!ball_.frozen) tickBall();
+    // Where the bodies actually ended up. A corner is a point and the floor only
+    // limits its height, so the body's own step can carry it into the ball after
+    // the ball has been stepped; that is answered here, once, rather than being
+    // left for nothing to notice.
+    settleBallIntoRoom();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -853,10 +864,11 @@ void PlaygroundRoom::advance(double seconds) {
         if (!pointFrozen_) {
             tick();
         } else {
+            if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 if (!bodies_[index].frozen) tickBody(index);
             }
-            if (!ball_.frozen) tickBall();
+            settleBallIntoRoom();
         }
         freezeCheck();
         ++ticks;
