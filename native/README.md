@@ -332,48 +332,60 @@ the same test.
   radius further out and not where the ball's middle would cross it; a corner is
   met when the middle is one radius from it. Both cases cover a circle against a
   polygon completely, so nothing is stepped or guessed.
-- The other side's motion is in the test. Taking the body's travel off the
-  ball's leaves the same question -- do these two things meet -- and because a
-  body's corners travel in straight lines within a tick, the answer stays exact.
-  This is what finds a body falling onto a ball that is lying still: the ball's
-  own travel cannot, because there is none. The ball is stepped before the bodies
-  for the same reason. The test is run whichever of the two is awake.
+- The bodies are stepped first, and their travel is not predicted. A body's
+  corners move in straight lines within a tick, so once the bodies have moved,
+  what they did is known exactly and the ball's own sweep is tested against it.
+  This is what finds a body coming down on a ball that is lying still: a ball
+  that is not going anywhere has no travel of its own to find anything with. The
+  sweep is run whichever of the two is awake.
+- Both sides stop where they met. The crossing says how far along its own step the
+  meeting was, and the body is put back there, so the two shapes are touching and
+  not one inside the other. Without that a body landing on a ball that has a floor
+  under it sinks in and stays sunk.
+- Neither side can take an answer the other has no freedom to give. A body on the
+  floor cannot be driven down into it, a ball lying on the floor cannot give way
+  under a load coming down on it, and what a surface does not answer is answered
+  by the other side -- which is what lets a ball carry the cube instead of being
+  squeezed out from under it.
 - The ball turns as well as travels. Friction acts at the bottom of the ball, one
   radius from its middle, so the same force that slows it also spins it: the
-  moment of inertia of a solid sphere is `0.4 * m * r^2`, and the grip is
-  limited by `mu_k * N` like everywhere else.
-- The spin is not assumed. The contact answers the slip at the bottom of the
-  ball, so a ball dropped flat starts skidding, the skid drives the spin up, and
-  it settles into rolling. From there rolling resistance -- 0.015 of gravity --
-  slows the travel and the spin by the same proportion, so a roll cannot turn
-  back into a skid on its own.
+  moment of inertia of a solid sphere is `0.4 * m * r^2`, and the grip is limited
+  by `mu * N` like everywhere else. The spin is not assumed: a ball dropped flat
+  skids, the skid drives the spin up, and the turn becomes the travel. Over seven
+  ticks of a roll the ball turned `-8.3333` radians per metre against `-1/r` of
+  `-8.333`.
 - A ball touches things all the way round. A body lying on a ball is touching the
   ball's top; the ball on top of the cube is touching the cube's face; a ball
   resting exactly on a face is at the surface and not outside it, so that counts
-  as touching too. There is no preferred side in the code, and the measurements
-  below are all eight approaches: both faces, both corners and the top of each
-  body, and the underside.
-- Bouncing is the ball's own: it gives back 0.75 of the speed it lands with, so
-  it keeps 56 percent of the height of a bounce. Nothing else in the room bounces
-  and nothing else got a bounce -- the solids still take the whole approach
-  speed, as before. Below 1 m/s there is no bounce left to give, which is what
-  lets a ball lie still instead of trembling.
-- Air acts on it: `0.5 * rho * Cd * A * v^2` against the direction of travel,
-  with a sphere's drag coefficient. A hard knock decays instead of rolling out of
-  the room for ever.
-- A ball squeezed between the floor and a face coming down on it cannot stay and
-  cannot go down, so it leaves sideways at the speed of the thing pressing it.
-  That is the only answer that is not a teleport with no momentum; held by the
-  mouse it is placed rather than squeezed, so it is just put outside.
+  as touching too. There is no preferred side in the code.
+- Bouncing is the answer to arriving at something that will not give way: the
+  floor, a frozen solid, a body the mouse is holding. The ball gives back 0.75 of
+  the speed it arrived with -- the speed it arrived at the tick with, before this
+  tick's gravity, so a ball already lying on the floor arrives at nothing and is
+  pressed into it rather than dropped onto it. Against something free to move,
+  there is no bounce: the two exchange momentum, which is the only way two things
+  stepped one after the other stay consistent. Nothing else in the room bounces.
+- Air acts on it: `0.5 * rho * Cd * A * v^2` against the direction of travel, with
+  a sphere's drag coefficient. A ball rolling at 3.4 m/s is down to 3.1 m/s two
+  seconds later, and a hard knock decays instead of rolling out of the room for
+  ever.
+- Rest needs no rule. A ball with nothing left to spend is frozen: no speed, and
+  every surface under it able to carry its weight. A slope cannot carry it, so a
+  ball on one is never frozen however slowly it is going, and a ball with a face
+  coming down on it is not at rest either.
 - `R` puts a fresh ball back where it started, and `R` is where the ball starts:
   0.28 m up, dropped, bouncing and coming to rest at exactly its radius.
 
-Measured: 4.8 m/s onto the floor rebounds at 4.3 m/s and peaks at 1.15 m; a ball
-dropped on the cube's top rests at 0.82 m (0.70 of cube plus 0.12 of ball); a
-point dropped on a resting ball rests on it at 0.31 m (ball, its radius, and the
-dot's); rolling off the triangle's slope into the cube's side moves the cube by
-29 mm and stops; the closest approach between the ball and any body in every one
-of those runs is 0.0000 m, meaning touching and never inside.
+Measured: 5.27 m/s onto the floor rebounds at 3.95 m/s, three quarters of it; a
+ball dropped from 3 m bounces 21 times, peaks at 1.696 m, and is at rest at
+0.1200 m after 2.55 s, still at 0.120000 m ten seconds later; a ball dropped on
+the cube's top rests at 0.820 m (0.700 of cube plus 0.120 of ball); the dot
+dropped on a resting ball rests on it at 0.310 m, both frozen; the cube set down
+on the ball is carried by it, its own corners 0.240 m up -- the ball's top -- and
+clear of the floor; rolling off the triangle's slope into the cube's side moves
+the cube by 7 mm and stops the ball; the closest approach between the ball and
+any body in every one of those runs is 0.0000 m, meaning touching and never
+inside.
 
 ### Grabbing
 

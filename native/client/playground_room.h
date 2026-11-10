@@ -55,6 +55,8 @@ public:
     int bodyContacts(std::size_t body) const { return body < kBodyCount ? bodies_[body].contacts : 0; }
     // Which body, if any, is holding the point up; -1 when the plane does.
     int supportBody() const { return restingBody_; }
+    // Which surface is holding the point up: a ball, as opposed to a body or the floor.
+    bool supportedByBall() const { return restingOnBall_; }
     // The ball: one point with a radius, its spin, and the angle it is drawn at.
     Vec3 ballPosition() const { return ball_.position; }
     Vec3 ballShown() const { return ball_.shown; }
@@ -73,15 +75,19 @@ private:
     // like a brick, which is not what a ball does.
     struct Ball {
         Vec3 position{}, previous{}, shown{}, velocity{};
+        // The speed the ball had when the tick began, before this tick's forces.
+        // A bounce is the answer to hitting something, so it is measured against
+        // what the ball arrived with -- not against the speed gravity lent it on
+        // the way, which a ball already lying on the floor has too.
+        Vec3 arrival{};
         double radius = 0.12;   // basketball: 0.24 m across
         double mass = 0.62;     // kg, a real basketball
         double spin = 0.0;      // radians per second about z
         double angle = 0.0, previousAngle = 0.0;
         bool frozen = false, touching = false;
-        // Rolling, and standing on something level. Both are worked out afresh
-        // every tick from what the ball actually touched.
-        bool rolling = false, level = true;
-        int quietTicks = 0;
+        // Whether static friction could hold the ball at every surface it touched
+        // this tick. A slope cannot, so a ball on one is never at rest.
+        bool standing = true;
         std::size_t faceBatch = 0, markBatch = 0;
     };
     // A body is its corner points and the distances between them that are not
@@ -98,7 +104,7 @@ private:
         // This body's own friction, from its shape.
         double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
-        int quietTicks = 0, contacts = 0;
+        int contacts = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
@@ -112,14 +118,14 @@ private:
     void hitBody(std::size_t body, Vec3 normal, double into);
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
     void tickBall();
-    void settleBallIntoRoom();
+    void ballOutOfSolids();
     // Whether anything else in the room is moving enough to reach the ball. A
     // ball asleep on the floor still has to be hit by whatever is falling on it.
     bool ballNeighboursMoving() const;
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
-    void ballContact(Vec3 normal, int bodyIndex);
+    void ballContact(Vec3 normal, int bodyIndex, double along = 1.0, bool ballHeld = false);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);
@@ -160,5 +166,6 @@ private:
     bool pointFrozen_ = false;
     // Which body is holding the point up, or -1 when none is.
     int restingBody_ = -1;
+    bool restingOnBall_ = false;
 };
 } // namespace gtc::native

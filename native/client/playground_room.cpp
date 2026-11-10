@@ -28,11 +28,6 @@ constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is
 // within a nanometre of it: the clamp puts it at exactly the plane's height.
 constexpr double kContactTolerance = 1e-9;   // metres
-// Below this a corner is not moving in any way that matters: the distance solve
-// leaves a few millimetres of wobble on a resting body, and a body doing that
-// is asleep rather than moving. Two ticks of it and the body is frozen.
-constexpr double kSleepSpeed = 0.08;  // m/s
-constexpr int kSleepTicks = 2;
 constexpr int kMaxContacts = 4;
 // Friction, in the two forms it actually has. A surface holds a body still as
 // long as mu_s * N is enough to answer the sideways force; that is static
@@ -170,7 +165,6 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         body.staticFriction = shape.staticFriction;
         body.kineticFriction = shape.kineticFriction;
         body.frozen = false;
-        body.quietTicks = 0;
         body.contacts = 0;
     }
     // A new ball, at the same place it starts in. The scene is not rebuilt by a
@@ -245,12 +239,10 @@ void PlaygroundRoom::beginDrag() {
         const Vec3 middle = centroid(body.position.data(), body.count);
         grabOffset_ = Vec3{middle.x - hit.x, middle.y - hit.y, 0};
         body.frozen = false;
-        body.quietTicks = 0;
         for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
     } else if (length(Vec3{hit.x - ball_.position.x, hit.y - ball_.position.y, 0}) <= ball_.radius) {
         dragTarget_ = DragTarget::Ball;
         ball_.frozen = false;
-        ball_.quietTicks = 0;
         ball_.velocity = {};
         ball_.spin = 0.0;
     } else if (pointNear) {
@@ -453,6 +445,7 @@ void PlaygroundRoom::tick() {
     traceFrom_ = point_;
     resting_ = false;
     restingBody_ = -1;
+    restingOnBall_ = false;
     slideSpan_ = 0.0;
     // The tick's travel, walked from contact to contact: find where the segment
     // meets something, move to it, answer it, and carry on with the time that is
@@ -513,6 +506,7 @@ void PlaygroundRoom::tick() {
             pointAgainstBall(normal);
             resting_ = true;
             restingBody_ = -1;
+            restingOnBall_ = true;
             supportNormal_ = normal;
             slideSpan_ += kTick * remaining;
             if (!(length(velocity_) > 1e-12)) break;
@@ -575,6 +569,22 @@ void PlaygroundRoom::tick() {
                 slideSpan_ = kTick;
                 break;
             }
+            // The ball is a surface too, and for the same reason: a dot lying on
+            // it never arrives at it, so nothing else would tell it there is
+            // something underneath. Its own shape is a circle, so the test is the
+            // distance between the two middles.
+            if (!resting_) {
+                const Vec3 gap = point_ - ball_.position;
+                const double distance = length(gap);
+                const double touching = kPointRadius + ball_.radius;
+                if (distance <= touching + 1e-9 && distance > 0.0 && gap.y > 0.0) {
+                    resting_ = true;
+                    restingBody_ = -1;
+                    restingOnBall_ = true;
+                    supportNormal_ = gap / distance;
+                    slideSpan_ = kTick;
+                }
+            }
         }
     }
     // Nothing may be left inside a body: a contact is found just before it, and
@@ -617,7 +627,7 @@ void PlaygroundRoom::tick() {
         }
     }
     slideSpan_ = 0.0;
-    if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < kSleepSpeed && heldStill_) {
+    if (dragTarget_ != DragTarget::Point && resting_ && !(length(velocity_) > kRestSpeed) && heldStill_) {
         // No speed and no net force: this point cannot do anything next tick.
         // Freezing also ends the interpolation, so what is drawn is the resting
         // position and not some fraction of the way down the last tick.
@@ -629,21 +639,16 @@ void PlaygroundRoom::tick() {
     // A frozen body is not stepped at all. It has no velocity and no force to
     // resolve, and stepping it anyway let gravity and the floor clamp nibble at
     // it tick after tick, which drifted a body that was supposed to be asleep.
-    // The ball is stepped before the bodies, and the result is handed to them.
-    // Each body is a set of corners that travel in straight lines within a tick,
-    // so the ball's swept contact can take the body's own travel off its own and
-    // still be exact -- which is how a body dropped onto a resting ball is found
-    // at all. Stepping the bodies first would have the ball chasing a shape that
-    // had already gone past it.
-    if (!ball_.frozen || ballNeighboursMoving()) tickBall();
+    // The bodies are stepped first, so that when the ball is swept nothing has to
+    // be predicted: each body's own travel this tick is known exactly, and the
+    // ball's is tested against it. That is what finds a body dropped onto a ball
+    // lying still -- a ball that is not going anywhere has no travel of its own to
+    // find anything with.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         if (!bodies_[index].frozen) tickBody(index);
     }
-    // Where the bodies actually ended up. A corner is a point and the floor only
-    // limits its height, so the body's own step can carry it into the ball after
-    // the ball has been stepped; that is answered here, once, rather than being
-    // left for nothing to notice.
-    settleBallIntoRoom();
+    if (!ball_.frozen || ballNeighboursMoving()) tickBall();
+    ballOutOfSolids();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -813,7 +818,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     }
     bool quiet = true;
     for (std::size_t i = 0; i < count; ++i) {
-        quiet = quiet && length(body.position[i] - body.previous[i]) / kTick < kSleepSpeed;
+        quiet = quiet && length(body.position[i] - body.previous[i]) < kRestSpeed * kTick;
     }
     // A body is carried by the plane only if its weight passes between the
     // corners that are actually touching it. Balanced on one corner it is not
@@ -825,8 +830,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     const bool carried = touchingPlane && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
     // Resting on the plane and no longer going anywhere: there is no force left
     // to resolve, so the body is frozen and its ticks stop costing anything.
-    body.quietTicks = carried && quiet ? body.quietTicks + 1 : 0;
-    if (body.quietTicks >= kSleepTicks && !bodyHeld(index)) {
+    if (quiet && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {
             body.velocity[i] = {};
@@ -838,7 +842,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
 
 void PlaygroundRoom::freezeCheck() {
     if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
-        (point_.y <= kSurfaceY || restingBody_ >= 0)) {
+        (point_.y <= kSurfaceY || restingBody_ >= 0 || restingOnBall_)) {
         pointFrozen_ = true;
         velocity_ = {};
     }
@@ -852,6 +856,10 @@ void PlaygroundRoom::advance(double seconds) {
     int ticks = 0;
     while (accumulator_ >= kTick && ticks < 5) {
         accumulator_ -= kTick;
+        // What the ball arrived with, taken before anything in the room moved this
+        // tick. A bounce is the answer to arriving at something; a push it gets
+        // part-way through the tick is not an arrival, and must not be bounced back.
+        ball_.arrival = ball_.velocity;
         // A point parked on a body is only held up by that body. Take it away --
         // drag it, or let it slide -- and the support is gone, so the point goes
         // back to being a falling body.
@@ -860,15 +868,24 @@ void PlaygroundRoom::advance(double seconds) {
             resting_ = false;
             restingBody_ = -1;
         }
+        // The same for a ball: take it away and the dot has nothing under it.
+        if (pointFrozen_ && restingOnBall_) {
+            const double distance = length(point_ - ball_.position);
+            if (distance > kPointRadius + ball_.radius + 1e-9) {
+                pointFrozen_ = false;
+                resting_ = false;
+                restingOnBall_ = false;
+            }
+        }
         // A frozen body has nothing to do: no force, no motion, no work.
         if (!pointFrozen_) {
             tick();
         } else {
-            if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 if (!bodies_[index].frozen) tickBody(index);
             }
-            settleBallIntoRoom();
+            if (!ball_.frozen || ballNeighboursMoving()) tickBall();
+            ballOutOfSolids();
         }
         freezeCheck();
         ++ticks;

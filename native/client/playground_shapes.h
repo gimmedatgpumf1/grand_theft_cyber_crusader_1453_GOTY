@@ -18,6 +18,11 @@ namespace gtc::native::playground_detail {
 // How big the dot is drawn, and therefore how big a thing the ball and the
 // bodies see. One number, because the picture and the contact must agree.
 inline constexpr double kPointRadius = 0.07;
+// What counts as not moving. This is the room's existing rest level -- the dot
+// freezes below it -- and it is a statement about the arithmetic, not about
+// physics: a speed of a nanometre per second moves an object a fiftieth of a
+// picometre in a tick, which no double here can tell from standing still.
+inline constexpr double kRestSpeed = 1e-9;  // m/s
 inline constexpr double kHalfSize = 0.35;
 inline constexpr double kCubeSide = 2.0 * kHalfSize;
 inline constexpr double kTriangleLeg = 3.0 * kCubeSide;
