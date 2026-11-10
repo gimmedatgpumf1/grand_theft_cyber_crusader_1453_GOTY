@@ -189,9 +189,13 @@ corner, 1 kg each. It is four points, exactly as specified, not a rigid body.
   downward speed is removed at the end of the tick.
 - Once it rests on the plane and no corner moved this tick, the cube freezes.
 
-The distance solve runs until every distance is back to its rest length to
-within a nanometre, so there is no pass count to choose: the cube's shape is
-restored to the same accuracy every tick. A corner the plane holds loses its
+The shape is not approximated. Each tick, the six distances and the plane are
+solved together -- push the distances straight, put any corner that went through
+the plane back on it, check both again -- until neither is out by more than a
+nanometre. The order matters: the plane is what opens the distance error, so the
+distance solve has to see the plane. What is drawn is then rebuilt from where the
+square is and how far round it has turned, never by sliding four corners along
+straight lines between ticks, so a turning square cannot look squashed. A corner the plane holds loses its
 downward velocity and has friction taken off its sliding, and a constraint is
 not allowed to hand a corner more speed than it already had, so the push-back
 and the plane cannot pump energy into the cube. Once the corners are on the

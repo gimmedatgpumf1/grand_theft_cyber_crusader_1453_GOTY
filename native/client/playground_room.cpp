@@ -167,6 +167,12 @@ bool segmentHitsSquare(Vec3 from, Vec3 to, const std::array<Vec3, 4>& square, do
     return true;
 }
 
+// Which way round the square is, from the direction of one of its sides.
+double edgeAngle(const std::array<Vec3, 4>& square) {
+    const Vec3 side = square[1] - square[0];
+    return std::atan2(side.y, side.x);
+}
+
 // The middle of the four corners. The cube is only its corners, so this is
 // worked out from them rather than stored and kept in step.
 Vec3 centroid(const std::array<Vec3, 4>& corners) {
@@ -303,8 +309,28 @@ void PlaygroundRoom::interpolate() {
     const double pointAlpha = pointFrozen_ || dragTarget_ == DragTarget::Point ? 1.0 : fraction;
     const double cubeAlpha = cubeFrozen_ || dragTarget_ == DragTarget::Cube ? 1.0 : fraction;
     shown_ = previous_ + (point_ - previous_) * pointAlpha;
+    // The square is drawn as a square. Interpolating its four corners straight
+    // from tick to tick pulls them along chords, so a turning square looks like
+    // it is being squashed and stretched; interpolating where it is and how far
+    // round it has turned, and rebuilding the corners from those, cannot.
+    if (cubeAlpha >= 1.0) {
+        for (std::size_t i = 0; i < 4; ++i) cubeShown_[i] = cubePosition_[i];
+        return;
+    }
+    const Vec3 from = centroid(cubePrevious_);
+    const Vec3 to = centroid(cubePosition_);
+    const double fromAngle = edgeAngle(cubePrevious_);
+    double turn = edgeAngle(cubePosition_) - fromAngle;
+    while (turn > 3.14159265358979323846) turn -= 2.0 * 3.14159265358979323846;
+    while (turn < -3.14159265358979323846) turn += 2.0 * 3.14159265358979323846;
+    const Vec3 centre = from + (to - from) * cubeAlpha;
+    const double angle = fromAngle + turn * cubeAlpha;
+    const double c = std::cos(angle), sn = std::sin(angle);
+    const std::array<Vec2, 4> local{{{-kHalfSize, -kHalfSize}, {kHalfSize, -kHalfSize},
+                                    {kHalfSize, kHalfSize}, {-kHalfSize, kHalfSize}}};
     for (std::size_t i = 0; i < 4; ++i) {
-        cubeShown_[i] = cubePrevious_[i] + (cubePosition_[i] - cubePrevious_[i]) * cubeAlpha;
+        cubeShown_[i] = {centre.x + local[i].x * c - local[i].y * sn,
+                         centre.y + local[i].x * sn + local[i].y * c, 0};
     }
 }
 
@@ -466,13 +492,16 @@ void PlaygroundRoom::tickCube() {
     // into a spring and the cube rattles for a second after it lands.
     std::array<double, 4> speedBefore{};
     for (std::size_t i = 0; i < 4; ++i) speedBefore[i] = length(cubeVelocity_[i]);
-    // Each pass walks every fixed distance once and splits the error evenly
-    // between its two corners. Interleaving the plane clamp keeps the solve from
-    // pushing a corner through the floor to satisfy a distance. The loop ends
-    // when no distance is out by more than a nanometre, so the result does not
-    // depend on a pass count chosen by hand.
+    // The shape and the plane are solved together until both are satisfied. A
+    // pass pushes every fixed distance back to its rest length, then puts any
+    // corner the pass pushed through the plane back on it, and that repeats
+    // until neither is out by more than a nanometre. Solving the distances and
+    // then clamping once -- or clamping inside the distance loop without
+    // checking the distances again -- is what leaves the square permanently out
+    // of shape: it is the clamp that opens the distance error, so the distance
+    // solve has to see the clamp.
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
-        double worst = 0.0;
+        double worstDistance = 0.0;
         for (std::size_t pair = 0; pair < kPairs.size(); ++pair) {
             const std::size_t a = std::size_t(kPairs[pair][0]), b = std::size_t(kPairs[pair][1]);
             const Vec3 delta = cubePosition_[b] - cubePosition_[a];
@@ -480,22 +509,20 @@ void PlaygroundRoom::tickCube() {
             if (!(current > 1e-12)) continue;
             const Vec3 direction = delta / current;
             const double deviation = current - cubeRest_[pair];
-            worst = std::max(worst, std::abs(deviation));
+            worstDistance = std::max(worstDistance, std::abs(deviation));
             const Vec3 correction = direction * (deviation * 0.5);
             cubePosition_[a] += correction;
             cubePosition_[b] -= correction;
         }
-        if (worst <= kDistanceTolerance) break;
-    }
-    // The plane is applied once, after the distances are satisfied, instead of
-    // inside the loop. Clamping inside the loop fights the distances: every
-    // pass pushes the corners apart, the clamp pushes back, and the pair of them
-    // pump energy in until the cube flies away.
-    for (std::size_t i = 0; i < 4; ++i) {
-        if (cubePosition_[i].y < kSurfaceY) {
-            cubePosition_[i].y = kSurfaceY;
-            onPlane[i] = true;
+        double deepest = 0.0;
+        for (std::size_t i = 0; i < 4; ++i) {
+            if (cubePosition_[i].y < kSurfaceY) {
+                deepest = std::max(deepest, kSurfaceY - cubePosition_[i].y);
+                cubePosition_[i].y = kSurfaceY;
+                onPlane[i] = true;
+            }
         }
+        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance) break;
     }
     for (std::size_t i = 0; i < 4; ++i) {
         Vec3 velocity = (cubePosition_[i] - cubePrevious_[i]) / kTick;
