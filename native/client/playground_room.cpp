@@ -23,10 +23,6 @@ constexpr double kGhostRadius = 0.032;
 constexpr double kTraceHalfWidth = 0.010;
 constexpr double kCornerRadius = 0.045;
 constexpr double kEdgeHalfWidth = 0.008;
-constexpr double kHalfSize = 0.35;                 // the cube is 0.70 m on a side
-constexpr double kCubeSide = 2.0 * kHalfSize;
-constexpr double kTriangleLeg = 3.0 * kCubeSide;   // the triangle is three times the cube
-constexpr double kStartAngle = 0.30;  // radians, so a corner leads the landing
 constexpr double kPointGrabRadius = 0.14;  // how close the mouse has to be to take it
 constexpr double kGrabMargin = 0.06;       // and to take a body by its outline
 // The distance solve runs until every distance is back to its rest length,
@@ -42,46 +38,21 @@ constexpr double kContactTolerance = 1e-9;   // metres
 // is asleep rather than moving. Two ticks of it and the body is frozen.
 constexpr double kSleepSpeed = 0.08;  // m/s
 constexpr int kSleepTicks = 2;
-// How much sliding the plane resists.
-constexpr double kFriction = 0.5;
+// Friction, in the two forms it actually has. A surface holds a body still as
+// long as mu_s * N is enough to answer the sideways force; that is static
+// friction, and while it holds, nothing moves. Once the pull beats it, the body
+// slides and mu_k * N slows it -- tick by tick, never in one instant.
+// The point is smooth and keeps its sideways speed for a long way. The solids
+// are gripped far harder, and how hard also depends on how much of them is
+// touching the floor: the coefficients below are the solids' personal factors,
+// and they are scaled by the length of the contact they actually have.
+constexpr double kPointStaticFriction = 0.40;
+constexpr double kPointKineticFriction = 0.30;
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 // Each body gets its own face, edge and corner markers: a body owns a hundred
 // object ids, which is more than four corners will ever need.
 constexpr std::uint32_t kBodyFaceId = 200, kBodySpan = 100, kBodyEdgeOffset = 10, kBodyCornerOffset = 20;
 constexpr const char* kSky = "#101c22";
-
-// What each body is when the room starts: its corners about its own middle, the
-// distances it holds, and where that middle is and how far it is turned.
-struct Shape {
-    std::size_t count = 0, pairCount = 0;
-    std::array<Vec3, 4> local{};
-    std::array<std::array<int, 2>, 6> pairs{};
-    Vec3 middle{};
-    double angle = 0;
-};
-
-constexpr double kThird = 1.0 / 3.0;
-constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
-    // The square, turned so a corner leads: it lands on a corner and has to be
-    // held up by the other three.
-    {4,
-     6,
-     {{{-kHalfSize, -kHalfSize, 0}, {kHalfSize, -kHalfSize, 0}, {kHalfSize, kHalfSize, 0}, {-kHalfSize, kHalfSize, 0}}},
-     kSquarePairs,
-     {1.20, 2.05, 0},
-     kStartAngle},
-    // The right isosceles triangle: two legs three cubes long, the right angle
-    // standing on the plane so it is held up by two corners and its mass sits
-    // between them.
-    {3,
-     3,
-     {{{-kTriangleLeg * kThird, -kTriangleLeg * kThird, 0},
-       {kTriangleLeg * 2.0 * kThird, -kTriangleLeg * kThird, 0},
-       {-kTriangleLeg * kThird, kTriangleLeg * 2.0 * kThird, 0}}},
-     kTrianglePairs,
-     {-1.90, kTriangleLeg * kThird, 0},
-     0.0},
-}};
 
 // Where a segment first meets a convex body, and the outward normal of the edge
 // it meets. The corners are in order, so each edge can be tested on its own and
@@ -203,6 +174,8 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
             body.rest[pair] = length(body.position[std::size_t(body.pairs[pair][1])] -
                                      body.position[std::size_t(body.pairs[pair][0])]);
         }
+        body.staticFriction = shape.staticFriction;
+        body.kineticFriction = shape.kineticFriction;
         body.frozen = false;
         body.quietTicks = 0;
         body.contacts = 0;
@@ -437,6 +410,20 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
     point_ = point_ - normal * 1e-6;
     resting_ = false;
     pointFrozen_ = false;
+    // Sliding along the face it just met: the face holds it up across itself and
+    // rubs it along itself. N across a tilted face is only the part of the weight
+    // pressing into that face, so a 45 degree slope grips less than the floor
+    // does, and the point keeps most of the speed it built falling.
+    {
+        const Vec3 across = velocity_ - normal * dot(velocity_, normal);
+        const double speed = length(across);
+        const double span = kTick * std::clamp(1.0 - along, 0.0, 1.0);
+        const double pressed = kGravity * std::clamp(std::abs(normal.y), 0.0, 1.0);
+        const double hold = kPointStaticFriction * pressed * span;
+        const double slide = kPointKineticFriction * pressed * span;
+        if (speed <= hold) velocity_ = velocity_ - across;
+        else velocity_ = velocity_ - across * std::min(1.0, slide / speed);
+    }
     // If the contact has taken all the speed there was, the body is holding the
     // point up exactly as the plane would, and it is allowed to stay there. The
     // same "slow enough to be at rest" rule the plane uses. Testing for an exact
@@ -450,6 +437,7 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
             velocity_ = {};
             resting_ = true;
             restingBody_ = int(index);
+            supportNormalY_ = std::abs(normal.y);
             point_ = {point_.x, height, 0};
         }
     }
@@ -561,9 +549,15 @@ void PlaygroundRoom::tick() {
                 if (part < first) {
                     point_ = point_ + (next - point_) * part;
                     point_.y = kSurfaceY;
-                    velocity_ = {};
+                    // The floor answers the part of the motion that is into it.
+                    // What is running along it is the point's own kinetic
+                    // energy and the floor does not get to delete it: friction
+                    // takes it away, and friction takes time.
+                    velocity_.y = 0.0;
                     resting_ = true;
                     restingBody_ = -1;
+                    supportNormalY_ = 1.0;
+                    slideSpan_ += kTick * remaining * (1.0 - part);
                     break;
                 }
             }
@@ -584,23 +578,52 @@ void PlaygroundRoom::tick() {
         const double fraction = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
         point_ = from + (to - from) * fraction;
         point_.y = kSurfaceY;
-        velocity_ = {};
+        // Only the speed into the floor is answered here. Everything running
+        // along the floor is left alone; that is the point's kinetic energy and
+        // it is friction's job to take it, not the contact's.
+        velocity_.y = 0.0;
         resting_ = true;
         restingBody_ = -1;
+        supportNormalY_ = 1.0;
+        slideSpan_ = kTick * (1.0 - fraction);
         // The line stops at the contact, so what is drawn is the trace that was
         // actually walked rather than the travel that was refused.
         traceTo_ = point_;
     } else if (resting_ && restingBody_ >= 0) {
-        // Standing on a body with nothing pushing it: keep the position and stay
-        // supported, the same way the plane holds it.
-        point_ = from;
-        velocity_ = {};
+        // Standing on a body with nothing pushing it: the body holds its weight,
+        // and it keeps whatever sideways motion it has. Friction takes that.
+        point_ = from + Vec3{velocity_.x, 0, 0} * kTick;
+        velocity_.y = 0.0;
+        slideSpan_ = kTick;
         traceTo_ = point_;
     } else {
         point_ = to;
         resting_ = point_.y <= kSurfaceY + 1e-9 && velocity_.y <= 0.0;
+        if (resting_) {
+            // Already down and staying down: it is in contact for the whole
+            // tick, so friction acts for the whole tick.
+            slideSpan_ = kTick;
+            supportNormalY_ = 1.0;
+        }
         traceTo_ = to;
     }
+    // Friction on the point, applied for the part of the tick it was actually
+    // touching something. N is the part of its weight the surface carries: all
+    // of it on the floor or on a flat face, less across a tilted one. If mu_s * N
+    // can answer the sideways motion it is held still; otherwise mu_k * N takes
+    // speed away over time, tick after tick, which is the whole point.
+    if (slideSpan_ > 0.0 && dragTarget_ != DragTarget::Point) {
+        const double pressed = kGravity * std::clamp(std::abs(supportNormalY_), 0.0, 1.0);
+        const double hold = kPointStaticFriction * pressed * slideSpan_;
+        const double slide = kPointKineticFriction * pressed * slideSpan_;
+        if (std::abs(velocity_.x) <= hold) {
+            velocity_.x = 0.0;
+        } else {
+            const double lost = std::copysign(slide, velocity_.x);
+            velocity_.x = std::abs(velocity_.x) <= slide ? 0.0 : velocity_.x - lost;
+        }
+    }
+    slideSpan_ = 0.0;
     if (dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < kSleepSpeed) {
         // No speed and no net force: this point cannot do anything next tick.
         // Freezing also ends the interpolation, so what is drawn is the resting
@@ -722,6 +745,23 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         }
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance) break;
     }
+    // How much of this body is lying on the floor: the length of the contact
+    // between the corners that are actually on it. A longer contact grips
+    // harder, so the square's 0.70 m footprint is the reference and the
+    // triangle's 2.10 m footprint gets three times its friction for the same
+    // coefficients.
+    double leftmost = 1e30, rightmost = -1e30;
+    bool touchingPlane = false;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (body.position[i].y > kSurfaceY + kContactTolerance) continue;
+        touchingPlane = true;
+        leftmost = std::min(leftmost, body.position[i].x);
+        rightmost = std::max(rightmost, body.position[i].x);
+    }
+    const double footprint = touchingPlane ? std::max(0.0, rightmost - leftmost) / kCubeSide : 0.0;
+    const double holdSpeed = body.staticFriction * footprint * kGravity * kTick;
+    const double slideSpeed = body.kineticFriction * footprint * kGravity * kTick;
+
     // Which corners are touching the plane now, after the solve has finished
     // moving them. A clamp from an earlier pass is not a contact: the solve may
     // have lifted that corner back off the plane, and a corner in the air has to
@@ -733,25 +773,36 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // was actually doing.
         velocity.y -= lift[i] / kTick;
         if (onPlane[i]) {
-            // The plane holds this corner: it cannot travel into the plane, and
-            // friction takes away the sliding it would need to keep rocking.
+            // The plane holds this corner: it cannot travel into the plane.
+            // Sideways is friction's business, and that is done for the body as
+            // a whole just below.
             if (velocity.y < 0.0) velocity.y = 0.0;
-            const double grip = kFriction * kGravity * kTick;
-            velocity.x = std::abs(velocity.x) <= grip ? 0.0
-                                                      : velocity.x - std::copysign(grip, velocity.x);
         }
         const double speed = length(velocity);
         if (speed > speedBefore[i] && speed > 1e-12) velocity = velocity * (speedBefore[i] / speed);
         body.velocity[i] = velocity;
     }
-    bool touching = false, quiet = true;
-    double leftmost = 1e30, rightmost = -1e30;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (onPlane[i]) {
-            touching = true;
-            leftmost = std::min(leftmost, body.position[i].x);
-            rightmost = std::max(rightmost, body.position[i].x);
+    // Friction is a force at the contact patch, and the patch pushes the body,
+    // not one corner of it. Taking the slide off each corner on its own does
+    // nothing once the floor has pinned that corner, which is why the body used
+    // to stop dead no matter what coefficients it had: the body's own sideways
+    // motion is what mu_s has to hold and mu_k has to slow, and the fixed
+    // distances carry that to every corner.
+    if (touchingPlane) {
+        Vec3 middleVelocity{};
+        for (std::size_t i = 0; i < count; ++i) middleVelocity += body.velocity[i];
+        middleVelocity = middleVelocity / static_cast<double>(count);
+        const double sideways = middleVelocity.x;
+        if (std::abs(sideways) <= holdSpeed) {
+            // mu_s * N answers it: it does not move at all.
+            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= sideways;
+        } else {
+            // Sliding: mu_k * N takes the same speed off every corner.
+            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= std::copysign(slideSpeed, sideways);
         }
+    }
+    bool quiet = true;
+    for (std::size_t i = 0; i < count; ++i) {
         quiet = quiet && length(body.position[i] - body.previous[i]) / kTick < kSleepSpeed;
     }
     // A body is carried by the plane only if its weight passes between the
@@ -761,7 +812,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // this a body can be caught at the instant it is standing on a single
     // corner, and stop in mid-air.
     const Vec3 middle = centroid(body.position.data(), count);
-    const bool carried = touching && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
+    const bool carried = touchingPlane && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
     // Resting on the plane and no longer going anywhere: there is no force left
     // to resolve, so the body is frozen and its ticks stop costing anything.
     body.quietTicks = carried && quiet ? body.quietTicks + 1 : 0;

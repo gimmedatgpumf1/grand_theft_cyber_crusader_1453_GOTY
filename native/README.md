@@ -215,10 +215,40 @@ nanometre. The order matters: the plane is what opens the distance error, so the
 distance solve has to see the plane. What is drawn is then rebuilt from where the
 body is and how far round it has turned, never by sliding four corners along
 straight lines between ticks, so a turning body cannot look squashed. A corner the plane holds loses its
-downward velocity and has friction taken off its sliding, and a constraint is
-not allowed to hand a corner more speed than it already had, so the push-back
-and the plane cannot pump energy into a body. The worst distance error measured
-across every run is 0.00000 mm.
+downward velocity, and a constraint is not allowed to hand a corner more speed
+than it already had, so the push-back and the plane cannot pump energy into a
+body. The worst distance error measured across every run is 0.00000 mm.
+
+### Friction
+
+A contact answers only the motion that goes into the surface. Everything running
+along the surface is the body's own kinetic energy, and it is friction that
+takes it away -- as a force, over time, never in an instant. Deleting the
+sideways velocity at the moment of contact is not a contact, it is an energy
+sink, and it made a dot that had been accelerated down a slope by gravity stop
+dead the instant it touched the floor.
+
+Two coefficients, as asked:
+
+- Static: a surface holds a body still while `mu_s * N` is enough to answer the
+  pull on it. Below that, nothing moves at all.
+- Kinetic: once it is sliding, `mu_k * N` takes speed away tick by tick,
+  `v -= mu_k * g * dt`.
+
+`N` is the part of the weight the surface carries, so a 45 degree face grips less
+than the floor does and the point keeps most of the speed it built falling. The
+point is smooth: `mu_s` 0.40, `mu_k` 0.30, so it runs a long way and then stops.
+Each solid carries its own pair, 0.70 and 0.55, and that coefficient is scaled by
+the length of the contact it actually has with the floor -- a body standing on a
+longer footprint grips proportionally harder. Friction on a solid is applied to
+the body, not to each corner: the floor has already pinned the corners it holds,
+so rubbing them one at a time does nothing at all.
+
+Measured: the dot slides off the triangle at 4.8 m/s and keeps it, running
+another 1.45 m along the floor before friction stops it; a dot pushed at 0.10 m/s
+moves 7 mm and is held, one pushed at 3 m/s slides 1.76 m. A 12 m/s strike moves
+the cube 43 mm and the taller triangle only 33 mm, and neither slides on
+afterwards.
 
 ### Freezing
 

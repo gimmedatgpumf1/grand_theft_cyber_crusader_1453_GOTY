@@ -70,6 +70,8 @@ private:
         // The rest shape about the body's own middle, which is what the drawn
         // body is rebuilt from between ticks.
         std::array<Vec3, kMaxCorners> local{};
+        // This body's own friction, from its shape.
+        double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
         int quietTicks = 0, contacts = 0;
         std::size_t faceBatch = 0;
@@ -104,6 +106,12 @@ private:
     DragTarget dragTarget_ = DragTarget::None;
     std::size_t dragBody_ = kBodyCount;
     Vec3 planeGrab_{}, grabOffset_{};
+    // How much of the tick the point spent sliding on something. Friction acts
+    // over that time and no more, so a contact made late in a tick does not
+    // brake the point for the whole tick.
+    double slideSpan_ = 0.0;
+    // How much of the point's weight the surface it is resting on is carrying.
+    double supportNormalY_ = 1.0;
     bool sceneReady_ = false, resting_ = false, haveTrace_ = false;
     bool pointFrozen_ = false;
     // Which body is holding the point up, or -1 when none is.

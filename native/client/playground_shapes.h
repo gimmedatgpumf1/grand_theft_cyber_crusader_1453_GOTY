@@ -14,6 +14,12 @@
 
 namespace gtc::native::playground_detail {
 
+// The cube is 0.70 m on a side and the triangle is three times the cube.
+inline constexpr double kHalfSize = 0.35;
+inline constexpr double kCubeSide = 2.0 * kHalfSize;
+inline constexpr double kTriangleLeg = 3.0 * kCubeSide;
+inline constexpr double kStartAngle = 0.30;  // radians, so a corner leads the landing
+
 // Batches carry a model matrix that the renderer reads every frame, so the
 // point and its markers move without rebuilding or re-uploading any geometry.
 inline std::array<double, 16> translation(Vec3 point) {
@@ -96,5 +102,44 @@ inline std::size_t findBatch(const GpuScene& scene, std::uint32_t objectId) {
 constexpr std::array<std::array<int, 2>, 6> kSquarePairs{{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 2}, {1, 3}}};
 constexpr std::array<std::array<int, 2>, 6> kTrianglePairs{{{0, 1}, {1, 2}, {2, 0}, {0, 1}, {0, 1}, {0, 1}}};
 
+
+// What each body is when the room starts: its corners about its own middle, the
+// distances it holds, and where that middle is and how far it is turned.
+struct Shape {
+    std::size_t count = 0, pairCount = 0;
+    std::array<Vec3, 4> local{};
+    std::array<std::array<int, 2>, 6> pairs{};
+    Vec3 middle{};
+    double angle = 0;
+    // This body's own pair of coefficients.
+    double staticFriction = 0, kineticFriction = 0;
+};
+
+inline constexpr double kThird = 1.0 / 3.0;
+inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
+    // The square, turned so a corner leads: it lands on a corner and has to be
+    // held up by the other three.
+    {4,
+     6,
+     {{{-kHalfSize, -kHalfSize, 0}, {kHalfSize, -kHalfSize, 0}, {kHalfSize, kHalfSize, 0}, {-kHalfSize, kHalfSize, 0}}},
+     kSquarePairs,
+     {1.20, 2.05, 0},
+     kStartAngle,
+     0.70,
+     0.55},
+    // The right isosceles triangle: two legs three cubes long, the right angle
+    // standing on the plane so it is held up by two corners and its mass sits
+    // between them.
+    {3,
+     3,
+     {{{-kTriangleLeg * kThird, -kTriangleLeg * kThird, 0},
+       {kTriangleLeg * 2.0 * kThird, -kTriangleLeg * kThird, 0},
+       {-kTriangleLeg * kThird, kTriangleLeg * 2.0 * kThird, 0}}},
+     kTrianglePairs,
+     {-1.90, kTriangleLeg * kThird, 0},
+     0.0,
+     0.70,
+     0.55},
+}};
 
 } // namespace gtc::native::playground_detail
