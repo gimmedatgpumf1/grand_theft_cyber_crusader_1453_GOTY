@@ -645,9 +645,20 @@ void PlaygroundRoom::tick() {
     // lying still -- a ball that is not going anywhere has no travel of its own to
     // find anything with.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        if (!bodies_[index].frozen) tickBody(index);
+        Body& body = bodies_[index];
+        if (body.frozen) {
+            // A body that is not stepped still has to own its last position, or
+            // the first tick it is woken the travel it is measured over runs back
+            // to wherever it froze, and the ball answers that instead of the
+            // motion that just happened.
+            body.previous = body.position;
+            for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
+        } else {
+            tickBody(index);
+        }
     }
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
+    else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
     ballOutOfSolids();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
@@ -882,9 +893,16 @@ void PlaygroundRoom::advance(double seconds) {
             tick();
         } else {
             for (std::size_t index = 0; index < kBodyCount; ++index) {
-                if (!bodies_[index].frozen) tickBody(index);
+                Body& body = bodies_[index];
+                if (body.frozen) {
+                    body.previous = body.position;
+                    for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
+                } else {
+                    tickBody(index);
+                }
             }
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
+            else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
             ballOutOfSolids();
         }
         freezeCheck();

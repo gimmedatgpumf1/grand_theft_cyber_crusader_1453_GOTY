@@ -64,6 +64,7 @@ public:
     double ballRadius() const { return ball_.radius; }
     double ballSpin() const { return ball_.spin; }
     double ballAngle() const { return ball_.angle; }
+    double ballShownAngle() const { return ball_.shownAngle; }
     bool ballFrozen() const { return ball_.frozen; }
 
 private:
@@ -83,7 +84,11 @@ private:
         double radius = 0.12;   // basketball: 0.24 m across
         double mass = 0.62;     // kg, a real basketball
         double spin = 0.0;      // radians per second about z
-        double angle = 0.0, previousAngle = 0.0;
+        // The angle the simulation has actually turned through, and the one
+        // the screen is shown. They are separate because the drawing spreads a
+        // tick over the frames between ticks; writing that back into `angle`
+        // would throw away most of every tick's turn.
+        double angle = 0.0, previousAngle = 0.0, shownAngle = 0.0;
         bool frozen = false, touching = false;
         // Whether static friction could hold the ball at every surface it touched
         // this tick. A slope cannot, so a ball on one is never at rest.
@@ -125,7 +130,8 @@ private:
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
-    void ballContact(Vec3 normal, int bodyIndex, double along = 1.0, bool ballHeld = false);
+    void ballContact(Vec3 normal, int bodyIndex, double along = 1.0, bool ballHeld = false,
+                     Vec3 contactPoint = {});
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);

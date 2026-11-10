@@ -47,7 +47,11 @@ void PlaygroundRoom::interpolate() {
     // over the frames the same way as everything else.
     const double ballAlpha = ball_.frozen || dragTarget_ == DragTarget::Ball ? 1.0 : fraction;
     ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
-    ball_.angle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * ballAlpha;
+    // What is drawn, not what is simulated. Writing this back into `angle` used
+    // to divide every tick's turn by the number of frames in it, so at 300 FPS
+    // the ball turned a fifteenth of the way it rolled and the seams looked
+    // nailed on.
+    ball_.shownAngle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * ballAlpha;
 }
 
 void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
@@ -186,7 +190,7 @@ void PlaygroundRoom::placeMarkers() {
         // needs no new geometry.
         scene_.batches[ball_.faceBatch].modelMatrix =
             {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
-        const double c = std::cos(ball_.angle), s = std::sin(ball_.angle);
+        const double c = std::cos(ball_.shownAngle), s = std::sin(ball_.shownAngle);
         scene_.batches[ball_.markBatch].modelMatrix =
             {radius * c, radius * s, 0, 0, -radius * s, radius * c, 0, 0, 0, 0, 1, 0,
              ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};

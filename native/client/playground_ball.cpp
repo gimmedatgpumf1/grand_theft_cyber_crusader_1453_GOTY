@@ -35,6 +35,11 @@ constexpr int kMaxContacts = 4;
 // instead of skidding for ever.
 constexpr double kBallStaticFriction = 0.70;
 constexpr double kBallKineticFriction = 0.55;
+// Rolling resistance, F = Crr * N. Rubber on a wooden floor: the ball does not
+// roll for ever on a level floor, and this is the coefficient that says how fast
+// a roll dies away. It is a property of the pair of materials, measured like mu,
+// not a speed below which something changes.
+constexpr double kBallRollingResistance = 0.010;
 // A basketball is a gas-filled skin: it gives back three quarters of the speed it
 // lands with, which is a little over half the height.
 constexpr double kBallRestitution = 0.75;
@@ -44,15 +49,32 @@ constexpr double kAirDensity = 1.225;  // kg/m^3
 constexpr double kBallDragCoefficient = 0.47;
 constexpr double kPi = 3.14159265358979323846;
 
+// Is this point inside the outline? The same test the point uses to decide it
+// has been left inside a body: it is inside when it is on the inner side of every
+// side. Nothing is assumed about the order the sides are wound in beyond that.
+bool insideOutline(Vec3 point, const Vec3* corners, std::size_t count) {
+    for (std::size_t edge = 0; edge < count; ++edge) {
+        const Vec3 a = corners[edge];
+        const Vec3 b = corners[(edge + 1) % count];
+        const Vec3 side = b - a;
+        const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
+        if (!(sideLength > 1e-12)) return false;
+        const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        if (dot(point - a, outward) > 0.0) return false;
+    }
+    return true;
+}
+
 // Where a circle's path first reaches a moving convex outline. Both sides travel
 // in straight lines for the length of one tick, so taking the outline's travel
 // off the circle's leaves the same question -- do these two meet -- and the
 // answer is exact. This is the whole of the ball's collision detection: a circle
 // against a polygon has exactly two kinds of contact, a corner and a side.
 bool circleHitsOutline(Vec3 from, Vec3 travel, Vec3 a, Vec3 aTravel, Vec3 b, Vec3 bTravel, double radius,
-                       double& along, Vec3& normal) {
+                       Vec3 inside, double& along, Vec3& normal, Vec3& contact) {
     double best = 2.0;
     Vec3 bestNormal{0, 1, 0};
+    Vec3 bestContact = from;
     // Corner circles.
     const Vec3 corners[2] = {a, b};
     const Vec3 cornerTravels[2] = {aTravel, bTravel};
@@ -63,6 +85,7 @@ bool circleHitsOutline(Vec3 from, Vec3 travel, Vec3 a, Vec3 aTravel, Vec3 b, Vec
         if (segmentHitsCircle(from, from + relative, corners[i], radius, hit, facing) && hit < best) {
             best = hit;
             bestNormal = facing;
+            bestContact = corners[i] + cornerTravels[i] * hit;
         }
     }
     // Reaching a side. A ball does not have to get its middle to the surface: it
@@ -71,12 +94,21 @@ bool circleHitsOutline(Vec3 from, Vec3 travel, Vec3 a, Vec3 aTravel, Vec3 b, Vec
     const Vec3 side = b - a;
     const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
     if (sideLength > 1e-12) {
-        const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        // Which side of this edge is outside. The winding alone does not say it:
+        // the shapes are not wound the same way, and an edge whose normal points
+        // into the body pushes the ball through it. The body's own middle is on
+        // the inside, so the outward normal is the one the middle is not on.
+        Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        if (dot(inside - a, outward) > 0.0) outward = outward * -1.0;
         const Vec3 relative = travel - (aTravel + bTravel) * 0.5;
         const double start = dot(from - a, outward) - radius;
         const double end = dot(from + relative - a, outward) - radius;
         // A ball lying exactly on a side is at the surface, not outside it: it is
         // touching whatever the thing is doing, so a press counts as a contact.
+        // Only a crossing of this side itself. Being on the inner side of a side
+        // is not a contact with it: the far side of a triangle is on the inner
+        // side of the ball too, and taking that for a contact had the slope's
+        // opposite edge grinding the speed off a ball rolling down it.
         if (start >= -1e-9 && end <= 0.0 && start - end > 1e-12) {
             const double crossing = std::clamp(start / (start - end), 0.0, 1.0);
             const Vec3 at = from + relative * crossing;
@@ -84,12 +116,19 @@ bool circleHitsOutline(Vec3 from, Vec3 travel, Vec3 a, Vec3 aTravel, Vec3 b, Vec
             if (position >= 0.0 && position <= 1.0 && crossing < best) {
                 best = crossing;
                 bestNormal = outward;
+                // Where a circle touches a face: straight in from its own middle,
+                // one radius. Not the middle itself, and not a corner -- the arm
+                // from the body's middle to its contact point is what the blow
+                // turns it by, and a wrong arm either spins a body that should not
+                // spin or turns a fall into a lever.
+                bestContact = at - outward * radius;
             }
         }
     }
     if (best > 1.0) return false;
     along = std::max(0.0, best);
     normal = bestNormal;
+    contact = bestContact;
     return true;
 }
 
@@ -166,6 +205,7 @@ void PlaygroundRoom::tickBall() {
         const Vec3 travel = next - ball.position;
         double first = 2.0;
         Vec3 normal{0, 1, 0};
+        Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, -3 the dot, otherwise a body
         if (next.y < ball.radius && travel.y < 0.0) {
             // Not negative zero: a distance of zero along a downward step divides
@@ -181,26 +221,34 @@ void PlaygroundRoom::tickBall() {
                 const std::size_t top = (edge + 1) % body.count;
                 double along = 2.0;
                 Vec3 facing{0, 1, 0};
+                Vec3 touchPoint = body.position[edge];
                 // How far the body's own corners travelled this tick. The bodies
                 // are stepped first, so this is not a prediction: it is exactly
                 // what they did, and the ball's own travel is tested against it.
                 if (!circleHitsOutline(ball.position, travel, body.previous[edge],
                                        body.position[edge] - body.previous[edge], body.previous[top],
-                                       body.position[top] - body.previous[top], ball.radius, along, facing))
+                                       body.position[top] - body.previous[top], ball.radius,
+                                       centroid(body.position.data(), body.count), along, facing, touchPoint))
                     continue;
-                // Touching and getting no closer is touching, not arriving -- the
-                // same rule the dot follows. What matters is the closing speed of
-                // the two of them, not of the ball alone: a ball lying still under a
-                // face coming down on it is being arrived at, and the face is doing
-                // the arriving.
-                const Vec3 relativeVelocity =
-                    ball.velocity - (body.velocity[edge] + body.velocity[top]) * 0.5;
-                if (along <= 1e-9 && dot(relativeVelocity, facing) >= 0.0) continue;
+                // Touching and getting no closer is touching, not arriving. The
+                // sweep already says whether they meet inside this tick -- it only
+                // reports a crossing -- so the question here is only whether the
+                // two of them were already at each other when the tick started and
+                // are moving apart. What the corners did this tick is their travel,
+                // not their stored velocity: a corner's velocity is cut to nothing
+                // by the floor while its step still carries the body down into the
+                // ball, and reading the velocity said "not moving" for something
+                // that had just moved.
+                const Vec3 stepFrom = body.position[edge] - body.previous[edge];
+                const Vec3 stepTo = body.position[top] - body.previous[top];
+                const Vec3 relativeVelocity = ball.velocity - (stepFrom + stepTo) * (0.5 / kTick);
+                if (along <= 1e-9 && dot(relativeVelocity, facing) >= 0.0 && !alreadyAnswered(int(index))) continue;
                 if (alreadyAnswered(int(index))) continue;
                 if (along < first) {
                     first = along;
                     normal = facing;
                     what = int(index);
+                    contactPoint = touchPoint;
                 }
             }
         }
@@ -228,7 +276,7 @@ void PlaygroundRoom::tickBall() {
         } else if (what == -3) {
             hitBallWithPoint(normal);
         } else {
-            ballContact(normal, what, first, held);
+            ballContact(normal, what, first, held, contactPoint);
         }
         if (length(ball.velocity) <= 0.0) break;
     }
@@ -317,12 +365,23 @@ void PlaygroundRoom::tickBall() {
 // other side can move, the ball keeps whatever it did not hand over. The rest of
 // the contact is friction, and because it acts at the bottom of the ball rather
 // than at its middle it turns the ball as well as slowing it.
-void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool ballHeld) {
+void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool ballHeld, Vec3 contactPoint) {
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     std::size_t struck = 0;
     Vec3 answer = normal;
     bool canMove = false;
+    // A body at rest is not stepped, and what it is not stepping it cannot give
+    // either. Letting it take a share of the ball's momentum and then discarding
+    // that share is not a contact, it is a pump: the ball keeps more speed than a
+    // solid surface would leave it and ends up rolling under whatever is on top of
+    // it faster and faster. So a resting body answers as the solid it is, and a
+    // real blow wakes it -- which is the only thing that should ever move a body
+    // that had come to rest.
+    if (body != nullptr && body->frozen) {
+        const Vec3 closingVelocity = ball.velocity - (body->position[struck] - body->previous[struck]) * (1.0 / kTick);
+        if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
+    }
     if (body != nullptr) {
         double nearest = 1e30;
         for (std::size_t i = 0; i < body->count; ++i) {
@@ -341,7 +400,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool 
         // ball has to be able to stop on it. A body held by the mouse has nowhere
         // to go at all.
         const bool drivenDown = normal.y > 0.0;
-        answer = dragTarget_ == DragTarget::Body ? Vec3{} : (supported && drivenDown ? Vec3{normal.x, 0, 0} : normal);
+        answer = (dragTarget_ == DragTarget::Body || body->frozen)
+                     ? Vec3{}
+                     : (supported && drivenDown ? Vec3{normal.x, 0, 0} : normal);
         // What the body can do about this contact is only the part of its freedom
         // that lies along the normal. A face is never exactly level in floating
         // point, so its normal carries a horizontal part of 1e-16; taking that for
@@ -358,7 +419,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool 
     // doing plus the blow they took -- the step is travel, the blow is momentum,
     // and a body whose travel was cut short by a ball has to keep both.
     std::array<Vec3, kMaxCorners> handed{};
-    const Vec3 surfaceVelocity = canMove ? body->velocity[struck] : Vec3{};
+    // What the struck corner actually did this tick. Its stored velocity can be
+    // zero -- the floor cuts it when the corner lands -- while the corner is still
+    // travelling down into the ball, and the ball has to answer the travel.
+    const Vec3 surfaceVelocity =
+        canMove ? (body->position[struck] - body->previous[struck]) * (1.0 / kTick) : Vec3{};
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
     // A bounce is an answer to arriving at something that is not going to give
@@ -373,28 +438,41 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool 
     if (closing < 0.0) {
         constexpr double kStruckShare = 0.5;
         if (canMove) {
-            // Solved so that the two of them are left with no closing speed at all
-            // along the normal. The body answers only part of the normal -- a body
-            // on the floor gives nothing downwards -- and the share it can answer
-            // is exactly what the impulse has to be divided by. Getting this wrong
-            // leaves the ball still driving into the face after the contact has
-            // been answered, so the same contact is found again and answered again
-            // without the ball ever going anywhere.
-            //
-            // The ball has the same question to answer about itself. A ball lying
-            // on the floor with a body coming down on it cannot give way: the floor
-            // answers its weight, so there is nowhere for the momentum to go and it
-            // is the body that has to stop. Letting the ball take a share it cannot
-            // keep leaves the body still falling with a speed nothing took off it.
+            // A body struck by the ball takes the blow as the solid it is: the
+            // impulse reaches the corner that was struck, and all four corners
+            // move as one rigid shape -- together, and turning about the middle by
+            // the amount that blow would turn it. Sharing it out unevenly corner by
+            // corner is what had one corner stop dead while the other three kept
+            // falling, which the fixed distances then had to fight, and what turns
+            // a square being landed on into a shape that shudders and shears.
             const double answered = dot(answer, normal);
+            const Vec3 middle = centroid(body->position.data(), body->count);
+            // Where the two shapes are touching, not the nearest corner: the ball
+            // meeting the middle of a face turns the body by nothing, and a corner
+            // of a face is not where the blow lands.
+            const Vec3 arm = contactPoint - middle;
+            const double lever = arm.x * answer.y - arm.y * answer.x;
+            const double inertia = [] (const Body& b, Vec3 centre) {
+                double sum = 0.0;
+                for (std::size_t i = 0; i < b.count; ++i) {
+                    const Vec3 r = b.position[i] - centre;
+                    sum += kMass * dot(r, r);
+                }
+                return sum;
+            }(*body, middle);
+            const double bodyShare = 1.0 / (static_cast<double>(body->count) * kMass) +
+                                     lever * lever / (inertia > 0.0 ? inertia : 1.0);
             const double ballShare = ballHeld ? 0.0 : 1.0;
-            const double impulse =
-                (rebound - closing) / (ballShare / ball.mass + kStruckShare * answered / kMass);
+            const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
-            const double rest = (1.0 - kStruckShare) / static_cast<double>(body->count - 1);
+            const Vec3 push = answer * -(impulse / (static_cast<double>(body->count) * kMass));
+            const Vec3 turn{0, 0, (impulse) * lever / (inertia > 0.0 ? inertia : 1.0)};
             for (std::size_t i = 0; i < body->count; ++i) {
-                const double share = i == struck ? kStruckShare : rest;
-                handed[i] = answer * -(impulse * share / kMass);
+                const Vec3 r = body->position[i] - middle;
+                // Translation of the whole body plus the turn about its middle:
+                // every corner of a solid moves together.
+                const Vec3 rotate{-turn.z * r.y, turn.z * r.x, 0};
+                handed[i] = push + rotate;
             }
             body->frozen = false;
             pressed = impulse;
@@ -463,6 +541,24 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, double along, bool 
         const double impulse = holds ? wanted : (wanted > 0.0 ? limit : -limit);
         ball.velocity = ball.velocity + tangent * (impulse / ball.mass);
         ball.spin += lever * impulse / inertia;
+    }
+
+    // Rolling resistance, F = Crr * N, at the same contact and in the same way:
+    // the normal force presses the ball into the surface, the surface does not
+    // give that back perfectly, and the loss acts against the way the ball is
+    // going. It is applied through the same lever as friction, so a rolling ball
+    // slows and its turn slows with it and it goes on rolling; it is not a rule
+    // that switches anything off, and it does nothing to a ball that is not
+    // touching anything. N here is exactly the impulse this contact carried.
+    if (pressed > 0.0) {
+        const double travel = dot(ball.velocity - surfaceVelocity, tangent);
+        if (travel != 0.0) {
+            const double limit = kBallRollingResistance * pressed;
+            const double wanted = -travel / (1.0 / ball.mass + lever * lever / inertia);
+            const double impulse = std::clamp(wanted, -limit, limit);
+            ball.velocity = ball.velocity + tangent * (impulse / ball.mass);
+            ball.spin += lever * impulse / inertia;
+        }
     }
 }
 
@@ -538,35 +634,73 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
 // does next follows from the contact and from gravity.
 void PlaygroundRoom::ballOutOfSolids() {
     Ball& ball = ball_;
+    // Both the floor and the solids, together, until nothing is left inside
+    // anything. A face pressing the ball down onto the floor cannot push it
+    // through: the floor is the one thing in the room nothing gets past, so a ball
+    // squeezed between the two leaves sideways from under the face, which is what
+    // a ball between a floor and a weight does.
+    for (int pass = 0; pass < 12; ++pass) {
+        bool moved = false;
+        if (ball.position.y < ball.radius) {
+            ball.position.y = ball.radius;
+            if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
+            moved = true;
+        }
+        const bool onFloor = ball.position.y <= ball.radius + 1e-9;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            double nearest = 1e30;
+            Vec3 way{0, 1, 0};
+            for (std::size_t edge = 0; edge < body.count; ++edge) {
+                const Vec3 a = body.position[edge];
+                const Vec3 b = body.position[(edge + 1) % body.count];
+                const Vec3 side = b - a;
+                const double sideLength = side.x * side.x + side.y * side.y;
+                const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
+                const Vec3 gap = ball.position - (a + side * t);
+                const double distance = length(gap);
+                if (distance < nearest) {
+                    nearest = distance;
+                    if (distance > 0.0) way = gap / distance;
+                }
+            }
+            const bool inside = insideOutline(ball.position, body.position.data(), body.count);
+            // How far out the ball has to go, and which way. Outside the outline
+            // the way out is away from the nearest edge; already inside it, the
+            // near edge is behind the ball's middle, so the way out is towards it
+            // and the whole of the middle's depth plus the radius has to be cleared.
+            double depth = 0.0;
+            Vec3 exit = way;
+            if (inside) {
+                depth = nearest + ball.radius;
+                exit = way * -1.0;
+            } else if (nearest < ball.radius) {
+                depth = ball.radius - nearest;
+            } else {
+                continue;
+            }
+            Vec3 push = exit * depth;
+            if (onFloor && push.y < 0.0) {
+                // Down is not available: the floor is there. Everything the push
+                // wanted to do downwards becomes sideways instead -- out from under
+                // whatever is pressing on it.
+                const Vec3 middle = centroid(body.position.data(), body.count);
+                const double away = ball.position.x <= middle.x ? -1.0 : 1.0;
+                push = Vec3{exit.x * depth + away * -push.y, 0.0, 0.0};
+                if (push.x == 0.0) push.x = away * -push.y;
+            }
+            ball.position = ball.position + push;
+            const double into = dot(ball.velocity, exit);
+            if (into < 0.0) ball.velocity = ball.velocity - exit * into;
+            ball.frozen = false;
+            moved = true;
+        }
+        if (!moved) break;
+    }
+    // Whatever happened above, the floor is still the floor.
     if (ball.position.y < ball.radius) {
         ball.position.y = ball.radius;
         if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
-    }
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        double nearest = ball.radius;
-        Vec3 way{0, 1, 0};
-        for (std::size_t edge = 0; edge < body.count; ++edge) {
-            const Vec3 a = body.position[edge];
-            const Vec3 b = body.position[(edge + 1) % body.count];
-            const Vec3 side = b - a;
-            const double sideLength = side.x * side.x + side.y * side.y;
-            const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
-            const Vec3 gap = ball.position - (a + side * t);
-            const double distance = length(gap);
-            if (distance < nearest) {
-                nearest = distance;
-                if (distance > 0.0) way = gap / distance;
-            }
-        }
-        if (nearest >= ball.radius - 1e-12) continue;
-        // Only put it back where it belongs. The contact has already been answered
-        // by the walk, with the momentum that goes with it; answering it a second
-        // time here would take a second blow out of the same meeting.
-        ball.position = ball.position + way * (ball.radius - nearest);
-        const double into = dot(ball.velocity, way);
-        if (into < 0.0) ball.velocity = ball.velocity - way * into;
-        ball.frozen = false;
     }
 }
 
