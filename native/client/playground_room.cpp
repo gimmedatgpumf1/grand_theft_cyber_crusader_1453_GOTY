@@ -25,7 +25,20 @@ constexpr double kHalfSize = 0.35;    // the cube is 0.70 m on a side
 constexpr double kStartAngle = 0.30;  // radians, so a corner leads the landing
 constexpr double kPointGrabRadius = 0.14;  // how close the mouse has to be to take it
 constexpr double kGrabMargin = 0.06;       // and to take the cube by its edge
-constexpr int kDistancePasses = 24;   // how hard the corners are pushed apart
+// The distance solve runs until every distance is back to its rest length,
+// not for a chosen number of passes. The bound is only a guard against a
+// numerical corner case looping forever.
+constexpr int kMaxDistancePasses = 256;
+constexpr double kDistanceTolerance = 1e-9;  // metres
+// Below this a corner is not moving in any way that matters: the distance solve
+// leaves a few millimetres of wobble on a resting square, and a body doing that
+// is asleep rather than moving. Two ticks of it and the body is frozen.
+constexpr double kSleepSpeed = 0.08;  // m/s
+constexpr int kSleepTicks = 2;
+// How much of the closing speed comes back along the contact normal, and how
+// much sliding the plane resists. Both are properties of the two surfaces.
+constexpr double kRestitution = 0.25;
+constexpr double kFriction = 0.5;
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 constexpr std::uint32_t kCubeFaceId = 200, kCubeEdgeId = 210, kCubeCornerId = 220;
 constexpr const char* kSky = "#101c22";
@@ -97,6 +110,63 @@ std::size_t findBatch(const GpuScene& scene, std::uint32_t objectId) {
 // are what keeps the cube square instead of letting it fold into a diamond.
 constexpr std::array<std::array<int, 2>, 6> kPairs{{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 2}, {1, 3}}};
 
+// Where a segment first meets the square, and the outward normal of the edge it
+// meets. The square is convex and its corners are in order, so each edge can be
+// tested on its own and the earliest crossing wins. A point already inside is
+// reported as a hit at once, with the normal of the nearest edge.
+bool segmentHitsSquare(Vec3 from, Vec3 to, const std::array<Vec3, 4>& square, double& hit,
+                       Vec3& normal) {
+    const auto cross2 = [](Vec3 a, Vec3 b) { return a.x * b.y - a.y * b.x; };
+    const auto edgeNormal = [&](int edge) {
+        const Vec3 a = square[std::size_t(edge)];
+        const Vec3 b = square[std::size_t((edge + 1) % 4)];
+        const Vec3 side = b - a;
+        const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
+        return sideLength > 1e-12 ? Vec3{side.y / sideLength, -side.x / sideLength, 0} : Vec3{};
+    };
+    // A segment walking from outside must cross an edge; the earliest crossing is
+    // the hit. Crossing out of the square is not a hit.
+    const Vec3 travel = to - from;
+    double earliest = 2.0;
+    int crossing = -1;
+    for (int edge = 0; edge < 4; ++edge) {
+        const Vec3 a = square[std::size_t(edge)];
+        const Vec3 b = square[std::size_t((edge + 1) % 4)];
+        const Vec3 side = b - a;
+        const double denominator = cross2(travel, side);
+        if (std::abs(denominator) < 1e-15) continue;
+        const Vec3 gap = a - from;
+        const double along = cross2(gap, side) / denominator;
+        const double across = cross2(gap, travel) / denominator;
+        if (along < 0.0 || along > 1.0 || across < 0.0 || across > 1.0) continue;
+        // Only a crossing that goes from outside to inside counts.
+        const Vec3 outward = edgeNormal(edge);
+        if (!(dot(travel, outward) < 0.0)) continue;
+        if (along < earliest) { earliest = along; crossing = edge; }
+    }
+    if (crossing >= 0) {
+        hit = earliest;
+        normal = edgeNormal(crossing);
+        return true;
+    }
+    // Already inside: every edge must report it as behind itself. One edge
+    // behind itself is not enough -- that is just a point somewhere outside.
+    bool inside = true;
+    int nearest = 0;
+    double nearestDistance = -1e30;
+    for (int edge = 0; edge < 4; ++edge) {
+        const Vec3 outward = edgeNormal(edge);
+        if (length(outward) < 0.5) return false;
+        const double distance = dot(from - square[std::size_t(edge)], outward);
+        if (distance > 0.0) inside = false;
+        if (distance > nearestDistance) { nearestDistance = distance; nearest = edge; }
+    }
+    if (!inside) return false;
+    hit = 0.0;
+    normal = edgeNormal(nearest);
+    return true;
+}
+
 // The middle of the four corners. The cube is only its corners, so this is
 // worked out from them rather than stored and kept in step.
 Vec3 centroid(const std::array<Vec3, 4>& corners) {
@@ -133,6 +203,15 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     }
     cubeFrozen_ = false;
     return true;
+}
+
+void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
+    point_ = previous_ = shown_ = start;
+    velocity_ = startVelocity;
+    traceFrom_ = traceTo_ = point_;
+    resting_ = false;
+    haveTrace_ = false;
+    pointFrozen_ = false;
 }
 
 void PlaygroundRoom::setDragRay(Vec3 origin, Vec3 direction) {
@@ -229,6 +308,63 @@ void PlaygroundRoom::interpolate() {
     }
 }
 
+// The point meets the square. The hit is found by walking this tick's segment
+// against the square's four edges, before the point is allowed to move, so a
+// fast point cannot pass through it. The point carries momentum m*v; the corner
+// it struck takes that momentum and the square gives back a push along the
+// normal, so the point rebounds and the square is set turning.
+void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
+    double along = hit;
+    Vec3 normal{0, 1, 0};
+    if (!segmentHitsSquare(from, to, cubePosition_, along, normal)) return;
+    Vec3 contact = from + (to - from) * along;
+    // A point that begins the tick already inside is put back outside along the
+    // nearest face, so it can never sit inside the square collecting speed.
+    if (along <= 0.0) contact = from - normal * 1e-4;
+    point_ = contact;
+    ++pointCubeContacts_;
+    // Which corner carries the blow: the nearest one. The square is four points,
+    // so the momentum goes into those points and the fixed distances pass it on.
+    std::size_t struck = 0;
+    double nearest = 1e30;
+    for (std::size_t i = 0; i < 4; ++i) {
+        const double distance = length(contact - cubePosition_[i]);
+        if (distance < nearest) { nearest = distance; struck = i; }
+    }
+    const bool held = dragTarget_ == DragTarget::Cube;
+    const Vec3 cornerVelocity = held ? Vec3{} : cubeVelocity_[struck];
+    const double closing = dot(velocity_ - cornerVelocity, normal);
+    if (closing < 0.0) {
+        // Equal and opposite impulses. The struck corner takes half of what the
+        // square receives and the other three share the rest, so the square as a
+        // whole gains exactly the momentum the point loses and is set turning by
+        // the uneven share. A held square cannot be pushed, so it takes none.
+        constexpr double kStruckShare = 0.5;
+        constexpr double kOtherShare = (1.0 - kStruckShare) / 3.0;
+        const double cornerInverseMass = held ? 0.0 : kStruckShare / kMass;
+        const double impulse = -(1.0 + kRestitution) * closing /
+                               (1.0 / kMass + cornerInverseMass);
+        velocity_ = velocity_ - normal * (impulse / kMass);
+        if (!held) {
+            for (std::size_t i = 0; i < 4; ++i) {
+                const double share = i == struck ? kStruckShare : kOtherShare;
+                cubeVelocity_[i] = cubeVelocity_[i] + normal * (impulse * share / kMass);
+            }
+            cubeFrozen_ = false;
+        }
+        // If the exchange still leaves the point heading into the square -- two
+        // equal masses cannot both bounce apart -- the surface simply holds it.
+        const double still = dot(velocity_, normal);
+        if (still < 0.0) velocity_ = velocity_ - normal * still;
+    }
+    // Nothing may be left sitting exactly on the surface, or the next tick's
+    // segment starts inside the square and the point never gets out.
+    point_ = point_ - normal * 1e-6;
+    resting_ = false;
+    pointFrozen_ = false;
+    traceTo_ = point_;
+}
+
 void PlaygroundRoom::tick() {
     previous_ = point_;
     const Vec3 from = point_;
@@ -239,9 +375,24 @@ void PlaygroundRoom::tick() {
     const double force = supported ? 0.0 : -kMass * kGravity;
     const double acceleration = force / kMass;
     velocity_.y += acceleration * kTick;
-    const Vec3 to = from + velocity_ * kTick;
+    Vec3 to = from + velocity_ * kTick;
     traceFrom_ = from;
-    if (to.y < kSurfaceY) {
+    // The hitscan checks the square as well as the plane, and whichever comes
+    // first is where the point stops.
+    double cubeHit = 2.0;
+    Vec3 cubeNormal{0, 1, 0};
+    const bool meetsCube = segmentHitsSquare(from, to, cubePosition_, cubeHit, cubeNormal);
+    const bool meetsPlane = to.y < kSurfaceY;
+    const double planeHit = meetsPlane ? std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0) : 2.0;
+    if (meetsCube && cubeHit <= planeHit) {
+        // The square is in the way first. The point is placed at the contact and
+        // the momentum is exchanged there rather than at the end of the tick.
+        point_ = from + (to - from) * cubeHit;
+        hitCube(from, to, cubeHit);
+        // Whatever travel was left after the hit belongs to the new velocity.
+        to = point_;
+        traceTo_ = point_;
+    } else if (to.y < kSurfaceY) {
         // Hitscan: walk the segment from here to where the speed would carry
         // the point and find where it meets the plane. The point stops at that
         // crossing. It cannot pass through, however far one tick takes it.
@@ -309,42 +460,66 @@ void PlaygroundRoom::tickCube() {
         }
         onPlane[i] = cubePosition_[i].y <= kSurfaceY + 1e-12;
     }
+    // What each corner was doing before the distances were pushed back. A
+    // constraint does no work, so the solve is not allowed to hand a corner more
+    // speed than it already had; without this the push-back and the plane turn
+    // into a spring and the cube rattles for a second after it lands.
+    std::array<double, 4> speedBefore{};
+    for (std::size_t i = 0; i < 4; ++i) speedBefore[i] = length(cubeVelocity_[i]);
     // Each pass walks every fixed distance once and splits the error evenly
     // between its two corners. Interleaving the plane clamp keeps the solve from
-    // pushing a corner through the floor to satisfy a distance.
-    for (int pass = 0; pass < kDistancePasses; ++pass) {
+    // pushing a corner through the floor to satisfy a distance. The loop ends
+    // when no distance is out by more than a nanometre, so the result does not
+    // depend on a pass count chosen by hand.
+    for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
+        double worst = 0.0;
         for (std::size_t pair = 0; pair < kPairs.size(); ++pair) {
             const std::size_t a = std::size_t(kPairs[pair][0]), b = std::size_t(kPairs[pair][1]);
             const Vec3 delta = cubePosition_[b] - cubePosition_[a];
             const double current = length(delta);
             if (!(current > 1e-12)) continue;
             const Vec3 direction = delta / current;
-            const double error = (current - cubeRest_[pair]) * 0.5;
-            cubePosition_[a] += direction * error;
-            cubePosition_[b] -= direction * error;
+            const double deviation = current - cubeRest_[pair];
+            worst = std::max(worst, std::abs(deviation));
+            const Vec3 correction = direction * (deviation * 0.5);
+            cubePosition_[a] += correction;
+            cubePosition_[b] -= correction;
         }
-        for (std::size_t i = 0; i < 4; ++i) {
-            if (cubePosition_[i].y < kSurfaceY) {
-                cubePosition_[i].y = kSurfaceY;
-                onPlane[i] = true;
-            }
+        if (worst <= kDistanceTolerance) break;
+    }
+    // The plane is applied once, after the distances are satisfied, instead of
+    // inside the loop. Clamping inside the loop fights the distances: every
+    // pass pushes the corners apart, the clamp pushes back, and the pair of them
+    // pump energy in until the cube flies away.
+    for (std::size_t i = 0; i < 4; ++i) {
+        if (cubePosition_[i].y < kSurfaceY) {
+            cubePosition_[i].y = kSurfaceY;
+            onPlane[i] = true;
         }
     }
     for (std::size_t i = 0; i < 4; ++i) {
-        cubeVelocity_[i] = (cubePosition_[i] - cubePrevious_[i]) / kTick;
-        // A corner the plane is holding cannot still be travelling into it.
-        if (onPlane[i] && cubeVelocity_[i].y < 0.0) cubeVelocity_[i].y = 0.0;
+        Vec3 velocity = (cubePosition_[i] - cubePrevious_[i]) / kTick;
+        if (onPlane[i]) {
+            // The plane holds this corner: it cannot travel into the plane, and
+            // friction takes away the sliding it would need to keep rocking.
+            if (velocity.y < 0.0) velocity.y = 0.0;
+            const double grip = kFriction * kGravity * kTick;
+            velocity.x = std::abs(velocity.x) <= grip ? 0.0
+                                                      : velocity.x - std::copysign(grip, velocity.x);
+        }
+        const double speed = length(velocity);
+        if (speed > speedBefore[i] && speed > 1e-12) velocity = velocity * (speedBefore[i] / speed);
+        cubeVelocity_[i] = velocity;
     }
-    bool touching = false, moving = false;
+    bool touching = false, quiet = true;
     for (std::size_t i = 0; i < 4; ++i) {
         touching = touching || onPlane[i];
-        // What matters is whether a corner actually moved this tick, not whether
-        // the leftover velocity after the distance solve reads as zero.
-        moving = moving || length(cubePosition_[i] - cubePrevious_[i]) > 1e-6;
+        quiet = quiet && length(cubePosition_[i] - cubePrevious_[i]) / kTick < kSleepSpeed;
     }
-    // Resting on the plane and not moving: there is no force left to resolve, so
-    // the cube is frozen and its ticks stop costing anything.
-    if (touching && !moving && dragTarget_ != DragTarget::Cube) {
+    // Resting on the plane and no longer going anywhere: there is no force left
+    // to resolve, so the cube is frozen and its ticks stop costing anything.
+    cubeQuietTicks_ = touching && quiet ? cubeQuietTicks_ + 1 : 0;
+    if (cubeQuietTicks_ >= kSleepTicks && dragTarget_ != DragTarget::Cube) {
         cubeFrozen_ = true;
         for (std::size_t i = 0; i < 4; ++i) {
             cubeVelocity_[i] = {};

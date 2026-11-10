@@ -189,11 +189,13 @@ corner, 1 kg each. It is four points, exactly as specified, not a rigid body.
   downward speed is removed at the end of the tick.
 - Once it rests on the plane and no corner moved this tick, the cube freezes.
 
-Two honest limits. Whether the cube tips over when it lands on a corner is
-decided by those distance pushes and by how many passes are run
-(`kDistancePasses`), not by a moment of inertia. And because a corner the plane
-holds is clamped rather than impulsed, a resting cube is being held by the
-plane, not balanced by the three corners that are not touching it.
+The distance solve runs until every distance is back to its rest length to
+within a nanometre, so there is no pass count to choose: the cube's shape is
+restored to the same accuracy every tick. A corner the plane holds loses its
+downward velocity and has friction taken off its sliding, and a constraint is
+not allowed to hand a corner more speed than it already had, so the push-back
+and the plane cannot pump energy into the cube. Once the corners are on the
+plane and no longer moving, the cube is frozen.
 
 ### Freezing
 
@@ -202,6 +204,20 @@ tick still counts, since it has already passed, but there is no force, no
 motion and no contact work for a frozen body. Freezing also ends the drawing
 interpolation for that body, so a frozen body is drawn exactly where it is
 instead of part of the way along a tick. R resets; dragging the point wakes it.
+
+### The point and the cube
+
+Before the point travels, its segment is walked against the square's four edges
+as well as the plane, and whichever it reaches first is where it stops. A hit on
+the square exchanges momentum: the point carries m·v, the corner it struck
+takes half of the impulse and the other three corners share the rest, so the
+square as a whole gains exactly what the point loses and is set turning by the
+uneven share. The square pushes back along the face normal with the material's
+restitution. Where a 1 kg point meets a 4 kg square, the point is left with no
+speed along the normal and the square carries the momentum away -- and because
+the crossing is found before the point moves, none of this depends on how fast
+the point was going. A point arriving at 100 km/s is stopped at the surface in
+the same tick.
 
 ### Grabbing
 
