@@ -15,6 +15,9 @@
 namespace gtc::native::playground_detail {
 
 // The cube is 0.70 m on a side and the triangle is three times the cube.
+// How big the dot is drawn, and therefore how big a thing the ball and the
+// bodies see. One number, because the picture and the contact must agree.
+inline constexpr double kPointRadius = 0.07;
 inline constexpr double kHalfSize = 0.35;
 inline constexpr double kCubeSide = 2.0 * kHalfSize;
 inline constexpr double kTriangleLeg = 3.0 * kCubeSide;
@@ -154,6 +157,35 @@ inline Vec3 centroid(const Vec3* corners, std::size_t count) {
     Vec3 sum{};
     for (std::size_t i = 0; i < count; ++i) sum += corners[i];
     return sum / static_cast<double>(count);
+}
+
+// Where a segment first comes within radius of a circle, and the normal there.
+// The ball is one point with a radius, so every test against it is this one.
+inline bool segmentHitsCircle(Vec3 from, Vec3 to, Vec3 centre, double radius, double& along, Vec3& normal) {
+    const Vec3 travel = to - from;
+    const Vec3 offset = from - centre;
+    const double a = dot(travel, travel);
+    if (!(a > 1e-18)) return false;
+    const double b = 2.0 * dot(offset, travel);
+    const double c = dot(offset, offset) - radius * radius;
+    if (c <= 0.0) {
+        // Already overlapping: report it at once, so it is pushed back out.
+        const double distance = std::sqrt(dot(offset, offset));
+        if (!(distance > 1e-12)) return false;
+        along = 0.0;
+        normal = offset / distance;
+        return true;
+    }
+    const double discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0) return false;
+    const double root = (-b - std::sqrt(discriminant)) / (2.0 * a);
+    if (root < 0.0 || root > 1.0) return false;
+    along = root;
+    const Vec3 hit = from + travel * root;
+    const Vec3 gap = hit - centre;
+    const double distance = std::sqrt(dot(gap, gap));
+    normal = distance > 1e-12 ? gap / distance : Vec3{0, 1, 0};
+    return true;
 }
 
 // A point found inside a body is put back onto the boundary, at the closest

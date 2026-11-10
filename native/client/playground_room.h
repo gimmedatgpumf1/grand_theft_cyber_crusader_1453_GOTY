@@ -55,10 +55,35 @@ public:
     int bodyContacts(std::size_t body) const { return body < kBodyCount ? bodies_[body].contacts : 0; }
     // Which body, if any, is holding the point up; -1 when the plane does.
     int supportBody() const { return restingBody_; }
+    // The ball: one point with a radius, its spin, and the angle it is drawn at.
+    Vec3 ballPosition() const { return ball_.position; }
+    Vec3 ballShown() const { return ball_.shown; }
+    Vec3 ballVelocity() const { return ball_.velocity; }
+    double ballRadius() const { return ball_.radius; }
+    double ballSpin() const { return ball_.spin; }
+    double ballAngle() const { return ball_.angle; }
+    bool ballFrozen() const { return ball_.frozen; }
 
 private:
     // What the mouse is holding, if anything.
-    enum class DragTarget { None, Point, Body };
+    enum class DragTarget { None, Point, Body, Ball };
+
+    // A ball is one point with a radius, not a set of corner points. It carries
+    // spin as well as speed: a sphere that slid without turning would be slowed
+    // like a brick, which is not what a ball does.
+    struct Ball {
+        Vec3 position{}, previous{}, shown{}, velocity{};
+        double radius = 0.12;   // basketball: 0.24 m across
+        double mass = 0.62;     // kg, a real basketball
+        double spin = 0.0;      // radians per second about z
+        double angle = 0.0, previousAngle = 0.0;
+        bool frozen = false, touching = false;
+        // Rolling, and standing on something level. Both are worked out afresh
+        // every tick from what the ball actually touched.
+        bool rolling = false, level = true;
+        int quietTicks = 0;
+        std::size_t faceBatch = 0, markBatch = 0;
+    };
     // A body is its corner points and the distances between them that are not
     // allowed to change. Nothing in the room asks which body it is looking at.
     static constexpr std::size_t kMaxCorners = 4, kMaxPairs = 6;
@@ -86,6 +111,16 @@ private:
     // along the normal.
     void hitBody(std::size_t body, Vec3 normal, double into);
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
+    void tickBall();
+    void settleBallIntoRoom();
+    // Answers a ball's contact. A ball against the room shares nothing; a ball
+    // against a body shares the answer with the corner it struck, so the ball
+    // gives up only what the body takes.
+    void ballContact(Vec3 normal, int bodyIndex);
+    // The ball meets the point, and the point meets the ball. Both exchange the
+    // same momentum along the line between them.
+    void hitBallWithPoint(Vec3 normal);
+    void pointAgainstBall(Vec3 normal);
     void freezeCheck();
     void updateDrag();
     void buildScene(const Camera& camera);
@@ -99,6 +134,7 @@ private:
     std::array<Vec3, 40> ghosts_{};
     std::size_t ghostCount_ = 0, ghostNext_ = 0;
     std::array<Body, kBodyCount> bodies_{};
+    Ball ball_{};
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
     std::size_t pointBatch_ = 0, traceBatch_ = 0;

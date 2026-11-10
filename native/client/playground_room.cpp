@@ -173,6 +173,9 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         body.quietTicks = 0;
         body.contacts = 0;
     }
+    ball_ = Ball{};
+    ball_.position = ball_.previous = ball_.shown = Vec3{3.10, ball_.radius + 1.60, 0};
+    ball_.angle = ball_.previousAngle = 0.0;
     return true;
 }
 
@@ -237,6 +240,12 @@ void PlaygroundRoom::beginDrag() {
         body.frozen = false;
         body.quietTicks = 0;
         for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
+    } else if (length(Vec3{hit.x - ball_.position.x, hit.y - ball_.position.y, 0}) <= ball_.radius) {
+        dragTarget_ = DragTarget::Ball;
+        ball_.frozen = false;
+        ball_.quietTicks = 0;
+        ball_.velocity = {};
+        ball_.spin = 0.0;
     } else if (pointNear) {
         dragTarget_ = DragTarget::Point;
         pointFrozen_ = false;
@@ -257,6 +266,13 @@ void PlaygroundRoom::updateDrag() {
     const double distance = (0.0 - origin.z) / direction.z;
     if (!(distance > 0.0)) return;
     const Vec3 hit = origin + direction * distance;
+    if (dragTarget_ == DragTarget::Ball) {
+        ball_.position = {std::clamp(hit.x, -5.0, 5.0), std::max(ball_.radius, hit.y), 0};
+        ball_.previous = ball_.shown = ball_.position;
+        ball_.velocity = {};
+        ball_.spin = 0.0;
+        return;
+    }
     if (dragTarget_ == DragTarget::Body) {
         // A body follows the mouse by its middle, so every corner moves by the
         // same amount and no distance changes. A dragged body has no previous
@@ -444,6 +460,7 @@ void PlaygroundRoom::tick() {
         std::size_t hitIndex = kBodyCount;
         Vec3 normal{0, 1, 0};
         bool wall = false;
+        bool ballHit = false;
         if (next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
             first = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
             wall = true;
@@ -464,12 +481,36 @@ void PlaygroundRoom::tick() {
                 wall = false;
             }
         }
+        // The ball is one more thing in the way: a point with a radius, so the
+        // point meets it when their surfaces touch.
+        {
+            double along = 2.0;
+            Vec3 facing{0, 1, 0};
+            if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
+                !(along <= 1e-9 && dot(velocity_, facing) >= 0.0) && along < first) {
+                first = along;
+                normal = facing;
+                ballHit = true;
+                wall = false;
+            }
+        }
         if (!(first <= 1.0)) {
             point_ = next;
             break;
         }
         point_ = point_ + (next - point_) * first;
         remaining *= 1.0 - first;
+        if (ballHit) {
+            // Same rule as a body: what drives into the ball is answered by both
+            // sides, and what runs along it is left alone.
+            pointAgainstBall(normal);
+            resting_ = true;
+            restingBody_ = -1;
+            supportNormal_ = normal;
+            slideSpan_ += kTick * remaining;
+            if (!(length(velocity_) > 1e-12)) break;
+            continue;
+        }
         if (wall) {
             // The plane answers only what drives into it. What is running along
             // it is the point's kinetic energy and friction is what takes that.
@@ -584,6 +625,7 @@ void PlaygroundRoom::tick() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         if (!bodies_[index].frozen) tickBody(index);
     }
+    if (!ball_.frozen) tickBall();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -807,6 +849,7 @@ void PlaygroundRoom::advance(double seconds) {
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 if (!bodies_[index].frozen) tickBody(index);
             }
+            if (!ball_.frozen) tickBall();
         }
         freezeCheck();
         ++ticks;

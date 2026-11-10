@@ -318,10 +318,50 @@ Because the crossing is found before the point moves, none of this depends on
 how fast the point was going. A point arriving at 100 km/s is stopped at the
 surface in the same tick.
 
+### The ball
+
+A basketball is in the room too: 0.24 m across, 0.62 kg, drawn as one disc. It is
+not built from corner points like the solids and nothing is sampled on its
+surface -- it is one point with a radius, and that radius is all the shape it
+has. Every contact is still found before it moves, from the geometry:
+
+- Against a flat side, the ball touches when its middle is one radius from that
+  side, so the side is tested where the ball's own surface would meet it, not
+  where the middle would cross it. Against a corner it touches when its middle is
+  one radius from the corner. Those two cases are the whole of a circle meeting a
+  polygon, so nothing is stepped or guessed.
+- The ball turns as well as travels. Friction acts at the bottom of the ball,
+  which is a lever arm from its middle, so the same force that slows it down also
+  spins it: the moment of inertia of a solid sphere is `0.4 * m * r^2`, and the
+  grip is limited by `mu_k * N` like everywhere else. A ball that could only
+  slide would be slowed like a brick, which is not what a ball does.
+- The spin is not assumed: the contact answers the slip at the bottom of the
+  ball, so a ball dropped flat starts skidding, the skid drives the spin up, and
+  it reaches rolling when the bottom stops slipping. From there the roll is held
+  by the surface, and rolling resistance -- 0.015 of gravity, the price a real
+  ball pays for being round -- slows the travel and the spin by the same
+  proportion. It cannot turn into a skid on its own.
+- Nothing bounces. A ball dropped on the floor, the cube or the triangle ends at
+  rest, on the floor at exactly its radius, on the cube's top at 0.82 m (0.70 of
+  cube plus 0.12 of ball).
+- A slope is never a place to stop: on the triangle's 45 degree face the ball
+  accelerates down the face and turns as it goes, and it only freezes where what
+  it stands on is level. It comes off the slope at 3.7 m/s and rolls 4.4 m across
+  the floor -- the length of the room -- and is still rolling when it reaches the
+  cube.
+- The ball is one more thing for the point and the solids to meet. Its momentum
+  is shared with the corner it struck, exactly as the point's is, so a ball rolled
+  into the cube pushes it and gives up what it handed over; a point dropped on the
+  ball rolls off it.
+- A ball that has ended up inside a solid -- dragged into one with the mouse, or
+  shoved through by a hit from the far side -- is put back out the shortest way
+  that does not go through the floor. That is geometry undoing a placement, not a
+  physics answer.
+
 ### Grabbing
 
-The left mouse button takes whichever body is under the ray: the point, the cube
-or the triangle. A click near the point takes the point even when it is sitting
+The left mouse button takes whatever is under the ray: the point, the cube, the
+triangle or the ball. A click near the point takes the point even when it is sitting
 on a body, so it can always be picked up off a face. A body is taken by its
 middle, so all of its corners move by the same amount and none of the distances
 it is made of are asked to stretch; it is placed rather than simulated while it

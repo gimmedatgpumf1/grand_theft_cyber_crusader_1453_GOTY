@@ -20,8 +20,9 @@ constexpr double kTick = 1.0 / 20.0;
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 constexpr std::uint32_t kBodyFaceId = 200, kBodySpan = 100, kBodyEdgeOffset = 10, kBodyCornerOffset = 20;
 constexpr const char* kSky = "#101c22";
-constexpr double kPointRadius = 0.07, kGhostRadius = 0.032, kTraceHalfWidth = 0.010;
+constexpr double kGhostRadius = 0.032, kTraceHalfWidth = 0.010;
 constexpr double kCornerRadius = 0.045, kEdgeHalfWidth = 0.008;
+constexpr std::uint32_t kBallId = 400, kBallMarkId = 401;
 } // namespace
 
 // Everything the room draws, and the interpolation that decides where a body is
@@ -42,6 +43,11 @@ void PlaygroundRoom::interpolate() {
         const double alpha = body.frozen || bodyHeld(index) ? 1.0 : fraction;
         interpolateBody(body, alpha);
     }
+    // The ball is one point: where it is and how far it has turned, both spread
+    // over the frames the same way as everything else.
+    const double ballAlpha = ball_.frozen || dragTarget_ == DragTarget::Ball ? 1.0 : fraction;
+    ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
+    ball_.angle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * ballAlpha;
 }
 
 void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
@@ -126,10 +132,27 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         }
     }
 
+    // The ball: a disc of its own radius, and a cross of two seams so the turning
+    // can be seen. The seams are thin quads turned together by the ball's angle,
+    // so the spin needs no geometry of its own either.
+    points.clear();
+    faces.clear();
+    disc(points, faces, 1.0);
+    raster.setObject(kBallId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#c8763a"));
+    points.clear();
+    faces.clear();
+    quad(points, faces, -0.80, -0.09, 0.80, 0.09, 0.01);
+    quad(points, faces, -0.09, -0.80, 0.09, 0.80, 0.01);
+    raster.setObject(kBallMarkId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#3a2016"));
+
     scene_ = raster.takeGpuScene();
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
     traceBatch_ = findBatch(scene_, kTraceId);
+    ball_.faceBatch = findBatch(scene_, kBallId);
+    ball_.markBatch = findBatch(scene_, kBallMarkId);
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         ghostBatches_[i] = findBatch(scene_, kGhostId + static_cast<std::uint32_t>(i));
     }
@@ -156,6 +179,17 @@ void PlaygroundRoom::placeMarkers() {
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         scene_.batches[ghostBatches_[i]].modelMatrix =
             i < ghostCount_ ? translation(ghosts_[i]) : translation({0, -1000, 0});
+    }
+    {
+        const double radius = ball_.radius;
+        // A unit disc scaled to the ball's radius, so a ball of a different size
+        // needs no new geometry.
+        scene_.batches[ball_.faceBatch].modelMatrix =
+            {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
+        const double c = std::cos(ball_.angle), s = std::sin(ball_.angle);
+        scene_.batches[ball_.markBatch].modelMatrix =
+            {radius * c, radius * s, 0, 0, -radius * s, radius * c, 0, 0, 0, 0, 1, 0,
+             ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
     }
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
