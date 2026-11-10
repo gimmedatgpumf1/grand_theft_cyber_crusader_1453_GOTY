@@ -266,7 +266,13 @@ void PlaygroundRoom::updateDrag() {
     if (!(distance > 0.0)) return;
     const Vec3 hit = origin + direction * distance;
     if (dragTarget_ == DragTarget::Ball) {
-        ball_.position = {std::clamp(hit.x, -5.0, 5.0), std::max(ball_.radius, hit.y), 0};
+        // Being carried is not being simulated, so the ball goes where the mouse
+        // goes -- but not into a solid or through the floor. A spot the ball does
+        // not fit in is not a spot it can be put down, and it stays where it was
+        // until the mouse finds one it does.
+        const Vec3 wanted{std::clamp(hit.x, -5.0, 5.0), std::max(ball_.radius, hit.y), 0};
+        if (!ballPlacementClear(wanted)) return;
+        ball_.position = wanted;
         ball_.previous = ball_.shown = ball_.position;
         ball_.velocity = {};
         ball_.spin = 0.0;
@@ -659,7 +665,6 @@ void PlaygroundRoom::tick() {
     }
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
-    ballOutOfSolids();
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -692,12 +697,35 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         const Vec3 from = body.position[i];
         body.velocity[i].y -= kGravity * kTick;
         const Vec3 to = from + body.velocity[i] * kTick;
+        // The same hitscan the point uses, once per corner: the first thing the
+        // corner's step reaches is where that corner stops, however far the tick
+        // would have carried it. The floor is one of those things; the ball is the
+        // other. A corner is a point, so it reaches the ball when it is one ball
+        // radius from the ball's middle.
+        double along = 2.0;
+        bool onFloor = false;
         if (to.y < kSurfaceY) {
-            // The same hitscan the point uses, once per corner: the crossing is
-            // where that corner stops, however far the tick would have carried it.
-            const double fraction = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
-            body.position[i] = from + (to - from) * fraction;
-            body.position[i].y = kSurfaceY;
+            along = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
+            onFloor = true;
+        }
+        {
+            double ballAlong = 2.0;
+            Vec3 facing{0, 1, 0};
+            if (segmentHitsCircle(from, to, ball_.position, ball_.radius, ballAlong, facing)) {
+                // Starting within reach and going further in is not a journey this
+                // tick: the corner is already at the ball and cannot advance. That
+                // is what stops a body standing on a ball from sinking into it tick
+                // after tick, without any pass that puts it back afterwards.
+                if (ballAlong <= 1e-9 && dot(to - from, facing) <= 0.0) ballAlong = 0.0;
+                if (ballAlong < along) {
+                    along = ballAlong;
+                    onFloor = false;
+                }
+            }
+        }
+        if (along <= 1.0) {
+            body.position[i] = from + (to - from) * along;
+            if (onFloor) body.position[i].y = kSurfaceY;
         } else {
             body.position[i] = to;
         }
@@ -730,6 +758,11 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     std::array<bool, kMaxCorners> held{};
     for (std::size_t i = 0; i < count; ++i) held[i] = onPlane[i];
     std::array<double, kMaxCorners> lift{};
+    // The ball is the other thing a corner cannot be inside. Lifting a corner out of
+    // it is a correction in exactly the way the floor's lift is: the body did not
+    // travel, the solve put it back, and that has to be taken out of the velocity
+    // again or a cube landing on a ball kicks itself off it.
+    std::array<Vec3, kMaxCorners> ballLift{};
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
         double worstDistance = 0.0;
         // Both ways round every pass. Pushing the distances back in one fixed
@@ -758,6 +791,22 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             body.position[a] += Vec3{direction.x * share * acrossA, direction.y * share * downA, 0};
             body.position[b] -= Vec3{direction.x * share * acrossB, direction.y * share * downB, 0};
         }
+        // And out of the ball, the same way. Two things can be through it: a corner,
+        // which is a point inside the ball's reach, and a face, which is the whole
+        // side of a body crossing the ball's surface while both its corners are
+        // outside it -- a cube tipping over onto a ball does exactly that, and
+        // clamping corners alone left the face free to cut through.
+        double deepestBall = 0.0;
+        for (std::size_t i = 0; i < count; ++i) {
+            const Vec3 gap = body.position[i] - ball_.position;
+            const double distance = length(gap);
+            if (!(distance > 1e-12) || distance >= ball_.radius) continue;
+            const Vec3 out = gap / distance;
+            const double amount = ball_.radius - distance;
+            deepestBall = std::max(deepestBall, amount);
+            ballLift[i] += out * amount;
+            body.position[i] = ball_.position + out * ball_.radius;
+        }
         double deepest = 0.0;
         for (std::size_t i = 0; i < count; ++i) {
             if (body.position[i].y < kSurfaceY) {
@@ -769,7 +818,9 @@ void PlaygroundRoom::tickBody(std::size_t index) {
                 held[i] = true;
             }
         }
-        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance) break;
+        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance &&
+            deepestBall <= kDistanceTolerance)
+            break;
     }
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
@@ -795,9 +846,11 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
     for (std::size_t i = 0; i < count; ++i) {
         Vec3 velocity = (body.position[i] - body.previous[i]) / kTick;
-        // Take the floor's correction back out: what is left is what the corner
-        // was actually doing.
+        // Take the corrections back out: what is left is what the corner was
+        // actually doing. The floor's is upwards, the ball's is whatever way it had
+        // to go to get back on the ball's surface.
         velocity.y -= lift[i] / kTick;
+        velocity = velocity - ballLift[i] * (1.0 / kTick);
         if (onPlane[i]) {
             // The plane holds this corner: it cannot travel into the plane.
             // Sideways is friction's business, and that is done for the body as
@@ -903,7 +956,6 @@ void PlaygroundRoom::advance(double seconds) {
             }
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
-            ballOutOfSolids();
         }
         freezeCheck();
         ++ticks;

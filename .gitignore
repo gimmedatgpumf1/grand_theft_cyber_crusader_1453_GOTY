@@ -24,3 +24,7 @@ node_modules/
 # Locally saved toe alignment edits
 toe-bone-edits.txt
 toe-bone-axes.txt
+# Harness binaries built from the scratch sources
+scratch/base
+scratch/drop
+scratch/shot

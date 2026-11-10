@@ -331,7 +331,19 @@ the same test.
   met where the ball's own surface would reach it, so the side is looked at one
   radius further out and not where the ball's middle would cross it; a corner is
   met when the middle is one radius from it. Both cases cover a circle against a
-  polygon completely, so nothing is stepped or guessed.
+  polygon completely, so nothing is stepped or guessed. A ball that is already
+  touching a side when the tick starts is still meeting it, and a ball whose
+  surface is already past a side is answered by how far it is through that side
+  itself -- the distance to the edge, not to its line, so the far side of a
+  triangle never answers for the slope the ball is rolling on.
+- There is no pass afterwards that pushes the ball out of anything. The sweep
+  decides where the ball may go; a ball found through a solid can only be one that
+  something else was driven into, and it is put back by exactly the amount it is
+  through, along that surface's own normal. The mouse cannot put the ball inside a
+  solid at all: a spot its circle does not fit in is a spot it cannot be put down.
+- A body's corners and sides are held out of the ball in the same solve that holds
+  them out of the floor, so a cube coming down on a ball stops on its surface
+  instead of being pushed out of it later.
 - The bodies are stepped first, and their travel is not predicted. A body's
   corners move in straight lines within a tick, so once the bodies have moved,
   what they did is known exactly and the ball's own sweep is tested against it.
@@ -353,12 +365,18 @@ the same test.
   same rest level the room uses everywhere; waking it with a hair of a contact and
   then discarding the momentum it took was a pump that made a ball roll out from
   under a cube faster and faster.
-- The floor is resolved together with the solids, not before them. A face pressing
-  a ball down onto the floor pushes it sideways out from under the face instead of
-  through the floor, and the solver repeats until nothing is left inside anything.
-  Across every stress drop in the checks -- a ball from 8 m, the cube from 5 m onto
-  a resting ball, the ball down the slope, the dot from 3 m -- the deepest overlap
-  measured is 0.00027 m, one tick's rounding, and most runs are 0.000000 m.
+- The floor and the ball are the two things in the room nothing gets through, and
+  a body's own solve holds its corners out of both. A ball under a body coming down
+  on it has nowhere to go downwards, so the body is the one that is put right --
+  lifted onto the ball's surface -- and the lift is taken out of the body's step as
+  well, so it is a correction and never read back as a jump. Across the drops in
+  `scratch/base.cpp` -- the ball down the slope from two dozen heights, a ball
+  dropped onto the triangle's apex and onto its foot, the cube onto a resting ball
+  from twelve heights and off centre by ten more, the dot onto a ball -- the
+  deepest overlap measured is 0.000000001 m, the rounding allowance the test itself
+  uses. The one case still out is a cube that tips over onto the ball while the
+  floor is under both: the tipped side crosses the ball between its own corners,
+  which no corner test sees, and that reads 0.07 m on the worst tick.
 - Neither side can take an answer the other has no freedom to give. A body on the
   floor cannot be driven down into it, a ball lying on the floor cannot give way
   under a load coming down on it, and what a surface does not answer is answered
