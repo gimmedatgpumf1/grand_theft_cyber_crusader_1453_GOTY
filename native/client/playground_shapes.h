@@ -142,4 +142,18 @@ inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
      0.55},
 }};
 
+// Which way round a body is, from the direction of its first edge.
+inline double edgeAngle(const Vec3* corners) {
+    const Vec3 side = corners[1] - corners[0];
+    return std::atan2(side.y, side.x);
+}
+
+// The middle of a body's corners. A body is only its corners, so this is worked
+// out from them rather than stored and kept in step.
+inline Vec3 centroid(const Vec3* corners, std::size_t count) {
+    Vec3 sum{};
+    for (std::size_t i = 0; i < count; ++i) sum += corners[i];
+    return sum / static_cast<double>(count);
+}
+
 } // namespace gtc::native::playground_detail

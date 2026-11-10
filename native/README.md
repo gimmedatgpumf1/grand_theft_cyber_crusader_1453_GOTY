@@ -278,11 +278,21 @@ slide -- drops the point back into free fall. A drop onto the plane and the same
 drop onto a flat face give the same trace: the falling speed builds tick by tick
 and the last tick ends at rest, not at a bounce.
 
-A body standing on the plane cannot be pushed down into it, so a blow from
-above is answered by the plane and the body does not move at all. A blow from
-the side is not blocked, and it shoves the body along the plane: a 1 kg point at
-12 m/s sends the 4 kg square 66 mm and the 3 kg triangle 49 mm sideways, which
-is the momentum ratio.
+The impulse goes along the contact normal, not straight down. A dot dropped from
+a great height has all of its momentum pointing down, but the face it land on
+turns that into a push along the normal: onto the triangle's 45 degree face it
+leaves at exactly -45 degrees, along the face, and the face is pushed the other
+way. A body standing on the plane cannot be pushed down into it, but the plane
+only answers the part of the blow that drives into it -- the part that runs
+along the plane has to go into the body. That is why a drop on the triangle
+shoves the triangle sideways instead of being swallowed by the floor.
+
+A body whose face is flat and horizontal is a different matter: the whole blow
+drives straight down into the plane, the plane answers all of it, and the body
+does not move -- which is the same reason it does not hop. A drop from 20 m onto
+the square's top face moves the square 0.0000 mm; the same drop onto the
+triangle's slope moves it 81 mm sideways at the impulse, and hitting a corner of
+the square moves the square 25 mm sideways.
 
 What is left of a tick after a contact is walked with the speed the contact left
 behind. That is what lets the point run down the triangle's 45 degree face

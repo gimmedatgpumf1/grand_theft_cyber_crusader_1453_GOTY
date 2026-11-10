@@ -18,11 +18,6 @@ constexpr double kTick = 1.0 / 20.0;
 constexpr double kMass = 1.0;      // kg
 constexpr double kGravity = 9.8;   // m/s^2
 constexpr double kSurfaceY = 0.0;  // the plane, y = 0
-constexpr double kPointRadius = 0.07;
-constexpr double kGhostRadius = 0.032;
-constexpr double kTraceHalfWidth = 0.010;
-constexpr double kCornerRadius = 0.045;
-constexpr double kEdgeHalfWidth = 0.008;
 constexpr double kPointGrabRadius = 0.14;  // how close the mouse has to be to take it
 constexpr double kGrabMargin = 0.06;       // and to take a body by its outline
 // The distance solve runs until every distance is back to its rest length,
@@ -48,11 +43,6 @@ constexpr int kSleepTicks = 2;
 // and they are scaled by the length of the contact they actually have.
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
-constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
-// Each body gets its own face, edge and corner markers: a body owns a hundred
-// object ids, which is more than four corners will ever need.
-constexpr std::uint32_t kBodyFaceId = 200, kBodySpan = 100, kBodyEdgeOffset = 10, kBodyCornerOffset = 20;
-constexpr const char* kSky = "#101c22";
 
 // Where a segment first meets a convex body, and the outward normal of the edge
 // it meets. The corners are in order, so each edge can be tested on its own and
@@ -109,20 +99,6 @@ bool segmentHitsPolygon(Vec3 from, Vec3 to, const Vec3* corners, std::size_t cou
     hit = 0.0;
     normal = edgeNormal(nearest);
     return true;
-}
-
-// Which way round a body is, from the direction of its first edge.
-double edgeAngle(const Vec3* corners) {
-    const Vec3 side = corners[1] - corners[0];
-    return std::atan2(side.y, side.x);
-}
-
-// The middle of a body's corners. A body is only its corners, so this is worked
-// out from them rather than stored and kept in step.
-Vec3 centroid(const Vec3* corners, std::size_t count) {
-    Vec3 sum{};
-    for (std::size_t i = 0; i < count; ++i) sum += corners[i];
-    return sum / static_cast<double>(count);
 }
 
 } // namespace
@@ -297,45 +273,6 @@ void PlaygroundRoom::updateDrag() {
 // tick and the position the last tick left it in, at the fraction of a tick the
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
-void PlaygroundRoom::interpolate() {
-    const double fraction = !sceneReady_ ? 1.0 : std::clamp(accumulator_ / kTick, 0.0, 1.0);
-    const double pointAlpha = pointFrozen_ || dragTarget_ == DragTarget::Point ? 1.0 : fraction;
-    shown_ = previous_ + (point_ - previous_) * pointAlpha;
-    // Each body is interpolated on its own. A frozen body is drawn where it is,
-    // but that must never stop a body that is still falling from being spread
-    // over the frames: one shared switch here is exactly what made the point
-    // snap from tick to tick again the moment the square settled.
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        const double alpha = body.frozen || bodyHeld(index) ? 1.0 : fraction;
-        interpolateBody(body, alpha);
-    }
-}
-
-void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
-    // A body is drawn as it is. Interpolating its corners straight from tick to
-    // tick pulls them along chords, so a turning body looks like it is being
-    // squashed and stretched; interpolating where it is and how far round it has
-    // turned, and rebuilding the corners from those, cannot.
-    if (alpha >= 1.0) {
-        body.shown = body.position;
-        return;
-    }
-    const Vec3 from = centroid(body.previous.data(), body.count);
-    const Vec3 to = centroid(body.position.data(), body.count);
-    const double fromAngle = edgeAngle(body.previous.data());
-    double turn = edgeAngle(body.position.data()) - fromAngle;
-    while (turn > 3.14159265358979323846) turn -= 2.0 * 3.14159265358979323846;
-    while (turn < -3.14159265358979323846) turn += 2.0 * 3.14159265358979323846;
-    const Vec3 centre = from + (to - from) * alpha;
-    const double angle = fromAngle + turn * alpha;
-    const double c = std::cos(angle), s = std::sin(angle);
-    for (std::size_t i = 0; i < body.count; ++i) {
-        body.shown[i] = {centre.x + body.local[i].x * c - body.local[i].y * s,
-                         centre.y + body.local[i].x * s + body.local[i].y * c, 0};
-    }
-}
-
 // The point meets a body. The hit is found by walking this tick's segment
 // against the body's edges, before the point is allowed to move, so a fast point
 // cannot pass through it. The corner it struck takes the momentum and the body
@@ -362,30 +299,35 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
         const double distance = length(contact - body.position[i]);
         if (distance < nearest) { nearest = distance; struck = i; }
     }
-    // A body standing on the plane cannot be pushed down into it: the plane
-    // would have to give way, and it will not. So a blow from above is answered
-    // by the plane, not by the body, and the body does not move at all. This is
-    // also why the square used to hop: the impulse drove its corners into the
-    // floor, the floor put them back, and the distance solve turned that
-    // correction into a 16 mm jump.
+    // A body on the plane cannot be pushed down into it -- the plane only
+    // answers the part of a blow that drives into it. The rest of that impulse
+    // runs along the plane and the body must take it. A dot dropped straight
+    // down onto the triangle's 45 degree face arrives with all its momentum
+    // vertical and the face turns that into a push along its normal, so the
+    // triangle is shoved sideways. Letting the floor answer the whole blow is
+    // what used to swallow such a hit and leave the triangle untouched.
     bool supported = false;
     for (std::size_t i = 0; i < body.count; ++i) supported = supported || body.position[i].y <= kSurfaceY + 1e-9;
     const bool held = dragTarget_ == DragTarget::Body;
-    const bool blocked = held || (supported && normal.y > 0.5);
-    const Vec3 cornerVelocity = blocked ? Vec3{} : body.velocity[struck];
+    // The direction the body is actually free to move in. A held body moves
+    // nowhere; a body standing on the plane can only move across the plane.
+    const Vec3 answer = held ? Vec3{} : (supported ? Vec3{normal.x, 0, 0} : normal);
+    const bool canMove = length(answer) > 1e-9;
+    const Vec3 cornerVelocity = canMove ? body.velocity[struck] : Vec3{};
+    // The struck corner takes half of what the body receives and the other
+    // corners share the rest, so the body as a whole gains exactly the momentum
+    // the point loses and is set turning by the uneven share.
+    constexpr double kStruckShare = 0.5;
+    const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
     const double closing = dot(velocity_ - cornerVelocity, normal);
     if (closing < 0.0) {
         // The contact takes exactly the approach speed and gives none of it
         // back, which is what the plane does to the point. Two surfaces that
         // stop the same point differently is the reason it bounced on the square
         // and only sat down on the plane.
-        // Equal and opposite impulses. The struck corner takes half of what the
-        // body receives and the other corners share the rest, so the body as a
-        // whole gains exactly the momentum the point loses and is set turning by
-        // the uneven share. A held body cannot be pushed, so it takes none.
-        constexpr double kStruckShare = 0.5;
-        const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
-        const double cornerInverseMass = blocked ? 0.0 : kStruckShare / kMass;
+        // Equal and opposite impulses. A body that cannot move takes none, and
+        // then the point stops on it exactly as it stops on the floor.
+        const double cornerInverseMass = canMove ? kStruckShare / kMass : 0.0;
         const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
         // The normal points out of the body, towards the point: the point is
         // pushed along it and the body is pushed the other way. Getting this
@@ -393,10 +335,10 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
         // it, which is why it never bounced and why the square was shoved into
         // the floor hard enough to hop.
         velocity_ = velocity_ + normal * (impulse / kMass);
-        if (!blocked) {
+        if (canMove) {
             for (std::size_t i = 0; i < body.count; ++i) {
                 const double share = i == struck ? kStruckShare : otherShare;
-                body.velocity[i] = body.velocity[i] - normal * (impulse * share / kMass);
+                body.velocity[i] = body.velocity[i] - answer * (impulse * share / kMass);
             }
             body.frozen = false;
         }
@@ -421,8 +363,18 @@ void PlaygroundRoom::hitBody(std::size_t index, Vec3 from, Vec3 to, double hit) 
         const double pressed = kGravity * std::clamp(std::abs(normal.y), 0.0, 1.0);
         const double hold = kPointStaticFriction * pressed * span;
         const double slide = kPointKineticFriction * pressed * span;
-        if (speed <= hold) velocity_ = velocity_ - across;
-        else velocity_ = velocity_ - across * std::min(1.0, slide / speed);
+        const Vec3 lost = speed <= hold ? across : across * std::min(1.0, slide / speed);
+        velocity_ = velocity_ - lost;
+        // Friction has two ends. The face rubs the point, so the point rubs the
+        // face, and the momentum the point loses along the face is pushed into
+        // the body. It goes in horizontally, because that is the only way a body
+        // standing on the plane can go: the floor takes the rest.
+        if (canMove && std::abs(lost.x) > 1e-12) {
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const double share = i == struck ? kStruckShare : otherShare;
+                body.velocity[i] = body.velocity[i] - Vec3{lost.x, 0, 0} * (share * kMass / kMass);
+            }
+        }
     }
     // If the contact has taken all the speed there was, the body is holding the
     // point up exactly as the plane would, and it is allowed to stay there. The
@@ -633,7 +585,12 @@ void PlaygroundRoom::tick() {
         previous_ = point_;
         shown_ = point_;
     }
-    for (std::size_t index = 0; index < kBodyCount; ++index) tickBody(index);
+    // A frozen body is not stepped at all. It has no velocity and no force to
+    // resolve, and stepping it anyway let gravity and the floor clamp nibble at
+    // it tick after tick, which drifted a body that was supposed to be asleep.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        if (!bodies_[index].frozen) tickBody(index);
+    }
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -863,135 +820,4 @@ void PlaygroundRoom::advance(double seconds) {
     }
 }
 
-void PlaygroundRoom::buildScene(const Camera& camera) {
-    Rasterizer raster(camera.width, camera.height, colorHex(kSky), camera.focal(), true);
-    raster.setCamera(camera);
-    std::vector<Vec3> points;
-    std::vector<std::array<int, 3>> faces;
-
-    // The room behind the demo: ground below the plane, the plane itself on top.
-    quad(points, faces, -6, -4, 6, 0, -0.02);
-    raster.setObject(kGroundId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#22302f"));
-
-    points.clear();
-    faces.clear();
-    quad(points, faces, -6, -0.06, 6, 0.0, -0.01);
-    raster.setObject(kSurfaceId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#b9ccc4"));
-
-    // One marker per past tick: the 20 Hz cadence made visible.
-    for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
-        disc(points, faces, kGhostRadius);
-        raster.setObject(kGhostId + static_cast<std::uint32_t>(i), {0, 0}, 0);
-        raster.mesh(points, faces, flat("#5c716c"));
-    }
-
-    // This tick's hitscan segment, and the point itself in front of it.
-    points.clear();
-    faces.clear();
-    quad(points, faces, 0, -1, 1, 1, 0.004);
-    raster.setObject(kTraceId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#6fc6ff"));
-
-    disc(points, faces, kPointRadius);
-    raster.setObject(kPointId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#ffd24a"));
-
-    // Each body: a face, one edge marker per side, and a point at every corner
-    // it is made of. The geometry is the body's rest shape and never changes;
-    // where it is comes from the batch matrix, every frame, with no upload.
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        const std::uint32_t base = kBodyFaceId + static_cast<std::uint32_t>(index) * kBodySpan;
-        face(points, faces, body.local.data(), body.count, -0.002);
-        raster.setObject(base, {0, 0}, 0);
-        raster.mesh(points, faces, flat("#2c5f74"));
-
-        points.clear();
-        faces.clear();
-        quad(points, faces, 0, -1, 1, 1, 0.005);
-        for (std::size_t i = 0; i < body.count; ++i) {
-            raster.setObject(base + kBodyEdgeOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
-            raster.mesh(points, faces, flat("#9fd8e8"));
-        }
-        disc(points, faces, kCornerRadius);
-        for (std::size_t i = 0; i < body.count; ++i) {
-            raster.setObject(base + kBodyCornerOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
-            raster.mesh(points, faces, flat("#ff8a4c"));
-        }
-    }
-
-    scene_ = raster.takeGpuScene();
-    scene_.revision = 1;
-    pointBatch_ = findBatch(scene_, kPointId);
-    traceBatch_ = findBatch(scene_, kTraceId);
-    for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
-        ghostBatches_[i] = findBatch(scene_, kGhostId + static_cast<std::uint32_t>(i));
-    }
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        const std::uint32_t base = kBodyFaceId + static_cast<std::uint32_t>(index) * kBodySpan;
-        body.faceBatch = findBatch(scene_, base);
-        for (std::size_t i = 0; i < body.count; ++i) {
-            body.edgeBatches[i] = findBatch(scene_, base + kBodyEdgeOffset + static_cast<std::uint32_t>(i));
-            body.cornerBatches[i] = findBatch(scene_, base + kBodyCornerOffset + static_cast<std::uint32_t>(i));
-        }
-    }
-}
-
-void PlaygroundRoom::placeMarkers() {
-    scene_.batches[pointBatch_].modelMatrix = translation(shown_);
-    // The trace belongs to the tick that is being drawn: while the point is
-    // still gliding through the last tick, the line runs from the previous
-    // position to where that tick's travel was allowed to reach, so the point on
-    // screen always sits on the line that was walked.
-    const Vec3 traceStart = dragTarget_ == DragTarget::Point || !sceneReady_ ? traceFrom_ : previous_;
-    scene_.batches[traceBatch_].modelMatrix =
-        haveTrace_ ? segment(traceStart, traceTo_, kTraceHalfWidth) : translation({0, -1000, 0});
-    for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
-        scene_.batches[ghostBatches_[i]].modelMatrix =
-            i < ghostCount_ ? translation(ghosts_[i]) : translation({0, -1000, 0});
-    }
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        // The face is the rest shape placed where the drawn corners already are,
-        // so what is filled in is exactly the outline the edges draw.
-        const Vec3 middle = centroid(body.shown.data(), body.count);
-        scene_.batches[body.faceBatch].modelMatrix = pose(middle, edgeAngle(body.shown.data()));
-        for (std::size_t i = 0; i < body.count; ++i) {
-            scene_.batches[body.edgeBatches[i]].modelMatrix =
-                segment(body.shown[i], body.shown[(i + 1) % body.count], kEdgeHalfWidth);
-            scene_.batches[body.cornerBatches[i]].modelMatrix = translation(body.shown[i]);
-        }
-    }
-}
-
-bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const RoomFreecam& freecam) {
-    const Camera camera = freecam.camera(view.width, view.height, view.gpu);
-    if (!sceneReady_) {
-        buildScene(camera);
-        sceneReady_ = true;
-    }
-    interpolate();
-    placeMarkers();
-    scene_.width = camera.width;
-    scene_.height = camera.height;
-    scene_.focal = camera.focal();
-    scene_.viewMatrix = camera.viewMatrix();
-    scene_.covered = false;
-    const auto count = scene_.batches.size();
-    frame.interfaceInFrame = false;
-    if (frame.uiLayer && !frame.uiLayer->empty()) {
-        appendUiBatches(*frame.uiLayer, camera, scene_);
-        frame.interfaceInFrame = true;
-    }
-    frame.width = camera.width;
-    frame.height = camera.height;
-    frame.wantsBgra = true;
-    frame.rgb.clear();
-    const bool ok = renderGpuScene(scene_, frame);
-    scene_.batches.resize(count);
-    return ok;
-}
 } // namespace gtc::native
