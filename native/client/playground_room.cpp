@@ -173,7 +173,14 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         body.quietTicks = 0;
         body.contacts = 0;
     }
+    // A new ball, at the same place it starts in. The scene is not rebuilt by a
+    // reset, so the two drawing handles it was given at build time have to be
+    // kept: clearing them to zero puts the ball's transform on the ground batch
+    // and leaves the ball itself where the last scene was built.
+    const std::size_t ballFace = ball_.faceBatch, ballMark = ball_.markBatch;
     ball_ = Ball{};
+    ball_.faceBatch = ballFace;
+    ball_.markBatch = ballMark;
     ball_.position = ball_.previous = ball_.shown = Vec3{3.10, ball_.radius + 1.60, 0};
     ball_.angle = ball_.previousAngle = 0.0;
     return true;
