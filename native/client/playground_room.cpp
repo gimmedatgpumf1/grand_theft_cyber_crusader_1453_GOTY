@@ -693,18 +693,37 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         return;
     }
     std::array<bool, kMaxCorners> onPlane{};
+    // Where this tick's step would put each corner, before anything is committed.
+    std::array<Vec3, kMaxCorners> target{};
+    for (std::size_t i = 0; i < count; ++i) {
+        body.velocity[i].y -= kGravity * kTick;
+        target[i] = body.position[i] + body.velocity[i] * kTick;
+    }
+    // The shape's step is swept against the ball before any of it is spent,
+    // exactly as a corner's step is swept against the plane -- but along the whole
+    // outline, because a face lying across a ball has no corner anywhere near it
+    // and a corner's own hitscan says nothing about it. What the sweep answers
+    // with is the last fraction of the step at which every piece of the outline is
+    // still clear of the ball; the step is walked that far, and what is left of
+    // the tick is a contact, solved below against the piece of the outline the
+    // ball is actually holding. Without this the whole step is carried into the
+    // ball and then pushed back out of it, and coming back to the same place every
+    // tick is a shape perched on a ball for ever, never turning about it.
+    const double reach = bodyBallReach(index, target.data());
+    if (reach < 1.0) {
+        for (std::size_t i = 0; i < count; ++i)
+            body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
+        for (std::size_t i = 0; i < count; ++i)
+            target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
+    }
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 from = body.position[i];
-        body.velocity[i].y -= kGravity * kTick;
-        const Vec3 to = from + body.velocity[i] * kTick;
+        const Vec3 to = target[i];
         // The same hitscan the point uses, once per corner: the first thing the
         // corner's step reaches is where that corner stops, however far the tick
-        // would have carried it. It is the floor and nothing else. The ball is not
-        // asked here: a corner is a point, and a body's *face* can lie across a
-        // ball with every corner of it nowhere near -- which is exactly what a flat
-        // shape dropped on a ball does. One test that sees the whole outline is what
-        // can answer that, and the ball owns it, so the body does not guess at the
-        // ball at all and the two of them cannot answer the same contact twice.
+        // would have carried it. The ball is the other thing in the way, and it
+        // was already walked against the whole outline above, so a corner can no
+        // longer reach it on its own.
         double along = 2.0;
         bool onFloor = false;
         if (to.y < kSurfaceY) {
@@ -745,7 +764,16 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // because the corner it leaned on never actually went anywhere.
     std::array<bool, kMaxCorners> held{};
     for (std::size_t i = 0; i < count; ++i) held[i] = onPlane[i];
+    // How far the plane lifted each corner. Lifting a corner is a correction,
+    // not motion: the body did not travel upwards, the floor put it back. That
+    // lift has to be kept so it can be taken back out of the velocity, or a
+    // corner pushed down by a blow turns into the whole body hopping upwards.
     std::array<double, kMaxCorners> lift{};
+    // The same for the ball, once: how far it had to put the body's own step back
+    // out of it. Later passes are the shape re-arranging itself about the contact,
+    // which is the shape turning, and that is motion.
+    std::array<Vec3, kMaxCorners> ballLift{};
+
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
         double worstDistance = 0.0;
         // Both ways round every pass. Pushing the distances back in one fixed
@@ -785,6 +813,12 @@ void PlaygroundRoom::tickBody(std::size_t index) {
                 held[i] = true;
             }
         }
+        // The ball is the second thing that holds the shape: the piece of the
+        // outline the ball is against is put back outside it, and the distances
+        // are solved again, so the corner the ball is not holding is the one that
+        // gives way. That is the whole of what makes a shape tip off a ball instead
+        // of resting on it.
+        deepest = std::max(deepest, pushBodyOutOfBall(index, pass == 0 ? &ballLift : nullptr));
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance) break;
     }
     // How much of this body is lying on the floor: the length of the contact
@@ -810,10 +844,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
     for (std::size_t i = 0; i < count; ++i) {
+        // What the corner actually did this tick, solved shape and all: a shape
+        // that is turning about something is doing that, and the turn is motion.
         Vec3 velocity = (body.position[i] - body.previous[i]) / kTick;
-        // Take the correction back out: what is left is what the corner was
-        // actually doing. The floor's is upwards.
+        // Take the corrections back out: what is left is what the corner was
+        // actually doing. The floor's is upwards; the ball's is outwards.
         velocity.y -= lift[i] / kTick;
+        velocity = velocity - ballLift[i] * (1.0 / kTick);
         if (onPlane[i]) {
             // The plane holds this corner: it cannot travel into the plane.
             // Sideways is friction's business, and that is done for the body as
@@ -854,9 +891,15 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // this a body can be caught at the instant it is standing on a single
     // corner, and stop in mid-air.
     const Vec3 middle = centroid(body.position.data(), count);
-    const bool carried = !touchingPlane || (middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6);
+    const bool carried = touchingPlane && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
     // Resting on the plane and no longer going anywhere: there is no force left
     // to resolve, so the body is frozen and its ticks stop costing anything.
+    // Only the plane can do that. A ball is a round surface: it carries a shape
+    // only where the shape's weight runs straight down through the point of
+    // contact, which is one configuration out of the whole of the ball, so a shape
+    // left on a ball is never at rest -- it tips and it slides off. Freezing it
+    // there because its corners happen to be moving very little is what left a
+    // shape perched on the top of a ball for ever.
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {

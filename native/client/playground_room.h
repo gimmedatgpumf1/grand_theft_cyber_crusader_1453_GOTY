@@ -122,6 +122,12 @@ private:
     // along the normal.
     void hitBody(std::size_t body, Vec3 normal, double into);
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
+    // A body and the ball, from the body's side. How far the body's step can go
+    // before the whole of its outline reaches the ball, and how far the ball has
+    // the outline inside it and which way out. Both are the ball's geometry
+    // against a body's outline, so both live with the ball.
+    double bodyBallReach(std::size_t index, const Vec3* target) const;
+    double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     void tickBall();
     // Whether the ball can be put down here: the mouse may carry it anywhere in
     // the room, but not inside a solid. A ball placed inside one would have to be
@@ -134,8 +140,8 @@ private:
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
-    void ballContact(Vec3 normal, int bodyIndex, double along = 1.0, bool ballHeld = false,
-                     Vec3 contactPoint = {}, double depth = 0.0, bool exchange = true);
+    void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
+                     double depth = 0.0, bool exchange = true);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);
