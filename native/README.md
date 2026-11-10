@@ -217,11 +217,18 @@ the square exchanges momentum: the point carries m·v, the corner it struck
 takes half of the impulse and the other three corners share the rest, so the
 square as a whole gains exactly what the point loses and is set turning by the
 uneven share. The square pushes back along the face normal with the material's
-restitution. Where a 1 kg point meets a 4 kg square, the point is left with no
-speed along the normal and the square carries the momentum away -- and because
-the crossing is found before the point moves, none of this depends on how fast
-the point was going. A point arriving at 100 km/s is stopped at the surface in
-the same tick.
+restitution, which drops to zero below 0.6 m/s: gravity alone gives a resting
+object 0.49 m/s each tick, and handing that back every tick leaves it trembling
+on the surface forever.
+
+A square standing on the plane cannot be pushed down into it, so a blow from
+above is answered by the plane and the square does not move at all. A blow from
+the side is not blocked, and it shoves the square along the plane: a 1 kg point
+at 12 m/s sends a 4 kg square 123 mm sideways, which is the momentum ratio.
+
+Because the crossing is found before the point moves, none of this depends on
+how fast the point was going. A point arriving at 100 km/s is stopped at the
+surface in the same tick.
 
 ### Grabbing
 

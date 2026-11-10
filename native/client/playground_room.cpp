@@ -38,6 +38,10 @@ constexpr int kSleepTicks = 2;
 // How much of the closing speed comes back along the contact normal, and how
 // much sliding the plane resists. Both are properties of the two surfaces.
 constexpr double kRestitution = 0.25;
+// Below this closing speed a contact does not bounce. Gravity alone gives a
+// resting object 0.49 m/s each tick, and giving that back at 25% every tick
+// leaves it visibly trembling on the surface forever.
+constexpr double kBounceThreshold = 0.6;  // m/s
 constexpr double kFriction = 0.5;
 constexpr std::uint32_t kGroundId = 1, kSurfaceId = 2, kPointId = 3, kTraceId = 4, kGhostId = 100;
 constexpr std::uint32_t kCubeFaceId = 200, kCubeEdgeId = 210, kCubeCornerId = 220;
@@ -345,8 +349,9 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
     if (!segmentHitsSquare(from, to, cubePosition_, along, normal)) return;
     Vec3 contact = from + (to - from) * along;
     // A point that begins the tick already inside is put back outside along the
-    // nearest face, so it can never sit inside the square collecting speed.
-    if (along <= 0.0) contact = from - normal * 1e-4;
+    // nearest face, so it can never sit inside the square collecting speed. The
+    // normal points out of the square, so getting out means moving along it.
+    if (along <= 0.0) contact = from + normal * 1e-4;
     point_ = contact;
     ++pointCubeContacts_;
     // Which corner carries the blow: the nearest one. The square is four points,
@@ -357,24 +362,38 @@ void PlaygroundRoom::hitCube(Vec3 from, Vec3 to, double hit) {
         const double distance = length(contact - cubePosition_[i]);
         if (distance < nearest) { nearest = distance; struck = i; }
     }
-    const bool held = dragTarget_ == DragTarget::Cube;
-    const Vec3 cornerVelocity = held ? Vec3{} : cubeVelocity_[struck];
+    // A square standing on the plane cannot be pushed down into it: the plane
+    // would have to give way, and it will not. So a blow from above is answered
+    // by the plane, not by the square, and the square does not move at all. This
+    // is also why the square used to hop: the impulse drove its corners into the
+    // floor, the floor put them back, and the distance solve turned that
+    // correction into a 16 mm jump.
+    bool supported = false;
+    for (const Vec3& corner : cubePosition_) supported = supported || corner.y <= kSurfaceY + 1e-9;
+    const bool blocked = dragTarget_ == DragTarget::Cube || (supported && normal.y > 0.5);
+    const Vec3 cornerVelocity = blocked ? Vec3{} : cubeVelocity_[struck];
     const double closing = dot(velocity_ - cornerVelocity, normal);
     if (closing < 0.0) {
+        const double restitution = -closing > kBounceThreshold ? kRestitution : 0.0;
         // Equal and opposite impulses. The struck corner takes half of what the
         // square receives and the other three share the rest, so the square as a
         // whole gains exactly the momentum the point loses and is set turning by
         // the uneven share. A held square cannot be pushed, so it takes none.
         constexpr double kStruckShare = 0.5;
         constexpr double kOtherShare = (1.0 - kStruckShare) / 3.0;
-        const double cornerInverseMass = held ? 0.0 : kStruckShare / kMass;
-        const double impulse = -(1.0 + kRestitution) * closing /
+        const double cornerInverseMass = blocked ? 0.0 : kStruckShare / kMass;
+        const double impulse = -(1.0 + restitution) * closing /
                                (1.0 / kMass + cornerInverseMass);
-        velocity_ = velocity_ - normal * (impulse / kMass);
-        if (!held) {
+        // The normal points out of the square, towards the point: the point is
+        // pushed along it and the square is pushed the other way. Getting this
+        // sign backwards drove the point into the surface instead of away from
+        // it, which is why it never bounced and why the square was shoved into
+        // the floor hard enough to hop.
+        velocity_ = velocity_ + normal * (impulse / kMass);
+        if (!blocked) {
             for (std::size_t i = 0; i < 4; ++i) {
                 const double share = i == struck ? kStruckShare : kOtherShare;
-                cubeVelocity_[i] = cubeVelocity_[i] + normal * (impulse * share / kMass);
+                cubeVelocity_[i] = cubeVelocity_[i] - normal * (impulse * share / kMass);
             }
             cubeFrozen_ = false;
         }
@@ -500,6 +519,11 @@ void PlaygroundRoom::tickCube() {
     // checking the distances again -- is what leaves the square permanently out
     // of shape: it is the clamp that opens the distance error, so the distance
     // solve has to see the clamp.
+    // How far the plane lifted each corner. Lifting a corner is a correction,
+    // not motion: the cube did not travel upwards, the floor put it back. That
+    // lift has to be kept so it can be taken back out of the velocity, or a
+    // corner pushed down by a blow turns into the whole cube hopping upwards.
+    std::array<double, 4> lift{};
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
         double worstDistance = 0.0;
         for (std::size_t pair = 0; pair < kPairs.size(); ++pair) {
@@ -517,7 +541,9 @@ void PlaygroundRoom::tickCube() {
         double deepest = 0.0;
         for (std::size_t i = 0; i < 4; ++i) {
             if (cubePosition_[i].y < kSurfaceY) {
-                deepest = std::max(deepest, kSurfaceY - cubePosition_[i].y);
+                const double amount = kSurfaceY - cubePosition_[i].y;
+                deepest = std::max(deepest, amount);
+                lift[i] += amount;
                 cubePosition_[i].y = kSurfaceY;
                 onPlane[i] = true;
             }
@@ -526,6 +552,9 @@ void PlaygroundRoom::tickCube() {
     }
     for (std::size_t i = 0; i < 4; ++i) {
         Vec3 velocity = (cubePosition_[i] - cubePrevious_[i]) / kTick;
+        // Take the floor's correction back out: what is left is what the corner
+        // was actually doing.
+        velocity.y -= lift[i] / kTick;
         if (onPlane[i]) {
             // The plane holds this corner: it cannot travel into the plane, and
             // friction takes away the sliding it would need to keep rocking.
