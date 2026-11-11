@@ -457,7 +457,13 @@ void PlaygroundRoom::tick() {
             force = along;                            // it slides
         }
     }
+    // The two forces on the point, written down where they are applied: its weight,
+    // always, and whatever the surface it is standing on answers it with. The
+    // difference between the speed after the forces and the speed at the end of the
+    // tick is the contact's impulse, turned back into newtons over the tick.
+    addForce(point_, Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
     velocity_ = velocity_ + force * (kTick / kMass);
+    pointAfterForces_ = velocity_;
     traceFrom_ = point_;
     resting_ = false;
     restingBody_ = -1;
@@ -674,6 +680,11 @@ void PlaygroundRoom::tick() {
     bodiesAnswer();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
+    // And what the surfaces did to the point, once the walk is over.
+    {
+        const Vec3 push = (velocity_ - pointAfterForces_) * (kMass / kTick);
+        if (length(push) > 1e-6) addForce(point_, push, ForceKind::Contact);
+    }
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
@@ -783,6 +794,9 @@ void PlaygroundRoom::advance(double seconds) {
             restingOnBall_ = false;
         }
         // A frozen body has nothing to do: no force, no motion, no work.
+        // The ledger belongs to one tick: every force written into it was applied
+        // during that tick, and a stale arrow is worse than no arrow.
+        clearForces();
         if (!pointFrozen_) {
             tick();
         } else {

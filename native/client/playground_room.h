@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/raster.h"
+#include "client/ui_layer.h"
 
 #include <array>
 #include <cstddef>
@@ -51,6 +52,35 @@ public:
     std::size_t bodyCorners(std::size_t body) const { return body < kBodyCount ? bodies_[body].count : 0; }
     Vec3 bodyMiddle(std::size_t body) const;
     bool bodyFrozen(std::size_t body) const { return body < kBodyCount ? bodies_[body].frozen : true; }
+    // Forces, as they are applied, and the room's energy.
+    //
+    // Every tick the room writes down every force it applies: where it acts, which
+    // way, and how hard in newtons. Nothing in the simulation is allowed to move a
+    // corner except a force written here, so this is the room's own account of what
+    // it is doing -- not a separate diagnostic that could drift from the physics.
+    // The arrows drawn on F are these numbers, and the figures on N are the same
+    // numbers again, so what is on screen cannot disagree with what was solved.
+    enum class ForceKind { Gravity = 0, Contact = 1, Pair = 2, Ball = 3, KindCount = 4 };
+    static constexpr std::size_t kMaxForceSamples = 64;
+    static constexpr std::size_t kArrowsPerKind = 16;
+    struct ForceSample {
+        Vec3 at{};     // where it acts, in metres
+        Vec3 force{};  // newtons
+        ForceKind kind = ForceKind::Gravity;
+    };
+    void toggleForceArrows() { showForces_ = !showForces_; }
+    void toggleForceNewtons() { showNewtons_ = !showNewtons_; }
+    bool forceArrowsShown() const { return showForces_; }
+    bool forceNewtonsShown() const { return showNewtons_; }
+    const std::array<ForceSample, kMaxForceSamples>& forces() const { return forces_; }
+    std::size_t forceCount() const { return forceCount_; }
+    // What the room's energy is made of: the motion of every corner and the ball,
+    // and the height each of them is at. A tick may move energy between the two; it
+    // may never make any. The sum is what N shows, so a solver that invents motion
+    // is visible as a rising total and nothing else has to be trusted.
+    void energyBudget(double& kinetic, double& potential) const;
+    double totalEnergy() const;
+
     // How many times the point has struck a body, for the visual harness.
     int bodyContacts(std::size_t body) const { return body < kBodyCount ? bodies_[body].contacts : 0; }
     // Which body, if any, is holding the point up; -1 when the plane does.
@@ -234,13 +264,26 @@ private:
     bool pointReachedByBodies() const;
     void freezeCheck();
     void updateDrag();
+    // One force, written down as it is applied. Called from the tick itself and
+    // from the pair and ball contacts, so the ledger is filled by the physics and
+    // nothing else writes to it.
+    void addForce(Vec3 at, Vec3 force, ForceKind kind) {
+        if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind};
+    }
+    void clearForces() { forceCount_ = 0; }
+    // The arrows, and the numbers written beside them.
+    void placeForceArrows();
+    void appendForceLabels(const Camera& camera, NativeFrame& frame);
     void buildScene(const Camera& camera);
     void placeMarkers();
     void interpolate();
     void interpolateBody(Body& body, double alpha);
 
     Vec3 point_{0, 2, 0}, previous_{0, 2, 0}, shown_{0, 2, 0};
-    Vec3 velocity_{};
+    // The point's speed once the tick's forces had been applied to it, before any
+    // contact answered it: the difference at the end of the tick is what the
+    // contacts delivered.
+    Vec3 velocity_{}, pointAfterForces_{};
     Vec3 traceFrom_{0, 2, 0}, traceTo_{0, 2, 0};
     std::array<Vec3, 40> ghosts_{};
     std::size_t ghostCount_ = 0, ghostNext_ = 0;
@@ -249,6 +292,18 @@ private:
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
     std::size_t pointBatch_ = 0, traceBatch_ = 0;
+    // One batch per arrow, built once and hidden when there is nothing to draw. The
+    // shaft is a unit bar along +x and the head a unit disc, so the tail goes where
+    // the force acts and the tip where the force reaches -- the same matrix call the
+    // bodies' own edges are placed with.
+    std::array<std::array<std::size_t, kArrowsPerKind>, std::size_t(ForceKind::KindCount)> arrowShaft_{};
+    std::array<std::array<std::size_t, kArrowsPerKind>, std::size_t(ForceKind::KindCount)> arrowHead_{};
+    std::array<ForceSample, kMaxForceSamples> forces_{};
+    std::size_t forceCount_ = 0;
+    bool showForces_ = false, showNewtons_ = false;
+    // The numbers are quads like everything else: they are laid out here and handed
+    // to the same batcher the rest of the interface goes through.
+    UiLayer forceLabels_;
     std::array<std::size_t, 40> ghostBatches_{};
     double accumulator_ = 0;
     DragTarget dragTarget_ = DragTarget::None;

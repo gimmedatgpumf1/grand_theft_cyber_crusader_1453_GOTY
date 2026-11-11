@@ -40,10 +40,21 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     std::array<bool, kMaxCorners> onPlane{};
     // Where this tick's step would put each corner, before anything is committed.
     std::array<Vec3, kMaxCorners> target{};
+    // Gravity is a force at every corner, and it is the same force at every corner:
+    // m*g newtons downwards on each of them. It is not a speed the body is given:
+    // the speed each corner ends the tick with is what the impulses below are
+    // written in terms of, and this is where they start from.
+    const Vec3 weight{0.0, -kMass * kGravity, 0.0};
     for (std::size_t i = 0; i < count; ++i) {
+        addForce(body.position[i], weight, ForceKind::Gravity);
         body.velocity[i].y -= kGravity * kTick;
         target[i] = body.position[i] + body.velocity[i] * kTick;
     }
+    // What each corner's speed was once the forces had been applied and before any
+    // contact answered it. The difference at the end of the tick is the impulse a
+    // contact delivered, over the tick is the force it delivered it with.
+    std::array<Vec3, kMaxCorners> afterForces{};
+    for (std::size_t i = 0; i < count; ++i) afterForces[i] = body.velocity[i];
     // The shape's step is swept against the ball before any of it is spent,
     // exactly as a corner's step is swept against the plane -- but along the whole
     // outline, because a face lying across a ball has no corner anywhere near it
@@ -369,6 +380,15 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
+    // Everything the contacts did to this body, corner by corner: the floor, the
+    // shape solve holding it rigid, friction at the patch. It is the difference
+    // between the speed the forces gave each corner and the speed it ended with,
+    // taken back to newtons over the tick -- so it is exactly the momentum the
+    // room delivered, and the arrows on F are the room admitting to it.
+    for (std::size_t i = 0; i < count; ++i) {
+        const Vec3 push = (body.velocity[i] - afterForces[i]) * (kMass / kTick);
+        if (length(push) > 1e-6) addForce(body.position[i], push, ForceKind::Contact);
+    }
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {
