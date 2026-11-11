@@ -452,6 +452,11 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
     if (std::getenv("GTC_V")) {
+        double fast = 0.0;
+        for (std::size_t i = 0; i < count; ++i) fast = std::max(fast, length(body.velocity[i]));
+        if (fast > 12.0) std::fprintf(stderr, "  FAST body %zu speed %.3f\n", index, fast);
+    }
+    if (std::getenv("GTC_V")) {
         std::fprintf(stderr, "  V body %zu:", index);
         for (std::size_t i = 0; i < count; ++i)
             std::fprintf(stderr, " (%.2f,%.2f)", body.velocity[i].x, body.velocity[i].y);
