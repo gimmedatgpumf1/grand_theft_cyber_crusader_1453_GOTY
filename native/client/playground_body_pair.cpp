@@ -59,7 +59,20 @@ constexpr int kMaxContactPasses = 16;
 // nothing is passed through: a corner that starts outside and ends inside has
 // crossed the outline, and that crossing is solved for outright.
 namespace {
-bool arrives(double along) { return along > 1e-9; }
+// Being on the surface is not the same as having arrived at it -- that guard is what
+// stops a body stuttering as it slides along another one. But a body that is on the
+// surface and moving *into* it has arrived, at this very instant: there is no later
+// moment when it is inside that could be called the meeting. The sweep has to say so,
+// or the body walks its whole tick into the other one, and being pushed back out
+// afterwards is not a hitscan, it is a repair -- a shape that is shoved out at a slant
+// every tick is a shape that creeps sideways with nothing pushing it.
+//
+// A corner clear of the surface has arrived when its own step reaches the surface.
+// A corner on it, or inside it, has arrived already if its step is going further in.
+bool arrivedAt(double along, double gap, Vec3 travel, Vec3 outward) {
+    if (along > 1e-9) return true;
+    return gap <= kSkin && dot(travel, outward) < 0.0;
+}
 }  // namespace
 
 // How far this body's step can be walked before one of its corners reaches another
@@ -97,10 +110,17 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             const Vec3 travel = (target[i] - body.position[i]) - solidStep;
             double along = 2.0;
             Vec3 normal{0, 1, 0};
+            const OutlineGap gap =
+                outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
             if (!segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(), solid.count,
-                                    along, normal))
-                continue;
-            if (!arrives(along) || !(along < first)) continue;
+                                    along, normal)) {
+                // No crossing found. A corner already against the surface and driving
+                // into it is a meeting all the same, and it is now.
+                if (!(arrivedAt(0.0, gap.gap, travel, gap.normal) && gap.gap <= kSkin)) continue;
+                along = 0.0;
+                normal = gap.normal;
+            }
+            if (!arrivedAt(along, gap.gap, travel, normal) || !(along < first)) continue;
             first = along;
             *wayOut = normal;
             *metWith = other;
@@ -114,10 +134,15 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             const Vec3 travel = solidStep - ownStep;
             double along = 2.0;
             Vec3 normal{0, 1, 0};
+            const OutlineGap gap =
+                outlineGap(solid.position[i], body.position.data(), body.position.data(), body.count, 1.0);
             if (!segmentHitsPolygon(solid.position[i], solid.position[i] + travel, body.position.data(), body.count,
-                                    along, normal))
-                continue;
-            if (!arrives(along) || !(along < first)) continue;
+                                    along, normal)) {
+                if (!(arrivedAt(0.0, gap.gap, travel, gap.normal) && gap.gap <= kSkin)) continue;
+                along = 0.0;
+                normal = gap.normal;
+            }
+            if (!arrivedAt(along, gap.gap, travel, normal) || !(along < first)) continue;
             first = along;
             *metWith = other;
             // The normal of a corner this body's own outline was met by points out

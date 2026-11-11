@@ -17,8 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -82,10 +80,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         if (along < planeReach) planeReach = along;
     }
     const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
-    const bool dbg = std::getenv("GTC_SWEEP") != nullptr;
-    if (dbg)
-        std::fprintf(stderr, "  [%zu] reach %.6f (body %.6f ball %.6f plane %.6f) metBody %d\n", index, reach,
-                     bodyReach, ballReach, planeReach, body.metBody < kBodyCount ? 1 : 0);
     const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
     // The floor's way out is straight up, whatever the other sweeps found: it is the
     // floor that cut this step short.
