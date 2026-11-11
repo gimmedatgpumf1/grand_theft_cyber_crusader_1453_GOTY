@@ -121,19 +121,16 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // answers it with is taken off the whole body: every corner loses the same
         // amount, the turn between them is untouched, and the body goes on turning
         // about the point it is standing on -- which is what a body on a corner does.
-        Vec3 contactSpeed{};
+        // Which corner is the one that arrived: the corner nearest the place they met
+        // when another body cut the step, and the lowest corner when it was the floor.
+        std::size_t arrived = 0;
         if (metBody) {
-            const std::size_t hit = nearestCorner(body, metAt);
-            contactSpeed = body.velocity[hit];
+            arrived = nearestCorner(body, metAt);
         } else {
-            // The floor holds the corner that reached it; without a place to read the
-            // speed at, the lowest corner is the one it is holding.
-            std::size_t lowest = 0;
             for (std::size_t i = 1; i < count; ++i)
-                if (body.position[i].y < body.position[lowest].y) lowest = i;
-            contactSpeed = body.velocity[lowest];
+                if (body.position[i].y < body.position[arrived].y) arrived = i;
         }
-        const double inward = std::min(0.0, dot(contactSpeed, metWay));
+        const double inward = std::min(0.0, dot(body.velocity[arrived], metWay));
         for (std::size_t i = 0; i < count; ++i) {
             body.velocity[i] = body.velocity[i] - metWay * inward;
             target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
