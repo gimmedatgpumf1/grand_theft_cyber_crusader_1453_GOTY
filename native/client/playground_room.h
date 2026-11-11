@@ -61,8 +61,12 @@ public:
     // The arrows drawn on F are these numbers, and the figures on N are the same
     // numbers again, so what is on screen cannot disagree with what was solved.
     enum class ForceKind { Gravity = 0, Contact = 1, Pair = 2, Ball = 3, Drag = 4, KindCount = 5 };
-    static constexpr std::size_t kMaxForceSamples = 64;
-    static constexpr std::size_t kArrowsPerKind = 16;
+    // Room for a whole tick's worth of every kind at once: two bodies of four
+    // corners, the dot, the ball, and the contacts and pairs between them. The
+    // number is a bound on the array, not a cut: nothing is ever dropped quietly,
+    // because a ledger that loses entries is worse than no ledger at all.
+    static constexpr std::size_t kMaxForceSamples = 128;
+    static constexpr std::size_t kArrowsPerKind = 20;
     struct ForceSample {
         Vec3 at{};     // where it acts, in metres
         Vec3 force{};  // newtons
