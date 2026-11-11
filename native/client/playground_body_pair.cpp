@@ -491,6 +491,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     // What friction has to hold against, over the tick: the blow this
                     // contact carried, or the weight it is carrying.
                     double carried = 0.0;
+                    const bool dbg = std::getenv("GTC_ANS") != nullptr && self == 1;
+                    if (dbg)
+                        std::fprintf(stderr, "  AT i%zu gap %+.7f n (%.3f,%.3f) tr (%.5f,%.5f) close %+.5f press %d\n", i,
+                                     gap.gap, normal.x, normal.y, travel.x, travel.y, closing, int(pressing));
                     if (closing < 0.0) {
                         const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
                         const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
