@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -420,6 +422,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
+    if (std::getenv("GTC_FIN") && index == 1) {
+        std::fprintf(stderr, "  FIN carried", 0);
+        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " %d", int(carriedCorner[i]));
+        std::fprintf(stderr, " v");
+        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.velocity[i].x, body.velocity[i].y);
+        std::fprintf(stderr, " support %.4f\n", support);
+    }
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {
