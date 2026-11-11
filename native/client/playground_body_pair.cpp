@@ -432,7 +432,7 @@ void PlaygroundRoom::bodiesAnswer() {
                     if (!givesBody && !givesSolid) continue;
                     const bool dbg = std::getenv("GTC_ANS") && self == 1 && i == 0;
                     if (dbg) {
-                        std::fprintf(stderr, "      CHK them %zu count %zu y:", them, solid.count);
+                        std::fprintf(stderr, "      CHK them %zu count %zu surf %.6f held %d y:", them, solid.count, double(tick::kSurfaceY), int(bodyHeld(them)));
                         for (std::size_t q = 0; q < solid.count; ++q) std::fprintf(stderr, " %.10f", solid.position[q].y);
                         std::fprintf(stderr, "\n");
                     }
