@@ -347,6 +347,10 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     if (std::getenv("GTC_FRIC") && index == 1) {
         Vec3 mv{};
         for (std::size_t i = 0; i < count; ++i) mv = mv + body.velocity[i];
+        std::fprintf(stderr, "  V");
+        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.velocity[i].x, body.velocity[i].y);
+        std::fprintf(stderr, " P");
+        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.position[i].x, body.position[i].y);
         std::fprintf(stderr, "  FRIC body1 touching %d support %.4f mvx %.5f onPlane", int(touchingPlane), support,
                      mv.x / double(count));
         for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " %d(%.6f)", int(onPlane[i]), body.position[i].y);
