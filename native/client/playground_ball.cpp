@@ -185,41 +185,16 @@ OutlineGap outlineGap(Vec3 point, const Vec3* previous, const Vec3* current, std
     return result;
 }
 
-bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double radius,
-                    OutlineHit& hit) {
-    const OutlineGap atStart = outlineGap(from, corners, corners, count, 1.0);
-    hit.resting = atStart.gap <= radius + kTouch;
-    // On the surface already. That is a contact for the whole tick however the
-    // ball spends it, and a ball rolling down a face spends every tick of it
-    // touching: there is no meeting to find, and looking for one found nothing at
-    // all -- so the surface was never asked about friction, and the ball ran down
-    // the face with its seam standing still.
-    if (hit.resting) {
-        hit.along = 0.0;
-        hit.normal = atStart.normal;
-        hit.contact = from - atStart.normal * radius;
-        hit.depth = std::max(0.0, radius - atStart.gap);
-        return true;
-    }
-    if (atStart.gap <= radius - kSkin) {
-        // Already through the outline: there is nothing to interpolate, the answer
-        // is where the ball is now and how far through it is.
-        hit.along = 0.0;
-        hit.normal = atStart.normal;
-        hit.contact = from - atStart.normal * radius;
-        hit.depth = radius - atStart.gap;
-        return true;
-    }
-    // Not through it. When the ball reaches the outline is a question that can be
-    // answered outright: the circle's surface meets an edge where the face's line
-    // comes to one radius of the ball's middle, and meets a corner where the ball's
-    // middle comes to one radius of that corner. Both are solved for, and the
-    // earliest of them is the meeting. Nothing is sampled, so no speed is too fast
-    // to see: a ball crossing the whole room in a tick meets whatever lies across
-    // its path, at the instant it crosses it.
+// The first fraction of the travel at which the ball's middle comes within
+// `reach` of the outline, or 2 if it never does. A face is met where its line
+// comes that close; a corner where the middle comes that close to the corner.
+// Both are solved outright. Nothing is sampled, so no speed is too fast to see:
+// a ball crossing the room in a tick meets whatever lies across its path.
+double firstTouch(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double reach) {
     Vec3 middle{};
     for (std::size_t i = 0; i < count; ++i) middle = middle + corners[i];
     middle = middle * (1.0 / static_cast<double>(count));
+    const double square = dot(travel, travel);
     double first = 2.0;
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 a = corners[i];
@@ -229,30 +204,47 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
         if (!(sideLength > 1e-18)) continue;
         Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
         if (dot(middle - a, outward) > 0.0) outward = outward * -1.0;
-        // The face itself: where its line is one radius from the ball's middle.
         const double approach = dot(outward, travel);
         if (approach < 0.0) {
-            const double t = (radius - dot(outward, from - a)) / approach;
-            if (t >= 0.0 && t < first) {
-                const Vec3 at = from + travel * t;
-                const double along = dot(at - a, side) / (sideLength * sideLength);
-                // Past either end of the face, that end is what the ball meets, and
-                // the corners below are where that is worked out.
-                if (along >= 0.0 && along <= 1.0) first = t;
-            }
+            const double t = (reach - dot(outward, from - a)) / approach;
+            // Past either end of the face, that end is what the ball meets, and
+            // the corners below are where that is worked out.
+            if (t >= 0.0 && t < first &&
+                dot(from + travel * t - a, side) >= 0.0 && dot(from + travel * t - a, side) <= sideLength * sideLength)
+                first = t;
         }
-        // And either end of it: a corner of the outline, met by the ball's surface.
+        if (!(square > 0.0)) continue;
         for (const Vec3 corner : {a, b}) {
             const Vec3 away = from - corner;
-            const double square = dot(travel, travel);
             const double half = dot(away, travel);
-            const double clear = dot(away, away) - radius * radius;
-            const double disc = half * half - square * clear;
-            if (!(square > 0.0) || disc < 0.0) continue;
+            const double disc = half * half - square * (dot(away, away) - reach * reach);
+            if (disc < 0.0) continue;
             const double t = (-half - std::sqrt(disc)) / square;
             if (t >= 0.0 && t < first) first = t;
         }
     }
+    return first;
+}
+
+bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double radius,
+                    OutlineHit& hit) {
+    const OutlineGap atStart = outlineGap(from, corners, corners, count, 1.0);
+    hit.resting = atStart.gap <= radius + kTouch;
+    hit.normal = atStart.normal;
+    hit.contact = from - atStart.normal * radius;
+    hit.depth = std::max(0.0, radius - atStart.gap);
+    if (hit.resting) {
+        // On the surface already: a contact for the whole tick, and the ball rolls
+        // along it. What the rest of the tick still has to be swept for is going
+        // deeper -- rounding the end of a face puts the ball inside the face it is
+        // beside -- and a ball that only looked at where it started ended the tick
+        // millimetres in. A skin is the margin, so a ball that is simply on the
+        // surface spends its travel and one that is being pressed in is stopped.
+        hit.along = hit.depth > kSkin ? 0.0 : firstTouch(from, travel, corners, count,
+                                                        std::min(radius, atStart.gap) - kTouch);
+        return true;
+    }
+    const double first = firstTouch(from, travel, corners, count, radius);
     if (first > 1.0) return false;
     // Which way the surface faces where the ball meets it. A corner is answered by
     // the line from the corner, not by either face that ends there.
