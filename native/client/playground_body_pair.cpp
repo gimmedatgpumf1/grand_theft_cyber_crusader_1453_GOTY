@@ -413,56 +413,61 @@ void PlaygroundRoom::bodiesAnswer() {
                         held.supportHigh = std::max(held.supportHigh, body.position[i].x);
                         held.supportFrozen = under.frozen;
                     }
-                    // A body on the plane cannot be driven down into it, and a body
-                    // the mouse is holding cannot move at all. Both are what the dot's
-                    // own blow is held to.
-                    const Vec3 bodyAnswer = answerFor(self, normal);
-                    const Vec3 solidAnswer = answerFor(them, normal * -1.0);
-                    // Two corners, equal mass: the contact takes the speed the two of
-                    // them are closing at and gives none of it back, and each point
-                    // takes its half. Nothing is shared out over the rest of either
-                    // body here -- the fixed distances do that, which is the whole of
-                    // the coupling: a point pushed up pulls its neighbours with it and
-                    // the body turns about that point. Handing the body its half as a
-                    // rigid whole would put the support under its middle, and a body
-                    // on the point of another is not supported under its middle, it
-                    // tips. Every point that is touching is answered, so a body lying
-                    // across another is held by the points it actually rests on and
-                    // not by the worst of them.
-                    // What that piece of the outline is doing, and what the two points
-                    // are closing at together.
+                    // The contact is a place on two solids, and a solid struck at a
+                    // place is struck as a solid. So the answer is the ball's answer, to
+                    // the letter: what a side gives at the contact is one over its mass
+                    // plus the lever over its moment (bodyShareAt), and what it is
+                    // handed is a rigid turn about its own middle (giveBodyTurn).
+                    //
+                    // Giving the blow to the one corner instead -- "two corners, equal
+                    // mass, half each" -- and letting the fixed distances carry it is
+                    // not the same thing at all. The distances then turn one point's kick
+                    // into a shove of the whole body, so a corner that friction has just
+                    // pinned still walks: the triangle balanced on one corner on the cube
+                    // crept half a metre sideways with nothing whatever pushing it.
+                    const Vec3 at = solid.position[struck.a] * (1.0 - struck.t) + solid.position[struck.b] * struck.t;
+                    const BodyInertia mine = bodyInertia(body);
+                    const BodyInertia theirs = bodyInertia(solid);
+                    // A side that cannot move gives nothing. A body standing on the
+                    // plane cannot be driven down into it, a body the mouse is holding
+                    // cannot go anywhere, and a sleeping body is a wall until something
+                    // wakes it. All three are the dot's own rule for a blow.
+                    const bool givesBody = length(answerFor(self, normal)) > 0.0;
+                    const bool givesSolid = length(answerFor(them, normal * -1.0)) > 0.0;
+                    if (!givesBody && !givesSolid) continue;
                     const Vec3 solidVelocity =
                         solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
                     const double closing = dot(body.velocity[i] - solidVelocity, normal);
+                    // What friction has to hold against, over the tick: the blow this
+                    // contact carried, or the weight it is carrying.
+                    double carried = 0.0;
                     if (closing < 0.0) {
-                        closingTotal = std::max(closingTotal, -closing);
-                        // What the contact is solved against is what each side is free
-                        // to give: a side that is standing on the floor cannot be driven
-                        // into it, so the whole of the answer falls on the side that can
-                        // move. Solving against both masses regardless would take half
-                        // the speed off a body whose support cannot move at all, and it
-                        // would sink into the thing holding it.
-                        const double give = dot(bodyAnswer, normal) * dot(bodyAnswer, normal) / tick::kMass +
-                                            dot(solidAnswer, normal) * dot(solidAnswer, normal) / tick::kMass;
-                        if (!(give > 1e-12)) continue;
-                        const double impulse = -closing / give;
-                        body.velocity[i] = body.velocity[i] + bodyAnswer * (impulse / tick::kMass);
-                        solid.velocity[struck.a] =
-                            solid.velocity[struck.a] + solidAnswer * (impulse * (1.0 - struck.t) / tick::kMass);
-                        solid.velocity[struck.b] =
-                            solid.velocity[struck.b] + solidAnswer * (impulse * struck.t / tick::kMass);
-                        body.touched = true;
-                        solid.touched = true;
-                        if (-closing > kRestSpeed) {
-                            body.frozen = false;
-                            solid.frozen = false;
+                        const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
+                        const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
+                        // The two sides pull the closing speed apart between them, so
+                        // the two shares add: the whole of the approach is answered
+                        // between them, and a side that cannot move simply contributes
+                        // nothing and takes nothing.
+                        const double give = shareMine + shareTheirs;
+                        if (give > 1e-12) {
+                            const double impulse = -closing / give;
+                            carried = impulse;
+                            closingTotal = std::max(closingTotal, -closing);
+                            if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
+                            if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
+                            body.touched = true;
+                            solid.touched = true;
+                            if (-closing > kRestSpeed) {
+                                body.frozen = false;
+                                solid.frozen = false;
+                            }
                         }
                     }
-                    // Friction at that contact, between those two points, and only
-                    // where something is pressing them together: the blow this contact
-                    // carried, or -- when it is only carrying weight -- that weight
-                    // over the tick. mu_s holds a slide it can carry and mu_k takes its
-                    // share of one it cannot, which is the floor's own rule.
+                    // Friction at that same place, and only where something is pressing
+                    // the two together: mu_s holds a slide it can carry and mu_k takes
+                    // its share of one it cannot, which is the floor's own rule. It is
+                    // answered as a solid too, at the same place and through the same
+                    // two functions, or it pins one corner of a body that is turning.
                     const Vec3 solidNow =
                         solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
                     const Vec3 relative = body.velocity[i] - solidNow;
@@ -470,16 +475,21 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double slide = dot(relative, tangent);
                     if (!(std::abs(slide) > 0.0)) continue;
                     const double pressed =
-                        std::max(std::max(0.0, -closing) * tick::kMass,
-                                 tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
+                        std::max(carried, tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
                     const double hold = body.staticFriction * pressed;
                     const double slip = body.kineticFriction * pressed;
-                    const double needed = std::abs(slide) * tick::kMass * 0.5;
+                    const double shareMineSlide = givesBody ? bodyShareAt(body, mine, at, tangent) : 0.0;
+                    const double shareTheirsSlide = givesSolid ? bodyShareAt(solid, theirs, at, tangent) : 0.0;
+                    const double giveSlide = shareMineSlide + shareTheirsSlide;
+                    if (!(giveSlide > 1e-12)) continue;
+                    // What it would take to stop the slide, and whether the grip can
+                    // carry it: if it can, the two do not move against each other at
+                    // all, and if it cannot, they rub at mu_k and lose that much.
+                    const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
-                    const Vec3 friction = (slide > 0.0 ? tangent * -1.0 : tangent) * (rubbed / tick::kMass);
-                    body.velocity[i] = body.velocity[i] + friction;
-                    solid.velocity[struck.a] = solid.velocity[struck.a] - friction * (1.0 - struck.t);
-                    solid.velocity[struck.b] = solid.velocity[struck.b] - friction * struck.t;
+                    const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
+                    if (givesBody) giveBodyTurn(self, mine, at, momentum);
+                    if (givesSolid) giveBodyTurn(them, theirs, at, momentum * -1.0);
                 }
             }
         }
