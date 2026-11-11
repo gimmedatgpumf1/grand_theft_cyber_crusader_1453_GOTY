@@ -373,6 +373,12 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             const double take = stopIt <= hold ? stopIt : slide;
             if (take > 0.0 && slip != 0.0)
                 giveBodyTurn(index, inertia, patch, sideways * (-std::copysign(take, slip)));
+            if (std::getenv("GTC_FRIC") && index == 1) {
+                Vec3 after{};
+                for (std::size_t i = 0; i < count; ++i) after = after + body.velocity[i];
+                std::fprintf(stderr, "    TAKE slip %.5f share %.4f stopIt %.5f hold %.5f take %.5f -> mvx %.5f\n", slip,
+                             share, stopIt, hold, take, after.x / double(count));
+            }
         }
     }
 
