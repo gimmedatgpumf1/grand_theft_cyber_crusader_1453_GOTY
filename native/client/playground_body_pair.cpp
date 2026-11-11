@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -453,6 +455,11 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
+                            if (std::getenv("GTC_ANS"))
+                                std::fprintf(stderr,
+                                             "  ANS at (%.4f,%.4f) n(%.2f,%.2f) closing %+.4f J %+.4f shareB %.4f givesS %d\n",
+                                             at.x, at.y, normal.x, normal.y, closing, impulse, shareMine,
+                                             givesSolid ? 1 : 0);
                             if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
                             if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
                             body.touched = true;
@@ -488,6 +495,9 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
+                    if (std::getenv("GTC_ANS"))
+                        std::fprintf(stderr, "  FRIC slide %+.5f needed %.5f hold %.5f rubbed %.5f\n", slide, needed,
+                                     hold, rubbed);
                     if (givesBody) giveBodyTurn(self, mine, at, momentum);
                     if (givesSolid) giveBodyTurn(them, theirs, at, momentum * -1.0);
                 }
