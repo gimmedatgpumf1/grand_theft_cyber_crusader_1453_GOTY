@@ -123,16 +123,25 @@ bool PlaygroundRoom::cornerCrossesSide(Vec3 from, Vec3 to, const Body& solid, co
         // face and is not arriving at it.
         const double start = s0.x * r0.y - s0.y * r0.x;
         const double inward = s0.x * (inside.y - a0.y) - s0.y * (inside.x - a0.x);
-        if (!(start * inward < 0.0)) continue;
-        if (!(std::abs(start) > 1e-9 * length0)) continue;
+        // Already on the body's side of the line: it is not arriving at this side,
+        // it is through it, and the corner-by-corner test before this one is what
+        // answers that. Exactly on the line -- a corner met a side at the very
+        // instant a tick began, which is what a shape coming down onto another one's
+        // corner does -- is outside it, and whether it is going in is the first
+        // thing to ask about it.
+        if (!(start * inward < 0.0) && !(std::abs(start) <= 1e-9 * length0)) continue;
         const double quadratic = z.x * w.y - z.y * w.x;
         const double linear = (s0.x * w.y - s0.y * w.x) + (z.x * r0.y - z.y * r0.x);
         const double constant = start;
+        // A corner sitting on the line and setting off towards the other body is
+        // through it at this very instant, and that is a meeting at time nought.
+        const double lowest = std::abs(start) <= 1e-9 * length0 && linear * inward > 0.0 ? 0.0 : 1e-300;
         double found = 2.0;
+        if (lowest == 0.0) found = 0.0;
         if (std::abs(quadratic) <= 1e-18) {
             if (std::abs(linear) > 1e-18) {
                 const double one = -constant / linear;
-                if (one > 0.0 && one <= 1.0) found = one;
+                if (one >= lowest && one <= 1.0 && one < found) found = one;
             }
         } else {
             const double disc = linear * linear - 4.0 * quadratic * constant;
@@ -141,7 +150,7 @@ bool PlaygroundRoom::cornerCrossesSide(Vec3 from, Vec3 to, const Body& solid, co
             if (disc > 0.0) {
                 const double root = std::sqrt(disc);
                 for (const double each : {(-linear - root) / (2.0 * quadratic), (-linear + root) / (2.0 * quadratic)})
-                    if (each > 0.0 && each <= 1.0 && each < found) found = each;
+                    if (each >= lowest && each <= 1.0 && each < found) found = each;
             }
         }
         if (!(found <= 1.0) || !(found < best)) continue;
@@ -219,8 +228,12 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, double
             const Vec3 travel = target[i] - body.position[i];
             const OutlineGap gap =
                 outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-            if (!(gap.gap <= kSkin)) continue;
-            if (!(dot(travel, gap.normal) < 0.0)) continue;
+            // A corner strictly inside is not arriving at a surface, it is through
+            // it, and there is no later instant that could be called the meeting:
+            // the body stops here. The sweep below is what makes sure a corner is
+            // never in that state to begin with; this is the last line of it.
+            const bool through = gap.gap < -kSkin;
+            if (!(through || (gap.gap <= kSkin && dot(travel, gap.normal) < 0.0))) continue;
             if (!(0.0 < first)) continue;
             first = 0.0;
             *wayOut = gap.normal;
@@ -233,8 +246,8 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, double
             const Vec3 travel = solidTarget[i] - solid.position[i];
             const OutlineGap gap =
                 outlineGap(solid.position[i], body.position.data(), body.position.data(), body.count, 1.0);
-            if (!(gap.gap <= kSkin)) continue;
-            if (!(dot(travel, gap.normal) < 0.0)) continue;
+            const bool through = gap.gap < -kSkin;
+            if (!(through || (gap.gap <= kSkin && dot(travel, gap.normal) < 0.0))) continue;
             if (!(0.0 < first)) continue;
             first = 0.0;
             *wayOut = gap.normal * -1.0;
