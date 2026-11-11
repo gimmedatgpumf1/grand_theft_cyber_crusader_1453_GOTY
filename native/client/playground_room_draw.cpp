@@ -71,7 +71,11 @@ std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, Pla
         arrow.kind = kind;
         arrow.slot = used[kind]++;
         arrow.from = sample.at;
-        arrow.to = sample.at + sample.force * (kArrowMetresPerNewton / newtons);
+        // The tip is the tail plus the force itself, scaled: the arrow's direction
+        // is the force's direction and its length is the force's amount times one
+        // number for the whole room, so 9.8 N is always the same arrow however many
+        // forces are on screen and two of them can be compared by eye.
+        arrow.to = sample.at + sample.force * kArrowMetresPerNewton;
         arrow.newtons = newtons;
         arrows.push_back(arrow);
     }
