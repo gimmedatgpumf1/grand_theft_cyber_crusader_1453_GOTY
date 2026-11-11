@@ -797,6 +797,7 @@ void PlaygroundRoom::advance(double seconds) {
         // The ledger belongs to one tick: every force written into it was applied
         // during that tick, and a stale arrow is worse than no arrow.
         clearForces();
+        recordStaticForces();
         if (!pointFrozen_) {
             tick();
         } else {
@@ -815,6 +816,43 @@ void PlaygroundRoom::advance(double seconds) {
         }
         freezeCheck();
         ++ticks;
+    }
+}
+
+void PlaygroundRoom::recordStaticForces() {
+    // A body that has come to rest is still pulled down by its own weight and still
+    // held up by what it is standing on. Its tick is what would have said so, and
+    // it has none -- so if the ledger were left to the ticks alone, every settled
+    // shape would be drawn as a shape with no forces on it at all, which is the one
+    // thing a body at rest is not.
+    //
+    // What holds it up is not invented: a body that is not accelerating has its
+    // contacts carrying exactly its weight, and the contacts are at the corners it
+    // is actually standing on -- the lowest ones. Which of them carries how much is
+    // not something a rigid body at rest decides (any distribution that sums to the
+    // weight leaves it still), so it is shared equally, and the two columns add up
+    // to nothing to the newton.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (!body.frozen || body.count == 0) continue;
+        double lowest = 1e30;
+        for (std::size_t i = 0; i < body.count; ++i) lowest = std::min(lowest, body.position[i].y);
+        std::size_t carrying = 0;
+        for (std::size_t i = 0; i < body.count; ++i)
+            if (body.position[i].y <= lowest + 1e-6) ++carrying;
+        if (carrying == 0) continue;
+        for (std::size_t i = 0; i < body.count; ++i) {
+            addForce(body.position[i], Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
+            if (body.position[i].y <= lowest + 1e-6)
+                addForce(body.position[i],
+                         Vec3{0.0, kMass * kGravity * static_cast<double>(body.count) / static_cast<double>(carrying), 0.0},
+                         ForceKind::Contact);
+        }
+    }
+    // The dot, asleep on something, is the same pair of forces at one point.
+    if (pointFrozen_) {
+        addForce(point_, Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
+        addForce(point_, Vec3{0.0, kMass * kGravity, 0.0}, ForceKind::Contact);
     }
 }
 

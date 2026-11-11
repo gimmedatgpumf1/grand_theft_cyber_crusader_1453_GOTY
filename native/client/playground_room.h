@@ -271,6 +271,12 @@ private:
         if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind};
     }
     void clearForces() { forceCount_ = 0; }
+    // What is still acting on the things that are no longer stepped. A body at
+    // rest is not ticked, and a body that is not ticked writes nothing -- but it
+    // is still being pulled down by its own weight and still held up by whatever
+    // it stands on. This is that pair, written from what holds it still: the
+    // weight at every corner, and the same weight back at the corners carrying it.
+    void recordStaticForces();
     // The arrows, and the numbers written beside them.
     void placeForceArrows();
     void appendForceLabels(const Camera& camera, NativeFrame& frame);
