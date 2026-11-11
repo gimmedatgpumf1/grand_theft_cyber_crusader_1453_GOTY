@@ -349,6 +349,7 @@ void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame)
     std::snprintf(number, sizeof(number), "E %.2f J   KE %.2f   PE %.2f", kinetic + potential, kinetic, potential);
     drawTextPixels(frame, 14, 12, number, colorHex("#e0effb"), kForceLabelHeight + 2);
     frame.ui = borrowed;
+    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] final labels %zu\n", forceLabels_.quads().size());
 }
 
 bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const RoomFreecam& freecam) {
