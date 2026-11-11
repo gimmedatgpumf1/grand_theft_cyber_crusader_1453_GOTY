@@ -238,8 +238,9 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
         // along it. What the rest of the tick still has to be swept for is going
         // deeper -- rounding the end of a face puts the ball inside the face it is
         // beside -- and a ball that only looked at where it started ended the tick
-        // millimetres in. A skin is the margin, so a ball that is simply on the
-        // surface spends its travel and one that is being pressed in is stopped.
+        // millimetres in. The margin is the rounding allowance itself, so a ball
+        // simply lying on a surface spends its travel and one being pressed into
+        // it is stopped where it touches it.
         hit.along = hit.depth > kSkin ? 0.0 : firstTouch(from, travel, corners, count,
                                                         std::min(radius, atStart.gap) - kTouch);
         return true;
