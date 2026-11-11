@@ -17,8 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -57,7 +55,8 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // ball and then pushed back out of it, and coming back to the same place every
     // tick is a shape perched on a ball for ever, never turning about it.
     Vec3 metWay{0, 1, 0};
-    const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody);
+    Vec3 metAt{};
+    const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody, &metAt);
     const double ballReach = bodyBallReach(index, target.data());
     // And the floor, swept the same way the other two are: the first fraction of the
     // step at which any of this body's corners arrives at it.
@@ -104,20 +103,40 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
-        if (metPlane || bodyReach <= ballReach) {
-            // What is left of the step is spent along the piece of surface that was
-            // met, and not into it: a body that has met something still has the rest
-            // of its tick to travel, and along the surface is the only travel the
-            // surface allows. Walking the whole of it as it was is carrying the
-            // body into the other one by however fast it happened to be going.
-            for (std::size_t i = 0; i < count; ++i) {
-                Vec3 left = body.velocity[i] * (kTick * (1.0 - reach));
-                left = left - metWay * std::min(0.0, dot(left, metWay));
-                target[i] = body.position[i] + left;
-            }
+        // What is left of the step is spent along the surface that was met, and not
+        // into it -- and it is spent as *one* motion, because the body is one object.
+        //
+        // Taking the inward part of each corner's own travel away, corner by corner,
+        // is not one motion: a body that is turning has a different travel at every
+        // corner, so trimming each corner separately bends the shape. The fixed
+        // distances then have to pull it straight, and that pull moves the whole body
+        // sideways -- which is a body sliding along a surface with nothing pushing it.
+        // That is what the triangle balanced on one corner on the cube did: the way
+        // out it was handed was the cube's own top corner's diagonal, a step of equal
+        // parts up and across, and every tick it was trimmed along that and pulled
+        // straight again, so it climbed and walked off the cube by a thousandth of a
+        // metre a tick that only ever added up.
+        //
+        // So the speed at the place they met is what the surface answers, and what it
+        // answers it with is taken off the whole body: every corner loses the same
+        // amount, the turn between them is untouched, and the body goes on turning
+        // about the point it is standing on -- which is what a body on a corner does.
+        Vec3 contactSpeed{};
+        if (metBody) {
+            const std::size_t hit = nearestCorner(body, metAt);
+            contactSpeed = body.velocity[hit];
         } else {
-            for (std::size_t i = 0; i < count; ++i)
-                target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
+            // The floor holds the corner that reached it; without a place to read the
+            // speed at, the lowest corner is the one it is holding.
+            std::size_t lowest = 0;
+            for (std::size_t i = 1; i < count; ++i)
+                if (body.position[i].y < body.position[lowest].y) lowest = i;
+            contactSpeed = body.velocity[lowest];
+        }
+        const double inward = std::min(0.0, dot(contactSpeed, metWay));
+        for (std::size_t i = 0; i < count; ++i) {
+            body.velocity[i] = body.velocity[i] - metWay * inward;
+            target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
         }
     }
     for (std::size_t i = 0; i < count; ++i) {
@@ -176,7 +195,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // the shape turning, and that is motion.
     std::array<Vec3, kMaxCorners> bodyLift{};
 
-    const Vec3 beforeSolve = body.position[0];
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
         double worstDistance = 0.0;
         // Both ways round every pass. Pushing the distances back in one fixed
@@ -241,10 +259,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
     }
-    if (std::getenv("GTC_DRIFT") && index == 1)
-        std::fprintf(stderr, "  DRIFT-in c0 (%.5f,%.5f) beforeSolve (%.5f,%.5f) -> correction (%.6f,%.6f)\n",
-                     body.position[0].x, body.position[0].y, beforeSolve.x, beforeSolve.y,
-                     body.position[0].x - beforeSolve.x, body.position[0].y - beforeSolve.y);
     // Whatever the loop left, no corner may be under the floor when the tick ends:
     // the floor is not a suggestion. Correcting it the way the floor's own pass does
     // -- rigidly, at the corner that is through it -- keeps the shape.
@@ -254,14 +268,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             onPlane[i] = true;
             held[i] = true;
         }
-    }
-    if (std::getenv("GTC_DRIFT") && index == 1) {
-        const Vec3 step = (body.position[0] - body.previous[0]) * (1.0 / kTick);
-        std::fprintf(stderr,
-                     "  DRIFT c0 end (%.5f,%.5f) stepVel (%.5f,%.5f) storedVel (%.5f,%.5f) bodyLift (%.6f,%.6f) lift "
-                     "(%.6f,%.6f)\n",
-                     body.position[0].x, body.position[0].y, step.x, step.y, body.velocity[0].x, body.velocity[0].y,
-                     bodyLift[0].x, bodyLift[0].y, lift[0].x, lift[0].y);
     }
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips

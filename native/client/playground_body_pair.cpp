@@ -85,7 +85,8 @@ bool arrivedAt(double along, double gap, Vec3 travel, Vec3 outward) {
 // Both are swept -- this body's corners through the other body's outline, and the
 // other body's corners through this one's -- each against the travel between them,
 // so a face landing on a corner is caught in the tick it lands and not a tick late.
-double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith) const {
+double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith,
+                                  Vec3* metAt) const {
     const Body& body = bodies_[index];
     *metWith = kBodyCount;
     if (body.count == 0) return 1.0;
@@ -124,6 +125,9 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             first = along;
             *wayOut = normal;
             *metWith = other;
+            // The place they met: a corner is a point with no radius, so it is the
+            // corner itself, or where its step reached the face.
+            *metAt = along <= 1.0 ? body.position[i] + travel * along : body.position[i];
         }
         // And the other body's corners through this one's outline, which is the same
         // meeting: a face arriving at a corner is that corner arriving at the face.
@@ -145,6 +149,7 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             if (!arrivedAt(along, gap.gap, travel, normal) || !(along < first)) continue;
             first = along;
             *metWith = other;
+            *metAt = solid.position[i];
             // The normal of a corner this body's own outline was met by points out
             // of this body's outline, which is the way the corner is pushed and the
             // opposite of the way this body is: it gives way along it.

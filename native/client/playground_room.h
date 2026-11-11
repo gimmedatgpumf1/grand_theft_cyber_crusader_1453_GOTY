@@ -180,7 +180,8 @@ private:
     // sides at once once every body has been stepped. The same geometry and the
     // same answer for every pair -- nothing in there knows which shapes it is
     // looking at, and a corner is a point with no size of its own.
-    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith) const;
+    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith,
+                       Vec3* metAt) const;
     double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     // Moves a body as one rigid piece so that the piece of it at `at` travels by
     // `displacement`: that is what a correction at a contact is. It is here because
