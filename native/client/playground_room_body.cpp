@@ -56,85 +56,85 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // tick is a shape perched on a ball for ever, never turning about it.
     Vec3 metWay{0, 1, 0};
     Vec3 metAt{};
-    const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody, &metAt);
-    const double ballReach = bodyBallReach(index, target.data());
-    // And the floor, swept the same way the other two are: the first fraction of the
-    // step at which any of this body's corners arrives at it.
+    // The step is walked as far as the hitscan allows, over and over, until the tick
+    // is spent. Each pass sweeps what is left of the step against the other body, the
+    // ball and the floor, and walks the body to the first place anything is met; what
+    // is left after that is spent along the surface, and that leftover is swept in
+    // its turn. A pass that finds nothing spends all of what is left.
     //
-    // This is the whole of what a landing is. Clamping each corner after the step has
-    // been taken is not a sweep: it lets the corners that reached the floor stop while
-    // the rest of the body carries on through the tick, so the shape is squashed flat
-    // by however far it fell in that one tick -- a metre and a half a second squashes a
-    // cube by a quarter of a metre -- and then the fixed distances have to put it back,
-    // and the only way they can is to shove the corners sideways. A cube landing flat
-    // on the floor then slides seven centimetres for no reason at all.
+    // A corner can therefore never cross a line, because no motion of this body is
+    // ever taken without the segment it takes being tested: what the sweep cuts is
+    // the tick, not a step that has already been carried out. Walking the whole step
+    // first and taking the inward part out of it afterwards is a different thing --
+    // the leftover is then spent along a surface it was never swept against, and a
+    // shape that is turned slides one of its corners through the face it is leaning
+    // on, which is a corner inside another body and has to be pushed back out.
     //
-    // A corner already on the floor is not arriving at it: it is being carried by it,
-    // and gravity would otherwise find an arrival at the first instant of every tick
-    // and hold the body still for ever. Only a corner that starts clear of the floor
-    // and ends below it has arrived.
-    double planeReach = 1.0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (body.position[i].y <= kSurfaceY + kContactTolerance) continue;
-        if (!(target[i].y < kSurfaceY)) continue;
-        const double along = (kSurfaceY - body.position[i].y) / (target[i].y - body.position[i].y);
-        if (along < planeReach) planeReach = along;
-    }
-    const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
-    const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
-    // The floor's way out is straight up, whatever the other sweeps found: it is the
-    // floor that cut this step short.
-    if (metPlane) metWay = Vec3{0, 1, 0};
-    // What each corner was trying to do this tick, before anything cut it short.
-    //
-    // A body stopped by another body must not have its speed read back off the
-    // shortened step. Reading it back hands every corner the same fraction of its
-    // own travel, which is a support under the body's middle -- and a body standing
-    // on the point of another is not held under its middle, that is the whole of why
-    // it tips. The blow at such a contact is answered where the two bodies met, by
-    // bodiesAnswer, from the approach both of them arrived with; the step is only
-    // where they ended up.
+    // What is left to spend is a fraction of the tick, not a speed: each pass takes
+    // the part of the tick it used off, so a body that is leaning on a surface spends
+    // the rest of its tick sliding along it and not falling through it.
     std::array<Vec3, kMaxCorners> attempted{};
     for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
-    // A body that met another body keeps the speed it arrived with, because the blow
-    // is answered at the point they met by bodiesAnswer. The ball answers its own
-    // contact. The floor is answered at the corners it holds, below.
-    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
-    if (reach < 1.0) {
+    bool metBodyAny = false;
+    double spend = 1.0;
+    for (int pass = 0; pass < kSlidePasses && spend > 1e-9; ++pass) {
+        for (std::size_t i = 0; i < count; ++i) target[i] = body.position[i] + body.velocity[i] * (kTick * spend);
+        const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody, &metAt);
+        const double ballReach = bodyBallReach(index, target.data());
+        // And the floor, swept the same way the other two are: the first fraction of
+        // the step at which any of this body's corners arrives at it.
+        //
+        // This is the whole of what a landing is. Clamping each corner after the step
+        // has been taken is not a sweep: it lets the corners that reached the floor
+        // stop while the rest of the body carries on through the tick, so the shape is
+        // squashed flat by however far it fell in that one tick -- a metre and a half a
+        // second squashes a cube by a quarter of a metre -- and then the fixed
+        // distances have to put it back, and the only way they can is to shove the
+        // corners sideways. A cube landing flat on the floor then slides seven
+        // centimetres for no reason at all.
+        //
+        // A corner already on the floor is not arriving at it: it is being carried by
+        // it, and gravity would otherwise find an arrival at the first instant of every
+        // tick and hold the body still for ever. Only a corner that starts clear of the
+        // floor and ends below it has arrived.
+        double planeReach = 1.0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (body.position[i].y <= kSurfaceY + kContactTolerance) continue;
+            if (!(target[i].y < kSurfaceY)) continue;
+            const double along = (kSurfaceY - body.position[i].y) / (target[i].y - body.position[i].y);
+            if (along < planeReach) planeReach = along;
+        }
+        const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
+        const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
+        // The floor's way out is straight up, whatever the other sweeps found: it is
+        // the floor that cut this step short.
+        if (metPlane) metWay = Vec3{0, 1, 0};
+        // A body that met another body keeps the speed it arrived with, because the
+        // blow is answered at the place they met by bodiesAnswer, from the approach
+        // both of them arrived with; the step is only where they ended up.
+        if (bodyReach < 1.0 && !metPlane && bodyReach <= ballReach) metBodyAny = true;
         for (std::size_t i = 0; i < count; ++i)
-            body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
-        // What is left of the step is spent along the surface that was met, and not
-        // into it -- and it is spent as *one* motion, because the body is one object.
-        //
-        // Taking the inward part of each corner's own travel away, corner by corner,
-        // is not one motion: a body that is turning has a different travel at every
-        // corner, so trimming each corner separately bends the shape. The fixed
-        // distances then have to pull it straight, and that pull moves the whole body
-        // sideways -- which is a body sliding along a surface with nothing pushing it.
-        // That is what the triangle balanced on one corner on the cube did: the way
-        // out it was handed was the cube's own top corner's diagonal, a step of equal
-        // parts up and across, and every tick it was trimmed along that and pulled
-        // straight again, so it climbed and walked off the cube by a thousandth of a
-        // metre a tick that only ever added up.
-        //
-        // So the speed at the place they met is what the surface answers, and what it
+            body.position[i] = body.position[i] + (target[i] - body.position[i]) * reach;
+        spend = spend * (1.0 - reach);
+        if (!(reach < 1.0)) break;
+        // The speed at the place they met is what the surface answers, and what it
         // answers it with is taken off the whole body: every corner loses the same
         // amount, the turn between them is untouched, and the body goes on turning
         // about the point it is standing on -- which is what a body on a corner does.
-        // Which corner is the one that arrived: the corner nearest the place they met
-        // when another body cut the step, and the lowest corner when it was the floor.
+        // Taking the inward part of each corner's own travel away, corner by corner,
+        // bends a body that is turning, because it trims a different amount at every
+        // corner; the fixed distances then pull that straight, and the pull walks the
+        // body along the surface with nothing pushing it.
         std::size_t arrived = 0;
-        if (metBody) {
+        if (metBodyAny && !metPlane) {
             arrived = nearestCorner(body, metAt);
         } else {
             for (std::size_t i = 1; i < count; ++i)
                 if (body.position[i].y < body.position[arrived].y) arrived = i;
         }
         const double inward = std::min(0.0, dot(body.velocity[arrived], metWay));
-        for (std::size_t i = 0; i < count; ++i) {
-            body.velocity[i] = body.velocity[i] - metWay * inward;
-            target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
-        }
+        if (!(inward < 0.0)) break;
+        for (std::size_t i = 0; i < count; ++i) body.velocity[i] = body.velocity[i] - metWay * inward;
     }
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 from = body.position[i];
@@ -254,6 +254,12 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // a whole tick -- which is what the next tick then spends its passes undoing.
         double under = 0.0;
         for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
+        // A corner the corrections carried across a face is put back on the line, and
+        // the distances are asked again about where that left the body: a corner on
+        // the far side of a face is a corner inside another body, and the sweep cannot
+        // speak for a motion that was not a speed.
+        const bool crossed = undoCrossings(index);
+        if (crossed) deepest = std::max(deepest, kDistanceTolerance * 2.0);
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
     }
     // Whatever the loop left, no corner may be under the floor when the tick ends:
@@ -295,7 +301,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // A corner that another body stopped keeps what it was trying to do. The
         // contact is answered from the approach the body arrived with, at the place
         // the two of them met, and not by trimming the travel afterwards.
-        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
+        Vec3 velocity = metBodyAny ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
         // Take the corrections back out: what is left is what the corner was
         // actually doing. The floor's is upwards; the ball's is outwards.
         velocity = velocity - lift[i] * (1.0 / kTick);

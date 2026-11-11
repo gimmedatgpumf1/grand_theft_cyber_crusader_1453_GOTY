@@ -21,6 +21,11 @@ inline constexpr double kSurfaceY = 0.0;  // the plane, y = 0
 // not for a chosen number of passes. The bound is only a guard against a
 // numerical corner case looping forever.
 inline constexpr int kMaxDistancePasses = 256;
+// How many times the tick's step is re-swept along a surface it has met. Each pass
+// spends the part of the tick up to the first place anything is met, so a body that
+// is leaning on something keeps sliding along it for the rest of the tick instead
+// of stopping dead at the first contact.
+inline constexpr int kSlidePasses = 8;
 inline constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is
 // within a nanometre of it: the clamp puts it at exactly the plane's height.
