@@ -409,12 +409,11 @@ void PlaygroundRoom::tickBall() {
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, otherwise a body
-        // A surface the ball was already on has its answer given below, and that
-        // answer changes the ball's speed -- but where the ball would have gone
-        // this tick was worked out before the answer was. Spending it anyway sent
-        // the ball the whole gravity step into the surface it had just been
-        // answered on, a steady two and a half centimetres through a corner every
-        // tick. So the walk starts the same instant again with the answer in hand.
+        // A surface the ball is already on has its answer given below, and that
+        // answer changes the ball's speed -- but where the ball would have gone this
+        // tick was worked out before the answer was. Spending it anyway sent the
+        // ball a whole gravity step into the surface, 24 mm through the triangle's
+        // tip every tick. So the walk starts the same instant again, answer in hand.
         bool restart = false;
         // The floor is the one thing nothing gets below, so it is met whenever the
         // ball is at it or on its way through it -- and if the ball is somehow
@@ -442,12 +441,10 @@ void PlaygroundRoom::tickBall() {
             // tick, answered here and then travelled along, not a meeting to stop
             // at. Stopping there eats every tick's travel and the ball sits
             // gathering speed and spinning instead of rolling.
-            // A ball within a skin of the face is against it, not through it: the
-            // arithmetic that puts a resting ball at exactly one radius from a face
-            // lands it a nanometre either side, and reading "a nanometre in" as
-            // inside stopped the walk at fraction zero every tick -- a ball under a
-            // shape was pinned where it was, and gathered speed and turn on the spot
-            // for as long as it stayed there.
+            // A ball within a skin of the face is against it, not through it. The
+            // arithmetic that rests a ball at exactly one radius lands it a
+            // nanometre either side, and reading that as inside pinned a ball under
+            // a shape where it was, gathering turn on the spot.
             if (hit.depth <= kSkin && hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
