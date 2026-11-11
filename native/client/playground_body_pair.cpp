@@ -293,6 +293,12 @@ bool PlaygroundRoom::undoCrossings(std::size_t index) {
             const Vec3 from = body.previous[i];
             const Vec3 to = body.position[i];
             if (length(to - from) <= 0.0) continue;
+            // Only a corner that has actually ended up inside has crossed. A corner
+            // resting on a face touches it at the very first instant of every step,
+            // and answering that as a crossing stops the body dead every tick -- a
+            // cube that can never tip off its corner and a ball that is never rolled.
+            const OutlineGap ended = outlineGap(to, solid.position.data(), solid.position.data(), solid.count, 1.0);
+            if (!(ended.gap < -kSkin)) continue;
             double along = 2.0;
             Vec3 normal{0, 1, 0};
             if (!segmentHitsPolygon(from, to, solid.position.data(), solid.count, along, normal)) continue;
@@ -313,8 +319,11 @@ bool PlaygroundRoom::undoCrossings(std::size_t index) {
             const Vec3 to = body.position[i];
             if (length(to - from) <= 0.0) continue;
             // A corner that began the tick already inside the ball is not crossing
-            // into it: it is the ball's own contact, answered above.
+            // into it: it is the ball's own contact, answered above. And a corner that
+            // is merely against the ball has not crossed it either -- only one that has
+            // ended up inside it.
             if (length(from - ball_.position) <= ball_.radius) continue;
+            if (!(length(to - ball_.position) < ball_.radius - kSkin)) continue;
             double along = 2.0;
             Vec3 normal{0, 1, 0};
             if (!segmentHitsCircle(from, to, ball_.position, ball_.radius, along, normal)) continue;
