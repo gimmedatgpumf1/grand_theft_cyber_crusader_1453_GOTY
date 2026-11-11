@@ -221,42 +221,43 @@ void PlaygroundRoom::pushBodyAtPoint(std::size_t index, Vec3 at, Vec3 displaceme
 double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift) {
     Body& body = bodies_[index];
     if (body.count == 0) return 0.0;
-    // A pair of bodies is put apart by the shortest way there is, and as one piece.
-    //
-    // Nudging each corner that is inside the other one out along its own nearest side
-    // is not that. A body resting on the point of another has a corner inside it by a
-    // hair, and the nearest side of that corner is a side that sends the whole body
-    // through the one it is standing on; a body landing on another is deep inside it
-    // for a tick and gets thrown out at a slant. What separates two outlines is the
-    // least of the overlaps along their own sides -- the pair's own hitscan, run
-    // backwards -- and it is a translation, so it cannot bend either body.
-    //
-    // Half each, because the other body is put out of this one by its own tick, the
-    // same way. The whole of it when what is under it cannot move at all: a frozen
-    // body, a body the mouse is holding, or a body with a corner on the floor, which
-    // the floor will not let down.
+    // A correction is a rigid motion of the whole body at the place it is needed, in
+    // the same terms an impulse is given it by -- one mass, one moment, one lever:
+    // the piece of the body at the contact moves by the amount it is out by, and the
+    // rest of it comes along as the fixed distances require. Pushing corners about
+    // one at a time was pushing the ends of a long base two different distances, and
+    // a body corrected that way creeps along the surface it is standing on.
     double deepest = 0.0;
+    const auto push = [&](Vec3 at, Vec3 displacement) {
+        if (!(length(displacement) > 0.0)) return;
+        pushBodyAtPoint(index, at, displacement, lift);
+        deepest = std::max(deepest, length(displacement));
+    };
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         if (other == index) continue;
         const Body& solid = bodies_[other];
         if (solid.count == 0) continue;
-        Vec3 way{};
-        double amount = 0.0;
-        if (!leastOverlap(body.position.data(), body.count, solid.position.data(), solid.count, way, amount)) continue;
-        if (!(amount > 0.0)) continue;
-        bool underHeld = solid.frozen || bodyHeld(other);
-        for (std::size_t i = 0; i < solid.count && !underHeld; ++i)
-            underHeld = solid.position[i].y <= tick::kSurfaceY + tick::kContactTolerance;
-        if (std::getenv("GTC_SEP"))
-            std::fprintf(stderr, "    SEP index %zu vs %zu way (%.3f,%.3f) amount %.6f held %d\n", index, other, way.x,
-                         way.y, amount, int(underHeld));
-        const double share = underHeld ? 1.0 : 0.5;
-        const Vec3 move = way * (amount * share);
+        // This body's corners, out of the other body's outline, along the closest way
+        // out of it -- pushOutOfPolygon, the function the dot is put back out by.
+        //
+        // Only the body whose own corner is through the other one is moved here, and
+        // only by its share of the overlap, because the other body is doing exactly
+        // the same thing from its own side in its own tick. Correcting the overlap
+        // from both sides at once -- this body out of the other's outline and, in the
+        // same breath, this body away from the other's corner that is through it --
+        // moves the same overlap twice and in opposite directions: a triangle with a
+        // corner resting a hair inside a cube pushed the cube down out of its way
+        // every tick, the floor pushed the cube straight back up, and the body was
+        // left with a velocity that was nothing but the two corrections cancelling.
+        // That is a body creeping along another with nothing pushing it. Half each,
+        // which is what the fixed distances already do between two equal masses; the
+        // whole of it when what is under it cannot move at all.
+        const double share = (solid.frozen || bodyHeld(other)) ? 1.0 : 0.5;
         for (std::size_t i = 0; i < body.count; ++i) {
-            body.position[i] = body.position[i] + move;
-            if (lift != nullptr) (*lift)[i] = (*lift)[i] + move;
+            Vec3 escaped = body.position[i];
+            if (!pushOutOfPolygon(escaped, solid.position.data(), solid.count)) continue;
+            push(body.position[i], (escaped - body.position[i]) * share);
         }
-        deepest = std::max(deepest, amount);
     }
     return deepest;
 }
