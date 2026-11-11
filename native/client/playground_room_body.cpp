@@ -97,83 +97,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
-    // What each corner was trying to do before the sweep shortened anything. A
-    // corner another body stopped keeps this: the blow between two bodies is
-    // answered in bodiesAnswer, from the approach both of them arrived with, and
-    // reading the speed back off the shortened step would hand every corner the
-    // same fraction of its own travel -- a support under the body's middle, when
-    // what the contact is is a support at the point they met.
-    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
+    // The step is walked as far as the sweep allows, and no further.
+    //
+    // This is the whole of what the sweep is for. It says where the step stops and
+    // it does nothing else: what the surface then does to the body is a contact, and
+    // every contact in this room is answered in exactly one place -- the floor at the
+    // corners it is holding, below, another body in bodiesAnswer, the ball in the
+    // ball's own walk. Letting the sweep answer a meeting as well was the same
+    // meeting answered twice in one tick, and a blow given twice is a blow given away:
+    // the floor pressed a body and the sweep pressed it again, and what was left
+    // behind was a body spinning with nothing having hit it.
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
-        // What is left of the step is spent along the surface that was met, and not
-        // into it -- and it is spent as *one* motion, because the body is one object.
-        //
-        // Taking the inward part of each corner's own travel away, corner by corner,
-        // is not one motion: a body that is turning has a different travel at every
-        // corner, so trimming each corner separately bends the shape. The fixed
-        // distances then have to pull it straight, and that pull moves the whole body
-        // sideways -- which is a body sliding along a surface with nothing pushing it.
-        // That is what the triangle balanced on one corner on the cube did: the way
-        // out it was handed was the cube's own top corner's diagonal, a step of equal
-        // parts up and across, and every tick it was trimmed along that and pulled
-        // straight again, so it climbed and walked off the cube by a thousandth of a
-        // metre a tick that only ever added up.
-        //
-        // So the speed at the place they met is what the surface answers, and what it
-        // answers it with is taken off the whole body: every corner loses the same
-        // amount, the turn between them is untouched, and the body goes on turning
-        // about the point it is standing on -- which is what a body on a corner does.
-        // Which corner is the one that arrived: the corner nearest the place they met
-        // when another body cut the step, and the lowest corner when it was the floor.
-        std::size_t arrived = 0;
-        if (metBody) {
-            arrived = nearestCorner(body, metAt);
-        } else {
-            for (std::size_t i = 1; i < count; ++i)
-                if (body.position[i].y < body.position[arrived].y) arrived = i;
-        }
-        // And the speed is answered as an impulse at the place they met, not as a
-        // speed subtracted from every corner.
-        //
-        // Subtracting the same amount from every corner is a push through the
-        // middle of the body and nothing else: it can stop it, but it cannot turn
-        // it, and a body stopped by a surface it is standing on one corner of is
-        // turned by that surface -- the surface presses at the corner, the mass is
-        // at the middle, and the arm between them is the turn. That is the same
-        // impulse the ball's strike gives a body and the same one a body gives
-        // another in bodiesAnswer: what the surface presses with is what the
-        // meeting point's own approach makes necessary, divided by the reciprocal
-        // mass there, and the body answers it as a body.
-        const BodyInertia inertia = bodyInertia(body);
-        // Where the floor presses. A face landing flat is pressed along the whole of
-        // the face, not at whichever of its two ends the loop happened to find first:
-        // answering the ends one at a time is a body tipping on a corner it did not
-        // land on, and a cube dropped flat then walks sideways a little more every
-        // tick. The floor's press is at the middle of the corners that arrived
-        // together; a body that lands on one corner has one, and is tipped by it.
-        Vec3 patch = metBody ? metAt : body.position[arrived];
-        double press = 1.0;
-        if (!metBody) {
-            patch = Vec3{};
-            press = 0.0;
-            for (std::size_t i = 0; i < count; ++i) {
-                if (body.position[i].y > body.position[arrived].y + 1e-6) continue;
-                patch += body.position[i];
-                press += 1.0;
-            }
-            patch = press > 0.0 ? patch / press : body.position[arrived];
-            press = 1.0;
-        }
-        const Vec3 at = patch;
-        const double approach = dot(body.velocity[arrived], metWay);
-        const double share = bodyShareAt(body, inertia, at, metWay);
-        if (approach < 0.0 && share > 1e-12) {
-            giveBodyTurn(index, inertia, at, metWay * (-approach / share));
-            for (std::size_t i = 0; i < count; ++i)
-                target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
-        }
     }
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 from = body.position[i];
