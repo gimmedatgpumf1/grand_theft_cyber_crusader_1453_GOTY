@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -310,6 +312,10 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= std::copysign(slideSpeed, sideways);
         }
     }
+    if (std::getenv("GTC_V") && index == 1)
+        std::fprintf(stderr, "  V c0 pos (%.6f,%.6f) vel (%.5f,%.5f) lift (%+.7f,%+.7f) ballLift (%+.7f,%+.7f) bodyLift (%+.7f,%+.7f) metBody %zu\n",
+                     body.position[0].x, body.position[0].y, body.velocity[0].x, body.velocity[0].y, lift[0].x, lift[0].y,
+                     ballLift[0].x, ballLift[0].y, bodyLift[0].x, bodyLift[0].y, body.metBody);
     // Nothing moved it this tick. The floor puts a corner back on itself exactly,
     // so a body resting on the floor moves by nothing at all; a body resting on
     // another body is put back by the constraint solve, which is exact only to its
