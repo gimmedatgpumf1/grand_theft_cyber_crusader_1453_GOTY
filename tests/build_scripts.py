@@ -60,6 +60,12 @@ def main():
                        ('build.cmd', '/std:c++20'),
                        ('native/build.cmd', '/std:c++20'),
                        ('native/vendor/bullet/build.cmd', '/std:c++20')]:
+        # The vendored dependencies are not in every checkout -- the phone build
+        # and the CI checkout fetch them separately -- so an absent one is not a
+        # failure here. Everything else must exist, or the check below silently
+        # passes because there is nothing to read.
+        if not (ROOT / path).exists() and path.startswith('native/vendor/'):
+            continue
         text = (ROOT / path).read_text(errors='replace')
         if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|23|latest)', text):
             failures.append(f'{path} must use {flag}, not another C++ mode')
