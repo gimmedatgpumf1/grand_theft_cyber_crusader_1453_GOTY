@@ -247,6 +247,9 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
         bool underHeld = solid.frozen || bodyHeld(other);
         for (std::size_t i = 0; i < solid.count && !underHeld; ++i)
             underHeld = solid.position[i].y <= tick::kSurfaceY + tick::kContactTolerance;
+        if (std::getenv("GTC_SEP"))
+            std::fprintf(stderr, "    SEP index %zu vs %zu way (%.3f,%.3f) amount %.6f held %d\n", index, other, way.x,
+                         way.y, amount, int(underHeld));
         const double share = underHeld ? 1.0 : 0.5;
         const Vec3 move = way * (amount * share);
         for (std::size_t i = 0; i < body.count; ++i) {
