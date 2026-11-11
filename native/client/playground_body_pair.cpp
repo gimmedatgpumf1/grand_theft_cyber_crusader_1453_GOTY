@@ -387,40 +387,34 @@ void PlaygroundRoom::bodiesAnswer() {
                         outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
                     double along = 2.0;
                     Vec3 hitNormal{0, 1, 0};
-                    const bool reaches = segmentHitsPolygon(body.position[i], body.position[i] + travel,
-                                                            solid.position.data(), solid.count, along, hitNormal);
-                    // A meeting is a corner pressing into a surface, or a corner that was
-                    // clear of it and whose own step arrives at it. Those are the two
-                    // ways a point touches a surface and there is no third:
+                    segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(),
+                                       solid.count, along, hitNormal);
+                    // A meeting is a contact -- and what a contact is, is a corner that
+                    // this tick's own step has taken into the surface, or one already on
+                    // it. The two are one test, not two: the gap the corner has left is
+                    // compared with how far its own step closes it.
                     //
-                    //   pressing  -- on the surface (within the skin the ball's own
-                    //                contacts are taken within) and doing so against the
-                    //                way out of it. Standing on it, or leaning on it.
-                    //   arriving  -- clear of the surface, and this tick's step crosses
-                    //                it. The hitscan's fraction is where that happens.
+                    // Testing for a crossing with the hitscan alone misses every corner
+                    // that is already against the surface and resting on it, because a
+                    // resting corner's step is along the surface and crosses nothing --
+                    // and a skin of a millionth of a metre is not a test either, it is a
+                    // coin toss: a corner resting a hair above the surface loses its
+                    // contact, falls for a tick, and comes back as a blow, so nothing
+                    // that is standing on anything ever has a contact it can grip with.
+                    // That is a triangle balanced on a corner on the cube turning about
+                    // it and walking out from under itself with nothing pushing it.
                     //
-                    // A corner that is on a surface and *leaving* it is neither. The
-                    // base of a triangle lying along the top face of a cube puts the
-                    // cube's own top corner exactly on that base line, a hair inside it,
-                    // and the step that corner is taking is down, away through the
-                    // triangle's own base. Counting the crossing that makes as a meeting
-                    // had the cube answered as though the triangle had come down onto it
-                    // from above, when it is the other way round: the whole momentum of
-                    // the pair was handed to the triangle and it was thrown off the cube.
-                    // Resting on it, or pressing into it. A corner carrying the body it
-                    // belongs to has a travel that is *along* the surface, so its travel
-                    // along the way out is nothing at all -- and asking for a travel that
-                    // is into the surface refused exactly that contact. A resting corner
-                    // then had no contact, so it had no friction, so the whole of what
-                    // holds a body on a surface was missing: a triangle balanced on one
-                    // corner on the cube turned about it and the corner walked out from
-                    // under it, half a metre across the top of the cube, with nothing
-                    // pushing it anywhere. What is not a contact is a corner *leaving*:
-                    // one whose travel along the way out is more than a skin.
-                    const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) <= kSkin;
-                    const bool arriving = gap.gap > kSkin && reaches && along <= 1.0;
-                    if (!pressing && !arriving) continue;
-                    const Vec3 normal = pressing ? gap.normal : hitNormal;
+                    // What is not a contact is a corner clear of the surface and leaving
+                    // it: its step closes nothing.
+                    const double closes = -dot(travel, gap.normal);
+                    const bool meeting = gap.gap <= kSkin + std::max(0.0, closes);
+                    if (!meeting) continue;
+                    // The way out of the surface is the same whether the corner is on it
+                    // or a step short of it: outlineGap's own normal, from the surface to
+                    // the point. A corner in the air is answered along it exactly as a
+                    // corner resting on the surface is, which is what makes the last
+                    // fraction of a step before a landing the same contact as the landing.
+                    const Vec3 normal = gap.normal;
                     // Standing on the other body: the way out of its surface points
                     // up, so what is under this corner is what has to hold this body's
                     // weight up -- and a way out that points down is the same meeting
