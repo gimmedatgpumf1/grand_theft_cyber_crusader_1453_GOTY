@@ -17,8 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -105,8 +103,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // reading the speed back off the shortened step would hand every corner the
     // same fraction of its own travel -- a support under the body's middle, when
     // what the contact is is a support at the point they met.
-    std::array<Vec3, kMaxCorners> attempted{};
-    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
     const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
@@ -474,23 +470,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
-    if (std::getenv("GTC_V")) {
-        double fast = 0.0;
-        for (std::size_t i = 0; i < count; ++i) fast = std::max(fast, length(body.velocity[i]));
-        if (fast > 12.0) std::fprintf(stderr, "  FAST body %zu speed %.3f\n", index, fast);
-    }
-    if (std::getenv("GTC_V")) {
-        std::fprintf(stderr, "  V body %zu:", index);
-        for (std::size_t i = 0; i < count; ++i)
-            std::fprintf(stderr, " (%.2f,%.2f)", body.velocity[i].x, body.velocity[i].y);
-        std::fprintf(stderr, " pos");
-        for (std::size_t i = 0; i < count; ++i)
-            std::fprintf(stderr, " (%.2f,%.2f)", body.position[i].x, body.position[i].y);
-        std::fprintf(stderr, " lift");
-        for (std::size_t i = 0; i < count; ++i)
-            std::fprintf(stderr, " (%.3f,%.3f)", lift[i].x, lift[i].y);
-        std::fprintf(stderr, "\n");
-    }
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {

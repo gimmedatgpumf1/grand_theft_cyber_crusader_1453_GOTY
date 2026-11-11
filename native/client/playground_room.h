@@ -226,6 +226,12 @@ private:
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);
     void pointAgainstBall(Vec3 normal);
+    // Whether a body has arrived at the resting point this tick. A point that is
+    // asleep is not stepped, and a step that is not taken runs no hitscan -- so a
+    // shape falling on a dot that is resting on the floor would pass straight
+    // through it. This is the hitscan that wakes it: the step every body took this
+    // tick, swept against the dot's own radius.
+    bool pointReachedByBodies() const;
     void freezeCheck();
     void updateDrag();
     void buildScene(const Camera& camera);

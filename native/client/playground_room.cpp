@@ -1,6 +1,7 @@
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
+#include "client/playground_ball_shape.h"
 #include "client/renderer.h"
 #include "client/room_freecam.h"
 #include "client/ui_layer.h"
@@ -686,6 +687,49 @@ void PlaygroundRoom::tick() {
 // against the plane, and then the fixed distances are pushed back to what they
 // were. A corner that moves therefore pulls and pushes the others through those
 // distances: that is the whole of the coupling.
+// Whether any body's step this tick has arrived at the point.
+//
+// The dot is a point with a radius, and a body arriving at it is a face or a corner
+// arriving at a circle -- the same question the ball's own hitscan answers, so it is
+// asked here with the same geometry. What it is for is the one thing a sleeping point
+// cannot do for itself: a point that is not stepped has no sweep, and a body that
+// falls on it while it sleeps has nothing to stop it. The point wakes, and from then
+// on its own tick -- which does have a sweep -- answers whatever met it.
+bool PlaygroundRoom::pointReachedByBodies() const {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen) continue;
+        // It has already overtaken the point: wherever the point is, a body's outline
+        // around it is a meeting that has happened and has to be answered.
+        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return true;
+        // And where the shape was, to where it is now: the piece of its outline the
+        // step swept, and every corner of it through the same travel. A body falling a
+        // quarter of a metre a tick is swept, not sampled.
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 before = body.previous[i], after = body.position[i];
+            const Vec3 side = body.position[(i + 1) % body.count] - body.position[i];
+            const Vec3 sideBefore = body.previous[(i + 1) % body.count] - body.previous[i];
+            if (length(side) <= 0.0 && length(sideBefore) <= 0.0) continue;
+            // A corner's travel, against the point's own radius.
+            const Vec3 travel = after - before;
+            const double lengthSquared = dot(travel, travel);
+            const double along = lengthSquared > 1e-18 ? std::clamp(dot(point_ - before, travel) / lengthSquared, 0.0, 1.0) : 0.0;
+            if (length(point_ - (before + travel * along)) <= kPointRadius) return true;
+            // And the side swept through the tick, which is what catches a face coming
+            // down flat across the point with neither of its ends anywhere near it.
+            for (const double fraction : {0.0, 0.5, 1.0}) {
+                const Vec3 a = body.previous[i] + travel * fraction;
+                const Vec3 b = body.previous[(i + 1) % body.count] + travel * fraction;
+                const Vec3 edge = b - a;
+                const double edgeSquared = dot(edge, edge);
+                const double place = edgeSquared > 1e-18 ? std::clamp(dot(point_ - a, edge) / edgeSquared, 0.0, 1.0) : 0.0;
+                if (length(point_ - (a + edge * place)) <= kPointRadius) return true;
+            }
+        }
+    }
+    return false;
+}
+
 void PlaygroundRoom::freezeCheck() {
     if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
         (point_.y <= kSurfaceY || restingBody_ >= 0 || restingOnBall_)) {
@@ -722,6 +766,17 @@ void PlaygroundRoom::advance(double seconds) {
                 resting_ = false;
                 restingOnBall_ = false;
             }
+        }
+        // A resting point is still something a shape can be dropped on, and a point
+        // that is not stepped runs no sweep: the shape would go through it and be
+        // answered a tick later, from inside, which is the clipping. So the dot is
+        // asked, every tick, whether a body has arrived at it -- and if one has, the
+        // point wakes and its own tick answers it.
+        if (pointFrozen_ && pointReachedByBodies()) {
+            pointFrozen_ = false;
+            resting_ = false;
+            restingBody_ = -1;
+            restingOnBall_ = false;
         }
         // A frozen body has nothing to do: no force, no motion, no work.
         if (!pointFrozen_) {
