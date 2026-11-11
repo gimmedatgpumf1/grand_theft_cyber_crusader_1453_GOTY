@@ -563,7 +563,16 @@ void PlaygroundRoom::bodiesAnswer() {
     // back out as a shove of the whole body, and a triangle turning about a corner on
     // a cube walks sideways along it.
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
+        const bool dbg = std::getenv("GTC_PASS") != nullptr;
+        if (dbg)
+            std::fprintf(stderr, "  PASS %d pre tri0 (%.4f,%.4f) cube0 (%.4f,%.4f)\n", solve,
+                         bodies_[1].velocity[0].x, bodies_[1].velocity[0].y, bodies_[0].velocity[0].x,
+                         bodies_[0].velocity[0].y);
         const double closing = solveContacts();
+        if (dbg)
+            std::fprintf(stderr, "  PASS %d post tri0 (%.4f,%.4f) cube0 (%.4f,%.4f) closing %.4f\n", solve,
+                         bodies_[1].velocity[0].x, bodies_[1].velocity[0].y, bodies_[0].velocity[0].x,
+                         bodies_[0].velocity[0].y, closing);
         if (closing <= kRestSpeed) break;
     }
     // A frozen body has nothing holding it up the moment whatever was under it is
