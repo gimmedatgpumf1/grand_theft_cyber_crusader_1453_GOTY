@@ -13,6 +13,7 @@
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
+#include "client/playground_ball_shape.h"
 
 #include <algorithm>
 #include <array>
@@ -140,6 +141,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         const double inward = std::min(0.0, dot(body.velocity[arrived], metWay));
         if (!(inward < 0.0)) break;
         for (std::size_t i = 0; i < count; ++i) body.velocity[i] = body.velocity[i] - metWay * inward;
+    }
+    if (std::getenv("GTC_STEP")) {
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == index) continue;
+            double worst = 0.0;
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto gap = ball_shape::outlineGap(body.position[i], bodies_[other].position.data(),
+                                                        bodies_[other].position.data(), bodies_[other].count, 1.0);
+                worst = std::max(worst, -gap.gap);
+            }
+            if (worst > 1e-9) std::fprintf(stderr, "  STEP index %zu: after the sweep, corner %.7f inside %zu\n", index,
+                                           worst, other);
+        }
     }
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 from = body.position[i];
