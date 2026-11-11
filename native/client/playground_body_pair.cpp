@@ -291,7 +291,7 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
 // other. Two answers are enough to be right to a thousandth of a millimetre a
 // second on a contact of two points; the rest is what a corner between two faces
 // needs, which is the one place the two keep spoiling each other's answer.
-constexpr int kContactSettle = 1;
+constexpr int kContactSettle = 8;
 
 void PlaygroundRoom::bodiesAnswer() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
