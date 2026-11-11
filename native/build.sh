@@ -6,6 +6,13 @@ bash "$ROOT/tools/nagger.sh"
 mkdir -p "$ROOT/build/bin" "$ROOT/build/obj/native" "$ROOT/.cache/ccache" "$ROOT/prebuilt/linux-x86_64"
 export CCACHE_DIR="$ROOT/.cache/ccache"
 export CCACHE_CONFIGPATH="$ROOT/tools/ccache.conf"
+# The committed seed is restored only when the local cache is empty, so a fresh
+# checkout does not compile sixty-one client sources from cold.
+SEED="$ROOT/cache/ccache-linux-x86_64.tar.gz"
+if [ -f "$SEED" ] && [ -z "$(find "$CCACHE_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  echo '[build] Restoring the committed content-hash ccache seed.'
+  tar -xzf "$SEED" -C "$CCACHE_DIR"
+fi
 COMPILER="${CXX:-g++}"
 CCACHE_BIN="${CCACHE:-}"
 if [ -z "$CCACHE_BIN" ] && [ -x "$ROOT/tools/ccache/linux-x86_64/ccache" ]; then
