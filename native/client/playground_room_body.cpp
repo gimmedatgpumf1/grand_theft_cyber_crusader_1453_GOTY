@@ -156,25 +156,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         }
     }
     for (std::size_t i = 0; i < count; ++i) {
-        const Vec3 from = body.position[i];
-        const Vec3 to = target[i];
-        // The same hitscan the point uses, once per corner: the first thing the
-        // corner's step reaches is where that corner stops, however far the tick
-        // would have carried it. The ball is the other thing in the way, and it
-        // was already walked against the whole outline above, so a corner can no
-        // longer reach it on its own.
-        double along = 2.0;
-        bool onFloor = false;
-        if (to.y < kSurfaceY) {
-            along = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
-            onFloor = true;
-        }
-        if (along <= 1.0) {
-            body.position[i] = from + (to - from) * along;
-            if (onFloor) body.position[i].y = kSurfaceY;
-        } else {
-            body.position[i] = to;
-        }
+        // The corners have already been carried by the sweeps above; there is no
+        // travel left over to take here, and taking any would be a step that was
+        // never tested against anything. Whatever is left of the tick when a pass
+        // cut it short is the tick the body spends leaning on what it met, and it
+        // is spent by the passes themselves, one surface at a time, each of them
+        // swept in its turn. All that is left to do is to say which corners the
+        // floor is holding.
         onPlane[i] = body.position[i].y <= kSurfaceY + 1e-12;
     }
     // The shape and the plane are solved together until both are satisfied. A
