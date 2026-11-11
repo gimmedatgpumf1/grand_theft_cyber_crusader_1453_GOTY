@@ -122,6 +122,22 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         if (std::getenv("GTC_REACH") && index == 0)
             std::fprintf(stderr, "  R pass %d spend %.4f reach %.6f (body %.4f ball %.2f plane %.4f) way (%.2f,%.2f)\n",
                          pass, spend, reach, bodyReach, ballReach, planeReach, metWay.x, metWay.y);
+        if (std::getenv("GTC_DEEP")) {
+            for (std::size_t other = 0; other < kBodyCount; ++other) {
+                if (other == index) continue;
+                double worst = 0.0;
+                std::size_t which = 0;
+                Vec3 at{};
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto gap = ball_shape::outlineGap(body.position[i], bodies_[other].position.data(),
+                                                           bodies_[other].position.data(), bodies_[other].count, 1.0);
+                    if (-gap.gap > worst) { worst = -gap.gap; which = i; at = body.position[i]; }
+                }
+                if (worst > 1e-9)
+                    std::fprintf(stderr, "  DEEP idx %zu pass %d reach %.4f bodyReach %.4f other %zu corner %zu at (%.3f,%.3f) depth %.6f\n",
+                                 index, pass, reach, bodyReach, other, which, at.x, at.y, worst);
+            }
+        }
         if (!(reach < 1.0)) break;
         // The speed at the place they met is what the surface answers, and what it
         // answers it with is taken off the whole body: every corner loses the same
