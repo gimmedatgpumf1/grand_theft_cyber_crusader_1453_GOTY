@@ -333,7 +333,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             // below.
             const Vec3 normalImpulse{0.0, -velocity.y * kMass, 0.0};
             velocity = velocity + normalImpulse * (1.0 / kMass);
-            addForce(body.position[i], normalImpulse * (1.0 / kTick), ForceKind::Contact);
         }
         body.velocity[i] = velocity;
     }
@@ -359,7 +358,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             for (std::size_t i = 0; i < count; ++i) {
                 const Vec3 gripImpulse{-taken, 0.0, 0.0};
                 body.velocity[i] = body.velocity[i] + gripImpulse * (1.0 / kMass);
-                addForce(body.position[i], gripImpulse * (1.0 / kTick), ForceKind::Contact);
             }
         }
     }
@@ -404,11 +402,15 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
-    // Everything the contacts did to this body, corner by corner: the floor, the
-    // shape solve holding it rigid, friction at the patch. It is the difference
-    // between the speed the forces gave each corner and the speed it ended with,
-    // taken back to newtons over the tick -- so it is exactly the momentum the
-    // room delivered, and the arrows on F are the room admitting to it.
+    // Everything the contacts did to this body, corner by corner: the floor's
+    // normal impulse, the shape solve holding it rigid, friction at the patch --
+    // the impulses above and every other one the tick applied. It is the
+    // difference between the speed the forces gave each corner and the speed it
+    // ended with, taken back to newtons over the tick, so it is exactly the
+    // momentum the room delivered, and it is written into the ledger here rather
+    // than at each impulse above: one corner may be answered by the floor, the
+    // patch and the solve in the same tick, and three part-written entries would
+    // be three arrows where the corner has one force.
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 push = (body.velocity[i] - afterForces[i]) * (kMass / kTick);
         if (length(push) > 1e-6) addForce(body.position[i], push, ForceKind::Contact);
