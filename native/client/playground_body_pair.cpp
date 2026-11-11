@@ -283,6 +283,7 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
 // stopped where it crossed, on the first instant it was ever across, and the body is
 // walked back to that instant with it.
 bool PlaygroundRoom::undoCrossings(std::size_t index) {
+    if (std::getenv("GTC_NOCROSS")) return false;
     Body& body = bodies_[index];
     bool moved = false;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
