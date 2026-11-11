@@ -459,8 +459,17 @@ void PlaygroundRoom::bodiesAnswer() {
                     // one corner on the cube did.
                     const Vec3 mineWay = answerFor(self, normal);
                     const Vec3 theirsWay = answerFor(them, normal * -1.0);
+                    // Whether a side gives at all is a question about the amount, not
+                    // about an exact zero: the blocked answer is the normal's own x
+                    // lever, a few times ten to the minus sixteen, and counting that as
+                    // a side that gives hands a share of every blow to a body that will
+                    // not move. One part in a million of the normal is the same skin the
+                    // contacts are taken within; below that a side is a wall.
+                    constexpr double kGives = 1e-6;
                     const double freedomMine = dot(mineWay, normal);
                     const double freedomTheirs = dot(theirsWay, normal * -1.0);
+                    const bool givesBody = freedomMine > kGives;
+                    const bool givesSolid = freedomTheirs > kGives;
                     // What the other body is doing at that place: a piece of an outline
                     // between two corners moves at the lever's interpolation of them, which
                     // is the ball's own outlineTouch. Reading one corner's speed instead is
@@ -473,10 +482,8 @@ void PlaygroundRoom::bodiesAnswer() {
                     // contact carried, or the weight it is carrying.
                     double carried = 0.0;
                     if (closing < 0.0) {
-                        const double shareMine =
-                            freedomMine > 0.0 ? freedomMine * bodyShareAt(body, mine, at, normal) : 0.0;
-                        const double shareTheirs =
-                            freedomTheirs > 0.0 ? freedomTheirs * bodyShareAt(solid, theirs, at, normal) : 0.0;
+                        const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
+                        const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
                         // The two sides pull the closing speed apart between them, so
                         // the two shares add: the whole of the approach is answered
                         // between them, and a side that cannot move simply contributes
@@ -488,8 +495,8 @@ void PlaygroundRoom::bodiesAnswer() {
                             closingTotal = std::max(closingTotal, -closing);
                             // Each side is given only the way it is free to go, which for
                             // a side that cannot move is no momentum at all.
-                            if (freedomMine > 0.0) giveBodyTurn(self, mine, at, mineWay * impulse);
-                            if (freedomTheirs > 0.0) giveBodyTurn(them, theirs, at, theirsWay * impulse);
+                            if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse);
+                            if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse);
                             body.touched = true;
                             solid.touched = true;
                             if (-closing > kRestSpeed) {
@@ -519,12 +526,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     const Vec3 theirsSlideWay = answerFor(them, tangent * -1.0);
                     const double freedomMineSlide = dot(mineSlideWay, tangent);
                     const double freedomTheirsSlide = dot(theirsSlideWay, tangent * -1.0);
-                    const double shareMineSlide = freedomMineSlide > 0.0
-                                                      ? freedomMineSlide * bodyShareAt(body, mine, at, tangent)
-                                                      : 0.0;
-                    const double shareTheirsSlide = freedomTheirsSlide > 0.0
-                                                        ? freedomTheirsSlide * bodyShareAt(solid, theirs, at, tangent)
-                                                        : 0.0;
+                    const bool slidesBody = freedomMineSlide > kGives;
+                    const bool slidesSolid = freedomTheirsSlide > kGives;
+                    const double shareMineSlide = slidesBody ? bodyShareAt(body, mine, at, tangent) : 0.0;
+                    const double shareTheirsSlide = slidesSolid ? bodyShareAt(solid, theirs, at, tangent) : 0.0;
                     const double giveSlide = shareMineSlide + shareTheirsSlide;
                     if (!(giveSlide > 1e-12)) continue;
                     // What it would take to stop the slide, and whether the grip can
@@ -533,8 +538,9 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
-                    if (freedomMineSlide > 0.0) giveBodyTurn(self, mine, at, mineSlideWay * (rubbed * (slide > 0.0 ? -1.0 : 1.0)));
-                    if (freedomTheirsSlide > 0.0)
+                    if (slidesBody)
+                        giveBodyTurn(self, mine, at, mineSlideWay * (rubbed * (slide > 0.0 ? -1.0 : 1.0)));
+                    if (slidesSolid)
                         giveBodyTurn(them, theirs, at, theirsSlideWay * (rubbed * (slide > 0.0 ? 1.0 : -1.0)));
                 }
             }
