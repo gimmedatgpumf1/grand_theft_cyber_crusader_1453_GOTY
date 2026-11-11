@@ -1,4 +1,7 @@
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 #include "client/renderer.h"
@@ -310,6 +313,11 @@ void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia,
     ++body.contacts;
     const Vec3 arm = contact - inertia.middle;
     const double turn = (arm.x * momentum.y - arm.y * momentum.x) / inertia.moment;
+    if (std::getenv("GTC_TURN"))
+        std::fprintf(stderr, "    TURN idx %zu n %zu mid (%.4f,%.4f) at (%.4f,%.4f) mom (%.5f,%.5f) I %.5f turn %+.5f push (%.5f,%.5f)\n",
+                     index, body.count, inertia.middle.x, inertia.middle.y, contact.x, contact.y, momentum.x,
+                     momentum.y, inertia.moment, turn, momentum.x / (double(body.count) * kMass),
+                     momentum.y / (double(body.count) * kMass));
     const Vec3 push = momentum * (1.0 / (static_cast<double>(body.count) * kMass));
     for (std::size_t i = 0; i < body.count; ++i) {
         const Vec3 r = body.position[i] - inertia.middle;
