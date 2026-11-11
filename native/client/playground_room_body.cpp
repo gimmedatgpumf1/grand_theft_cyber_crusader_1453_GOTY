@@ -120,8 +120,11 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             body.position[i] = body.position[i] + (target[i] - body.position[i]) * reach;
         spend = spend * (1.0 - reach);
         if (std::getenv("GTC_REACH") && index == 0)
-            std::fprintf(stderr, "  R pass %d spend %.4f reach %.6f (body %.4f ball %.2f plane %.4f) way (%.2f,%.2f)\n",
-                         pass, spend, reach, bodyReach, ballReach, planeReach, metWay.x, metWay.y);
+            std::fprintf(stderr,
+                         "  R pass %d spend %.4f reach %.6f (body %.4f ball %.2f plane %.4f) way (%.2f,%.2f) "
+                         "met %zu at (%.3f,%.3f)\n",
+                         pass, spend, reach, bodyReach, ballReach, planeReach, metWay.x, metWay.y, body.metBody,
+                         metAt.x, metAt.y);
         if (std::getenv("GTC_DEEP")) {
             for (std::size_t other = 0; other < kBodyCount; ++other) {
                 if (other == index) continue;
