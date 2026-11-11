@@ -293,19 +293,35 @@ void PlaygroundRoom::separateBodies() {
                 double amount = 0.0;
                 if (!leastOverlap(one.position.data(), one.count, two.position.data(), two.count, way, amount)) continue;
                 if (!(amount > tick::kDistanceTolerance)) continue;
-                // A side that cannot move takes none of it.
-                const auto immovable = [&](std::size_t index, const Body& body) {
-                    if (bodyHeld(index)) return true;
-                    if (body.frozen) return true;
+                // A side that cannot move takes none of it: one asleep, one the
+                // mouse is holding. And a side standing on the floor cannot be put
+                // *down* into it -- the floor answers that, not this -- so the floor's
+                // share goes to the other one, which in a pair that has both feet on
+                // the floor means the upper one is lifted clear and the lower one is
+                // left alone. Both of them refused, and a pair that is inside itself
+                // was left inside itself.
+                const auto onFloor = [&](const Body& body) {
                     for (std::size_t i = 0; i < body.count; ++i)
                         if (body.position[i].y <= tick::kSurfaceY + tick::kContactTolerance) return true;
                     return false;
                 };
-                const bool oneStill = immovable(a, one);
-                const bool twoStill = immovable(b, two);
-                if (oneStill && twoStill) continue;
-                const double shareOne = oneStill ? 0.0 : (twoStill ? 1.0 : 0.5);
-                const double shareTwo = twoStill ? 0.0 : (oneStill ? 1.0 : 0.5);
+                const bool oneHeld = bodyHeld(a) || one.frozen;
+                const bool twoHeld = bodyHeld(b) || two.frozen;
+                if (oneHeld && twoHeld) continue;
+                double shareOne = oneHeld ? 0.0 : (twoHeld ? 1.0 : 0.5);
+                double shareTwo = twoHeld ? 0.0 : (oneHeld ? 1.0 : 0.5);
+                // The first body is moved along -way, so it would be going down when
+                // way points up; the second is moved along way, so it would be going
+                // down when way points down.
+                if (shareOne > 0.0 && way.y > 0.0 && onFloor(one)) {
+                    shareTwo = std::min(1.0, shareTwo + shareOne);
+                    shareOne = 0.0;
+                }
+                if (shareTwo > 0.0 && way.y < 0.0 && onFloor(two)) {
+                    shareOne = std::min(1.0, shareOne + shareTwo);
+                    shareTwo = 0.0;
+                }
+                if (!(shareOne > 0.0) && !(shareTwo > 0.0)) continue;
                 const Vec3 oneMove = way * (amount * -shareOne);
                 const Vec3 twoMove = way * (amount * shareTwo);
                 for (std::size_t i = 0; i < one.count; ++i) one.position[i] = one.position[i] + oneMove;
