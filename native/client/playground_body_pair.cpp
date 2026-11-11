@@ -537,6 +537,11 @@ void PlaygroundRoom::bodiesAnswer() {
                     // all, and if it cannot, they rub at mu_k and lose that much.
                     const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
+                    if (std::getenv("GTC_FRI"))
+                        std::fprintf(stderr,
+                                     "  FRI self %zu i %zu at (%.4f,%.4f) slide %+.5f giveSlide %.5f hold %.4f "
+                                     "slip %.4f needed %.5f rubbed %.5f\n",
+                                     self, i, at.x, at.y, slide, giveSlide, hold, slip, needed, rubbed);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
                     if (slidesBody)
                         giveBodyTurn(self, mine, at, mineSlideWay * (rubbed * (slide > 0.0 ? -1.0 : 1.0)));
