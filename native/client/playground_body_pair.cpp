@@ -29,8 +29,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -364,47 +362,31 @@ void PlaygroundRoom::bodiesAnswer() {
                 for (std::size_t i = 0; i < solid.count; ++i) solidStep = solidStep + solid.velocity[i];
                 solidStep = solidStep * (tick::kTick / static_cast<double>(solid.count));
                 for (std::size_t i = 0; i < body.count; ++i) {
-                    // Where this corner's travel was taking it, relative to the body it
-                    // is against, before the sweep cut the step short. That is what the
-                    // plane's own hitscan asks -- not "is this corner below the floor"
-                    // but "would this tick's travel put it below the floor" -- and the
-                    // pair has to ask the same question of the two of them moving. A
-                    // body resting on another is one whose travel every tick would take
-                    // it in, and the sweep leaves the two exactly at the surface, a hair
-                    // apart; asking where the corner ended up is asking whether it is
-                    // already inside, which a resting body never is. The closing speed
-                    // was then never answered: the corners fell for nine ticks and got
-                    // one blow, which is a body shivering on the thing it stands on.
-                    // The other body's own travel is measured the way the sweep
-                    // measures it -- what its corners actually did -- because it is the
-                    // one that is moving when a pair is landing, and a corner of the
-                    // still one is the one that has to be put back out of it.
-                    const Vec3 wouldBe = body.position[i] + body.velocity[i] * tick::kTick - solidStep;
+                    // The contact's normal comes from the same hitscan the sweep uses,
+                    // asked the same question about the same travel: is this corner on
+                    // the other body's outline now, or does this tick's own step take it
+                    // there? A surface and a step, in one rule.
+                    //
+                    // Asking instead where the corner will *end up* -- "is it inside
+                    // after its step" -- is a contact that comes and goes. A body turning
+                    // about the corner it is standing on lifts that corner a few
+                    // millimetres off the face as it turns; the contact is lost, the body
+                    // falls until it is inside, the contact comes back as a blow and spins
+                    // it further. That cycle is a body creeping sideways along a surface
+                    // with nothing pushing it, and it is what the triangle balanced on one
+                    // corner on the cube did.
+                    const Vec3 travel = body.velocity[i] * tick::kTick - solidStep;
                     const OutlineGap gap =
-                        outlineGap(wouldBe, solid.position.data(), solid.position.data(), solid.count, 1.0);
-                    // Against it, not merely near it -- and within the same skin the
-                    // ball's own contacts are taken within.
-                    if (std::getenv("GTC_ANS"))
-                        std::fprintf(stderr, "  SCAN r%d i%zu gap %+.7f wouldBe.y %.5f v.y %+.4f\n", round, i, gap.gap,
-                                     wouldBe.y, body.velocity[i].y);
-                    if (gap.gap > kSkin) continue;
-                    // The way out of the other body's outline, which is the normal of
-                    // this contact: it points from what was touched towards this
-                    // corner.
-                    const Vec3 normal = gap.normal;
-                    // The corner of the other body that this one is against. A contact
-                    // is between two points: this body's corner, which is where the
-                    // contact is, and the nearest corner of the other body to it --
-                    // exactly as a dot's blow is carried by the nearest corner of the
-                    // body it strikes.
-                    // ...and the piece of the other body's outline it is against. An
-                    // outline is a bar between two corner points, so a force at a
-                    // fraction along it is those two points' shares of it: (1 - t) and
-                    // t. Taking the nearest corner instead hands the whole impulse to a
-                    // point up to a metre away, and a corner of one body becomes a
-                    // lever on the other -- which is what tipped a triangle whose base
-                    // was lying across a cube it was balanced on.
-                    const OutlineTouch struck = outlineTouch(body.position[i], solid.position.data(), solid.count);
+                        outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
+                    double along = 2.0;
+                    Vec3 hitNormal{0, 1, 0};
+                    const bool willReach = segmentHitsPolygon(body.position[i], body.position[i] + travel,
+                                                              solid.position.data(), solid.count, along, hitNormal);
+                    // Against it, or about to be: on the surface within the same skin the
+                    // ball's own contacts are taken within, and otherwise only where the
+                    // step genuinely arrives at it.
+                    if (!willReach && gap.gap > kSkin) continue;
+                    const Vec3 normal = gap.gap <= kSkin ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
                     // up, so what is under this corner is what has to hold this body's
                     // weight up -- and a way out that points down is the same meeting
@@ -430,7 +412,11 @@ void PlaygroundRoom::bodiesAnswer() {
                     // into a shove of the whole body, so a corner that friction has just
                     // pinned still walks: the triangle balanced on one corner on the cube
                     // crept half a metre sideways with nothing whatever pushing it.
-                    const Vec3 at = solid.position[struck.a] * (1.0 - struck.t) + solid.position[struck.b] * struck.t;
+                    // The contact is where the hitscan says it is, and where the sweep
+                    // took the body's step to be: on the surface the corner is standing
+                    // on it is the corner itself, and on a step that arrives it is the
+                    // place the step arrives at.
+                    const Vec3 at = along <= 1.0 ? body.position[i] + travel * along : body.position[i];
                     const BodyInertia mine = bodyInertia(body);
                     const BodyInertia theirs = bodyInertia(solid);
                     // A side that cannot move gives nothing. A body standing on the
@@ -440,8 +426,13 @@ void PlaygroundRoom::bodiesAnswer() {
                     const bool givesBody = length(answerFor(self, normal)) > 0.0;
                     const bool givesSolid = length(answerFor(them, normal * -1.0)) > 0.0;
                     if (!givesBody && !givesSolid) continue;
+                    // What the other body is doing at that place: a piece of an outline
+                    // between two corners moves at the lever's interpolation of them, which
+                    // is the ball's own outlineTouch. Reading one corner's speed instead is
+                    // reading a face's motion at a point that is not on it.
+                    const OutlineTouch face = outlineTouch(at, solid.position.data(), solid.count);
                     const Vec3 solidVelocity =
-                        solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
+                        solid.velocity[face.a] * (1.0 - face.t) + solid.velocity[face.b] * face.t;
                     const double closing = dot(body.velocity[i] - solidVelocity, normal);
                     // What friction has to hold against, over the tick: the blow this
                     // contact carried, or the weight it is carrying.
@@ -458,11 +449,6 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
-                            if (std::getenv("GTC_ANS"))
-                                std::fprintf(stderr,
-                                             "  ANS at (%.4f,%.4f) n(%.2f,%.2f) closing %+.4f J %+.4f shareB %.4f givesS %d\n",
-                                             at.x, at.y, normal.x, normal.y, closing, impulse, shareMine,
-                                             givesSolid ? 1 : 0);
                             if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
                             if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
                             body.touched = true;
@@ -478,8 +464,8 @@ void PlaygroundRoom::bodiesAnswer() {
                     // its share of one it cannot, which is the floor's own rule. It is
                     // answered as a solid too, at the same place and through the same
                     // two functions, or it pins one corner of a body that is turning.
-                    const Vec3 solidNow =
-                        solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
+                    const OutlineTouch held = outlineTouch(at, solid.position.data(), solid.count);
+                    const Vec3 solidNow = solid.velocity[held.a] * (1.0 - held.t) + solid.velocity[held.b] * held.t;
                     const Vec3 relative = body.velocity[i] - solidNow;
                     const Vec3 tangent{normal.y, -normal.x, 0};
                     const double slide = dot(relative, tangent);
@@ -498,9 +484,6 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
-                    if (std::getenv("GTC_ANS"))
-                        std::fprintf(stderr, "  FRIC slide %+.5f needed %.5f hold %.5f rubbed %.5f\n", slide, needed,
-                                     hold, rubbed);
                     if (givesBody) giveBodyTurn(self, mine, at, momentum);
                     if (givesSolid) giveBodyTurn(them, theirs, at, momentum * -1.0);
                 }
