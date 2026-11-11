@@ -208,7 +208,10 @@ private:
     };
     BodyInertia bodyInertia(const Body& body) const;
     double bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const;
-    void giveBodyTurn(std::size_t body, const BodyInertia& inertia, Vec3 contact, Vec3 momentum);
+    // `kind` is which force is handing the momentum over, so the ledger records it
+    // as the thing it is: a pair contact, or the ball.
+    void giveBodyTurn(std::size_t body, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
+                      ForceKind kind = ForceKind::Pair);
     // A point of mass kMass meets a body: the impulse the point takes along the
     // normal is returned so the dot's own velocity can be given it back. Nothing
     // bounces, and a body on the plane only takes the part of the blow that runs
@@ -309,7 +312,7 @@ private:
     // The point's speed once the tick's forces had been applied to it, before any
     // contact answered it: the difference at the end of the tick is what the
     // contacts delivered.
-    Vec3 velocity_{}, pointAfterForces_{};
+    Vec3 velocity_{};
     // And the same accumulator for the dot: its weight goes in, what the surface
     // answers goes in, and the integrator adds the total over its mass.
     Vec3 pointForce_{};

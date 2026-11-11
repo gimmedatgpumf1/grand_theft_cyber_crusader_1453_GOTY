@@ -56,11 +56,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         body.velocity[i] = accelerated(body.velocity[i], body.force[i], kMass);
         target[i] = body.position[i] + body.velocity[i] * kTick;
     }
-    // What each corner's speed was once the forces had been applied and before any
-    // contact answered it. The difference at the end of the tick is the impulse a
-    // contact delivered, over the tick is the force it delivered it with.
-    std::array<Vec3, kMaxCorners> afterForces{};
-    for (std::size_t i = 0; i < count; ++i) afterForces[i] = body.velocity[i];
     // The shape's step is swept against the ball before any of it is spent,
     // exactly as a corner's step is swept against the plane -- but along the whole
     // outline, because a face lying across a ball has no corner anywhere near it
@@ -311,6 +306,10 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // have lifted that corner back off the plane, and a corner in the air has to
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
+    // What the plane hands this corner over the tick, in newton seconds: its normal
+    // impulse and its grip, added up as they happen so the corner gets one arrow
+    // rather than a crowd of them.
+    std::array<Vec3, kMaxCorners> floorImpulse{};
     for (std::size_t i = 0; i < count; ++i) {
         // What the corner actually did this tick, solved shape and all: a shape
         // that is turning about something is doing that, and the turn is motion.
@@ -333,6 +332,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             // below.
             const Vec3 normalImpulse{0.0, -velocity.y * kMass, 0.0};
             velocity = velocity + normalImpulse * (1.0 / kMass);
+            floorImpulse[i] = floorImpulse[i] + normalImpulse;
         }
         body.velocity[i] = velocity;
     }
@@ -358,6 +358,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             for (std::size_t i = 0; i < count; ++i) {
                 const Vec3 gripImpulse{-taken, 0.0, 0.0};
                 body.velocity[i] = body.velocity[i] + gripImpulse * (1.0 / kMass);
+                floorImpulse[i] = floorImpulse[i] + gripImpulse;
             }
         }
     }
@@ -402,18 +403,12 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
-    // Everything the contacts did to this body, corner by corner: the floor's
-    // normal impulse, the shape solve holding it rigid, friction at the patch --
-    // the impulses above and every other one the tick applied. It is the
-    // difference between the speed the forces gave each corner and the speed it
-    // ended with, taken back to newtons over the tick, so it is exactly the
-    // momentum the room delivered, and it is written into the ledger here rather
-    // than at each impulse above: one corner may be answered by the floor, the
-    // patch and the solve in the same tick, and three part-written entries would
-    // be three arrows where the corner has one force.
+    // And the floor's own arrows, one per corner it answered: the normal impulse
+    // and the grip at that corner added together, because they are one surface
+    // pressing one point. They were written down as they were applied -- see
+    // floorImpulse below -- and this is that sum over the tick, in newtons.
     for (std::size_t i = 0; i < count; ++i) {
-        const Vec3 push = (body.velocity[i] - afterForces[i]) * (kMass / kTick);
-        if (length(push) > 1e-6) addForce(body.position[i], push, ForceKind::Contact);
+        if (length(floorImpulse[i]) > 1e-9) addForce(body.position[i], floorImpulse[i] * (1.0 / kTick), ForceKind::Contact);
     }
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;

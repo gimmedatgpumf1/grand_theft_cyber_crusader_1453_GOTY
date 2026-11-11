@@ -285,15 +285,10 @@ void PlaygroundRoom::giveBodyImpulse(std::size_t index, std::size_t struck, Vec3
     for (std::size_t i = 0; i < body.count; ++i)
         body.velocity[i] = body.velocity[i] + momentum * ((i == struck ? kStruckShare : otherShare) / kMass);
     body.frozen = false;
-    // And the corner it was struck at gets the arrow: the momentum handed over,
-    // over the tick, in newtons. This happens before the body's own tick has taken
-    // its snapshot of what the forces did, so nothing else will account for it --
-    // without this line a body knocked by the dot would be moving for no reason the
-    // ledger could name.
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const Vec3 share = momentum * ((i == struck ? kStruckShare : otherShare) / kTick);
-        if (length(share) > 1e-6) addForce(body.position[i], share, ForceKind::Contact);
-    }
+    // And the arrow: the momentum handed over, over the tick, written at the corner
+    // it was struck at -- which is where the dot's blow landed and where the force
+    // it stands for acts.
+    if (length(momentum) > 1e-9) addForce(body.position[struck], momentum * (1.0 / kTick), ForceKind::Contact);
 }
 
 // A body's mass where a blow lands. A body is its corners held at fixed distances
@@ -329,9 +324,16 @@ double PlaygroundRoom::bodyShareAt(const Body& body, const BodyInertia& inertia,
 // turns about its middle by what that impulse would turn it by, so where the blow
 // landed is what the body turns by. Sharing the impulse out corner by corner
 // instead had one corner stop dead while the others kept falling.
-void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia, Vec3 contact, Vec3 momentum) {
+void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
+                                 ForceKind kind) {
     Body& body = bodies_[index];
     ++body.contacts;
+    // The ledger is written here, where the impulse is applied, by the same call
+    // that applies it -- not measured afterwards by looking at how much the corners
+    // changed. An impulse over a tick is a force, and a force is what the arrows
+    // claim to show, so the two cannot drift apart: there is no other door into a
+    // body's velocity that this one does not also write.
+    if (length(momentum) > 1e-9) addForce(contact, momentum * (1.0 / kTick), kind);
     const Vec3 arm = contact - inertia.middle;
     const double turn = (arm.x * momentum.y - arm.y * momentum.x) / inertia.moment;
     const Vec3 push = momentum * (1.0 / (static_cast<double>(body.count) * kMass));
@@ -477,7 +479,6 @@ void PlaygroundRoom::tick() {
         }
     }
     velocity_ = accelerated(velocity_, pointForce_, kMass);
-    pointAfterForces_ = velocity_;
     traceFrom_ = point_;
     resting_ = false;
     restingBody_ = -1;
@@ -697,11 +698,6 @@ void PlaygroundRoom::tick() {
     bodiesAnswer();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
-    // And what the surfaces did to the point, once the walk is over.
-    {
-        const Vec3 push = (velocity_ - pointAfterForces_) * (kMass / kTick);
-        if (length(push) > 1e-6) addForce(point_, push, ForceKind::Contact);
-    }
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
     if (length(point_ - from) > 1e-9) {
         ghosts_[ghostNext_] = point_;
