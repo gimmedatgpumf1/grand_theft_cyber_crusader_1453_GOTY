@@ -72,9 +72,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // is not motion either -- so the step is read here, once, and used from here on.
     Vec3 surfaceVelocity{};
     if (body != nullptr) {
-        for (std::size_t i = 0; i < body->count; ++i)
-            surfaceVelocity = surfaceVelocity + (body->position[i] - body->previous[i]);
-        surfaceVelocity = surfaceVelocity * (1.0 / (kTick * static_cast<double>(body->count)));
+        for (std::size_t i = 0; i < body->count; ++i) surfaceVelocity = surfaceVelocity + body->velocity[i];
+        surfaceVelocity = surfaceVelocity * (1.0 / static_cast<double>(body->count));
     }
 
     // A ball found through an outline is the ball's own way out: the body's tick
