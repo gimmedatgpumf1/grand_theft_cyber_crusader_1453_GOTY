@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -174,6 +176,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // the shape turning, and that is motion.
     std::array<Vec3, kMaxCorners> bodyLift{};
 
+    const Vec3 beforeSolve = body.position[0];
     for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
         double worstDistance = 0.0;
         // Both ways round every pass. Pushing the distances back in one fixed
@@ -238,6 +241,10 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
     }
+    if (std::getenv("GTC_DRIFT") && index == 1)
+        std::fprintf(stderr, "  DRIFT-in c0 (%.5f,%.5f) beforeSolve (%.5f,%.5f) -> correction (%.6f,%.6f)\n",
+                     body.position[0].x, body.position[0].y, beforeSolve.x, beforeSolve.y,
+                     body.position[0].x - beforeSolve.x, body.position[0].y - beforeSolve.y);
     // Whatever the loop left, no corner may be under the floor when the tick ends:
     // the floor is not a suggestion. Correcting it the way the floor's own pass does
     // -- rigidly, at the corner that is through it -- keeps the shape.
@@ -247,6 +254,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             onPlane[i] = true;
             held[i] = true;
         }
+    }
+    if (std::getenv("GTC_DRIFT") && index == 1) {
+        const Vec3 step = (body.position[0] - body.previous[0]) * (1.0 / kTick);
+        std::fprintf(stderr,
+                     "  DRIFT c0 end (%.5f,%.5f) stepVel (%.5f,%.5f) storedVel (%.5f,%.5f) bodyLift (%.6f,%.6f) lift "
+                     "(%.6f,%.6f)\n",
+                     body.position[0].x, body.position[0].y, step.x, step.y, body.velocity[0].x, body.velocity[0].y,
+                     bodyLift[0].x, bodyLift[0].y, lift[0].x, lift[0].y);
     }
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
