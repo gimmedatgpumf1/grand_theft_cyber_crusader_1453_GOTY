@@ -125,6 +125,11 @@ private:
         // Whether static friction could hold the ball at every surface it touched
         // this tick. A slope cannot, so a ball on one is never at rest.
         bool standing = true;
+        // The way out of the surface that is under it, from the last contact that
+        // could carry it. A ball at rest is pressed at that point and nowhere else,
+        // so this is where its weight comes back up, and the arrow on F is drawn
+        // there -- not under the middle of a ball that may be sitting on a slope.
+        Vec3 supportNormal{0, 1, 0};
         std::size_t faceBatch = 0, markBatch = 0;
     };
     // A body is its corner points and the distances between them that are not

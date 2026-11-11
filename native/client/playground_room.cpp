@@ -804,8 +804,9 @@ void PlaygroundRoom::advance(double seconds) {
         // A frozen body has nothing to do: no force, no motion, no work.
         // The ledger belongs to one tick: every force written into it was applied
         // during that tick, and a stale arrow is worse than no arrow.
+        // The ledger belongs to one tick: every force written into it was applied
+        // during that tick, and a stale arrow is worse than no arrow.
         clearForces();
-        recordStaticForces();
         if (!pointFrozen_) {
             tick();
         } else {
@@ -823,6 +824,12 @@ void PlaygroundRoom::advance(double seconds) {
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
         freezeCheck();
+        // What is still acting, now that the tick has finished with everything. It
+        // is written here, at the end, because that is when it is known which things
+        // were stepped and which were not: a body that was woken by this tick's
+        // contacts has already written the forces that woke it, and a body that is
+        // still asleep has written nothing at all.
+        recordStaticForces();
         ++ticks;
     }
 }
@@ -857,10 +864,26 @@ void PlaygroundRoom::recordStaticForces() {
                          ForceKind::Contact);
         }
     }
-    // The dot, asleep on something, is the same pair of forces at one point.
+    // The ball asleep on something is the same pair again: its weight, and the
+    // surface carrying it. A ball at rest has no other forces -- no drag, because
+    // it is not moving, and no blows, because nothing is arriving -- so those two
+    // arrows are the whole of what is acting on it, and leaving them out was the
+    // ledger showing an empty ball while it is very much being pressed into the
+    // floor by its own weight. The surface answers at the point it presses, and a
+    // ball held still on a slope is held by its normal force and its friction
+    // together, whose sum is exactly its weight -- so one arrow of -weight at that
+    // point is the true total, not an approximation of it.
+    if (ball_.frozen && !ballNeighboursMoving()) {
+        const Vec3 weight{0.0, -ball_.mass * kGravity, 0.0};
+        addForce(ball_.position, weight, ForceKind::Gravity);
+        addForce(ball_.position + ball_.supportNormal * (-ball_.radius), weight * -1.0, ForceKind::Contact);
+    }
+    // The dot, asleep on something, is the same pair of forces at one point -- and
+    // the point it is pressed at is the one its own support says.
     if (pointFrozen_) {
-        addForce(point_, Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
-        addForce(point_, Vec3{0.0, kMass * kGravity, 0.0}, ForceKind::Contact);
+        const Vec3 weight{0.0, -kMass * kGravity, 0.0};
+        addForce(point_, weight, ForceKind::Gravity);
+        addForce(point_, weight * -1.0, ForceKind::Contact);
     }
 }
 

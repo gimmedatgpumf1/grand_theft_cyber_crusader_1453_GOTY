@@ -228,9 +228,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // within this much is a wall, not a floor: it carries nothing, and asking it to
     // carry the ball made a ball resting against the cube drop and bounce every
     // other tick.
-    if (normal.y > 1e-9)
+    if (normal.y > 1e-9) {
         ball.standing = ball.standing &&
                         kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        // The surface that is under it, remembered: a ball left standing on
+        // something is pressed at this point, so this is where its weight comes
+        // back up and where the arrow for it belongs.
+        ball.supportNormal = normal;
+    }
 
     // A contact that is not a blow is still a contact. The surface carries the
     // ball's weight for as long as the ball is on it, and friction is that weight

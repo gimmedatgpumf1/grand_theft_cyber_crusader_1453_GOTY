@@ -129,8 +129,10 @@ void PlaygroundRoom::tickBall() {
     addForce(ball.position, weight, ForceKind::Gravity, &ball.force);
     if (held) {
         // The surface under it carries it: the same weight back, at the point the
-        // ball is standing on, which is where the floor presses it.
-        addForce(ball.position + Vec3{0, -ball.radius, 0}, weight * -1.0, ForceKind::Contact, &ball.force);
+        // ball is standing on -- along the way out of that surface, which is where
+        // the ball is actually pressed and the one place the force can act.
+        addForce(ball.position + ball.supportNormal * (-ball.radius), weight * -1.0, ForceKind::Contact,
+                 &ball.force);
     } else {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
