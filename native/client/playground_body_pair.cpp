@@ -543,10 +543,16 @@ void PlaygroundRoom::bodiesAnswer() {
                                      "slip %.4f needed %.5f rubbed %.5f\n",
                                      self, i, at.x, at.y, slide, giveSlide, hold, slip, needed, rubbed);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
-                    if (slidesBody)
-                        giveBodyTurn(self, mine, at, mineSlideWay * (rubbed * (slide > 0.0 ? -1.0 : 1.0)));
-                    if (slidesSolid)
-                        giveBodyTurn(them, theirs, at, theirsSlideWay * (rubbed * (slide > 0.0 ? 1.0 : -1.0)));
+                    // The same sign for both sides: `mineSlideWay` is the way this side
+                    // may slide and `theirsSlideWay` is the way the other one may, which
+                    // is already the opposite direction. Flipping it a second time for
+                    // the other side pushed both bodies the same way, so the slide they
+                    // were meant to lose was left exactly where it was and a little
+                    // momentum was added to the pair on every pass -- a resting body
+                    // taking off along the surface it was resting on.
+                    const double grip = slide > 0.0 ? -rubbed : rubbed;
+                    if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
+                    if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
                 }
             }
         }
