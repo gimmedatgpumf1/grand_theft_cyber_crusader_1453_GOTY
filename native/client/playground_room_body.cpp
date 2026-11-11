@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -116,6 +118,9 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.position[i] + (target[i] - body.position[i]) * reach;
         spend = spend * (1.0 - reach);
+        if (std::getenv("GTC_REACH") && index == 0)
+            std::fprintf(stderr, "  R pass %d spend %.4f reach %.6f (body %.4f ball %.2f plane %.4f) way (%.2f,%.2f)\n",
+                         pass, spend, reach, bodyReach, ballReach, planeReach, metWay.x, metWay.y);
         if (!(reach < 1.0)) break;
         // The speed at the place they met is what the surface answers, and what it
         // answers it with is taken off the whole body: every corner loses the same
