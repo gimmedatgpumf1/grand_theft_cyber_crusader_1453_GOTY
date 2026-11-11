@@ -30,13 +30,19 @@ constexpr std::uint32_t kArrowId = 2000, kArrowKindStride = 40, kArrowHeadOffset
 // How long a newton is, in metres of arrow. A corner weighs m*g = 9.8 N, so its
 // weight is drawn a hand's width long; every other force is the same scale, which
 // is the whole point of the arrows -- they are comparable by eye.
-constexpr double kArrowMetresPerNewton = 0.030, kArrowHalfWidth = 0.010, kArrowHeadRadius = 0.045;
+constexpr double kArrowMetresPerNewton = 0.030, kArrowHalfWidth = 0.010;
+// The head is a share of the arrow's own length, not a fixed size: a long arrow
+// gets a long head and a short one a short head, so a small force still reads as
+// an arrow and not as a head with no shaft. Both are fractions of the drawn
+// length, which is the force, so nothing here is a separate scale to keep in step.
+constexpr double kArrowHeadShare = 0.34, kArrowHeadHalfShare = 0.42;
 constexpr int kForceLabelHeight = 20;
 
 // One arrow per drawn force: where it acts, where its tip is, and how hard it is.
 struct Arrow {
     std::size_t kind = 0, slot = 0;
-    Vec3 from{}, to{};
+    Vec3 from{}, to{};   // where it acts, and the tip of the head
+    Vec3 neck{};         // where the shaft ends and the head begins
     double newtons = 0.0;
 };
 
@@ -75,7 +81,9 @@ std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, Pla
         // is the force's direction and its length is the force's amount times one
         // number for the whole room, so 9.8 N is always the same arrow however many
         // forces are on screen and two of them can be compared by eye.
+        const Vec3 direction = sample.force * (1.0 / newtons);
         arrow.to = sample.at + sample.force * kArrowMetresPerNewton;
+        arrow.neck = arrow.to - direction * (length(arrow.to - arrow.from) * kArrowHeadShare);
         arrow.newtons = newtons;
         arrows.push_back(arrow);
     }
@@ -209,7 +217,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     raster.setObject(kBallMarkId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#3a2016"));
 
-    // The forces: a unit bar along +x for the shaft and a unit disc for the head,
+    // The forces: a unit bar along +x for the shaft and a unit triangle for the head,
     // both placed by a model matrix every frame, exactly as the bodies' edges and
     // corners are. Every arrow exists in the scene from the first frame and is
     // moved off screen when there is no force to draw, so turning F on costs no
@@ -223,7 +231,10 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
             quad(points, faces, 0, -1, 1, 1, 0.008);
             raster.setObject(base, {0, 0}, 0);
             raster.mesh(points, faces, flat(kindColour(kind)));
-            disc(points, faces, 1.0);
+            // A point on the end of it, not a disc: the tip of the arrow is where
+            // the force ends, and a round end says nothing about which way it is
+            // going or where it stops.
+            triangle(points, faces, 0.008);
             raster.setObject(base + kArrowHeadOffset, {0, 0}, 0);
             raster.mesh(points, faces, flat(kindColour(kind)));
         }
@@ -293,11 +304,12 @@ void PlaygroundRoom::placeMarkers() {
     }
     if (showForces_) {
         for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
+            const double drawn = length(arrow.to - arrow.from);
+            const double head = drawn * kArrowHeadShare;
             scene_.batches[arrowShaft_[arrow.kind][arrow.slot]].modelMatrix =
-                segment(arrow.from, arrow.to, kArrowHalfWidth);
+                segment(arrow.from, arrow.neck, kArrowHalfWidth);
             scene_.batches[arrowHead_[arrow.kind][arrow.slot]].modelMatrix =
-                {kArrowHeadRadius, 0, 0, 0, 0, kArrowHeadRadius, 0, 0, 0, 0, 1, 0,
-                 arrow.to.x, arrow.to.y, arrow.to.z, 1};
+                arrowHead(arrow.neck, arrow.to, head * kArrowHeadHalfShare);
         }
     }
     for (std::size_t index = 0; index < kBodyCount; ++index) {

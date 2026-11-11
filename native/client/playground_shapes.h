@@ -54,6 +54,29 @@ inline std::array<double, 16> pose(Vec3 centre, double angle) {
     return {c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, centre.x, centre.y, centre.z, 1};
 }
 
+// An arrow's head: a triangle whose base is at `base` and whose point is at `tip`,
+// so the head lies along the force exactly as the shaft does. Its own geometry is
+// a unit triangle -- base spanning y from -1 to 1 at x = 0, point at (1, 0) -- and
+// this is the matrix that puts it there, the same way `segment` places a bar.
+inline std::array<double, 16> arrowHead(Vec3 base, Vec3 tip, double halfWidth) {
+    const Vec3 along = tip - base;
+    const double span = std::sqrt(along.x * along.x + along.y * along.y);
+    if (!(span > 1e-9)) return translation({0, -1000, 0});
+    const Vec3 across{-along.y / span * halfWidth, along.x / span * halfWidth, 0};
+    return {along.x, along.y, 0, 0, across.x, across.y, 0, 0, 0, 0, 1, 0,
+            base.x, base.y, base.z, 1};
+}
+
+// The unit triangle that arrowHead places: base at local x = 0, point at x = 1.
+inline void triangle(std::vector<Vec3>& points, std::vector<std::array<int, 3>>& faces, double z) {
+    points.clear();
+    faces.clear();
+    points.push_back({0, -1, z});
+    points.push_back({0, 1, z});
+    points.push_back({1, 0, z});
+    faces.push_back({0, 1, 2});
+}
+
 // One flat colour, no shading: these are markers, not surfaces.
 inline Material flat(const char* hex) {
     Material material;
