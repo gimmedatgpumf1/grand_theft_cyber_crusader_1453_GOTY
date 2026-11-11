@@ -1,4 +1,5 @@
 #include "client/playground_ball_shape.h"
+#include "client/playground_room_tick.h"
 #include <cstdio>
 #include <cstdlib>
 #include "client/playground_shapes.h"
@@ -6,6 +7,8 @@
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
+// playground_tick is named where it is used: ball_shape has its own kTick and
+// kGravity for the geometry, and the two must not be confused.
 
 // The ball: one point with a radius, and spin. It is not made of corner points
 // and there is nothing sampled on its surface -- it is a single body whose only
@@ -117,17 +120,26 @@ void PlaygroundRoom::tickBall() {
     // weight trading the same impulse back and forth every tick.
     const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed;
 
-    // Forces for this tick: weight, and the air it has to push through.
-    if (!held) ball.velocity.y -= kGravity * kTick;
-    if (!held) {
+    // Forces for this tick: weight, and the air it has to push through. Both are
+    // forces in newtons in one accumulator, and the integrator turns the pair of
+    // them into speed -- the ball is heavy, so its weight is a large force, and it
+    // falls for exactly that reason.
+    const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
+    ball.force = {};
+    addForce(ball.position, weight, ForceKind::Gravity, &ball.force);
+    if (held) {
+        // The surface under it carries it: the same weight back, at the point the
+        // ball is standing on, which is where the floor presses it.
+        addForce(ball.position + Vec3{0, -ball.radius, 0}, weight * -1.0, ForceKind::Contact, &ball.force);
+    } else {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
             const double area = kPi * ball.radius * ball.radius;
-            const double force = 0.5 * kAirDensity * kBallDragCoefficient * area * speed * speed;
-            const double loss = force / ball.mass * kTick;
-            ball.velocity = ball.velocity * (speed <= loss ? 0.0 : (speed - loss) / speed);
+            const double drag = 0.5 * kAirDensity * kBallDragCoefficient * area * speed * speed;  // N
+            addForce(ball.position, ball.velocity * (-drag / speed), ForceKind::Drag, &ball.force);
         }
     }
+    ball.velocity = playground_tick::accelerated(ball.velocity, ball.force, ball.mass);
 
     ball.touching = false;
     ball.standing = true;

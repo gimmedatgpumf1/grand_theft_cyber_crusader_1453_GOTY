@@ -33,4 +33,16 @@ inline constexpr double kContactTolerance = 1e-9;  // metres
 // contacts at once; this is a guard against a numerical corner case, not a tuning.
 inline constexpr int kContactPasses = 32;
 
+// What a force does to a speed over one tick, and the only place in the room that
+// does it: a = F/m, and the speed gains a*dt.
+//
+// Gravity is not a separate rule here. Its weight is m*g newtons exactly like a
+// contact is some number of newtons, it goes into the same accumulator as every
+// other force, and it comes out of this same product. There is no line anywhere in
+// the room that adds a speed because something is heavy -- a body that is heavy is
+// a body a large force acts on, and that is all.
+inline Vec3 accelerated(Vec3 velocity, Vec3 force, double mass) {
+    return velocity + force * (kTick / mass);
+}
+
 }  // namespace gtc::native::playground_tick

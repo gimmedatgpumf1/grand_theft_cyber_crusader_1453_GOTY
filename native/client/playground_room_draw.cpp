@@ -46,6 +46,7 @@ const char* kindColour(std::size_t kind) {
         case PlaygroundRoom::ForceKind::Contact: return "#7ce38b";
         case PlaygroundRoom::ForceKind::Pair: return "#ffb454";
         case PlaygroundRoom::ForceKind::Ball: return "#e07bd8";
+        case PlaygroundRoom::ForceKind::Drag: return "#b9ccc4";
         case PlaygroundRoom::ForceKind::KindCount: break;
     }
     return "#ffffff";

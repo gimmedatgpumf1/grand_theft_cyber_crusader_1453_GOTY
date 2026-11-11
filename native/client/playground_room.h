@@ -60,7 +60,7 @@ public:
     // it is doing -- not a separate diagnostic that could drift from the physics.
     // The arrows drawn on F are these numbers, and the figures on N are the same
     // numbers again, so what is on screen cannot disagree with what was solved.
-    enum class ForceKind { Gravity = 0, Contact = 1, Pair = 2, Ball = 3, KindCount = 4 };
+    enum class ForceKind { Gravity = 0, Contact = 1, Pair = 2, Ball = 3, Drag = 4, KindCount = 5 };
     static constexpr std::size_t kMaxForceSamples = 64;
     static constexpr std::size_t kArrowsPerKind = 16;
     struct ForceSample {
@@ -119,6 +119,8 @@ private:
         // tick over the frames between ticks; writing that back into `angle`
         // would throw away most of every tick's turn.
         double angle = 0.0, previousAngle = 0.0, shownAngle = 0.0;
+        // The forces on the ball this tick, in newtons, before the integrator.
+        Vec3 force{};
         bool frozen = false, touching = false;
         // Whether static friction could hold the ball at every surface it touched
         // this tick. A slope cannot, so a ball on one is never at rest.
@@ -131,6 +133,11 @@ private:
     struct Body {
         std::size_t count = 0, pairCount = 0;
         std::array<Vec3, kMaxCorners> position{}, previous{}, shown{}, velocity{};
+        // What the forces of this tick add up to at each corner, in newtons. It is
+        // cleared at the start of the tick, gravity goes into it, and the
+        // integrator turns it into speed once -- so a corner moves because a force
+        // acted on it, never because something decided it should.
+        std::array<Vec3, kMaxCorners> force{};
         std::array<std::array<int, 2>, kMaxPairs> pairs{};
         std::array<double, kMaxPairs> rest{};
         // The rest shape about the body's own middle, which is what the drawn
@@ -267,8 +274,9 @@ private:
     // One force, written down as it is applied. Called from the tick itself and
     // from the pair and ball contacts, so the ledger is filled by the physics and
     // nothing else writes to it.
-    void addForce(Vec3 at, Vec3 force, ForceKind kind) {
+    void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator = nullptr) {
         if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind};
+        if (accumulator != nullptr) *accumulator = *accumulator + force;
     }
     void clearForces() { forceCount_ = 0; }
     // What is still acting on the things that are no longer stepped. A body at
@@ -290,6 +298,9 @@ private:
     // contact answered it: the difference at the end of the tick is what the
     // contacts delivered.
     Vec3 velocity_{}, pointAfterForces_{};
+    // And the same accumulator for the dot: its weight goes in, what the surface
+    // answers goes in, and the integrator adds the total over its mass.
+    Vec3 pointForce_{};
     Vec3 traceFrom_{0, 2, 0}, traceTo_{0, 2, 0};
     std::array<Vec3, 40> ghosts_{};
     std::size_t ghostCount_ = 0, ghostNext_ = 0;

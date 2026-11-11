@@ -41,13 +41,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // Where this tick's step would put each corner, before anything is committed.
     std::array<Vec3, kMaxCorners> target{};
     // Gravity is a force at every corner, and it is the same force at every corner:
-    // m*g newtons downwards on each of them. It is not a speed the body is given:
-    // the speed each corner ends the tick with is what the impulses below are
-    // written in terms of, and this is where they start from.
+    // m*g newtons downwards on each of them. It is a force and nothing else -- it
+    // goes into the same accumulator every other force goes into, and the one
+    // integrator below turns the total into speed. Writing "the speed falls by g
+    // times dt" instead would be a rule about gravity that the room's other forces
+    // do not obey, and a rule like that is where made-up motion starts.
     const Vec3 weight{0.0, -kMass * kGravity, 0.0};
     for (std::size_t i = 0; i < count; ++i) {
-        addForce(body.position[i], weight, ForceKind::Gravity);
-        body.velocity[i].y -= kGravity * kTick;
+        body.force[i] = {};
+        addForce(body.position[i], weight, ForceKind::Gravity, &body.force[i]);
+    }
+    // The integrator: p += F*dt, one line, for every corner, whatever the forces are.
+    for (std::size_t i = 0; i < count; ++i) {
+        body.velocity[i] = accelerated(body.velocity[i], body.force[i], kMass);
         target[i] = body.position[i] + body.velocity[i] * kTick;
     }
     // What each corner's speed was once the forces had been applied and before any
@@ -291,8 +297,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         rightmost = std::max(rightmost, body.position[i].x);
     }
     const double footprint = touchingPlane ? std::max(0.0, rightmost - leftmost) / kCubeSide : 0.0;
-    const double holdSpeed = body.staticFriction * footprint * kGravity * kTick;
-    const double slideSpeed = body.kineticFriction * footprint * kGravity * kTick;
+    // Friction is a fraction of the force pressing the floor, and it is a force
+    // over the tick like any other: mu * N newtons held for dt on a mass is
+    // mu * N * dt / m of speed. N here is the body's own weight, m*g newtons, times
+    // how much of its footprint is down.
+    const double floorPressure = kMass * kGravity * footprint;  // N
+    const double holdSpeed = body.staticFriction * floorPressure * kTick / kMass;
+    const double slideSpeed = body.kineticFriction * floorPressure * kTick / kMass;
 
     // Which corners are touching the plane now, after the solve has finished
     // moving them. A clamp from an earlier pass is not a contact: the solve may

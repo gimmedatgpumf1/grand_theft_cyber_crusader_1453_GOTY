@@ -436,43 +436,38 @@ void PlaygroundRoom::tick() {
     // surface holds the point only if static friction can answer what is left --
     // mu_s * N -- and on a 45 degree face it cannot, which is why a point on a
     // slope slides instead of creeping to a stop.
-    Vec3 force{0.0, -kMass * kGravity, 0};
+    // The forces on the point, in the one accumulator: its weight first, m*g
+    // newtons down like any other force, and then whatever is holding it up. There
+    // is no separate rule for gravity here: what the surface cannot answer is left
+    // in the sum and the integrator below turns the whole of it into speed.
+    const Vec3 weight{0.0, -kMass * kGravity, 0.0};
+    pointForce_ = {};
+    addForce(point_, weight, ForceKind::Gravity, &pointForce_);
     heldStill_ = false;
     if (dragTarget_ == DragTarget::Point) {
-        force = Vec3{};
+        // The mouse holds it: the hold is the force that carries its weight.
+        addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_);
         heldStill_ = true;
     } else if (resting_) {
         const Vec3 normal = supportNormal_;
-        const double into = dot(force, normal);       // negative when pressing in
-        const Vec3 along = force - normal * into;     // what the surface cannot answer
+        const double into = dot(weight, normal);      // negative when pressing in
+        const Vec3 along = weight - normal * into;    // what the surface cannot answer
         const double carried = -into;                 // N, how hard it is pressed
         // Static friction holds a surface only against something that is not
         // already moving. A point with sideways speed is sliding, and sliding is
         // kinetic friction's business however weakly it is being pushed.
         const Vec3 sliding = velocity_ - normal * dot(velocity_, normal);
         if (length(along) <= kPointStaticFriction * carried && length(sliding) < 1e-9) {
-            force = Vec3{};
+            // The surface answers the whole weight, sideways pull included.
+            addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_);
             heldStill_ = true;
         } else {
-            force = along;                            // it slides
+            // It slides: the surface answers the part of the weight that presses
+            // into it, and the rest of the sum is a force down the slope.
+            addForce(point_, normal * carried, ForceKind::Contact, &pointForce_);
         }
     }
-    // The two forces on the point, written down where they are applied: its weight,
-    // always, and whatever the surface it is standing on answers it with. The
-    // difference between the speed after the forces and the speed at the end of the
-    // tick is the contact's impulse, turned back into newtons over the tick.
-    addForce(point_, Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
-    // What the surface has already answered is the part of the weight it took out
-    // of `force`, and it belongs in the ledger at the same instant the weight went
-    // in -- a point held still by the floor is under 9.8 N down and 9.8 N up, and
-    // the speed it never gains is exactly why the difference has to be written
-    // here rather than measured afterwards. The rest of the tick's contacts are
-    // still measured where they happen, at the end.
-    {
-        const Vec3 support = force - Vec3{0.0, -kMass * kGravity, 0.0};
-        if (length(support) > 1e-6) addForce(point_, support, ForceKind::Contact);
-    }
-    velocity_ = velocity_ + force * (kTick / kMass);
+    velocity_ = accelerated(velocity_, pointForce_, kMass);
     pointAfterForces_ = velocity_;
     traceFrom_ = point_;
     resting_ = false;
@@ -637,8 +632,11 @@ void PlaygroundRoom::tick() {
         const Vec3 normal = supportNormal_;
         const Vec3 across = velocity_ - normal * dot(velocity_, normal);
         const double speed = length(across);
-        const double pressed = kGravity * std::abs(normal.y);
-        const double slide = kPointKineticFriction * pressed * slideSpan_;
+        // The normal force the surface presses the point with is the part of its
+        // weight that goes into it, m*g*cos, and friction is a fraction of that
+        // force held for the part of the tick the point was on it.
+        const double normalForce = kMass * kGravity * std::abs(normal.y);  // N
+        const double slide = kPointKineticFriction * normalForce * slideSpan_ / kMass;
         if (speed > 1e-12) {
             const double keep = speed <= slide ? 0.0 : (speed - slide) / speed;
             const Vec3 lost = across * (1.0 - keep);
