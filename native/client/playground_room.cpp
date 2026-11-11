@@ -462,6 +462,16 @@ void PlaygroundRoom::tick() {
     // difference between the speed after the forces and the speed at the end of the
     // tick is the contact's impulse, turned back into newtons over the tick.
     addForce(point_, Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
+    // What the surface has already answered is the part of the weight it took out
+    // of `force`, and it belongs in the ledger at the same instant the weight went
+    // in -- a point held still by the floor is under 9.8 N down and 9.8 N up, and
+    // the speed it never gains is exactly why the difference has to be written
+    // here rather than measured afterwards. The rest of the tick's contacts are
+    // still measured where they happen, at the end.
+    {
+        const Vec3 support = force - Vec3{0.0, -kMass * kGravity, 0.0};
+        if (length(support) > 1e-6) addForce(point_, support, ForceKind::Contact);
+    }
     velocity_ = velocity_ + force * (kTick / kMass);
     pointAfterForces_ = velocity_;
     traceFrom_ = point_;
