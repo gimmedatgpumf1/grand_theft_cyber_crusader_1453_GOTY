@@ -507,6 +507,9 @@ void PlaygroundRoom::bodiesAnswer() {
                             // a side that cannot move is no momentum at all.
                             if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse);
                             if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse);
+                            if (std::getenv("GTC_ORD") && self == 1)
+                                std::fprintf(stderr, "    NORMAL close %+.5f imp %+.5f -> c0 v.n %+.6f\n", closing, impulse,
+                                             dot(body.velocity[i], normal));
                             body.touched = true;
                             solid.touched = true;
                             if (-closing > kRestSpeed) {
@@ -558,6 +561,9 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double grip = slide > 0.0 ? -rubbed : rubbed;
                     if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
                     if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
+                    if (std::getenv("GTC_ORD") && self == 1)
+                        std::fprintf(stderr, "    FRICT slide %+.5f grip %+.5f -> c0 v.n %+.6f slide now %+.6f\n", slide,
+                                     grip, dot(body.velocity[i], normal), dot(body.velocity[i], tangent));
                 }
             }
         }
