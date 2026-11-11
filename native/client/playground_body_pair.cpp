@@ -529,10 +529,15 @@ void PlaygroundRoom::bodiesAnswer() {
     }
 
     };
-    // Contacts and distances, together, until nothing between the bodies is closing.
+    // Contacts until nothing between the bodies is closing. The distances are not
+    // solved here: the answer is given to each body as a solid, so the shape is rigid
+    // by construction and there is nothing left for a second pass over the fixed
+    // distances to repair. Running one anyway takes a velocity field that is already
+    // rigid and bends it -- a contact's grip, which was meant to pin a point, comes
+    // back out as a shove of the whole body, and a triangle turning about a corner on
+    // a cube walks sideways along it.
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
         const double closing = solveContacts();
-        solveDistances();
         if (closing <= kRestSpeed) break;
     }
     // A frozen body has nothing holding it up the moment whatever was under it is
