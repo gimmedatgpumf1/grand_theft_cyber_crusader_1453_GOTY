@@ -285,6 +285,15 @@ void PlaygroundRoom::giveBodyImpulse(std::size_t index, std::size_t struck, Vec3
     for (std::size_t i = 0; i < body.count; ++i)
         body.velocity[i] = body.velocity[i] + momentum * ((i == struck ? kStruckShare : otherShare) / kMass);
     body.frozen = false;
+    // And the corner it was struck at gets the arrow: the momentum handed over,
+    // over the tick, in newtons. This happens before the body's own tick has taken
+    // its snapshot of what the forces did, so nothing else will account for it --
+    // without this line a body knocked by the dot would be moving for no reason the
+    // ledger could name.
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 share = momentum * ((i == struck ? kStruckShare : otherShare) / kTick);
+        if (length(share) > 1e-6) addForce(body.position[i], share, ForceKind::Contact);
+    }
 }
 
 // A body's mass where a blow lands. A body is its corners held at fixed distances
