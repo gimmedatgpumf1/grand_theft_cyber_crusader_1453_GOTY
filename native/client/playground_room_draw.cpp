@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace gtc::native {
@@ -342,6 +343,7 @@ void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame)
         drawTextPixels(frame, static_cast<int>(std::lround(x)) + 6, static_cast<int>(std::lround(y)) - 22,
                        number, colorHex(kindColour(arrow.kind)), kForceLabelHeight);
     }
+    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] labels %zu\n", forceLabels_.quads().size());
     double kinetic = 0.0, potential = 0.0;
     energyBudget(kinetic, potential);
     std::snprintf(number, sizeof(number), "E %.2f J   KE %.2f   PE %.2f", kinetic + potential, kinetic, potential);
