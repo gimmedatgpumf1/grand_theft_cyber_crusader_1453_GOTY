@@ -140,11 +140,15 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
                     for (std::size_t k = 0; k < solid.count; ++k)
                         solidHigh = std::max(solidHigh, dot(solid.position[k], axis));
                     const double gap = bodyLow - solidHigh;
+                    // Only a side that actually keeps them apart says anything: two
+                    // convex outlines overlap along most of their sides even when they
+                    // are nowhere near each other, and reading that as a meeting is a
+                    // body that stops in mid-air. Along the side that separates them,
+                    // the distance between them is real and so is the rate it closes at.
+                    if (!(gap > 0.0)) continue;
                     const double closes = -dot(relative, axis);
                     if (!(closes > 1e-12)) continue;
-                    // Already inside along this axis and still closing: they met at the
-                    // first instant of the step.
-                    const double along = gap > 0.0 ? gap / closes : 0.0;
+                    const double along = gap / closes;
                     if (!(along < first)) continue;
                     first = along;
                     *wayOut = axis;
