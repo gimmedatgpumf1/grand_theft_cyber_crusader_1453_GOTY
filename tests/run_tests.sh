@@ -70,31 +70,31 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   tests/skeleton_bilateral.cpp -o build/bin/gtc-skeleton-bilateral
 ./build/bin/gtc-skeleton-bilateral
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_source_room.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-source-room
 ./build/bin/gtc-skeleton-source-room
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_ragdoll.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_ragdoll.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-ragdoll
 ./build/bin/gtc-skeleton-ragdoll
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_live_bends.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_live_bends.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-live-bends
 ./build/bin/gtc-skeleton-live-bends
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_shoulder_girdle.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_shoulder_girdle.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-shoulder-girdle
 ./build/bin/gtc-skeleton-shoulder-girdle
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_t_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_t_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-t-pose
 ./build/bin/gtc-skeleton-t-pose
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_leg_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_leg_pose.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-leg-pose
 ./build/bin/gtc-skeleton-leg-pose
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_finger_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-finger-joints
 ./build/bin/gtc-skeleton-finger-joints
 "${COMMAND[@]}" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
@@ -106,23 +106,23 @@ echo '[test] C++ simulation and signed geometry checks passed.'
   -o build/bin/gtc-skeleton-windows-header-order
 ./build/bin/gtc-skeleton-windows-header-order
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_toe_joints.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-toe-joints
 ./build/bin/gtc-skeleton-toe-joints
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_source_hand_angles.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_source_hand_angles.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-hand-angles
 ./build/bin/gtc-skeleton-hand-angles
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_elbow_sweep.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-elbow-sweep
 python3 tests/openskeleton_elbow_collision.py
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_hip_fits.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp \
+  tests/skeleton_hip_fits.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp native/client/skeleton_body_reference.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-hip-fits
 ./build/bin/gtc-skeleton-hip-fits
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_knee_fits.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp \
+  tests/skeleton_knee_fits.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp native/client/skeleton_body_reference.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-knee-fits
 ./build/bin/gtc-skeleton-knee-fits
 "${COMMAND[@]}" -std=c++20 -O2 -Isrc -Inative tests/rajagopal_spatial_joint.cpp -o build/bin/gtc-rajagopal-knee
@@ -130,15 +130,15 @@ python3 tests/openskeleton_elbow_collision.py
 "${COMMAND[@]}" -std=c++20 -O2 -Isrc -Inative tests/clinical_bend_ranges.cpp -o build/bin/gtc-clinical-bend-ranges
 ./build/bin/gtc-clinical-bend-ranges
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_clinical_bend.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp \
+  tests/skeleton_clinical_bend.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp native/client/skeleton_body_reference.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-clinical-bend
 ./build/bin/gtc-skeleton-clinical-bend
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_source_rig.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp \
+  tests/skeleton_source_rig.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp native/client/skeleton_body_reference.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-rig
 ./build/bin/gtc-skeleton-source-rig
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative \
-  tests/skeleton_source_structures.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp \
+  tests/skeleton_source_structures.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/raster.cpp native/client/skeleton_body_reference.cpp \
   native/client/hud.cpp native/client/ui_layer.cpp -o build/bin/gtc-skeleton-source-structures
 ./build/bin/gtc-skeleton-source-structures
 "${COMMAND[@]}" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative \
@@ -161,40 +161,40 @@ else
 fi
 # Verify averaged skull/jaw triangles and preserve the white source geometry.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skull_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skull_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skull-symmetry
 ./build/bin/gtc-skull-symmetry
 # Check each original and mirrored vertebra with the actual slider mapping.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/vertebra_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-vertebra-symmetry
 ./build/bin/gtc-vertebra-symmetry
 # Check each rib and shoulder-girdle pair and preserve the source meshes.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/bone_pair_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/bone_pair_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-bone-pair-symmetry
 ./build/bin/gtc-bone-pair-symmetry
 # All 182 parts must share one upright mirror plane, not merely separate planes.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/whole_skeleton_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/whole_skeleton_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-whole-skeleton-symmetry
 ./build/bin/gtc-whole-skeleton-symmetry
 # A symmetric central bone must not duplicate an off-axis coccyx into two tips.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/coccyx_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/coccyx_symmetry.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-coccyx-symmetry
 ./build/bin/gtc-coccyx-symmetry
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp \
+  tests/skeleton_comparison.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-comparison
 ./build/bin/gtc-skeleton-comparison
 # Enumerate and check every paired blue bone at default and slider extremes.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/bone_symmetry_checklist.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/bone_symmetry_checklist.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-bone-symmetry-checklist
 ./build/bin/gtc-bone-symmetry-checklist
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-  tests/skeleton_height_transition.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+  tests/skeleton_height_transition.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
   build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-height-transition
 ./build/bin/gtc-skeleton-height-transition
 python3 tests/skull_mesh_contact.py
@@ -205,7 +205,7 @@ python3 tests/shoulder_girdle_mesh_contact.py
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src tests/interactive_room.cpp \
-  native/client/{client,raster,hud,human_renderer,human_materials,blockbody,skeleton_body,skeleton_room,skeleton_ragdoll,world_renderer,fps_counter,crosshair,cheat_menu,mode_bar,overlay_panel,interaction_wheel,status_panel,ui_layer,target_prompt,diagnostics,window_x11,opengl_shared}.cpp \
+  native/client/{client,raster,hud,human_renderer,human_materials,blockbody,skeleton_body,skeleton_room,skeleton_ragdoll,world_renderer,fps_counter,crosshair,cheat_menu,mode_bar,overlay_panel,interaction_wheel,status_panel,ui_layer,target_prompt,diagnostics,window_x11,opengl_shared}.cpp native/client/skeleton_body_reference.cpp \
   native/{human,hair}.cpp src/core/json.cpp src/net/{platform,websocket,sha1}.cpp \
   native/vulkan/{vk_device,vk_renderer,vk_upload,vk_batches,vk_targets,vk_swapchain}.cpp \
   build/obj/bullet/libbullet.a -ldl -o build/bin/gtc-interactive-room
@@ -237,27 +237,27 @@ GTC_FAKE_STAGED=1 LD_LIBRARY_PATH="$ROOT/build/vulkan-stub" ./build/bin/gtc-vulk
 if [ "${GTC_VULKAN_UI_TEST:-0}" = 1 ]; then
   ./build/bin/gtc-vulkan-ui-check
   "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-    tests/skeleton_comparison_vulkan.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,diagnostics,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp \
+    tests/skeleton_comparison_vulkan.cpp native/client/{skeleton_room,skeleton_body,skeleton_ragdoll,diagnostics,raster,hud,ui_layer}.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
     native/vulkan/{vk_device,vk_renderer,vk_upload,vk_batches,vk_targets,vk_swapchain}.cpp \
     build/obj/bullet/libbullet.a -ldl -o build/bin/gtc-skeleton-comparison-vulkan
   ./build/bin/gtc-skeleton-comparison-vulkan
   # Actual Vulkan rendering through the C room, with repeated target resizes.
   "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-    tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+    tests/skeleton_resize_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
     native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
     native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
     -ldl build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-resize-vulkan
   ./build/bin/gtc-skeleton-resize-vulkan
   "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-    tests/skeleton_source_rig_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+    tests/skeleton_source_rig_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
     native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
     native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
     -ldl build/obj/bullet/libbullet.a -o build/bin/gtc-skeleton-source-rig-vulkan
   ./build/bin/gtc-skeleton-source-rig-vulkan
   "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src \
-    tests/skeleton_ragdoll_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp \
+    tests/skeleton_ragdoll_vulkan.cpp native/client/skeleton_room.cpp native/client/skeleton_body.cpp native/client/skeleton_reference_toe.cpp native/client/skeleton_ragdoll.cpp native/client/skeleton_comparison_load.cpp native/client/skeleton_body_reference.cpp \
     native/client/diagnostics.cpp native/client/raster.cpp native/client/hud.cpp native/client/ui_layer.cpp \
     native/vulkan/vk_device.cpp native/vulkan/vk_renderer.cpp native/vulkan/vk_upload.cpp \
     native/vulkan/vk_batches.cpp native/vulkan/vk_targets.cpp native/vulkan/vk_swapchain.cpp \
