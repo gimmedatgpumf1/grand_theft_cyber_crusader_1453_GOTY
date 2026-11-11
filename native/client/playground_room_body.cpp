@@ -57,7 +57,33 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     Vec3 metWay{0, 1, 0};
     const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody);
     const double ballReach = bodyBallReach(index, target.data());
-    const double reach = std::min(ballReach, bodyReach);
+    // And the floor, swept the same way the other two are: the first fraction of the
+    // step at which any of this body's corners arrives at it.
+    //
+    // This is the whole of what a landing is. Clamping each corner after the step has
+    // been taken is not a sweep: it lets the corners that reached the floor stop while
+    // the rest of the body carries on through the tick, so the shape is squashed flat
+    // by however far it fell in that one tick -- a metre and a half a second squashes a
+    // cube by a quarter of a metre -- and then the fixed distances have to put it back,
+    // and the only way they can is to shove the corners sideways. A cube landing flat
+    // on the floor then slides seven centimetres for no reason at all.
+    //
+    // A corner already on the floor is not arriving at it: it is being carried by it,
+    // and gravity would otherwise find an arrival at the first instant of every tick
+    // and hold the body still for ever. Only a corner that starts clear of the floor
+    // and ends below it has arrived.
+    double planeReach = 1.0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (body.position[i].y <= kSurfaceY + kContactTolerance) continue;
+        if (!(target[i].y < kSurfaceY)) continue;
+        const double along = (kSurfaceY - body.position[i].y) / (target[i].y - body.position[i].y);
+        if (along < planeReach) planeReach = along;
+    }
+    const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
+    const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
+    // The floor's way out is straight up, whatever the other sweeps found: it is the
+    // floor that cut this step short.
+    if (metPlane) metWay = Vec3{0, 1, 0};
     // What each corner was trying to do this tick, before anything cut it short.
     //
     // A body stopped by another body must not have its speed read back off the
@@ -69,15 +95,16 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // where they ended up.
     std::array<Vec3, kMaxCorners> attempted{};
     for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
-    // The plane is not that: it answers a corner exactly where the corner is, and
-    // the ball answers its own contact.
-    const bool metBody = bodyReach < ballReach && bodyReach < 1.0;
+    // A body that met another body keeps the speed it arrived with, because the blow
+    // is answered at the point they met by bodiesAnswer. The ball answers its own
+    // contact. The floor is answered at the corners it holds, below.
+    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
-        if (bodyReach <= ballReach) {
-            // What is left of the step is spent along the piece of outline that was
-            // met, and not into it: a body that has met another still has the rest
+        if (metPlane || bodyReach <= ballReach) {
+            // What is left of the step is spent along the piece of surface that was
+            // met, and not into it: a body that has met something still has the rest
             // of its tick to travel, and along the surface is the only travel the
             // surface allows. Walking the whole of it as it was is carrying the
             // body into the other one by however fast it happened to be going.
@@ -113,12 +140,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         }
         onPlane[i] = body.position[i].y <= kSurfaceY + 1e-12;
     }
-    // What each corner was doing before the distances were pushed back. A
-    // constraint does no work, so the solve is not allowed to hand a corner more
-    // speed than it already had; without this the push-back and the plane turn
-    // into a spring and the body rattles for a second after it lands.
-    std::array<double, kMaxCorners> speedBefore{};
-    for (std::size_t i = 0; i < count; ++i) speedBefore[i] = length(body.velocity[i]);
     // The shape and the plane are solved together until both are satisfied. A
     // pass pushes every fixed distance back to its rest length, then puts any
     // corner the pass pushed through the plane back on it, and that repeats
@@ -143,7 +164,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // not motion: the body did not travel upwards, the floor put it back. That
     // lift has to be kept so it can be taken back out of the velocity, or a
     // corner pushed down by a blow turns into the whole body hopping upwards.
-    std::array<double, kMaxCorners> lift{};
+    std::array<Vec3, kMaxCorners> lift{};
     // The same for the ball, once: how far it had to put the body's own step back
     // out of it. Later passes are the shape re-arranging itself about the contact,
     // which is the shape turning, and that is motion.
@@ -186,8 +207,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             if (body.position[i].y < kSurfaceY) {
                 const double amount = kSurfaceY - body.position[i].y;
                 deepest = std::max(deepest, amount);
-                lift[i] += amount;
-                body.position[i].y = kSurfaceY;
+                // The floor corrects the body it is holding the way the ball and
+                // another body do: rigidly, at the corner that is through it. Pinning
+                // that one corner and letting the fixed distances pull the rest of the
+                // body into line is what let a cube come down at seventeen degrees and
+                // arrive flat, its top corners thrown a metre and a half sideways, and
+                // what left a corner of it sitting under the floor afterwards.
+                pushBodyAtPoint(index, body.position[i], Vec3{0, amount, 0}, &lift);
                 onPlane[i] = true;
                 held[i] = true;
             }
@@ -204,7 +230,23 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // way. That is what makes a shape tip on the corner of another instead of
         // lying across it.
         deepest = std::max(deepest, pushBodyOutOfBody(index, pass == 0 ? &bodyLift : nullptr));
-        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance) break;
+        // The floor is not finished with until every corner is out of it. Asking the
+        // loop only after the distances are closed lets it leave with a corner still
+        // under the floor, and a corner under the floor is a shape being squashed for
+        // a whole tick -- which is what the next tick then spends its passes undoing.
+        double under = 0.0;
+        for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
+        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
+    }
+    // Whatever the loop left, no corner may be under the floor when the tick ends:
+    // the floor is not a suggestion. Correcting it the way the floor's own pass does
+    // -- rigidly, at the corner that is through it -- keeps the shape.
+    for (std::size_t i = 0; i < count; ++i) {
+        if (body.position[i].y < kSurfaceY - kDistanceTolerance) {
+            pushBodyAtPoint(index, body.position[i], Vec3{0, kSurfaceY - body.position[i].y, 0}, &lift);
+            onPlane[i] = true;
+            held[i] = true;
+        }
     }
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
@@ -238,7 +280,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
         // Take the corrections back out: what is left is what the corner was
         // actually doing. The floor's is upwards; the ball's is outwards.
-        velocity.y -= lift[i] / kTick;
+        velocity = velocity - lift[i] * (1.0 / kTick);
         velocity = velocity - ballLift[i] * (1.0 / kTick);
         velocity = velocity - bodyLift[i] * (1.0 / kTick);
         if (onPlane[i]) {
@@ -247,8 +289,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             // a whole just below.
             if (velocity.y < 0.0) velocity.y = 0.0;
         }
-        const double speed = length(velocity);
-        if (speed > speedBefore[i] && speed > 1e-12) velocity = velocity * (speedBefore[i] / speed);
         body.velocity[i] = velocity;
     }
     // Friction is a force at the contact patch, and the patch pushes the body,

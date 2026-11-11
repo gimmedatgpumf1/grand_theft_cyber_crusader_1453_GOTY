@@ -159,6 +159,35 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
 // motion: the body's tick takes it back out of that corner's speed, so a body
 // pushed up out of another does not fly and a body resting on one does not gain
 // speed every tick.
+// A correction is a rigid motion of the whole body at the place it is needed, in the
+// same terms an impulse is given it by -- one mass, one moment, one lever: the piece
+// of the body at the contact moves by the amount it is out by, and the rest of it
+// comes along as the fixed distances require. The floor, the ball and another body
+// all correct a body this way; correcting it any other way -- pinning the one point
+// that is out and letting the distances sort out the rest -- is what let a cube come
+// down at seventeen degrees and land flat, its far corners thrown sideways.
+void PlaygroundRoom::pushBodyAtPoint(std::size_t index, Vec3 at, Vec3 displacement,
+                                    std::array<Vec3, kMaxCorners>* lift) {
+    Body& body = bodies_[index];
+    if (body.count == 0) return;
+    const double error = length(displacement);
+    if (!(error > 0.0)) return;
+    const BodyInertia inertia = bodyInertia(body);
+    const Vec3 normal = displacement * (1.0 / error);
+    const Vec3 arm = at - inertia.middle;
+    const double lever = arm.x * normal.y - arm.y * normal.x;
+    const double share = 1.0 / static_cast<double>(body.count) + lever * lever / inertia.moment;
+    if (!(share > 1e-12)) return;
+    const double take = error / share;
+    const double turn = take * lever / inertia.moment;
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 r = body.position[i] - inertia.middle;
+        const Vec3 amount = normal * (take / static_cast<double>(body.count)) + Vec3{-turn * r.y, turn * r.x, 0};
+        body.position[i] = body.position[i] + amount;
+        if (lift != nullptr) (*lift)[i] = (*lift)[i] + amount;
+    }
+}
+
 double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift) {
     Body& body = bodies_[index];
     if (body.count == 0) return 0.0;
@@ -168,25 +197,11 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
     // rest of it comes along as the fixed distances require. Pushing corners about
     // one at a time was pushing the ends of a long base two different distances, and
     // a body corrected that way creeps along the surface it is standing on.
-    const BodyInertia inertia = bodyInertia(body);
     double deepest = 0.0;
     const auto push = [&](Vec3 at, Vec3 displacement) {
-        const double error = length(displacement);
-        if (!(error > 0.0)) return;
-        const Vec3 normal = displacement * (1.0 / error);
-        const Vec3 arm = at - inertia.middle;
-        const double lever = arm.x * normal.y - arm.y * normal.x;
-        const double share = 1.0 / static_cast<double>(body.count) + lever * lever / inertia.moment;
-        if (!(share > 1e-12)) return;
-        const double take = error / share;
-        const double turn = take * lever / inertia.moment;
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 r = body.position[i] - inertia.middle;
-            const Vec3 amount = normal * (take / static_cast<double>(body.count)) + Vec3{-turn * r.y, turn * r.x, 0};
-            body.position[i] = body.position[i] + amount;
-            if (lift != nullptr) (*lift)[i] = (*lift)[i] + amount;
-        }
-        deepest = std::max(deepest, error);
+        if (!(length(displacement) > 0.0)) return;
+        pushBodyAtPoint(index, at, displacement, lift);
+        deepest = std::max(deepest, length(displacement));
     };
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         if (other == index) continue;

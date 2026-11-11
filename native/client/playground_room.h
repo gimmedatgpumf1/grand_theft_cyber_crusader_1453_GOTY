@@ -182,6 +182,12 @@ private:
     // looking at, and a corner is a point with no size of its own.
     double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith) const;
     double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
+    // Moves a body as one rigid piece so that the piece of it at `at` travels by
+    // `displacement`: that is what a correction at a contact is. It is here because
+    // the floor, the ball and another body all have to correct a body the same way,
+    // and correcting a body any other way -- pinning the one point that is out and
+    // letting the fixed distances sort out the rest -- does not keep its shape.
+    void pushBodyAtPoint(std::size_t index, Vec3 at, Vec3 displacement, std::array<Vec3, kMaxCorners>* lift);
     void bodiesAnswer();
     double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     void tickBall();
