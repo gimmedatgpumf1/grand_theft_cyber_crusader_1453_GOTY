@@ -225,9 +225,6 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
     double deepest = 0.0;
     const auto push = [&](Vec3 at, Vec3 displacement) {
         if (!(length(displacement) > 0.0)) return;
-        if (std::getenv("GTC_PUSH") && length(displacement) > 1e-6)
-            std::fprintf(stderr, "  PUSH body %zu at (%.5f,%.5f) by (%.6f,%.6f)|%.6f\n", index, at.x, at.y,
-                         displacement.x, displacement.y, length(displacement));
         pushBodyAtPoint(index, at, displacement, lift);
         deepest = std::max(deepest, length(displacement));
     };
@@ -237,23 +234,24 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
         if (solid.count == 0) continue;
         // This body's corners, out of the other body's outline, along the closest way
         // out of it -- pushOutOfPolygon, the function the dot is put back out by.
+        //
+        // Only the body whose own corner is through the other one is moved here, and
+        // only by its share of the overlap, because the other body is doing exactly
+        // the same thing from its own side in its own tick. Correcting the overlap
+        // from both sides at once -- this body out of the other's outline and, in the
+        // same breath, this body away from the other's corner that is through it --
+        // moves the same overlap twice and in opposite directions: a triangle with a
+        // corner resting a hair inside a cube pushed the cube down out of its way
+        // every tick, the floor pushed the cube straight back up, and the body was
+        // left with a velocity that was nothing but the two corrections cancelling.
+        // That is a body creeping along another with nothing pushing it. Half each,
+        // which is what the fixed distances already do between two equal masses; the
+        // whole of it when what is under it cannot move at all.
+        const double share = (solid.frozen || bodyHeld(other)) ? 1.0 : 0.5;
         for (std::size_t i = 0; i < body.count; ++i) {
             Vec3 escaped = body.position[i];
             if (!pushOutOfPolygon(escaped, solid.position.data(), solid.count)) continue;
-            push(body.position[i], escaped - body.position[i]);
-        }
-        // And the other body's corners, out of this one's outline: a corner is a
-        // point, so this is the ball's contact with the radius nought, and the piece
-        // of this body's outline the corner is through is what the correction is
-        // about.
-        for (std::size_t i = 0; i < solid.count; ++i) {
-            const OutlineGap gap = outlineGap(solid.position[i], body.position.data(), body.position.data(), body.count, 1.0);
-            // Outside, or on it: an outline is allowed to be touched, and a corner
-            // that is merely near nothing is not a contact.
-            if (gap.gap >= 0.0) continue;
-            // The way this body has to go: opposite the way the corner is nearest to
-            // being out by, which is the ball's own `away`.
-            push(solid.position[i], gap.normal * gap.gap);
+            push(body.position[i], (escaped - body.position[i]) * share);
         }
     }
     return deepest;
