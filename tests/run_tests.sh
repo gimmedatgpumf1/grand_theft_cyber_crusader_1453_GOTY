@@ -61,6 +61,7 @@ python3 tools/skeleton-source/openskeleton/29-comparison-sd.py --check
 "${COMMAND[@]}" -std=c++20 -O1 -g -pthread -Wall -Wextra -Wpedantic -Isrc -Itests \
   tests/tests.cpp tests/tests_core.cpp tests/tests_character.cpp tests/tests_needs.cpp tests/tests_combat.cpp \
   src/core/collision.cpp src/core/json.cpp src/core/pathfinding.cpp src/core/projectile.cpp src/core/world.cpp \
+  src/core/world_character.cpp src/core/world_session.cpp \
   src/net/platform.cpp src/net/websocket.cpp \
   -o build/bin/gtc1453_tests
 ./build/bin/gtc1453_tests
