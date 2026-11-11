@@ -287,6 +287,12 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
 // between those places is not carried by them and is not allowed to freeze there;
 // it turns about the last of them instead, which is what a shape hanging over an
 // edge does.
+// How many times one contact's press and its grip are answered against each
+// other. Two answers are enough to be right to a thousandth of a millimetre a
+// second on a contact of two points; the rest is what a corner between two faces
+// needs, which is the one place the two keep spoiling each other's answer.
+constexpr int kContactSettle = 8;
+
 void PlaygroundRoom::bodiesAnswer() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         bodies_[index].touched = false;
@@ -484,57 +490,14 @@ void PlaygroundRoom::bodiesAnswer() {
                     // between two corners moves at the lever's interpolation of them, which
                     // is the ball's own outlineTouch. Reading one corner's speed instead is
                     // reading a face's motion at a point that is not on it.
-                    const OutlineTouch face = outlineTouch(at, solid.position.data(), solid.count);
-                    const Vec3 solidVelocity =
-                        solid.velocity[face.a] * (1.0 - face.t) + solid.velocity[face.b] * face.t;
-                    const double closing = dot(body.velocity[i] - solidVelocity, normal);
-                    // What friction has to hold against, over the tick: the blow this
-                    // contact carried, or the weight it is carrying.
-                    double carried = 0.0;
-                    if (closing < 0.0) {
-                        const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
-                        const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
-                        // The two sides pull the closing speed apart between them, so
-                        // the two shares add: the whole of the approach is answered
-                        // between them, and a side that cannot move simply contributes
-                        // nothing and takes nothing.
-                        const double give = shareMine + shareTheirs;
-                        if (give > 1e-12) {
-                            const double impulse = -closing / give;
-                            carried = impulse;
-                            closingTotal = std::max(closingTotal, -closing);
-                            // Each side is given only the way it is free to go, which for
-                            // a side that cannot move is no momentum at all.
-                            if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse);
-                            if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse);
-                            if (std::getenv("GTC_ORD") && self == 1)
-                                std::fprintf(stderr, "    NORMAL close %+.5f imp %+.5f -> c0 v.n %+.6f\n", closing, impulse,
-                                             dot(body.velocity[i], normal));
-                            body.touched = true;
-                            solid.touched = true;
-                            if (-closing > kRestSpeed) {
-                                body.frozen = false;
-                                solid.frozen = false;
-                            }
-                        }
-                    }
-                    // Friction at that same place, and only where something is pressing
-                    // the two together: mu_s holds a slide it can carry and mu_k takes
-                    // its share of one it cannot, which is the floor's own rule. It is
-                    // answered as a solid too, at the same place and through the same
-                    // two functions, or it pins one corner of a body that is turning.
-                    const OutlineTouch held = outlineTouch(at, solid.position.data(), solid.count);
-                    const Vec3 solidNow = solid.velocity[held.a] * (1.0 - held.t) + solid.velocity[held.b] * held.t;
-                    const Vec3 relative = body.velocity[i] - solidNow;
-                    const Vec3 tangent{normal.y, -normal.x, 0};
-                    const double slide = dot(relative, tangent);
-                    if (!(std::abs(slide) > 0.0)) continue;
-                    const double pressed =
-                        std::max(carried, tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
-                    const double hold = body.staticFriction * pressed;
-                    const double slip = body.kineticFriction * pressed;
+                    // What the other body is doing at that place: a piece of an outline
+                    // between two corners moves at the lever's interpolation of them, which
+                    // is the ball's own outlineTouch. Reading one corner's speed instead is
+                    // reading a face's motion at a point that is not on it.
+                    //
                     // Along the surface the same rule decides who gives: the floor holds
                     // a corner's height and nothing else, so a corner on it still slides.
+                    const Vec3 tangent{normal.y, -normal.x, 0};
                     const Vec3 mineSlideWay = answerFor(self, tangent);
                     const Vec3 theirsSlideWay = answerFor(them, tangent * -1.0);
                     const double freedomMineSlide = dot(mineSlideWay, tangent);
@@ -544,28 +507,78 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double shareMineSlide = slidesBody ? bodyShareAt(body, mine, at, tangent) : 0.0;
                     const double shareTheirsSlide = slidesSolid ? bodyShareAt(solid, theirs, at, tangent) : 0.0;
                     const double giveSlide = shareMineSlide + shareTheirsSlide;
-                    if (!(giveSlide > 1e-12)) continue;
-                    // What it would take to stop the slide, and whether the grip can
-                    // carry it: if it can, the two do not move against each other at
-                    // all, and if it cannot, they rub at mu_k and lose that much.
-                    const double needed = std::abs(slide) / giveSlide;
-                    const double rubbed = needed <= hold ? needed : std::min(needed, slip);
-                    const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
-                    // The same sign for both sides: `mineSlideWay` is the way this side
-                    // may slide and `theirsSlideWay` is the way the other one may, which
-                    // is already the opposite direction. Flipping it a second time for
-                    // the other side pushed both bodies the same way, so the slide they
-                    // were meant to lose was left exactly where it was and a little
-                    // momentum was added to the pair on every pass -- a resting body
-                    // taking off along the surface it was resting on.
-                    const double grip = slide > 0.0 ? -rubbed : rubbed;
-                    const Vec3 beforeF = body.velocity[i];
-                    if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
-                    if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
-                    if (std::getenv("GTC_ORD") && self == 1)
-                        std::fprintf(stderr, "    FRICT slide %+.5f grip %+.5f slidesBody %d at (%.4f,%.4f) arm (%.4f,%.4f) dVx %+.6f dVy %+.6f\n", slide,
-                                     grip, int(slidesBody), at.x, at.y, mine.middle.x, mine.middle.y,
-                                     body.velocity[i].x - beforeF.x, body.velocity[i].y - beforeF.y);
+                    const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
+                    const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
+                    // The two sides pull the closing speed apart between them, so the two
+                    // shares add: the whole of the approach is answered between them, and a
+                    // side that cannot move simply contributes nothing and takes nothing.
+                    const double give = shareMine + shareTheirs;
+                    // The contact answers two questions -- how hard the two press together,
+                    // and how much grip that pressure buys along the surface -- and neither
+                    // answer leaves the other alone. An impulse along the surface at a point
+                    // off the normal line moves that point along the normal as well, by the
+                    // lever it has about the middle: answering the normal once and the
+                    // friction once leaves the contact still closing by six thousandths of a
+                    // metre a second after both, and a contact that is still closing when
+                    // the tick ends is a body sinking into the one it is standing on. So the
+                    // two are answered in turn until neither has anything left to say, which
+                    // is the same walk the fixed distances and the floor are solved by.
+                    //
+                    // A side that cannot move gives nothing here either, and by the same
+                    // amount test: an answer that only exists as rounding noise is a wall.
+                    double carried = 0.0;
+                    for (int settle = 0; settle < kContactSettle; ++settle) {
+                        const OutlineTouch here = outlineTouch(at, solid.position.data(), solid.count);
+                        const Vec3 otherNow =
+                            solid.velocity[here.a] * (1.0 - here.t) + solid.velocity[here.b] * here.t;
+                        const double closing = dot(body.velocity[i] - otherNow, normal);
+                        // The blow this contact carries, which is also what the surface
+                        // under it is being pressed with.
+                        if (closing < 0.0 && give > 1e-12) {
+                            const double impulse = -closing / give;
+                            carried += impulse;
+                            closingTotal = std::max(closingTotal, -closing);
+                            if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse);
+                            if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse);
+                            body.touched = true;
+                            solid.touched = true;
+                            if (-closing > kRestSpeed) {
+                                body.frozen = false;
+                                solid.frozen = false;
+                            }
+                        }
+                        // Friction at that same place, and only where something is
+                        // pressing the two together: mu_s holds a slide it can carry and
+                        // mu_k takes its share of one it cannot, which is the floor's own
+                        // rule. It is answered as a solid too, at the same place and
+                        // through the same two functions, or it pins one corner of a body
+                        // that is turning.
+                        if (!(giveSlide > 1e-12)) break;
+                        const OutlineTouch held = outlineTouch(at, solid.position.data(), solid.count);
+                        const Vec3 solidNow =
+                            solid.velocity[held.a] * (1.0 - held.t) + solid.velocity[held.b] * held.t;
+                        const double slide = dot(body.velocity[i] - solidNow, tangent);
+                        if (!(std::abs(slide) > 0.0)) break;
+                        const double pressed =
+                            std::max(carried, tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
+                        const double hold = body.staticFriction * pressed;
+                        const double slip = body.kineticFriction * pressed;
+                        // What it would take to stop the slide, and whether the grip can
+                        // carry it: if it can, the two do not move against each other at
+                        // all, and if it cannot, they rub at mu_k and lose that much.
+                        const double needed = std::abs(slide) / giveSlide;
+                        const double rubbed = needed <= hold ? needed : std::min(needed, slip);
+                        // The same sign for both sides: `mineSlideWay` is the way this side
+                        // may slide and `theirsSlideWay` is the way the other one may, which
+                        // is already the opposite direction. Flipping it a second time for
+                        // the other side pushed both bodies the same way, so the slide they
+                        // were meant to lose was left exactly where it was and a little
+                        // momentum was added to the pair on every pass -- a resting body
+                        // taking off along the surface it was resting on.
+                        const double grip = slide > 0.0 ? -rubbed : rubbed;
+                        if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
+                        if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
+                    }
                 }
             }
         }
