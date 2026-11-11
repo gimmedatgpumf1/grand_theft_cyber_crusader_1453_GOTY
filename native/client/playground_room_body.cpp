@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -342,6 +344,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // would stop the patch's slip -- solved against the body's reciprocal mass at
     // the patch, so the turn comes out of it. mu_s takes the slip away outright and
     // holds while it can; past that mu_k takes its share off every tick.
+    if (std::getenv("GTC_FRIC") && index == 1) {
+        Vec3 mv{};
+        for (std::size_t i = 0; i < count; ++i) mv = mv + body.velocity[i];
+        std::fprintf(stderr, "  FRIC body1 touching %d support %.4f mvx %.5f onPlane", int(touchingPlane), support,
+                     mv.x / double(count));
+        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " %d(%.6f)", int(onPlane[i]), body.position[i].y);
+        std::fprintf(stderr, "\n");
+    }
     if (touchingPlane && support > 0.0) {
         Vec3 patch{}, patchVelocity{};
         std::size_t onFloorCount = 0;
