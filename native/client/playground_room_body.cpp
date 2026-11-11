@@ -353,6 +353,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         if (!closing) break;
     }
     for (std::size_t i = 0; i < count; ++i) support += press[i];
+    // And the weight. A body standing still has no approach left for the contact
+    // solve to take away -- its corners did not travel -- so the press the solve
+    // works out for it is nothing, and a floor that presses with nothing has no grip
+    // to rub with: the body creeps sideways a thousandth of a metre a tick for ever.
+    // What the floor actually carries is the weight, m*g over the tick, and that is
+    // the force the grip is a fraction of. It is the same number the contact solve
+    // would have found if the body's step had not been stopped before it started.
+    support = std::max(support, static_cast<double>(count) * kMass * kGravity * kTick);
 
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
