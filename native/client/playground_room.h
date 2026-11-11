@@ -186,9 +186,6 @@ private:
     // which shapes it is looking at.
     static void outlineAt(const Body& body, const Vec3* target, double fraction,
                           std::array<Vec3, kMaxCorners>& out);
-    static bool cornerCrossesSide(Vec3 from, Vec3 to, const Body& solid,
-                                  const std::array<Vec3, kMaxCorners>& solidEnd, Vec3 inside, double* along,
-                                  Vec3* normal, Vec3* contact);
     double bodiesReach(std::size_t index, const Vec3* target, double fraction, Vec3* wayOut,
                        std::size_t* metWith, Vec3* metAt) const;
     double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
