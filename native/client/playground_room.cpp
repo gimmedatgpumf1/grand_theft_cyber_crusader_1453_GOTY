@@ -8,8 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 namespace gtc::native {
@@ -778,9 +776,6 @@ void PlaygroundRoom::advance(double seconds) {
         // answered a tick later, from inside, which is the clipping. So the dot is
         // asked, every tick, whether a body has arrived at it -- and if one has, the
         // point wakes and its own tick answers it.
-        if (std::getenv("GTC_DOT") && pointFrozen_)
-            std::fprintf(stderr, "  DOT frozen at (%.4f,%.4f) reached %d\n", point_.x, point_.y,
-                         int(pointReachedByBodies()));
         if (pointFrozen_ && pointReachedByBodies()) {
             pointFrozen_ = false;
             resting_ = false;
