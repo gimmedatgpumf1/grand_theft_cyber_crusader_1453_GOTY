@@ -225,6 +225,9 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
     double deepest = 0.0;
     const auto push = [&](Vec3 at, Vec3 displacement) {
         if (!(length(displacement) > 0.0)) return;
+        if (std::getenv("GTC_PUSH") && length(displacement) > 1e-6)
+            std::fprintf(stderr, "  PUSH body %zu at (%.5f,%.5f) by (%.6f,%.6f)|%.6f\n", index, at.x, at.y,
+                         displacement.x, displacement.y, length(displacement));
         pushBodyAtPoint(index, at, displacement, lift);
         deepest = std::max(deepest, length(displacement));
     };
