@@ -98,15 +98,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
-    // Whether the sweep was cut short by another body rather than by the floor. The
-    // answer at that meeting is bodiesAnswer's, from the approach the body arrived
-    // with, so the corner keeps that speed instead of the shortened step.
-    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
-    // What each corner was trying to do before the sweep shortened anything: the blow
-    // between two bodies is answered in bodiesAnswer from the approach both of them
-    // arrived with, and the step is only where they ended up.
-    std::array<Vec3, kMaxCorners> attempted{};
-    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
     // The step is walked as far as the sweep allows, and no further.
     //
     // This is the whole of what the sweep is for. It says where the step stops and
@@ -257,29 +248,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
 
-    // What each corner actually did this tick, with every correction taken back out.
-    //
-    // A corner's speed is where it went over the tick -- not a number kept beside it
-    // that gravity added to. That is the only way the constraints can be believed: a
-    // corner the floor has stopped is not travelling, whatever gravity said it wanted,
-    // and a solver that keeps the wanted speed instead of the achieved one stores it.
-    // Two ticks of that and a corner resting on the floor is carrying twenty metres a
-    // second of "downwards" that it is not using, and the first tick the floor stops
-    // holding it, that speed is spent -- a shape standing still and then dancing.
-    //
-    // What is put back out of it is the corrections: the floor lifting a corner out of
-    // itself, the ball and another body pushing it out of theirs. A correction is not
-    // travel. What is left is motion, and it is the same reading the fixed distances
-    // were solved against.
-    for (std::size_t i = 0; i < count; ++i) {
-        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
-        velocity = velocity - lift[i] * (1.0 / kTick);
-        velocity = velocity - ballLift[i] * (1.0 / kTick);
-        velocity = velocity - bodyLift[i] * (1.0 / kTick);
-        if (onPlane[i] && velocity.y < 0.0) velocity.y = 0.0;
-        body.velocity[i] = velocity;
-    }
-
     // The speed this body ends the tick with is the speed the forces gave it.
     //
     // It is not read back off where its corners ended up. Those are two different
@@ -316,6 +284,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // leaning on one corner had its turn thrown away with it and a face landing flat
     // had one corner's answer spread over the other three.
     const BodyInertia inertia = bodyInertia(body);
+    // Which corners the floor is actually carrying.
+    //
+    // Not just the ones that ended the solve exactly on the plane. A corner the solve
+    // had to lift is a corner the floor is holding, and it can be left a centimetre
+    // above the plane by the fixed distances pulling the body back into shape about
+    // its neighbours. Asking only about the ones that landed exactly on the plane
+    // misses exactly those, so their speed is never answered: gravity keeps adding to
+    // a corner that is being carried, tick after tick, and the sum of it is a corner
+    // standing still while holding twenty metres a second of downwards that it is not
+    // allowed to spend. The first tick it is free, it spends it -- a shape sitting on
+    // the floor that suddenly dances.
+    std::array<bool, kMaxCorners> carriedCorner{};
+    for (std::size_t i = 0; i < count; ++i) carriedCorner[i] = onPlane[i] || lift[i].y > 0.0;
     // What each contact has been pressed with so far. A contact's answer is not
     // "stop this corner now" -- that is what overshoots, because the second corner's
     // answer changes the first one's, and the first one is never told. It is "the
@@ -327,7 +308,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     for (int pass = 0; pass < kContactPasses; ++pass) {
         bool closing = false;
         for (std::size_t i = 0; i < count; ++i) {
-            if (!onPlane[i]) continue;
+            if (!carriedCorner[i]) continue;
             const Vec3 normal{0, 1, 0};
             const double share = bodyShareAt(body, inertia, body.position[i], normal);
             if (!(share > 1e-12)) continue;
@@ -378,7 +359,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         Vec3 patch{}, patchVelocity{};
         std::size_t onFloorCount = 0;
         for (std::size_t i = 0; i < count; ++i) {
-            if (!onPlane[i]) continue;
+            if (!carriedCorner[i]) continue;
             patch += body.position[i];
             patchVelocity += body.velocity[i];
             ++onFloorCount;
