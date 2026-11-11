@@ -25,5 +25,12 @@ inline constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is
 // within a nanometre of it: the clamp puts it at exactly the plane's height.
 inline constexpr double kContactTolerance = 1e-9;  // metres
+// How many times a tick's contacts are answered. A contact solve is iterative
+// because every impulse changes what the others are closing at -- answering a face
+// corner by corner overshoots the second corner by what the first one did, and the
+// only way to take that back is to look again with what is already answered
+// remembered. It converges in a handful for a face and in a dozen for a body on two
+// contacts at once; this is a guard against a numerical corner case, not a tuning.
+inline constexpr int kContactPasses = 32;
 
 }  // namespace gtc::native::playground_tick

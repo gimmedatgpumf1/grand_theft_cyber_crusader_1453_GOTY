@@ -305,23 +305,33 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // leaning on one corner had its turn thrown away with it and a face landing flat
     // had one corner's answer spread over the other three.
     const BodyInertia inertia = bodyInertia(body);
+    // What each contact has been pressed with so far. A contact's answer is not
+    // "stop this corner now" -- that is what overshoots, because the second corner's
+    // answer changes the first one's, and the first one is never told. It is "the
+    // press this contact needs, given every other press already made", and it may
+    // only grow: the floor can push a corner, never pull it. Remembering it is what
+    // lets a later pass take back an overshoot instead of leaving the body hopping.
+    std::array<double, kMaxCorners> press{};
     double support = 0.0;
-    for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
+    for (int pass = 0; pass < kContactPasses; ++pass) {
         bool closing = false;
         for (std::size_t i = 0; i < count; ++i) {
             if (!onPlane[i]) continue;
-            const double approach = body.velocity[i].y;
-            if (!(approach < 0.0)) continue;
             const Vec3 normal{0, 1, 0};
             const double share = bodyShareAt(body, inertia, body.position[i], normal);
             if (!(share > 1e-12)) continue;
-            const double momentum = -approach / share;
-            giveBodyTurn(index, inertia, body.position[i], normal * momentum);
-            support += momentum;
+            const double approach = body.velocity[i].y;
+            const double want = press[i] - approach / share;
+            const double take = std::max(0.0, want);
+            const double add = take - press[i];
+            if (!(add != 0.0)) continue;
+            press[i] = take;
+            giveBodyTurn(index, inertia, body.position[i], normal * add);
             closing = true;
         }
         if (!closing) break;
     }
+    for (std::size_t i = 0; i < count; ++i) support += press[i];
 
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
