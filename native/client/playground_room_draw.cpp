@@ -26,7 +26,11 @@ constexpr double kCornerRadius = 0.045, kEdgeHalfWidth = 0.008;
 constexpr std::uint32_t kBallId = 400, kBallMarkId = 401;
 // One shaft and one head per arrow. The ids are well clear of the bodies' own,
 // which run in hundreds from kBodyFaceId.
-constexpr std::uint32_t kArrowId = 2000, kArrowKindStride = 40, kArrowHeadOffset = 20;
+// The ids are laid out from the room's own count of arrows per kind, so a change
+// to that number cannot silently walk one kind's heads into the next kind's
+// shafts: each kind owns twice that many ids, the shafts first and then the heads.
+constexpr std::uint32_t kArrowId = 2000, kArrowHeadOffset = PlaygroundRoom::kArrowsPerKind,
+                        kArrowKindStride = 2 * PlaygroundRoom::kArrowsPerKind;
 // How long a newton is, in metres of arrow. A corner weighs m*g = 9.8 N, so its
 // weight is drawn a hand's width long; every other force is the same scale, which
 // is the whole point of the arrows -- they are comparable by eye.
