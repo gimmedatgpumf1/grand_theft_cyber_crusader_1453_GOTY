@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 namespace gtc::native {
@@ -32,7 +31,7 @@ constexpr std::uint32_t kArrowId = 2000, kArrowKindStride = 40, kArrowHeadOffset
 // weight is drawn a hand's width long; every other force is the same scale, which
 // is the whole point of the arrows -- they are comparable by eye.
 constexpr double kArrowMetresPerNewton = 0.030, kArrowHalfWidth = 0.010, kArrowHeadRadius = 0.045;
-constexpr int kForceLabelHeight = 18;
+constexpr int kForceLabelHeight = 20;
 
 // One arrow per drawn force: where it acts, where its tip is, and how hard it is.
 struct Arrow {
@@ -336,23 +335,18 @@ void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame)
         return inView.z > 1e-3;
     };
     char number[64];
-    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] arrows %zu showN %d\n", forceArrows(forces_, forceCount_).size(), int(showNewtons_));
     for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
         double x = 0.0, y = 0.0;
-        const bool ok = project(arrow.to, x, y);
-        if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] at (%.2f,%.2f) -> (%.1f,%.1f) %d\n", arrow.to.x, arrow.to.y, x, y, int(ok));
-        if (!ok) continue;
+        if (!project(arrow.to, x, y)) continue;
         std::snprintf(number, sizeof(number), "%.1f N", arrow.newtons);
         drawTextPixels(frame, static_cast<int>(std::lround(x)) + 6, static_cast<int>(std::lround(y)) - 22,
                        number, colorHex(kindColour(arrow.kind)), kForceLabelHeight);
     }
-    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] labels %zu\n", forceLabels_.quads().size());
     double kinetic = 0.0, potential = 0.0;
     energyBudget(kinetic, potential);
     std::snprintf(number, sizeof(number), "E %.2f J   KE %.2f   PE %.2f", kinetic + potential, kinetic, potential);
     drawTextPixels(frame, 14, 12, number, colorHex("#e0effb"), kForceLabelHeight + 2);
     frame.ui = borrowed;
-    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] final labels %zu\n", forceLabels_.quads().size());
 }
 
 bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const RoomFreecam& freecam) {
