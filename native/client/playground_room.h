@@ -110,6 +110,17 @@ private:
         double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
         int contacts = 0;
+        // Whether another body is holding this one up -- worked out every tick from
+        // the contacts it ended that tick with, exactly as the ball remembers
+        // whether it could stand on what it touched -- and where along its bottom
+        // those contacts are. A body whose weight does not pass between them is not
+        // carried by them: it turns about the last of them instead, which is what a
+        // shape hanging over an edge does.
+        bool onBody = false;
+        double supportLow = 1e30, supportHigh = -1e30;
+        // And whether what it is standing on is itself at rest. A body asleep on a
+        // body that is still moving has nothing solid under it.
+        bool supportFrozen = false;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
@@ -127,6 +138,15 @@ private:
     // the outline inside it and which way out. Both are the ball's geometry
     // against a body's outline, so both live with the ball.
     double bodyBallReach(std::size_t index, const Vec3* target) const;
+    // A body and another body. How far this body's step can be walked before one of
+    // its corners crosses another body's outline; the corners each puts back out of
+    // the other; and what the two of them are still closing at, answered for both
+    // sides at once once every body has been stepped. The same geometry and the
+    // same answer for every pair -- nothing in there knows which shapes it is
+    // looking at, and a corner is a point with no size of its own.
+    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut) const;
+    double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
+    void bodiesAnswer();
     double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     void tickBall();
     // What the ball was against this tick, so the grip at each of them can be

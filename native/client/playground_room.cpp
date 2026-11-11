@@ -28,63 +28,6 @@ constexpr int kMaxContacts = 4;
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
 
-// Where a segment first meets a convex body, and the outward normal of the edge
-// it meets. The corners are in order, so each edge can be tested on its own and
-// the earliest crossing wins. A point already inside is reported as a hit at
-// once, with the normal of the nearest edge.
-bool segmentHitsPolygon(Vec3 from, Vec3 to, const Vec3* corners, std::size_t count, double& hit,
-                        Vec3& normal) {
-    const auto cross2 = [](Vec3 a, Vec3 b) { return a.x * b.y - a.y * b.x; };
-    const auto edgeNormal = [&](std::size_t edge) {
-        const Vec3 a = corners[edge];
-        const Vec3 b = corners[(edge + 1) % count];
-        const Vec3 side = b - a;
-        const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
-        return sideLength > 1e-12 ? Vec3{side.y / sideLength, -side.x / sideLength, 0} : Vec3{};
-    };
-    // A segment walking from outside must cross an edge; the earliest crossing is
-    // the hit. Crossing out of the body is not a hit.
-    const Vec3 travel = to - from;
-    double earliest = 2.0;
-    std::size_t crossing = count;
-    for (std::size_t edge = 0; edge < count; ++edge) {
-        const Vec3 a = corners[edge];
-        const Vec3 b = corners[(edge + 1) % count];
-        const Vec3 side = b - a;
-        const double denominator = cross2(travel, side);
-        if (std::abs(denominator) < 1e-15) continue;
-        const Vec3 gap = a - from;
-        const double along = cross2(gap, side) / denominator;
-        const double across = cross2(gap, travel) / denominator;
-        if (along < 0.0 || along > 1.0 || across < 0.0 || across > 1.0) continue;
-        // Only a crossing that goes from outside to inside counts.
-        const Vec3 outward = edgeNormal(edge);
-        if (!(dot(travel, outward) < 0.0)) continue;
-        if (along < earliest) { earliest = along; crossing = edge; }
-    }
-    if (crossing < count) {
-        hit = earliest;
-        normal = edgeNormal(crossing);
-        return true;
-    }
-    // Already inside: every edge must report it as behind itself. One edge
-    // behind itself is not enough -- that is just a point somewhere outside.
-    bool inside = true;
-    std::size_t nearest = 0;
-    double nearestDistance = -1e30;
-    for (std::size_t edge = 0; edge < count; ++edge) {
-        const Vec3 outward = edgeNormal(edge);
-        if (length(outward) < 0.5) return false;
-        const double distance = dot(from - corners[edge], outward);
-        if (distance > 0.0) inside = false;
-        if (distance > nearestDistance) { nearestDistance = distance; nearest = edge; }
-    }
-    if (!inside) return false;
-    hit = 0.0;
-    normal = edgeNormal(nearest);
-    return true;
-}
-
 } // namespace
 
 Vec3 PlaygroundRoom::outwardNormalAt(const Body& body, Vec3 point) {
@@ -651,6 +594,11 @@ void PlaygroundRoom::tick() {
             tickBody(index);
         }
     }
+    // And then the bodies against each other, once every one of them has been
+    // stepped. A body's own tick cannot do this: it would be answering a pair
+    // against a body that has not moved yet this tick, and the first body in the
+    // list would always be the one that gave way.
+    bodiesAnswer();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
@@ -716,6 +664,7 @@ void PlaygroundRoom::advance(double seconds) {
                     tickBody(index);
                 }
             }
+            bodiesAnswer();
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
