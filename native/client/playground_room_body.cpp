@@ -297,13 +297,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         rightmost = std::max(rightmost, body.position[i].x);
     }
     const double footprint = touchingPlane ? std::max(0.0, rightmost - leftmost) / kCubeSide : 0.0;
-    // Friction is a fraction of the force pressing the floor, and it is a force
-    // over the tick like any other: mu * N newtons held for dt on a mass is
-    // mu * N * dt / m of speed. N here is the body's own weight, m*g newtons, times
-    // how much of its footprint is down.
+    // Friction is a fraction of the force pressing the floor, and a force over a
+    // tick is an impulse: mu * N * dt, in newton seconds. N here is the body's own
+    // weight, m*g newtons, times how much of its footprint is down. What that
+    // impulse can do to a mass is the momentum it can take out of it, which is the
+    // only thing the grip is ever compared with.
     const double floorPressure = kMass * kGravity * footprint;  // N
-    const double holdSpeed = body.staticFriction * floorPressure * kTick / kMass;
-    const double slideSpeed = body.kineticFriction * floorPressure * kTick / kMass;
+    const double holdImpulse = body.staticFriction * floorPressure * kTick;   // N*s
+    const double slideImpulse = body.kineticFriction * floorPressure * kTick;  // N*s
 
     // Which corners are touching the plane now, after the solve has finished
     // moving them. A clamp from an earlier pass is not a contact: the solve may
@@ -323,11 +324,16 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         velocity = velocity - lift[i] * (1.0 / kTick);
         velocity = velocity - ballLift[i] * (1.0 / kTick);
         velocity = velocity - bodyLift[i] * (1.0 / kTick);
-        if (onPlane[i]) {
-            // The plane holds this corner: it cannot travel into the plane.
-            // Sideways is friction's business, and that is done for the body as
-            // a whole just below.
-            if (velocity.y < 0.0) velocity.y = 0.0;
+        if (onPlane[i] && velocity.y < 0.0) {
+            // The plane holds this corner: it cannot travel into the plane. That is
+            // not a number being set to zero, it is the floor handing back the
+            // momentum the corner was driving into it -- J = -m*v_y upwards, at the
+            // corner, which is the impulse of a normal force over the tick. Sideways
+            // is friction's business, and that is done for the body as a whole just
+            // below.
+            const Vec3 normalImpulse{0.0, -velocity.y * kMass, 0.0};
+            velocity = velocity + normalImpulse * (1.0 / kMass);
+            addForce(body.position[i], normalImpulse * (1.0 / kTick), ForceKind::Contact);
         }
         body.velocity[i] = velocity;
     }
@@ -342,12 +348,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         for (std::size_t i = 0; i < count; ++i) middleVelocity += body.velocity[i];
         middleVelocity = middleVelocity / static_cast<double>(count);
         const double sideways = middleVelocity.x;
-        if (std::abs(sideways) <= holdSpeed) {
-            // mu_s * N answers it: it does not move at all.
-            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= sideways;
-        } else {
-            // Sliding: mu_k * N takes the same speed off every corner.
-            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= std::copysign(slideSpeed, sideways);
+        // The momentum the body is carrying along the floor, corner by corner, and
+        // what the grip can take out of it. Static friction answers the whole of it
+        // when mu_s * N * dt is enough; kinetic friction takes mu_k * N * dt of it
+        // when it is not. Neither is a clamped speed: each corner is handed an
+        // impulse, and the impulse is written down as the force it is over a tick.
+        const double carried = sideways * kMass;  // N*s of sideways momentum, per corner
+        const double taken = std::abs(carried) <= holdImpulse ? carried : std::copysign(slideImpulse, carried);
+        if (taken != 0.0) {
+            for (std::size_t i = 0; i < count; ++i) {
+                const Vec3 gripImpulse{-taken, 0.0, 0.0};
+                body.velocity[i] = body.velocity[i] + gripImpulse * (1.0 / kMass);
+                addForce(body.position[i], gripImpulse * (1.0 / kTick), ForceKind::Contact);
+            }
         }
     }
     // Nothing moved it this tick. The floor puts a corner back on itself exactly,
