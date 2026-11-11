@@ -42,6 +42,11 @@ namespace tick = playground_tick;
 // as nothing between the two bodies is closing.
 constexpr int kMaxContactPasses = 16;
 
+// How many times the pairs are put apart at the end of a tick. One is what a pair
+// that only just met needs; a body leaning on two others at once can need another,
+// and no arrangement of two convex bodies has ever needed a third.
+constexpr int kMaxSeparatePasses = 4;
+
 // A corner lying on a face and moving along it is touching, not arriving:
 // answering that as a contact would stop the step at its very first instant, every
 // tick, and the body would stutter along the surface instead of sliding down it.
@@ -260,6 +265,56 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
         }
     }
     return deepest;
+}
+
+// The last thing said about a pair, once the tick is otherwise over: they are not
+// inside each other.
+//
+// Everything above answers motion -- where a step stops, what a contact does to a
+// speed. None of it can promise the two outlines are apart at the end of it: the
+// fixed distances re-arrange a body about the corner that was stopped, a body that
+// is turning sweeps its far corners through the place it is leaning on, and a step
+// that was cut is still a step. So the pair is put apart by the shortest way there
+// is, as one motion, half each -- the whole of it to a body that cannot move: one
+// asleep, one the mouse is holding, one standing on the floor.
+//
+// Half each, because both bodies are being put apart from both sides every tick;
+// the shortest way out is a translation, so it cannot bend either of them, and it
+// is the least amount that leaves them touching rather than inside.
+void PlaygroundRoom::separateBodies() {
+    for (int pass = 0; pass < kMaxSeparatePasses; ++pass) {
+        double worst = 0.0;
+        for (std::size_t a = 0; a < kBodyCount; ++a) {
+            for (std::size_t b = a + 1; b < kBodyCount; ++b) {
+                Body& one = bodies_[a];
+                Body& two = bodies_[b];
+                if (one.count == 0 || two.count == 0) continue;
+                Vec3 way{};
+                double amount = 0.0;
+                if (!leastOverlap(one.position.data(), one.count, two.position.data(), two.count, way, amount)) continue;
+                if (!(amount > tick::kDistanceTolerance)) continue;
+                // A side that cannot move takes none of it.
+                const auto immovable = [&](std::size_t index, const Body& body) {
+                    if (bodyHeld(index)) return true;
+                    if (body.frozen) return true;
+                    for (std::size_t i = 0; i < body.count; ++i)
+                        if (body.position[i].y <= tick::kSurfaceY + tick::kContactTolerance) return true;
+                    return false;
+                };
+                const bool oneStill = immovable(a, one);
+                const bool twoStill = immovable(b, two);
+                if (oneStill && twoStill) continue;
+                const double shareOne = oneStill ? 0.0 : (twoStill ? 1.0 : 0.5);
+                const double shareTwo = twoStill ? 0.0 : (oneStill ? 1.0 : 0.5);
+                const Vec3 oneMove = way * (amount * -shareOne);
+                const Vec3 twoMove = way * (amount * shareTwo);
+                for (std::size_t i = 0; i < one.count; ++i) one.position[i] = one.position[i] + oneMove;
+                for (std::size_t i = 0; i < two.count; ++i) two.position[i] = two.position[i] + twoMove;
+                worst = std::max(worst, amount);
+            }
+        }
+        if (worst <= tick::kDistanceTolerance) break;
+    }
 }
 
 // What the two bodies are still doing where they meet, once every body has been
@@ -628,6 +683,10 @@ void PlaygroundRoom::bodiesAnswer() {
         const double closing = solveContacts();
         if (closing <= kRestSpeed) break;
     }
+    // And last of all, the pair is not inside itself. This is a correction, not
+    // motion: it happens after every speed in the room has been decided, so it can
+    // neither add to one nor take from one.
+    separateBodies();
     // A frozen body has nothing holding it up the moment whatever was under it is
     // taken away. The plane never goes anywhere, so only a body that is neither on
     // the plane nor on a resting body can be left in the air.

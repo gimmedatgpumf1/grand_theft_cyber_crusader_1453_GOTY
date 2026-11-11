@@ -254,6 +254,58 @@ inline bool segmentHitsPolygon(Vec3 from, Vec3 to, const Vec3* corners, std::siz
 // point of it. Nudging it out along an edge normal by a hair is not enough --
 // a point that is a centimetre deep stays a centimetre deep, gets nudged again
 // next tick, and creeps instead of sliding. Returns true when it had to move.
+// How far two convex outlines are into each other, and the shortest way out.
+//
+// Two convex outlines are apart if they are apart along any one of their own sides,
+// and the smallest of those overlaps is the shortest distance that puts them apart.
+// `way` points from the first outline towards the second: the direction the second
+// one has to move. False when they are not overlapping at all.
+//
+// This is the only way to put a pair apart that holds for a pair that is deep in
+// each other. Taking a corner out along the nearest side of the outline it is inside
+// of is right only while the corner is near that side; for a body that has been
+// carried into another one, the nearest side is a side that sends it *through*, and
+// a pair put back out the wrong way was never separated at all -- which is a square
+// that has gone into a triangle and stayed there.
+inline bool leastOverlap(const Vec3* one, std::size_t oneCount, const Vec3* two, std::size_t twoCount, Vec3& way,
+                         double& amount) {
+    double least = 1e30;
+    Vec3 axis{0, 1, 0};
+    for (int side = 0; side < 2; ++side) {
+        const Vec3* corners = side == 0 ? one : two;
+        const std::size_t count = side == 0 ? oneCount : twoCount;
+        for (std::size_t i = 0; i < count; ++i) {
+            const Vec3 a = corners[i];
+            const Vec3 b = corners[(i + 1) % count];
+            const Vec3 edge = b - a;
+            const double edgeLength = std::sqrt(edge.x * edge.x + edge.y * edge.y);
+            if (!(edgeLength > 1e-12)) continue;
+            const Vec3 outward{edge.y / edgeLength, -edge.x / edgeLength, 0};
+            double oneLow = 1e30, oneHigh = -1e30, twoLow = 1e30, twoHigh = -1e30;
+            for (std::size_t k = 0; k < oneCount; ++k) {
+                const double at = dot(one[k], outward);
+                oneLow = std::min(oneLow, at);
+                oneHigh = std::max(oneHigh, at);
+            }
+            for (std::size_t k = 0; k < twoCount; ++k) {
+                const double at = dot(two[k], outward);
+                twoLow = std::min(twoLow, at);
+                twoHigh = std::max(twoHigh, at);
+            }
+            const double overlap = std::min(oneHigh, twoHigh) - std::max(oneLow, twoLow);
+            if (!(overlap > 0.0)) return false;  // apart along this side: apart
+            if (overlap < least) {
+                least = overlap;
+                axis = dot(outward, one[0] - two[0]) > 0.0 ? outward * -1.0 : outward;
+            }
+        }
+    }
+    if (!(least < 1e30)) return false;
+    way = axis;
+    amount = least;
+    return true;
+}
+
 inline bool pushOutOfPolygon(Vec3& point, const Vec3* corners, std::size_t count) {
     bool inside = true;
     for (std::size_t edge = 0; edge < count; ++edge) {

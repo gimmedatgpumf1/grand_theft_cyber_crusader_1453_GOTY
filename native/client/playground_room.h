@@ -183,6 +183,7 @@ private:
     double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith,
                        Vec3* metAt) const;
     double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
+    void separateBodies();
     // Moves a body as one rigid piece so that the piece of it at `at` travels by
     // `displacement`: that is what a correction at a contact is. It is here because
     // the floor, the ball and another body all have to correct a body the same way,
