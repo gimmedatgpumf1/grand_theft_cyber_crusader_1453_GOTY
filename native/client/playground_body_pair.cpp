@@ -381,13 +381,30 @@ void PlaygroundRoom::bodiesAnswer() {
                         outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
                     double along = 2.0;
                     Vec3 hitNormal{0, 1, 0};
-                    const bool willReach = segmentHitsPolygon(body.position[i], body.position[i] + travel,
-                                                              solid.position.data(), solid.count, along, hitNormal);
-                    // Against it, or about to be: on the surface within the same skin the
-                    // ball's own contacts are taken within, and otherwise only where the
-                    // step genuinely arrives at it.
-                    if (!willReach && gap.gap > kSkin) continue;
-                    const Vec3 normal = gap.gap <= kSkin ? gap.normal : hitNormal;
+                    segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(), solid.count,
+                                       along, hitNormal);
+                    // A meeting is a corner pressing into a surface, or a corner that was
+                    // clear of it and whose own step arrives at it. Those are the two
+                    // ways a point touches a surface and there is no third:
+                    //
+                    //   pressing  -- on the surface (within the skin the ball's own
+                    //                contacts are taken within) and doing so against the
+                    //                way out of it. Standing on it, or leaning on it.
+                    //   arriving  -- clear of the surface, and this tick's step crosses
+                    //                it. The hitscan's fraction is where that happens.
+                    //
+                    // A corner that is on a surface and *leaving* it is neither. The
+                    // base of a triangle lying along the top face of a cube puts the
+                    // cube's own top corner exactly on that base line, a hair inside it,
+                    // and the step that corner is taking is down, away through the
+                    // triangle's own base. Counting the crossing that makes as a meeting
+                    // had the cube answered as though the triangle had come down onto it
+                    // from above, when it is the other way round: the whole momentum of
+                    // the pair was handed to the triangle and it was thrown off the cube.
+                    const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) < 0.0;
+                    const bool arriving = gap.gap > kSkin && along > 1e-9;
+                    if (!pressing && !arriving) continue;
+                    const Vec3 normal = pressing ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
                     // up, so what is under this corner is what has to hold this body's
                     // weight up -- and a way out that points down is the same meeting
@@ -467,12 +484,6 @@ void PlaygroundRoom::bodiesAnswer() {
                         const double give = shareMine + shareTheirs;
                         if (give > 1e-12) {
                             const double impulse = -closing / give;
-                            if (std::getenv("GTC_ANS"))
-                                std::fprintf(stderr,
-                                             "  ANS self %zu i %zu/n%zu at (%.5f,%.5f) n (%.3f,%.3f) close %+.5f give %.5f "
-                                             "imp %+.5f free %+.3f/%+.3f\n",
-                                             self, i, body.count, at.x, at.y, normal.x, normal.y, closing, give, impulse,
-                                             freedomMine, freedomTheirs);
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
                             // Each side is given only the way it is free to go, which for
