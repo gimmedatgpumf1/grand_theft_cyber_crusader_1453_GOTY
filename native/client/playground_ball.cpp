@@ -317,6 +317,7 @@ double PlaygroundRoom::pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMa
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
+    ballTouchCount_ = 0;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
     if (dragTarget_ == DragTarget::Ball) {
@@ -551,6 +552,10 @@ void PlaygroundRoom::tickBall() {
             if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
         }
     }
+
+    // Every face the tick met, solved against the others: what is left of the ball's
+    // speed and its turn is what their grips all allow at once.
+    settleBallFriction();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
@@ -812,39 +817,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // is only holding the ball up is the weight pressed into it, over the tick.
     if (!(pressed > 0.0)) pressed = kGravity * ball.mass * std::max(0.0, normal.y) * kTick;
 
-    // Contact friction and rolling resistance take energy out of a ball, they never
-    // put it in: they are losses, and a solve that handed a ball more energy than it
-    // arrived with would be inventing motion. A ball squeezed between two surfaces
-    // can be made to gain a little every tick by two exact slip corrections taking
-    // turns, and this is what stops that -- the loss is kept, the gain is not.
-    const Vec3 velocityBeforeFriction = ball.velocity;
-    const double spinBeforeFriction = ball.spin;
-    const double energyBeforeFriction =
-        0.5 * ball.mass * dot(ball.velocity, ball.velocity) +
-        0.5 * (0.4 * ball.mass * ball.radius * ball.radius) * ball.spin * ball.spin;
-
-    // Kinetic friction, limited by mu * N, with N the impulse this contact carried.
-    // It acts at the bottom of the ball, so it also turns it: a skid spins the ball
-    // up until the bottom stops slipping, and from then on the turn is the travel.
+    // Friction is not applied here. A grip at one surface changes what is left to
+    // slip at every other surface the ball is against, so the whole tick's contacts
+    // are solved against each other once they are all known -- see
+    // settleBallFriction(). What is recorded is what each contact is: the face, how
+    // it is moving there, and how hard it is pressed.
+    if (pressed > 0.0 && ballTouchCount_ < kMaxBallTouches)
+        ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed};
     const Vec3 tangent{normal.y, -normal.x, 0};
-    const Vec3 arm = normal * -ball.radius;
-    const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
-    const Vec3 spinSpeed{-ball.spin * arm.y, ball.spin * arm.x, 0};
-    const double slip = dot(ball.velocity + spinSpeed - surfaceVelocity, tangent);
-    const double lever = arm.x * tangent.y - arm.y * tangent.x;
-    if (pressed > 0.0 && slip != 0.0) {
-        const double effective = 1.0 / ball.mass + lever * lever / inertia;
-        const double wanted = -slip / effective;
-        // Two coefficients, as everywhere else in this room. If the grip can take
-        // the slip away outright the ball rolls from here -- the contact holds, and
-        // nothing is left slipping. If it cannot, the ball slides and mu_k * N acts
-        // against the slide, over time, never in one instant.
-        const bool holds = std::abs(wanted) <= kBallStaticFriction * pressed;
-        const double limit = (holds ? kBallStaticFriction : kBallKineticFriction) * pressed;
-        const double impulse = holds ? wanted : (wanted > 0.0 ? limit : -limit);
-        ball.velocity = ball.velocity + tangent * (impulse / ball.mass);
-        ball.spin += lever * impulse / inertia;
-    }
 
     // Rolling resistance, F = Crr * N, at the same contact and in the same way:
     // the normal force presses the ball into the surface, the surface does not
@@ -872,18 +852,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const double impulse = std::clamp(travel * ball.mass, -limit, limit);
             ball.velocity = ball.velocity - tangent * (impulse / ball.mass);
         }
-    }
-
-    // A surface that is not moving gives nothing: a ball can never come out of a
-    // friction solve against it with more energy than it went in with. A surface that
-    // is moving is another matter -- it is doing work, which is what being hit by a
-    // moving body is -- so the check is only made against what is still.
-    const double energyAfterFriction =
-        0.5 * ball.mass * dot(ball.velocity, ball.velocity) +
-        0.5 * inertia * ball.spin * ball.spin;
-    if (length(surfaceVelocity) <= 0.0 && energyAfterFriction > energyBeforeFriction) {
-        ball.velocity = velocityBeforeFriction;
-        ball.spin = spinBeforeFriction;
     }
 
     // And whatever is left pointing into the surface is speed the ball cannot spend.

@@ -1,0 +1,91 @@
+// The grip of the ball's contacts, worked out together.
+//
+// The ball's friction does not belong to one face at a time -- an impulse at one
+// changes what is left to slip at every other -- so it is its own step, run once
+// all of a tick's contacts are known. This file is that step and nothing else.
+
+#include "client/playground_room.h"
+
+#include <cmath>
+
+namespace gtc::native {
+namespace {
+
+// Two coefficients, as everywhere else in this room: rubber on a wooden floor.
+constexpr double kBallStaticFriction = 0.70;
+constexpr double kBallKineticFriction = 0.55;
+// How many passes the tick's contacts get to agree with each other in. Two faces
+// are settled in a handful; a corner of three is a little slower, and past this
+// what is left is smaller than the arithmetic can tell from nothing.
+constexpr int kBallFrictionPasses = 12;
+
+}  // namespace
+
+// The grip of every surface the ball is against this tick, worked out together.
+//
+// Friction is not a property of one contact. An impulse that stops the slip at one
+// face changes the slip at every other face the ball is touching, and a ball
+// wedged between two of them -- a slope above, a cube's side behind -- had its spin
+// taken away by the first and handed straight back by the second, every tick, for
+// as long as it stayed in the corner: the seam whirled while the ball itself never
+// moved. Solved together, the same two faces agree instead: each impulse is the one
+// its own grip allows once the others have had theirs, and a ball held in a corner
+// has no spin left to whirl with because neither face is slipping.
+//
+// Each impulse is a Coulomb one: mu_s can take the slip away outright and hold, and
+// anything it cannot take is mu_k * N against the slide, over the tick, never more.
+void PlaygroundRoom::settleBallFriction() {
+    if (ballTouchCount_ == 0) return;
+    Ball& ball = ball_;
+    const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
+    std::array<Vec3, kMaxBallTouches> tangents{}, arms{};
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
+        arms[i] = ballTouches_[i].normal * -ball.radius;
+    }
+    // The slip each face sees, for a given speed and turn of the ball.
+    const auto slipAt = [&](std::size_t i, Vec3 velocity, double spin) {
+        const Vec3 turned{-spin * arms[i].y, spin * arms[i].x, 0};
+        return dot(velocity + turned - ballTouches_[i].surfaceVelocity, tangents[i]);
+    };
+    const Vec3 velocityBefore = ball.velocity;
+    const double spinBefore = ball.spin;
+    const double energyBefore = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
+    // Until the faces agree. Each pass is one pass over them, and the slip a face
+    // sees is measured against what the passes before it have already done -- that
+    // is what makes them agree instead of undoing each other.
+    for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
+        bool clashing = false;
+        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+            const double slip = slipAt(i, ball.velocity, ball.spin);
+            if (slip == 0.0) continue;
+            const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
+            const double effective = 1.0 / ball.mass + lever * lever / inertia;
+            const double wanted = -slip / effective;
+            const double pressed = ballTouches_[i].pressed;
+            // Static friction takes the slip away and the ball rolls from there; if
+            // it cannot, the face slides and kinetic friction acts against the slide.
+            const bool holds = std::abs(wanted) <= kBallStaticFriction * pressed;
+            if (!holds) clashing = true;
+            const double limit = (holds ? kBallStaticFriction : kBallKineticFriction) * pressed;
+            const double impulse = holds ? wanted : (wanted > 0.0 ? limit : -limit);
+            ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
+            ball.spin += lever * impulse / inertia;
+        }
+        if (!clashing) break;
+    }
+    // A surface that is not moving gives nothing: a ball can never come out of a
+    // friction solve against still faces with more energy than it took in. A moving
+    // surface is another matter -- it is doing work, which is what being hit by a
+    // moving body is -- so the check is only made against what is still.
+    bool still = true;
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) still = still && length(ballTouches_[i].surfaceVelocity) <= 0.0;
+    const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
+    if (still && energyAfter > energyBefore) {
+        ball.velocity = velocityBefore;
+        ball.spin = spinBefore;
+    }
+    ballTouchCount_ = 0;
+}
+
+}  // namespace gtc::native

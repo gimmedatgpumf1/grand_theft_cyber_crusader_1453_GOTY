@@ -129,6 +129,16 @@ private:
     double bodyBallReach(std::size_t index, const Vec3* target) const;
     double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     void tickBall();
+    // What the ball was against this tick, so the grip at each of them can be
+    // worked out against the others instead of one after another.
+    struct BallTouch {
+        Vec3 normal{}, surfaceVelocity{};
+        double pressed = 0.0;
+    };
+    static constexpr std::size_t kMaxBallTouches = 8;
+    std::array<BallTouch, kMaxBallTouches> ballTouches_{};
+    std::size_t ballTouchCount_ = 0;
+    void settleBallFriction();
     // Whether the ball can be put down here: the mouse may carry it anywhere in
     // the room, but not inside a solid. A ball placed inside one would have to be
     // driven back out, and nothing in this room is driven out of anything -- it
