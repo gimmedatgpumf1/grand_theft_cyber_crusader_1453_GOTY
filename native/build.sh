@@ -57,7 +57,9 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 "$COMPILER" -pthread "$ROOT/build/obj/native-client/smoke.o" "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-native-smoke"
 # The counter is drawn on the host into pixels, so it can be checked as pixels:
 # the box, the border, every glyph block, both byte orders, four window sizes.
-"$COMPILER" -pthread -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative "$ROOT/tests/interface_check.cpp" \
+"$COMPILER" -pthread -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Inative -Itests \
+  "$ROOT/tests/interface_check.cpp" "$ROOT/tests/interface_check_strip.cpp" \
+  "$ROOT/tests/interface_check_menu.cpp" "$ROOT/tests/interface_check_panels.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-interface-check"
 "$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
