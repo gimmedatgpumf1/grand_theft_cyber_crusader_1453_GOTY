@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace gtc::native {
@@ -23,6 +24,58 @@ constexpr const char* kSky = "#101c22";
 constexpr double kGhostRadius = 0.032, kTraceHalfWidth = 0.010;
 constexpr double kCornerRadius = 0.045, kEdgeHalfWidth = 0.008;
 constexpr std::uint32_t kBallId = 400, kBallMarkId = 401;
+// One shaft and one head per arrow. The ids are well clear of the bodies' own,
+// which run in hundreds from kBodyFaceId.
+constexpr std::uint32_t kArrowId = 2000, kArrowKindStride = 40, kArrowHeadOffset = 20;
+// How long a newton is, in metres of arrow. A corner weighs m*g = 9.8 N, so its
+// weight is drawn a hand's width long; every other force is the same scale, which
+// is the whole point of the arrows -- they are comparable by eye.
+constexpr double kArrowMetresPerNewton = 0.030, kArrowHalfWidth = 0.010, kArrowHeadRadius = 0.045;
+constexpr int kForceLabelHeight = 18;
+
+// One arrow per drawn force: where it acts, where its tip is, and how hard it is.
+struct Arrow {
+    std::size_t kind = 0, slot = 0;
+    Vec3 from{}, to{};
+    double newtons = 0.0;
+};
+
+const char* kindColour(std::size_t kind) {
+    switch (PlaygroundRoom::ForceKind(kind)) {
+        case PlaygroundRoom::ForceKind::Gravity: return "#5aa9ff";
+        case PlaygroundRoom::ForceKind::Contact: return "#7ce38b";
+        case PlaygroundRoom::ForceKind::Pair: return "#ffb454";
+        case PlaygroundRoom::ForceKind::Ball: return "#e07bd8";
+        case PlaygroundRoom::ForceKind::KindCount: break;
+    }
+    return "#ffffff";
+}
+
+// The ledger, as arrows. A force is written at the point it acts and its tip is
+// the point plus the force itself, scaled -- so the direction is the force's own
+// direction and the length is the force's own amount, and two forces can be
+// compared by looking at them. Nothing here is smoothed or capped: a force too
+// small to see is drawn too small to see, which is what it is.
+std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, PlaygroundRoom::kMaxForceSamples>& forces,
+                               std::size_t count) {
+    std::array<std::size_t, std::size_t(PlaygroundRoom::ForceKind::KindCount)> used{};
+    std::vector<Arrow> arrows;
+    for (std::size_t i = 0; i < count; ++i) {
+        const PlaygroundRoom::ForceSample& sample = forces[i];
+        const std::size_t kind = std::size_t(sample.kind);
+        if (kind >= used.size() || used[kind] >= PlaygroundRoom::kArrowsPerKind) continue;
+        const double newtons = length(sample.force);
+        if (!(newtons > 1e-6)) continue;
+        Arrow arrow;
+        arrow.kind = kind;
+        arrow.slot = used[kind]++;
+        arrow.from = sample.at;
+        arrow.to = sample.at + sample.force * (kArrowMetresPerNewton / newtons);
+        arrow.newtons = newtons;
+        arrows.push_back(arrow);
+    }
+    return arrows;
+}
 } // namespace
 
 // Everything the room draws, and the interpolation that decides where a body is
@@ -151,6 +204,26 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     raster.setObject(kBallMarkId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#3a2016"));
 
+    // The forces: a unit bar along +x for the shaft and a unit disc for the head,
+    // both placed by a model matrix every frame, exactly as the bodies' edges and
+    // corners are. Every arrow exists in the scene from the first frame and is
+    // moved off screen when there is no force to draw, so turning F on costs no
+    // upload at all.
+    for (std::size_t kind = 0; kind < std::size_t(ForceKind::KindCount); ++kind) {
+        for (std::size_t slot = 0; slot < kArrowsPerKind; ++slot) {
+            const std::uint32_t base = kArrowId + static_cast<std::uint32_t>(kind) * kArrowKindStride +
+                                       static_cast<std::uint32_t>(slot);
+            points.clear();
+            faces.clear();
+            quad(points, faces, 0, -1, 1, 1, 0.008);
+            raster.setObject(base, {0, 0}, 0);
+            raster.mesh(points, faces, flat(kindColour(kind)));
+            disc(points, faces, 1.0);
+            raster.setObject(base + kArrowHeadOffset, {0, 0}, 0);
+            raster.mesh(points, faces, flat(kindColour(kind)));
+        }
+    }
+
     scene_ = raster.takeGpuScene();
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
@@ -159,6 +232,14 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     ball_.markBatch = findBatch(scene_, kBallMarkId);
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         ghostBatches_[i] = findBatch(scene_, kGhostId + static_cast<std::uint32_t>(i));
+    }
+    for (std::size_t kind = 0; kind < std::size_t(ForceKind::KindCount); ++kind) {
+        for (std::size_t slot = 0; slot < kArrowsPerKind; ++slot) {
+            const std::uint32_t base = kArrowId + static_cast<std::uint32_t>(kind) * kArrowKindStride +
+                                       static_cast<std::uint32_t>(slot);
+            arrowShaft_[kind][slot] = findBatch(scene_, base);
+            arrowHead_[kind][slot] = findBatch(scene_, base + kArrowHeadOffset);
+        }
     }
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -195,6 +276,25 @@ void PlaygroundRoom::placeMarkers() {
             {radius * c, radius * s, 0, 0, -radius * s, radius * c, 0, 0, 0, 0, 1, 0,
              ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
     }
+    // The arrows: hidden unless F is on, and otherwise every force the ledger
+    // holds, drawn at the point it acts with its own length. An arrow that is not
+    // drawn is put under the floor rather than left where it was, so a stale force
+    // cannot be mistaken for a live one.
+    for (std::size_t kind = 0; kind < std::size_t(ForceKind::KindCount); ++kind) {
+        for (std::size_t slot = 0; slot < kArrowsPerKind; ++slot) {
+            scene_.batches[arrowShaft_[kind][slot]].modelMatrix = translation({0, -1000, 0});
+            scene_.batches[arrowHead_[kind][slot]].modelMatrix = translation({0, -1000, 0});
+        }
+    }
+    if (showForces_) {
+        for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
+            scene_.batches[arrowShaft_[arrow.kind][arrow.slot]].modelMatrix =
+                segment(arrow.from, arrow.to, kArrowHalfWidth);
+            scene_.batches[arrowHead_[arrow.kind][arrow.slot]].modelMatrix =
+                {kArrowHeadRadius, 0, 0, 0, 0, kArrowHeadRadius, 0, 0, 0, 0, 1, 0,
+                 arrow.to.x, arrow.to.y, arrow.to.z, 1};
+        }
+    }
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         // The face is the rest shape placed where the drawn corners already are,
@@ -207,6 +307,41 @@ void PlaygroundRoom::placeMarkers() {
             scene_.batches[body.cornerBatches[i]].modelMatrix = translation(body.shown[i]);
         }
     }
+}
+
+// The numbers on N: every arrow's force in newtons, written beside its tip, and
+// the room's energy budget above them. The energy is the check on everything
+// else -- it may be moved between speed and height by a tick, and it may never
+// grow -- so it is shown next to the forces that are supposed to account for it.
+void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame) {
+    forceLabels_.clear(camera.width, camera.height);
+    if (!showNewtons_) return;
+    // The words go into a layer of their own, laid out by the same glyph code the
+    // rest of the interface uses: the frame is borrowed for the moment it takes to
+    // fill the layer and given back untouched.
+    UiLayer* const borrowed = frame.ui;
+    frame.ui = &forceLabels_;
+    const double focal = camera.focal();
+    const auto project = [&](Vec3 point, double& x, double& y) {
+        const Vec3 inView = camera.view(point);
+        const double depth = inView.z > 1e-3 ? inView.z : 1e-3;
+        x = camera.width * 0.5 + focal * inView.x / depth;
+        y = camera.height * 0.5 - focal * inView.y / depth;
+        return inView.z > 1e-3;
+    };
+    char number[64];
+    for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
+        double x = 0.0, y = 0.0;
+        if (!project(arrow.to, x, y)) continue;
+        std::snprintf(number, sizeof(number), "%.1f N", arrow.newtons);
+        drawTextPixels(frame, static_cast<int>(std::lround(x)) + 6, static_cast<int>(std::lround(y)) - 22,
+                       number, colorHex(kindColour(arrow.kind)), kForceLabelHeight);
+    }
+    double kinetic = 0.0, potential = 0.0;
+    energyBudget(kinetic, potential);
+    std::snprintf(number, sizeof(number), "E %.2f J   KE %.2f   PE %.2f", kinetic + potential, kinetic, potential);
+    drawTextPixels(frame, 14, 12, number, colorHex("#e0effb"), kForceLabelHeight + 2);
+    frame.ui = borrowed;
 }
 
 bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const RoomFreecam& freecam) {
@@ -222,7 +357,12 @@ bool PlaygroundRoom::render(NativeFrame& frame, const ViewState& view, const Roo
     scene_.focal = camera.focal();
     scene_.viewMatrix = camera.viewMatrix();
     scene_.covered = false;
+    // The force labels are laid out first and batched with the world, so the
+    // numbers sit on the arrows they belong to instead of in a corner of the
+    // screen.
+    appendForceLabels(camera, frame);
     const auto count = scene_.batches.size();
+    if (!forceLabels_.empty()) appendUiBatches(forceLabels_, camera, scene_);
     frame.interfaceInFrame = false;
     if (frame.uiLayer && !frame.uiLayer->empty()) {
         appendUiBatches(*frame.uiLayer, camera, scene_);

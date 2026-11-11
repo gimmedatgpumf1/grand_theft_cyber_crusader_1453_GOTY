@@ -449,6 +449,11 @@ private:
         }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') { leavePlayground(); return; }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') { stopPlaygroundDrag(); playground_.reset(); return; }
+        // F shows what is pushing what, as arrows scaled by the force. N adds the
+        // numbers in newtons and the room's energy, so the arrows can be read as
+        // amounts rather than as directions only.
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='f') { playground_.toggleForceArrows(); return; }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='n') { playground_.toggleForceNewtons(); return; }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) { screenshot_=true; return; }
         if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) {
             stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; return;
