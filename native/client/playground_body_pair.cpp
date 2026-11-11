@@ -42,11 +42,10 @@ namespace tick = playground_tick;
 // as nothing between the two bodies is closing.
 constexpr int kMaxContactPasses = 16;
 
-// How many times a corner left on the far side of a face is put back onto it before
-// the tick is accepted. A corner put onto one face can, without ever leaving the
-// other body, find itself across a second one; two rounds is all it has ever taken.
-constexpr int kCrossingRounds = 4;
-
+// How many times the pairs are put apart at the end of a tick. One is what a pair
+// that only just met needs; a body leaning on two others at once can need another,
+// and no arrangement of two convex bodies has ever needed a third.
+constexpr int kMaxSeparatePasses = 4;
 
 // A corner lying on a face and moving along it is touching, not arriving:
 // answering that as a contact would stop the step at its very first instant, every
@@ -81,149 +80,86 @@ bool arrivedAt(double along, double gap, Vec3 travel, Vec3 outward) {
 }
 }  // namespace
 
-// Where a body's outline stands at one fraction of the tick: every corner carried
-// along its own step. A shape that is turning is its corners going round, so this is
-// the whole of what turning does to where its sides are -- there is no separate
-// turning case to get wrong, and no side that moves without its ends moving.
-void PlaygroundRoom::outlineAt(const Body& body, const Vec3* target, double fraction,
-                              std::array<Vec3, kMaxCorners>& out) {
-    for (std::size_t i = 0; i < body.count; ++i) out[i] = body.position[i] + (target[i] - body.position[i]) * fraction;
-}
-
-// How far this body's step can be walked before one of its corners is through
-// another body's outline, and which way that surface faces.
+// How far this body's step can be walked before one of its corners reaches another
+// body's outline, and which way that surface faces.
 //
-// The question asked at every fraction of the tick is the plain one, and it is the
-// only question there is: is any corner of either shape inside the other one? Both
-// shapes are carried along their own steps to that fraction, and the question is
-// asked of where they are *then*. That is what makes turning part of the sweep
-// rather than a case beside it -- a turning shape is its corners going round, and
-// they are carried round here like everything else -- and it is why a face landing
-// on a corner, a corner landing on a face, two corners passing each other and a
-// shape turning into another are all the same question at a different instant.
-//
-// The window is found by halving it. If nothing is inside at the start of a window
-// and something is inside at the end of it, there is a first instant at which
-// something is inside, and halving finds it: twenty halvings put it inside a
-// millionth of a tick, and each of them is a point against an outline, which is the
-// test the dot and the ball already use. Nothing is guessed at, no arrangement of
-// corners is a special case, and no speed is too fast to see -- a shape that crosses
-// the whole of another in one tick is still inside it at the end of that tick, and
-// the halving walks back to where it went in.
-//
-// What the halving cannot do is invent a way out of a shape that was already through
-// one at the start of the tick. So nothing may ever be through one: that is what the
-// answer below is, and a body placed inside another by the mouse is the mouse's
-// doing, not this tick's.
-double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, double fraction, Vec3* wayOut,
-                                   std::size_t* metWith, Vec3* metAt) const {
+// The sweep is the dot's: segmentHitsPolygon against a corner's segment, solved
+// outright, so no speed is too coarse for it. What the dot does not need and a body
+// does is the other body's travel: two bodies are stepped one after the other, so a
+// corner and the face arriving at it are the same meeting seen from either side.
+// Both are swept -- this body's corners through the other body's outline, and the
+// other body's corners through this one's -- each against the travel between them,
+// so a face landing on a corner is caught in the tick it lands and not a tick late.
+double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith,
+                                  Vec3* metAt) const {
     const Body& body = bodies_[index];
     *metWith = kBodyCount;
     if (body.count == 0) return 1.0;
+    Vec3 ownStep{};
+    for (std::size_t i = 0; i < body.count; ++i) ownStep = ownStep + (target[i] - body.position[i]);
+    ownStep = ownStep * (1.0 / static_cast<double>(body.count));
     double first = 1.0;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         if (other == index) continue;
         const Body& solid = bodies_[other];
         if (solid.count == 0) continue;
-        // Where the other body's corners will be at the end of this window of the
-        // tick. A body lower in the list has already taken its step, so it is not
-        // going anywhere else this tick and its corners are where they are; the one
-        // above is still to come, and its step is its own speeds. Reading a body that
-        // has already stepped as still on its way is counting its step twice.
-        std::array<Vec3, kMaxCorners> solidTarget{};
-        const bool solidStill = other < index;
-        for (std::size_t i = 0; i < solid.count; ++i)
-            solidTarget[i] = solidStill ? solid.position[i]
-                                        : solid.position[i] + solid.velocity[i] * (kTick * fraction);
-        // How far the deepest corner of either shape is through the other one at this
-        // fraction, where that corner is, and which way out is shortest there.
-        std::array<Vec3, kMaxCorners> solidAt{};
-        const auto deepest = [&](double at, Vec3* where, Vec3* way) {
-            for (std::size_t i = 0; i < solid.count; ++i)
-                solidAt[i] = solid.position[i] + (solidTarget[i] - solid.position[i]) * at;
-            double worst = 0.0;
-            for (std::size_t i = 0; i < body.count; ++i) {
-                const Vec3 corner = body.position[i] + (target[i] - body.position[i]) * at;
-                const OutlineGap gap = outlineGap(corner, solidAt.data(), solidAt.data(), solid.count, 1.0);
-                if (-gap.gap > worst) {
-                    worst = -gap.gap;
-                    *where = corner;
-                    *way = gap.normal;
-                }
-            }
-            // And the other body's corners through this one's outline, which is the
-            // same statement from the other side: a face lying on a corner is a
-            // corner inside a face.
-            std::array<Vec3, kMaxCorners> bodyAt{};
-            for (std::size_t i = 0; i < body.count; ++i)
-                bodyAt[i] = body.position[i] + (target[i] - body.position[i]) * at;
-            for (std::size_t i = 0; i < solid.count; ++i) {
-                const Vec3 corner = solidAt[i];
-                const OutlineGap gap = outlineGap(corner, bodyAt.data(), bodyAt.data(), body.count, 1.0);
-                if (-gap.gap > worst) {
-                    worst = -gap.gap;
-                    *where = corner;
-                    // The way this body gives is the opposite of the way that corner
-                    // is out of it.
-                    *way = gap.normal * -1.0;
-                }
-            }
-            return worst;
-        };
-        Vec3 where{}, way{};
-        // A corner on the surface and driving into it has arrived already, at this
-        // very instant: there is no later moment when it is inside that could be
-        // called the meeting. The dot's own walk is held to exactly this rule, and so
-        // is the ball's; without it a body resting on another stutters every tick.
+        // What the other body has already done this tick, read the way the ball's
+        // contacts read a body's motion: as its actual step, not as a velocity
+        // gravity may not have reached yet. A body that has not been stepped yet is
+        // still where it was, and this same sweep catches it when its turn comes --
+        // an empty step is the honest answer for it, not last tick's.
+        Vec3 solidStep{};
+        for (std::size_t i = 0; i < solid.count; ++i) solidStep = solidStep + (solid.position[i] - solid.previous[i]);
+        solidStep = solidStep * (1.0 / static_cast<double>(solid.count));
+        // This body's corners through the other body's outline.
         for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 travel = target[i] - body.position[i];
+            const Vec3 travel = (target[i] - body.position[i]) - solidStep;
+            double along = 2.0;
+            Vec3 normal{0, 1, 0};
             const OutlineGap gap =
                 outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-            if (!(gap.gap <= kSkin) || !(dot(travel, gap.normal) < 0.0)) continue;
-            if (!(0.0 < first)) continue;
-            first = 0.0;
-            *wayOut = gap.normal;
+            if (!segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(), solid.count,
+                                    along, normal)) {
+                // No crossing found. A corner already against the surface and driving
+                // into it is a meeting all the same, and it is now.
+                if (!(arrivedAt(0.0, gap.gap, travel, gap.normal) && gap.gap <= kSkin)) continue;
+                along = 0.0;
+                normal = gap.normal;
+            }
+            if (!arrivedAt(along, gap.gap, travel, normal) || !(along < first)) continue;
+            first = along;
+            *wayOut = normal;
             *metWith = other;
-            *metAt = body.position[i];
+            // The place they met: a corner is a point with no radius, so it is the
+            // corner itself, or where its step reached the face.
+            *metAt = along <= 1.0 ? body.position[i] + travel * along : body.position[i];
         }
+        // And the other body's corners through this one's outline, which is the same
+        // meeting: a face arriving at a corner is that corner arriving at the face.
+        // Only one of the two bodies is stepped at a time, so a face landing on a
+        // corner has to be found here as well -- the corner's own sweep is the other
+        // body's tick, and by then this one has already moved a whole tick into it.
         for (std::size_t i = 0; i < solid.count; ++i) {
-            const Vec3 travel = solidTarget[i] - solid.position[i];
+            const Vec3 travel = solidStep - ownStep;
+            double along = 2.0;
+            Vec3 normal{0, 1, 0};
             const OutlineGap gap =
                 outlineGap(solid.position[i], body.position.data(), body.position.data(), body.count, 1.0);
-            if (!(gap.gap <= kSkin) || !(dot(travel, gap.normal) < 0.0)) continue;
-            if (!(0.0 < first)) continue;
-            first = 0.0;
-            *wayOut = gap.normal * -1.0;
+            if (!segmentHitsPolygon(solid.position[i], solid.position[i] + travel, body.position.data(), body.count,
+                                    along, normal)) {
+                if (!(arrivedAt(0.0, gap.gap, travel, gap.normal) && gap.gap <= kSkin)) continue;
+                along = 0.0;
+                normal = gap.normal;
+            }
+            if (!arrivedAt(along, gap.gap, travel, normal) || !(along < first)) continue;
+            first = along;
             *metWith = other;
             *metAt = solid.position[i];
+            // The normal of a corner this body's own outline was met by points out
+            // of this body's outline, which is the way the corner is pushed and the
+            // opposite of the way this body is: it gives way along it.
+            *wayOut = normal * -1.0;
         }
-        // A shape already through another one at the start of the tick is not
-        // arriving at anything: it stops where it is.
-        if (deepest(0.0, &where, &way) > kSkin) {
-            if (0.0 < first) {
-                first = 0.0;
-                *wayOut = way;
-                *metWith = other;
-                *metAt = where;
-            }
-            continue;
-        }
-        if (!(deepest(1.0, &where, &way) > kSkin)) continue;
-        double clear = 0.0, through = 1.0;
-        for (int round = 0; round < 40; ++round) {
-            const double middle = 0.5 * (clear + through);
-            if (deepest(middle, &where, &way) > kSkin) through = middle;
-            else clear = middle;
-        }
-        // Where it went in, and which way out is shortest there: the corner that is
-        // through, a hair past the instant it went through, so the way out is read
-        // from the shape it went into and not from a corner sitting exactly on it.
-        deepest(through, &where, &way);
-        if (!(clear < first)) continue;
-        first = clear;
-        *wayOut = way;
-        *metWith = other;
-        *metAt = where;
     }
     return first;
 }
@@ -331,66 +267,70 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
     return deepest;
 }
 
-// A corner that was carried across a line is put back on it.
+// The last thing said about a pair, once the tick is otherwise over: they are not
+// inside each other.
 //
-// The sweep is what keeps a corner on its own side of a face: no step of this body is
-// ever taken without the segment it takes being tested. What the sweep cannot speak
-// for is the *correction* -- the fixed distances pushing a body back into shape about
-// a corner that was stopped, which moves corners that were never swept, and by an
-// amount that is not a speed of anything. A corner can be carried across a face that
-// way, and a corner on the far side of a face is a corner inside another body.
+// Everything above answers motion -- where a step stops, what a contact does to a
+// speed. None of it can promise the two outlines are apart at the end of it: the
+// fixed distances re-arrange a body about the corner that was stopped, a body that
+// is turning sweeps its far corners through the place it is leaning on, and a step
+// that was cut is still a step. So the pair is put apart by the shortest way there
+// is, as one motion, half each -- the whole of it to a body that cannot move: one
+// asleep, one the mouse is holding, one standing on the floor.
 //
-// So the same hitscan is asked once more, about the segment each corner actually
-// travelled this tick: from where it was when the tick began to where the solve has
-// left it. Where that segment crosses a face, the corner is put at the crossing --
-// on the line, not past it -- and the whole body is moved with it, because a body is
-// one object and a corner put back on its own would bend it. The distances are solved
-// again afterwards, so the body is still the shape it was.
-//
-// This is not a push-out: nothing is ever put anywhere it has not been. The corner is
-// stopped where it crossed, on the first instant it was ever across, and the body is
-// walked back to that instant with it.
-bool PlaygroundRoom::undoCrossings(std::size_t index) {
-    Body& body = bodies_[index];
-    bool moved = false;
-    // A corner that is on the far side of a face is put back on the face, and the body
-    // goes with it.
-    //
-    // The sweep above is what keeps a corner on its own side: no step of a body is
-    // taken without the segment it takes being tested, against the other body's faces
-    // and along every side of both outlines. What it cannot speak for is a corner that
-    // moves without being stepped -- the fixed distances re-arranging the shape about a
-    // corner that was stopped, and the other body simply being elsewhere than where
-    // this one's sweep expected it, because the two are stepped one after the other.
-    // A corner left on the far side of a face is a corner inside another body, and it
-    // is put back onto the line at the first instant it is ever across it: onto the
-    // outline itself, not to some pushed-out distance from it, and the whole body is
-    // moved with it so the shape is not bent.
-    for (std::size_t other = 0; other < kBodyCount; ++other) {
-        if (other == index) continue;
-        const Body& solid = bodies_[other];
-        if (solid.count == 0) continue;
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const OutlineGap gap =
-                outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-            if (!(gap.gap < -kSkin)) continue;
-            // The way out is the outline's own normal; the distance to the line is the
-            // gap. Putting the corner on the line is moving it by the gap and no more.
-            const Vec3 onto = gap.normal * gap.gap;
-            for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + onto;
-            moved = true;
+// Half each, because both bodies are being put apart from both sides every tick;
+// the shortest way out is a translation, so it cannot bend either of them, and it
+// is the least amount that leaves them touching rather than inside.
+void PlaygroundRoom::separateBodies() {
+    for (int pass = 0; pass < kMaxSeparatePasses; ++pass) {
+        double worst = 0.0;
+        for (std::size_t a = 0; a < kBodyCount; ++a) {
+            for (std::size_t b = a + 1; b < kBodyCount; ++b) {
+                Body& one = bodies_[a];
+                Body& two = bodies_[b];
+                if (one.count == 0 || two.count == 0) continue;
+                Vec3 way{};
+                double amount = 0.0;
+                if (!leastOverlap(one.position.data(), one.count, two.position.data(), two.count, way, amount)) continue;
+                if (!(amount > tick::kDistanceTolerance)) continue;
+                // A side that cannot move takes none of it: one asleep, one the
+                // mouse is holding. And a side standing on the floor cannot be put
+                // *down* into it -- the floor answers that, not this -- so the floor's
+                // share goes to the other one, which in a pair that has both feet on
+                // the floor means the upper one is lifted clear and the lower one is
+                // left alone. Both of them refused, and a pair that is inside itself
+                // was left inside itself.
+                const auto onFloor = [&](const Body& body) {
+                    for (std::size_t i = 0; i < body.count; ++i)
+                        if (body.position[i].y <= tick::kSurfaceY + tick::kContactTolerance) return true;
+                    return false;
+                };
+                const bool oneHeld = bodyHeld(a) || one.frozen;
+                const bool twoHeld = bodyHeld(b) || two.frozen;
+                if (oneHeld && twoHeld) continue;
+                double shareOne = oneHeld ? 0.0 : (twoHeld ? 1.0 : 0.5);
+                double shareTwo = twoHeld ? 0.0 : (oneHeld ? 1.0 : 0.5);
+                // The first body is moved along -way, so it would be going down when
+                // way points up; the second is moved along way, so it would be going
+                // down when way points down.
+                if (shareOne > 0.0 && way.y > 0.0 && onFloor(one)) {
+                    shareTwo = std::min(1.0, shareTwo + shareOne);
+                    shareOne = 0.0;
+                }
+                if (shareTwo > 0.0 && way.y < 0.0 && onFloor(two)) {
+                    shareOne = std::min(1.0, shareOne + shareTwo);
+                    shareTwo = 0.0;
+                }
+                if (!(shareOne > 0.0) && !(shareTwo > 0.0)) continue;
+                const Vec3 oneMove = way * (amount * -shareOne);
+                const Vec3 twoMove = way * (amount * shareTwo);
+                for (std::size_t i = 0; i < one.count; ++i) one.position[i] = one.position[i] + oneMove;
+                for (std::size_t i = 0; i < two.count; ++i) two.position[i] = two.position[i] + twoMove;
+                worst = std::max(worst, amount);
+            }
         }
+        if (worst <= tick::kDistanceTolerance) break;
     }
-    // And the ball, whose outline is a circle: a corner inside it is put on it.
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const Vec3 arm = body.position[i] - ball_.position;
-        const double distance = length(arm);
-        if (!(distance < ball_.radius - kSkin)) continue;
-        const Vec3 onto = distance > 1e-12 ? arm * ((ball_.radius - distance) / distance) : Vec3{0, ball_.radius, 0};
-        for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + onto;
-        moved = true;
-    }
-    return moved;
 }
 
 // What the two bodies are still doing where they meet, once every body has been
@@ -759,15 +699,10 @@ void PlaygroundRoom::bodiesAnswer() {
         const double closing = solveContacts();
         if (closing <= kRestSpeed) break;
     }
-    // And once every body in the room has been stepped, no corner is left on the far
-    // side of a face: the last word on the tick is that a corner is never inside
-    // anything. Nothing here is motion -- it happens after every speed has been
-    // decided -- so it can neither add to one nor take from one.
-    for (int round = 0; round < kCrossingRounds; ++round) {
-        bool moved = false;
-        for (std::size_t index = 0; index < kBodyCount; ++index) moved = undoCrossings(index) || moved;
-        if (!moved) break;
-    }
+    // And last of all, the pair is not inside itself. This is a correction, not
+    // motion: it happens after every speed in the room has been decided, so it can
+    // neither add to one nor take from one.
+    separateBodies();
     // A frozen body has nothing holding it up the moment whatever was under it is
     // taken away. The plane never goes anywhere, so only a body that is neither on
     // the plane nor on a resting body can be left in the air.
