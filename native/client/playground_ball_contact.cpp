@@ -23,6 +23,15 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                 bool exchange) {
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
+    // What the ball was doing before this surface answered it. When the call is
+    // done, the difference is the momentum the surface took from it or gave it,
+    // which is the force the ball's arrows are drawn from -- recorded where the
+    // two met, because that is where it acts.
+    const Vec3 ballBefore = ball.velocity;
+    const auto recordBall = [&]() {
+        const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
+        if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball);
+    };
     std::size_t struck = 0;
     Vec3 answer = normal;
     bool canMove = false;
@@ -155,6 +164,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         if (normal.y > 1e-9)
             ball.standing = ball.standing &&
                             kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        recordBall();
         return;
     }
 
@@ -281,12 +291,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double into = dot(ball.velocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
+    recordBall();
 }
 
 // The ball runs into the dot. Both have mass, so they exchange momentum along the
 // line between them.
 void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     Ball& ball = ball_;
+    const Vec3 ballBefore = ball.velocity, pointBefore = velocity_;
     const double closing = dot(ball.velocity - velocity_, normal);
     // Nothing springs back between two things that are both free to move.
     const double rebound = 0.0;
@@ -310,6 +322,14 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     if (normal.y > 1e-9)
         ball.standing = ball.standing &&
                         kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+    // The dot and the ball are two bodies in one blow: each one's share is written
+    // down at the place they met, so F shows the pair of arrows the exchange is.
+    {
+        const Vec3 onBall = (ball.velocity - ballBefore) * (ball.mass / kTick);
+        const Vec3 onPoint = (velocity_ - pointBefore) * (kMass / kTick);
+        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball);
+        if (length(onPoint) > 1e-6) addForce(point_, onPoint, ForceKind::Ball);
+    }
     // Separate them, so they are not still overlapping next tick.
     const Vec3 gap = ball.position - point_;
     const double distance = length(gap);

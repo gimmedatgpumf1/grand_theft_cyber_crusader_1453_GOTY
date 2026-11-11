@@ -429,6 +429,16 @@ void PlaygroundRoom::bodiesAnswer() {
     // -- the floor answers that, not the body -- and a body held by the mouse
     // cannot go anywhere at all. The ball's own contact is filtered the same way,
     // with the same words.
+    // What every corner was doing when the pairs took it up, so that when the
+    // solve is finished the ledger can say what the pairs did: the difference,
+    // over the tick, in newtons, written at the corner it was handed to. Gravity
+    // and the floor have already had their say in the body's own tick, so what is
+    // left here is the pairs and nothing else.
+    std::array<std::array<Vec3, kMaxCorners>, kBodyCount> beforePairs{};
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        for (std::size_t i = 0; i < body.count; ++i) beforePairs[index][i] = body.velocity[i];
+    }
     const auto answerFor = [&](std::size_t index, Vec3 push) {
         if (bodyHeld(index)) return Vec3{};
         const Body& body = bodies_[index];
@@ -745,6 +755,17 @@ void PlaygroundRoom::bodiesAnswer() {
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
         const double closing = solveContacts();
         if (closing <= kRestSpeed) break;
+    }
+    // Everything the pairs delivered to this body, corner by corner. It is the
+    // same rule the floor's contacts are written by: the momentum a corner gained
+    // over the tick, taken back to newtons, so the arrows on F are the solve's own
+    // account of what it did rather than a second opinion about it.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 push = (body.velocity[i] - beforePairs[index][i]) * (tick::kMass / tick::kTick);
+            if (length(push) > 1e-6) addForce(body.position[i], push, ForceKind::Pair);
+        }
     }
     // And last of all, the pair is not inside itself. This is a correction, not
     // motion: it happens after every speed in the room has been decided, so it can

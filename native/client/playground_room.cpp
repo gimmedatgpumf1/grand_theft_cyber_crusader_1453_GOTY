@@ -818,4 +818,40 @@ void PlaygroundRoom::advance(double seconds) {
     }
 }
 
+// The room's energy, counted from what the simulation actually holds: the speed
+// of every corner, the dot, and the ball, and the height each of them is at.
+//
+// This is the check the forces answer to. Gravity moves energy from the heights
+// into the speeds and a contact moves it back; neither may make any, and the
+// total is the one number that says so. It is also the number N puts on screen,
+// so a solver that invents motion cannot hide: the sum climbs.
+void PlaygroundRoom::energyBudget(double& kinetic, double& potential) const {
+    kinetic = 0.0;
+    potential = 0.0;
+    // The dot: one point of mass kMass.
+    kinetic += 0.5 * kMass * dot(velocity_, velocity_);
+    potential += kMass * kGravity * point_.y;
+    // Every corner of every body is a point of the same mass, and a body that is
+    // asleep has none of either.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        for (std::size_t i = 0; i < body.count; ++i) {
+            kinetic += 0.5 * kMass * dot(body.velocity[i], body.velocity[i]);
+            potential += kMass * kGravity * body.position[i].y;
+        }
+    }
+    // The ball: its travel and its turn, and the same height rule.
+    kinetic += 0.5 * ball_.mass * dot(ball_.velocity, ball_.velocity);
+    // A solid sphere, which is the moment the ball's own contacts are solved with.
+    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+    kinetic += 0.5 * moment * ball_.spin * ball_.spin;
+    potential += ball_.mass * kGravity * ball_.position.y;
+}
+
+double PlaygroundRoom::totalEnergy() const {
+    double kinetic = 0.0, potential = 0.0;
+    energyBudget(kinetic, potential);
+    return kinetic + potential;
+}
+
 } // namespace gtc::native
