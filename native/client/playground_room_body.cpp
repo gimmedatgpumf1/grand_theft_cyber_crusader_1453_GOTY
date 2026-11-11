@@ -238,7 +238,20 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             // How much of the correction each end can take: half each across the
             // floor, but none of it downwards at a corner the plane is holding.
             const double acrossA = 0.5, acrossB = 0.5;
-            const double downA = held[a] ? 0.0 : 0.5, downB = held[b] ? 0.0 : 0.5;
+            const double freeDown = 0.5 + 0.5;
+            const double downA0 = held[a] ? 0.0 : 0.5, downB0 = held[b] ? 0.0 : 0.5;
+            const double reach0 = 2.0 * acrossA * direction.x * direction.x +
+                                  (downA0 + downB0) * direction.y * direction.y;
+            // A pair standing straight up with a corner the floor is holding at each
+            // end has, by that reading, nowhere to go: neither end may move down and
+            // the pair points straight up. Left at that, the distance is never put
+            // back and the shape comes apart -- a body wedged between the floor and
+            // whatever is on top of it visibly stops being a body. What is holding a
+            // corner is a lift, and a lift is a correction of the whole body, not a
+            // corner: the distance is solved as if both ends were free, and the floor
+            // then puts the body back up as one piece, which is what the floor does.
+            const bool forced = !(reach0 > 1e-12) && freeDown * direction.y * direction.y > 1e-12;
+            const double downA = forced ? 0.5 : downA0, downB = forced ? 0.5 : downB0;
             const double reach = 2.0 * acrossA * direction.x * direction.x +
                                  (downA + downB) * direction.y * direction.y;
             if (!(reach > 1e-12)) continue;
