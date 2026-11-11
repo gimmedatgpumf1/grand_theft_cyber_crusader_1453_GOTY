@@ -197,10 +197,17 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, double
         const Body& solid = bodies_[other];
         if (solid.count == 0) continue;
         // Where the other body's corners will be at the end of this window of the
-        // tick, from its own speeds: the same window this body's step is the rest of.
+        // tick. A body lower in the list has already taken its step, so it is not
+        // going anywhere else this tick and its corners are where they are; the one
+        // above is still to come, and its step is its own speeds. Reading a body that
+        // has already stepped as still on its way is counting its step twice: this
+        // body then stops short of where the other one is, and the other one is
+        // already there, so the pair meet a tick late with a corner between them.
         std::array<Vec3, kMaxCorners> solidTarget{};
+        const bool solidStill = other < index;
         for (std::size_t i = 0; i < solid.count; ++i)
-            solidTarget[i] = solid.position[i] + solid.velocity[i] * (kTick * fraction);
+            solidTarget[i] = solidStill ? solid.position[i]
+                                        : solid.position[i] + solid.velocity[i] * (kTick * fraction);
         std::array<Vec3, kMaxCorners> here{};
         outlineAt(body, target, 1.0, here);
         const Vec3 insideBody = centroid(body.position.data(), body.count);
