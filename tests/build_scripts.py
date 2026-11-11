@@ -116,6 +116,7 @@ def main():
     failures.extend(nested_type_failures(['native/client/window_win32.cpp',
                                           'native/client/window_x11.cpp']))
     failures.extend(windows_interface_keyword_failures())
+    failures.extend(mangled_object_failures())
 
     if failures:
         for failure in failures:
@@ -124,6 +125,52 @@ def main():
         return 1
     print(f'build scripts: PASS ({len(sources)} client sources, {len(objects)} linked objects, both platforms agree)')
     return 0
+
+
+def mangled_object_failures():
+    """Every object handed to the linker must be a whole path, on both platforms.
+
+    Two ways this has already gone wrong, both of which only the linker noticed
+    on the machine that builds for Windows:
+
+      * two objects pasted into one pair of quotes, so the linker is asked for a
+        file whose name contains a space and a second path;
+      * an object whose %ROOT%\\build\\obj\\native-client\\ prefix was dropped in
+        an edit, so the linker looks for `vk_device.obj` in whatever directory
+        the build happened to run from.
+
+    Neither compiles anything, so they are cheap to check here. System libraries
+    are bare names by design and are allowed.
+    """
+    system_libraries = {'Ws2_32.lib', 'User32.lib', 'Gdi32.lib', 'Opengl32.lib', 'Shell32.lib',
+                        'Ole32.lib', 'libbullet.a'}
+    problems = []
+    script = (ROOT / 'native' / 'build.cmd').read_text(errors='replace')
+    for number, line in enumerate(script.splitlines(), 1):
+        stripped = line.strip()
+        # The common object list is assembled on a `set` line and expanded into
+        # every link, so a broken path hides there as easily as on a cl.exe line.
+        if not (stripped.startswith('cl.exe') or stripped.startswith('set "CLIENT_COMMON=')):
+            continue
+        for token in stripped.replace('"', ' ').split():
+            # The assignment itself is not a file: drop the name and the `=`.
+            token = token.split('=', 1)[1] if token.startswith('CLIENT_COMMON=') else token
+            if not token or token == 'set':
+                continue
+            if token in system_libraries or token.startswith('!') or token.startswith('/'):
+                continue
+            if token.endswith('.obj') and not token.startswith('%ROOT%\\'):
+                problems.append(f'build.cmd line {number}: object without its full path: {token}')
+    shell = (ROOT / 'native' / 'build.sh').read_text(errors='replace')
+    for number, line in enumerate(shell.splitlines(), 1):
+        for token in line.replace('"', ' ').split():
+            if token in system_libraries or token.startswith('$') or token.startswith('!'):
+                continue
+            # A bare name like `raster.o` is the bug; `).o` out of a command
+            # substitution is punctuation, not a filename.
+            if re.fullmatch(r'[\w.-]+\.(?:o|a)', token):
+                problems.append(f'build.sh line {number}: object without its full path: {token}')
+    return problems
 
 
 def narrowing_failures(sources):
