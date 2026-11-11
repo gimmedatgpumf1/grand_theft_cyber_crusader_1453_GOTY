@@ -42,6 +42,11 @@ namespace tick = playground_tick;
 // as nothing between the two bodies is closing.
 constexpr int kMaxContactPasses = 16;
 
+// How many times a corner left on the far side of a face is put back onto it before
+// the tick is accepted. A corner put onto one face can, without ever leaving the
+// other body, find itself across a second one; two rounds is all it has ever taken.
+constexpr int kCrossingRounds = 4;
+
 
 // A corner lying on a face and moving along it is touching, not arriving:
 // answering that as a contact would stop the step at its very first instant, every
@@ -336,57 +341,44 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
 // stopped where it crossed, on the first instant it was ever across, and the body is
 // walked back to that instant with it.
 bool PlaygroundRoom::undoCrossings(std::size_t index) {
-    if (std::getenv("GTC_NOCROSS")) return false;
     Body& body = bodies_[index];
     bool moved = false;
+    // A corner that is on the far side of a face is put back on the face, and the body
+    // goes with it.
+    //
+    // The sweep above is what keeps a corner on its own side: no step of a body is
+    // taken without the segment it takes being tested, against the other body's faces
+    // and along every side of both outlines. What it cannot speak for is a corner that
+    // moves without being stepped -- the fixed distances re-arranging the shape about a
+    // corner that was stopped, and the other body simply being elsewhere than where
+    // this one's sweep expected it, because the two are stepped one after the other.
+    // A corner left on the far side of a face is a corner inside another body, and it
+    // is put back onto the line at the first instant it is ever across it: onto the
+    // outline itself, not to some pushed-out distance from it, and the whole body is
+    // moved with it so the shape is not bent.
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         if (other == index) continue;
         const Body& solid = bodies_[other];
         if (solid.count == 0) continue;
         for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 from = body.previous[i];
-            const Vec3 to = body.position[i];
-            if (length(to - from) <= 0.0) continue;
-            // Only a corner that has actually ended up inside has crossed. A corner
-            // resting on a face touches it at the very first instant of every step,
-            // and answering that as a crossing stops the body dead every tick -- a
-            // cube that can never tip off its corner and a ball that is never rolled.
-            const OutlineGap ended = outlineGap(to, solid.position.data(), solid.position.data(), solid.count, 1.0);
-            if (!(ended.gap < -kSkin)) continue;
-            double along = 2.0;
-            Vec3 normal{0, 1, 0};
-            if (!segmentHitsPolygon(from, to, solid.position.data(), solid.count, along, normal)) continue;
-            if (!(along < 1.0)) continue;
-            // Walk the whole body back to the instant the corner reached the face, and
-            // not a hair past it: the corner sits on the line.
-            const Vec3 stop = from + (to - from) * along;
-            const Vec3 back = stop - to;
-            for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + back;
+            const OutlineGap gap =
+                outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
+            if (!(gap.gap < -kSkin)) continue;
+            // The way out is the outline's own normal; the distance to the line is the
+            // gap. Putting the corner on the line is moving it by the gap and no more.
+            const Vec3 onto = gap.normal * gap.gap;
+            for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + onto;
             moved = true;
         }
     }
-    // And the ball's outline, which is the same meeting with a corner of a shape
-    // instead of a face: segmentHitsCircle is the ball's own hitscan.
-    {
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 from = body.previous[i];
-            const Vec3 to = body.position[i];
-            if (length(to - from) <= 0.0) continue;
-            // A corner that began the tick already inside the ball is not crossing
-            // into it: it is the ball's own contact, answered above. And a corner that
-            // is merely against the ball has not crossed it either -- only one that has
-            // ended up inside it.
-            if (length(from - ball_.position) <= ball_.radius) continue;
-            if (!(length(to - ball_.position) < ball_.radius - kSkin)) continue;
-            double along = 2.0;
-            Vec3 normal{0, 1, 0};
-            if (!segmentHitsCircle(from, to, ball_.position, ball_.radius, along, normal)) continue;
-            if (!(along < 1.0)) continue;
-            const Vec3 stop = from + (to - from) * along;
-            const Vec3 back = stop - to;
-            for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + back;
-            moved = true;
-        }
+    // And the ball, whose outline is a circle: a corner inside it is put on it.
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 arm = body.position[i] - ball_.position;
+        const double distance = length(arm);
+        if (!(distance < ball_.radius - kSkin)) continue;
+        const Vec3 onto = distance > 1e-12 ? arm * ((ball_.radius - distance) / distance) : Vec3{0, ball_.radius, 0};
+        for (std::size_t k = 0; k < body.count; ++k) body.position[k] = body.position[k] + onto;
+        moved = true;
     }
     return moved;
 }
@@ -756,6 +748,15 @@ void PlaygroundRoom::bodiesAnswer() {
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
         const double closing = solveContacts();
         if (closing <= kRestSpeed) break;
+    }
+    // And once every body in the room has been stepped, no corner is left on the far
+    // side of a face: the last word on the tick is that a corner is never inside
+    // anything. Nothing here is motion -- it happens after every speed has been
+    // decided -- so it can neither add to one nor take from one.
+    for (int round = 0; round < kCrossingRounds; ++round) {
+        bool moved = false;
+        for (std::size_t index = 0; index < kBodyCount; ++index) moved = undoCrossings(index) || moved;
+        if (!moved) break;
     }
     // A frozen body has nothing holding it up the moment whatever was under it is
     // taken away. The plane never goes anywhere, so only a body that is neither on
