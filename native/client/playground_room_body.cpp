@@ -296,18 +296,22 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
 
-    // What each corner actually did this tick, solved shape and all: a body that is
-    // turning is doing that, and the turn is motion. That is the body's speed -- a
-    // speed is where a corner went over the tick, not a number kept beside it -- and
-    // the corrections the floor and the other shapes made are taken back out of it,
-    // because a corner put back on the floor did not travel upwards.
-    for (std::size_t i = 0; i < count; ++i) {
-        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
-        velocity = velocity - lift[i] * (1.0 / kTick);
-        velocity = velocity - ballLift[i] * (1.0 / kTick);
-        velocity = velocity - bodyLift[i] * (1.0 / kTick);
-        body.velocity[i] = velocity;
-    }
+    // The speed this body ends the tick with is the speed the forces gave it.
+    //
+    // It is not read back off where its corners ended up. Those are two different
+    // numbers, and only one of them is physics: a corner is put back on the floor,
+    // or out of another shape, by a correction, and a correction is not a distance
+    // the body travelled. Read the corners and divide by the tick and every repair
+    // becomes speed -- a shape wedged between the floor and another body has its
+    // corners thrown a few centimetres in one tick, which reads as metres per
+    // second, and the next tick starts with that much energy in it. That is the
+    // explosion: not a bad contact, but a solver correction being cashed in as
+    // motion.
+    //
+    // So the tick is in the order it should always have been: gravity and the other
+    // forces change the speeds, the sweeps cut the travel the new speeds ask for,
+    // the contacts answer those speeds with impulses, and where the corners ended up
+    // is only ever where they are -- never how fast they are going.
 
     // The floor is a force, not a place.
     //
