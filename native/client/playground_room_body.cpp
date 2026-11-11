@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -80,6 +82,9 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         if (along < planeReach) planeReach = along;
     }
     const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
+    const bool tr = std::getenv("GTC_TICK") != nullptr && index == 1;
+    if (tr) std::fprintf(stderr, "  T start c0 (%.5f,%.5f) v(%.4f,%.4f) reach %.6f\n", body.position[0].x,
+                         body.position[0].y, body.velocity[0].x, body.velocity[0].y, reach);
     const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
     // The floor's way out is straight up, whatever the other sweeps found: it is the
     // floor that cut this step short.
@@ -238,6 +243,8 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
         if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
     }
+    if (tr) std::fprintf(stderr, "  T solved c0 (%.5f,%.5f) lift0 (%.6f,%.6f) bodyLift0 (%.6f,%.6f)\n", body.position[0].x,
+                         body.position[0].y, lift[0].x, lift[0].y, bodyLift[0].x, bodyLift[0].y);
     // Whatever the loop left, no corner may be under the floor when the tick ends:
     // the floor is not a suggestion. Correcting it the way the floor's own pass does
     // -- rigidly, at the corner that is through it -- keeps the shape.
@@ -310,6 +317,8 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= std::copysign(slideSpeed, sideways);
         }
     }
+    if (tr) std::fprintf(stderr, "  T end c0 (%.5f,%.5f) v(%.4f,%.4f)\n", body.position[0].x, body.position[0].y,
+                         body.velocity[0].x, body.velocity[0].y);
     // Nothing moved it this tick. The floor puts a corner back on itself exactly,
     // so a body resting on the floor moves by nothing at all; a body resting on
     // another body is put back by the constraint solve, which is exact only to its
