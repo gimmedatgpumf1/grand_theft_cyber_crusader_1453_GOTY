@@ -70,10 +70,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // What the body's step was before anything below shortens it. A corner's stored
     // velocity is not the body's motion -- the floor cuts it, and a shortened step
     // is not motion either -- so the step is read here, once, and used from here on.
+    //
+    // It is the speed *where the surfaces touch*, not the body's average speed: a body
+    // tipping over a ball has one edge standing still and the other going twice as
+    // fast as the middle, and the piece between the corners is moving at the lever's
+    // interpolation of the two of them -- which is what outlineTouch already says for
+    // the position. Reading the average instead says a body turning on the spot is not
+    // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
     Vec3 surfaceVelocity{};
     if (body != nullptr) {
-        for (std::size_t i = 0; i < body->count; ++i) surfaceVelocity = surfaceVelocity + body->velocity[i];
-        surfaceVelocity = surfaceVelocity * (1.0 / static_cast<double>(body->count));
+        const OutlineTouch touch = outlineTouch(contactPoint, body->position.data(), body->count);
+        surfaceVelocity = body->velocity[touch.a] + (body->velocity[touch.b] - body->velocity[touch.a]) * touch.t;
     }
 
     // A ball found through an outline is the ball's own way out: the body's tick
@@ -185,14 +192,22 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
-            // What this surface can rub against the ball is what it can press the
-            // ball with, and the ball is only pressed by the part of the blow it
-            // actually took. A ball lying on the floor with a shape landing flat on
-            // top of it takes none of that blow -- the floor under it does -- and a
-            // friction solve given the whole of it span the ball sideways and down
-            // at metres a second off a body that never touched it that way.
             giveBodyTurn(std::size_t(bodyIndex), inertia, contactPoint, answer * -impulse);
-            pressed = impulse * ballShare;
+            // How hard the two surfaces are pressed together is the whole of the
+            // impulse the contact carried, not just the part the ball was free to take.
+            //
+            // A ball lying on the floor cannot be driven down into it -- the floor
+            // answers that, not the ball -- so a shape landing on top of it finds the
+            // ball immovable and the blow goes into the floor. But the floor is holding
+            // the ball *up* through that blow: the two surfaces are pressed together
+            // just as hard as if the ball had been free, and it is that squeeze, not
+            // the ball's freedom to move, that gives the pair its grip. Handing the
+            // grip only the part the ball took gave it nothing at all in exactly the
+            // case that matters -- a shape resting on a ball on the floor -- so the
+            // face and the ball slid across each other with no friction whatever, the
+            // ball was never turned, and the only thing left moving the shape was the
+            // correction that kept it out of the ball.
+            pressed = impulse;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
