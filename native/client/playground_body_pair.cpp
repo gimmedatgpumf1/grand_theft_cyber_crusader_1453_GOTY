@@ -39,10 +39,20 @@ namespace tick = playground_tick;
 // answering that as a contact would stop the step at its very first instant, every
 // tick, and the body would stutter along the surface instead of sliding down it.
 // The dot's own walk is held to exactly this rule.
+// A corner that begins the tick on a surface has not arrived at it: it is on it. The
+// dot's own walk is held to the same rule, and for the same reason -- answering a
+// touch at the very first instant of every step stops the step dead.
+//
+// What such a corner does instead is go where its speed takes it and be put back out
+// if that is inside, which is pushBodyOutOfBody's job and is the position solve's
+// answer wherever the surface touched. That matters where the two meet: stopping the
+// whole body at the first instant cuts every corner by the same fraction, which is
+// the same thing as holding it under its middle -- and a body standing on the point
+// of another is not held under its middle, it tips. Only a crossing counts here, so
+// nothing is passed through: a corner that starts outside and ends inside has
+// crossed the outline, and that crossing is solved for outright.
 namespace {
-bool arrives(double along, Vec3 travel, Vec3 normal) {
-    return !(along <= 1e-9 && dot(travel, normal) >= 0.0);
-}
+bool arrives(double along) { return along > 1e-9; }
 }  // namespace
 
 // How far this body's step can be walked before one of its corners reaches another
@@ -82,7 +92,7 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             if (!segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(), solid.count,
                                     along, normal))
                 continue;
-            if (!arrives(along, travel, normal) || !(along < first)) continue;
+            if (!arrives(along) || !(along < first)) continue;
             first = along;
             *wayOut = normal;
         }
@@ -98,7 +108,7 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             if (!segmentHitsPolygon(solid.position[i], solid.position[i] + travel, body.position.data(), body.count,
                                     along, normal))
                 continue;
-            if (!arrives(along, travel, normal) || !(along < first)) continue;
+            if (!arrives(along) || !(along < first)) continue;
             first = along;
             // The normal of a corner this body's own outline was met by points out
             // of this body's outline, which is the way the corner is pushed and the
@@ -109,14 +119,31 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
     return first;
 }
 
-// No corner of a body may be inside another body.
+// No corner of a body may be inside another body, and no outline may be inside a
+// corner. Both are the same statement from either side, and both are answered the
+// way the ball's own contact is answered.
 //
-// A corner that has ended up inside another body is put back onto that body's
-// outline at the closest point of it -- pushOutOfPolygon, the same function the dot
-// is put back out by, for the same reason: a point nudged out along an edge normal
-// by a hair stays as deep as it was and creeps. Each body does this for its own
-// corners in its own tick, so the two of them are separated from both sides and
-// neither is ever shoved by the other's business.
+// A corner of this body that is inside another body is put back onto that body's
+// outline at the closest point of it -- pushOutOfPolygon, the function the dot is
+// put back out by, for the same reason: a point nudged out along an edge normal by a
+// hair stays as deep as it was and creeps.
+//
+// The other way round is a corner of the other body inside this one, and that is a
+// face lying on a point -- the cube set down on the point of the triangle. A point
+// has no radius, and a point that is inside an outline is a ball of radius zero
+// inside it, so the answer is pushBodyOutOfBall's, with the radius taken out: this
+// body moves away from the corner along the opposite of the corner's way out, and
+// the piece of this body's outline the corner is through is what moves, in
+// proportion to how near the corner is to either end of it. That is what lets the
+// face tip and slide off a point; lifting every corner of the body by the same
+// amount is a body carried on a point without so much as leaning, which is what a
+// cube left standing on the triangle's corner looked like. Nothing here is special
+// to a corner of a shape: it is the ball's contact with the radius nought.
+//
+// Each body does this for itself in its own tick, so a pair is separated from both
+// sides and neither is ever shoved by the other's business -- and a body that is not
+// being stepped leaves the whole correction to the one that is, exactly as the ball
+// resolves all of a crossing it finds on its own.
 //
 // `lift` remembers how far each corner was put back, because a correction is not
 // motion: the body's tick takes it back out of that corner's speed, so a body
@@ -125,17 +152,55 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
 double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift) {
     Body& body = bodies_[index];
     if (body.count == 0) return 0.0;
+    // A correction is a rigid motion of the whole body at the place it is needed, in
+    // the same terms an impulse is given it by -- one mass, one moment, one lever:
+    // the piece of the body at the contact moves by the amount it is out by, and the
+    // rest of it comes along as the fixed distances require. Pushing corners about
+    // one at a time was pushing the ends of a long base two different distances, and
+    // a body corrected that way creeps along the surface it is standing on.
+    const BodyInertia inertia = bodyInertia(body);
     double deepest = 0.0;
+    const auto push = [&](Vec3 at, Vec3 displacement) {
+        const double error = length(displacement);
+        if (!(error > 0.0)) return;
+        const Vec3 normal = displacement * (1.0 / error);
+        const Vec3 arm = at - inertia.middle;
+        const double lever = arm.x * normal.y - arm.y * normal.x;
+        const double share = 1.0 / static_cast<double>(body.count) + lever * lever / inertia.moment;
+        if (!(share > 1e-12)) return;
+        const double take = error / share;
+        const double turn = take * lever / inertia.moment;
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 r = body.position[i] - inertia.middle;
+            const Vec3 amount = normal * (take / static_cast<double>(body.count)) + Vec3{-turn * r.y, turn * r.x, 0};
+            body.position[i] = body.position[i] + amount;
+            if (lift != nullptr) (*lift)[i] = (*lift)[i] + amount;
+        }
+        deepest = std::max(deepest, error);
+    };
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         if (other == index) continue;
         const Body& solid = bodies_[other];
         if (solid.count == 0) continue;
+        // This body's corners, out of the other body's outline, along the closest way
+        // out of it -- pushOutOfPolygon, the function the dot is put back out by.
         for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 before = body.position[i];
-            if (!pushOutOfPolygon(body.position[i], solid.position.data(), solid.count)) continue;
-            const Vec3 amount = body.position[i] - before;
-            deepest = std::max(deepest, length(amount));
-            if (lift != nullptr) (*lift)[i] = (*lift)[i] + amount;
+            Vec3 escaped = body.position[i];
+            if (!pushOutOfPolygon(escaped, solid.position.data(), solid.count)) continue;
+            push(body.position[i], escaped - body.position[i]);
+        }
+        // And the other body's corners, out of this one's outline: a corner is a
+        // point, so this is the ball's contact with the radius nought, and the piece
+        // of this body's outline the corner is through is what the correction is
+        // about.
+        for (std::size_t i = 0; i < solid.count; ++i) {
+            const OutlineGap gap = outlineGap(solid.position[i], body.position.data(), body.position.data(), body.count, 1.0);
+            // Outside, or on it: an outline is allowed to be touched, and a corner
+            // that is merely near nothing is not a contact.
+            if (gap.gap >= 0.0) continue;
+            // The way this body has to go: opposite the way the corner is nearest to
+            // being out by, which is the ball's own `away`.
+            push(solid.position[i], gap.normal * gap.gap);
         }
     }
     return deepest;
@@ -190,16 +255,26 @@ void PlaygroundRoom::bodiesAnswer() {
         for (std::size_t i = 0; i < body.count; ++i) supported = supported || body.position[i].y <= tick::kSurfaceY + tick::kContactTolerance;
         return supported && push.y < 0.0 ? Vec3{push.x, 0.0, 0.0} : push;
     };
+    // What one pair is doing where they meet: one answer for the pair, not one per
+    // corner. Two corners of a face lying on another face are one contact, and
+    // answering each of them for the whole approach is answering it twice -- which
+    // is what the ball's own walk guards against with its per-body `answered` flag.
+    // The contact patch is the average of the places they met, so a face lying flat
+    // has its answer under its middle and a body standing on a point has it at the
+    // point, which is the difference between a body carried and a body tipped.
+    struct PairContact {
+        bool any = false;
+        Vec3 normal{0, 1, 0};
+        Vec3 at{};
+        Vec3 relative{};
+        double approach = 0.0;  // the most negative closing seen, 0 when they are not closing
+        std::size_t contacts = 0;
+    };
     for (std::size_t a = 0; a < kBodyCount; ++a) {
         for (std::size_t b = a + 1; b < kBodyCount; ++b) {
             Body& one = bodies_[a];
             Body& two = bodies_[b];
             if (one.count == 0 || two.count == 0) continue;
-            // Two bodies asleep are still touching each other, and still holding
-            // each other up: a pair that skipped its contacts the moment both of
-            // them were at rest would find nothing under the one on top on the next
-            // tick and wake it, over and over. What is skipped for a resting pair is
-            // the answer, and that skips itself: neither of them is moving.
             const BodyInertia oneInertia = bodyInertia(one);
             const BodyInertia twoInertia = bodyInertia(two);
             // Both ways round: each body's own corners against the other's outline.
@@ -214,6 +289,7 @@ void PlaygroundRoom::bodiesAnswer() {
                 const std::size_t them = std::size_t(round == 0 ? b : a);
                 const BodyInertia& bodyFrame = round == 0 ? oneInertia : twoInertia;
                 const BodyInertia& solidFrame = round == 0 ? twoInertia : oneInertia;
+                PairContact meeting;
                 for (std::size_t i = 0; i < body.count; ++i) {
                     const OutlineGap gap =
                         outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
@@ -230,6 +306,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     const Vec3 solidVelocity =
                         solid.velocity[touch.a] * (1.0 - touch.t) + solid.velocity[touch.b] * touch.t;
                     const Vec3 relative = body.velocity[i] - solidVelocity;
+                    const double closing = dot(relative, normal);
+                    // Something really leaning on this body wakes it: a resting body
+                    // is woken by a real blow and by nothing else.
+                    if (closing < -kRestSpeed) body.frozen = false;
                     // Standing on the other body: the way out of its surface points
                     // up, so what is under this corner is what has to hold this
                     // body's weight up -- and a way out that points down is the same
@@ -243,46 +323,67 @@ void PlaygroundRoom::bodiesAnswer() {
                         held.supportHigh = std::max(held.supportHigh, contact.x);
                         held.supportFrozen = under.frozen;
                     }
-                    const double closing = dot(relative, normal);
-                    // Something really leaning on this body wakes it: a resting body
-                    // is woken by a real blow and by nothing else.
-                    if (closing < -kRestSpeed) body.frozen = false;
-                    if (!(closing < 0.0)) continue;
-                    // How much of each side's mass is where the two met, and what
-                    // each of them is free to do there: the impulse is the approach
-                    // speed over that, exactly as the ball's strike is solved.
-                    const Vec3 bodyAnswer = answerFor(self, normal);
-                    const Vec3 solidAnswer = answerFor(them, normal * -1.0);
-                    const bool bodyMoves = dot(bodyAnswer, normal) > 1e-9;
-                    const bool solidMoves = dot(solidAnswer, normal) > 1e-9;
-                    const double share = (bodyMoves ? bodyShareAt(body, bodyFrame, contact, bodyAnswer) : 0.0) +
-                                         (solidMoves ? bodyShareAt(solid, solidFrame, contact, solidAnswer) : 0.0);
-                    if (!(share > 1e-12)) continue;
-                    const double impulse = -closing / share;
-                    if (bodyMoves) giveBodyTurn(self, bodyFrame, contact, bodyAnswer * impulse);
-                    if (solidMoves) giveBodyTurn(them, solidFrame, contact, solidAnswer * -impulse);
-                    // Friction, at that contact and on what is left running along
-                    // it: the slide is answered by an impulse along the surface,
-                    // solved against the same two masses and limited by mu times the
-                    // impulse this contact carried -- the weight pressing into it when
-                    // the contact is carrying nothing, which is the floor's own answer
-                    // to a body lying still on it.
-                    const Vec3 tangent{normal.y, -normal.x, 0};
-                    const double slide = dot(relative, tangent);
-                    if (!(std::abs(slide) > 0.0)) continue;
-                    const Vec3 along = slide > 0.0 ? tangent * -1.0 : tangent;
-                    const double grip = (bodyMoves ? bodyShareAt(body, bodyFrame, contact, along) : 0.0) +
-                                        (solidMoves ? bodyShareAt(solid, solidFrame, contact, along) : 0.0);
-                    if (!(grip > 1e-12)) continue;
-                    const double needed = std::abs(slide) / grip;
-                    const double carried = std::max(impulse, tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
-                    const double hold = body.staticFriction * carried;
-                    const double slip = body.kineticFriction * carried;
-                    const double rubbed = needed <= hold ? needed : std::min(needed, slip);
-                    const Vec3 friction = along * rubbed;
-                    if (bodyMoves) giveBodyTurn(self, bodyFrame, contact, friction);
-                    if (solidMoves) giveBodyTurn(them, solidFrame, contact, friction * -1.0);
+                    if (!meeting.any) {
+                        meeting.any = true;
+                        meeting.normal = normal;
+                        meeting.relative = relative;
+                        meeting.approach = std::min(closing, 0.0);
+                    } else if (closing < meeting.approach) {
+                        // The hardest meeting is the one the pair is answered on; the
+                        // rest of the patch only says where the blow lands.
+                        meeting.normal = normal;
+                        meeting.relative = relative;
+                        meeting.approach = closing;
+                    }
+                    meeting.at = meeting.at + contact;
+                    ++meeting.contacts;
                 }
+                if (!meeting.any || meeting.contacts == 0) continue;
+                meeting.at = meeting.at * (1.0 / static_cast<double>(meeting.contacts));
+                const Vec3 normal = meeting.normal;
+                // How much of each side's mass is where the two met, and what each of
+                // them is free to do there: the impulse is the approach speed over
+                // that, exactly as the ball's strike is solved.
+                const Vec3 bodyAnswer = answerFor(self, normal);
+                const Vec3 solidAnswer = answerFor(them, normal * -1.0);
+                // Each side is free in its own direction: this body along the way out
+                // of the surface it is against, and the other body the other way. The
+                // two directions are opposites, so each is measured against its own.
+                const bool bodyMoves = dot(bodyAnswer, normal) > 1e-9;
+                const bool solidMoves = dot(solidAnswer, normal * -1.0) > 1e-9;
+                const double share = (bodyMoves ? bodyShareAt(body, bodyFrame, meeting.at, bodyAnswer) : 0.0) +
+                                     (solidMoves ? bodyShareAt(solid, solidFrame, meeting.at, solidAnswer) : 0.0);
+                if (!(share > 1e-12)) continue;
+                if (meeting.approach < 0.0) {
+                    const double impulse = -meeting.approach / share;
+                    // `closing` is measured along the way out of the surface this
+                    // corner is against, so the two of them are pushed apart along
+                    // it: this body the way it is free to go, and the body it struck
+                    // the other way -- which is what `solidAnswer` already is.
+                    if (bodyMoves) giveBodyTurn(self, bodyFrame, meeting.at, bodyAnswer * impulse);
+                    if (solidMoves) giveBodyTurn(them, solidFrame, meeting.at, solidAnswer * impulse);
+                }
+                // Friction, at that contact and on what is left running along it: the
+                // slide is answered by an impulse along the surface, solved against
+                // the same two masses and limited by mu times the impulse this
+                // contact carried -- the weight pressing into it when the contact is
+                // carrying nothing, which is the floor's own answer to a body lying
+                // still on it.
+                const Vec3 tangent{normal.y, -normal.x, 0};
+                const double slide = dot(meeting.relative, tangent);
+                if (!(std::abs(slide) > 0.0)) continue;
+                const Vec3 along = slide > 0.0 ? tangent * -1.0 : tangent;
+                const double grip = (bodyMoves ? bodyShareAt(body, bodyFrame, meeting.at, along) : 0.0) +
+                                    (solidMoves ? bodyShareAt(solid, solidFrame, meeting.at, along) : 0.0);
+                if (!(grip > 1e-12)) continue;
+                const double needed = std::abs(slide) / grip;
+                const double carried = tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick;
+                const double hold = body.staticFriction * carried;
+                const double slip = body.kineticFriction * carried;
+                const double rubbed = needed <= hold ? needed : std::min(needed, slip);
+                const Vec3 friction = along * rubbed;
+                if (bodyMoves) giveBodyTurn(self, bodyFrame, meeting.at, friction);
+                if (solidMoves) giveBodyTurn(them, solidFrame, meeting.at, friction * -1.0);
             }
         }
     }

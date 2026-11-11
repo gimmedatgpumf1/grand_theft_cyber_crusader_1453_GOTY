@@ -270,8 +270,16 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     const bool carriedByPlane = touchingPlane && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
     // And another body carries it the same way: what it is standing on has to be
     // under the weight, and it has to be at rest itself.
-    const bool carriedByBody = body.onBody && body.supportFrozen && middle.x >= body.supportLow - 1e-6 &&
-                               middle.x <= body.supportHigh + 1e-6;
+    //
+    // What it is standing on also has to have some extent. A single contact point
+    // is a round surface with no radius in it -- the triangle's corner, or the top
+    // of a ball -- and a shape on one of those is carried only in the one
+    // configuration where its weight runs straight down the point, which is not a
+    // rest but a knife edge: the smallest thing tips it. Freezing it there is what
+    // left a cube perched on the point of the triangle for ever. A support with
+    // extent can carry it, and that is a face or a pair of corners, not a point.
+    const bool carriedByBody = body.onBody && body.supportFrozen && body.supportHigh > body.supportLow &&
+                               middle.x >= body.supportLow - 1e-6 && middle.x <= body.supportHigh + 1e-6;
     const bool carried = carriedByPlane || carriedByBody;
     // Resting on the plane and no longer going anywhere: there is no force left
     // to resolve, so the body is frozen and its ticks stop costing anything.
