@@ -82,7 +82,7 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     double spend = 1.0;
     for (int pass = 0; pass < kSlidePasses && spend > 1e-9; ++pass) {
         for (std::size_t i = 0; i < count; ++i) target[i] = body.position[i] + body.velocity[i] * (kTick * spend);
-        const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody, &metAt);
+        const double bodyReach = bodiesReach(index, target.data(), spend, &metWay, &body.metBody, &metAt);
         const double ballReach = bodyBallReach(index, target.data());
         // And the floor, swept the same way the other two are: the first fraction of
         // the step at which any of this body's corners arrives at it.
