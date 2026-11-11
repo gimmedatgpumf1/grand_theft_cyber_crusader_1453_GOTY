@@ -130,6 +130,9 @@ private:
         // answered and hangs in the air gathering speed. The ball remembers what it
         // is touching for exactly this reason.
         std::size_t metBody = kBodyCount;
+        // Whether a contact answered one of this body's points this tick. A body
+        // that was not touched is left exactly as it is.
+        bool touched = false;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };

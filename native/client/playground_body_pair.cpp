@@ -35,6 +35,13 @@ using namespace ball_shape;
 using namespace playground_detail;
 namespace tick = playground_tick;
 
+// How many times a pair's contacts are solved before the tick ends. A contact
+// solve is iterative: each answer changes what the others are closing at, so the
+// last one to be answered is the one that is wrong. This is a guard against a
+// numerical corner case looping for ever, not a tuning -- the solve leaves as soon
+// as nothing between the two bodies is closing.
+constexpr int kMaxContactPasses = 16;
+
 // A corner lying on a face and moving along it is touching, not arriving:
 // answering that as a contact would stop the step at its very first instant, every
 // tick, and the body would stutter along the surface instead of sliding down it.
@@ -241,6 +248,7 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
 // edge does.
 void PlaygroundRoom::bodiesAnswer() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
+        bodies_[index].touched = false;
         bodies_[index].onBody = false;
         bodies_[index].supportLow = 1e30;
         bodies_[index].supportHigh = -1e30;
@@ -272,14 +280,28 @@ void PlaygroundRoom::bodiesAnswer() {
         Vec3 relative{};
         double approach = 0.0;  // the most negative closing seen, 0 when they are not closing
         std::size_t contacts = 0;
+        // Which corner of this body met the other one hardest: it is the point the
+        // contact is answered at, because a contact is between points.
+        std::size_t corner = 0;
     };
+    //
+    // Every answer a contact gives is one point's speed, and one point's speed is
+    // not a body moving until the fixed distances have carried it to the rest of
+    // it. So the two are solved together, the way the shape and the plane are: a
+    // sweep answers every contact of every pair, the distances of every body that
+    // was answered are solved, and that repeats until nothing is closing any more.
+    // Answering all the contacts first and only then making the bodies rigid is
+    // answering the second contact against a body the first one never touched --
+    // and an uneven pair is a body tipped by the order its own corners happen to
+    // be in. The bound is a guard against a numerical corner case looping for
+    // ever, not a tuning: the loop leaves as soon as nothing is closing.
+    const auto solveContacts = [&]() {
+    double closingTotal = 0.0;
     for (std::size_t a = 0; a < kBodyCount; ++a) {
         for (std::size_t b = a + 1; b < kBodyCount; ++b) {
             Body& one = bodies_[a];
             Body& two = bodies_[b];
             if (one.count == 0 || two.count == 0) continue;
-            const BodyInertia oneInertia = bodyInertia(one);
-            const BodyInertia twoInertia = bodyInertia(two);
             // Both ways round: each body's own corners against the other's outline.
             // A corner on the surface and a corner inside it are the same meeting at
             // different depths, and outlineGap is the ball's own test for both --
@@ -290,126 +312,178 @@ void PlaygroundRoom::bodiesAnswer() {
                 const std::size_t self = std::size_t(round == 0 ? a : b);
                 Body& solid = round == 0 ? two : one;
                 const std::size_t them = std::size_t(round == 0 ? b : a);
-                const BodyInertia& bodyFrame = round == 0 ? oneInertia : twoInertia;
-                const BodyInertia& solidFrame = round == 0 ? twoInertia : oneInertia;
-                PairContact meeting;
-                const bool met = body.metBody == them || solid.metBody == self;
+                // Where the other body's travel was taking it this tick, before the
+                // sweep cut it short -- the same target the plane's hitscan is given,
+                // and not where the body ended up. A body held still by the solve has
+                // an achieved travel of nothing, and reading that as "it is not moving"
+                // is what let a pair of bodies that are pressed together never be
+                // answered at all.
+                Vec3 solidStep{};
+                for (std::size_t i = 0; i < solid.count; ++i) solidStep = solidStep + solid.velocity[i];
+                solidStep = solidStep * (tick::kTick / static_cast<double>(solid.count));
                 for (std::size_t i = 0; i < body.count; ++i) {
+                    // Where this corner's travel was taking it, relative to the body it
+                    // is against, before the sweep cut the step short. That is what the
+                    // plane's own hitscan asks -- not "is this corner below the floor"
+                    // but "would this tick's travel put it below the floor" -- and the
+                    // pair has to ask the same question of the two of them moving. A
+                    // body resting on another is one whose travel every tick would take
+                    // it in, and the sweep leaves the two exactly at the surface, a hair
+                    // apart; asking where the corner ended up is asking whether it is
+                    // already inside, which a resting body never is. The closing speed
+                    // was then never answered: the corners fell for nine ticks and got
+                    // one blow, which is a body shivering on the thing it stands on.
+                    // The other body's own travel is measured the way the sweep
+                    // measures it -- what its corners actually did -- because it is the
+                    // one that is moving when a pair is landing, and a corner of the
+                    // still one is the one that has to be put back out of it.
+                    const Vec3 wouldBe = body.position[i] + body.velocity[i] * tick::kTick - solidStep;
                     const OutlineGap gap =
-                        outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-                    // Against it, not merely near it. The sweep stops the step where the
-                    // two touch, and the solve that follows -- the fixed distances and
-                    // the plane -- is exact only to a tolerance, so a pair that is
-                    // genuinely touching ends the tick a hair apart. A hair is not a
-                    // separation: the ball's own contacts are taken as touching within
-                    // the same skin, and a pair that stops being a contact whenever the
-                    // solve rounds is a pair whose closing speed is never answered, which
-                    // is a body that hangs in the air gathering speed.
-                    // The pair the sweep stopped this tick is a pair in contact,
-                    // wherever the solve has since left the two of them: the sweep is
-                    // where they met, and a contact measured by the gap alone is a
-                    // contact that comes and goes with the solver's rounding.
-                    // Against it, not merely near it -- and the same skin the ball's
-                    // own contacts are taken within. The sweep stops the step exactly
-                    // where the two touch, so a pair that is touching ends the tick a
-                    // rounding error apart, and a contact that is only recognised while
-                    // the error happens to fall one way is a contact that comes and
-                    // goes: the closing speed is then never answered, and the body
-                    // hangs where it is, gathering speed it can never spend.
-                    (void)met;
+                        outlineGap(wouldBe, solid.position.data(), solid.position.data(), solid.count, 1.0);
+                    // Against it, not merely near it -- and within the same skin the
+                    // ball's own contacts are taken within.
                     if (gap.gap > kSkin) continue;
-                    // The way out of the other body's outline, which is the normal
-                    // of this contact: it points from what was touched towards this
+                    // The way out of the other body's outline, which is the normal of
+                    // this contact: it points from what was touched towards this
                     // corner.
                     const Vec3 normal = gap.normal;
-                    const Vec3 contact = body.position[i];
-                    // The piece of the other body that is being touched, and what it
-                    // is doing there: an edge's motion is its two corners' motion at
-                    // the fraction along it where the contact is.
-                    const OutlineTouch touch = outlineTouch(contact, solid.position.data(), solid.count);
-                    const Vec3 solidVelocity =
-                        solid.velocity[touch.a] * (1.0 - touch.t) + solid.velocity[touch.b] * touch.t;
-                    const Vec3 relative = body.velocity[i] - solidVelocity;
-                    const double closing = dot(relative, normal);
-                    // Something really leaning on this body wakes it: a resting body
-                    // is woken by a real blow and by nothing else.
-                    if (closing < -kRestSpeed) body.frozen = false;
+                    // The corner of the other body that this one is against. A contact
+                    // is between two points: this body's corner, which is where the
+                    // contact is, and the nearest corner of the other body to it --
+                    // exactly as a dot's blow is carried by the nearest corner of the
+                    // body it strikes.
+                    // ...and the piece of the other body's outline it is against. An
+                    // outline is a bar between two corner points, so a force at a
+                    // fraction along it is those two points' shares of it: (1 - t) and
+                    // t. Taking the nearest corner instead hands the whole impulse to a
+                    // point up to a metre away, and a corner of one body becomes a
+                    // lever on the other -- which is what tipped a triangle whose base
+                    // was lying across a cube it was balanced on.
+                    const OutlineTouch struck = outlineTouch(body.position[i], solid.position.data(), solid.count);
                     // Standing on the other body: the way out of its surface points
-                    // up, so what is under this corner is what has to hold this
-                    // body's weight up -- and a way out that points down is the same
-                    // meeting with the other body on top, which is the pair seen
-                    // from the side that did not move.
+                    // up, so what is under this corner is what has to hold this body's
+                    // weight up -- and a way out that points down is the same meeting
+                    // with the other body on top, which is the pair seen from the side
+                    // that did not move.
                     if (std::abs(normal.y) > 1e-6) {
                         Body& held = normal.y > 0.0 ? body : solid;
                         const Body& under = normal.y > 0.0 ? solid : body;
                         held.onBody = true;
-                        held.supportLow = std::min(held.supportLow, contact.x);
-                        held.supportHigh = std::max(held.supportHigh, contact.x);
+                        held.supportLow = std::min(held.supportLow, body.position[i].x);
+                        held.supportHigh = std::max(held.supportHigh, body.position[i].x);
                         held.supportFrozen = under.frozen;
                     }
-                    if (!meeting.any) {
-                        meeting.any = true;
-                        meeting.normal = normal;
-                        meeting.relative = relative;
-                        meeting.approach = std::min(closing, 0.0);
-                    } else if (closing < meeting.approach) {
-                        // The hardest meeting is the one the pair is answered on; the
-                        // rest of the patch only says where the blow lands.
-                        meeting.normal = normal;
-                        meeting.relative = relative;
-                        meeting.approach = closing;
+                    // A body on the plane cannot be driven down into it, and a body
+                    // the mouse is holding cannot move at all. Both are what the dot's
+                    // own blow is held to.
+                    const Vec3 bodyAnswer = answerFor(self, normal);
+                    const Vec3 solidAnswer = answerFor(them, normal * -1.0);
+                    // Two corners, equal mass: the contact takes the speed the two of
+                    // them are closing at and gives none of it back, and each point
+                    // takes its half. Nothing is shared out over the rest of either
+                    // body here -- the fixed distances do that, which is the whole of
+                    // the coupling: a point pushed up pulls its neighbours with it and
+                    // the body turns about that point. Handing the body its half as a
+                    // rigid whole would put the support under its middle, and a body
+                    // on the point of another is not supported under its middle, it
+                    // tips. Every point that is touching is answered, so a body lying
+                    // across another is held by the points it actually rests on and
+                    // not by the worst of them.
+                    // What that piece of the outline is doing, and what the two points
+                    // are closing at together.
+                    const Vec3 solidVelocity =
+                        solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
+                    const double closing = dot(body.velocity[i] - solidVelocity, normal);
+                    if (closing < 0.0) {
+                        closingTotal = std::max(closingTotal, -closing);
+                        // What the contact is solved against is what each side is free
+                        // to give: a side that is standing on the floor cannot be driven
+                        // into it, so the whole of the answer falls on the side that can
+                        // move. Solving against both masses regardless would take half
+                        // the speed off a body whose support cannot move at all, and it
+                        // would sink into the thing holding it.
+                        const double give = dot(bodyAnswer, normal) * dot(bodyAnswer, normal) / tick::kMass +
+                                            dot(solidAnswer, normal) * dot(solidAnswer, normal) / tick::kMass;
+                        if (!(give > 1e-12)) continue;
+                        const double impulse = -closing / give;
+                        body.velocity[i] = body.velocity[i] + bodyAnswer * (impulse / tick::kMass);
+                        solid.velocity[struck.a] =
+                            solid.velocity[struck.a] + solidAnswer * (impulse * (1.0 - struck.t) / tick::kMass);
+                        solid.velocity[struck.b] =
+                            solid.velocity[struck.b] + solidAnswer * (impulse * struck.t / tick::kMass);
+                        body.touched = true;
+                        solid.touched = true;
+                        if (-closing > kRestSpeed) {
+                            body.frozen = false;
+                            solid.frozen = false;
+                        }
                     }
-                    meeting.at = meeting.at + contact;
-                    ++meeting.contacts;
+                    // Friction at that contact, between those two points, and only
+                    // where something is pressing them together: the blow this contact
+                    // carried, or -- when it is only carrying weight -- that weight
+                    // over the tick. mu_s holds a slide it can carry and mu_k takes its
+                    // share of one it cannot, which is the floor's own rule.
+                    const Vec3 solidNow =
+                        solid.velocity[struck.a] * (1.0 - struck.t) + solid.velocity[struck.b] * struck.t;
+                    const Vec3 relative = body.velocity[i] - solidNow;
+                    const Vec3 tangent{normal.y, -normal.x, 0};
+                    const double slide = dot(relative, tangent);
+                    if (!(std::abs(slide) > 0.0)) continue;
+                    const double pressed =
+                        std::max(std::max(0.0, -closing) * tick::kMass,
+                                 tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
+                    const double hold = body.staticFriction * pressed;
+                    const double slip = body.kineticFriction * pressed;
+                    const double needed = std::abs(slide) * tick::kMass * 0.5;
+                    const double rubbed = needed <= hold ? needed : std::min(needed, slip);
+                    const Vec3 friction = (slide > 0.0 ? tangent * -1.0 : tangent) * (rubbed / tick::kMass);
+                    body.velocity[i] = body.velocity[i] + friction;
+                    solid.velocity[struck.a] = solid.velocity[struck.a] - friction * (1.0 - struck.t);
+                    solid.velocity[struck.b] = solid.velocity[struck.b] - friction * struck.t;
                 }
-                if (!meeting.any || meeting.contacts == 0) continue;
-                meeting.at = meeting.at * (1.0 / static_cast<double>(meeting.contacts));
-                const Vec3 normal = meeting.normal;
-                // How much of each side's mass is where the two met, and what each of
-                // them is free to do there: the impulse is the approach speed over
-                // that, exactly as the ball's strike is solved.
-                const Vec3 bodyAnswer = answerFor(self, normal);
-                const Vec3 solidAnswer = answerFor(them, normal * -1.0);
-                // Each side is free in its own direction: this body along the way out
-                // of the surface it is against, and the other body the other way. The
-                // two directions are opposites, so each is measured against its own.
-                const bool bodyMoves = dot(bodyAnswer, normal) > 1e-9;
-                const bool solidMoves = dot(solidAnswer, normal * -1.0) > 1e-9;
-                const double share = (bodyMoves ? bodyShareAt(body, bodyFrame, meeting.at, bodyAnswer) : 0.0) +
-                                     (solidMoves ? bodyShareAt(solid, solidFrame, meeting.at, solidAnswer) : 0.0);
-                if (!(share > 1e-12)) continue;
-                if (meeting.approach < 0.0) {
-                    const double impulse = -meeting.approach / share;
-                    // `closing` is measured along the way out of the surface this
-                    // corner is against, so the two of them are pushed apart along
-                    // it: this body the way it is free to go, and the body it struck
-                    // the other way -- which is what `solidAnswer` already is.
-                    if (bodyMoves) giveBodyTurn(self, bodyFrame, meeting.at, bodyAnswer * impulse);
-                    if (solidMoves) giveBodyTurn(them, solidFrame, meeting.at, solidAnswer * impulse);
-                }
-                // Friction, at that contact and on what is left running along it: the
-                // slide is answered by an impulse along the surface, solved against
-                // the same two masses and limited by mu times the impulse this
-                // contact carried -- the weight pressing into it when the contact is
-                // carrying nothing, which is the floor's own answer to a body lying
-                // still on it.
-                const Vec3 tangent{normal.y, -normal.x, 0};
-                const double slide = dot(meeting.relative, tangent);
-                if (!(std::abs(slide) > 0.0)) continue;
-                const Vec3 along = slide > 0.0 ? tangent * -1.0 : tangent;
-                const double grip = (bodyMoves ? bodyShareAt(body, bodyFrame, meeting.at, along) : 0.0) +
-                                    (solidMoves ? bodyShareAt(solid, solidFrame, meeting.at, along) : 0.0);
-                if (!(grip > 1e-12)) continue;
-                const double needed = std::abs(slide) / grip;
-                const double carried = tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick;
-                const double hold = body.staticFriction * carried;
-                const double slip = body.kineticFriction * carried;
-                const double rubbed = needed <= hold ? needed : std::min(needed, slip);
-                const Vec3 friction = along * rubbed;
-                if (bodyMoves) giveBodyTurn(self, bodyFrame, meeting.at, friction);
-                if (solidMoves) giveBodyTurn(them, solidFrame, meeting.at, friction * -1.0);
             }
         }
+    }
+    return closingTotal;
+    };
+    // A body is its points held at fixed distances. The distances are solved on the
+    // positions every tick, but a contact answers one point's speed, and a point's
+    // speed that the distances know nothing about is a shape being pulled apart:
+    // the unsupported points go on falling while the supported one is held, which is
+    // a body that tips over from nothing at all. So the same fixed distances are
+    // solved once on the velocities: what two joined points are closing at is taken
+    // out of both of them, equally, because they are equal masses. That is the whole
+    // of what makes a body move as one piece after it is struck at a point, and it
+    // is what carries the weight of a body held at its corner to the rest of it.
+    const auto solveDistances = [&]() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || !body.touched) continue;
+        for (int pass = 0; pass < tick::kMaxDistancePasses; ++pass) {
+            double worst = 0.0;
+            for (std::size_t pair = 0; pair < body.pairCount; ++pair) {
+                const std::size_t a = std::size_t(body.pairs[pair][0]), b = std::size_t(body.pairs[pair][1]);
+                const Vec3 delta = body.position[b] - body.position[a];
+                const double span = length(delta);
+                if (!(span > 1e-12)) continue;
+                const Vec3 direction = delta * (1.0 / span);
+                const double closing = dot(body.velocity[b] - body.velocity[a], direction);
+                if (!(std::abs(closing) > kRestSpeed)) continue;
+                worst = std::max(worst, std::abs(closing));
+                const Vec3 share = direction * (closing * 0.5);
+                body.velocity[a] = body.velocity[a] + share;
+                body.velocity[b] = body.velocity[b] - share;
+            }
+            if (worst <= kRestSpeed) break;
+        }
+    }
+
+    };
+    // Contacts and distances, together, until nothing between the bodies is closing.
+    for (int solve = 0; solve < kMaxContactPasses; ++solve) {
+        const double closing = solveContacts();
+        solveDistances();
+        if (closing <= kRestSpeed) break;
     }
     // A frozen body has nothing holding it up the moment whatever was under it is
     // taken away. The plane never goes anywhere, so only a body that is neither on
