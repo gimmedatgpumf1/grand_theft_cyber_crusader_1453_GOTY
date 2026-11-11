@@ -156,7 +156,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // was driving into the shape, and the shape takes the blow. The bodies are
     // stepped before the ball, so where the body is, is where it has already been
     // solved to be -- the ball is the one that has travelled since.
-    std::array<Vec3, kMaxCorners> handed{};
     // What the struck corner actually did this tick. Its stored velocity can be
     // zero -- the floor cuts it when the corner lands -- while the corner is still
     // travelling down into the ball, and the ball has to answer the travel.
@@ -173,24 +172,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         if (canMove) {
             // A body struck by the ball takes the blow as the solid it is: every
             // corner of it moves together, turning about the middle by the amount
-            // that blow would turn it. Sharing it out unevenly corner by corner had
-            // one corner stop dead while the other three kept falling.
-            const Vec3 middle = centroid(body->position.data(), body->count);
-            // Where the two shapes are touching, not the nearest corner: the ball
-            // meeting the middle of a face turns the body by nothing, and a corner
-            // of a face is not where the blow lands.
-            const Vec3 arm = contactPoint - middle;
-            const double lever = arm.x * answer.y - arm.y * answer.x;
-            const double inertia = [] (const Body& b, Vec3 centre) {
-                double sum = 0.0;
-                for (std::size_t i = 0; i < b.count; ++i) {
-                    const Vec3 r = b.position[i] - centre;
-                    sum += kMass * dot(r, r);
-                }
-                return sum;
-            }(*body, middle);
-            const double bodyShare = 1.0 / (static_cast<double>(body->count) * kMass) +
-                                     lever * lever / (inertia > 0.0 ? inertia : 1.0);
+            // that blow would turn it. Where the two shapes are touching, not the
+            // nearest corner: the ball meeting the middle of a face turns the body
+            // by nothing, and a corner of a face is not where the blow lands.
+            const BodyInertia inertia = bodyInertia(*body);
+            const double bodyShare = bodyShareAt(*body, inertia, contactPoint, answer);
             // What the ball can take of this blow is only what it is free to do with
             // it. A ball already held by a surface, or one on the floor that the
             // blow would drive downwards, has nowhere to go: the body takes the
@@ -206,16 +192,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // top of it takes none of that blow -- the floor under it does -- and a
             // friction solve given the whole of it span the ball sideways and down
             // at metres a second off a body that never touched it that way.
-            const Vec3 push = answer * -(impulse / (static_cast<double>(body->count) * kMass));
-            const Vec3 turn{0, 0, (impulse) * lever / (inertia > 0.0 ? inertia : 1.0)};
-            for (std::size_t i = 0; i < body->count; ++i) {
-                const Vec3 r = body->position[i] - middle;
-                // Translation of the whole body plus the turn about its middle:
-                // every corner of a solid moves together.
-                const Vec3 rotate{-turn.z * r.y, turn.z * r.x, 0};
-                handed[i] = push + rotate;
-            }
-            body->frozen = false;
+            giveBodyTurn(std::size_t(bodyIndex), inertia, contactPoint, answer * -impulse);
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
@@ -223,13 +200,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             pressed = impulse;
         }
-    }
-    if (canMove) {
-        // What the body is left doing is what it was doing plus the blow it took.
-        // Its speed must not be read back off the shortened step: the step was cut
-        // short by the ball, and reading it back would hand the body the whole fall
-        // again on the next tick and let it through.
-        for (std::size_t i = 0; i < body->count; ++i) body->velocity[i] = body->velocity[i] + handed[i];
     }
 
 

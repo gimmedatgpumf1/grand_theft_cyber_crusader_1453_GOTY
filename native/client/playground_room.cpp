@@ -242,53 +242,117 @@ void PlaygroundRoom::updateDrag() {
 // tick and the position the last tick left it in, at the fraction of a tick the
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
-// The point meets a body. The position has already been put at the contact by
-// the walk; this is the momentum exchange there, and the friction of sliding
-// along the face it met.
-void PlaygroundRoom::hitBody(std::size_t index, Vec3 normal, double into) {
-    Body& body = bodies_[index];
-    ++body.contacts;
-    // Which corner carries the blow: the nearest one. The body is its points, so
-    // the momentum goes into those points and the fixed distances pass it on.
+// Which of a body's corners a blow lands on: the nearest one. The body is its
+// points, so the momentum goes into those points and the fixed distances pass it
+// on to the rest.
+std::size_t PlaygroundRoom::nearestCorner(const Body& body, Vec3 point) const {
     std::size_t struck = 0;
     double nearest = 1e30;
     for (std::size_t i = 0; i < body.count; ++i) {
-        const double distance = length(point_ - body.position[i]);
+        const double distance = length(point - body.position[i]);
         if (distance < nearest) { nearest = distance; struck = i; }
     }
-    // A body on the plane cannot be pushed down into it -- the plane only
-    // answers the part of a blow that drives into it. The rest of that impulse
-    // runs along the plane and the body must take it. A dot dropped straight
-    // down onto the triangle's 45 degree face arrives with all its momentum
-    // vertical and the face turns that into a push along its normal, so the
-    // triangle is shoved sideways. Letting the floor answer the whole blow is
-    // what used to swallow such a hit and leave the triangle untouched.
+    return struck;
+}
+
+// A body takes a blow at one of its corners. The struck corner takes half of it
+// and the other corners share the rest, so the body gains exactly the momentum it
+// was handed and is set turning by the uneven share. This is how a point's blow is
+// delivered to a body, which is the dot's collision and the pull friction gives a
+// body the dot is sliding on. A body struck by another body is a solid struck at a
+// contact rather than a point struck at a corner, and that one is giveBodyTurn.
+void PlaygroundRoom::giveBodyImpulse(std::size_t index, std::size_t struck, Vec3 momentum) {
+    Body& body = bodies_[index];
+    ++body.contacts;
+    constexpr double kStruckShare = 0.5;
+    const double otherShare =
+        body.count > 1 ? (1.0 - kStruckShare) / static_cast<double>(body.count - 1) : 0.0;
+    for (std::size_t i = 0; i < body.count; ++i)
+        body.velocity[i] = body.velocity[i] + momentum * ((i == struck ? kStruckShare : otherShare) / kMass);
+    body.frozen = false;
+}
+
+// A body's mass where a blow lands. A body is its corners held at fixed distances
+// from each other, which is a solid: its middle is where those corners balance, and
+// the moment of inertia of them about that middle is what a blow has to turn. The
+// ball has always been answered this way and so is a body against a body -- one
+// solid is struck wherever the two of them met, and it turns about its middle.
+PlaygroundRoom::BodyInertia PlaygroundRoom::bodyInertia(const Body& body) const {
+    BodyInertia result;
+    if (body.count == 0) return result;
+    result.middle = centroid(body.position.data(), body.count);
+    double sum = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 r = body.position[i] - result.middle;
+        sum += kMass * dot(r, r);
+    }
+    result.moment = sum > 0.0 ? sum : 1.0;
+    return result;
+}
+
+// How much of a body's mass lies the way an impulse is pointing, from where it
+// lands: the inverse of its mass plus the lever's share about its middle. This is
+// the reciprocal the impulse is solved against, and it is the same expression the
+// ball's strike on a body already uses.
+double PlaygroundRoom::bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const {
+    if (body.count == 0 || length(direction) <= 0.0) return 0.0;
+    const Vec3 arm = contact - inertia.middle;
+    const double lever = arm.x * direction.y - arm.y * direction.x;
+    return 1.0 / (static_cast<double>(body.count) * kMass) + lever * lever / inertia.moment;
+}
+
+// A body takes an impulse at a point: every corner of it moves together and it
+// turns about its middle by what that impulse would turn it by, so where the blow
+// landed is what the body turns by. Sharing the impulse out corner by corner
+// instead had one corner stop dead while the others kept falling.
+void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia, Vec3 contact, Vec3 momentum) {
+    Body& body = bodies_[index];
+    ++body.contacts;
+    const Vec3 arm = contact - inertia.middle;
+    const double turn = (arm.x * momentum.y - arm.y * momentum.x) / inertia.moment;
+    const Vec3 push = momentum * (1.0 / (static_cast<double>(body.count) * kMass));
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 r = body.position[i] - inertia.middle;
+        const Vec3 rotate{-turn * r.y, turn * r.x, 0};
+        body.velocity[i] = body.velocity[i] + push + rotate;
+    }
+    body.frozen = false;
+}
+
+// A point of mass kMass meets a body. This is the whole of what the dot is told by
+// a body it has run into: what the body can do about the blow, and what the point
+// takes back along the normal.
+double PlaygroundRoom::answerPointOnBody(std::size_t index, Vec3 pointPosition, Vec3 pointVelocity, Vec3 normal) {
+    Body& body = bodies_[index];
+    const std::size_t struck = nearestCorner(body, pointPosition);
+    // A body on the plane cannot be pushed down into it -- the plane only answers
+    // the part of a blow that drives into it. The rest of that impulse runs along
+    // the plane and the body must take it. A dot dropped straight down onto the
+    // triangle's 45 degree face arrives with all its momentum vertical and the
+    // face turns that into a push along its normal, so the triangle is shoved
+    // sideways. Letting the floor answer the whole blow is what used to swallow
+    // such a hit and leave the triangle untouched.
     bool supported = false;
     for (std::size_t i = 0; i < body.count; ++i) supported = supported || body.position[i].y <= kSurfaceY + 1e-9;
-    const bool held = dragTarget_ == DragTarget::Body;
+    const bool held = bodyHeld(index);
     const Vec3 answer = held ? Vec3{} : (supported ? Vec3{normal.x, 0, 0} : normal);
     const bool canMove = length(answer) > 1e-9;
     const Vec3 cornerVelocity = canMove ? body.velocity[struck] : Vec3{};
-    const double closing = dot(velocity_ - cornerVelocity, normal);
-    // The struck corner takes half of what the body receives and the other
-    // corners share the rest, so the body gains exactly the momentum the point
-    // loses and is set turning by the uneven share.
+    const double closing = dot(pointVelocity - cornerVelocity, normal);
+    if (!(closing < 0.0)) return 0.0;
+    // The contact takes exactly the approach speed and gives none of it back,
+    // which is what the plane does to the point: nothing bounces in this room.
     constexpr double kStruckShare = 0.5;
-    const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
-    if (closing < 0.0) {
-        // The contact takes exactly the approach speed and gives none of it back,
-        // which is what the plane does to the point: nothing bounces in this room.
-        const double cornerInverseMass = canMove ? kStruckShare / kMass : 0.0;
-        const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
-        velocity_ = velocity_ + normal * (impulse / kMass);
-        if (canMove) {
-            for (std::size_t i = 0; i < body.count; ++i) {
-                const double share = i == struck ? kStruckShare : otherShare;
-                body.velocity[i] = body.velocity[i] - answer * (impulse * share / kMass);
-            }
-            body.frozen = false;
-        }
-    }
+    const double cornerInverseMass = canMove ? kStruckShare / kMass : 0.0;
+    const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
+    if (canMove) giveBodyImpulse(index, struck, answer * -impulse);
+    return impulse;
+}
+
+// The point meets a body. The position has already been put at the contact by the
+// walk; this is the momentum exchange there.
+void PlaygroundRoom::hitBody(std::size_t index, Vec3 normal, double into) {
+    velocity_ = velocity_ + normal * (answerPointOnBody(index, point_, velocity_, normal) / kMass);
     (void)into;
 }
 
@@ -552,14 +616,8 @@ void PlaygroundRoom::tick() {
             // rubs the surface, and the momentum does not vanish. It goes in
             // horizontally, the only way a body on the plane can go.
             if (restingBody_ >= 0 && dragTarget_ != DragTarget::Body && std::abs(lost.x) > 1e-12) {
-                Body& body = bodies_[std::size_t(restingBody_)];
-                constexpr double kStruckShare = 0.5;
-                const double otherShare = (1.0 - kStruckShare) / static_cast<double>(body.count - 1);
-                for (std::size_t i = 0; i < body.count; ++i) {
-                    const double share = i == 0 ? kStruckShare : otherShare;
-                    body.velocity[i] = body.velocity[i] - Vec3{lost.x, 0, 0} * share;
-                }
-                body.frozen = false;
+                const std::size_t index = std::size_t(restingBody_);
+                giveBodyImpulse(index, nearestCorner(bodies_[index], point_), Vec3{-lost.x, 0, 0});
             }
         }
     }

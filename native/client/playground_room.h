@@ -132,6 +132,30 @@ private:
     // The point meets a body: energy into the corner it struck, a push back
     // along the normal.
     void hitBody(std::size_t body, Vec3 normal, double into);
+    // Which of a body's corners a blow lands on, and what a body does with a blow
+    // it is given there: the struck corner takes half and the rest share it. This
+    // is how a point's blow reaches a body -- the dot's collision, and the reaction
+    // to the friction of a body the dot is sliding on.
+    std::size_t nearestCorner(const Body& body, Vec3 point) const;
+    void giveBodyImpulse(std::size_t body, std::size_t struck, Vec3 momentum);
+    // What a body is when a blow lands on it: where its corners balance, and the
+    // moment of inertia of them about that middle. `shareAt` is how much of the
+    // body's mass lies the way the impulse points from there, which is the
+    // reciprocal the impulse is solved against, and `giveTurn` is what the body is
+    // left doing when it takes that impulse at that point. The ball's strike on a
+    // body and a body's strike on a body are both answered by these three.
+    struct BodyInertia {
+        Vec3 middle{};
+        double moment = 1.0;
+    };
+    BodyInertia bodyInertia(const Body& body) const;
+    double bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const;
+    void giveBodyTurn(std::size_t body, const BodyInertia& inertia, Vec3 contact, Vec3 momentum);
+    // A point of mass kMass meets a body: the impulse the point takes along the
+    // normal is returned so the dot's own velocity can be given it back. Nothing
+    // bounces, and a body on the plane only takes the part of the blow that runs
+    // along it.
+    double answerPointOnBody(std::size_t body, Vec3 pointPosition, Vec3 pointVelocity, Vec3 normal);
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
     // A body and the ball, from the body's side. How far the body's step can go
     // before the whole of its outline reaches the ball, and how far the ball has
