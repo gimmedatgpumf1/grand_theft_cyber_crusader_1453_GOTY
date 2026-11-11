@@ -433,7 +433,7 @@ void PlaygroundRoom::bodiesAnswer() {
                     const bool dbg = std::getenv("GTC_ANS") && self == 1 && i == 0;
                     if (dbg) {
                         const Vec3 probeAns = answerFor(them, normal * -1.0);
-                        std::fprintf(stderr, "      CHK them %zu ans (%.3f,%.3f) gB %d gS %d y:", them, probeAns.x, probeAns.y, int(givesBody), int(givesSolid));
+                        std::fprintf(stderr, "      CHK them %zu anslen %.20f n (%.1f,%.1f) gB %d gS %d y:", them, length(probeAns), normal.x, normal.y, int(givesBody), int(givesSolid));
                         for (std::size_t q = 0; q < solid.count; ++q) std::fprintf(stderr, " %.10f", solid.position[q].y);
                         std::fprintf(stderr, "\n");
                     }
