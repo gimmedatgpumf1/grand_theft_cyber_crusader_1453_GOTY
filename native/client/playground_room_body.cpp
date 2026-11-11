@@ -83,8 +83,9 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     }
     const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
     const bool tr = std::getenv("GTC_TICK") != nullptr && index == 1;
-    if (tr) std::fprintf(stderr, "  T start c0 (%.5f,%.5f) v(%.4f,%.4f) reach %.6f\n", body.position[0].x,
-                         body.position[0].y, body.velocity[0].x, body.velocity[0].y, reach);
+    if (tr) std::fprintf(stderr, "  T start c0 (%.5f,%.5f) v(%.4f,%.4f) reach %.6f metWay (%.3f,%.3f) metBody %d\n",
+                         body.position[0].x, body.position[0].y, body.velocity[0].x, body.velocity[0].y, reach, metWay.x,
+                         metWay.y, body.metBody < kBodyCount ? 1 : 0);
     const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
     // The floor's way out is straight up, whatever the other sweeps found: it is the
     // floor that cut this step short.
