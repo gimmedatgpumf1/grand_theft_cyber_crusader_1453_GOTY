@@ -381,8 +381,8 @@ void PlaygroundRoom::bodiesAnswer() {
                         outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
                     double along = 2.0;
                     Vec3 hitNormal{0, 1, 0};
-                    segmentHitsPolygon(body.position[i], body.position[i] + travel, solid.position.data(), solid.count,
-                                       along, hitNormal);
+                    const bool reaches = segmentHitsPolygon(body.position[i], body.position[i] + travel,
+                                                            solid.position.data(), solid.count, along, hitNormal);
                     // A meeting is a corner pressing into a surface, or a corner that was
                     // clear of it and whose own step arrives at it. Those are the two
                     // ways a point touches a surface and there is no third:
@@ -402,7 +402,7 @@ void PlaygroundRoom::bodiesAnswer() {
                     // from above, when it is the other way round: the whole momentum of
                     // the pair was handed to the triangle and it was thrown off the cube.
                     const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) < 0.0;
-                    const bool arriving = gap.gap > kSkin && along > 1e-9;
+                    const bool arriving = gap.gap > kSkin && reaches && along <= 1.0;
                     if (!pressing && !arriving) continue;
                     const Vec3 normal = pressing ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
