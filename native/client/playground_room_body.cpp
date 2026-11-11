@@ -13,13 +13,10 @@
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
-#include "client/playground_ball_shape.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -97,22 +94,47 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // it tips. The blow at such a contact is answered where the two bodies met, by
     // bodiesAnswer, from the approach both of them arrived with; the step is only
     // where they ended up.
+    std::array<Vec3, kMaxCorners> attempted{};
+    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
-    // The step is walked as far as the sweep allows, and no further.
-    //
-    // This is the whole of what the sweep is for. It says where the step stops and
-    // it does nothing else: what the surface then does to the body is a contact, and
-    // every contact in this room is answered in exactly one place -- the floor at the
-    // corners it is holding, below, another body in bodiesAnswer, the ball in the
-    // ball's own walk. Letting the sweep answer a meeting as well was the same
-    // meeting answered twice in one tick, and a blow given twice is a blow given away:
-    // the floor pressed a body and the sweep pressed it again, and what was left
-    // behind was a body spinning with nothing having hit it.
+    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
+        // What is left of the step is spent along the surface that was met, and not
+        // into it -- and it is spent as *one* motion, because the body is one object.
+        //
+        // Taking the inward part of each corner's own travel away, corner by corner,
+        // is not one motion: a body that is turning has a different travel at every
+        // corner, so trimming each corner separately bends the shape. The fixed
+        // distances then have to pull it straight, and that pull moves the whole body
+        // sideways -- which is a body sliding along a surface with nothing pushing it.
+        // That is what the triangle balanced on one corner on the cube did: the way
+        // out it was handed was the cube's own top corner's diagonal, a step of equal
+        // parts up and across, and every tick it was trimmed along that and pulled
+        // straight again, so it climbed and walked off the cube by a thousandth of a
+        // metre a tick that only ever added up.
+        //
+        // So the speed at the place they met is what the surface answers, and what it
+        // answers it with is taken off the whole body: every corner loses the same
+        // amount, the turn between them is untouched, and the body goes on turning
+        // about the point it is standing on -- which is what a body on a corner does.
+        // Which corner is the one that arrived: the corner nearest the place they met
+        // when another body cut the step, and the lowest corner when it was the floor.
+        std::size_t arrived = 0;
+        if (metBody) {
+            arrived = nearestCorner(body, metAt);
+        } else {
+            for (std::size_t i = 1; i < count; ++i)
+                if (body.position[i].y < body.position[arrived].y) arrived = i;
+        }
+        const double inward = std::min(0.0, dot(body.velocity[arrived], metWay));
+        for (std::size_t i = 0; i < count; ++i) {
+            body.velocity[i] = body.velocity[i] - metWay * inward;
+            target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
+        }
     }
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 from = body.position[i];
@@ -219,13 +241,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // are solved again, so the corner the ball is not holding is the one that
         // gives way. That is the whole of what makes a shape tip off a ball instead
         // of resting on it.
-        deepest = std::max(deepest, pushBodyOutOfBall(index, &ballLift));
+        deepest = std::max(deepest, pushBodyOutOfBall(index, pass == 0 ? &ballLift : nullptr));
         // And another body is the third thing that holds the shape, by the same
         // rule: the corner that has gone into it is put back out, and the distances
         // are solved again, so the corner that is not held is the one that gives
         // way. That is what makes a shape tip on the corner of another instead of
         // lying across it.
-        deepest = std::max(deepest, pushBodyOutOfBody(index, &bodyLift));
+        deepest = std::max(deepest, pushBodyOutOfBody(index, pass == 0 ? &bodyLift : nullptr));
         // The floor is not finished with until every corner is out of it. Asking the
         // loop only after the distances are closed lets it leave with a corner still
         // under the floor, and a corner under the floor is a shape being squashed for
@@ -244,97 +266,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             held[i] = true;
         }
     }
-    // Which corners are touching the plane now, after the solve has finished
-    // moving them. A clamp from an earlier pass is not a contact: the solve may
-    // have lifted that corner back off the plane, and a corner in the air has to
-    // keep falling instead of being held and rubbed by the floor.
-    for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
-
-    // The speed this body ends the tick with is the speed the forces gave it.
-    //
-    // It is not read back off where its corners ended up. Those are two different
-    // numbers, and only one of them is physics: a corner is put back on the floor,
-    // or out of another shape, by a correction, and a correction is not a distance
-    // the body travelled. Read the corners and divide by the tick and every repair
-    // becomes speed -- a shape wedged between the floor and another body has its
-    // corners thrown a few centimetres in one tick, which reads as metres per
-    // second, and the next tick starts with that much energy in it. That is the
-    // explosion: not a bad contact, but a solver correction being cashed in as
-    // motion.
-    //
-    // So the tick is in the order it should always have been: gravity and the other
-    // forces change the speeds, the sweeps cut the travel the new speeds ask for,
-    // the contacts answer those speeds with impulses, and where the corners ended up
-    // is only ever where they are -- never how fast they are going.
-
-    // The floor is a force, not a place.
-    //
-    // Every corner it is holding is a point contact, and the floor presses that
-    // point with whatever impulse takes the point's approach away. The body answers
-    // it the way it answers any other impulse: the mass goes together and the arm
-    // turns it about its middle. Solved over all of them until none is closing, so a
-    // face lying flat on the floor is carried by both of its corners and neither is
-    // answered twice; a body standing on one corner is pressed only there, and what
-    // is left is a body turning about that corner, which is what standing on a
-    // corner does.
-    //
-    // This is the whole of what holds a body up. It used to be a speed read back off
-    // the trimmed step -- where the corner ended up, divided by the tick -- with the
-    // downward part cut off by hand. A speed read off a displacement is not an
-    // answer to a force: it cannot tell the difference between a body the floor
-    // stopped and a body the constraint solver happened to leave there, so a body
-    // leaning on one corner had its turn thrown away with it and a face landing flat
-    // had one corner's answer spread over the other three.
-    const BodyInertia inertia = bodyInertia(body);
-    // Which corners the floor is actually carrying.
-    //
-    // Not just the ones that ended the solve exactly on the plane. A corner the solve
-    // had to lift is a corner the floor is holding, and it can be left a centimetre
-    // above the plane by the fixed distances pulling the body back into shape about
-    // its neighbours. Asking only about the ones that landed exactly on the plane
-    // misses exactly those, so their speed is never answered: gravity keeps adding to
-    // a corner that is being carried, tick after tick, and the sum of it is a corner
-    // standing still while holding twenty metres a second of downwards that it is not
-    // allowed to spend. The first tick it is free, it spends it -- a shape sitting on
-    // the floor that suddenly dances.
-    std::array<bool, kMaxCorners> carriedCorner{};
-    for (std::size_t i = 0; i < count; ++i) carriedCorner[i] = onPlane[i] || lift[i].y > 0.0;
-    // What each contact has been pressed with so far. A contact's answer is not
-    // "stop this corner now" -- that is what overshoots, because the second corner's
-    // answer changes the first one's, and the first one is never told. It is "the
-    // press this contact needs, given every other press already made", and it may
-    // only grow: the floor can push a corner, never pull it. Remembering it is what
-    // lets a later pass take back an overshoot instead of leaving the body hopping.
-    std::array<double, kMaxCorners> press{};
-    double support = 0.0;
-    for (int pass = 0; pass < kContactPasses; ++pass) {
-        bool closing = false;
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!carriedCorner[i]) continue;
-            const Vec3 normal{0, 1, 0};
-            const double share = bodyShareAt(body, inertia, body.position[i], normal);
-            if (!(share > 1e-12)) continue;
-            const double approach = body.velocity[i].y;
-            const double want = press[i] - approach / share;
-            const double take = std::max(0.0, want);
-            const double add = take - press[i];
-            if (!(add != 0.0)) continue;
-            press[i] = take;
-            giveBodyTurn(index, inertia, body.position[i], normal * add);
-            closing = true;
-        }
-        if (!closing) break;
-    }
-    for (std::size_t i = 0; i < count; ++i) support += press[i];
-    // And the weight. A body standing still has no approach left for the contact
-    // solve to take away -- its corners did not travel -- so the press the solve
-    // works out for it is nothing, and a floor that presses with nothing has no grip
-    // to rub with: the body creeps sideways a thousandth of a metre a tick for ever.
-    // What the floor actually carries is the weight, m*g over the tick, and that is
-    // the force the grip is a fraction of. It is the same number the contact solve
-    // would have found if the body's step had not been stopped before it started.
-    support = std::max(support, static_cast<double>(count) * kMass * kGravity * kTick);
-
     // How much of this body is lying on the floor: the length of the contact
     // between the corners that are actually on it. A longer contact grips
     // harder, so the square's 0.70 m footprint is the reference and the
@@ -349,38 +280,54 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         rightmost = std::max(rightmost, body.position[i].x);
     }
     const double footprint = touchingPlane ? std::max(0.0, rightmost - leftmost) / kCubeSide : 0.0;
+    const double holdSpeed = body.staticFriction * footprint * kGravity * kTick;
+    const double slideSpeed = body.kineticFriction * footprint * kGravity * kTick;
 
-    // Friction is a force at the contact patch, and the patch pushes the body, not
-    // one corner of it. It is solved the way the floor's own press is solved: what
-    // the grip can take is mu times what the surface carried this tick (the impulse
-    // above, not a weight assumed), and what it is asked to take is the impulse that
-    // would stop the patch's slip -- solved against the body's reciprocal mass at
-    // the patch, so the turn comes out of it. mu_s takes the slip away outright and
-    // holds while it can; past that mu_k takes its share off every tick.
-    if (touchingPlane && support > 0.0) {
-        Vec3 patch{}, patchVelocity{};
-        std::size_t onFloorCount = 0;
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!carriedCorner[i]) continue;
-            patch += body.position[i];
-            patchVelocity += body.velocity[i];
-            ++onFloorCount;
+    // Which corners are touching the plane now, after the solve has finished
+    // moving them. A clamp from an earlier pass is not a contact: the solve may
+    // have lifted that corner back off the plane, and a corner in the air has to
+    // keep falling instead of being held and rubbed by the floor.
+    for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
+    for (std::size_t i = 0; i < count; ++i) {
+        // What the corner actually did this tick, solved shape and all: a shape
+        // that is turning about something is doing that, and the turn is motion.
+        //
+        // A corner that another body stopped keeps what it was trying to do. The
+        // contact is answered from the approach the body arrived with, at the place
+        // the two of them met, and not by trimming the travel afterwards.
+        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
+        // Take the corrections back out: what is left is what the corner was
+        // actually doing. The floor's is upwards; the ball's is outwards.
+        velocity = velocity - lift[i] * (1.0 / kTick);
+        velocity = velocity - ballLift[i] * (1.0 / kTick);
+        velocity = velocity - bodyLift[i] * (1.0 / kTick);
+        if (onPlane[i]) {
+            // The plane holds this corner: it cannot travel into the plane.
+            // Sideways is friction's business, and that is done for the body as
+            // a whole just below.
+            if (velocity.y < 0.0) velocity.y = 0.0;
         }
-        if (onFloorCount > 0) {
-            patch = patch / static_cast<double>(onFloorCount);
-            patchVelocity = patchVelocity / static_cast<double>(onFloorCount);
-            const Vec3 sideways{1, 0, 0};
-            const double slip = patchVelocity.x;
-            const double share = bodyShareAt(body, inertia, patch, sideways);
-            const double stopIt = share > 1e-12 ? std::abs(slip) / share : 0.0;
-            const double hold = body.staticFriction * footprint * support;
-            const double slide = body.kineticFriction * footprint * support;
-            const double take = stopIt <= hold ? stopIt : slide;
-            if (take > 0.0 && slip != 0.0)
-                giveBodyTurn(index, inertia, patch, sideways * (-std::copysign(take, slip)));
+        body.velocity[i] = velocity;
+    }
+    // Friction is a force at the contact patch, and the patch pushes the body,
+    // not one corner of it. Taking the slide off each corner on its own does
+    // nothing once the floor has pinned that corner, which is why the body used
+    // to stop dead no matter what coefficients it had: the body's own sideways
+    // motion is what mu_s has to hold and mu_k has to slow, and the fixed
+    // distances carry that to every corner.
+    if (touchingPlane) {
+        Vec3 middleVelocity{};
+        for (std::size_t i = 0; i < count; ++i) middleVelocity += body.velocity[i];
+        middleVelocity = middleVelocity / static_cast<double>(count);
+        const double sideways = middleVelocity.x;
+        if (std::abs(sideways) <= holdSpeed) {
+            // mu_s * N answers it: it does not move at all.
+            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= sideways;
+        } else {
+            // Sliding: mu_k * N takes the same speed off every corner.
+            for (std::size_t i = 0; i < count; ++i) body.velocity[i].x -= std::copysign(slideSpeed, sideways);
         }
     }
-
     // Nothing moved it this tick. The floor puts a corner back on itself exactly,
     // so a body resting on the floor moves by nothing at all; a body resting on
     // another body is put back by the constraint solve, which is exact only to its
@@ -422,13 +369,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body asleep on another body that is no longer under it has nothing holding
     // it: the plane never goes anywhere, so only a body without its own corner on
     // the floor can lose a support that way.
-    if (std::getenv("GTC_FIN") && index == 1) {
-        std::fprintf(stderr, "  FIN carried", 0);
-        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " %d", int(carriedCorner[i]));
-        std::fprintf(stderr, " v");
-        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.velocity[i].x, body.velocity[i].y);
-        std::fprintf(stderr, " support %.4f\n", support);
-    }
     if (quiet && carried && !bodyHeld(index)) {
         body.frozen = true;
         for (std::size_t i = 0; i < count; ++i) {
