@@ -18,8 +18,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -100,6 +98,15 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
+    // Whether the sweep was cut short by another body rather than by the floor. The
+    // answer at that meeting is bodiesAnswer's, from the approach the body arrived
+    // with, so the corner keeps that speed instead of the shortened step.
+    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
+    // What each corner was trying to do before the sweep shortened anything: the blow
+    // between two bodies is answered in bodiesAnswer from the approach both of them
+    // arrived with, and the step is only where they ended up.
+    std::array<Vec3, kMaxCorners> attempted{};
+    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
     // The step is walked as far as the sweep allows, and no further.
     //
     // This is the whole of what the sweep is for. It says where the step stops and
@@ -250,6 +257,29 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
 
+    // What each corner actually did this tick, with every correction taken back out.
+    //
+    // A corner's speed is where it went over the tick -- not a number kept beside it
+    // that gravity added to. That is the only way the constraints can be believed: a
+    // corner the floor has stopped is not travelling, whatever gravity said it wanted,
+    // and a solver that keeps the wanted speed instead of the achieved one stores it.
+    // Two ticks of that and a corner resting on the floor is carrying twenty metres a
+    // second of "downwards" that it is not using, and the first tick the floor stops
+    // holding it, that speed is spent -- a shape standing still and then dancing.
+    //
+    // What is put back out of it is the corrections: the floor lifting a corner out of
+    // itself, the ball and another body pushing it out of theirs. A correction is not
+    // travel. What is left is motion, and it is the same reading the fixed distances
+    // were solved against.
+    for (std::size_t i = 0; i < count; ++i) {
+        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
+        velocity = velocity - lift[i] * (1.0 / kTick);
+        velocity = velocity - ballLift[i] * (1.0 / kTick);
+        velocity = velocity - bodyLift[i] * (1.0 / kTick);
+        if (onPlane[i] && velocity.y < 0.0) velocity.y = 0.0;
+        body.velocity[i] = velocity;
+    }
+
     // The speed this body ends the tick with is the speed the forces gave it.
     //
     // It is not read back off where its corners ended up. Those are two different
@@ -344,18 +374,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // would stop the patch's slip -- solved against the body's reciprocal mass at
     // the patch, so the turn comes out of it. mu_s takes the slip away outright and
     // holds while it can; past that mu_k takes its share off every tick.
-    if (std::getenv("GTC_FRIC") && index == 1) {
-        Vec3 mv{};
-        for (std::size_t i = 0; i < count; ++i) mv = mv + body.velocity[i];
-        std::fprintf(stderr, "  V");
-        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.velocity[i].x, body.velocity[i].y);
-        std::fprintf(stderr, " P");
-        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " (%.3f,%.3f)", body.position[i].x, body.position[i].y);
-        std::fprintf(stderr, "  FRIC body1 touching %d support %.4f mvx %.5f onPlane", int(touchingPlane), support,
-                     mv.x / double(count));
-        for (std::size_t i = 0; i < count; ++i) std::fprintf(stderr, " %d(%.6f)", int(onPlane[i]), body.position[i].y);
-        std::fprintf(stderr, "\n");
-    }
     if (touchingPlane && support > 0.0) {
         Vec3 patch{}, patchVelocity{};
         std::size_t onFloorCount = 0;
@@ -377,12 +395,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
             const double take = stopIt <= hold ? stopIt : slide;
             if (take > 0.0 && slip != 0.0)
                 giveBodyTurn(index, inertia, patch, sideways * (-std::copysign(take, slip)));
-            if (std::getenv("GTC_FRIC") && index == 1) {
-                Vec3 after{};
-                for (std::size_t i = 0; i < count; ++i) after = after + body.velocity[i];
-                std::fprintf(stderr, "    TAKE slip %.5f share %.4f stopIt %.5f hold %.5f take %.5f -> mvx %.5f\n", slip,
-                             share, stopIt, hold, take, after.x / double(count));
-            }
         }
     }
 
