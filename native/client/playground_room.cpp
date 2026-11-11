@@ -218,8 +218,22 @@ void PlaygroundRoom::updateDrag() {
         const Vec3 center{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
                           std::max(kSurfaceY, hit.y + grabOffset_.y), 0};
         const Vec3 move{center.x - middle.x, center.y - middle.y, 0};
+        // A body, like the ball, cannot be put down inside a solid.
+        //
+        // Dragging is not simulating: while the mouse has it, nothing is stepped and
+        // no hitscan runs, so the cursor may sit on top of another shape. Releasing
+        // it there used to leave a body a whole body's width inside another one, and
+        // the tick then had to find 0.7 m of overlap to undo -- which the shape solve
+        // answers by throwing corners metres in one tick, and a corner that moved a
+        // metre in a tick is a corner moving at twenty metres a second. That is the
+        // clipping and the explosion. A spot a shape does not fit in is not a spot it
+        // can be put down: the body stays where it was and the mouse has to find room
+        // for it, exactly as the ball already does.
+        std::array<Vec3, kMaxCorners> wanted{};
+        for (std::size_t i = 0; i < body.count; ++i) wanted[i] = body.position[i] + move;
+        if (!bodyPlacementClear(dragBody_ < kBodyCount ? dragBody_ : 0, wanted)) return;
         for (std::size_t i = 0; i < body.count; ++i) {
-            body.position[i] += move;
+            body.position[i] = wanted[i];
             body.previous[i] = body.position[i];
             body.shown[i] = body.position[i];
             body.velocity[i] = {};

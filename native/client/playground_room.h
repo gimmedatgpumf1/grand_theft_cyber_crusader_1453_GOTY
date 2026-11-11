@@ -208,6 +208,12 @@ private:
     // driven back out, and nothing in this room is driven out of anything -- it
     // never gets in.
     bool ballPlacementClear(Vec3 at) const;
+    // Whether a body can be put down where its corners would be: the mouse may carry
+    // it anywhere in the room, but not into another shape, another body's corner, or
+    // the ball. Nothing in this room is ever driven out of anything -- it never gets
+    // in -- and a body the mouse let go of inside another one is the state that no
+    // amount of solving can answer without inventing speed.
+    bool bodyPlacementClear(std::size_t index, const std::array<Vec3, kMaxCorners>& wanted) const;
     // Whether anything else in the room is moving enough to reach the ball. A
     // ball asleep on the floor still has to be hit by whatever is falling on it.
     bool ballNeighboursMoving() const;

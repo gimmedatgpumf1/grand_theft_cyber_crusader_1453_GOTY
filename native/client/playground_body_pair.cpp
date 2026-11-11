@@ -267,6 +267,53 @@ double PlaygroundRoom::pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMa
     return deepest;
 }
 
+// Whether a body can be put down with its corners where `wanted` says: not through
+// another body's outline, not under a corner of one, not through the ball, and not
+// through the floor.
+//
+// This is the same question the sweep asks, asked before the mouse lets go instead of
+// after. Everything else in this room refuses to let two shapes be inside each other,
+// and the mouse is the one thing that can put them there -- dragging is not simulated,
+// so a body follows the cursor wherever it goes. A body released inside another is a
+// state the tick cannot answer without inventing motion: the overlap has to be undone
+// somewhere, and undoing a hundredth of a metre every tick is a shape creeping out of
+// a shape it was never in. So it is not put there in the first place.
+bool PlaygroundRoom::bodyPlacementClear(std::size_t index, const std::array<Vec3, kMaxCorners>& wanted) const {
+    const Body& body = bodies_[index < kBodyCount ? index : 0];
+    if (body.count == 0) return true;
+    for (std::size_t i = 0; i < body.count; ++i) {
+        if (wanted[i].y < kSurfaceY - kSkin) return false;
+        // The floor is a line, so a corner of the body being put down is clear of it
+        // unless it is under it -- which the line above already answers.
+        if (length(wanted[i] - ball_.position) < ball_.radius + kSkin) return false;
+    }
+    if (insideOutline(ball_.position, wanted.data(), body.count)) return false;
+    for (std::size_t other = 0; other < kBodyCount; ++other) {
+        if (other == index || bodies_[other].count == 0) continue;
+        const Body& solid = bodies_[other];
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const OutlineGap gap = outlineGap(wanted[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
+            if (gap.gap < kSkin) return false;
+        }
+        for (std::size_t i = 0; i < solid.count; ++i) {
+            const OutlineGap gap = outlineGap(solid.position[i], wanted.data(), wanted.data(), body.count, 1.0);
+            if (gap.gap < kSkin) return false;
+        }
+        // And a side of each through a side of the other, which is the one pair the
+        // corner tests cannot see: two shapes lying across each other with every
+        // corner of both outside the other's outline is not possible for convex
+        // shapes, but a side passing exactly through a corner is, and it is the state
+        // a body put down flush against another one lands in.
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 a = wanted[i], b = wanted[(i + 1) % body.count];
+            double along = 2.0;
+            Vec3 normal{0, 1, 0};
+            if (segmentHitsPolygon(a, b, solid.position.data(), solid.count, along, normal)) return false;
+        }
+    }
+    return true;
+}
+
 // The last thing said about a pair, once the tick is otherwise over: they are not
 // inside each other.
 //
