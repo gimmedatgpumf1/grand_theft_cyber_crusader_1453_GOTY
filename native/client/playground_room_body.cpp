@@ -151,7 +151,26 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // meeting point's own approach makes necessary, divided by the reciprocal
         // mass there, and the body answers it as a body.
         const BodyInertia inertia = bodyInertia(body);
-        const Vec3 at = metBody ? metAt : body.position[arrived];
+        // Where the floor presses. A face landing flat is pressed along the whole of
+        // the face, not at whichever of its two ends the loop happened to find first:
+        // answering the ends one at a time is a body tipping on a corner it did not
+        // land on, and a cube dropped flat then walks sideways a little more every
+        // tick. The floor's press is at the middle of the corners that arrived
+        // together; a body that lands on one corner has one, and is tipped by it.
+        Vec3 patch = metBody ? metAt : body.position[arrived];
+        double press = 1.0;
+        if (!metBody) {
+            patch = Vec3{};
+            press = 0.0;
+            for (std::size_t i = 0; i < count; ++i) {
+                if (body.position[i].y > body.position[arrived].y + 1e-6) continue;
+                patch += body.position[i];
+                press += 1.0;
+            }
+            patch = press > 0.0 ? patch / press : body.position[arrived];
+            press = 1.0;
+        }
+        const Vec3 at = patch;
         const double approach = dot(body.velocity[arrived], metWay);
         const double share = bodyShareAt(body, inertia, at, metWay);
         if (approach < 0.0 && share > 1e-12) {
