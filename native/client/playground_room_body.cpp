@@ -25,6 +25,7 @@ using namespace playground_tick;
 void PlaygroundRoom::tickBody(std::size_t index) {
     Body& body = bodies_[index];
     body.previous = body.position;
+    body.metBody = kBodyCount;
     const std::size_t count = body.count;
     if (bodyHeld(index)) {
         // The mouse owns this body: it is placed, not simulated, so nothing here
@@ -54,9 +55,23 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // ball and then pushed back out of it, and coming back to the same place every
     // tick is a shape perched on a ball for ever, never turning about it.
     Vec3 metWay{0, 1, 0};
-    const double bodyReach = bodiesReach(index, target.data(), &metWay);
+    const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody);
     const double ballReach = bodyBallReach(index, target.data());
     const double reach = std::min(ballReach, bodyReach);
+    // What each corner was trying to do this tick, before anything cut it short.
+    //
+    // A body stopped by another body must not have its speed read back off the
+    // shortened step. Reading it back hands every corner the same fraction of its
+    // own travel, which is a support under the body's middle -- and a body standing
+    // on the point of another is not held under its middle, that is the whole of why
+    // it tips. The blow at such a contact is answered where the two bodies met, by
+    // bodiesAnswer, from the approach both of them arrived with; the step is only
+    // where they ended up.
+    std::array<Vec3, kMaxCorners> attempted{};
+    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
+    // The plane is not that: it answers a corner exactly where the corner is, and
+    // the ball answers its own contact.
+    const bool metBody = bodyReach < ballReach && bodyReach < 1.0;
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
             body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
@@ -216,7 +231,11 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     for (std::size_t i = 0; i < count; ++i) {
         // What the corner actually did this tick, solved shape and all: a shape
         // that is turning about something is doing that, and the turn is motion.
-        Vec3 velocity = (body.position[i] - body.previous[i]) / kTick;
+        //
+        // A corner that another body stopped keeps what it was trying to do. The
+        // contact is answered from the approach the body arrived with, at the place
+        // the two of them met, and not by trimming the travel afterwards.
+        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
         // Take the corrections back out: what is left is what the corner was
         // actually doing. The floor's is upwards; the ball's is outwards.
         velocity.y -= lift[i] / kTick;

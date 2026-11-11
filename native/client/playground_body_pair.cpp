@@ -65,8 +65,9 @@ bool arrives(double along) { return along > 1e-9; }
 // Both are swept -- this body's corners through the other body's outline, and the
 // other body's corners through this one's -- each against the travel between them,
 // so a face landing on a corner is caught in the tick it lands and not a tick late.
-double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut) const {
+double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith) const {
     const Body& body = bodies_[index];
+    *metWith = kBodyCount;
     if (body.count == 0) return 1.0;
     Vec3 ownStep{};
     for (std::size_t i = 0; i < body.count; ++i) ownStep = ownStep + (target[i] - body.position[i]);
@@ -95,6 +96,7 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
             if (!arrives(along) || !(along < first)) continue;
             first = along;
             *wayOut = normal;
+            *metWith = other;
         }
         // And the other body's corners through this one's outline, which is the same
         // meeting: a face arriving at a corner is that corner arriving at the face.
@@ -110,6 +112,7 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
                 continue;
             if (!arrives(along) || !(along < first)) continue;
             first = along;
+            *metWith = other;
             // The normal of a corner this body's own outline was met by points out
             // of this body's outline, which is the way the corner is pushed and the
             // opposite of the way this body is: it gives way along it.
@@ -290,10 +293,31 @@ void PlaygroundRoom::bodiesAnswer() {
                 const BodyInertia& bodyFrame = round == 0 ? oneInertia : twoInertia;
                 const BodyInertia& solidFrame = round == 0 ? twoInertia : oneInertia;
                 PairContact meeting;
+                const bool met = body.metBody == them || solid.metBody == self;
                 for (std::size_t i = 0; i < body.count; ++i) {
                     const OutlineGap gap =
                         outlineGap(body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-                    if (gap.gap > kTouch) continue;
+                    // Against it, not merely near it. The sweep stops the step where the
+                    // two touch, and the solve that follows -- the fixed distances and
+                    // the plane -- is exact only to a tolerance, so a pair that is
+                    // genuinely touching ends the tick a hair apart. A hair is not a
+                    // separation: the ball's own contacts are taken as touching within
+                    // the same skin, and a pair that stops being a contact whenever the
+                    // solve rounds is a pair whose closing speed is never answered, which
+                    // is a body that hangs in the air gathering speed.
+                    // The pair the sweep stopped this tick is a pair in contact,
+                    // wherever the solve has since left the two of them: the sweep is
+                    // where they met, and a contact measured by the gap alone is a
+                    // contact that comes and goes with the solver's rounding.
+                    // Against it, not merely near it -- and the same skin the ball's
+                    // own contacts are taken within. The sweep stops the step exactly
+                    // where the two touch, so a pair that is touching ends the tick a
+                    // rounding error apart, and a contact that is only recognised while
+                    // the error happens to fall one way is a contact that comes and
+                    // goes: the closing speed is then never answered, and the body
+                    // hangs where it is, gathering speed it can never spend.
+                    (void)met;
+                    if (gap.gap > kSkin) continue;
                     // The way out of the other body's outline, which is the normal
                     // of this contact: it points from what was touched towards this
                     // corner.

@@ -121,6 +121,15 @@ private:
         // And whether what it is standing on is itself at rest. A body asleep on a
         // body that is still moving has nothing solid under it.
         bool supportFrozen = false;
+        // Which other body this one's step was stopped by this tick, or kBodyCount
+        // for none. The sweep stops a body exactly where it touches the other one,
+        // and the solve that follows -- the fixed distances and the plane -- leaves
+        // it a fraction of a hair outside; a contact that is only recognised by
+        // measuring the gap afterwards is therefore a contact that comes and goes,
+        // and a pair whose contact comes and goes never has its closing speed
+        // answered and hangs in the air gathering speed. The ball remembers what it
+        // is touching for exactly this reason.
+        std::size_t metBody = kBodyCount;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
@@ -168,7 +177,7 @@ private:
     // sides at once once every body has been stepped. The same geometry and the
     // same answer for every pair -- nothing in there knows which shapes it is
     // looking at, and a corner is a point with no size of its own.
-    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut) const;
+    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith) const;
     double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
     void bodiesAnswer();
     double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
