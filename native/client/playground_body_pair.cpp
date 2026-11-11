@@ -469,9 +469,9 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             if (std::getenv("GTC_ANS"))
                                 std::fprintf(stderr,
-                                             "  ANS self %zu i %zu at (%.5f,%.5f) n (%.3f,%.3f) close %+.5f give %.5f "
+                                             "  ANS self %zu i %zu/n%zu at (%.5f,%.5f) n (%.3f,%.3f) close %+.5f give %.5f "
                                              "imp %+.5f free %+.3f/%+.3f\n",
-                                             self, i, at.x, at.y, normal.x, normal.y, closing, give, impulse,
+                                             self, i, body.count, at.x, at.y, normal.x, normal.y, closing, give, impulse,
                                              freedomMine, freedomTheirs);
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
