@@ -559,11 +559,13 @@ void PlaygroundRoom::bodiesAnswer() {
                     // momentum was added to the pair on every pass -- a resting body
                     // taking off along the surface it was resting on.
                     const double grip = slide > 0.0 ? -rubbed : rubbed;
+                    const Vec3 beforeF = body.velocity[i];
                     if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
                     if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
                     if (std::getenv("GTC_ORD") && self == 1)
-                        std::fprintf(stderr, "    FRICT slide %+.5f grip %+.5f -> c0 v.n %+.6f slide now %+.6f\n", slide,
-                                     grip, dot(body.velocity[i], normal), dot(body.velocity[i], tangent));
+                        std::fprintf(stderr, "    FRICT slide %+.5f grip %+.5f slidesBody %d at (%.4f,%.4f) arm (%.4f,%.4f) dVx %+.6f dVy %+.6f\n", slide,
+                                     grip, int(slidesBody), at.x, at.y, mine.middle.x, mine.middle.y,
+                                     body.velocity[i].x - beforeF.x, body.velocity[i].y - beforeF.y);
                 }
             }
         }
