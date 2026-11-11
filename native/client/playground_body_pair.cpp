@@ -423,20 +423,28 @@ void PlaygroundRoom::bodiesAnswer() {
                     const Vec3 at = along <= 1.0 ? body.position[i] + travel * along : body.position[i];
                     const BodyInertia mine = bodyInertia(body);
                     const BodyInertia theirs = bodyInertia(solid);
-                    // A side that cannot move gives nothing. A body standing on the
-                    // plane cannot be driven down into it, a body the mouse is holding
+                    // A side that cannot move gives nothing, and one that can move
+                    // only along part of the normal gives that part. A body standing on
+                    // the plane cannot be driven down into it, a body the mouse holds
                     // cannot go anywhere, and a sleeping body is a wall until something
-                    // wakes it. All three are the dot's own rule for a blow.
-                    const bool givesBody = length(answerFor(self, normal)) > 0.0;
-                    const bool givesSolid = length(answerFor(them, normal * -1.0)) > 0.0;
-                    if (!givesBody && !givesSolid) continue;
-                    const bool dbg = std::getenv("GTC_ANS") && self == 1 && i == 0;
-                    if (dbg) {
-                        const Vec3 probeAns = answerFor(them, normal * -1.0);
-                        std::fprintf(stderr, "      CHK them %zu anslen %.20f n (%.1f,%.1f) gB %d gS %d y:", them, length(probeAns), normal.x, normal.y, int(givesBody), int(givesSolid));
-                        for (std::size_t q = 0; q < solid.count; ++q) std::fprintf(stderr, " %.10f", solid.position[q].y);
-                        std::fprintf(stderr, "\n");
-                    }
+                    // wakes it: all three are the dot's own rule for a blow. answerFor
+                    // answers with the way the side is free to go, so the freedom is the
+                    // part of that way that lies along the normal.
+                    //
+                    // Asking instead whether that answer is merely not zero is the
+                    // difference between a cube the floor is holding and a cube that
+                    // flies. The blocked answer comes back as the normal's own x-lever
+                    // -- three times ten to the minus sixteen -- and counting that as
+                    // "this side gives" hands a share of every blow to a body that will
+                    // not move: the momentum is delivered, the floor deletes it with its
+                    // own correction, and the other side keeps its half of a blow that
+                    // was never paid for. That is a body pushed along a surface with
+                    // nothing pushing it, which is exactly what the triangle balanced on
+                    // one corner on the cube did.
+                    const Vec3 mineWay = answerFor(self, normal);
+                    const Vec3 theirsWay = answerFor(them, normal * -1.0);
+                    const double freedomMine = dot(mineWay, normal);
+                    const double freedomTheirs = dot(theirsWay, normal * -1.0);
                     // What the other body is doing at that place: a piece of an outline
                     // between two corners moves at the lever's interpolation of them, which
                     // is the ball's own outlineTouch. Reading one corner's speed instead is
@@ -449,8 +457,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     // contact carried, or the weight it is carrying.
                     double carried = 0.0;
                     if (closing < 0.0) {
-                        const double shareMine = givesBody ? bodyShareAt(body, mine, at, normal) : 0.0;
-                        const double shareTheirs = givesSolid ? bodyShareAt(solid, theirs, at, normal) : 0.0;
+                        const double shareMine =
+                            freedomMine > 0.0 ? freedomMine * bodyShareAt(body, mine, at, normal) : 0.0;
+                        const double shareTheirs =
+                            freedomTheirs > 0.0 ? freedomTheirs * bodyShareAt(solid, theirs, at, normal) : 0.0;
                         // The two sides pull the closing speed apart between them, so
                         // the two shares add: the whole of the approach is answered
                         // between them, and a side that cannot move simply contributes
@@ -460,21 +470,10 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
-                            if (dbg)
-                                std::fprintf(stderr,
-                                             "    ANS at (%.4f,%.4f) n (%.3f,%.3f) close %+.4f imp %+.4f gB %d gS %d\n",
-                                             at.x, at.y, normal.x, normal.y, closing, impulse, int(givesBody),
-                                             int(givesSolid));
-                            if (dbg)
-                                std::fprintf(stderr, "      PRE c0 v(%.4f,%.4f)  cube v(%.4f,%.4f) frozen %d/%d\n",
-                                             body.velocity[0].x, body.velocity[0].y, solid.velocity[0].x,
-                                             solid.velocity[0].y, int(body.frozen), int(solid.frozen));
-                            if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
-                            if (dbg)
-                                std::fprintf(stderr, "      POST c0 v(%.4f,%.4f)  cube v(%.4f,%.4f)\n",
-                                             body.velocity[0].x, body.velocity[0].y, solid.velocity[0].x,
-                                             solid.velocity[0].y);
-                            if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
+                            // Each side is given only the way it is free to go, which for
+                            // a side that cannot move is no momentum at all.
+                            if (freedomMine > 0.0) giveBodyTurn(self, mine, at, mineWay * impulse);
+                            if (freedomTheirs > 0.0) giveBodyTurn(them, theirs, at, theirsWay * impulse);
                             body.touched = true;
                             solid.touched = true;
                             if (-closing > kRestSpeed) {
@@ -498,8 +497,18 @@ void PlaygroundRoom::bodiesAnswer() {
                         std::max(carried, tick::kGravity * tick::kMass * std::abs(normal.y) * tick::kTick);
                     const double hold = body.staticFriction * pressed;
                     const double slip = body.kineticFriction * pressed;
-                    const double shareMineSlide = givesBody ? bodyShareAt(body, mine, at, tangent) : 0.0;
-                    const double shareTheirsSlide = givesSolid ? bodyShareAt(solid, theirs, at, tangent) : 0.0;
+                    // Along the surface the same rule decides who gives: the floor holds
+                    // a corner's height and nothing else, so a corner on it still slides.
+                    const Vec3 mineSlideWay = answerFor(self, tangent);
+                    const Vec3 theirsSlideWay = answerFor(them, tangent * -1.0);
+                    const double freedomMineSlide = dot(mineSlideWay, tangent);
+                    const double freedomTheirsSlide = dot(theirsSlideWay, tangent * -1.0);
+                    const double shareMineSlide = freedomMineSlide > 0.0
+                                                      ? freedomMineSlide * bodyShareAt(body, mine, at, tangent)
+                                                      : 0.0;
+                    const double shareTheirsSlide = freedomTheirsSlide > 0.0
+                                                        ? freedomTheirsSlide * bodyShareAt(solid, theirs, at, tangent)
+                                                        : 0.0;
                     const double giveSlide = shareMineSlide + shareTheirsSlide;
                     if (!(giveSlide > 1e-12)) continue;
                     // What it would take to stop the slide, and whether the grip can
@@ -508,8 +517,9 @@ void PlaygroundRoom::bodiesAnswer() {
                     const double needed = std::abs(slide) / giveSlide;
                     const double rubbed = needed <= hold ? needed : std::min(needed, slip);
                     const Vec3 momentum = tangent * (slide > 0.0 ? -rubbed : rubbed);
-                    if (givesBody) giveBodyTurn(self, mine, at, momentum);
-                    if (givesSolid) giveBodyTurn(them, theirs, at, momentum * -1.0);
+                    if (freedomMineSlide > 0.0) giveBodyTurn(self, mine, at, mineSlideWay * (rubbed * (slide > 0.0 ? -1.0 : 1.0)));
+                    if (freedomTheirsSlide > 0.0)
+                        giveBodyTurn(them, theirs, at, theirsSlideWay * (rubbed * (slide > 0.0 ? 1.0 : -1.0)));
                 }
             }
         }
