@@ -493,9 +493,11 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             if (std::getenv("GTC_ANS"))
                                 std::fprintf(stderr,
-                                             "  ANS self %zu i %zu at (%.5f,%.5f) n (%.3f,%.3f) close %+.5f give %.5f "
-                                             "imp %+.5f\n",
-                                             self, i, at.x, at.y, normal.x, normal.y, closing, give, impulse);
+                                             "  ANS self %zu i %zu gap %+.7f tr (%.5f,%.5f) gn (%.3f,%.3f) press %d arr %d n (%.3f,%.3f) close %+.5f "
+                                             "give %.5f imp %+.5f\n",
+                                             self, i, gap.gap, travel.x, travel.y, gap.normal.x, gap.normal.y,
+                                             int(pressing), int(arriving), normal.x, normal.y, closing, give,
+                                             impulse);
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
                             // Each side is given only the way it is free to go, which for
