@@ -403,6 +403,9 @@ void PlaygroundRoom::bodiesAnswer() {
                     // the pair was handed to the triangle and it was thrown off the cube.
                     const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) < 0.0;
                     const bool arriving = gap.gap > kSkin && reaches && along <= 1.0;
+                    if (std::getenv("GTC_SWEEP") && (self == 0 || self == 1))
+                        std::fprintf(stderr, "      SCAN self %zu i %zu gap %+.6f press %d arr %d along %.4f reach %d\n",
+                                     self, i, gap.gap, int(pressing), int(arriving), along, int(reaches));
                     if (!pressing && !arriving) continue;
                     const Vec3 normal = pressing ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
