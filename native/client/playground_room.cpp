@@ -801,12 +801,19 @@ void PlaygroundRoom::advance(double seconds) {
             restingBody_ = -1;
             restingOnBall_ = false;
         }
-        // A frozen body has nothing to do: no force, no motion, no work.
-        // The ledger belongs to one tick: every force written into it was applied
-        // during that tick, and a stale arrow is worse than no arrow.
         // The ledger belongs to one tick: every force written into it was applied
         // during that tick, and a stale arrow is worse than no arrow.
         clearForces();
+        // What this tick is going to step, worked out before it starts stepping: an
+        // object that is stepped writes its own forces, so an object that is not
+        // stepped is the only one whose forces have to be written for it below. A
+        // body that falls asleep at the end of its own tick has already said what
+        // was acting on it, and adding a second, static, pair on top of that would
+        // be counting the same weight twice.
+        std::array<bool, kBodyCount> stepped{};
+        for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = !bodies_[index].frozen;
+        const bool pointStepped = !pointFrozen_;
+        const bool ballStepped = !ball_.frozen || ballNeighboursMoving();
         if (!pointFrozen_) {
             tick();
         } else {
@@ -829,12 +836,13 @@ void PlaygroundRoom::advance(double seconds) {
         // were stepped and which were not: a body that was woken by this tick's
         // contacts has already written the forces that woke it, and a body that is
         // still asleep has written nothing at all.
-        recordStaticForces();
+        recordStaticForces(stepped, pointStepped, ballStepped);
         ++ticks;
     }
 }
 
-void PlaygroundRoom::recordStaticForces() {
+void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& stepped, bool pointStepped,
+                                        bool ballStepped) {
     // A body that has come to rest is still pulled down by its own weight and still
     // held up by what it is standing on. Its tick is what would have said so, and
     // it has none -- so if the ledger were left to the ticks alone, every settled
@@ -849,7 +857,7 @@ void PlaygroundRoom::recordStaticForces() {
     // to nothing to the newton.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
-        if (!body.frozen || body.count == 0) continue;
+        if (!body.frozen || stepped[index] || body.count == 0) continue;
         double lowest = 1e30;
         for (std::size_t i = 0; i < body.count; ++i) lowest = std::min(lowest, body.position[i].y);
         std::size_t carrying = 0;
@@ -873,14 +881,14 @@ void PlaygroundRoom::recordStaticForces() {
     // ball held still on a slope is held by its normal force and its friction
     // together, whose sum is exactly its weight -- so one arrow of -weight at that
     // point is the true total, not an approximation of it.
-    if (ball_.frozen && !ballNeighboursMoving()) {
+    if (ball_.frozen && !ballStepped) {
         const Vec3 weight{0.0, -ball_.mass * kGravity, 0.0};
         addForce(ball_.position, weight, ForceKind::Gravity);
         addForce(ball_.position + ball_.supportNormal * (-ball_.radius), weight * -1.0, ForceKind::Contact);
     }
     // The dot, asleep on something, is the same pair of forces at one point -- and
     // the point it is pressed at is the one its own support says.
-    if (pointFrozen_) {
+    if (pointFrozen_ && !pointStepped) {
         const Vec3 weight{0.0, -kMass * kGravity, 0.0};
         addForce(point_, weight, ForceKind::Gravity);
         addForce(point_, weight * -1.0, ForceKind::Contact);

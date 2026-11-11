@@ -289,7 +289,10 @@ private:
     // is still being pulled down by its own weight and still held up by whatever
     // it stands on. This is that pair, written from what holds it still: the
     // weight at every corner, and the same weight back at the corners carrying it.
-    void recordStaticForces();
+    // `stepped` says, per body, whether this tick stepped it -- and the two flags
+    // do the same for the dot and the ball. Anything that was stepped has already
+    // written its own forces and is skipped here.
+    void recordStaticForces(const std::array<bool, kBodyCount>& stepped, bool pointStepped, bool ballStepped);
     // The arrows, and the numbers written beside them.
     void placeForceArrows();
     void appendForceLabels(const Camera& camera, NativeFrame& frame);
