@@ -56,6 +56,7 @@ if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
 fi
 echo "[build] Success: $ROOT/build/bin/gtc1453"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi
+bash "$ROOT/tools/sync-cache.sh" || true
 if [ "${1:-}" = "--run" ]; then
   exec "$ROOT/build/bin/gtc1453"
 fi

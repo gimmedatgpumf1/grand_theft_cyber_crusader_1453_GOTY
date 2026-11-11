@@ -82,3 +82,6 @@ echo "[native] Success: $ROOT/build/bin/gtc-native-smoke"
 echo "[native] Success: $ROOT/build/bin/gtc-interface-check"
 echo "[native] Success: $ROOT/build/bin/gtc-vulkan-ui-check"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi
+# Saving is part of building: this workspace wipes the objects and the cache every
+# session, so the repository is the only place they outlive the build that made them.
+bash "$ROOT/tools/sync-cache.sh" || true
