@@ -459,7 +459,15 @@ void PlaygroundRoom::bodiesAnswer() {
                                              "    ANS at (%.4f,%.4f) n (%.3f,%.3f) close %+.4f imp %+.4f gB %d gS %d\n",
                                              at.x, at.y, normal.x, normal.y, closing, impulse, int(givesBody),
                                              int(givesSolid));
+                            if (dbg)
+                                std::fprintf(stderr, "      PRE c0 v(%.4f,%.4f)  cube v(%.4f,%.4f) frozen %d/%d\n",
+                                             body.velocity[0].x, body.velocity[0].y, solid.velocity[0].x,
+                                             solid.velocity[0].y, int(body.frozen), int(solid.frozen));
                             if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
+                            if (dbg)
+                                std::fprintf(stderr, "      POST c0 v(%.4f,%.4f)  cube v(%.4f,%.4f)\n",
+                                             body.velocity[0].x, body.velocity[0].y, solid.velocity[0].x,
+                                             solid.velocity[0].y);
                             if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
                             body.touched = true;
                             solid.touched = true;
