@@ -700,10 +700,14 @@ void PlaygroundRoom::tick() {
 bool PlaygroundRoom::pointReachedByBodies() const {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen) continue;
+        if (body.count == 0) continue;
         // It has already overtaken the point: wherever the point is, a body's outline
-        // around it is a meeting that has happened and has to be answered.
+        // around it is a meeting that has happened and has to be answered. A body that
+        // has come to rest is not skipped here: it is asleep, but the point inside it
+        // is still inside it, and a sleeping shape is exactly what a shape that landed
+        // on a sleeping dot becomes -- skip it and the dot is left inside it for ever.
         if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return true;
+        if (body.frozen) continue;
         // And where the shape was, to where it is now: the piece of its outline the
         // step swept, and every corner of it through the same travel. A body falling a
         // quarter of a metre a tick is swept, not sampled.
