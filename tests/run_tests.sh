@@ -205,7 +205,7 @@ python3 tests/shoulder_girdle_mesh_contact.py
 ./build/bin/gtc-room-freecam
 # Actual App event routing and WebSocket input, including walking before/after C.
 "${COMMAND[@]}" -std=c++20 -O2 -pthread -Isrc -Inative -Inative/vendor/bullet/src tests/interactive_room.cpp \
-  native/client/{client,raster,hud,human_renderer,human_materials,blockbody,skeleton_body,skeleton_room,skeleton_ragdoll,world_renderer,fps_counter,crosshair,cheat_menu,mode_bar,overlay_panel,interaction_wheel,status_panel,ui_layer,target_prompt,diagnostics,window_x11,opengl_shared}.cpp native/client/skeleton_body_reference.cpp \
+  native/client/{client,raster,hud,human_renderer,human_materials,blockbody,skeleton_body,skeleton_room,skeleton_ragdoll,world_renderer,fps_counter,crosshair,cheat_menu,mode_bar,overlay_panel,interaction_wheel,status_panel,ui_layer,target_prompt,diagnostics,window_x11,opengl_shared}.cpp native/client/skeleton_body_reference.cpp native/client/human_renderer_draw.cpp \
   native/{human,hair}.cpp src/core/json.cpp src/net/{platform,websocket,sha1}.cpp \
   native/vulkan/{vk_device,vk_renderer,vk_upload,vk_batches,vk_targets,vk_swapchain}.cpp \
   build/obj/bullet/libbullet.a -ldl -o build/bin/gtc-interactive-room
