@@ -17,8 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -86,9 +84,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // The floor's way out is straight up, whatever the other sweeps found: it is the
     // floor that cut this step short.
     if (metPlane) metWay = Vec3{0, 1, 0};
-    if (std::getenv("GTC_SWEEP") && index == 0)
-        std::fprintf(stderr, "  SWEEP reach %.5f (body %.5f ball %.5f plane %.5f) metWay (%.3f,%.3f) metBody %zu c0y %.5f\n",
-                     reach, bodyReach, ballReach, planeReach, metWay.x, metWay.y, body.metBody, body.position[0].y);
     // What each corner was trying to do this tick, before anything cut it short.
     //
     // A body stopped by another body must not have its speed read back off the

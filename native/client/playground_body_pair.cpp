@@ -401,11 +401,18 @@ void PlaygroundRoom::bodiesAnswer() {
                     // had the cube answered as though the triangle had come down onto it
                     // from above, when it is the other way round: the whole momentum of
                     // the pair was handed to the triangle and it was thrown off the cube.
-                    const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) < 0.0;
+                    // Resting on it, or pressing into it. A corner carrying the body it
+                    // belongs to has a travel that is *along* the surface, so its travel
+                    // along the way out is nothing at all -- and asking for a travel that
+                    // is into the surface refused exactly that contact. A resting corner
+                    // then had no contact, so it had no friction, so the whole of what
+                    // holds a body on a surface was missing: a triangle balanced on one
+                    // corner on the cube turned about it and the corner walked out from
+                    // under it, half a metre across the top of the cube, with nothing
+                    // pushing it anywhere. What is not a contact is a corner *leaving*:
+                    // one whose travel along the way out is more than a skin.
+                    const bool pressing = gap.gap <= kSkin && dot(travel, gap.normal) <= kSkin;
                     const bool arriving = gap.gap > kSkin && reaches && along <= 1.0;
-                    if (std::getenv("GTC_SWEEP") && (self == 0 || self == 1))
-                        std::fprintf(stderr, "      SCAN self %zu i %zu gap %+.6f press %d arr %d along %.4f reach %d\n",
-                                     self, i, gap.gap, int(pressing), int(arriving), along, int(reaches));
                     if (!pressing && !arriving) continue;
                     const Vec3 normal = pressing ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
