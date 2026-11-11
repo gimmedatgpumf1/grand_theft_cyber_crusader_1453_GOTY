@@ -336,9 +336,12 @@ void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame)
         return inView.z > 1e-3;
     };
     char number[64];
+    if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] arrows %zu showN %d\n", forceArrows(forces_, forceCount_).size(), int(showNewtons_));
     for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
         double x = 0.0, y = 0.0;
-        if (!project(arrow.to, x, y)) continue;
+        const bool ok = project(arrow.to, x, y);
+        if (std::getenv("GTC_DBG")) std::fprintf(stderr, "[forces] at (%.2f,%.2f) -> (%.1f,%.1f) %d\n", arrow.to.x, arrow.to.y, x, y, int(ok));
+        if (!ok) continue;
         std::snprintf(number, sizeof(number), "%.1f N", arrow.newtons);
         drawTextPixels(frame, static_cast<int>(std::lround(x)) + 6, static_cast<int>(std::lround(y)) - 22,
                        number, colorHex(kindColour(arrow.kind)), kForceLabelHeight);
