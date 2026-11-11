@@ -465,6 +465,10 @@ void PlaygroundRoom::bodiesAnswer() {
     // and an uneven pair is a body tipped by the order its own corners happen to
     // be in. The bound is a guard against a numerical corner case looping for
     // ever, not a tuning: the loop leaves as soon as nothing is closing.
+    // The momentum each corner of each body is handed by the pairs over the whole
+    // solve, so that one contact solved in several passes becomes one force at the
+    // place it is, and not an arrow per pass.
+    std::array<std::array<Vec3, kMaxCorners>, kBodyCount> pairImpulse{};
     const auto solveContacts = [&]() {
     double closingTotal = 0.0;
     for (std::size_t a = 0; a < kBodyCount; ++a) {
@@ -646,6 +650,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     double carried = 0.0;
                     for (int settle = 0; settle < kContactSettle; ++settle) {
                         const OutlineTouch here = outlineTouch(at, solid.position.data(), solid.count);
+                        // The other body's corner this contact is on: a contact is
+                        // between two points, and its share is written at the point
+                        // of the other body it landed on.
+                        const std::size_t heldCorner = here.t < 0.5 ? here.a : here.b;
                         const Vec3 otherNow =
                             solid.velocity[here.a] * (1.0 - here.t) + solid.velocity[here.b] * here.t;
                         const double closing = dot(body.velocity[i] - otherNow, normal);
@@ -655,8 +663,9 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             carried += impulse;
                             closingTotal = std::max(closingTotal, -closing);
-                            if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse);
-                            if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse);
+                            if (givesBody) giveBodyTurn(self, mine, at, mineWay * impulse, ForceKind::Pair, &pairImpulse[self][i]);
+                            if (givesSolid) giveBodyTurn(them, theirs, at, theirsWay * impulse, ForceKind::Pair,
+                                                         &pairImpulse[them][heldCorner]);
                             body.touched = true;
                             solid.touched = true;
                             if (-closing > kRestSpeed) {
@@ -693,8 +702,9 @@ void PlaygroundRoom::bodiesAnswer() {
                         // momentum was added to the pair on every pass -- a resting body
                         // taking off along the surface it was resting on.
                         const double grip = slide > 0.0 ? -rubbed : rubbed;
-                        if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
-                        if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
+                        if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip, ForceKind::Pair, &pairImpulse[self][i]);
+                        if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip, ForceKind::Pair,
+                                                     &pairImpulse[them][heldCorner]);
                     }
                 }
             }
@@ -745,6 +755,16 @@ void PlaygroundRoom::bodiesAnswer() {
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
         const double closing = solveContacts();
         if (closing <= kRestSpeed) break;
+    }
+    // The pairs' arrows, one per corner, written where the corners are while the
+    // contact is still the thing that just happened: the momentum a corner was
+    // handed over the whole solve, over the tick, in newtons.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        for (std::size_t i = 0; i < body.count; ++i) {
+            if (length(pairImpulse[index][i]) > 1e-9)
+                addForce(body.position[i], pairImpulse[index][i] * (1.0 / tick::kTick), ForceKind::Pair);
+        }
     }
     // And last of all, the pair is not inside itself. This is a correction, not
     // motion: it happens after every speed in the room has been decided, so it can

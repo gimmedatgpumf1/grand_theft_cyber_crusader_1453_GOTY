@@ -325,7 +325,7 @@ double PlaygroundRoom::bodyShareAt(const Body& body, const BodyInertia& inertia,
 // landed is what the body turns by. Sharing the impulse out corner by corner
 // instead had one corner stop dead while the others kept falling.
 void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
-                                 ForceKind kind) {
+                                 ForceKind kind, Vec3* accumulate) {
     Body& body = bodies_[index];
     ++body.contacts;
     // The ledger is written here, where the impulse is applied, by the same call
@@ -333,7 +333,8 @@ void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia,
     // changed. An impulse over a tick is a force, and a force is what the arrows
     // claim to show, so the two cannot drift apart: there is no other door into a
     // body's velocity that this one does not also write.
-    if (length(momentum) > 1e-9) addForce(contact, momentum * (1.0 / kTick), kind);
+    if (accumulate != nullptr) *accumulate = *accumulate + momentum;
+    else if (length(momentum) > 1e-9) addForce(contact, momentum * (1.0 / kTick), kind);
     const Vec3 arm = contact - inertia.middle;
     const double turn = (arm.x * momentum.y - arm.y * momentum.x) / inertia.moment;
     const Vec3 push = momentum * (1.0 / (static_cast<double>(body.count) * kMass));

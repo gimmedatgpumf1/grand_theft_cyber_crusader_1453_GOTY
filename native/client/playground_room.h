@@ -209,9 +209,12 @@ private:
     BodyInertia bodyInertia(const Body& body) const;
     double bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const;
     // `kind` is which force is handing the momentum over, so the ledger records it
-    // as the thing it is: a pair contact, or the ball.
+    // as the thing it is: a pair contact, or the ball. When `accumulate` is given,
+    // the momentum is added to it instead of being written down: a contact that is
+    // solved in passes hands the same contact several impulses in one tick, and the
+    // force is their sum, not one arrow per pass.
     void giveBodyTurn(std::size_t body, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
-                      ForceKind kind = ForceKind::Pair);
+                      ForceKind kind = ForceKind::Pair, Vec3* accumulate = nullptr);
     // A point of mass kMass meets a body: the impulse the point takes along the
     // normal is returned so the dot's own velocity can be given it back. Nothing
     // bounces, and a body on the plane only takes the part of the blow that runs
