@@ -83,11 +83,11 @@ constexpr double kTouch = 1e-9;
 // bit, and an atom inside must not read back as "inside all along" or every tick
 // spends itself on a contact it has already answered.
 constexpr double kSkin = 1e-6;
-// How finely the tick is walked before the meeting is closed in on, and how far it
-// is closed in. A body cannot move more than a fraction of its own size in a tick
-// at the speeds this room reaches, so the first sample that finds contact brackets
-// it; the bisection then takes that bracket to a millionth of a tick.
-constexpr int kSweepSamples = 24, kBisections = 24;
+// How far a bracket is closed in on once it is known. The meeting itself is solved
+// for outright, so this is only ever used to find a place along a surface, never
+// to find a time: a time found by sampling is a time that can be missed between two
+// samples, and the ball would be a hair into whatever it passed too fast to see.
+constexpr int kBisections = 24;
 
 struct OutlineHit {
     double along = 2.0;    // where in the tick, 0..1
@@ -210,41 +210,59 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
         hit.depth = radius - atStart.gap;
         return true;
     }
-    // Not through it. Whether the ball reaches it is a question about the tick:
-    // the circle is walked along its travel, sample by sample, and the first
-    // sample that finds it inside brackets the meeting.
-    double before = 0.0;
-    OutlineGap touched = atStart;
-    for (int sample = 1; sample <= kSweepSamples; ++sample) {
-        const double fraction = static_cast<double>(sample) / kSweepSamples;
-        const OutlineGap now = outlineGap(from + travel * fraction, corners, corners, count, 1.0);
-        if (now.gap <= radius - kSkin) {
-            // The meeting is somewhere between the last sample and this one. Close
-            // in on the touch itself, and answer with the last fraction at which
-            // the ball is still clear: stopping a hair inside leaves the ball being
-            // put back out of the surface before it can spend the next tick.
-            double clear = before, met = fraction;
-            touched = now;
-            for (int step = 0; step < kBisections; ++step) {
-                const double middle = 0.5 * (clear + met);
-                const OutlineGap mid = outlineGap(from + travel * middle, corners, corners, count, 1.0);
-                if (mid.gap <= radius) {
-                    met = middle;
-                    touched = mid;
-                } else {
-                    clear = middle;
-                }
+    // Not through it. When the ball reaches the outline is a question that can be
+    // answered outright: the circle's surface meets an edge where the face's line
+    // comes to one radius of the ball's middle, and meets a corner where the ball's
+    // middle comes to one radius of that corner. Both are solved for, and the
+    // earliest of them is the meeting. Nothing is sampled, so no speed is too fast
+    // to see: a ball crossing the whole room in a tick meets whatever lies across
+    // its path, at the instant it crosses it.
+    Vec3 middle{};
+    for (std::size_t i = 0; i < count; ++i) middle = middle + corners[i];
+    middle = middle * (1.0 / static_cast<double>(count));
+    double first = 2.0;
+    for (std::size_t i = 0; i < count; ++i) {
+        const Vec3 a = corners[i];
+        const Vec3 b = corners[(i + 1) % count];
+        const Vec3 side = b - a;
+        const double sideLength = length(side);
+        if (!(sideLength > 1e-18)) continue;
+        Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+        if (dot(middle - a, outward) > 0.0) outward = outward * -1.0;
+        // The face itself: where its line is one radius from the ball's middle.
+        const double approach = dot(outward, travel);
+        if (approach < 0.0) {
+            const double t = (radius - dot(outward, from - a)) / approach;
+            if (t >= 0.0 && t < first) {
+                const Vec3 at = from + travel * t;
+                const double along = dot(at - a, side) / (sideLength * sideLength);
+                // Past either end of the face, that end is what the ball meets, and
+                // the corners below are where that is worked out.
+                if (along >= 0.0 && along <= 1.0) first = t;
             }
-            hit.along = clear;
-            hit.normal = touched.normal;
-            hit.contact = from + travel * clear - touched.normal * radius;
-            hit.depth = 0.0;
-            return true;
         }
-        before = fraction;
-        touched = now;
+        // And either end of it: a corner of the outline, met by the ball's surface.
+        for (const Vec3 corner : {a, b}) {
+            const Vec3 away = from - corner;
+            const double square = dot(travel, travel);
+            const double half = dot(away, travel);
+            const double clear = dot(away, away) - radius * radius;
+            const double disc = half * half - square * clear;
+            if (!(square > 0.0) || disc < 0.0) continue;
+            const double t = (-half - std::sqrt(disc)) / square;
+            if (t >= 0.0 && t < first) first = t;
+        }
     }
-    return false;
+    if (first > 1.0) return false;
+    // Which way the surface faces where the ball meets it. A corner is answered by
+    // the line from the corner, not by either face that ends there.
+    const Vec3 at = from + travel * first;
+    const OutlineGap touched = outlineGap(at, corners, corners, count, 1.0);
+    hit.along = std::min(first, 1.0);
+    hit.normal = touched.normal;
+    hit.contact = at - touched.normal * radius;
+    hit.depth = 0.0;
+    return true;
 }
 
 }  // namespace
@@ -391,6 +409,13 @@ void PlaygroundRoom::tickBall() {
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, otherwise a body
+        // A surface the ball was already on has its answer given below, and that
+        // answer changes the ball's speed -- but where the ball would have gone
+        // this tick was worked out before the answer was. Spending it anyway sent
+        // the ball the whole gravity step into the surface it had just been
+        // answered on, a steady two and a half centimetres through a corner every
+        // tick. So the walk starts the same instant again with the answer in hand.
+        bool restart = false;
         // The floor is the one thing nothing gets below, so it is met whenever the
         // ball is at it or on its way through it -- and if the ball is somehow
         // already under it, that is answered at once too.
@@ -412,6 +437,7 @@ void PlaygroundRoom::tickBall() {
             OutlineHit hit;
             if (!circleHitsBody(ball.position, travel, body.position.data(), body.count, ball.radius, hit))
                 continue;
+
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop
             // at. Stopping there eats every tick's travel and the ball sits
@@ -435,6 +461,8 @@ void PlaygroundRoom::tickBall() {
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
                 // stopped at the surface instead of ending the tick buried in it.
+                restart = true;
+                continue;
             }
             // Touching and getting no closer is touching, not arriving. A ball
             // already through the outline is never skipped: that is inside, and it
@@ -446,10 +474,6 @@ void PlaygroundRoom::tickBall() {
                 for (std::size_t i = 0; i < body.count; ++i) step = step + (body.position[i] - body.previous[i]);
                 const Vec3 surfaceVelocity = step * (1.0 / (kTick * static_cast<double>(body.count)));
                 if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
-                // A contact this shape has already answered does not stop the walk
-                // at fraction zero again: its answer was given, and what is left of
-                // the ball's travel is along the face.
-                if (restingAnswered[index]) continue;
             }
             if (hit.along < first) {
                 first = hit.along;
@@ -459,6 +483,7 @@ void PlaygroundRoom::tickBall() {
                 contactPoint = hit.contact;
             }
         }
+        if (restart) continue;
         if (first > 1.0) {
             ball.position = next;
             break;
