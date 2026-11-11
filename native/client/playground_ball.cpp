@@ -416,7 +416,13 @@ void PlaygroundRoom::tickBall() {
             // tick, answered here and then travelled along, not a meeting to stop
             // at. Stopping there eats every tick's travel and the ball sits
             // gathering speed and spinning instead of rolling.
-            if (hit.depth <= 0.0 && hit.resting && !restingAnswered[index]) {
+            // A ball within a skin of the face is against it, not through it: the
+            // arithmetic that puts a resting ball at exactly one radius from a face
+            // lands it a nanometre either side, and reading "a nanometre in" as
+            // inside stopped the walk at fraction zero every tick -- a ball under a
+            // shape was pinned where it was, and gathered speed and turn on the spot
+            // for as long as it stayed there.
+            if (hit.depth <= kSkin && hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
@@ -435,11 +441,15 @@ void PlaygroundRoom::tickBall() {
             // has to be answered. What the body did this tick is its actual step,
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
-            if (hit.depth <= 0.0 && hit.along <= 1e-9) {
+            if (hit.depth <= kSkin && hit.along <= 1e-9) {
                 Vec3 step{};
                 for (std::size_t i = 0; i < body.count; ++i) step = step + (body.position[i] - body.previous[i]);
                 const Vec3 surfaceVelocity = step * (1.0 / (kTick * static_cast<double>(body.count)));
                 if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
+                // A contact this shape has already answered does not stop the walk
+                // at fraction zero again: its answer was given, and what is left of
+                // the ball's travel is along the face.
+                if (restingAnswered[index]) continue;
             }
             if (hit.along < first) {
                 first = hit.along;
