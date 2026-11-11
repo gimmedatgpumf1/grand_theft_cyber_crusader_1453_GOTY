@@ -467,6 +467,12 @@ void PlaygroundRoom::bodiesAnswer() {
                         const double give = shareMine + shareTheirs;
                         if (give > 1e-12) {
                             const double impulse = -closing / give;
+                            if (std::getenv("GTC_ANS"))
+                                std::fprintf(stderr,
+                                             "  ANS self %zu i %zu at (%.5f,%.5f) n (%.3f,%.3f) close %+.5f give %.5f "
+                                             "imp %+.5f free %+.3f/%+.3f\n",
+                                             self, i, at.x, at.y, normal.x, normal.y, closing, give, impulse,
+                                             freedomMine, freedomTheirs);
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
                             // Each side is given only the way it is free to go, which for
