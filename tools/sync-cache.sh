@@ -1,39 +1,37 @@
 #!/usr/bin/env bash
-# Keep the built objects and the compiler cache in the repository, every time,
-# without anyone asking.
+# Every successful build is a commit, and the commit is pushed.
 #
-# This workspace deletes `build/` and `.cache/` at the start of every session. They
-# are not scratch there, they are the only copy that survives -- so a build that is
-# not saved is a build that has to be done again from nothing, and the repository
-# has all the room it could ever need. Saving them is therefore part of building,
-# not something to remember afterwards.
+# Two things are true of this workspace and both are the reason this is not left to
+# anyone's memory. `build/` and `.cache/` are deleted at the start of every session,
+# so a build that is not saved is a build that has to be done again from nothing --
+# and the repository is the only place they outlive the build that made them. And a
+# green build is a checkpoint: it is the moment the tree is known to compile, which is
+# worth a commit on its own, for every changed file and not only the products.
 #
-# Only those three directories are staged and committed; whatever else is being
-# worked on in the tree is left exactly as it is, and a failure to push (a colleague
-# pushed first, a network hiccup) is reported and does not fail the build.
+# A push that is refused (a colleague pushed first, a network hiccup) is reported and
+# does not fail the build: the commit is local and nothing is lost.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-SAVED=(build .cache cache)
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  echo '[cache] Not a git checkout; nothing to save into.' >&2
+  echo '[build] Not a git checkout; nothing to record.' >&2
   exit 0
 fi
-if [ -z "$(git status --porcelain -- "${SAVED[@]}" 2>/dev/null)" ]; then
+if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
   exit 0
 fi
-git add -A -- "${SAVED[@]}" 2>/dev/null || {
-  echo '[cache] Could not stage the build products.' >&2
+git add -A 2>/dev/null || {
+  echo '[build] Could not stage the tree.' >&2
   exit 0
 }
-if ! git commit -q -m "Build products and compiler cache, saved automatically ($(date -u +%Y-%m-%dT%H:%M:%SZ))" -- "${SAVED[@]}"; then
-  echo '[cache] Nothing to commit after staging.' >&2
+if ! git commit -q -m "Build succeeded: everything that changed ($(date -u +%Y-%m-%dT%H:%M:%SZ))"; then
+  echo '[build] Nothing staged to commit.' >&2
   exit 0
 fi
-echo "[cache] Saved $(git rev-parse --short HEAD)."
+echo "[build] Committed $(git rev-parse --short HEAD): $(git show --stat --oneline HEAD | tail -1)"
 if git push -q origin HEAD 2>/dev/null; then
-  echo '[cache] Pushed, so the next session starts warm.'
+  echo '[build] Pushed.'
 else
-  echo '[cache] Saved locally; the push was refused (someone else is ahead). Nothing is lost.' >&2
+  echo '[build] Committed locally; the push was refused (someone else is ahead). Nothing is lost.' >&2
 fi
 exit 0
