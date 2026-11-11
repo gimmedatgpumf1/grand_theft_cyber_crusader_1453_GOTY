@@ -107,6 +107,55 @@ double PlaygroundRoom::bodiesReach(std::size_t index, const Vec3* target, Vec3* 
         Vec3 solidStep{};
         for (std::size_t i = 0; i < solid.count; ++i) solidStep = solidStep + (solid.position[i] - solid.previous[i]);
         solidStep = solidStep * (1.0 / static_cast<double>(solid.count));
+        // The pair's own hitscan, along the sides of both outlines.
+        //
+        // A corner against a face is not the only way two shapes meet: an edge can
+        // cross an edge with neither of their ends inside the other's outline, and a
+        // shape that is only ever asked about its corners walks straight through that.
+        // Two convex outlines are apart along any one of their own sides, so along
+        // each of those sides the distance between them is a number, and how fast it
+        // is closing is a number; the first of them to reach nothing is the instant
+        // the two touch. That is the same question the corner hitscan asks, asked
+        // about the whole shape instead of one point of it, and it is what no corner
+        // can slip past.
+        {
+            const Vec3 relative = ownStep - solidStep;
+            for (int side = 0; side < 2; ++side) {
+                const Vec3* corners = side == 0 ? body.position.data() : solid.position.data();
+                const std::size_t sideCount = side == 0 ? body.count : solid.count;
+                for (std::size_t i = 0; i < sideCount; ++i) {
+                    const Vec3 a = corners[i];
+                    const Vec3 b = corners[(i + 1) % sideCount];
+                    const Vec3 edge = b - a;
+                    const double edgeLength = std::sqrt(edge.x * edge.x + edge.y * edge.y);
+                    if (!(edgeLength > 1e-12)) continue;
+                    // The way out of the other body, whichever body this side is of.
+                    Vec3 axis{edge.y / edgeLength, -edge.x / edgeLength, 0};
+                    if (dot(axis, centroid(body.position.data(), body.count) -
+                                      centroid(solid.position.data(), solid.count)) < 0.0)
+                        axis = axis * -1.0;
+                    double bodyLow = 1e30;
+                    for (std::size_t k = 0; k < body.count; ++k) bodyLow = std::min(bodyLow, dot(body.position[k], axis));
+                    double solidHigh = -1e30;
+                    for (std::size_t k = 0; k < solid.count; ++k)
+                        solidHigh = std::max(solidHigh, dot(solid.position[k], axis));
+                    const double gap = bodyLow - solidHigh;
+                    const double closes = -dot(relative, axis);
+                    if (!(closes > 1e-12)) continue;
+                    // Already inside along this axis and still closing: they met at the
+                    // first instant of the step.
+                    const double along = gap > 0.0 ? gap / closes : 0.0;
+                    if (!(along < first)) continue;
+                    first = along;
+                    *wayOut = axis;
+                    *metWith = other;
+                    std::size_t nearest = 0;
+                    for (std::size_t k = 1; k < body.count; ++k)
+                        if (dot(body.position[k], axis) < dot(body.position[nearest], axis)) nearest = k;
+                    *metAt = body.position[nearest] + relative * along;
+                }
+            }
+        }
         // This body's corners through the other body's outline.
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 travel = (target[i] - body.position[i]) - solidStep;
