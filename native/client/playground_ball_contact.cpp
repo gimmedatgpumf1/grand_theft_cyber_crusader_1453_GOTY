@@ -28,22 +28,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // which is the force the ball's arrows are drawn from -- recorded where the
     // two met, because that is where it acts.
     const Vec3 ballBefore = ball.velocity;
-    // The same for the body: the ball's blow reaches it through giveBodyTurn, which
-    // moves every corner of it at once. The bodies were stepped and answered before
-    // the ball was walked, so the solve's own snapshot is already closed and would
-    // never show this -- the body would be turning for a reason nothing on screen
-    // gave. The corners' change over the tick, in newtons, is what the ball did to
-    // it, written at the corners that changed.
-    std::array<Vec3, kMaxCorners> bodyBefore{};
-    if (body != nullptr) bodyBefore = body->velocity;
+    // The body's side is written by giveBodyTurn, which is the call that hands it
+    // over; what is left for this one is the ball's own change, recorded at the
+    // place the two met.
     const auto recordBall = [&]() {
         const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
         if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball);
-        if (body == nullptr) return;
-        for (std::size_t i = 0; i < body->count; ++i) {
-            const Vec3 share = (body->velocity[i] - bodyBefore[i]) * (kMass / kTick);
-            if (length(share) > 1e-6) addForce(body->position[i], share, ForceKind::Ball);
-        }
     };
     std::size_t struck = 0;
     Vec3 answer = normal;
@@ -221,7 +211,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // top of it takes none of that blow -- the floor under it does -- and a
             // friction solve given the whole of it span the ball sideways and down
             // at metres a second off a body that never touched it that way.
-            giveBodyTurn(std::size_t(bodyIndex), inertia, contactPoint, answer * -impulse);
+            giveBodyTurn(std::size_t(bodyIndex), inertia, contactPoint, answer * -impulse, ForceKind::Ball);
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
