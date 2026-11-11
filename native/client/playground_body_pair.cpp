@@ -431,6 +431,11 @@ void PlaygroundRoom::bodiesAnswer() {
                     const bool givesSolid = length(answerFor(them, normal * -1.0)) > 0.0;
                     if (!givesBody && !givesSolid) continue;
                     const bool dbg = std::getenv("GTC_ANS") && self == 1 && i == 0;
+                    if (dbg) {
+                        std::fprintf(stderr, "      CHK them %zu count %zu y:", them, solid.count);
+                        for (std::size_t q = 0; q < solid.count; ++q) std::fprintf(stderr, " %.10f", solid.position[q].y);
+                        std::fprintf(stderr, "\n");
+                    }
                     // What the other body is doing at that place: a piece of an outline
                     // between two corners moves at the lever's interpolation of them, which
                     // is the ball's own outlineTouch. Reading one corner's speed instead is
