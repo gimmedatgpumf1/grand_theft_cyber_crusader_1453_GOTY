@@ -426,6 +426,7 @@ void PlaygroundRoom::bodiesAnswer() {
                     const bool givesBody = length(answerFor(self, normal)) > 0.0;
                     const bool givesSolid = length(answerFor(them, normal * -1.0)) > 0.0;
                     if (!givesBody && !givesSolid) continue;
+                    const bool dbg = std::getenv("GTC_ANS") && self == 1 && i == 0;
                     // What the other body is doing at that place: a piece of an outline
                     // between two corners moves at the lever's interpolation of them, which
                     // is the ball's own outlineTouch. Reading one corner's speed instead is
@@ -449,6 +450,11 @@ void PlaygroundRoom::bodiesAnswer() {
                             const double impulse = -closing / give;
                             carried = impulse;
                             closingTotal = std::max(closingTotal, -closing);
+                            if (dbg)
+                                std::fprintf(stderr,
+                                             "    ANS at (%.4f,%.4f) n (%.3f,%.3f) close %+.4f imp %+.4f gB %d gS %d\n",
+                                             at.x, at.y, normal.x, normal.y, closing, impulse, int(givesBody),
+                                             int(givesSolid));
                             if (givesBody) giveBodyTurn(self, mine, at, normal * impulse);
                             if (givesSolid) giveBodyTurn(them, theirs, at, normal * -impulse);
                             body.touched = true;
