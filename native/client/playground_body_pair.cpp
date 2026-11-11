@@ -385,6 +385,10 @@ void PlaygroundRoom::bodiesAnswer() {
                     // Against it, or about to be: on the surface within the same skin the
                     // ball's own contacts are taken within, and otherwise only where the
                     // step genuinely arrives at it.
+                    if (std::getenv("GTC_ANS") && self == 1 && i == 0)
+                        std::fprintf(stderr, "    SCN c0 (%.5f,%.5f) v(%.4f,%.4f) tr(%.5f,%.5f) gap %+.6f reach %d along %.4f\n",
+                                     body.position[i].x, body.position[i].y, body.velocity[i].x, body.velocity[i].y,
+                                     travel.x, travel.y, gap.gap, int(willReach), along);
                     if (!willReach && gap.gap > kSkin) continue;
                     const Vec3 normal = gap.gap <= kSkin ? gap.normal : hitNormal;
                     // Standing on the other body: the way out of its surface points
