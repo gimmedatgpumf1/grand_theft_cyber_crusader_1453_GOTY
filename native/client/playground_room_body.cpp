@@ -241,13 +241,13 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // are solved again, so the corner the ball is not holding is the one that
         // gives way. That is the whole of what makes a shape tip off a ball instead
         // of resting on it.
-        deepest = std::max(deepest, pushBodyOutOfBall(index, &ballLift));
+        deepest = std::max(deepest, pushBodyOutOfBall(index, pass == 0 ? &ballLift : nullptr));
         // And another body is the third thing that holds the shape, by the same
         // rule: the corner that has gone into it is put back out, and the distances
         // are solved again, so the corner that is not held is the one that gives
         // way. That is what makes a shape tip on the corner of another instead of
         // lying across it.
-        deepest = std::max(deepest, pushBodyOutOfBody(index, &bodyLift));
+        deepest = std::max(deepest, pushBodyOutOfBody(index, pass == 0 ? &bodyLift : nullptr));
         // The floor is not finished with until every corner is out of it. Asking the
         // loop only after the distances are closed lets it leave with a corner still
         // under the floor, and a corner under the floor is a shape being squashed for
