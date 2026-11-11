@@ -98,23 +98,6 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
-    // The ball's strike, when it is the ball that cut the step.
-    //
-    // The ball's own walk cannot see this meeting: it sweeps the ball's travel, and a
-    // ball lying still has none, so a shape coming down on a resting ball would simply
-    // stop on it. The shape's sweep has already found the instant and the place, so
-    // the strike is answered here -- once, through the same contact the ball answers
-    // its own surfaces with, from the approach the shape arrived with. Without it the
-    // shape rests on the ball with the ball knowing nothing about it, the correction
-    // that keeps the two apart does all the work, and a shape left leaning on a ball
-    // slides off it for no reason anyone could point at.
-    if (ballReach < 1.0 && ballReach <= bodyReach && ballReach <= planeReach) {
-        const ball_shape::OutlineTouch touch = ball_shape::outlineTouch(ball_.position, body.position.data(), count);
-        Vec3 away = ball_.position - touch.point;
-        const double span = length(away);
-        away = span > 1e-12 ? away * (1.0 / span) : Vec3{0, 1, 0};
-        ballContact(away, int(index), false, touch.point, 0.0, true);
-    }
     // The step is walked as far as the sweep allows, and no further.
     //
     // This is the whole of what the sweep is for. It says where the step stops and
