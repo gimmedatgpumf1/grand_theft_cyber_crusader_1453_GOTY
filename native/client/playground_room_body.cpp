@@ -242,12 +242,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
         // gives way. That is the whole of what makes a shape tip off a ball instead
         // of resting on it.
         deepest = std::max(deepest, pushBodyOutOfBall(index, pass == 0 ? &ballLift : nullptr));
-        // And another body is the third thing that holds the shape, by the same
-        // rule: the corner that has gone into it is put back out, and the distances
-        // are solved again, so the corner that is not held is the one that gives
-        // way. That is what makes a shape tip on the corner of another instead of
-        // lying across it.
-        deepest = std::max(deepest, pushBodyOutOfBody(index, pass == 0 ? &bodyLift : nullptr));
+        // Another body holds the shape the same way the floor and the ball do -- but
+        // by the sweep above, which never let a corner cross its outline, and by
+        // undoCrossings below, which puts a corner the *corrections* carried across a
+        // face back onto the line. It is not put back out by being shoved: a corner
+        // that has gone into another body is not near the side it should come out of,
+        // so the shove is at a slant, it fights the other body's own shove, and the
+        // two of them together are a body thrown across the room. That is what a
+        // square dropped on a triangle used to do.
         // The floor is not finished with until every corner is out of it. Asking the
         // loop only after the distances are closed lets it leave with a corner still
         // under the floor, and a corner under the floor is a shape being squashed for
