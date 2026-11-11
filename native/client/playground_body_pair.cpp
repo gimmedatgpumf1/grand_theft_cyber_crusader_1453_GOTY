@@ -572,6 +572,13 @@ void PlaygroundRoom::bodiesAnswer() {
                         const double grip = slide > 0.0 ? -rubbed : rubbed;
                         if (slidesBody) giveBodyTurn(self, mine, at, mineSlideWay * grip);
                         if (slidesSolid) giveBodyTurn(them, theirs, at, theirsSlideWay * grip);
+                        if (std::getenv("GTC_FIN") && self == 1 && i == 0)
+                            std::fprintf(stderr,
+                                         "  FIN it%d slide %+.5f grip %+.5f | c0 v (%.5f,%.5f) n-component %+.6f | "
+                                         "giveSlide %.4f share %.4f gives %d/%d\n",
+                                         settle, slide, grip, body.velocity[i].x, body.velocity[i].y,
+                                         dot(body.velocity[i], normal), giveSlide, give, int(givesBody),
+                                         int(givesSolid));
                     }
                 }
             }
