@@ -40,6 +40,11 @@ constexpr double kArrowMetresPerNewton = 0.030, kArrowHalfWidth = 0.010;
 // an arrow and not as a head with no shaft. Both are fractions of the drawn
 // length, which is the force, so nothing here is a separate scale to keep in step.
 constexpr double kArrowHeadShare = 0.34, kArrowHeadHalfShare = 0.42;
+// In front of everything the room draws, the ball's seams and the bodies' corners
+// included. A force that acts at a point inside a ball is still drawn where it
+// acts, and it has to be visible there: an arrow buried inside the shape it is
+// pushing is an arrow nobody can read.
+constexpr double kArrowZ = 0.02;
 constexpr int kForceLabelHeight = 20;
 
 // One arrow per drawn force: where it acts, where its tip is, and how hard it is.
@@ -232,13 +237,13 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
                                        static_cast<std::uint32_t>(slot);
             points.clear();
             faces.clear();
-            quad(points, faces, 0, -1, 1, 1, 0.008);
+            quad(points, faces, 0, -1, 1, 1, kArrowZ);
             raster.setObject(base, {0, 0}, 0);
             raster.mesh(points, faces, flat(kindColour(kind)));
             // A point on the end of it, not a disc: the tip of the arrow is where
             // the force ends, and a round end says nothing about which way it is
             // going or where it stops.
-            triangle(points, faces, 0.008);
+            triangle(points, faces, kArrowZ);
             raster.setObject(base + kArrowHeadOffset, {0, 0}, 0);
             raster.mesh(points, faces, flat(kindColour(kind)));
         }
