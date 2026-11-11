@@ -412,11 +412,13 @@ void PlaygroundRoom::bodiesAnswer() {
                     // into a shove of the whole body, so a corner that friction has just
                     // pinned still walks: the triangle balanced on one corner on the cube
                     // crept half a metre sideways with nothing whatever pushing it.
-                    // The contact is where the hitscan says it is, and where the sweep
-                    // took the body's step to be: on the surface the corner is standing
-                    // on it is the corner itself, and on a step that arrives it is the
-                    // place the step arrives at.
-                    const Vec3 at = along <= 1.0 ? body.position[i] + travel * along : body.position[i];
+                    // A corner is a point with no radius: where it meets a surface is
+                    // the corner itself. The hitscan's fraction along the step says a
+                    // meeting happens this tick, not where the corner is standing -- and
+                    // taking that fraction as the place of contact carries the contact
+                    // point forward along every step, which is a lever that grows with
+                    // every tick. The corner is the place.
+                    const Vec3 at = body.position[i];
                     const BodyInertia mine = bodyInertia(body);
                     const BodyInertia theirs = bodyInertia(solid);
                     // A side that cannot move gives nothing, and one that can move
@@ -563,16 +565,7 @@ void PlaygroundRoom::bodiesAnswer() {
     // back out as a shove of the whole body, and a triangle turning about a corner on
     // a cube walks sideways along it.
     for (int solve = 0; solve < kMaxContactPasses; ++solve) {
-        const bool dbg = std::getenv("GTC_PASS") != nullptr;
-        if (dbg)
-            std::fprintf(stderr, "  PASS %d pre tri0 (%.4f,%.4f) cube0 (%.4f,%.4f)\n", solve,
-                         bodies_[1].velocity[0].x, bodies_[1].velocity[0].y, bodies_[0].velocity[0].x,
-                         bodies_[0].velocity[0].y);
         const double closing = solveContacts();
-        if (dbg)
-            std::fprintf(stderr, "  PASS %d post tri0 (%.4f,%.4f) cube0 (%.4f,%.4f) closing %.4f\n", solve,
-                         bodies_[1].velocity[0].x, bodies_[1].velocity[0].y, bodies_[0].velocity[0].x,
-                         bodies_[0].velocity[0].y, closing);
         if (closing <= kRestSpeed) break;
     }
     // A frozen body has nothing holding it up the moment whatever was under it is
