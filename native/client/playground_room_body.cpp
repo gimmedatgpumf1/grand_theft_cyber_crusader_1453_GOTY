@@ -97,6 +97,14 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // A body that met another body keeps the speed it arrived with, because the blow
     // is answered at the point they met by bodiesAnswer. The ball answers its own
     // contact. The floor is answered at the corners it holds, below.
+    // What each corner was trying to do before the sweep shortened anything. A
+    // corner another body stopped keeps this: the blow between two bodies is
+    // answered in bodiesAnswer, from the approach both of them arrived with, and
+    // reading the speed back off the shortened step would hand every corner the
+    // same fraction of its own travel -- a support under the body's middle, when
+    // what the contact is is a support at the point they met.
+    std::array<Vec3, kMaxCorners> attempted{};
+    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
     const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
     if (reach < 1.0) {
         for (std::size_t i = 0; i < count; ++i)
@@ -285,6 +293,19 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     // have lifted that corner back off the plane, and a corner in the air has to
     // keep falling instead of being held and rubbed by the floor.
     for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
+
+    // What each corner actually did this tick, solved shape and all: a body that is
+    // turning is doing that, and the turn is motion. That is the body's speed -- a
+    // speed is where a corner went over the tick, not a number kept beside it -- and
+    // the corrections the floor and the other shapes made are taken back out of it,
+    // because a corner put back on the floor did not travel upwards.
+    for (std::size_t i = 0; i < count; ++i) {
+        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
+        velocity = velocity - lift[i] * (1.0 / kTick);
+        velocity = velocity - ballLift[i] * (1.0 / kTick);
+        velocity = velocity - bodyLift[i] * (1.0 / kTick);
+        body.velocity[i] = velocity;
+    }
 
     // The floor is a force, not a place.
     //
