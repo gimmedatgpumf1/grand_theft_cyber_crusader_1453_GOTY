@@ -384,6 +384,9 @@ void PlaygroundRoom::bodiesAnswer() {
                         outlineGap(wouldBe, solid.position.data(), solid.position.data(), solid.count, 1.0);
                     // Against it, not merely near it -- and within the same skin the
                     // ball's own contacts are taken within.
+                    if (std::getenv("GTC_ANS"))
+                        std::fprintf(stderr, "  SCAN r%d i%zu gap %+.7f wouldBe.y %.5f v.y %+.4f\n", round, i, gap.gap,
+                                     wouldBe.y, body.velocity[i].y);
                     if (gap.gap > kSkin) continue;
                     // The way out of the other body's outline, which is the normal of
                     // this contact: it points from what was touched towards this
