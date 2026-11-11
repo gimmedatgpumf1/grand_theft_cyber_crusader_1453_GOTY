@@ -12,6 +12,7 @@
 
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
+#include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 
 #include <algorithm>
@@ -82,6 +83,21 @@ void PlaygroundRoom::tickBody(std::size_t index) {
     }
     const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
     const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
+    // And the ball's strike, when it is the ball the step was cut by.
+    //
+    // The ball's own walk cannot see this meeting: it sweeps the ball's travel, and
+    // a ball lying still has none -- so a shape coming down on a resting ball simply
+    // stops on it and the ball never feels a thing, which is a ball that does not
+    // roll. The body's sweep has already found the instant and the place, so the
+    // strike is answered here, from the approach the body arrived with, through the
+    // same contact the ball answers its own surfaces with.
+    if (ballReach < 1.0 && ballReach <= bodyReach && ballReach <= planeReach) {
+        const ball_shape::OutlineTouch touch = ball_shape::outlineTouch(ball_.position, body.position.data(), count);
+        Vec3 strike = ball_.position - touch.point;
+        const double away = length(strike);
+        strike = away > 1e-12 ? strike * (1.0 / away) : Vec3{0, 1, 0};
+        ballContact(strike, int(index), false, touch.point, 0.0, true);
+    }
     // The floor's way out is straight up, whatever the other sweeps found: it is the
     // floor that cut this step short.
     if (metPlane) metWay = Vec3{0, 1, 0};
