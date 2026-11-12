@@ -112,6 +112,12 @@ std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, Pla
 // neither file grows past the size a file is allowed to be; the simulation knows
 // nothing about it.
 
+// Ticks happen twenty times a second and frames happen as often as the screen
+// allows, so a tick's worth of motion is spread over every frame that falls in
+// it. The screen shows the point between the position it had at the previous
+// tick and the position the last tick left it in, at the fraction of a tick the
+// frame has reached. Nothing is moved by the renderer; this is only what is
+// drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
 void PlaygroundRoom::interpolate() {
     const double fraction = !sceneReady_ ? 1.0 : std::clamp(accumulator_ / kTick, 0.0, 1.0);
     const double pointAlpha = pointFrozen_ || dragTarget_ == DragTarget::Point ? 1.0 : fraction;
