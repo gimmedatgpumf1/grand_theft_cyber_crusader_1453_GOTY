@@ -418,8 +418,10 @@ private:
     // One force, written down as it is applied. Called from the tick itself and
     // from the pair and ball contacts, so the ledger is filled by the physics and
     // nothing else writes to it.
-    void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator = nullptr,
-                  std::size_t owner = 0) {
+    // Which solid feels it has no default: an arrow that names no owner lands on
+    // body 0, and a ball's weight silently drawn on a cube is exactly the sort of
+    // lie a required argument stops being possible.
+    void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator, std::size_t owner) {
         if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind, owner};
         if (accumulator != nullptr) *accumulator = *accumulator + force;
     }

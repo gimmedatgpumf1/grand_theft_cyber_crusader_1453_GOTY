@@ -33,7 +33,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // place the two met.
     const auto recordBall = [&]() {
         const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
-        if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball);
+        if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball, nullptr, kBallOwner);
     };
     Vec3 answer = normal;
     bool canMove = false;
@@ -310,8 +310,8 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     {
         const Vec3 onBall = (ball.velocity - ballBefore) * (ball.mass / kTick);
         const Vec3 onPoint = (velocity_ - pointBefore) * (kMass / kTick);
-        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball);
-        if (length(onPoint) > 1e-6) addForce(point_, onPoint, ForceKind::Ball);
+        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball, nullptr, kBallOwner);
+        if (length(onPoint) > 1e-6) addForce(point_, onPoint, ForceKind::Ball, nullptr, kDotOwner);
     }
     // Separate them, so they are not still overlapping next tick.
     const Vec3 gap = ball.position - point_;

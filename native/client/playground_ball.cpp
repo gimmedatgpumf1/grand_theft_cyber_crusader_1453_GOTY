@@ -90,19 +90,19 @@ void PlaygroundRoom::tickBall() {
     // falls for exactly that reason.
     const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
     ball.force = {};
-    addForce(ball.position, weight, ForceKind::Gravity, &ball.force);
+    addForce(ball.position, weight, ForceKind::Gravity, &ball.force, kBallOwner);
     if (held) {
         // The surface under it carries it: the same weight back, at the point the
         // ball is standing on -- along the way out of that surface, which is where
         // the ball is actually pressed and the one place the force can act.
         addForce(ball.position + ball.supportNormal * (-ball.radius), weight * -1.0, ForceKind::Contact,
-                 &ball.force);
+                 &ball.force, kBallOwner);
     } else {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
             const double area = kPi * ball.radius * ball.radius;
             const double drag = 0.5 * kAirDensity * kBallDragCoefficient * area * speed * speed;  // N
-            addForce(ball.position, ball.velocity * (-drag / speed), ForceKind::Drag, &ball.force);
+            addForce(ball.position, ball.velocity * (-drag / speed), ForceKind::Drag, &ball.force, kBallOwner);
         }
     }
     ball.velocity = playground_tick::accelerated(ball.velocity, ball.force, ball.mass);
