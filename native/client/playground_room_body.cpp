@@ -353,14 +353,10 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             patch.other = two;
             patch.kind = ForceKind::Pair;
             double nearest[kMaxPatchEnds] = {1e30, 1e30};
-            bool haveNormal = false;
+            Vec3 way[kMaxPatchEnds];
             for (std::size_t i = 0; i < body.count; ++i) {
                 const ball_shape::OutlineGap gap = ball_shape::outlineGap(
                     body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-                if (!haveNormal) {
-                    patch.normal = gap.normal;  // out of the other body, into this one
-                    haveNormal = true;
-                }
                 for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                     if (gap.gap < nearest[k]) {
                         for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -368,15 +364,20 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                             patch.corner[j] = patch.corner[j - 1];
                             patch.point[j] = patch.point[j - 1];
                             patch.gap[j] = patch.gap[j - 1];
+                            way[j] = way[j - 1];
                         }
                         nearest[k] = gap.gap;
                         patch.corner[k] = i;
                         patch.point[k] = body.position[i];
                         patch.gap[k] = std::max(0.0, gap.gap);
+                        way[k] = gap.normal;  // out of the other body, into this one
                         break;
                     }
                 }
             }
+            // The way out of the body this one is meeting is the way at the place
+            // they are nearest, which is where the load is.
+            patch.normal = way[0];
             while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
             if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
         }
