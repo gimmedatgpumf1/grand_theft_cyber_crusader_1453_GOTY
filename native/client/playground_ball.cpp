@@ -229,7 +229,11 @@ void PlaygroundRoom::tickBall() {
                                  index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
                                  body.centre.x, body.centre.y, body.angle, body.previousCentre.x, body.previousCentre.y, body.previousAngle);
                 if (on.gap < ball.radius) {
-                    ++ballFoundThrough_;
+                    // Counted only when it is a real miss and not the last bit of a
+                    // double: a ball resting on a surface is one radius from it to
+                    // within rounding, every tick, and that is not the room failing
+                    // to prevent anything.
+                    if (ball.radius - on.gap > playground_tick::kQuantum) ++ballFoundThrough_;
                     ball.position = ball.position + on.normal * (ball.radius - on.gap);
                 }
                 ball.touching = true;
