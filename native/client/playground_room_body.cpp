@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -633,7 +635,12 @@ void PlaygroundRoom::tickBodies() {
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        if (step > 0.0) remaining -= advanceBodies(step);
+        const double used = step > 0.0 ? advanceBodies(step) : 0.0;
+        remaining -= used;
+        if (std::getenv("WOB"))
+            std::fprintf(stderr, "  stop %d step %.10f used %.10f rem %.10f v(%.6f,%.6f) w %.6f y %.9f %.9f\n",
+                         stop, step, used, remaining, bodies_[0].velocity.x, bodies_[0].velocity.y,
+                         bodies_[0].spin, bodies_[0].position[0].y, bodies_[0].position[1].y);
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
