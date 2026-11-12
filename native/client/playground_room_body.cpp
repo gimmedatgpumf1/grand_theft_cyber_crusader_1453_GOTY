@@ -459,6 +459,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
+        if (std::getenv("DBGB2")) std::fprintf(stderr, "ball patch b%zu gap %.9f n(%+.3f,%+.3f) at(%.3f,%.3f) v %+.4f\n", index, gap, way.x, way.y, at.x, at.y, bodies_[index].velocity.y);
         patches.add(patch);
     }
     // Another body, met by the corners of this one against its outline. The outline
