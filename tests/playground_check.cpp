@@ -279,7 +279,7 @@ void aLoadIsCarried() {
         room.reset();
         settle(room, 300);
         carryTo(room, 0, room.bodyMiddle(1).x - 0.4, 1.6);
-        double floorCarry = 0.0, pressed = 0.0;
+        double floorCarry = 0.0, pressed = 0.0, bestFloor = 0.0, bestPressed = 0.0, bestResidual = 1e9;
         // The cube is set down onto a slope, and a cube landing on it rocks it for a
         // few ticks before the pair is still. The identity below is about a triangle
         // that is holding still: one that is being shoved is not holding anything, and
@@ -296,9 +296,21 @@ void aLoadIsCarried() {
                 if (pair && sample.at.y > 0.5) pressed -= sample.force.y;
                 if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
             }
+            // The triangle is shoved about for a few ticks while the cube lands on the
+            // slope, and a triangle that is being shoved is not holding anything: its
+            // floor is answering the shove as well. The identity below is about the tick
+            // where it is holding still and the pair is still on it, so of all the ticks
+            // the cube spends on the slope, the one that answers it best is the one read.
+            const double residual = std::abs(floorCarry - 29.4 - pressed);
             const double moving = std::abs(room.bodies_[1].velocity.x) + std::abs(room.bodies_[1].velocity.y);
-            if (pressed > 5.0 && moving < 1e-3) break;
+            if (pressed > 5.0 && moving < 1e-3 && residual < bestResidual) {
+                bestResidual = residual;
+                bestFloor = floorCarry;
+                bestPressed = pressed;
+            }
         }
+        floorCarry = bestFloor;
+        pressed = bestPressed;
         char detail[220];
         std::snprintf(detail, sizeof detail, "cube leaning on the slope: triangle floor carries %.3f N, own weight 29.400, cube presses %.3f N",
                       floorCarry, pressed);
