@@ -214,37 +214,6 @@ void PlaygroundRoom::separateBodies() {
 // it had stopped when it hit something, which is where a contact would have stopped
 // it: no speed is changed, so no energy is made, and the ball's own tick then finds
 // it exactly where a contact belongs and answers it as one.
-void PlaygroundRoom::clampBodiesToBall() {
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        if (body.count == 0 || bodyHeld(index)) continue;
-        const ball_shape::OutlineGap now =
-            ball_shape::outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
-        // What counts as "carried through it" is going *deeper* than the tick began,
-        // not being inside in the first place. A ball lying on a shape is one radius
-        // from it and stays one radius from it; the shape starts turning into it on
-        // the very first bit of its step, and a test that only looks for "inside"
-        // never sees the shape arriving -- it sees it every tick, already arrived.
-        //
-        // The sweep asked is where the outline first gets a micrometre nearer than it
-        // began: that is the same conservative hitscan, asked of a circle a quantum
-        // smaller than the ball. Nothing is sampled, so how fast the shape is turning
-        // does not change where the meeting is found.
-        const double target = std::min(ball_.radius, now.gap) - playground_tick::kQuantum;
-        ball_shape::OutlineHit met;
-        if (!ball_shape::sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count,
-                                                ball_.position, Vec3{}, target, kTick, met))
-            continue;
-        // Carried back along its own step, to the meeting. The centre and the turn
-        // are the body's whole motion, so both are taken back by the same fraction.
-        body.centre = body.previousCentre + (body.centre - body.previousCentre) * met.along;
-        body.angle = body.previousAngle + (body.angle - body.previousAngle) * met.along;
-        placeCorners(body);
-        ++bodyStepClamped_;
-        if (getenv("GTC_TRACE")) std::fprintf(stderr, "CLAMP body %zu at %.4f of step, gap now %.6f before %.6f\n", index, met.along, now.gap, ball_shape::outlineGap(ball_.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap);
-    }
-}
-
 void PlaygroundRoom::separateBall() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];

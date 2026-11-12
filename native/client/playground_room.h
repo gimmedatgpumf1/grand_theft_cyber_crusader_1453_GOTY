@@ -394,13 +394,6 @@ private:
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.
     void separateBall();
-    // Stops each shape's step where its outline first reaches the ball. The shapes
-    // move before the ball does, so this is the one moment at which a shape can be
-    // carried through the ball without anything being asked: the contact solve
-    // answers the speed they are closing at, but it answers it at the contact point
-    // the tick began with, and a shape turning fast enough swings its outline past
-    // that point in the same tick. This is the step itself, clamped to the meeting.
-    void clampBodiesToBall();
 
 public:
     // Read by the checks and the probes: how much of this room is prevention and how

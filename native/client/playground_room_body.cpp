@@ -532,11 +532,6 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
-    // And the shape may not be left through the ball. Everything the shapes did to
-    // themselves this tick is finished by now -- the step, the parabola, the
-    // separation -- and the ball has not moved at all, so this is the whole of what
-    // the shapes did to it. Last, so that nothing can undo it.
-    clampBodiesToBall();
     settleBodies();
     writeImpulses();
 }

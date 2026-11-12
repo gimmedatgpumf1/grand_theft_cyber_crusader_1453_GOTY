@@ -133,7 +133,14 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
 // word is for: every step is the time the distance has left to close at the speed
 // it is closing, so it can stop early (and then it looks again) but never late. The
 // ball cannot be overtaken by a face, at any speed either of them is going.
+// A ball already against the surface at the start of the tick is normally answered
+// as a contact for the whole tick, because that is the state the tick begins in. A
+// caller asking instead "how far may this shape come into the ball" must not be
+// short-circuited by it: it is asking where the gap stops closing, which is the
+// instant after the one it started on, and the answer it wants is the first bit of
+// closing that the contact has not already accounted for.
 bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size_t count,
-                            Vec3 ballPosition, Vec3 ballVelocity, double radius, double tick, OutlineHit& hit);
+                            Vec3 ballPosition, Vec3 ballVelocity, double radius, double tick,
+                            OutlineHit& hit, bool touchingIsMeeting = true);
 
 }  // namespace gtc::native::ball_shape

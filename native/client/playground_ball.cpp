@@ -175,9 +175,45 @@ void PlaygroundRoom::tickBall() {
                         : 0.0;
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
+            Body& body = bodies_[index];
+            // Nothing is driven into the ball. A shape that was clear of it when the
+            // tick began, and whose own step would carry its outline inside it, is
+            // stopped at the instant the two touch -- both of them carried back to
+            // that instant, since the meeting is one moment and not two. That is
+            // prevention, and it is the whole reason the sweep below exists: what it
+            // stops is the shape that got there first, not the ball being thrown out
+            // of it afterwards.
+            //
+            // The distance it may not close past is the ball's radius, or where the
+            // shape already was if that is nearer -- a shape resting against a ball
+            // is not allowed a micrometre more than it has, which is what "touching"
+            // is here. Whether that is a hair's width or half a metre of step makes no
+            // difference to where it stops, because this is solved, not sampled.
+            if (!bodyStopped[index]) {
+                const double startGap =
+                    ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count,
+                                           1.0)
+                        .gap;
+                if (startGap > ball.radius - playground_tick::kQuantum) {
+                    const double limit = std::min(ball.radius, startGap) - playground_tick::kQuantum;
+                    OutlineHit stop;
+                    if (sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
+                                               ball.velocity, limit, kTick * remaining, stop, false) &&
+                        stop.along > 0.0) {
+                        const double when = (1.0 - remaining) + stop.along * remaining;
+                        body.centre = body.previousCentre + (body.centre - body.previousCentre) * when;
+                        body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;
+                        placeCorners(body);
+                        bodyStopped[index] = true;
+                        ++bodyStepClamped_;
+                        if (getenv("GTC_TRACE"))
+                            std::fprintf(stderr, "STOP body %zu at %.5f of its step (start gap %.6f)\n", index,
+                                         when, startGap);
+                    }
+                }
+            }
             // A body that is already stopped against the ball this tick is not
-            // moving any more: its step was spent at the meeting (below). What is
+            // moving any more: its step was spent at the meeting (above). What is
             // left of the tick is swept against where it came to rest.
             const Vec3* was = bodyStopped[index] ? body.position.data() : body.previous.data();
             // The body is stepped before the ball, and stepping it moves the piece of
@@ -270,7 +306,7 @@ void PlaygroundRoom::tickBall() {
         // and have to lift it out -- which is the kick this prevents. The centre and
         // the turn are the body's whole step, so both go back by the same fraction of
         // the tick that the ball had spent when it arrived.
-        if (what >= 0) {
+        if (what >= 0 && !bodyStopped[std::size_t(what)]) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;

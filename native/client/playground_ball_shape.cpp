@@ -156,14 +156,14 @@ static Vec3 outlineSpeed(const Vec3* previous, const Vec3* current, std::size_t 
 
 bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size_t count,
                             Vec3 ballPosition, Vec3 ballVelocity, double radius, double tick,
-                            OutlineHit& hit) {
+                            OutlineHit& hit, bool touchingIsMeeting) {
     Vec3 corners[kMaxOutlineCorners];
     // Where the ball is at the start: already against the surface or already
     // through it. That is not a meeting to find, it is the state the tick begins
     // in, and the caller has an answer for it (a contact for the whole tick).
     outlineAt(previous, current, count, 0.0, corners);
     const OutlineGap start = outlineGap(ballPosition, corners, corners, count, 1.0);
-    if (start.gap <= radius + kTouch) {
+    if (touchingIsMeeting && start.gap <= radius + kTouch) {
         hit.resting = true;
         hit.along = 0.0;
         hit.normal = start.normal;
