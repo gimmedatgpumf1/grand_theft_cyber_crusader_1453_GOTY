@@ -446,10 +446,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
-        if (std::getenv("DBGB3") && index == 0 && bodies_[0].velocity.y < -2.0)
-            std::fprintf(stderr, "      b0 v %+.3f ball (%.4f,%.4f) gap %.6f n(%+.3f,%+.3f) at(%.4f,%.4f) frozen %d\n",
-                         bodies_[0].velocity.y, ball_.position.x, ball_.position.y, gap, way.x, way.y, at.x, at.y,
-                         int(ball_.frozen));
         if (gap > kContactBand) continue;
         Manifold patch;
         patch.body = index;
@@ -589,6 +585,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
         const bool otherFixed = other != nullptr && bodyHeld(patch.other);
+        // A ball that is asleep is a surface, in the same way a body that is asleep
+        // is: it has no speed to speak of and nothing a contact can move. Its own
+        // speed has to be left out of the answer, or a shape pressed onto a sleeping
+        // ball is answered against motion that is not happening -- and its share of
+        // what an impulse gives has to be left out too, because the impulse is not
+        // going to move it anywhere.
+        const bool ballFixed = patch.ball && ball_.frozen;
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
@@ -599,7 +602,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) otherSpeed = pointSpeed(*other, at);
             } else if (patch.ball) {
-                otherSpeed = ballPointSpeed(at);
+                if (!ballFixed) otherSpeed = ballPointSpeed(at);
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
@@ -617,9 +620,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                value += dot(toward, direction) / ball_.mass +
-                         lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
-                             ballMoment;
+                if (!ballFixed)
+                    value += dot(toward, direction) / ball_.mass +
+                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
+                                 ballMoment;
             }
             return value;
         };
@@ -627,7 +631,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                pushBall(at, impulse, kind);
+                if (!ballFixed) pushBall(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
