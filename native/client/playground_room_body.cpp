@@ -526,15 +526,17 @@ void PlaygroundRoom::tickBodies() {
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
-    // And the shape may not be carried through the ball. It has moved without the
-    // ball moving, so the step is stopped where the two first touch.
-    clampBodiesToBall();
     // Whatever a spinning corner carried into a surface within the tick -- the one
     // thing a single straight step cannot see -- is put back out, by position alone.
     // It is the only thing in the room that moves a shape without an impulse, and
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
+    // And the shape may not be left through the ball. Everything the shapes did to
+    // themselves this tick is finished by now -- the step, the parabola, the
+    // separation -- and the ball has not moved at all, so this is the whole of what
+    // the shapes did to it. Last, so that nothing can undo it.
+    clampBodiesToBall();
     settleBodies();
     writeImpulses();
 }
