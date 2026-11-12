@@ -891,34 +891,32 @@ void PlaygroundRoom::tickBodies() {
         if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y);
         phase = now;
     };
-    wakeUnsupportedBodies();
-    // The air first, on the motion the body arrived with -- the speed its own weight
-    // has given it this tick is not air it has travelled through, and a shape standing
-    // still must feel none of it.
-    applyAirDrag();
-    applyBodyForces();
-    // What every body arrived with, and how much it had already been touched.
+    // What every body arrived with, and how many contacts it had already been given.
     //
-    // A body that spends the whole tick in the air has followed a parabola, and a
-    // parabola is a thing that can be drawn exactly. The tick does not: it gives the
-    // body its weight as a burst of speed and then carries it for the whole tick at
-    // the speed it now has, which lands it half a step too far from the speed it
-    // started with -- and half a step too far, every tick, in the direction the
-    // weight pulls is energy that the arithmetic has made out of nothing. For a four
-    // kilogram shape that is nought point four eight joules a tick, which is a body
-    // that never lands and keeps getting faster for no reason at all.
-    //
-    // The correction is the exact one, and it is only a move: half of the change the
-    // forces made, times the tick, added back to where the body ends up. Nothing is
-    // added to or taken from a speed. It is applied only to a body that met nothing
-    // -- a shape that touched something was stopped by something, and its travel is
-    // the walk's answer, not a parabola's.
+    // A body that spends a whole tick in the air has followed a parabola, and a
+    // parabola is a thing that can be drawn exactly. A tick that gives the body its
+    // weight as one burst of speed at the start and then carries it for the whole
+    // tick at the speed it now has does not: it lands the body half a step further
+    // along than the path went, and half a step further, every tick, are energy
+    // that the arithmetic has made out of nothing. The correction is the exact one
+    // and it is only a move: the trapezoid rule's half of the speed the forces
+    // changed, times the tick, added back to where the body ends up. Nothing is
+    // added to or taken from a speed, so a body cannot be sped up by it. It is
+    // applied only to a body that was given no contacts at all this tick -- a shape
+    // that met something was stopped by that something, and its travel is the
+    // solver's answer, not a parabola's.
     std::array<Vec3, kBodyCount> arrival{};
     std::array<int, kBodyCount> touchedBefore{};
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
         touchedBefore[index] = bodies_[index].contacts;
     }
+    wakeUnsupportedBodies();
+    // The air first, on the motion the body arrived with -- the speed its own weight
+    // has given it this tick is not air it has travelled through, and a shape standing
+    // still must feel none of it.
+    applyAirDrag();
+    applyBodyForces();
     // One set of patches for the whole tick, carried through the walk. The patches
     // that are there when the tick starts are answered first -- the weight of a shape
     // standing on the floor arrives as one tick's worth of impulse, and a patch that
