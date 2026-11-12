@@ -260,6 +260,11 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
 // stop the approach and no more.
 bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
     bool delivered = false;
+    // What the walk needs to know is whether there was anything to answer at all,
+    // not whether some impulse was a fraction of a newton different from the last
+    // pass: a resting body is touched by its contacts every tick and closing at
+    // none of them, and that must not stop the walk.
+    bool closingAtAll = false;
     for (int pass = 0; pass < kSolvePasses; ++pass) {
         double worst = 0.0;
         for (std::size_t c = 0; c < contacts.count; ++c) {
@@ -298,6 +303,7 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
                 if (give > 1e-12) {
                     const double closing = dot(relativeSpeed(contact.point), contact.normal);
                     worst = std::max(worst, std::abs(closing));
+                    if (closing < -kRestSpeed) closingAtAll = true;
                     const double next = std::max(0.0, contact.normalImpulse - closing / give);
                     const double delta = next - contact.normalImpulse;
                     if (delta != 0.0) {
@@ -372,7 +378,8 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
         }
         if (worst < kSolveTolerance && pass > 0) break;
     }
-    return delivered;
+    (void)delivered;
+    return closingAtAll;
 }
 
 // A body's rest, decided from its own motion and from what is under it. A shape
