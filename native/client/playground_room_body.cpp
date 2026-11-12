@@ -15,6 +15,7 @@
 // this file: nothing ever gets in.
 
 #include "client/playground_ball_shape.h"
+#include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -303,6 +304,11 @@ double PlaygroundRoom::timeToContact(double remaining) const {
         };
         near(one, two);
         near(two, one);
+        // And edge to edge. A corner-to-outline measure is blind to a wide face
+        // coming down across a narrow one -- every corner of it is out in the open
+        // until the step that puts the middle of the face through the other shape.
+        least = std::min(least, pair_shape::gap(corners[one].data(), bodies_[one].count, corners[two].data(),
+                                                bodies_[two].count));
         return least;
     };
     // Which meetings are worth watching: the ones that are not already touching.
@@ -487,6 +493,33 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             patch.normal = way[0];
             while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
             if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
+            // No corner of either shape is inside the other, and they are still
+            // meeting: a wide face lying across a narrow one, where what touches is
+            // two edges crossing and nothing else. Gathered where they cross, which
+            // for that case is the two ends of the span that actually carries it.
+            if (patch.ends == 0) {
+                pair_shape::PairManifold meeting;
+                if (pair_shape::separate(body.position.data(), body.count, solid.position.data(), solid.count,
+                                         meeting) &&
+                    meeting.overlap > 0.0 && meeting.ends > 0) {
+                    Manifold edge;
+                    edge.body = one;
+                    edge.other = two;
+                    edge.kind = ForceKind::Pair;
+                    edge.normal = meeting.normal;
+                    for (std::size_t k = 0; k < meeting.ends && k < kMaxPatchEnds; ++k) {
+                        edge.corner[k] = kMaxCorners;
+                        edge.point[k] = meeting.at[k];
+                        // Signed, like every other gap: inside is negative, and the
+                        // position pass is what takes it out again.
+                        edge.gap[k] = -meeting.depth[k];
+                        edge.normalImpulse[k] = 0.0;
+                        edge.tangentImpulse[k] = 0.0;
+                    }
+                    edge.ends = meeting.ends;
+                    patches.add(edge);
+                }
+            }
         }
     }
 }
@@ -778,6 +811,33 @@ void PlaygroundRoom::separateBodies() {
                 if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
                 placeCorners(body);
                 if (solidMoves) placeCorners(solid);
+            }
+            // And the same for two shapes meeting along their edges, where no corner
+            // of either is inside the other: the pair is moved apart along the axis
+            // it is least inside on.
+            {
+                pair_shape::PairManifold meeting;
+                if (pair_shape::separate(body.position.data(), body.count, solid.position.data(), solid.count,
+                                         meeting) &&
+                    meeting.overlap > 0.0) {
+                    const auto inside = [](const Vec3* from, std::size_t count, const Vec3* outline,
+                                           std::size_t outlineCount) {
+                        for (std::size_t i = 0; i < count; ++i)
+                            if (ball_shape::outlineGap(from[i], outline, outline, outlineCount, 1.0).gap < 0.0)
+                                return true;
+                        return false;
+                    };
+                    const bool cornersInside =
+                        inside(body.position.data(), body.count, solid.position.data(), solid.count) ||
+                        inside(solid.position.data(), solid.count, body.position.data(), body.count);
+                    if (!cornersInside) {
+                        const Vec3 move = meeting.normal * meeting.overlap;
+                        body.centre = body.centre + move * share;
+                        if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
+                        placeCorners(body);
+                        if (solidMoves) placeCorners(solid);
+                    }
+                }
             }
             // And the other way round: a corner of the other shape inside this one
             // is the same overlap seen from the other side.
