@@ -377,37 +377,37 @@ void PlaygroundRoom::tick() {
         const Vec3 along = weight - normal * into;    // what the surface cannot answer
         const double carried = std::max(0.0, -into);  // N, how hard it is pressed
         addForce(point_, normal * carried, ForceKind::Contact, &pointForce_, kDotOwner);
-        // Static friction holds while the point is not moving along the surface and
-        // the surface can answer what is pushing it sideways; past that it slips, and
-        // then kinetic friction acts, against the slip, at mu_k times the load. That
-        // is what makes a dot on a steep face accelerate down it instead of standing
-        // on it, and it is a force like any other, not a rule about when to stop.
+        // Static friction holds while the surface can answer whatever it takes to
+        // leave no slip; past that the surfaces slide, and kinetic friction acts
+        // against the slide at mu_k times the load. That is what makes a dot on a
+        // steep face accelerate down it instead of standing on it, and it is a
+        // force like any other, not a rule about when to stop.
+        //
+        // "Whatever it takes to leave no slip" is two things, and it has to be
+        // both of them at once. One is the slide already in hand: the surface must
+        // take that away, or the dot keeps the motion it had. The other is the
+        // push it is about to receive: what is left of the weight after the normal
+        // has answered its share drives along the face, and if friction answers
+        // nothing for it, that drive is a fresh slide every tick. Answering only
+        // the first leaves the second, tick after tick after tick -- a dot lying
+        // apparently still on a face that is a ten-millionth of a degree off level
+        // creeps a micrometre every few seconds for ever, and it is not a bug in
+        // the friction: it is friction being asked the wrong question.
         const Vec3 slip = velocity_ - normal * dot(velocity_, normal);
         const double swift = length(slip);
+        const Vec3 hold = along + slip * (kMass / kTick);  // N, to leave no slip at all
+        const double demand = length(hold);
         Vec3 friction{};
-        if (swift > kRestSpeed) {
-            // Coulomb, in the one form that does not hum. The surface rubs against
-            // the slide with mu_k * N -- and it can never do more than take the
-            // slide away, because friction stops a thing, it does not send it back.
-            // Asking for the whole of mu_k * N when a centimetre a second is left
-            // reverses the point, the next tick reverses it again, and a dot that
-            // has come to rest sits there buzzing for ever. What friction gives is
-            // whatever is needed to leave no slip, up to what the load can carry;
-            // and if the load can carry it, the point holds and does not slide at
-            // all, which is static friction, which is the same law.
-            const double toStop = kMass * swift / kTick;  // N, what would stop it dead
-            const double grip = std::min(toStop, (toStop <= kPointStaticFriction * carried)
-                                                     ? toStop
-                                                     : kPointKineticFriction * carried);
-            friction = slip * (-grip / swift);
-            if (toStop <= kPointStaticFriction * carried) heldStill_ = true;
-        } else if (length(along) <= kPointStaticFriction * carried) {
-            friction = along * -1.0;
+        if (demand <= kPointStaticFriction * carried) {
+            // The load can carry it. The surfaces do not move against each other,
+            // and the force that says so is exactly the one needed, no more.
+            friction = hold * -1.0;
             heldStill_ = true;
-        } else if (length(along) > 0.0) {
-            // Not moving yet, and not held: it is about to slide the way it is being
-            // pushed, and until it does, the surface resists with all it has.
-            friction = along * (-kPointStaticFriction * carried / length(along));
+        } else if (demand > 0.0) {
+            // The load cannot. They slide, and what slides is answered against the
+            // slide at mu_k, which can never send the dot back the way it came.
+            const Vec3 against = swift > kRestSpeed ? slip * (1.0 / swift) : hold * (1.0 / demand);
+            friction = against * (-kPointKineticFriction * carried);
         }
         if (length(friction) > 0.0)
             addForce(point_, friction, ForceKind::Friction, &pointForce_, kDotOwner);
