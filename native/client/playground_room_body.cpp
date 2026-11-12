@@ -606,23 +606,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t k = 0; k < count; ++k) {
                 if (!live[k]) continue;
                 order[dofs] = k;
-                // What the end has to do to be on the surface when the tick ends: it
-                // may close the distance it has left, and not one micron more. An end
-                // already on the surface has nothing left to close and is simply
-                // stopped there; an end a hair above it, with the face tipping onto
-                // it, is left free to come down onto it in this very tick instead of
-                // being held off it and rocking.
+                // What the end has to do to be on the surface when the tick ends:
+                // it may close the distance it has left, and not one micron more.
                 //
-                // The gap is signed, and that is the other half of it. An end that is
-                // already a little way inside a surface has a negative gap, and what
-                // the constraint then asks is that it be *out* by the end of the tick
-                // -- the distance, spread over the tick. Nothing is teleported and no
-                // shape is pushed out of another behind the physics' back: the body is
-                // simply given the speed that takes it clear, and the walk carries it
-                // there. Without it a corner that got a millimetre in could only ever
-                // stay a millimetre in, because a constraint that stops closing cannot
-                // undo what has already closed.
-                u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] / kTick;
+                // That is a constraint on speed, and on nothing else. It says the
+                // corner may not still be coming down when the tick ends; it does
+                // *not* say to throw the corner back out. Asking for the gap to be
+                // repaid as speed -- a corner a ten-thousandth of a millimetre inside
+                // given the velocity to be half a millimetre out by the end of the
+                // tick -- hands the body speed that nothing in the room gave it, and
+                // a shape resting on the floor then sits in a loop: pushed up, falls
+                // back, pushed up again, forever. It is a wiggle with no cause and a
+                // slow trickle of energy out of the arithmetic.
+                //
+                // A corner that got inside got there because the walk could not see
+                // it coming, and it is the walk's business: the surface it is in is a
+                // hard constraint on where the shape may be, and being stopped there
+                // is a clamp on position, not a gift of momentum.
+                u[dofs] = away(patch.point[k], patch.normal);
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
