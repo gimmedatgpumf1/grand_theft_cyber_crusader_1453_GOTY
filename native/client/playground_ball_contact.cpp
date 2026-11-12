@@ -178,6 +178,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // the floor gets that every tick, and bouncing it would be bouncing it off
     // nothing.
     const double rebound = arrivedSpeed < 0.0 ? -kBallRestitution * arrivedSpeed : 0.0;
+    if (std::getenv("DBGB"))
+        std::fprintf(stderr, "    arrival(%+.2f,%+.2f) surf(%+.2f,%+.2f) arrivedSpeed %+.3f closing %+.3f rebound %+.3f canMove %d\n",
+                     ball.arrival.x, ball.arrival.y, surfaceVelocity.x, surfaceVelocity.y, arrivedSpeed, closing,
+                     rebound, canMove ? 1 : 0);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
