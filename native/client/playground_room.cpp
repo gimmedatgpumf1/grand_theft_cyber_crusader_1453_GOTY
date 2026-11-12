@@ -304,7 +304,7 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     ball_.frozen = false;
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.
-    recordImpulse(at, impulse, kind, kBodyCount);
+    recordImpulse(at, impulse, kind, kBallOwner);
 }
 
 // The ledger, written where the impulse is applied. A contact solved in many passes
@@ -328,7 +328,7 @@ void PlaygroundRoom::writeImpulses() {
     for (std::size_t i = 0; i < impulseCount_; ++i) {
         const RecordedImpulse& entry = impulses_[i];
         if (!(length(entry.impulse) > 1e-9)) continue;
-        addForce(entry.at, entry.impulse * (1.0 / kTick), entry.kind);
+        addForce(entry.at, entry.impulse * (1.0 / kTick), entry.kind, nullptr, entry.on);
     }
     clearImpulses();
 }
@@ -431,7 +431,7 @@ void PlaygroundRoom::tick() {
     // in the sum and the integrator below turns the whole of it into speed.
     const Vec3 weight{0.0, -kMass * kGravity, 0.0};
     pointForce_ = {};
-    addForce(point_, weight, ForceKind::Gravity, &pointForce_);
+    addForce(point_, weight, ForceKind::Gravity, &pointForce_, kDotOwner);
     // And the air. The dot is a small sphere and it pushes through the same air the
     // ball does: F = half rho Cd A v^2, against its own motion. At the speeds it
     // reaches here it is a fraction of a newton, which is exactly what it should be
@@ -442,13 +442,13 @@ void PlaygroundRoom::tick() {
         if (swift > 0.0) {
             const double area = ball_shape::kPi * kPointRadius * kPointRadius;
             const double drag = 0.5 * ball_shape::kAirDensity * ball_shape::kBallDragCoefficient * area * swift * swift;
-            addForce(point_, velocity_ * (-drag / swift), ForceKind::Drag, &pointForce_);
+            addForce(point_, velocity_ * (-drag / swift), ForceKind::Drag, &pointForce_, kDotOwner);
         }
     }
     heldStill_ = false;
     if (dragTarget_ == DragTarget::Point) {
         // The mouse holds it: the hold is the force that carries its weight.
-        addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_);
+        addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_, kDotOwner);
         heldStill_ = true;
     } else if (resting_) {
         // The surface answers in two parts, because it does: a normal force straight
@@ -459,7 +459,7 @@ void PlaygroundRoom::tick() {
         const double into = dot(weight, normal);      // negative when pressing in
         const Vec3 along = weight - normal * into;    // what the surface cannot answer
         const double carried = std::max(0.0, -into);  // N, how hard it is pressed
-        addForce(point_, normal * carried, ForceKind::Contact, &pointForce_);
+        addForce(point_, normal * carried, ForceKind::Contact, &pointForce_, kDotOwner);
         // Static friction holds while the point is not moving along the surface and
         // the surface can answer what is pushing it sideways; past that it slips, and
         // then kinetic friction acts, against the slip, at mu_k times the load. That
@@ -478,7 +478,8 @@ void PlaygroundRoom::tick() {
             // pushed, and until it does, the surface resists with all it has.
             friction = along * (-kPointStaticFriction * carried / length(along));
         }
-        if (length(friction) > 0.0) addForce(point_, friction, ForceKind::Friction, &pointForce_);
+        if (length(friction) > 0.0)
+            addForce(point_, friction, ForceKind::Friction, &pointForce_, kDotOwner);
     }
     velocity_ = accelerated(velocity_, pointForce_, kMass);
     traceFrom_ = point_;
@@ -885,9 +886,10 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
         if (!body.frozen || stepped[index] || body.count == 0) continue;
         const double piece = body.mass / static_cast<double>(body.count);
         for (std::size_t i = 0; i < body.count; ++i)
-            addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity);
+            addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity, nullptr, index);
         for (std::size_t i = 0; i < body.appliedCount; ++i)
-            addForce(body.applied[i].at, body.applied[i].impulse * (1.0 / kTick), body.applied[i].kind);
+            addForce(body.applied[i].at, body.applied[i].impulse * (1.0 / kTick), body.applied[i].kind,
+                     nullptr, index);
     }
     // The ball asleep on something is the same pair again: its weight, and the
     // surface carrying it. A ball at rest has no other forces -- no drag, because
@@ -900,15 +902,16 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // point is the true total, not an approximation of it.
     if (ball_.frozen && !ballStepped) {
         const Vec3 weight{0.0, -ball_.mass * kGravity, 0.0};
-        addForce(ball_.position, weight, ForceKind::Gravity);
-        addForce(ball_.position + ball_.supportNormal * (-ball_.radius), weight * -1.0, ForceKind::Contact);
+        addForce(ball_.position, weight, ForceKind::Gravity, nullptr, kBallOwner);
+        addForce(ball_.position + ball_.supportNormal * (-ball_.radius), weight * -1.0, ForceKind::Contact,
+                 nullptr, kBallOwner);
     }
     // The dot, asleep on something, is the same pair of forces at one point -- and
     // the point it is pressed at is the one its own support says.
     if (pointFrozen_ && !pointStepped) {
         const Vec3 weight{0.0, -kMass * kGravity, 0.0};
-        addForce(point_, weight, ForceKind::Gravity);
-        addForce(point_, weight * -1.0, ForceKind::Contact);
+        addForce(point_, weight, ForceKind::Gravity, nullptr, kDotOwner);
+        addForce(point_, weight * -1.0, ForceKind::Contact, nullptr, kDotOwner);
     }
 }
 

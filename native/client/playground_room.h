@@ -67,6 +67,13 @@ public:
     Vec3 bodyCornerVelocity(std::size_t body, std::size_t index) const;
     std::size_t bodyCorners(std::size_t body) const { return body < kBodyCount ? bodies_[body].count : 0; }
     Vec3 bodyMiddle(std::size_t body) const;
+    // The body's own inertia and how fast its centre is going, so that what the
+    // ledger says a body feels can be checked against what the tick did to it.
+    double bodyMass(std::size_t body) const { return body < kBodyCount ? bodies_[body].mass : 0.0; }
+    Vec3 bodyCentreVelocity(std::size_t body) const {
+        return body < kBodyCount ? bodies_[body].velocity : Vec3{};
+    }
+    static constexpr std::size_t kBallOwner = kBodyCount, kDotOwner = kBodyCount + 1;
     bool bodyFrozen(std::size_t body) const { return body < kBodyCount ? bodies_[body].frozen : true; }
     // Forces, as they are applied, and the room's energy.
     //
@@ -91,6 +98,11 @@ public:
         Vec3 at{};     // where it acts, in metres
         Vec3 force{};  // newtons
         ForceKind kind = ForceKind::Gravity;
+        // Which solid feels it: 0..kBodyCount-1 for the room's bodies, kBodyCount
+        // for the ball, kBodyCount+1 for the dot. Without this a pair contact reads
+        // as two identical arrows in two places -- one on each shape -- and there is
+        // no way to add up what any one of them feels.
+        std::size_t owner = 0;
     };
     void toggleForceArrows() { showForces_ = !showForces_; }
     void toggleForceNewtons() { showNewtons_ = !showNewtons_; }
@@ -406,8 +418,9 @@ private:
     // One force, written down as it is applied. Called from the tick itself and
     // from the pair and ball contacts, so the ledger is filled by the physics and
     // nothing else writes to it.
-    void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator = nullptr) {
-        if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind};
+    void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator = nullptr,
+                  std::size_t owner = 0) {
+        if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind, owner};
         if (accumulator != nullptr) *accumulator = *accumulator + force;
     }
     void clearForces() { forceCount_ = 0; }
