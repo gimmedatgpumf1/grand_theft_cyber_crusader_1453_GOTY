@@ -758,6 +758,15 @@ void PlaygroundRoom::tickBodies() {
     report("separate");
     settleBodies();
     report("settled");
+    if (std::getenv("DBGC")) {
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            std::fprintf(stderr, "  body %zu centre (%.4f,%.4f) mass %.3f:", index, bodies_[index].centre.x,
+                         bodies_[index].centre.y, bodies_[index].mass);
+            for (std::size_t i = 0; i < bodies_[index].count; ++i)
+                std::fprintf(stderr, " (%.4f,%.4f)", bodies_[index].position[i].x, bodies_[index].position[i].y);
+            std::fprintf(stderr, "\n");
+        }
+    }
     writeImpulses();
 }
 
