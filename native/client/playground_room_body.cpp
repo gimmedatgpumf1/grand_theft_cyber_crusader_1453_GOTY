@@ -88,7 +88,7 @@ void PlaygroundRoom::applyBodyForces() {
         body.appliedCount = 0;
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 weight{0.0, -share * kGravity, 0.0};
-            addForce(body.position[i], weight, ForceKind::Gravity);
+            addForce(body.position[i], weight, ForceKind::Gravity, nullptr, index);
             // The impulse the weight delivers over one tick, at that very corner.
             // Written out rather than short-circuited to g*dt: what a body feels is
             // a force at a place, and this is that force at that place.
@@ -129,7 +129,7 @@ void PlaygroundRoom::applyAirDrag() {
             const double drag =
                 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth * swift * swift;  // N
             const Vec3 air = speed * (-drag / swift);
-            addForce(body.position[i], air, ForceKind::Drag);
+            addForce(body.position[i], air, ForceKind::Drag, nullptr, index);
             const Vec3 puff = air * kTick;
             const Vec3 arm = body.position[i] - body.centre;
             body.velocity = body.velocity + puff * (1.0 / body.mass);
