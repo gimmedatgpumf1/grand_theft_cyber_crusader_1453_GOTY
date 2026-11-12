@@ -142,16 +142,38 @@ static void outlineAt(const Vec3* previous, const Vec3* current, std::size_t cou
     for (std::size_t i = 0; i < count; ++i) corners[i] = previous[i] + (current[i] - previous[i]) * fraction;
 }
 
-// How fast the piece of outline nearest `point` is travelling, from the two corners
-// that own it. The piece between two corners moves at the lever's interpolation of
-// the two of them -- which is exactly what a rigid body's rotation does along an
-// edge, and what a body turning on the spot does to the place it is touching.
-static Vec3 outlineSpeed(const Vec3* previous, const Vec3* current, std::size_t count, Vec3 point,
-                         double tick) {
-    const OutlineTouch touch = outlineTouch(point, current, count);
-    const Vec3 stepA = current[touch.a] - previous[touch.a];
-    const Vec3 stepB = current[touch.b] - previous[touch.b];
-    return (stepA * (1.0 - touch.t) + stepB * touch.t) * (1.0 / tick);
+// The fastest the outline can come at a ball along `normal` this tick, and the
+// fastest the ball can come at it. This has to be an *upper* bound, because it is
+// the step of a conservative advance: a bound that is too small does not make the
+// search faster, it makes it wrong.
+//
+// The piece of outline nearest the ball is the wrong measure of it. A shape turning
+// about its middle carries the far corner much faster than the face beside the ball,
+// and it is a corner coming over the top that swallows a ball -- not the face the
+// ball was touching. So the bound is the middle's own step plus the turn times the
+// farthest corner: every point of the outline is inside that, so no part of it can
+// arrive sooner than the estimate says.
+static double closingSpeed(const Vec3* previous, const Vec3* current, std::size_t count, Vec3 ballVelocity,
+                           double tick) {
+    Vec3 wasMiddle{};
+    Vec3 isMiddle{};
+    for (std::size_t i = 0; i < count; ++i) {
+        wasMiddle = wasMiddle + previous[i];
+        isMiddle = isMiddle + current[i];
+    }
+    if (count == 0) return length(ballVelocity);
+    wasMiddle = wasMiddle * (1.0 / static_cast<double>(count));
+    isMiddle = isMiddle * (1.0 / static_cast<double>(count));
+    const double moved = length(isMiddle - wasMiddle) * (1.0 / tick);
+    // The turn, read from one corner's arm about the middle: the same shape, so it
+    // is the same turn for all of them.
+    const Vec3 wasArm = previous[0] - wasMiddle;
+    const Vec3 isArm = current[0] - isMiddle;
+    const double turn = std::abs(std::atan2(wasArm.x * isArm.y - wasArm.y * isArm.x, dot(wasArm, isArm))) *
+                        (1.0 / tick);
+    double reach = 0.0;
+    for (std::size_t i = 0; i < count; ++i) reach = std::max(reach, length(current[i] - isMiddle));
+    return length(ballVelocity) + moved + turn * reach;
 }
 
 bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size_t count,
@@ -187,11 +209,10 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
             unsafe = fraction;
             break;
         }
-        // The distance to close, at the rate the two surfaces are closing at.
-        const Vec3 surface = outlineSpeed(previous, current, count, at, tick);
-        const double closing = -dot(ballVelocity - surface, gap.normal);
-        // Not closing: whatever happens later in the tick, these two are moving
-        // apart along the way they would meet, and there is no meeting to report.
+        // The distance to close, at the rate the two can close at. The bound covers
+        // the whole outline, so a corner coming over the ball is never missed by it.
+        const double closing = closingSpeed(previous, current, count, ballVelocity, tick);
+        // Neither of them moving: there is nothing to meet, however long the tick is.
         if (!(closing > 0.0)) return false;
         const double needed = (gap.gap - radius) / closing;  // seconds
         if (!(needed > 0.0)) {
@@ -202,10 +223,10 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
         fraction += needed / tick;
         if (fraction > 1.0) return false;
     }
-    if (!(unsafe <= 1.0)) {
-        if (!(fraction <= 1.0)) return false;
-        unsafe = fraction;
-    }
+    // Not bracketed at all: every step was still clear when the search ran out of
+    // passes, so there is nothing to meet inside this tick. Reporting the last clear
+    // place as a meeting is how a shape gets stopped short of a ball it never reached.
+    if (!(unsafe <= 1.0)) return false;
     // Close the bracket in on the meeting. This is a time found by solving for the
     // distance, not by sampling for it, so where it lands does not depend on how
     // fast anything is going.
