@@ -109,12 +109,13 @@ int main() {
         cube.previous = cube.position;
     }
     RoomFreecam near;
-    near.reset({-1.40, 1.20, 3.60}, -0.06, -0.14);
+    near.reset({-1.20, 1.35, 5.40}, -0.06, -0.10);
     shoot(room, near, "scratch/host-lean-0.png");
     for (int tick = 1; tick <= 40; ++tick) {
         room.advance(1.0 / 20.0);
         report(room, tick);
-        if (tick == 4) shoot(room, near, "scratch/host-lean-4.png");
+        if (tick == 1) shoot(room, near, "scratch/host-lean-1.png");
+        if (tick == 8) shoot(room, near, "scratch/host-lean-8.png");
         if (tick == 12) shoot(room, near, "scratch/host-lean-12.png");
         if (tick == 40) shoot(room, near, "scratch/host-lean-40.png");
     }
