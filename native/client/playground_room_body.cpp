@@ -465,6 +465,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     next[1] = d > 1e-12 ? patch.normalImpulse[1] - closing[1] / d : 0.0;
                 }
             }
+            if (std::getenv("WOBDUMP"))
+                std::fprintf(stderr, "      patch b%zu o%zu ends %zu pass %d cl %.6f %.6f acc %.6f %.6f\n",
+                             patch.body, patch.other, ends, pass, closing[0], ends > 1 ? closing[1] : 0.0,
+                             patch.normalImpulse[0], ends > 1 ? patch.normalImpulse[1] : 0.0);
             for (std::size_t k = 0; k < ends; ++k) {
                 worst = std::max(worst, std::abs(closing[k]));
                 // A patch can press and cannot pull. An end whose share would be a
