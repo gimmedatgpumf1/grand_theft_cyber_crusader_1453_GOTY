@@ -247,6 +247,9 @@ private:
     // at the place it happens, and the walk goes on with what is left of the tick.
     void tickBodies();
     void applyBodyForces();
+    // The air, as its own force: every moving piece of every body, and how hard it
+    // is. See the file: it is applied before the weight and independently of it.
+    void applyAirDrag();
     // Carries every body that is being simulated by `seconds` of its own speed and
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.

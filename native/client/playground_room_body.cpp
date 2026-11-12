@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -88,17 +86,6 @@ void PlaygroundRoom::applyBodyForces() {
         // Only a body that is about to be solved for forgets what it was given last
         // tick; a sleeping body keeps it, because that is what it is standing on.
         body.appliedCount = 0;
-        // The motion the body arrives with. Everything that acts on it over this
-        // tick acts on *this*, not on the speed its own weight has just given it: the
-        // weight of the tick is not air it has travelled through, and a shape standing
-        // still must feel no air at all. Measuring the drag against the speed the
-        // body had when the tick began is what makes that true.
-        const Vec3 arriving = body.velocity;
-        const double arrivingSpin = body.spin;
-        const auto arrivingAt = [&](Vec3 at) {
-            const Vec3 arm = at - body.centre;
-            return Vec3{arriving.x - arrivingSpin * arm.y, arriving.y + arrivingSpin * arm.x, arriving.z};
-        };
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 weight{0.0, -share * kGravity, 0.0};
             addForce(body.position[i], weight, ForceKind::Gravity);
@@ -109,23 +96,42 @@ void PlaygroundRoom::applyBodyForces() {
             const Vec3 arm = body.position[i] - body.centre;
             body.velocity = body.velocity + jog * (1.0 / body.mass);
             body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
-            // And the air it has to push through. A plate does not fall through air
-            // as if there were none: F = half rho Cd A v^2, against the way it is
-            // moving. Each corner carries the piece of the plate nearest it -- half
-            // of each side that meets there, one metre deep -- and each piece is
-            // moving with the body, turn included, so a spinning shape is slowed by
-            // the air it turns through as well as by what it slides on.
+        }
+    }
+}
+
+// The air, on everything in the room that moves through it.
+//
+// This is a force in its own right and it is applied in a pass of its own, before
+// the weight and independently of it -- not as something that happens to a body
+// because it is falling. A shape sliding along the floor at speed is slowed by the
+// air exactly as a shape dropping through it is; a shape turning on the spot is
+// slowed by the air it turns through; a dot thrown sideways is slowed the same way,
+// and so is the ball. Nothing that moves is exempt, and nothing has to be falling
+// to feel it.
+//
+// The law is the drag equation: F = half rho Cd A v^2, against the way the piece is
+// moving. A body is a plate a metre deep, so each corner owns the piece of outline
+// nearest it -- half of each side that meets there -- and each piece moves with the
+// body, its turn included. That is why the air slows a spin as well as a slide: the
+// force is applied at the place, so an arm from the centre is a moment.
+void PlaygroundRoom::applyAirDrag() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen) continue;
+        for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 before = body.position[(i + body.count - 1) % body.count];
             const Vec3 after = body.position[(i + 1) % body.count];
             const double piece = 0.5 * (length(body.position[i] - before) + length(after - body.position[i]));
-            const Vec3 speed = arrivingAt(body.position[i]);
+            const Vec3 speed = pointSpeed(body, body.position[i]);
             const double swift = length(speed);
             if (!(swift > 0.0) || !(piece > 0.0)) continue;
-            const double drag = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth *
-                               swift * swift;  // N
+            const double drag =
+                0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth * swift * swift;  // N
             const Vec3 air = speed * (-drag / swift);
             addForce(body.position[i], air, ForceKind::Drag);
             const Vec3 puff = air * kTick;
+            const Vec3 arm = body.position[i] - body.centre;
             body.velocity = body.velocity + puff * (1.0 / body.mass);
             body.spin += (arm.x * puff.y - arm.y * puff.x) / body.moment;
         }
@@ -371,12 +377,11 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         double lowest[kMaxPatchEnds] = {1e30, 1e30};
         for (std::size_t i = 0; i < body.count; ++i) {
             const double height = body.position[i].y;
-            // The two lowest: a convex body stands on a face, and more than two
-            // corners on one plane is the same face seen with a collinear corner.
-            // Both of them are taken whether or not the second one has arrived: a
-            // face is either on the floor or it is not, and once it is, both of its
-            // ends are answered -- the one that is down against the floor it is on,
-            // and the one still in the air against the distance it has left to fall.
+            // The corners that are *on* the floor, nearest first. A corner half a
+            // metre up is not an end of a contact patch, it is a corner in the air,
+            // and taking it as one asks the floor to hold the face by a corner it is
+            // not touching -- which it cannot do without pulling, so it lets go.
+            if (height > kContactBand) continue;
             for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                 if (height < lowest[k]) {
                     for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -434,6 +439,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             for (std::size_t i = 0; i < body.count; ++i) {
                 const ball_shape::OutlineGap gap = ball_shape::outlineGap(
                     body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
+                if (gap.gap > kContactBand) continue;
                 for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                     if (gap.gap < nearest[k]) {
                         for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -626,9 +632,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
-            if (std::getenv("DBG") && patch.other < kBodyCount)
-                std::fprintf(stderr, "     pair solve b%zu o%zu dofs %zu u %.5f %.5f d %.5f %.5f\n", patch.body,
-                             patch.other, dofs, u[0], dofs > 1 ? u[1] : 0.0, delta[0], dofs > 1 ? delta[1] : 0.0);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
@@ -800,6 +803,10 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     wakeUnsupportedBodies();
+    // The air first, on the motion the body arrived with -- the speed its own weight
+    // has given it this tick is not air it has travelled through, and a shape standing
+    // still must feel none of it.
+    applyAirDrag();
     applyBodyForces();
     // One set of patches for the whole tick, carried through the walk. The patches
     // that are there when the tick starts are answered first -- the weight of a shape
@@ -810,12 +817,6 @@ void PlaygroundRoom::tickBodies() {
     // meeting instead of answering the same one again.
     ManifoldSet patches;
     gatherContacts(patches);
-    if (std::getenv("DBG"))
-        for (std::size_t m = 0; m < patches.count; ++m)
-            std::fprintf(stderr, "  P b%zu o%zu ball%d e%zu g0 %+.7f p0(%.3f,%.3f) n(%+.2f,%+.2f)\n",
-                         patches.items[m].body, patches.items[m].other, int(patches.items[m].ball),
-                         patches.items[m].ends, patches.items[m].gap[0], patches.items[m].point[0].x,
-                         patches.items[m].point[0].y, patches.items[m].normal.x, patches.items[m].normal.y);
     solveContacts(patches);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
