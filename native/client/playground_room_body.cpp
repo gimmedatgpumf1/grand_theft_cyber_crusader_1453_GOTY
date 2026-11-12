@@ -350,7 +350,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
-        const bool otherFixed = other != nullptr && bodyHeld(patch.other);
+        // A body asleep is a surface, for the same reason the ball is: it has no speed
+        // for a contact to change and nothing in the room can move it, so it may not
+        // take a share of anything. Treated as movable it would be pushed by every
+        // contact made against it, woken by the push, and then start the next tick on
+        // a speed no force gave it -- which is a shape that buzzes itself awake once a
+        // second for ever.
+        const bool otherFixed = other != nullptr && (bodyHeld(patch.other) || other->frozen);
         // A ball that is asleep is a surface, in the same way a body that is asleep
         // is: it has no speed to speak of and nothing a contact can move. Its own
         // speed has to be left out of the answer, or a shape pressed onto a sleeping
