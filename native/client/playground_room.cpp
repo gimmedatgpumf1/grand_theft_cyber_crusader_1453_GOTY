@@ -416,6 +416,19 @@ void PlaygroundRoom::tick() {
     // cannot pass through anything, and it never loses speed it did not spend on
     // a contact.
     double remaining = 1.0;
+    // The surfaces this tick's travel has already been answered against.
+    //
+    // A contact that is met at the very start of the time that is left costs none
+    // of that time, and it is still there at the start of the next try, so a walk
+    // that does not remember it meets it again, answers it again, and is done --
+    // the tick is spent on one face and the point has not moved at all. That is a
+    // point sitting on the floor at the foot of a slope with four metres a second
+    // still in it: every tick it is "arriving" at the edge it is lying on, the walk
+    // runs out of steps, and its speed is never spent. A surface answered once this
+    // tick is a surface the point is sliding along, and sliding along it is the
+    // only thing left to do -- so it is not in the way again.
+    bool metBody[kBodyCount] = {};
+    bool metFloor = false, metBall = false;
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = point_ + velocity_ * (kTick * remaining);
         // Whichever surface is met first: the plane, or an edge of a body.
@@ -424,11 +437,12 @@ void PlaygroundRoom::tick() {
         Vec3 normal{0, 1, 0};
         bool wall = false;
         bool ballHit = false;
-        if (next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
+        if (!metFloor && next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
             first = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
             wall = true;
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
+            if (metBody[index]) continue;
             const Body& body = bodies_[index];
             double along = 2.0;
             Vec3 facing{0, 1, 0};
@@ -446,7 +460,7 @@ void PlaygroundRoom::tick() {
         }
         // The ball is one more thing in the way: a point with a radius, so the
         // point meets it when their surfaces touch.
-        {
+        if (!metBall) {
             double along = 2.0;
             Vec3 facing{0, 1, 0};
             if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
@@ -464,6 +478,7 @@ void PlaygroundRoom::tick() {
         point_ = point_ + (next - point_) * first;
         remaining *= 1.0 - first;
         if (ballHit) {
+            metBall = true;
             // Same rule as a body: what drives into the ball is answered by both
             // sides, and what runs along it is left alone.
             pointAgainstBall(normal);
@@ -476,6 +491,7 @@ void PlaygroundRoom::tick() {
             continue;
         }
         if (wall) {
+            metFloor = true;
             // The plane answers only what drives into it. What is running along
             // it is the point's kinetic energy and friction is what takes that.
             if (velocity_.y < 0.0) velocity_.y = 0.0;
@@ -487,6 +503,7 @@ void PlaygroundRoom::tick() {
         }
         // The same rule for a body: only the part of the speed that drives into
         // the face is answered here.
+        metBody[hitIndex] = true;
         const Vec3 along = velocity_ - normal * dot(velocity_, normal);
         const double into = dot(velocity_, normal);
         if (into < 0.0) {
