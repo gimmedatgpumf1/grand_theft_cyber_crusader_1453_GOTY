@@ -174,8 +174,6 @@ void PlaygroundRoom::tickBall() {
         placeCorners(body);
         bodyStopped[index] = true;
         ++bodyStepClamped_;
-        if (getenv("GTC_TRACE"))
-            std::fprintf(stderr, "STOP body %zu at %.5f of its step (start gap %.6f)\n", index, stop.along, startGap);
     }
     const auto anybodyMoving = [this]() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -254,7 +252,6 @@ void PlaygroundRoom::tickBall() {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
-                if (getenv("GTC_TRACE")) std::fprintf(stderr, "REST body %zu inside by %.6f m (depth %.6f) at (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, hit.depth, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
                 // A micrometre in is touching. Only a depth the room's own resolution
                 // can tell from touching is one to put back, and only then is it a
                 // miss worth counting.
