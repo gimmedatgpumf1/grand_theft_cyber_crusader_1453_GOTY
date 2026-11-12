@@ -191,6 +191,7 @@ private:
         // stopped rocking is actually standing, and where it is put to sleep.
         Vec3 restPose{};
         double restPoseAngle = 0;
+        int restGrounded = -1;
         int restTicks = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};

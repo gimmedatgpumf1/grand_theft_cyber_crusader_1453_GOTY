@@ -415,11 +415,19 @@ void PlaygroundRoom::settleBodies() {
             body.restAngleLow = body.restAngleHigh = body.angle;
             body.restPose = body.centre;
             body.restPoseAngle = body.angle;
+            body.restGrounded = -1;
         }
-        // Where it is standing: the lowest pose of the settling, which is the one
-        // it comes back to every rock and the one it would be left in if the rock
-        // were taken away.
-        if (body.centre.y <= body.restLow.y) {
+        // Where it is standing: among the poses the settling actually passed
+        // through, the one standing on the most of its own corners, and the lowest
+        // of those. That is the pose it comes back to at the bottom of every rock
+        // -- the one it would be left in if the rock were taken away -- and it is
+        // read off what happened, not invented.
+        int grounded = 0;
+        for (std::size_t i = 0; i < body.count; ++i)
+            if (body.position[i].y <= kContactBand) ++grounded;
+        if (grounded > body.restGrounded ||
+            (grounded == body.restGrounded && body.centre.y <= body.restPose.y)) {
+            body.restGrounded = grounded;
             body.restPose = body.centre;
             body.restPoseAngle = body.angle;
         }
