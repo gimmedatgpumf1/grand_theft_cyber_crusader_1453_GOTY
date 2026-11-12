@@ -626,6 +626,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
+            if (std::getenv("DBG") && patch.other < kBodyCount)
+                std::fprintf(stderr, "     pair solve b%zu o%zu dofs %zu u %.5f %.5f d %.5f %.5f\n", patch.body,
+                             patch.other, dofs, u[0], dofs > 1 ? u[1] : 0.0, delta[0], dofs > 1 ? delta[1] : 0.0);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
