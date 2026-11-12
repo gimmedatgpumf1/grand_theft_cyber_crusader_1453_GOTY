@@ -449,23 +449,34 @@ void PlaygroundRoom::tick() {
         addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_);
         heldStill_ = true;
     } else if (resting_) {
+        // The surface answers in two parts, because it does: a normal force straight
+        // out of it, and friction along it. They are written into the ledger apart,
+        // so the arrow that holds a dot still on a slope can be seen to be friction
+        // and the arrow that presses it into the slope can be seen to be the normal.
         const Vec3 normal = supportNormal_;
         const double into = dot(weight, normal);      // negative when pressing in
         const Vec3 along = weight - normal * into;    // what the surface cannot answer
-        const double carried = -into;                 // N, how hard it is pressed
-        // Static friction holds a surface only against something that is not
-        // already moving. A point with sideways speed is sliding, and sliding is
-        // kinetic friction's business however weakly it is being pushed.
-        const Vec3 sliding = velocity_ - normal * dot(velocity_, normal);
-        if (length(along) <= kPointStaticFriction * carried && length(sliding) < 1e-9) {
-            // The surface answers the whole weight, sideways pull included.
-            addForce(point_, weight * -1.0, ForceKind::Contact, &pointForce_);
+        const double carried = std::max(0.0, -into);  // N, how hard it is pressed
+        addForce(point_, normal * carried, ForceKind::Contact, &pointForce_);
+        // Static friction holds while the point is not moving along the surface and
+        // the surface can answer what is pushing it sideways; past that it slips, and
+        // then kinetic friction acts, against the slip, at mu_k times the load. That
+        // is what makes a dot on a steep face accelerate down it instead of standing
+        // on it, and it is a force like any other, not a rule about when to stop.
+        const Vec3 slip = velocity_ - normal * dot(velocity_, normal);
+        const double swift = length(slip);
+        Vec3 friction{};
+        if (swift > kRestSpeed) {
+            friction = slip * (-kPointKineticFriction * carried / swift);
+        } else if (length(along) <= kPointStaticFriction * carried) {
+            friction = along * -1.0;
             heldStill_ = true;
-        } else {
-            // It slides: the surface answers the part of the weight that presses
-            // into it, and the rest of the sum is a force down the slope.
-            addForce(point_, normal * carried, ForceKind::Contact, &pointForce_);
+        } else if (length(along) > 0.0) {
+            // Not moving yet, and not held: it is about to slide the way it is being
+            // pushed, and until it does, the surface resists with all it has.
+            friction = along * (-kPointStaticFriction * carried / length(along));
         }
+        if (length(friction) > 0.0) addForce(point_, friction, ForceKind::Friction, &pointForce_);
     }
     velocity_ = accelerated(velocity_, pointForce_, kMass);
     traceFrom_ = point_;
