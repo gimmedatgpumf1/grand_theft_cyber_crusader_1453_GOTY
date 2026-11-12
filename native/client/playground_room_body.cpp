@@ -448,6 +448,10 @@ void PlaygroundRoom::tickBodies() {
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         if (step > 0.0) remaining -= advanceBodies(step);
+        // A meeting at the very last instant of the tick is not answered here: the
+        // next tick starts by answering every contact the bodies are touching at,
+        // and that is the same meeting seen with a whole tick to spend on it. An
+        // impulse handed out here would be a whole tick's worth for no time at all.
         if (!(remaining > 0.0)) break;
         ContactSet contacts;
         gatherContacts(contacts);
