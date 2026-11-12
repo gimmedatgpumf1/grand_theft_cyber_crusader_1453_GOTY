@@ -346,7 +346,7 @@ private:
         return 1.0 / ball_.mass + lever * lever / moment;
     }
     void pushBall(Vec3 at, Vec3 impulse, ForceKind kind);
-    void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind);
+    void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on);
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
     bool bodyHeld(std::size_t body) const { return dragTarget_ == DragTarget::Body && dragBody_ == body; }
@@ -454,11 +454,20 @@ private:
     std::size_t forceCount_ = 0;
     // Every impulse handed to a body this tick, added up at the place it acted, so
     // that a contact solved in eight passes is one force and not eight arrows.
+    // The force a body feels, not the pair of them. A contact between two shapes is
+    // one impulse of +J on one and one of -J on the other, at the same place: added
+    // together at the place alone they are nothing at all, which is how a shape
+    // resting on another shape came to be drawn with no contact force on it while it
+    // was very obviously being held up. Each is kept against the body it acts on.
     struct RecordedImpulse {
         Vec3 at{}, impulse{};
         ForceKind kind = ForceKind::Contact;
+        std::size_t on = 0;
     };
-    static constexpr std::size_t kMaxRecordedImpulses = 24;
+    // A whole tick's worth, merged by (body, kind, place). Sixty-four is far more
+    // than a room of this size can produce and the merge is what keeps it small; the
+    // array is a bound, never a cut.
+    static constexpr std::size_t kMaxRecordedImpulses = 64;
     std::array<RecordedImpulse, kMaxRecordedImpulses> impulses_{};
     std::size_t impulseCount_ = 0;
     void clearImpulses() { impulseCount_ = 0; }

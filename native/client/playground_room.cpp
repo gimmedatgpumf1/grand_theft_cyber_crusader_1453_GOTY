@@ -290,7 +290,7 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
             body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
         }
     }
-    recordImpulse(at, impulse, kind);
+    recordImpulse(at, impulse, kind, std::size_t(&body - bodies_.data()));
 }
 
 // And the same for the ball: a blow at a place changes its speed along the line of
@@ -302,22 +302,24 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ball_.frozen = false;
-    recordImpulse(at, impulse, kind);
+    // The ball is the room's other kind of solid, and it is its own entry: an impulse
+    // on it is a force on the ball, not on whatever it is touching.
+    recordImpulse(at, impulse, kind, kBodyCount);
 }
 
 // The ledger, written where the impulse is applied. A contact solved in many passes
 // is one force at one place, so an impulse already at that place and of that kind
 // is added to rather than grown as a second arrow.
-void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind) {
+void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on) {
     for (std::size_t i = 0; i < impulseCount_; ++i) {
         RecordedImpulse& entry = impulses_[i];
-        if (entry.kind != kind) continue;
+        if (entry.kind != kind || entry.on != on) continue;
         if (length(entry.at - at) > 1e-6) continue;
         entry.impulse = entry.impulse + impulse;
         return;
     }
     if (impulseCount_ >= impulses_.size()) return;
-    impulses_[impulseCount_++] = RecordedImpulse{at, impulse, kind};
+    impulses_[impulseCount_++] = RecordedImpulse{at, impulse, kind, on};
 }
 
 // An impulse over a tick is a force, and this is where the tick's contacts become
