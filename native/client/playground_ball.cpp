@@ -224,6 +224,10 @@ void PlaygroundRoom::tickBall() {
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
                 if (getenv("GTC_BALL")) std::fprintf(stderr, "  tick: body %zu already through by %.6f m, ball (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
+                if (getenv("GTC_BALL"))
+                    std::fprintf(stderr, "THROUGH body %zu by %.6f m: ball (%+.6f,%+.6f) v(%+.4f,%+.4f) | body c(%+.6f,%+.6f) a%+.6f prev c(%+.6f,%+.6f) a%+.6f\n",
+                                 index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
+                                 body.centre.x, body.centre.y, body.angle, body.previousCentre.x, body.previousCentre.y, body.previousAngle);
                 if (on.gap < ball.radius) {
                     ++ballFoundThrough_;
                     ball.position = ball.position + on.normal * (ball.radius - on.gap);
