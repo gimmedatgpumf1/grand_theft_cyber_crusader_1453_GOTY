@@ -167,11 +167,31 @@ void PlaygroundRoom::tickBall() {
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
+            // What the body itself did this tick. The bodies are stepped before the
+            // ball, so by the time the ball looks, the shape is already at the end of
+            // its own travel -- and the distance between the two of them closed by
+            // both of them moving. Sweeping the ball's own travel against the finished
+            // pose asks only "could the ball have reached where the shape now is", and
+            // that is the wrong question whenever the shape is the one arriving: a
+            // cube coming down on a ball the floor has already stopped closes eight
+            // centimetres on it in a tick while the ball travels none of it, and a
+            // sweep that does not subtract the shape's step sees no approach at all.
+            // It saw none, and the cube's face went through the ball.
+            //
+            // So the sweep is done in the shape's own frame: the ball's travel, less
+            // the shape's travel. That is exactly the motion of one against the other,
+            // and it is what a hitscan between two moving things is. Nothing is
+            // sampled and nothing is stepped: the meeting is still solved outright,
+            // which is what makes it independent of how fast either of them is going.
+            Vec3 bodyStep{};
+            for (std::size_t i = 0; i < body.count; ++i) bodyStep = bodyStep + (body.position[i] - body.previous[i]);
+            bodyStep = bodyStep * (1.0 / static_cast<double>(body.count));
             // One test per body, not one per edge: the sweep walks the ball's path
             // against the whole outline as the body moves through the tick, and
             // answers with the first piece of it the ball's surface reaches.
             OutlineHit hit;
-            if (!circleHitsBody(ball.position, travel, body.position.data(), body.count, ball.radius, hit))
+            if (!circleHitsBody(ball.position, travel - bodyStep, body.position.data(), body.count, ball.radius,
+                                hit))
                 continue;
 
             // Already on this surface when the tick began: a contact for the whole
@@ -204,9 +224,7 @@ void PlaygroundRoom::tickBall() {
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
             if (hit.depth <= kSkin && hit.along <= 1e-9) {
-                Vec3 step{};
-                for (std::size_t i = 0; i < body.count; ++i) step = step + (body.position[i] - body.previous[i]);
-                const Vec3 surfaceVelocity = step * (1.0 / (kTick * static_cast<double>(body.count)));
+                const Vec3 surfaceVelocity = bodyStep * (1.0 / kTick);
                 if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
             }
             if (hit.along < first) {
