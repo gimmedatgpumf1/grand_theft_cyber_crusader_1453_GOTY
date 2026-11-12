@@ -26,12 +26,17 @@ struct ViewState;
 // every corner, which is m*g at the centre of mass and no torque at all, because
 // the weight of each corner runs through the middle.
 //
-// A tick is walked, not sampled: the next instant at which anything would touch
-// anything is solved for, the bodies are carried exactly that far, the contact is
-// answered with an impulse, and the walk continues with what is left of the tick
-// -- so nothing can cross anything however fast it is going, and nothing is ever
-// pushed apart after the fact. There is no distance solve, no position
-// correction, and no velocity read back out of a position.
+// A tick is one step, and the step is the tick. The forces are given to the bodies
+// as impulses, every contact the tick's own travel can reach is gathered and solved
+// -- each end of a contact against the distance it still has to travel, so a shape
+// arriving at a surface is left *on* it -- and then every body is carried by the
+// speed it is left with for exactly one tick. Because the set of contacts is
+// everything that could arrive before the tick ends, nothing can be walked into
+// anything, and the only thing that ever moves a body along is its own speed. There
+// is no velocity read back out of a position and no state in which a shape is held
+// still while its speed keeps growing. The one exception is a corner carried into a
+// surface by a *turn*, which a straight step cannot see: that is put back out by
+// position alone, at the end of the tick, and there is normally nothing for it to do.
 class PlaygroundRoom {
 public:
     // The bodies in the room, in the order they are simulated.
