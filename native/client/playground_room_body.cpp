@@ -885,6 +885,7 @@ void PlaygroundRoom::tickBodies() {
     ++ticks_;
     const bool trace = std::getenv("DBGP") != nullptr;
     double phase = phaseEnergy();
+    if (trace) std::fprintf(stderr, "  tick %d START %.9f\n", ticks_, phase);
     const auto mark = [&](const char* what) {
         const double now = phaseEnergy();
         if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y);
