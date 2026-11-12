@@ -68,8 +68,10 @@ OutlineGap outlineGap(Vec3 point, const Vec3* previous, const Vec3* current, std
                       double fraction);
 
 // How close two surfaces have to be before they are touching rather than merely
-// near. It is a rounding allowance, not a distance anything may sink.
-constexpr double kTouch = 1e-9;
+// near: nearer than the room resolves. One number for the whole room -- the dot
+// and the shapes use it too (playground_room_tick.h) -- because "touching" is one
+// question with one answer, and two answers would be a seam to fall through.
+constexpr double kTouch = 1e-6;  // metres: a micrometre
 // And how far inside counts as inside: a micrometre. The sweep closes in by
 // bisection, so where it stops is good to a fraction of the step, not to the last
 // bit, and an atom inside must not read back as "inside all along" or every tick

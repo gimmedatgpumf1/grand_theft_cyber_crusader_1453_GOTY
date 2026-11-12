@@ -19,11 +19,11 @@ namespace gtc::native::playground_detail {
 // How big the dot is drawn, and therefore how big a thing the ball and the
 // bodies see. One number, because the picture and the contact must agree.
 inline constexpr double kPointRadius = 0.07;
-// What counts as not moving. This is the room's existing rest level -- the dot
-// freezes below it -- and it is a statement about the arithmetic, not about
-// physics: a speed of a nanometre per second moves an object a fiftieth of a
-// picometre in a tick, which no double here can tell from standing still.
-inline constexpr double kRestSpeed = 1e-9;  // m/s
+// What counts as not moving: the room's resolution, a micrometre of travel in a
+// tick. It is the same number everywhere else in the room (playground_room_tick.h,
+// kQuantumSpeed) -- anything slower covers less than the room can resolve, so its
+// speed is nothing.
+inline constexpr double kRestSpeed = 2e-5;  // m/s = 1 micrometre per 20 Hz tick
 // Air, for the solids and the dot. The same air the ball already falls through:
 // half its density, the drag coefficient of a flat plate square to the flow, and
 // the area the shape presents. A body is a plate one metre deep, so the piece of

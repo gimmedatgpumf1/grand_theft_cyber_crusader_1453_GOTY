@@ -238,7 +238,7 @@ void PlaygroundRoom::tickBall() {
             // has to be answered. What the body did this tick is its actual step,
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
-            if (hit.depth <= kSkin && hit.along <= 1e-9) {
+            if (hit.depth <= kSkin && hit.along <= kTouch) {
                 const Vec3 surfaceVelocity = bodyStep * (1.0 / kTick);
                 if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
             }
@@ -289,7 +289,7 @@ void PlaygroundRoom::tickBall() {
         // divide the tick by zero. Every surface that could be is put back out above,
         // so what is left here is a guard and not an escape: the ball is not left
         // inside anything, it is only not advanced further this tick.
-        if (depth > kSkin && first <= 1e-9) break;
+        if (depth > kSkin && first <= kTouch) break;
         // Not "the ball stopped, so stop looking": a ball standing still still has
         // something on its way to it -- a body is stepped before the ball, and its
         // step is felt here even though the ball itself is not going anywhere. The
