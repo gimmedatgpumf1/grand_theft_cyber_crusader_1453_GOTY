@@ -43,7 +43,7 @@ constexpr int kMaxWalkStops = 8;
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
 constexpr int kSolvePasses = 16;
-constexpr double kSolveTolerance = 1e-9;  // m/s
+constexpr double kSolveTolerance = 1e-12;  // m/s
 }  // namespace
 
 // Gravity, and nothing else, before the walk: m*g newtons at every corner, which
@@ -113,7 +113,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const Body& body = bodies_[index];
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             for (std::size_t i = 0; i < body.count; ++i)
-                if (body.position[i].y < -1e-12) {
+                if (body.position[i].y < -kOnSurface) {
                     inside = true;
                     if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: floor body %zu corner %zu y %.9f\n", index, i, body.position[i].y);
                 }
@@ -121,7 +121,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
                 if (bodies_[other].count == 0) continue;
                 double depth = 0.0;
-                if (bodiesIntoEachOther(index, other, way, depth) && depth > 1e-12) {
+                if (bodiesIntoEachOther(index, other, way, depth) && depth > kOnSurface) {
                     inside = true;
                     if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: pair %zu/%zu depth %.9f\n", index, other, depth);
                 }
