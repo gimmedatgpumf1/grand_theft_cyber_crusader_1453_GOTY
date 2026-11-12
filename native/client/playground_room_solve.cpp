@@ -374,19 +374,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // The grip the face is holding with now, as one number: each pressed end
         // carries an equal share of it.
         double held = 0.0;
-        if (pressed > 0) {
-            held = patch.tangentImpulse[0];
-            for (std::size_t k = 0; k < count; ++k) {
-                if (!(patch.normalImpulse[k] > 0.0)) {
-                    // An end that is not pressed is not gripping, and an end that has
-                    // been let go must give back what it was holding.
-                    if (patch.tangentImpulse[k] != 0.0) {
-                        pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
-                        worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
-                        patch.tangentImpulse[k] = 0.0;
-                    }
+        for (std::size_t k = 0; k < count; ++k) {
+            if (!(patch.normalImpulse[k] > 0.0)) {
+                // An end that is not pressed is not gripping, and an end that has been
+                // let go must give back what it was holding.
+                if (patch.tangentImpulse[k] != 0.0) {
+                    pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
+                    worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
+                    patch.tangentImpulse[k] = 0.0;
                 }
+                continue;
             }
+            held += patch.tangentImpulse[k];
         }
         if (pressed > 0 && response > 1e-12) {
             const double mu = std::abs(slip) > kRestSpeed ? kineticMu : staticMu;
