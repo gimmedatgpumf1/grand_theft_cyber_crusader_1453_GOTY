@@ -252,6 +252,11 @@ private:
         std::size_t ends = 0;
         std::size_t corner[kMaxPatchEnds] = {0, 0};
         Vec3 point[kMaxPatchEnds]{}, normal{};
+        // How far each end still has to fall before it is on the surface. A patch
+        // is answered against the distance it really has to travel, not against the
+        // instant a tick happens to end, so an end that is a hair above the floor is
+        // allowed to close exactly that hair over the tick -- and no more.
+        double gap[kMaxPatchEnds]{};
         double normalImpulse[kMaxPatchEnds]{}, tangentImpulse[kMaxPatchEnds]{};
         ForceKind kind = ForceKind::Contact;
     };

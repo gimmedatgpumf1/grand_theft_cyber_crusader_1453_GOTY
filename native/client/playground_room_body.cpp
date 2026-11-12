@@ -307,6 +307,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                     lowest[k] = height;
                     patch.corner[k] = i;
                     patch.point[k] = body.position[i];
+                    patch.gap[k] = std::max(0.0, height);
                     break;
                 }
             }
@@ -319,12 +320,14 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
-        if (bodyBallGap(index, way, at) > kContactBand) continue;
+        const double gap = bodyBallGap(index, way, at);
+        if (gap > kContactBand) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
         patch.ends = 1;
         patch.point[0] = at;
+        patch.gap[0] = std::max(0.0, gap);
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
         patches.add(patch);
@@ -362,6 +365,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                         nearest[k] = gap.gap;
                         patch.corner[k] = i;
                         patch.point[k] = body.position[i];
+                        patch.gap[k] = std::max(0.0, gap.gap);
                         break;
                     }
                 }
@@ -492,7 +496,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t k = 0; k < count; ++k) {
                 if (!live[k]) continue;
                 order[dofs] = k;
-                u[dofs] = away(patch.point[k], patch.normal);
+                // What the end has to do to be on the surface when the tick ends: it
+                // may close the distance it has left, and not one micron more. An end
+                // already on the surface has nothing left to close and is simply
+                // stopped there; an end a hair above it, with the face tipping onto
+                // it, is left free to come down onto it in this very tick instead of
+                // being held off it and rocking.
+                u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] / kTick;
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
