@@ -12,6 +12,8 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 namespace gtc::native {
@@ -104,6 +106,7 @@ void PlaygroundRoom::separateBodies() {
         double deepest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
         if (deepest > 0.0) {
+            if (std::getenv("DBGS")) std::fprintf(stderr, "sep b%zu floor up %.9f\n", one, deepest);
             body.centre.y += deepest;
             if (std::getenv("DBGS")) std::fprintf(stderr, "sep floor b%zu up %.6f\n", one, deepest);
             placeCorners(body);
