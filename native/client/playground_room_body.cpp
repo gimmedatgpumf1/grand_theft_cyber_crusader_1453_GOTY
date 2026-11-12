@@ -702,6 +702,33 @@ void PlaygroundRoom::tickBodies() {
     ManifoldSet patches;
     gatherContacts(patches);
     solveContacts(patches);
+    const auto report = [&](const char* when) {
+        if (!std::getenv("DBGR")) return;
+        double overlap = 0.0;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& b = bodies_[index];
+            if (b.count == 0) continue;
+            for (std::size_t i = 0; i < b.count; ++i) overlap = std::max(overlap, -b.position[i].y);
+            for (std::size_t other = 0; other < kBodyCount; ++other) {
+                if (other == index || bodies_[other].count == 0) continue;
+                pair_shape::PairManifold m;
+                if (pair_shape::collide(b.position.data(), b.count, bodies_[other].position.data(),
+                                        bodies_[other].count, 1.0, m))
+                    overlap = std::max(overlap, m.overlap);
+            }
+        }
+        std::fprintf(stderr, "  %-8s band %.6f overlap %.9f | b0 y %.6f v %+.5f w %+.5f %s | b1 y %.6f v %+.5f w %+.5f %s\n",
+                     when, contactBand_, overlap, bodies_[0].centre.y, bodies_[0].velocity.x, bodies_[0].spin,
+                     bodies_[0].frozen ? "Z" : "", bodies_[1].centre.y, bodies_[1].velocity.x, bodies_[1].spin,
+                     bodies_[1].frozen ? "Z" : "");
+        for (std::size_t m = 0; m < patches.count; ++m)
+            std::fprintf(stderr, "      patch b%zu o%zu n(%+.3f,%+.3f) ends %zu gap %.9f %.9f imp %.5f %.5f tan %.5f %.5f\n",
+                         patches.items[m].body, patches.items[m].other, patches.items[m].normal.x,
+                         patches.items[m].normal.y, patches.items[m].ends, patches.items[m].gap[0],
+                         patches.items[m].gap[1], patches.items[m].normalImpulse[0], patches.items[m].normalImpulse[1],
+                         patches.items[m].tangentImpulse[0], patches.items[m].tangentImpulse[1]);
+    };
+    report("solved");
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -715,8 +742,11 @@ void PlaygroundRoom::tickBodies() {
     // It is the only thing in the room that moves a shape without an impulse, and
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
+    report("advanced");
     separateBodies();
+    report("separate");
     settleBodies();
+    report("settled");
     writeImpulses();
 }
 
