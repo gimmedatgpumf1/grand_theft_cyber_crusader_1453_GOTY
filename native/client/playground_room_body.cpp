@@ -48,10 +48,7 @@ constexpr double kArithmetic = 1e-9;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-int solvePasses() {
-    const char* v = std::getenv("SOLVEPASSES");
-    return v ? std::atoi(v) : 32;
-}
+constexpr int kSolvePasses = 32;
 // A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
 // a whole tick: slower than the arithmetic of the positions can even show, and
@@ -565,8 +562,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
-    const int passes = solvePasses();
-    for (int pass = 0; pass < passes; ++pass) {
+    for (int pass = 0; pass < kSolvePasses; ++pass) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const std::size_t one = patches.items[m].body;
@@ -723,33 +719,6 @@ void PlaygroundRoom::tickBodies() {
     ManifoldSet patches;
     gatherContacts(patches, band);
     solveContacts(patches);
-    const auto report = [&](const char* when) {
-        if (!std::getenv("DBGR")) return;
-        double overlap = 0.0;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& b = bodies_[index];
-            if (b.count == 0) continue;
-            for (std::size_t i = 0; i < b.count; ++i) overlap = std::max(overlap, -b.position[i].y);
-            for (std::size_t other = 0; other < kBodyCount; ++other) {
-                if (other == index || bodies_[other].count == 0) continue;
-                pair_shape::PairManifold m;
-                if (pair_shape::collide(b.position.data(), b.count, bodies_[other].position.data(),
-                                        bodies_[other].count, 1.0, m))
-                    overlap = std::max(overlap, m.overlap);
-            }
-        }
-        std::fprintf(stderr, "  %-8s E %.9f b0 (y %.6f vy %+.5f vx %+.5f w %+.5f) b1 (y %.6f vy %+.5f vx %+.5f w %+.5f)\n",
-                     when, totalEnergy(), bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].velocity.x,
-                     bodies_[0].spin, bodies_[1].centre.y, bodies_[1].velocity.y, bodies_[1].velocity.x,
-                     bodies_[1].spin);
-        for (std::size_t m = 0; m < patches.count; ++m)
-            std::fprintf(stderr, "      patch b%zu o%zu n(%+.3f,%+.3f) ends %zu gap %.9f %.9f imp %.5f %.5f tan %.5f %.5f\n",
-                         patches.items[m].body, patches.items[m].other, patches.items[m].normal.x,
-                         patches.items[m].normal.y, patches.items[m].ends, patches.items[m].gap[0],
-                         patches.items[m].gap[1], patches.items[m].normalImpulse[0], patches.items[m].normalImpulse[1],
-                         patches.items[m].tangentImpulse[0], patches.items[m].tangentImpulse[1]);
-    };
-    report("solved");
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -763,28 +732,8 @@ void PlaygroundRoom::tickBodies() {
     // It is the only thing in the room that moves a shape without an impulse, and
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
-    report("advanced");
-    {
-        const Vec3 was0 = bodies_[0].centre, was1 = bodies_[1].centre;
-        separateBodies();
-        if (std::getenv("DBGS")) {
-            const Vec3 d0 = bodies_[0].centre - was0, d1 = bodies_[1].centre - was1;
-            if (length(d0) > 1e-12 || length(d1) > 1e-12)
-                std::fprintf(stderr, "  SEP b0 (%+.3e,%+.3e) b1 (%+.3e,%+.3e)\n", d0.x, d0.y, d1.x, d1.y);
-        }
-    }
-    report("separate");
+    separateBodies();
     settleBodies();
-    report("settled");
-    if (std::getenv("DBGC")) {
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            std::fprintf(stderr, "  body %zu centre (%.4f,%.4f) mass %.3f:", index, bodies_[index].centre.x,
-                         bodies_[index].centre.y, bodies_[index].mass);
-            for (std::size_t i = 0; i < bodies_[index].count; ++i)
-                std::fprintf(stderr, " (%.4f,%.4f)", bodies_[index].position[i].x, bodies_[index].position[i].y);
-            std::fprintf(stderr, "\n");
-        }
-    }
     writeImpulses();
 }
 
