@@ -546,8 +546,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             if (singular) return;
             for (std::size_t i = 0; i < 3; ++i) answer[i] = 0.0;
-            if (std::getenv("WOB"))
-                std::fprintf(stderr, "        attempt %d loads %d%d grip %d u %.5f %.5f %.5f %.5f\n", attempt,
+            if (std::getenv("WOB") && u[0] < -0.1 && u[1] < -0.1)
+                std::fprintf(stderr, "        attempt %d loads %d%d grip %d u %.5f %.5f t %.6f %.6f\n", attempt,
                              int(useLoad[0]), int(useLoad[1]), int(useGrip), u[0], u[1], u[count], u[count + 1]);
             for (std::size_t i = 0; i < 3; ++i)
                 if (dofOf[i] < dofs) answer[i] = matrix[dofOf[i]][dofs] / matrix[dofOf[i]][dofOf[i]];
@@ -587,12 +587,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             if (!changed) break;
         }
-        if (std::getenv("WOB"))
-            std::fprintf(stderr, "        -> loads %.4f %.4f grip %.4f (carried %.4f %.4f %.4f) ans %.4f %.4f %.4f\n",
+        if (std::getenv("WOB") && u[0] < -0.1 && u[1] < -0.1)
+            std::fprintf(stderr, "        -> loads %.4f %.4f grip %.4f carried %.4f %.4f %.4f\n",
                          (useLoad[0] || !(loadCarried[0] > 0.0)) ? loadCarried[0] + answer[0] : loadCarried[0],
-                         count == 2 ? ((useLoad[1] || !(loadCarried[1] > 0.0)) ? loadCarried[1] + answer[1] : loadCarried[1]) : 0.0,
-                         gripFixed, loadCarried[0], count == 2 ? loadCarried[1] : 0.0, carriedGrip, answer[0],
-                         answer[1], answer[2]);
+                         (useLoad[1] || !(loadCarried[1] > 0.0)) ? loadCarried[1] + answer[1] : loadCarried[1],
+                         gripFixed, loadCarried[0], loadCarried[1], carriedGrip);
         double load[2] = {};
         for (std::size_t k = 0; k < count; ++k) {
             load[k] = loadCarried[k] + (useLoad[k] || !(loadCarried[k] > 0.0) ? answer[k] : 0.0);
