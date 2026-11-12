@@ -388,7 +388,15 @@ void PlaygroundRoom::tickBodies() {
         if (step > 0.0) remaining -= advanceBodies(step);
         ContactSet contacts;
         gatherContacts(contacts);
-        if (dbg) std::fprintf(stderr, "  contacts %zu centre (%.5f,%.5f)\n", contacts.count, bodies_[0].centre.x, bodies_[0].centre.y);
+        if (dbg) {
+            std::fprintf(stderr, "  contacts %zu centre (%.5f,%.5f)\n", contacts.count, bodies_[0].centre.x, bodies_[0].centre.y);
+            for (std::size_t q = 0; q < contacts.count; ++q)
+                std::fprintf(stderr, "    c%zu body %zu other %zu ball %d pt (%.4f,%.4f) n (%.3f,%.3f) v(%.4f,%.4f)\n", q,
+                             contacts.items[q].body, contacts.items[q].other, int(contacts.items[q].ball),
+                             contacts.items[q].point.x, contacts.items[q].point.y, contacts.items[q].normal.x,
+                             contacts.items[q].normal.y, pointSpeed(bodies_[contacts.items[q].body], contacts.items[q].point).x,
+                             pointSpeed(bodies_[contacts.items[q].body], contacts.items[q].point).y);
+        }
         if (contacts.count == 0 || !solveContacts(contacts)) {
             // Nothing is touching, or nothing that is touching is closing: what is
             // left of the tick is travel along the way the bodies are going.
