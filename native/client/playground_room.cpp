@@ -257,6 +257,16 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     const Vec3 arm = at - body.centre;
     body.velocity = body.velocity + impulse * (1.0 / body.mass);
     body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
+    // A body that was asleep has just been woken by this, and it starts its
+    // settling again from where the blow found it: it is not at rest any more, it
+    // is doing something, and it has to be measured doing it before it is called
+    // still. Without this the tick that wakes a body would put it back to sleep on
+    // its way out and swallow the blow.
+    if (body.frozen) {
+        body.restTicks = 0;
+        body.restLow = body.restHigh = body.centre;
+        body.restAngleLow = body.restAngleHigh = body.angle;
+    }
     body.frozen = false;
     recordImpulse(at, impulse, kind);
 }
