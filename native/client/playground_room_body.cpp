@@ -801,8 +801,9 @@ void PlaygroundRoom::tickBodies() {
                                                     bodies_[1].position.data(), bodies_[1].count, 1.0);
             gap = std::min(gap, res.gap);
         }
-        std::fprintf(stderr, "  GAP nearest %.6f inside %d depth %.9f n(%.3f,%.3f) v(%.3f,%.3f)\n", gap, int(inside),
-                     depth, way.x, way.y, bodies_[0].velocity.x, bodies_[0].velocity.y);
+        std::fprintf(stderr, "  GAP nearest %.6f c0(%.3f,%.3f) c1(%.3f,%.3f) fz0 %d v(%.3f,%.3f)\n", gap,
+                     bodies_[0].centre.x, bodies_[0].centre.y, bodies_[1].centre.x, bodies_[1].centre.y,
+                     int(bodies_[0].frozen), bodies_[0].velocity.x, bodies_[0].velocity.y);
         (void)bway;
         (void)at;
     }
