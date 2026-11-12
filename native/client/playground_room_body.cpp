@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -470,10 +468,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         double share[2 * kMaxPatchEnds] = {};
         for (std::size_t k = 0; k < count; ++k) share[count + k] = count == 2 ? 0.5 : 1.0;
         // What each of those acts on, and how hard the body answers it.
-        if (std::getenv("WOB") && body == &bodies_[1])
-            std::fprintf(stderr, "        in ends %zu v(%.4f,%.4f) w %.4f p0(%.4f,%.4f) p1(%.4f,%.4f) n(%.3f,%.3f)\n",
-                         count, body->velocity.x, body->velocity.y, body->spin, patch.point[0].x,
-                         patch.point[0].y, patch.point[1].x, patch.point[1].y, patch.normal.x, patch.normal.y);
         double u[2 * kMaxPatchEnds] = {};
         double g[2 * kMaxPatchEnds][2 * kMaxPatchEnds] = {};
         for (std::size_t i = 0; i < 2 * count; ++i) {
@@ -520,10 +514,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         double answer[3] = {};
         for (std::size_t i = 0; i < dofs; ++i) answer[i] = matrix[i][dofs] / matrix[i][i];
-        if (std::getenv("WOB") && body == &bodies_[1])
-            std::fprintf(stderr, "        patch ends %zu dofs %zu M[0] %.4f %.4f %.4f rhs %.5f -> ans %.5f %.5f %.5f\n",
-                         count, dofs, matrix[0][0], dofs > 1 ? matrix[0][1] : 0.0, dofs > 2 ? matrix[0][2] : 0.0,
-                         matrix[0][dofs], answer[0], dofs > 1 ? answer[1] : 0.0, dofs > 2 ? answer[2] : 0.0);
         double load[2] = {};
         for (std::size_t k = 0; k < count; ++k) {
             load[k] = patch.normalImpulse[k] + answer[k];
@@ -578,6 +568,56 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m]);
         if (worst < kSolveTolerance && pass > 0) break;
+    }
+    // The load has the last word. The grip is settled by now, and it lands a moment
+    // on the body that can leave one end of a patch a hair closer than the other --
+    // so the ends are answered once more, on their own, until none of them is left
+    // being driven into the surface. Hold and slip may be a whisker from where they
+    // settle; nothing goes into anything.
+    for (int pass = 0; pass < kSolvePasses; ++pass) {
+        double left = 0.0;
+        for (std::size_t m = 0; m < patches.count; ++m) {
+            Manifold& patch = patches.items[m];
+            Body& body = bodies_[patch.body];
+            Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
+            const bool otherFixed = other != nullptr && bodyHeld(patch.other);
+            for (std::size_t k = 0; k < patch.ends; ++k) {
+                const auto at = patch.point[k];
+                const Vec3 otherAt = other != nullptr ? (otherFixed ? Vec3{} : pointSpeed(*other, at))
+                                     : patch.ball ? ballPointSpeed(at)
+                                                  : Vec3{};
+                const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
+                double compliance = dot(patch.normal, patch.normal) / body.mass +
+                                    lever(at - body.centre, patch.normal) *
+                                        lever(at - body.centre, patch.normal) / body.moment;
+                if (other != nullptr) {
+                    if (!otherFixed)
+                        compliance += 1.0 / other->mass +
+                                      lever(at - other->centre, patch.normal) *
+                                          lever(at - other->centre, patch.normal) / other->moment;
+                } else if (patch.ball) {
+                    const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+                    compliance += 1.0 / ball_.mass +
+                                  lever(at - ball_.position, patch.normal) *
+                                      lever(at - ball_.position, patch.normal) / ballMoment;
+                }
+                if (!(compliance > 1e-12)) continue;
+                const double closing = dot(pointSpeed(body, at) - otherAt, patch.normal);
+                left = std::max(left, std::abs(closing));
+                double carried = patch.normalImpulse[k] - closing / compliance;
+                if (!(carried > 0.0)) carried = 0.0;
+                const double delta = carried - patch.normalImpulse[k];
+                if (delta == 0.0) continue;
+                patch.normalImpulse[k] = carried;
+                pushBody(body, at, patch.normal * delta, patch.kind);
+                if (other != nullptr) {
+                    if (!otherFixed) pushBody(*other, at, patch.normal * -delta, patch.kind);
+                } else if (patch.ball) {
+                    pushBall(at, patch.normal * -delta, patch.kind);
+                }
+            }
+        }
+        if (left < kSolveTolerance) break;
     }
     return closingAtAll;
 }
@@ -662,16 +702,7 @@ void PlaygroundRoom::tickBodies() {
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        const double used = step > 0.0 ? advanceBodies(step) : 0.0;
-        remaining -= used;
-        if (std::getenv("WOB"))
-            std::fprintf(stderr, "  stop %d step %.10f used %.10f rem %.10f v(%.6f,%.6f) w %.6f y %.9f %.9f\n",
-                         stop, step, used, remaining, bodies_[0].velocity.x, bodies_[0].velocity.y,
-                         bodies_[0].spin, bodies_[0].position[0].y, bodies_[0].position[1].y);
-        if (std::getenv("WOB"))
-            std::fprintf(stderr, "        tri y %.9f %.9f %.9f v(%.3e,%.3e) w %.3e\n", bodies_[1].position[0].y,
-                         bodies_[1].position[1].y, bodies_[1].position[2].y, bodies_[1].velocity.x,
-                         bodies_[1].velocity.y, bodies_[1].spin);
+        if (step > 0.0) remaining -= advanceBodies(step);
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
