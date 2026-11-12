@@ -229,7 +229,14 @@ double PlaygroundRoom::advanceBodies(double seconds) {
     for (int guard = 0; guard < 40; ++guard) {
         bool deeper = false;
         for (std::size_t index = 0; index < kBodyCount && !deeper; ++index)
-            if (depthOf(index) > before[index] + kArithmetic) deeper = true;
+            // A body may not end a step deeper inside something than it already
+            // is -- but a body that is *clear* of everything may travel: being a
+            // little less clear is what walking towards a surface is. Measured
+            // against the clearance it started with, a shape falling onto a ball
+            // eleven millimetres above it refuses every step it takes, because each
+            // one brings it nearer, and then it hangs in the air with its speed
+            // still on and nothing to answer it.
+            if (depthOf(index) > std::max(before[index], 0.0) + kArithmetic) deeper = true;
         if (!deeper) break;
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
