@@ -70,6 +70,11 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-interface-check"
 "$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
+# The playground's physics, held to what it claims: no energy out of nothing, nothing
+# drawn as held still while it moves, drag that depends on speed, a bounce the same
+# from every direction, and R that really resets the room.
+"$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/playground_check.cpp" \
+  "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-playground-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
   cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
@@ -80,6 +85,7 @@ echo "[native] Success: $ROOT/build/bin/gtc-native-fit"
 echo "[native] Success: $ROOT/build/bin/gtc-native-client"
 echo "[native] Success: $ROOT/build/bin/gtc-native-smoke"
 echo "[native] Success: $ROOT/build/bin/gtc-interface-check"
+echo "[native] Success: $ROOT/build/bin/gtc-playground-check"
 echo "[native] Success: $ROOT/build/bin/gtc-vulkan-ui-check"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi
 # A green build is a checkpoint: everything that changed is committed and pushed.
