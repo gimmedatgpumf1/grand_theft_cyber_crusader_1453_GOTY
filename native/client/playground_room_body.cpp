@@ -668,6 +668,7 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
         if (!touching && bodyBallGap(index, way, at) <= kContactBand) touching = true;
         if (touching) continue;
         body.frozen = false;
+        body.woken = true;
         body.restTicks = 0;
         body.restLow = body.restHigh = body.centre;
         body.restAngleLow = body.restAngleHigh = body.angle;
@@ -712,6 +713,7 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
             pressed = true;
         if (!pressed) continue;
         body.frozen = false;
+        body.woken = true;
         body.restTicks = 0;
         body.restLow = body.restHigh = body.centre;
         body.restAngleLow = body.restAngleHigh = body.angle;

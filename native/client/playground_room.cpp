@@ -732,6 +732,13 @@ void PlaygroundRoom::advance(double seconds) {
         // body that falls asleep at the end of its own tick has already said what
         // was acting on it, and adding a second, static, pair on top of that would
         // be counting the same weight twice.
+        //
+        // "Stepped" is not the same question as "awake now": a body that began the tick
+        // asleep and was woken by a load arriving on it was stepped, and its forces
+        // for this tick are the solver's. Asking only what it was when the tick began
+        // wrote the replay on top of the solver's answer, and the triangle under a
+        // cube was drawn carrying twice what holds it up.
+        for (std::size_t index = 0; index < kBodyCount; ++index) bodies_[index].woken = false;
         std::array<bool, kBodyCount> stepped{};
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = !bodies_[index].frozen;
         const bool pointStepped = !pointFrozen_;
@@ -760,6 +767,9 @@ void PlaygroundRoom::advance(double seconds) {
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         separateBall();
+        // Read after the tick, so it covers the bodies the tick woke as well as the
+        // ones that were already awake when it began.
+        for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
         freezeCheck();
         // What is still acting, now that the tick has finished with everything. It
         // is written here, at the end, because that is when it is known which things

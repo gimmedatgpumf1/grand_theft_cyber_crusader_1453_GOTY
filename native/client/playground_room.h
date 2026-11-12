@@ -216,6 +216,10 @@ private:
         // This body's own friction, from its shape's material.
         double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
+        // Woken during this tick, by a load arriving on it or by its support going
+        // away. It was stepped, so its forces are the ones the solver wrote and not a
+        // replay of its last waking tick -- counting both would draw its weight twice.
+        bool woken = false;
         int contacts = 0;
         // How many contact patches this body has been answered in since the room was
         // reset. It is a counter and not a flag so that a tick can tell, by comparing
