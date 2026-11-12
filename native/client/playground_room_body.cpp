@@ -500,8 +500,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                         ? 0.0
                                         : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
                 u[dofs] = away(patch.point[k], patch.normal) + bias;
-                for (std::size_t j = 0; j <= dofs; ++j)
-                    g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
+                // Both halves of the matrix, because what one end is given at the
+                // other end's place is what the other end is given at its own: the
+                // answer is a push at one place and its reaction at another, and that
+                // is symmetric. Filled on one side only -- which is what this was --
+                // the system is not the room's, and its answer is not either: a face
+                // pressed at two ends came away with one end carrying half again the
+                // weight of the other, out of a coupling that was only asked one way.
+                for (std::size_t j = 0; j <= dofs; ++j) {
+                    const double coupled = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
+                    g[j][dofs] = coupled;
+                    g[dofs][j] = coupled;
+                }
                 ++dofs;
             }
             // The load each end needs to be left with no way into the surface.
@@ -615,8 +625,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     if (!carrying[k] || pinned[k]) continue;
                     order[dofs] = k;
                     u[dofs] = away(patch.point[k], tangent);
-                    for (std::size_t j = 0; j <= dofs; ++j)
-                        g[j][dofs] = give(patch.point[order[j]], tangent, patch.point[k], tangent);
+                    for (std::size_t j = 0; j <= dofs; ++j) {
+                        const double coupled = give(patch.point[order[j]], tangent, patch.point[k], tangent);
+                        g[j][dofs] = coupled;
+                        g[dofs][j] = coupled;
+                    }
                     ++dofs;
                 }
                 if (dofs == 0) break;
