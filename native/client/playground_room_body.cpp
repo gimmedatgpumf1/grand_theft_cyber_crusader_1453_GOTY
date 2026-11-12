@@ -416,17 +416,22 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // at another: the reciprocal of its mass, plus the two levers about its
         // centre. Every body in the patch contributes its own.
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
-            double value = 1.0 / body->mass +
+            // The share the mass carries is only the part of the push that is along
+            // the direction being asked about; a push across it moves the point only
+            // through the turn. Leaving that out makes a patch's own system singular
+            // as soon as its two ends are at the same height, which is every face
+            // lying flat on the floor.
+            double value = dot(toward, direction) / body->mass +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
                                body->moment;
             if (other != nullptr) {
                 if (!otherFixed) {
-                    value += 1.0 / other->mass +
+                    value += dot(toward, direction) / other->mass +
                              lever(at - other->centre, toward) *
                                  lever(pushAt - other->centre, direction) / other->moment;
                 }
             } else if (patch.ball) {
-                value += 1.0 / ball_.mass +
+                value += dot(toward, direction) / ball_.mass +
                          lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
                              ballMoment;
             }
