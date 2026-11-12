@@ -440,6 +440,11 @@ void PlaygroundRoom::tickBodies() {
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
+        if (std::getenv("DBG5")) {
+            const Body& b = bodies_[0];
+            std::fprintf(stderr, " walk stop %d step %.6f ang %+.5f w %+.4f y %.5f c0y %.5f c1y %.5f\n", stop, step,
+                         b.angle, b.spin, b.centre.y, b.position[0].y, b.position[1].y);
+        }
         if (step > 0.0) remaining -= advanceBodies(step);
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every contact the bodies are touching at -- that
