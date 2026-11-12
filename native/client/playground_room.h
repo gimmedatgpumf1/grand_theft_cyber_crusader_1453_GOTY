@@ -284,10 +284,20 @@ private:
     // How much a body gives when it is pushed at `at` along `direction`: the
     // reciprocal of its mass plus the lever's share about its centre. This is the
     // one number a contact is solved with.
+    //
+    // A body standing on the floor cannot be pushed down -- the floor is under it and
+    // the floor does not give -- so the part of a downward push that would be a
+    // *step* is refused, and the body is as immovable along that direction as the
+    // floor is. Solving it as if the mass were free hands the shape momentum the
+    // floor then quietly swallows: a ball dropped on a cube resting on the floor lost
+    // a quarter of every bounce to a cube that never moved at all. The lever still
+    // counts, because a shape can always turn about the floor it stands on.
     static double giveAt(const Body& body, Vec3 at, Vec3 direction) {
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;
-        return 1.0 / body.mass + lever * lever / body.moment;
+        const bool blocked = body.touchingPlane && direction.y > 0.0;
+        const double step = blocked ? 0.0 : 1.0 / body.mass;
+        return step + lever * lever / body.moment;
     }
 
     void tick();
