@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -377,12 +379,16 @@ void PlaygroundRoom::settleBodies() {
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     applyBodyForces();
+    const bool dbg = std::getenv("DBGW") != nullptr;
+    if (dbg) std::fprintf(stderr, "TICK v0 (%.4f,%.4f) w %.4f\n", bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
+        if (dbg) std::fprintf(stderr, " stop %d rem %.6f step %.6f\n", stop, remaining, step);
         if (step > 0.0) remaining -= advanceBodies(step);
         ContactSet contacts;
         gatherContacts(contacts);
+        if (dbg) std::fprintf(stderr, "  contacts %zu centre (%.5f,%.5f)\n", contacts.count, bodies_[0].centre.x, bodies_[0].centre.y);
         if (contacts.count == 0 || !solveContacts(contacts)) {
             // Nothing is touching, or nothing that is touching is closing: what is
             // left of the tick is travel along the way the bodies are going.
