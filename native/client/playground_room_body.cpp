@@ -183,6 +183,8 @@ double PlaygroundRoom::advanceBodies(double seconds) {
     double used = seconds;
     for (int guard = 0; guard < 40; ++guard) {
         if (penetration() <= before + 1e-12) break;
+        if (std::getenv("DBG"))
+            std::fprintf(stderr, "    guard halve: before %.3e after %.3e (used %.6f)\n", before, penetration(), used);
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             bodies_[index].centre = centres[index];
@@ -816,6 +818,7 @@ void PlaygroundRoom::tickBodies() {
         Vec3 way{};
         double depth = 0.0;
         const bool inside = bodiesIntoEachOther(0, 1, way, depth);
+        (void)inside;
         Vec3 bway{}, at{};
         const auto g = ball_shape::outlineGap;
         (void)g;
