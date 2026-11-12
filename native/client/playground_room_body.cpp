@@ -151,8 +151,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double falling = pointSpeed(body, body.position[i]).y;
             if (!(falling < 0.0)) continue;
             if (height <= kOnSurface) {
-                if (std::getenv("DBGW")) std::fprintf(stderr, "   floor stop body %zu corner %zu y %.9f vy %.4f\n", index, i, height, falling);
-                first = 0.0;
+                if (falling < -kRestSpeed) first = 0.0;
                 continue;
             }
             first = std::min(first, height / -falling);
@@ -166,8 +165,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
             if (!(closing > 1e-12)) continue;
             if (gap <= kOnSurface) {
-                if (std::getenv("DBGW")) std::fprintf(stderr, "   ball stop body %zu gap %.9f\n", index, gap);
-                first = 0.0;
+                if (closing > kRestSpeed) first = 0.0;
                 continue;
             }
             first = std::min(first, gap / closing);
@@ -182,8 +180,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double closing = -dot(closingSpeed, gap.normal);
             if (!(closing > 1e-12)) continue;
             if (gap.gap <= kOnSurface) {
-                if (std::getenv("DBGW")) std::fprintf(stderr, "   pair stop %zu/%zu gap %.9f closing %.4f\n", index, other, gap.gap, closing);
-                first = 0.0;
+                if (closing > kRestSpeed) first = 0.0;
                 continue;
             }
             first = std::min(first, gap.gap / closing);
@@ -255,7 +252,7 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
 // has carried so far times mu. Nothing bounces: the answer is exactly enough to
 // stop the approach and no more.
 bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
-    double delivered = 0.0;
+    bool delivered = false;
     for (int pass = 0; pass < kSolvePasses; ++pass) {
         double worst = 0.0;
         for (std::size_t c = 0; c < contacts.count; ++c) {
@@ -283,35 +280,52 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
                 }
             };
             const auto relativeSpeed = [&](Vec3 at) { return pointSpeed(body, at) - otherSpeed(at); };
-            const double give = giveAt(body, contact.point, contact.normal) +
-                                otherGive(contact.point, contact.normal);
-            if (!(give > 1e-12)) continue;
-            const double closing = dot(relativeSpeed(contact.point), contact.normal);
-            if (closing < 0.0) {
-                const double impulse = -closing / give;
-                contact.normalImpulse += impulse;
-                pushBody(body, contact.point, contact.normal * impulse, contact.kind);
-                pushOther(contact.point, contact.normal * -impulse);
-                delivered += impulse;
-                worst = std::max(worst, -closing);
-                // What is under this contact now decides what it can carry. A
-                // contact on the floor and a contact on another body are the same
-                // question, so they are answered by the same lines.
-                if (contact.normal.y > 0.5) {
-                    if (other == nullptr && !contact.ball) {
-                        body.touchingPlane = true;
-                    } else if (other != nullptr) {
-                        body.onBody = true;
-                        body.supportFrozen = other->frozen;
+            // The normal. What the contact has carried so far is kept, not
+            // forgotten: a contact that has already been answered is answered again
+            // from where its own previous answer left it, and an answer that is no
+            // longer needed is taken back -- but never past nothing, because a
+            // contact can push and cannot pull.
+            {
+                const double give = giveAt(body, contact.point, contact.normal) +
+                                    otherGive(contact.point, contact.normal);
+                if (give > 1e-12) {
+                    const double closing = dot(relativeSpeed(contact.point), contact.normal);
+                    worst = std::max(worst, std::abs(closing));
+                    const double next = std::max(0.0, contact.normalImpulse - closing / give);
+                    const double delta = next - contact.normalImpulse;
+                    if (delta != 0.0) {
+                        contact.normalImpulse = next;
+                        pushBody(body, contact.point, contact.normal * delta, contact.kind);
+                        pushOther(contact.point, contact.normal * -delta);
+                        delivered = true;
                     }
-                    body.supportLow = std::min(body.supportLow, contact.point.x);
-                    body.supportHigh = std::max(body.supportHigh, contact.point.x);
                 }
             }
-            // The grip. Coulomb's rule, in its two forms: mu_s holds the slide
-            // while the grip can carry what holding it would take, and once it
+            // What is under this contact decides what it can carry. A contact on
+            // the floor and a contact on another body are the same question, so
+            // they are answered by the same lines.
+            if (contact.normalImpulse > 0.0 && contact.normal.y > 0.5) {
+                if (other == nullptr && !contact.ball) {
+                    body.touchingPlane = true;
+                } else if (other != nullptr) {
+                    body.onBody = true;
+                    body.supportFrozen = other->frozen;
+                }
+                body.supportLow = std::min(body.supportLow, contact.point.x);
+                body.supportHigh = std::max(body.supportHigh, contact.point.x);
+            }
+            // The grip. Coulomb's rule, in its two forms: mu_s holds the slide as
+            // long as the grip can carry what holding it would take, and once it
             // cannot, mu_k carries what it can and the rest slips.
             const Vec3 tangent{contact.normal.y, -contact.normal.x, 0.0};
+            if (!(contact.normalImpulse > 0.0)) {
+                if (contact.tangentImpulse != 0.0) {
+                    pushBody(body, contact.point, tangent * -contact.tangentImpulse, contact.kind);
+                    pushOther(contact.point, tangent * contact.tangentImpulse);
+                    contact.tangentImpulse = 0.0;
+                }
+                continue;
+            }
             const double giveTangent = giveAt(body, contact.point, tangent) +
                                        otherGive(contact.point, tangent);
             if (!(giveTangent > 1e-12)) continue;
@@ -327,6 +341,8 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
             double next = contact.tangentImpulse - slide / giveTangent;
             const double hold = muStatic * contact.normalImpulse;
             if (std::abs(next) > hold) {
+                // Held no longer: the grip gives what sliding takes, and the rest
+                // of the pull goes into movement.
                 const double slip = muKinetic * contact.normalImpulse;
                 next = std::copysign(std::min(std::abs(next), slip), next);
             }
@@ -335,11 +351,12 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
                 contact.tangentImpulse = next;
                 pushBody(body, contact.point, tangent * delta, contact.kind);
                 pushOther(contact.point, tangent * -delta);
+                delivered = true;
             }
         }
-        if (worst < kSolveTolerance) break;
+        if (worst < kSolveTolerance && pass > 0) break;
     }
-    return delivered > 0.0;
+    return delivered;
 }
 
 // A body's rest, decided from its own motion and from what is under it. A shape
