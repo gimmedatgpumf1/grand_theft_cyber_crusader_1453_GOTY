@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -761,6 +763,17 @@ void PlaygroundRoom::tickBodies() {
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
             break;
+        }
+    }
+    if (std::getenv("DBG")) {
+        static int n = 0;
+        ++n;
+        if (n > 16) {
+            const Body& b = bodies_[1];
+            double sum = 0.0;
+            for (std::size_t i = 0; i < b.appliedCount; ++i) sum += b.applied[i].impulse.y / kTick;
+            std::fprintf(stderr, "  T%d tri applied %zu sumFy %+.4f v(%.8f,%.8f) w %.8f\n", n, b.appliedCount, sum,
+                         b.velocity.x, b.velocity.y, b.spin);
         }
     }
     settleBodies();
