@@ -875,6 +875,19 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
 // lands as the tick ends would otherwise begin the next one already closing on the
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
+    // Phase accounting: which part of a tick makes energy, if any does.
+    const auto phaseEnergy = [&]() {
+        double k = 0, p = 0;
+        energyBudget(k, p);
+        return k + p;
+    };
+    const bool trace = std::getenv("DBGP") != nullptr;
+    double phase = phaseEnergy();
+    const auto mark = [&](const char* what) {
+        const double now = phaseEnergy();
+        if (trace && now > phase + 1e-6) std::fprintf(stderr, "  tick gained %+.6f J at: %s\n", now - phase, what);
+        phase = now;
+    };
     wakeUnsupportedBodies();
     // The air first, on the motion the body arrived with -- the speed its own weight
     // has given it this tick is not air it has travelled through, and a shape standing
@@ -888,20 +901,25 @@ void PlaygroundRoom::tickBodies() {
     // still through. An arrival later in the tick joins the same set, keeping what
     // the ends it shares already carry, so the tick converges on one answer for each
     // meeting instead of answering the same one again.
+    mark("forces and air");
     ManifoldSet patches;
     gatherContacts(patches);
     solveContacts(patches);
+    mark("first solve");
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         const double used = step > 0.0 ? advanceBodies(step) : 0.0;
+        mark("walk");
         remaining -= used;
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
         gatherContacts(patches);
-        if (!solveContacts(patches)) {
+        const bool touching = solveContacts(patches);
+        mark("later solve");
+        if (!touching) {
             // Nothing new is touching and nothing already touching is closing: what
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
@@ -912,7 +930,9 @@ void PlaygroundRoom::tickBodies() {
     // position alone. It is the last thing done to the shapes and the only thing
     // that moves one without an impulse: see separateBodies.
     separateBodies();
+    mark("separate");
     settleBodies();
+    mark("settle");
     writeImpulses();
 }
 
