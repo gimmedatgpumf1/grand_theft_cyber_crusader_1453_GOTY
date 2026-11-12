@@ -68,14 +68,35 @@ Vec3 PlaygroundRoom::bodyMiddle(std::size_t body) const {
     return bodies_[body].centre;
 }
 
+// Back to the room the demonstration starts in, and back to *only* that.
+//
+// A reset is not just where things are put -- it is everything the room was
+// carrying. The forces written into the ledger belong to the tick they were solved
+// in, so a reset that leaves them behind leaves last session's arrows hanging over
+// the new room until a tick overwrites them; the recorded impulses belong to a body
+// that was asleep, and the body is not asleep any more; the drag belongs to a mouse
+// that is not holding anything; the ball's contact list belongs to a tick that no
+// longer happened. All of it is cleared here, in one place, so that "the room after
+// R" and "the room on the first frame" are the same room and not merely the same
+// positions.
 bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     point_ = previous_ = shown_ = start;
     velocity_ = startVelocity;
+    pointForce_ = {};
     traceFrom_ = traceTo_ = point_;
     ghostCount_ = ghostNext_ = 0;
     accumulator_ = 0;
     dragTarget_ = DragTarget::None;
+    dragBody_ = kBodyCount;
+    planeGrab_ = grabOffset_ = {};
+    slideSpan_ = 0.0;
+    heldStill_ = false;
+    supportNormal_ = Vec3{0, 1, 0};
+    ballTouchCount_ = 0;
+    clearForces();
+    impulseCount_ = 0;
     restingBody_ = -1;
+    restingOnBall_ = false;
     resting_ = false;
     haveTrace_ = false;
     pointFrozen_ = false;
