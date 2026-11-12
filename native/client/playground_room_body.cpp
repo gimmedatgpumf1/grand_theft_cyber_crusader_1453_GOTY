@@ -48,7 +48,10 @@ constexpr double kArithmetic = 1e-9;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-constexpr int kSolvePasses = 32;
+int solvePasses() {
+    const char* v = std::getenv("SOLVEPASSES");
+    return v ? std::atoi(v) : 32;
+}
 // A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
 // a whole tick: slower than the arithmetic of the positions can even show, and
@@ -556,7 +559,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
-    for (int pass = 0; pass < kSolvePasses; ++pass) {
+    const int passes = solvePasses();
+    for (int pass = 0; pass < passes; ++pass) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const std::size_t one = patches.items[m].body;
