@@ -108,6 +108,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                       : through;
             const double byBall = std::min(through, ground);
             ballLiftedOut_ += byBall > kSkin ? 1 : 0;
+            if (getenv("GTC_MOVE")) std::fprintf(stderr, "LIFT %+.6f m\n", byBall);
             ball.position = ball.position + normal * byBall;
             const double left = through - byBall;
             if (body != nullptr && left > kSkin) {
@@ -141,6 +142,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                 low = middle;
                             }
                         }
+                        if (getenv("GTC_MOVE")) std::fprintf(stderr, "SIDEWAYS %+.6f m (through %.6f, ground %.6f)\n", side * high, through, ground);
                         ball.position.x += side * high;
                         ball.position.y = std::max(ball.position.y, ball.radius);
                         if (ball.velocity.x * side < 0.0) ball.velocity.x = 0.0;

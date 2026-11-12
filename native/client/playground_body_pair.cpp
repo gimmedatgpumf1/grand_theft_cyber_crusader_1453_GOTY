@@ -258,7 +258,10 @@ void PlaygroundRoom::separateBall() {
         const Vec3 move = way * (-gap) * share;
         body.centre = body.centre + move;
         placeCorners(body);
-        if (ballMoves) ball_.position = ball_.position - way * (-gap) * (1.0 - share);
+        if (ballMoves) {
+            if (getenv("GTC_MOVE")) std::fprintf(stderr, "SEPARATE %+.6f m\n", (-gap) * (1.0 - share));
+            ball_.position = ball_.position - way * (-gap) * (1.0 - share);
+        }
     }
 }
 

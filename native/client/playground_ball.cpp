@@ -266,6 +266,7 @@ void PlaygroundRoom::tickBall() {
                     const double through = ball.radius - on.gap;
                     if (!pushBodyOutOfBall(index, on.normal, through)) {
                         ++ballFoundThrough_;
+                        if (getenv("GTC_MOVE")) std::fprintf(stderr, "FOUNDTHROUGH %+.6f m\n", through);
                         ball.position = ball.position + on.normal * through;
                     }
                 }
