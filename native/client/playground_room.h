@@ -202,7 +202,7 @@ private:
         // solved, not invented afterwards. This is what the arrows show while a body
         // sleeps, and it is why a body on a slope shows its friction and a body on
         // the level floor shows none.
-        static constexpr std::size_t kMaxRestForces = 12;
+        static constexpr std::size_t kMaxRestForces = 24;
         struct Applied {
             Vec3 at{}, impulse{};
             ForceKind kind = ForceKind::Contact;
