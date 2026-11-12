@@ -468,7 +468,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (std::getenv("WOBDUMP"))
                 std::fprintf(stderr, "      patch b%zu o%zu ends %zu pass %d cl %.6f %.6f acc %.6f %.6f\n",
                              patch.body, patch.other, ends, pass, closing[0], ends > 1 ? closing[1] : 0.0,
-                             patch.normalImpulse[0], ends > 1 ? patch.normalImpulse[1] : 0.0);
+                             patch.normalImpulse[0], ends > 1 ? patch.normalImpulse[1] : 0.0),
+                    std::fprintf(stderr, "        m %.4f I %.6f give %.6f v(%.5f,%.5f) w %.5f\n", body.mass,
+                                 body.moment, give(patch.point[0], patch.normal, patch.point[0], patch.normal),
+                                 body.velocity.x, body.velocity.y, body.spin);
             for (std::size_t k = 0; k < ends; ++k) {
                 worst = std::max(worst, std::abs(closing[k]));
                 // A patch can press and cannot pull. An end whose share would be a
