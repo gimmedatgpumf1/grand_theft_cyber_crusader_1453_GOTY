@@ -280,9 +280,11 @@ void aLoadIsCarried() {
         settle(room, 300);
         carryTo(room, 0, room.bodyMiddle(1).x - 0.4, 1.6);
         double floorCarry = 0.0, pressed = 0.0;
-        // The cube is set down where the slope is, which takes a tick or two to sort
-        // out; the first tick it is really lying on the slope is the one to read.
-        for (int tick = 0; tick < 12; ++tick) {
+        // The cube is set down onto a slope, and a cube landing on it rocks it for a
+        // few ticks before the pair is still. The identity below is about a triangle
+        // that is holding still: one that is being shoved is not holding anything, and
+        // its floor is answering the shove as well.
+        for (int tick = 0; tick < 60; ++tick) {
             room.advance(1.0 / 20.0);
             floorCarry = 0.0;
             pressed = 0.0;
@@ -294,7 +296,8 @@ void aLoadIsCarried() {
                 if (pair && sample.at.y > 0.5) pressed -= sample.force.y;
                 if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
             }
-            if (pressed > 5.0) break;
+            const double moving = std::abs(room.bodies_[1].velocity.x) + std::abs(room.bodies_[1].velocity.y);
+            if (pressed > 5.0 && moving < 1e-3) break;
         }
         char detail[220];
         std::snprintf(detail, sizeof detail, "cube leaning on the slope: triangle floor carries %.3f N, own weight 29.400, cube presses %.3f N",
