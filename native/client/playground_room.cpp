@@ -458,8 +458,7 @@ void PlaygroundRoom::tick() {
             // dead at the foot of the slope with four metres a second unused.
             // Below the thickness of a surface it is not arriving, it is lying on
             // it, and lying on it is the position pass's business.
-            const double closing = -dot(velocity_, facing);
-            if (along <= 1e-9 && closing * kTick * remaining <= ball_shape::kSkin) continue;
+            if (along <= 1e-9 && dot(velocity_, facing) >= 0.0) continue;
             if (along < first) {
                 first = along;
                 hitIndex = index;
@@ -473,8 +472,7 @@ void PlaygroundRoom::tick() {
             double along = 2.0;
             Vec3 facing{0, 1, 0};
             if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
-                !(along <= 1e-9 && -dot(velocity_, facing) * kTick * remaining <= ball_shape::kSkin) &&
-                along < first) {
+                !(along <= 1e-9 && dot(velocity_, facing) >= 0.0) && along < first) {
                 first = along;
                 normal = facing;
                 ballHit = true;
