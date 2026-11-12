@@ -47,14 +47,9 @@ cl.exe /nologo "%ROOT%\build\obj\native-client\main.obj" "%ROOT%\build\obj\nativ
 if errorlevel 1 exit /b 1
 cl.exe /nologo "%ROOT%\build\obj\native-client\smoke.obj" "%ROOT%\build\obj\native-client\smoke_motion.obj" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-native-smoke.exe" /link Ws2_32.lib
 if errorlevel 1 exit /b 1
-REM The counter is drawn on the host into pixels, so it is checked as pixels.
-cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" /I"%ROOT%\tests" "tests\interface_check.cpp" "tests\interface_check_strip.cpp" "tests\interface_check_menu.cpp" "tests\interface_check_panels.cpp" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-interface-check.exe" /link Ws2_32.lib
-if errorlevel 1 exit /b 1
-cl.exe /nologo /options:strict /std:c++20 /Zc:__cplusplus /EHsc /O2 /W4 /permissive- /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I"%ROOT%\src" /I"%ROOT%\native" "tests\vulkan_ui.cpp" !CLIENT_COMMON! /Fe"%ROOT%\build\bin\gtc-vulkan-ui-check.exe" /link Ws2_32.lib
-if errorlevel 1 exit /b 1
+REM The Windows build produces the client and its smoke run, and nothing else.
+REM The checks live in native/build.sh: they are run where they are read.
 echo [native] Success: %ROOT%\build\bin\gtc-native-fit.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-client.exe
 echo [native] Success: %ROOT%\build\bin\gtc-native-smoke.exe
-echo [native] Success: %ROOT%\build\bin\gtc-interface-check.exe
-echo [native] Success: %ROOT%\build\bin\gtc-vulkan-ui-check.exe
 exit /b 0
