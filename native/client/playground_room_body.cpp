@@ -960,6 +960,7 @@ void PlaygroundRoom::tickBodies() {
         Body& body = bodies_[index];
         if (trace) std::fprintf(stderr, "    body %zu skip? count %zu frozen %d held %d contacts %d/%d\n", index, body.count, int(body.frozen), int(bodyHeld(index)), body.contacts, touchedBefore[index]);
         if (body.count == 0 || body.frozen || bodyHeld(index) || body.contacts != touchedBefore[index]) continue;
+        if (trace) std::fprintf(stderr, "    body %zu parabola arr %.6f vel %.6f dy %+.9f\n", index, arrival[index].y, body.velocity.y, (arrival[index].y - body.velocity.y) * 0.5 * kTick);
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
