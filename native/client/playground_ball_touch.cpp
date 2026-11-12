@@ -13,9 +13,11 @@
 namespace gtc::native {
 namespace {
 
-// Two coefficients, as everywhere else in this room: rubber on a wooden floor.
-constexpr double kBallStaticFriction = 0.70;
-constexpr double kBallKineticFriction = 0.55;
+// The ball's two coefficients are the room's: they are in playground_ball_shape.h
+// beside the mass and the radius, and they were also written out here as well,
+// which is two places for one number to be wrong in. This file uses the one.
+using ball_shape::kBallKineticFriction;
+using ball_shape::kBallStaticFriction;
 // How many passes the tick's contacts get to agree with each other in. Two faces
 // are settled in a handful; a corner of three is a little slower, and past this
 // what is left is smaller than the arithmetic can tell from nothing.
