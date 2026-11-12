@@ -9,6 +9,7 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
+#include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
 #include <algorithm>
@@ -218,12 +219,21 @@ void PlaygroundRoom::clampBodiesToBall() {
         if (body.count == 0 || bodyHeld(index)) continue;
         const ball_shape::OutlineGap now =
             ball_shape::outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
-        if (now.gap >= ball_.radius) continue;
+        // What counts as "carried through it" is going *deeper* than the tick began,
+        // not being inside in the first place. A ball lying on a shape is one radius
+        // from it and stays one radius from it; the shape starts turning into it on
+        // the very first bit of its step, and a test that only looks for "inside"
+        // never sees the shape arriving -- it sees it every tick, already arrived.
+        //
+        // The sweep asked is where the outline first gets a micrometre nearer than it
+        // began: that is the same conservative hitscan, asked of a circle a quantum
+        // smaller than the ball. Nothing is sampled, so how fast the shape is turning
+        // does not change where the meeting is found.
+        const double target = std::min(ball_.radius, now.gap) - playground_tick::kQuantum;
         ball_shape::OutlineHit met;
         if (!ball_shape::sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count,
-                                                ball_.position, Vec3{}, ball_.radius, kTick, met))
+                                                ball_.position, Vec3{}, target, kTick, met))
             continue;
-        if (met.resting) continue;
         // Carried back along its own step, to the meeting. The centre and the turn
         // are the body's whole motion, so both are taken back by the same fraction.
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * met.along;
