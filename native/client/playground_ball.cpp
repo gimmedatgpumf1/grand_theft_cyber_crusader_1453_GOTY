@@ -160,13 +160,20 @@ void PlaygroundRoom::tickBall() {
         if (body.count == 0) continue;
         const double startGap =
             ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
-        if (!(startGap > ball.radius + kTouch)) continue;
-        // It may come as near as the ball's surface and no nearer, and where that is
-        // is solved rather than sampled: the speed of the ball and the speed of the
-        // turn make no difference to where it lands.
+        // How far it may come. A shape clear of the ball may come as near as the
+        // ball's surface. A shape already against it may come no nearer at all --
+        // its allowance is the gap it has, so the step stops the instant it would
+        // close. That is not the shape being refused its motion: the speed it is
+        // closing at was already answered by the contact, and it is the shape's
+        // *step* that would otherwise be spent inside the ball, which is the
+        // penetration that later had to be pushed back out.
+        const double limit = std::min(ball.radius, startGap);
+        // It may come as near as that and no nearer, and where that is is solved
+        // rather than sampled: the speed of the ball and the speed of the turn make
+        // no difference to where it lands.
         OutlineHit stop;
         if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
-                                    ball.velocity, ball.radius, kTick, stop))
+                                    ball.velocity, limit, kTick, stop, false))
             continue;
         if (!(stop.along < 1.0)) continue;
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
