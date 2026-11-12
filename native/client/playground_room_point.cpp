@@ -113,6 +113,12 @@ void PlaygroundRoom::freezeCheck() {
 // moving and never going anywhere. A surface a dot is pressed against holds it,
 // and holding it means this: the part of the speed driving into the face is gone.
 void PlaygroundRoom::separatePoint() {
+    // A dot that is asleep is not moved. Nothing moves a sleeping dot in this room:
+    // what wakes it is a shape arriving at it, which is asked in the room's own
+    // tick -- and a dot that has been woken is repaired on the tick it wakes, when
+    // it is a moving body again. Moving it while it sleeps would be the one thing
+    // a sleeping dot cannot be, which is moving.
+    if (pointFrozen_) return;
     // The floor is a plane and the dot is a ball: its middle can never be lower
     // than its own radius above it. That is not a correction, it is where the
     // floor is -- but it is worth saying, because a ball squeezed between a shape
