@@ -739,8 +739,12 @@ bool PlaygroundRoom::pointReachedByBodies() const {
 }
 
 void PlaygroundRoom::freezeCheck() {
+    // A dot at rest is a dot with nothing left to spend: it is on something, it is
+    // not moving, and the surface is holding it. "On the floor" is the top of the
+    // floor, which is the plane the dot's own radius makes -- the floor is a plane
+    // through kSurfaceY and the dot is a ball that stands its radius clear of it.
     if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
-        (point_.y <= kSurfaceY || restingBody_ >= 0 || restingOnBall_)) {
+        (point_.y <= kSurfaceY + kPointRadius || restingBody_ >= 0 || restingOnBall_)) {
         pointFrozen_ = true;
         velocity_ = {};
     }
