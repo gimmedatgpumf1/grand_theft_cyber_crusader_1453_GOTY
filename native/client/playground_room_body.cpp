@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -575,13 +573,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushEnd(k, tangent * delta);
             patch.tangentImpulse[k] = grip;
         }
-        if (std::getenv("WOB"))
-            std::fprintf(stderr, " P b%zu o%zu ball%d n(%+.2f,%+.2f) e%zu [p0 %+.4f,%+.4f g%.2e J%.4f T%.4f] [p1 %+.4f,%+.4f g%.2e J%.4f T%.4f]\n",
-                         patch.body, patch.other, int(patch.ball), patch.normal.x, patch.normal.y, patch.ends,
-                         patch.point[0].x, patch.point[0].y, patch.gap[0], patch.normalImpulse[0], patch.tangentImpulse[0],
-                         count > 1 ? patch.point[1].x : 0.0, count > 1 ? patch.point[1].y : 0.0,
-                         count > 1 ? patch.gap[1] : 0.0, count > 1 ? patch.normalImpulse[1] : 0.0,
-                         count > 1 ? patch.tangentImpulse[1] : 0.0);
         // What is under each end decides what the body is standing on.
         for (std::size_t k = 0; k < count; ++k) {
             if (!(patch.normalImpulse[k] > 0.0) || !(patch.normal.y > 0.5)) continue;
@@ -691,31 +682,12 @@ void PlaygroundRoom::tickBodies() {
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
-        const std::size_t before = patches.count;
         gatherContacts(patches);
         if (!solveContacts(patches)) {
             // Nothing new is touching and nothing already touching is closing: what
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
             break;
-        }
-        (void)before;
-    }
-    if (std::getenv("WOB")) {
-        static int tickNo = 0;
-        ++tickNo;
-        if (tickNo >= 17 && tickNo <= 26) {
-            std::fprintf(stderr, "T%d c0(%.4f,%.6f) c1(%.4f,%.6f) c2(%.4f,%.4f) c3(%.4f,%.4f) v(%.3f,%.3f) w(%.3f)\n", tickNo,
-                         bodies_[0].position[0].x, bodies_[0].position[0].y, bodies_[0].position[1].x, bodies_[0].position[1].y,
-                         bodies_[0].position[2].x, bodies_[0].position[2].y, bodies_[0].position[3].x, bodies_[0].position[3].y,
-                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin);
-            for (std::size_t m = 0; m < patches.count; ++m) {
-                const Manifold& q = patches.items[m];
-                if (q.body != 0) continue;
-                std::fprintf(stderr, "    m e%zu [%.4f,%.6f g%.6f J%.4f] [%.4f,%.6f g%.6f J%.4f]\n", q.ends, q.point[0].x,
-                             q.point[0].y, q.gap[0], q.normalImpulse[0], q.point[1].x, q.point[1].y, q.gap[1],
-                             q.normalImpulse[1]);
-            }
         }
     }
     settleBodies();
