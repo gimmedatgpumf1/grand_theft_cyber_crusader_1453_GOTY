@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -205,180 +203,260 @@ double PlaygroundRoom::timeToContact(double remaining) const {
     return std::clamp(first, 0.0, remaining);
 }
 
-// Every contact at the configuration the walk has stopped at. The floor is met by
-// a corner; another body is met by a corner of one against the outline of the
-// other, on both sides, so a face lying on a face is two contacts and a corner
-// standing on a face is one.
-void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
-    contacts.clear();
+// Every patch at the configuration the walk has stopped at.
+//
+// A body meets the floor with the face it is standing on, and a convex face on a
+// plane touches along a segment: the corners of the body that are on the plane are
+// that segment's ends. They are gathered as one patch, not as separate contacts,
+// because the load between them is one distributed load -- and a load that can sit
+// anywhere between two ends is the reason a body can stand on the floor at all.
+// A ball touches at one point and nowhere else, so its patch has one end.
+void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
+    patches.clear();
+    // The floor, met by the lowest corners of each body.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        Manifold patch;
+        patch.body = index;
+        patch.other = kBodyCount;
+        patch.normal = Vec3{0, 1, 0};
+        double lowest[kMaxPatchEnds] = {1e30, 1e30};
         for (std::size_t i = 0; i < body.count; ++i) {
-            if (body.position[i].y > kContactBand) continue;
-            Contact contact;
-            contact.body = index;
-            contact.other = kBodyCount;
-            contact.corner = i;
-            contact.point = Vec3{body.position[i].x, body.position[i].y, 0.0};
-            contact.normal = Vec3{0, 1, 0};
-            contacts.add(contact);
+            const double height = body.position[i].y;
+            if (height > kContactBand) continue;
+            // The two lowest: a convex body stands on a face, and more than two
+            // corners on one plane is the same face seen with a collinear corner.
+            for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
+                if (height < lowest[k]) {
+                    for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
+                        lowest[j] = lowest[j - 1];
+                        patch.corner[j] = patch.corner[j - 1];
+                        patch.point[j] = patch.point[j - 1];
+                    }
+                    lowest[k] = height;
+                    patch.corner[k] = i;
+                    patch.point[k] = body.position[i];
+                    break;
+                }
+            }
         }
+        while (patch.ends < kMaxPatchEnds && lowest[patch.ends] < 1e29) ++patch.ends;
+        if (patch.ends > 0) patches.add(patch);
     }
+    // The ball, met at the one place a body's outline comes closest to it.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
-        if (bodyBallGap(index, way, at) <= kContactBand) {
-            Contact contact;
-            contact.body = index;
-            contact.ball = true;
-            contact.point = at;
-            contact.normal = way;  // out of the ball, into the body
-            contact.kind = ForceKind::Ball;
-            contacts.add(contact);
-        }
+        if (bodyBallGap(index, way, at) > kContactBand) continue;
+        Manifold patch;
+        patch.body = index;
+        patch.ball = true;
+        patch.ends = 1;
+        patch.point[0] = at;
+        patch.normal = way;  // out of the ball, into the body
+        patch.kind = ForceKind::Ball;
+        patches.add(patch);
     }
+    // Another body, met by the corners of this one against its outline. The outline
+    // of a convex face is a segment too, so the corners of this body that are on it
+    // are the ends of one load as well.
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         const Body& body = bodies_[one];
         if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
             const Body& solid = bodies_[two];
+            Manifold patch;
+            patch.body = one;
+            patch.other = two;
+            patch.kind = ForceKind::Pair;
+            double nearest[kMaxPatchEnds] = {1e30, 1e30};
+            bool haveNormal = false;
             for (std::size_t i = 0; i < body.count; ++i) {
-                const ball_shape::OutlineGap gap = ball_shape::outlineGap(body.position[i], solid.position.data(),
-                                                  solid.position.data(), solid.count, 1.0);
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(
+                    body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
                 if (gap.gap > kContactBand) continue;
-                Contact contact;
-                contact.body = one;
-                contact.other = two;
-                contact.corner = i;
-                contact.point = body.position[i];
-                contact.normal = gap.normal;  // out of the other body, into this one
-                contact.kind = ForceKind::Pair;
-                contacts.add(contact);
+                if (!haveNormal) {
+                    patch.normal = gap.normal;  // out of the other body, into this one
+                    haveNormal = true;
+                }
+                for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
+                    if (gap.gap < nearest[k]) {
+                        for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
+                            nearest[j] = nearest[j - 1];
+                            patch.corner[j] = patch.corner[j - 1];
+                            patch.point[j] = patch.point[j - 1];
+                        }
+                        nearest[k] = gap.gap;
+                        patch.corner[k] = i;
+                        patch.point[k] = body.position[i];
+                        break;
+                    }
+                }
             }
+            while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
+            if (patch.ends > 0) patches.add(patch);
         }
     }
 }
 
-// The answer to a whole configuration of contacts at once: sequential impulses.
-// Each contact takes the closing speed it finds along its normal, applied to both
-// bodies at the place they meet, and the grip along the surface is what the normal
-// has carried so far times mu. Nothing bounces: the answer is exactly enough to
-// stop the approach and no more.
-bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
-    bool delivered = false;
-    // What the walk needs to know is whether there was anything to answer at all,
-    // not whether some impulse was a fraction of a newton different from the last
-    // pass: a resting body is touched by its contacts every tick and closing at
-    // none of them, and that must not stop the walk.
+// The answer to a whole configuration of patches at once.
+//
+// One patch is solved as one load with a pressure that runs from one end to the
+// other: two ends, two unknown impulses, and the requirement that the body is not
+// driven into the surface at either of them. That is a two by two system, and it is
+// solved as one -- which is the whole point. Two ends answered separately can each
+// stop their own end and leave the body turning; two ends answered together stop
+// the body where it stands, and a face that has landed flat stays flat instead of
+// rocking from corner to corner. When the answer at an end would be a pull, the
+// floor lets go there and the patch is carried by the other end alone: that is a
+// body lifting off, decided by the load and not by a rule about corners.
+//
+// Grip is the same load, along the surface, at each end, limited by mu times what
+// that end carries. The patches are swept against each other until they agree.
+bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     bool closingAtAll = false;
     for (int pass = 0; pass < kSolvePasses; ++pass) {
         double worst = 0.0;
-        for (std::size_t c = 0; c < contacts.count; ++c) {
-            Contact& contact = contacts.items[c];
-            Body& body = bodies_[contact.body];
-            Body* other = (!contact.ball && contact.other < kBodyCount) ? &bodies_[contact.other] : nullptr;
-            // The other side of the contact: a body, the ball, or the floor. Each
-            // one contributes its own speed at the place they meet and its own
+        for (std::size_t m = 0; m < patches.count; ++m) {
+            Manifold& patch = patches.items[m];
+            Body& body = bodies_[patch.body];
+            Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
+            const bool otherFixed = other != nullptr && bodyHeld(patch.other);
+            const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+            // The other side of the patch: a body, the ball, or the floor. Each one
+            // contributes its own speed at the place they meet and its own
             // willingness to be moved; the floor contributes neither.
             const auto otherSpeed = [&](Vec3 at) {
-                if (other != nullptr) return pointSpeed(*other, at);
-                if (contact.ball) return ballPointSpeed(at);
+                if (other != nullptr) return otherFixed ? Vec3{} : pointSpeed(*other, at);
+                if (patch.ball) return ballPointSpeed(at);
                 return Vec3{};
-            };
-            const auto otherGive = [&](Vec3 at, Vec3 direction) {
-                if (other != nullptr) return bodyHeld(contact.other) ? 0.0 : giveAt(*other, at, direction);
-                if (contact.ball) return ballGiveAt(at, direction);
-                return 0.0;
             };
             const auto pushOther = [&](Vec3 at, Vec3 impulse) {
                 if (other != nullptr) {
-                    if (!bodyHeld(contact.other)) pushBody(*other, at, impulse, contact.kind);
-                } else if (contact.ball) {
-                    pushBall(at, impulse, contact.kind);
+                    if (!otherFixed) pushBody(*other, at, impulse, patch.kind);
+                } else if (patch.ball) {
+                    pushBall(at, impulse, patch.kind);
                 }
             };
             const auto relativeSpeed = [&](Vec3 at) { return pointSpeed(body, at) - otherSpeed(at); };
-            // The normal. What the contact has carried so far is kept, not
-            // forgotten: a contact that has already been answered is answered again
-            // from where its own previous answer left it, and an answer that is no
-            // longer needed is taken back -- but never past nothing, because a
-            // contact can push and cannot pull.
-            {
-                const double give = giveAt(body, contact.point, contact.normal) +
-                                    otherGive(contact.point, contact.normal);
-                if (give > 1e-12) {
-                    const double closing = dot(relativeSpeed(contact.point), contact.normal);
-                    worst = std::max(worst, std::abs(closing));
-                    if (closing < -kRestSpeed) closingAtAll = true;
-                    const double next = std::max(0.0, contact.normalImpulse - closing / give);
-                    const double delta = next - contact.normalImpulse;
-                    if (delta != 0.0) {
-                        contact.normalImpulse = next;
-                        pushBody(body, contact.point, contact.normal * delta, contact.kind);
-                        pushOther(contact.point, contact.normal * -delta);
-                        delivered = true;
+            // How much the body gives at `at` along `toward` when it is pushed at
+            // `pushAt` along `direction`: the reciprocal of its mass, plus the two
+            // levers about its centre. Every body in the patch contributes its own.
+            const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
+                const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
+                double value = 1.0 / body.mass +
+                               lever(at - body.centre, toward) * lever(pushAt - body.centre, direction) /
+                                   body.moment;
+                if (other != nullptr) {
+                    if (!otherFixed) {
+                        value += 1.0 / other->mass +
+                                 lever(at - other->centre, toward) *
+                                     lever(pushAt - other->centre, direction) / other->moment;
                     }
+                } else if (patch.ball) {
+                    value += 1.0 / ball_.mass +
+                             lever(at - ball_.position, toward) *
+                                 lever(pushAt - ball_.position, direction) / ballMoment;
+                }
+                return value;
+            };
+            const std::size_t ends = patch.ends;
+            double closing[kMaxPatchEnds] = {};
+            for (std::size_t k = 0; k < ends; ++k) {
+                closing[k] = dot(relativeSpeed(patch.point[k]), patch.normal);
+                if (closing[k] < -kRestSpeed) closingAtAll = true;
+            }
+            // The load between the ends: two unknowns, solved together. The impulse
+            // that stops one end turns the body and so moves the other, and that
+            // coupling is exactly what a patch has and a corner does not.
+            double next[kMaxPatchEnds] = {};
+            if (ends == 1) {
+                const double compliance = give(patch.point[0], patch.normal, patch.point[0], patch.normal);
+                if (!(compliance > 1e-12)) continue;
+                next[0] = patch.normalImpulse[0] - closing[0] / compliance;
+            } else {
+                // One load over two ends: the impulse at one end moves the other, and
+                // that coupling is what a patch has and a corner does not.
+                const double a = give(patch.point[0], patch.normal, patch.point[0], patch.normal);
+                const double b = give(patch.point[0], patch.normal, patch.point[1], patch.normal);
+                const double c = give(patch.point[1], patch.normal, patch.point[0], patch.normal);
+                const double d = give(patch.point[1], patch.normal, patch.point[1], patch.normal);
+                const double det = a * d - b * c;
+                if (std::abs(det) > 1e-18) {
+                    next[0] = patch.normalImpulse[0] + (-closing[0] * d + closing[1] * b) / det;
+                    next[1] = patch.normalImpulse[1] + (closing[0] * c - closing[1] * a) / det;
+                } else {
+                    next[0] = a > 1e-12 ? patch.normalImpulse[0] - closing[0] / a : 0.0;
+                    next[1] = d > 1e-12 ? patch.normalImpulse[1] - closing[1] / d : 0.0;
                 }
             }
-            // What is under this contact decides what it can carry. A contact on
-            // the floor and a contact on another body are the same question, so
-            // they are answered by the same lines.
-            if (contact.normalImpulse > 0.0 && contact.normal.y > 0.5) {
-                if (other == nullptr && !contact.ball) {
-                    body.touchingPlane = true;
-                } else if (other != nullptr) {
-                    body.onBody = true;
-                    body.supportFrozen = other->frozen;
+            for (std::size_t k = 0; k < ends; ++k) {
+                worst = std::max(worst, std::abs(closing[k]));
+                // A patch can press and cannot pull. An end whose share would be a
+                // pull carries nothing, and the other end carries the load.
+                if (!(next[k] > 0.0)) next[k] = 0.0;
+                const double delta = next[k] - patch.normalImpulse[k];
+                if (delta == 0.0) continue;
+                patch.normalImpulse[k] = next[k];
+                pushBody(body, patch.point[k], patch.normal * delta, patch.kind);
+                pushOther(patch.point[k], patch.normal * -delta);
+            }
+            for (std::size_t k = 0; k < ends; ++k) {
+                // What is under this end decides what it can carry, and what the
+                // body is standing on.
+                if (patch.normalImpulse[k] > 0.0 && patch.normal.y > 0.5) {
+                    ++body.contacts;
+                    if (other == nullptr && !patch.ball) {
+                        body.touchingPlane = true;
+                    } else if (other != nullptr) {
+                        body.onBody = true;
+                        body.supportFrozen = other->frozen;
+                    }
+                    body.supportLow = std::min(body.supportLow, patch.point[k].x);
+                    body.supportHigh = std::max(body.supportHigh, patch.point[k].x);
                 }
-                body.supportLow = std::min(body.supportLow, contact.point.x);
-                body.supportHigh = std::max(body.supportHigh, contact.point.x);
-            }
-            // The grip. Coulomb's rule, in its two forms: mu_s holds the slide as
-            // long as the grip can carry what holding it would take, and once it
-            // cannot, mu_k carries what it can and the rest slips.
-            const Vec3 tangent{contact.normal.y, -contact.normal.x, 0.0};
-            if (!(contact.normalImpulse > 0.0)) {
-                if (contact.tangentImpulse != 0.0) {
-                    pushBody(body, contact.point, tangent * -contact.tangentImpulse, contact.kind);
-                    pushOther(contact.point, tangent * contact.tangentImpulse);
-                    contact.tangentImpulse = 0.0;
+                // The grip, at each end, on what that end carries: Coulomb's rule in
+                // its two forms. mu_s holds the slide while the grip can carry what
+                // holding it would take; once it cannot, mu_k carries what it can and
+                // the rest slips.
+                const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
+                if (!(patch.normalImpulse[k] > 0.0)) {
+                    if (patch.tangentImpulse[k] != 0.0) {
+                        pushBody(body, patch.point[k], tangent * -patch.tangentImpulse[k], patch.kind);
+                        pushOther(patch.point[k], tangent * patch.tangentImpulse[k]);
+                        patch.tangentImpulse[k] = 0.0;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            const double giveTangent = giveAt(body, contact.point, tangent) +
-                                       otherGive(contact.point, tangent);
-            if (!(giveTangent > 1e-12)) continue;
-            const double slide = dot(relativeSpeed(contact.point), tangent);
-            double muStatic = body.staticFriction, muKinetic = body.kineticFriction;
-            if (other != nullptr) {
-                muStatic = 0.5 * (muStatic + other->staticFriction);
-                muKinetic = 0.5 * (muKinetic + other->kineticFriction);
-            } else if (contact.ball) {
-                muStatic = std::min(muStatic, ball_shape::kBallStaticFriction);
-                muKinetic = std::min(muKinetic, ball_shape::kBallKineticFriction);
-            }
-            double next = contact.tangentImpulse - slide / giveTangent;
-            const double hold = muStatic * contact.normalImpulse;
-            if (std::abs(next) > hold) {
-                // Held no longer: the grip gives what sliding takes, and the rest
-                // of the pull goes into movement.
-                const double slip = muKinetic * contact.normalImpulse;
-                next = std::copysign(std::min(std::abs(next), slip), next);
-            }
-            const double delta = next - contact.tangentImpulse;
-            if (delta != 0.0) {
-                contact.tangentImpulse = next;
-                pushBody(body, contact.point, tangent * delta, contact.kind);
-                pushOther(contact.point, tangent * -delta);
-                delivered = true;
+                const double giveTangent = give(patch.point[k], tangent, patch.point[k], tangent);
+                if (!(giveTangent > 1e-12)) continue;
+                const double slide = dot(relativeSpeed(patch.point[k]), tangent);
+                double muStatic = body.staticFriction, muKinetic = body.kineticFriction;
+                if (other != nullptr) {
+                    muStatic = 0.5 * (muStatic + other->staticFriction);
+                    muKinetic = 0.5 * (muKinetic + other->kineticFriction);
+                } else if (patch.ball) {
+                    muStatic = std::min(muStatic, ball_shape::kBallStaticFriction);
+                    muKinetic = std::min(muKinetic, ball_shape::kBallKineticFriction);
+                }
+                double carried = patch.tangentImpulse[k] - slide / giveTangent;
+                const double hold = muStatic * patch.normalImpulse[k];
+                if (std::abs(carried) > hold) {
+                    const double slip = muKinetic * patch.normalImpulse[k];
+                    carried = std::copysign(std::min(std::abs(carried), slip), carried);
+                }
+                const double delta = carried - patch.tangentImpulse[k];
+                if (delta == 0.0) continue;
+                patch.tangentImpulse[k] = carried;
+                pushBody(body, patch.point[k], tangent * delta, patch.kind);
+                pushOther(patch.point[k], tangent * -delta);
             }
         }
         if (worst < kSolveTolerance && pass > 0) break;
     }
-    (void)delivered;
     return closingAtAll;
 }
 
@@ -415,23 +493,6 @@ void PlaygroundRoom::settleBodies() {
         if (body.restTicks == 0) {
             body.restLow = body.restHigh = body.centre;
             body.restAngleLow = body.restAngleHigh = body.angle;
-            body.restPose = body.centre;
-            body.restPoseAngle = body.angle;
-            body.restGrounded = -1;
-        }
-        // Where it is standing: among the poses the settling actually passed
-        // through, the one standing on the most of its own corners, and the lowest
-        // of those. That is the pose it comes back to at the bottom of every rock
-        // -- the one it would be left in if the rock were taken away -- and it is
-        // read off what happened, not invented.
-        int grounded = 0;
-        for (std::size_t i = 0; i < body.count; ++i)
-            if (body.position[i].y <= kContactBand) ++grounded;
-        if (grounded > body.restGrounded ||
-            (grounded == body.restGrounded && body.centre.y <= body.restPose.y)) {
-            body.restGrounded = grounded;
-            body.restPose = body.centre;
-            body.restPoseAngle = body.angle;
         }
         body.restLow = Vec3{std::min(body.restLow.x, body.centre.x), std::min(body.restLow.y, body.centre.y), 0};
         body.restHigh = Vec3{std::max(body.restHigh.x, body.centre.x), std::max(body.restHigh.y, body.centre.y), 0};
@@ -445,29 +506,16 @@ void PlaygroundRoom::settleBodies() {
         // second is standing still on what is holding it up, and a body that has
         // been anywhere is not, and starts its second again.
         if (body.restTicks >= kRestTicks && anywhere) {
+            // Asleep where the physics left it. Nothing is moved to make it look
+            // tidier: a body that is standing still is standing where it stands.
             body.frozen = true;
             body.velocity = {};
             body.spin = 0.0;
-            // Asleep where it was standing, not at whatever phase of its last
-            // twitch the arithmetic happened to end on.
-            body.centre = body.restPose;
-            body.angle = body.restPoseAngle;
-            placeCorners(body);
             body.shown = body.position;
         } else if (body.restTicks >= kRestTicks && !anywhere) {
             body.restTicks = 0;
         }
     }
-}
-
-template <class B> static void dumpBody(const char* tag, const B& body) {
-    if (std::getenv("WOBDUMP") == nullptr || body.count == 0) return;
-    std::fprintf(stderr, "  %-14s c(%.7f,%.7f) a %+.7f v(%+.5f,%+.5f) w %+.5f  y:", tag, body.centre.x,
-                 body.centre.y, body.angle, body.velocity.x, body.velocity.y, body.spin);
-    for (std::size_t i = 0; i < body.count; ++i) std::fprintf(stderr, " %.7f", body.position[i].y);
-    std::fprintf(stderr, " x:");
-    for (std::size_t i = 0; i < body.count; ++i) std::fprintf(stderr, " %.5f", body.position[i].x);
-    std::fprintf(stderr, "\n");
 }
 
 // One tick of every body. The forces first, then the walk.
@@ -479,53 +527,33 @@ template <class B> static void dumpBody(const char* tag, const B& body) {
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     applyBodyForces();
-    // One set of contacts for the whole tick, carried through the walk. The
-    // contacts that are there when the tick starts are answered first -- the weight
-    // of a shape standing on the floor arrives as one tick's worth of impulse, and a
-    // contact that answers none of it leaves the shape moving through a tick it
-    // should be standing still through. An arrival later in the tick joins the same
-    // set, keeping what the contacts it shares already carry, so the tick converges
-    // on one answer for each meeting instead of answering the same one again.
-    if (std::getenv("WOBDUMP")) std::fprintf(stderr, "TICK\n");
-    dumpBody("after-last", bodies_[0]);
-    ContactSet contacts;
-    gatherContacts(contacts);
-    if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  start contacts %zu\n", contacts.count);
-    solveContacts(contacts);
-    dumpBody("post-gravity+solve", bodies_[0]);
+    // One set of patches for the whole tick, carried through the walk. The patches
+    // that are there when the tick starts are answered first -- the weight of a shape
+    // standing on the floor arrives as one tick's worth of impulse, and a patch that
+    // answers none of it leaves the shape moving through a tick it should be standing
+    // still through. An arrival later in the tick joins the same set, keeping what
+    // the ends it shares already carry, so the tick converges on one answer for each
+    // meeting instead of answering the same one again.
+    ManifoldSet patches;
+    gatherContacts(patches);
+    solveContacts(patches);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         if (step > 0.0) remaining -= advanceBodies(step);
         // A meeting at the very last instant of the tick is left to the next tick,
-        // which begins by answering every contact the bodies are touching at -- that
+        // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
-        if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  -- pre-stop pos:\n");
-        dumpBody("pre-stop", bodies_[0]);
-        const std::size_t before = contacts.count;
-        gatherContacts(contacts);
-        if (std::getenv("WOBDUMP"))
-            for (std::size_t c = 0; c < contacts.count; ++c)
-                std::fprintf(stderr, "     contact corner %zu at (%.6f,%.9f)  carried %.6f\n",
-                             contacts.items[c].corner, contacts.items[c].point.x, contacts.items[c].point.y,
-                             contacts.items[c].normalImpulse);
-        if (contacts.count == before && !solveContacts(contacts)) {
+        const std::size_t before = patches.count;
+        gatherContacts(patches);
+        if (!solveContacts(patches)) {
             // Nothing new is touching and nothing already touching is closing: what
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
             break;
         }
-        if (!solveContacts(contacts)) {
-            remaining -= advanceBodies(remaining);
-            break;
-        }
-        if (std::getenv("WOBDUMP"))
-            for (std::size_t c = 0; c < contacts.count; ++c)
-                std::fprintf(stderr, "     -> corner %zu  n %.6f  t %.6f\n", contacts.items[c].corner,
-                             contacts.items[c].normalImpulse, contacts.items[c].tangentImpulse);
-        if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  after stop %d (remaining %.6f) contacts %zu\n", stop, remaining, contacts.count);
-        dumpBody("stopped", bodies_[0]);
+        (void)before;
     }
     settleBodies();
     writeImpulses();

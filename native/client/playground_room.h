@@ -187,11 +187,6 @@ private:
         // arithmetic of its contacts leaves it a hair of a rock or not.
         Vec3 restLow{1e30, 1e30, 0}, restHigh{-1e30, -1e30, 0};
         double restAngleLow = 1e30, restAngleHigh = -1e30;
-        // The lowest pose it held while it was settling: where a shape that has
-        // stopped rocking is actually standing, and where it is put to sleep.
-        Vec3 restPose{};
-        double restPoseAngle = 0;
-        int restGrounded = -1;
         int restTicks = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
@@ -240,45 +235,63 @@ private:
     double timeToContact(double remaining) const;
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
-    // One contact: this body pushed out of the other side, at a place, along a
-    // normal. `other` is kBodyCount when the other side is the floor, which cannot
-    // move. The impulses are accumulated over the passes of one solve, and written
-    // into the ledger once the tick has finished.
-    struct Contact {
-        std::size_t body = 0, other = kBodyCount, corner = 0;
+    // One patch: a face of a body resting on a surface. Its two ends are the ends
+    // of the load that face carries, not two independent meetings -- a body whose
+    // weight is answered at one corner alone cannot be held there without being
+    // turned by it, and that is a body that rocks forever. The pressure between
+    // the ends is what lets a flat face stand still, and what makes it lift off at
+    // one end when its weight no longer runs between them.
+    //
+    // `other` is kBodyCount when the other side is the floor, which cannot move.
+    // The impulses are accumulated over the solves of one tick and written into
+    // the ledger once the tick has finished.
+    static constexpr std::size_t kMaxPatchEnds = 2;
+    struct Manifold {
+        std::size_t body = 0, other = kBodyCount;
         bool ball = false;  // the other side is the ball rather than a body
-        Vec3 point{}, normal{};
-        double normalImpulse = 0.0, tangentImpulse = 0.0;
+        std::size_t ends = 0;
+        std::size_t corner[kMaxPatchEnds] = {0, 0};
+        Vec3 point[kMaxPatchEnds]{}, normal{};
+        double normalImpulse[kMaxPatchEnds]{}, tangentImpulse[kMaxPatchEnds]{};
         ForceKind kind = ForceKind::Contact;
     };
-    static constexpr std::size_t kMaxTickContacts = 16;
-    struct ContactSet {
-        std::array<Contact, kMaxTickContacts> items{};
+    static constexpr std::size_t kMaxTickManifolds = 12;
+    struct ManifoldSet {
+        std::array<Manifold, kMaxTickManifolds> items{};
         std::size_t count = 0;
-        // A contact that is found again is the same contact: it keeps what it has
-        // already carried, so a solve that runs more than once over one tick
-        // converges instead of answering the same meeting twice. That is what makes
-        // a shape resting on the floor stand still rather than rock.
-        void add(const Contact& contact) {
+        // A patch that is found again is the same patch: each of its ends keeps what
+        // it has already carried, so a tick that solves more than once over the same
+        // meeting converges on one answer instead of answering it twice.
+        void add(const Manifold& patch) {
             for (std::size_t i = 0; i < count; ++i) {
-                Contact& known = items[i];
-                if (known.body != contact.body || known.other != contact.other || known.ball != contact.ball)
+                Manifold& known = items[i];
+                if (known.body != patch.body || known.other != patch.other || known.ball != patch.ball)
                     continue;
-                if (!contact.ball && known.corner != contact.corner) continue;
-                known.point = contact.point;
-                known.normal = contact.normal;
+                double carried[kMaxPatchEnds]{}, grip[kMaxPatchEnds]{};
+                for (std::size_t k = 0; k < patch.ends; ++k) {
+                    for (std::size_t j = 0; j < known.ends; ++j) {
+                        if (!patch.ball && known.corner[j] != patch.corner[k]) continue;
+                        if (patch.ball && j != k) continue;
+                        carried[k] = known.normalImpulse[j];
+                        grip[k] = known.tangentImpulse[j];
+                    }
+                }
+                known = patch;
+                for (std::size_t k = 0; k < patch.ends; ++k) {
+                    known.normalImpulse[k] = carried[k];
+                    known.tangentImpulse[k] = grip[k];
+                }
                 return;
             }
-            if (count < items.size()) items[count++] = contact;
+            if (count < items.size()) items[count++] = patch;
         }
         void clear() { count = 0; }
     };
-    // Every contact at the configuration the walk has stopped at, and the answer
-    // to all of them at once. The answer is sequential impulses: each contact takes
-    // its share of the closing speed along its normal, and its grip along the
-    // surface is limited by mu times what the normal has carried so far.
-    void gatherContacts(ContactSet& contacts) const;
-    bool solveContacts(ContactSet& contacts);
+    // Every patch at the configuration the walk has stopped at, and the answer to
+    // all of them at once: each patch is solved as one load over its two ends, and
+    // the patches are swept until they agree with each other.
+    void gatherContacts(ManifoldSet& patches) const;
+    bool solveContacts(ManifoldSet& patches);
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
