@@ -511,7 +511,6 @@ void PlaygroundRoom::tick() {
         }
         // The same rule for a body: only the part of the speed that drives into
         // the face is answered here.
-        const Vec3 along = velocity_ - normal * dot(velocity_, normal);
         const double into = dot(velocity_, normal);
         if (into < 0.0) {
             // Where the two surfaces met: the body's lever is measured from the
@@ -519,7 +518,20 @@ void PlaygroundRoom::tick() {
             // middle, not the middle itself.
             hitBody(hitIndex, normal, into);
         }
-        velocity_ = along;
+        // And that exchange is the whole of the answer.
+        //
+        // A body is not the floor. The floor cannot yield, so all a dot driving
+        // into it can do is stop -- what runs along stays, nothing else survives.
+        // A body yields: it takes part of the approach as speed of its own, and
+        // what the dot keeps is the difference. Flattening the dot onto the face
+        // afterwards as if the face were a wall throws that difference away, and
+        // it throws away momentum with it: the dot arrived with four metres a
+        // second, the cube left with a third of one, and the rest of the motion
+        // went nowhere at all -- not into the cube, not into friction, not into
+        // heat. Only motion that still drives into a face is removed, so the
+        // separation the impulse has just produced is left alone to run.
+        if (velocity_.x * normal.x + velocity_.y * normal.y < 0.0)
+            velocity_ = velocity_ - normal * dot(velocity_, normal);
         resting_ = true;
         restingBody_ = int(hitIndex);
         supportNormal_ = normal;
