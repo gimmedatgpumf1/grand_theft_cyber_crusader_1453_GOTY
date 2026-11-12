@@ -410,19 +410,36 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
         }
         }
-        // What is under each end decides what the body is standing on.
+        // What is under each end decides what each body is standing on.
+        //
+        // A patch is one meeting, held by whichever of the two is the lower-numbered
+        // awake body, so the one that is *on top* is usually not the one the patch is
+        // filed under. It is still carried, by the same load at the same ends, and it
+        // has to know it: a body that is supported and does not know it never comes to
+        // rest, never sleeps, and -- because nothing in it is at rest -- goes on being
+        // solved every tick for as long as the room is open. So a patch whose surface
+        // faces up carries its owner, and one whose surface faces down is its owner
+        // being pressed from above, which carries the other.
         for (std::size_t k = 0; k < count; ++k) {
-            if (!(patch.normalImpulse[k] > 0.0) || !(patch.normal.y > 0.5)) continue;
-            ++body->contacts;
-            if (other == nullptr && !patch.ball) {
-                body->touchingPlane = true;
-            } else if (other != nullptr) {
-                body->onBody = true;
-                body->supportFrozen = other->frozen;
-                body->supportBody = patch.other;
+            if (!(patch.normalImpulse[k] > 0.0)) continue;
+            if (patch.normal.y > 0.5) {
+                ++body->contacts;
+                if (other == nullptr && !patch.ball) {
+                    body->touchingPlane = true;
+                } else if (other != nullptr) {
+                    body->onBody = true;
+                    body->supportFrozen = other->frozen;
+                    body->supportBody = patch.other;
+                }
+                body->supportLow = std::min(body->supportLow, patch.point[k].x);
+                body->supportHigh = std::max(body->supportHigh, patch.point[k].x);
+            } else if (patch.normal.y < -0.5 && other != nullptr) {
+                other->onBody = true;
+                other->supportFrozen = body->frozen;
+                other->supportBody = patch.body;
+                other->supportLow = std::min(other->supportLow, patch.point[k].x);
+                other->supportHigh = std::max(other->supportHigh, patch.point[k].x);
             }
-            body->supportLow = std::min(body->supportLow, patch.point[k].x);
-            body->supportHigh = std::max(body->supportHigh, patch.point[k].x);
         }
     };
 
