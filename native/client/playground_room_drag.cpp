@@ -106,6 +106,19 @@ void PlaygroundRoom::updateDrag() {
         // until the mouse finds one it does.
         const Vec3 wanted{std::clamp(hit.x, -5.0, 5.0), std::max(ball_.radius, hit.y), 0};
         if (!ballPlacementClear(wanted)) return;
+        // A spot the ball fits in is not enough: the hand may not carry it *through*
+        // a shape to get there. Refusing only the place a shape occupies left the ball
+        // jumping from one side of a cube to the other in a single frame, because every
+        // spot along the way was fine and the one between them was not -- the ball
+        // passed through the solid, invisibly, in a tick nobody saw.
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            double along = 2.0;
+            Vec3 normal{0, 1, 0};
+            if (segmentHitsPolygon(ball_.position, wanted, body.position.data(), body.count, along, normal))
+                return;
+        }
         ball_.position = wanted;
         ball_.previous = ball_.shown = ball_.position;
         ball_.velocity = {};
