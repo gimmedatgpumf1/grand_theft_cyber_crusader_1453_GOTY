@@ -215,9 +215,13 @@ void PlaygroundRoom::separateBodies() {
 // it: no speed is changed, so no energy is made, and the ball's own tick then finds
 // it exactly where a contact belongs and answers it as one.
 bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
+    if (getenv("GTC_PUSH")) std::fprintf(stderr, "push? %zu through %.6f\n", index, through);
     if (index >= kBodyCount || !(through > 0.0)) return false;
     Body& body = bodies_[index];
-    if (body.count == 0 || bodyHeld(index)) return false;
+    if (body.count == 0 || bodyHeld(index)) {
+        if (getenv("GTC_PUSH")) std::fprintf(stderr, "  no: count %zu held %d\n", body.count, (int)bodyHeld(index));
+        return false;
+    }
     if (getenv("GTC_PUSH")) std::fprintf(stderr, "push body %zu through %.6f normal(%+.3f,%+.3f) c(%+.3f,%+.3f)\n", index, through, normal.x, normal.y, body.centre.x, body.centre.y);
     const Vec3 was = body.centre;
     // How far the shape already reaches below the floor, which is a state it may
