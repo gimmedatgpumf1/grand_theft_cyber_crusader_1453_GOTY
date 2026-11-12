@@ -1,3 +1,6 @@
+#include <cstdio>
+#include <cstdlib>
+
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 
@@ -44,6 +47,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double turned = inertia * (ball.spin - spinBefore) / kTick;
         if (std::abs(turned) > 1e-9) addCouple(contactPoint, turned, Vec3{}, ForceKind::Ball, kBallOwner);
     };
+    if (std::getenv("DBGB"))
+        std::fprintf(stderr, "contact body %d depth %.6f exchange %d normal(%+.2f,%+.2f) v(%+.2f,%+.2f) at(%.3f,%.3f)\n",
+                     bodyIndex, depth, exchange ? 1 : 0, normal.x, normal.y, ball.velocity.x, ball.velocity.y,
+                     contactPoint.x, contactPoint.y);
     Vec3 answer = normal;
     bool canMove = false;
     // A body at rest is not stepped, and what it is not stepping it cannot give
