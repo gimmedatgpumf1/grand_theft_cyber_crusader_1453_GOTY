@@ -522,6 +522,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
+        if (std::getenv("DBG") && patch.other < kBodyCount)
+            std::fprintf(stderr, "    pair b%zu o%zu e%zu n(%+.3f,%+.3f) p0(%.3f,%.3f) g%.7f u0 %.4f\n", patch.body,
+                         patch.other, count, patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y,
+                         patch.gap[0], away(patch.point[0], patch.normal));
         // What the ends were closing at before this answer, for the walk.
         for (std::size_t k = 0; k < count; ++k) {
             const double closing = away(patch.point[k], patch.normal);
