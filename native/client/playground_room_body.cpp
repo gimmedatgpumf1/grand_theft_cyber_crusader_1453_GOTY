@@ -426,38 +426,30 @@ void PlaygroundRoom::settleBodies() {
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     applyBodyForces();
-    const bool dbg = std::getenv("DBGW") != nullptr;
-    if (dbg) std::fprintf(stderr, "TICK v0 (%.4f,%.4f) w %.4f\n", bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin);
+    // The contacts that are there when the tick starts are answered first, and
+    // they are answered for the whole tick: the weight of a shape standing on the
+    // floor arrives as one tick's worth of impulse, and a contact that answers none
+    // of it leaves the shape moving for a tick it should be standing still through.
+    // This is the same solve as an arrival's; what makes it different is only that
+    // nothing has moved.
+    ContactSet touching;
+    gatherContacts(touching);
+    if (touching.count > 0) solveContacts(touching);
+    // And then the walk: every arrival, answered where it happens, with what is
+    // left of the tick carried on from there.
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        if (dbg) std::fprintf(stderr, " stop %d rem %.6f step %.6f\n", stop, remaining, step);
-        if (std::getenv("DBG3"))
-            std::fprintf(stderr, "  stop %d step %.6f cube v(%.4f,%.4f) w %.4f y %.4f contacts %d/%d\n", stop, step,
-                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].centre.y,
-                         int(bodies_[0].touchingPlane), bodies_[0].contacts);
         if (step > 0.0) remaining -= advanceBodies(step);
-        if (std::getenv("DBG3"))
-            std::fprintf(stderr, "   after advance cube v(%.4f,%.4f) w %.4f y %.4f rem %.4f\n",
-                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].centre.y, remaining);
+        if (!(remaining > 0.0)) break;
         ContactSet contacts;
         gatherContacts(contacts);
-        if (dbg) {
-            std::fprintf(stderr, "  contacts %zu centre (%.5f,%.5f)\n", contacts.count, bodies_[0].centre.x, bodies_[0].centre.y);
-            for (std::size_t q = 0; q < contacts.count; ++q)
-                std::fprintf(stderr, "    c%zu body %zu other %zu ball %d pt (%.4f,%.4f) n (%.3f,%.3f) v(%.4f,%.4f)\n", q,
-                             contacts.items[q].body, contacts.items[q].other, int(contacts.items[q].ball),
-                             contacts.items[q].point.x, contacts.items[q].point.y, contacts.items[q].normal.x,
-                             contacts.items[q].normal.y, pointSpeed(bodies_[contacts.items[q].body], contacts.items[q].point).x,
-                             pointSpeed(bodies_[contacts.items[q].body], contacts.items[q].point).y);
-        }
         if (contacts.count == 0 || !solveContacts(contacts)) {
             // Nothing is touching, or nothing that is touching is closing: what is
             // left of the tick is travel along the way the bodies are going.
-            if (remaining > 0.0) remaining -= advanceBodies(remaining);
+            remaining -= advanceBodies(remaining);
             break;
         }
-        if (!(remaining > 1e-12)) break;
     }
     settleBodies();
     writeImpulses();
