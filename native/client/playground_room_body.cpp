@@ -432,7 +432,14 @@ void PlaygroundRoom::tickBodies() {
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         if (dbg) std::fprintf(stderr, " stop %d rem %.6f step %.6f\n", stop, remaining, step);
+        if (std::getenv("DBG3"))
+            std::fprintf(stderr, "  stop %d step %.6f cube v(%.4f,%.4f) w %.4f y %.4f contacts %d/%d\n", stop, step,
+                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].centre.y,
+                         int(bodies_[0].touchingPlane), bodies_[0].contacts);
         if (step > 0.0) remaining -= advanceBodies(step);
+        if (std::getenv("DBG3"))
+            std::fprintf(stderr, "   after advance cube v(%.4f,%.4f) w %.4f y %.4f rem %.4f\n",
+                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].centre.y, remaining);
         ContactSet contacts;
         gatherContacts(contacts);
         if (dbg) {
