@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -439,6 +441,9 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             // The way out of the body this one is meeting is the way at the place
             // they are nearest, which is where the load is.
             patch.normal = way[0];
+            if (std::getenv("DBG"))
+                std::fprintf(stderr, "   gather pair b%zu o%zu ends %zu nearest %.6f %.6f\n", one, two,
+                             patch.ends, nearest[0], nearest[1]);
             while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
             if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
         }
