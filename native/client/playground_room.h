@@ -390,6 +390,13 @@ private:
     // is refused for being inside something never moves at all while its weight goes
     // on arriving -- which is a shape that gains energy without ever moving.
     void separateBodies();
+    // Puts a shape back out of the ball by `through`, along `normal` (which runs
+    // from the shape towards the ball), instead of moving the ball. The ball is the
+    // one thing whose path may not jump: the shape is what arrived, and a shape that
+    // has come into the ball is a shape that has overstepped. Returns false when the
+    // shape cannot be the one to give way -- the mouse is holding it, or moving it
+    // would put it through the floor -- and then it is the ball's turn.
+    bool pushBodyOutOfBall(std::size_t index, Vec3 normal, double through);
     // Nothing ends a tick inside the ball: the sweep cannot see a shape turning into
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.

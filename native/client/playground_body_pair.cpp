@@ -214,6 +214,29 @@ void PlaygroundRoom::separateBodies() {
 // it had stopped when it hit something, which is where a contact would have stopped
 // it: no speed is changed, so no energy is made, and the ball's own tick then finds
 // it exactly where a contact belongs and answers it as one.
+bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
+    if (index >= kBodyCount || !(through > 0.0)) return false;
+    Body& body = bodies_[index];
+    if (body.count == 0 || bodyHeld(index)) return false;
+    const Vec3 was = body.centre;
+    // Out of the ball means along -normal, because the normal runs from the shape to
+    // the ball: the shape leaves the way the ball would have.
+    body.centre = body.centre - normal * through;
+    placeCorners(body);
+    // The floor is under everything, so a shape cannot be the one to give way if
+    // giving way would take it through the floor. What is left is the ball moving,
+    // which is the honest last resort.
+    for (std::size_t i = 0; i < body.count; ++i) {
+        if (body.position[i].y < playground_tick::kSurfaceY - playground_tick::kQuantum) {
+            body.centre = was;
+            placeCorners(body);
+            return false;
+        }
+    }
+    ++bodyStepClamped_;
+    return true;
+}
+
 void PlaygroundRoom::separateBall() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];

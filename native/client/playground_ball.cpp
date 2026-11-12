@@ -256,12 +256,18 @@ void PlaygroundRoom::tickBall() {
                 // can tell from touching is one to put back, and only then is it a
                 // miss worth counting.
                 if (ball.radius - on.gap > playground_tick::kQuantum) {
-                    // Counted only when it is a real miss and not the last bit of a
-                    // double: a ball resting on a surface is one radius from it to
-                    // within rounding, every tick, and that is not the room failing
-                    // to prevent anything.
-                    ++ballFoundThrough_;
-                    ball.position = ball.position + on.normal * (ball.radius - on.gap);
+                    // The shape gives way first. It is the one that arrived, and the
+                    // ball is the one thing in the room whose path may never jump: a
+                    // ball that is teleported out of what it is in is exactly the
+                    // "kicked out" this room is not allowed to do. Only when the shape
+                    // cannot move -- the mouse is holding it, or moving it would put it
+                    // through the floor -- does the ball step aside, and only then is
+                    // it a miss worth counting.
+                    const double through = ball.radius - on.gap;
+                    if (!pushBodyOutOfBall(index, on.normal, through)) {
+                        ++ballFoundThrough_;
+                        ball.position = ball.position + on.normal * through;
+                    }
                 }
                 ball.touching = true;
                 const bool answer = !answered[index];
