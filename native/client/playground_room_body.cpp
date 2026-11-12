@@ -294,9 +294,12 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         double lowest[kMaxPatchEnds] = {1e30, 1e30};
         for (std::size_t i = 0; i < body.count; ++i) {
             const double height = body.position[i].y;
-            if (height > kContactBand) continue;
             // The two lowest: a convex body stands on a face, and more than two
             // corners on one plane is the same face seen with a collinear corner.
+            // Both of them are taken whether or not the second one has arrived: a
+            // face is either on the floor or it is not, and once it is, both of its
+            // ends are answered -- the one that is down against the floor it is on,
+            // and the one still in the air against the distance it has left to fall.
             for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                 if (height < lowest[k]) {
                     for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -313,7 +316,10 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             }
         }
         while (patch.ends < kMaxPatchEnds && lowest[patch.ends] < 1e29) ++patch.ends;
-        if (patch.ends > 0) patches.add(patch);
+        // A face whose ends are all still in the air is a body falling, and a body
+        // falling is the walk's business: it is not answered here, where all it
+        // would get is a stop a tick early.
+        if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
     }
     // The ball, met at the one place a body's outline comes closest to it.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -350,7 +356,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             for (std::size_t i = 0; i < body.count; ++i) {
                 const ball_shape::OutlineGap gap = ball_shape::outlineGap(
                     body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-                if (gap.gap > kContactBand) continue;
                 if (!haveNormal) {
                     patch.normal = gap.normal;  // out of the other body, into this one
                     haveNormal = true;
@@ -371,7 +376,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                 }
             }
             while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
-            if (patch.ends > 0) patches.add(patch);
+            if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
         }
     }
 }
