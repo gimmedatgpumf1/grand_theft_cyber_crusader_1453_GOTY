@@ -308,6 +308,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                         lowest[j] = lowest[j - 1];
                         patch.corner[j] = patch.corner[j - 1];
                         patch.point[j] = patch.point[j - 1];
+                        patch.gap[j] = patch.gap[j - 1];
                     }
                     lowest[k] = height;
                     patch.corner[k] = i;
@@ -368,6 +369,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                             nearest[j] = nearest[j - 1];
                             patch.corner[j] = patch.corner[j - 1];
                             patch.point[j] = patch.point[j - 1];
+                            patch.gap[j] = patch.gap[j - 1];
                         }
                         nearest[k] = gap.gap;
                         patch.corner[k] = i;
