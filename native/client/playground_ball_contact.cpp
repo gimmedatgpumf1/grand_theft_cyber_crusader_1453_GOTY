@@ -182,6 +182,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
 
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   TERMS body %d closing %.4f arrived %.4f surface(%+.4f,%+.4f) v(%+.4f,%+.4f) canMove %d frozen %d\n", bodyIndex, closing, arrivedSpeed, surfaceVelocity.x, surfaceVelocity.y, ball.velocity.x, ball.velocity.y, (int)canMove, (int)(body ? body->frozen : 0));
     // A bounce is the answer to arriving at a surface, measured against what the
     // ball arrived with rather than the speed gravity lent it on the way: a ball on
     // the floor gets that every tick, and bouncing it would be bouncing it off
