@@ -56,12 +56,13 @@ Vec3 PlaygroundRoom::bodySimulatedCorner(std::size_t body, std::size_t index) co
 }
 
 Vec3 PlaygroundRoom::bodyCornerVelocity(std::size_t body, std::size_t index) const {
-    return body < kBodyCount && index < bodies_[body].count ? bodies_[body].velocity[index] : Vec3{};
+    if (body >= kBodyCount || index >= bodies_[body].count) return Vec3{};
+    return pointSpeed(bodies_[body], bodies_[body].position[index]);
 }
 
 Vec3 PlaygroundRoom::bodyMiddle(std::size_t body) const {
     if (body >= kBodyCount) return Vec3{};
-    return centroid(bodies_[body].position.data(), bodies_[body].count);
+    return bodies_[body].centre;
 }
 
 bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
@@ -78,26 +79,23 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         const Shape& shape = kShapes[index];
+        body = Body{};
         body.count = shape.count;
-        body.pairCount = shape.pairCount;
         body.local = shape.local;
-        body.pairs = shape.pairs;
-        const double c = std::cos(shape.angle), s = std::sin(shape.angle);
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 local = shape.local[i];
-            const Vec3 corner{shape.middle.x + local.x * c - local.y * s,
-                              shape.middle.y + local.x * s + local.y * c, 0};
-            body.position[i] = body.previous[i] = body.shown[i] = corner;
-            body.velocity[i] = {};
-        }
-        for (std::size_t pair = 0; pair < body.pairCount; ++pair) {
-            body.rest[pair] = length(body.position[std::size_t(body.pairs[pair][1])] -
-                                     body.position[std::size_t(body.pairs[pair][0])]);
-        }
+        // The shape's corners are given about the centre of area, which is where a
+        // uniform plate balances: the body's centre of mass.
+        body.centre = body.previousCentre = shape.middle;
+        body.angle = body.previousAngle = shape.angle;
+        body.mass = static_cast<double>(body.count) * kMass;
+        body.moment = polygonMoment(body.local, body.count, body.mass);
+        body.velocity = {};
+        body.spin = 0.0;
         body.staticFriction = shape.staticFriction;
         body.kineticFriction = shape.kineticFriction;
         body.frozen = false;
         body.contacts = 0;
+        placeCorners(body);
+        body.previous = body.shown = body.position;
     }
     // A new ball, at the same place it starts in. The scene is not rebuilt by a
     // reset, so the two drawing handles it was given at build time have to be
@@ -168,10 +166,10 @@ void PlaygroundRoom::beginDrag() {
         dragTarget_ = DragTarget::Body;
         dragBody_ = picked;
         planeGrab_ = hit;
-        const Vec3 middle = centroid(body.position.data(), body.count);
-        grabOffset_ = Vec3{middle.x - hit.x, middle.y - hit.y, 0};
+        grabOffset_ = Vec3{body.centre.x - hit.x, body.centre.y - hit.y, 0};
         body.frozen = false;
-        for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
+        body.velocity = {};
+        body.spin = 0.0;
     } else if (length(Vec3{hit.x - ball_.position.x, hit.y - ball_.position.y, 0}) <= ball_.radius) {
         dragTarget_ = DragTarget::Ball;
         ball_.frozen = false;
@@ -211,34 +209,26 @@ void PlaygroundRoom::updateDrag() {
         return;
     }
     if (dragTarget_ == DragTarget::Body) {
-        // A body follows the mouse by its middle, so every corner moves by the
-        // same amount and no distance changes. A dragged body has no previous
-        // tick to glide away from, and it must not be running its sleep test.
+        // The mouse carries the body's centre of mass; how far it is turned stays
+        // what it was, because the mouse is not twisting it. The corners follow
+        // from the two, as they always do.
         Body& body = bodies_[dragBody_ < kBodyCount ? dragBody_ : 0];
-        const Vec3 middle = centroid(body.position.data(), body.count);
-        const Vec3 center{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
+        const Vec3 centre{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
                           std::max(kSurfaceY, hit.y + grabOffset_.y), 0};
-        const Vec3 move{center.x - middle.x, center.y - middle.y, 0};
-        // A body, like the ball, cannot be put down inside a solid.
-        //
-        // Dragging is not simulating: while the mouse has it, nothing is stepped and
-        // no hitscan runs, so the cursor may sit on top of another shape. Releasing
-        // it there used to leave a body a whole body's width inside another one, and
-        // the tick then had to find 0.7 m of overlap to undo -- which the shape solve
-        // answers by throwing corners metres in one tick, and a corner that moved a
-        // metre in a tick is a corner moving at twenty metres a second. That is the
-        // clipping and the explosion. A spot a shape does not fit in is not a spot it
-        // can be put down: the body stays where it was and the mouse has to find room
-        // for it, exactly as the ball already does.
+        // A body, like the ball, cannot be put down inside a solid: a shape let go
+        // of inside another one is the one state the simulation has no honest answer
+        // to, because nothing in this room is ever driven out of anything.
         std::array<Vec3, kMaxCorners> wanted{};
+        const Vec3 move = centre - body.centre;
         for (std::size_t i = 0; i < body.count; ++i) wanted[i] = body.position[i] + move;
         if (!bodyPlacementClear(dragBody_ < kBodyCount ? dragBody_ : 0, wanted)) return;
-        for (std::size_t i = 0; i < body.count; ++i) {
-            body.position[i] = wanted[i];
-            body.previous[i] = body.position[i];
-            body.shown[i] = body.position[i];
-            body.velocity[i] = {};
-        }
+        body.centre = centre;
+        placeCorners(body);
+        body.previousCentre = body.centre;
+        body.previousAngle = body.angle;
+        body.previous = body.shown = body.position;
+        body.velocity = {};
+        body.spin = 0.0;
         return;
     }
     point_ = {std::clamp(hit.x, -5.0, 5.0), std::max(kSurfaceY, hit.y), 0};
@@ -257,122 +247,75 @@ void PlaygroundRoom::updateDrag() {
 // tick and the position the last tick left it in, at the fraction of a tick the
 // frame has reached. Nothing is moved by the renderer; this is only what is
 // drawn, exactly as Minecraft spreads a 20 Hz tick over rendered frames.
-// Which of a body's corners a blow lands on: the nearest one. The body is its
-// points, so the momentum goes into those points and the fixed distances pass it
-// on to the rest.
-std::size_t PlaygroundRoom::nearestCorner(const Body& body, Vec3 point) const {
-    std::size_t struck = 0;
-    double nearest = 1e30;
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const double distance = length(point - body.position[i]);
-        if (distance < nearest) { nearest = distance; struck = i; }
-    }
-    return struck;
-}
-
-// A body takes a blow at one of its corners. The struck corner takes half of it
-// and the other corners share the rest, so the body gains exactly the momentum it
-// was handed and is set turning by the uneven share. This is how a point's blow is
-// delivered to a body, which is the dot's collision and the pull friction gives a
-// body the dot is sliding on. A body struck by another body is a solid struck at a
-// contact rather than a point struck at a corner, and that one is giveBodyTurn.
-void PlaygroundRoom::giveBodyImpulse(std::size_t index, std::size_t struck, Vec3 momentum) {
-    Body& body = bodies_[index];
-    ++body.contacts;
-    constexpr double kStruckShare = 0.5;
-    const double otherShare =
-        body.count > 1 ? (1.0 - kStruckShare) / static_cast<double>(body.count - 1) : 0.0;
-    for (std::size_t i = 0; i < body.count; ++i)
-        body.velocity[i] = body.velocity[i] + momentum * ((i == struck ? kStruckShare : otherShare) / kMass);
+// One impulse, given to one body at one place. This is the only door into a
+// body's motion anywhere in the room, because it is the only thing a force can do
+// to a rigid body: change the speed of its centre of mass by J/m and its turn by
+// the moment of J about the centre, r x J / I. The corners are not touched here --
+// they are where the shape says they are, and they move because the body does.
+void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind) {
+    if (!(length(impulse) > 0.0)) return;
+    const Vec3 arm = at - body.centre;
+    body.velocity = body.velocity + impulse * (1.0 / body.mass);
+    body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
     body.frozen = false;
-    // And the arrow: the momentum handed over, over the tick, written at the corner
-    // it was struck at -- which is where the dot's blow landed and where the force
-    // it stands for acts.
-    if (length(momentum) > 1e-9) addForce(body.position[struck], momentum * (1.0 / kTick), ForceKind::Contact);
+    recordImpulse(at, impulse, kind);
 }
 
-// A body's mass where a blow lands. A body is its corners held at fixed distances
-// from each other, which is a solid: its middle is where those corners balance, and
-// the moment of inertia of them about that middle is what a blow has to turn. The
-// ball has always been answered this way and so is a body against a body -- one
-// solid is struck wherever the two of them met, and it turns about its middle.
-PlaygroundRoom::BodyInertia PlaygroundRoom::bodyInertia(const Body& body) const {
-    BodyInertia result;
-    if (body.count == 0) return result;
-    result.middle = centroid(body.position.data(), body.count);
-    double sum = 0.0;
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const Vec3 r = body.position[i] - result.middle;
-        sum += kMass * dot(r, r);
+// And the same for the ball: a blow at a place changes its speed along the line of
+// the blow, and its turn by the moment of it, with the moment of a solid sphere.
+void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
+    if (!(length(impulse) > 0.0)) return;
+    const Vec3 arm = at - ball_.position;
+    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+    ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
+    ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
+    ball_.frozen = false;
+    recordImpulse(at, impulse, kind);
+}
+
+// The ledger, written where the impulse is applied. A contact solved in many passes
+// is one force at one place, so an impulse already at that place and of that kind
+// is added to rather than grown as a second arrow.
+void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind) {
+    for (std::size_t i = 0; i < impulseCount_; ++i) {
+        RecordedImpulse& entry = impulses_[i];
+        if (entry.kind != kind) continue;
+        if (length(entry.at - at) > 1e-6) continue;
+        entry.impulse = entry.impulse + impulse;
+        return;
     }
-    result.moment = sum > 0.0 ? sum : 1.0;
-    return result;
+    if (impulseCount_ >= impulses_.size()) return;
+    impulses_[impulseCount_++] = RecordedImpulse{at, impulse, kind};
 }
 
-// How much of a body's mass lies the way an impulse is pointing, from where it
-// lands: the inverse of its mass plus the lever's share about its middle. This is
-// the reciprocal the impulse is solved against, and it is the same expression the
-// ball's strike on a body already uses.
-double PlaygroundRoom::bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const {
-    if (body.count == 0 || length(direction) <= 0.0) return 0.0;
-    const Vec3 arm = contact - inertia.middle;
-    const double lever = arm.x * direction.y - arm.y * direction.x;
-    return 1.0 / (static_cast<double>(body.count) * kMass) + lever * lever / inertia.moment;
-}
-
-// A body takes an impulse at a point: every corner of it moves together and it
-// turns about its middle by what that impulse would turn it by, so where the blow
-// landed is what the body turns by. Sharing the impulse out corner by corner
-// instead had one corner stop dead while the others kept falling.
-void PlaygroundRoom::giveBodyTurn(std::size_t index, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
-                                 ForceKind kind, Vec3* accumulate) {
-    Body& body = bodies_[index];
-    ++body.contacts;
-    // The ledger is written here, where the impulse is applied, by the same call
-    // that applies it -- not measured afterwards by looking at how much the corners
-    // changed. An impulse over a tick is a force, and a force is what the arrows
-    // claim to show, so the two cannot drift apart: there is no other door into a
-    // body's velocity that this one does not also write.
-    if (accumulate != nullptr) *accumulate = *accumulate + momentum;
-    else if (length(momentum) > 1e-9) addForce(contact, momentum * (1.0 / kTick), kind);
-    const Vec3 arm = contact - inertia.middle;
-    const double turn = (arm.x * momentum.y - arm.y * momentum.x) / inertia.moment;
-    const Vec3 push = momentum * (1.0 / (static_cast<double>(body.count) * kMass));
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const Vec3 r = body.position[i] - inertia.middle;
-        const Vec3 rotate{-turn * r.y, turn * r.x, 0};
-        body.velocity[i] = body.velocity[i] + push + rotate;
+// An impulse over a tick is a force, and this is where the tick's contacts become
+// the arrows on screen: F = J/dt at the place J was given.
+void PlaygroundRoom::writeImpulses() {
+    for (std::size_t i = 0; i < impulseCount_; ++i) {
+        const RecordedImpulse& entry = impulses_[i];
+        if (!(length(entry.impulse) > 1e-9)) continue;
+        addForce(entry.at, entry.impulse * (1.0 / kTick), entry.kind);
     }
-    body.frozen = false;
+    clearImpulses();
 }
 
-// A point of mass kMass meets a body. This is the whole of what the dot is told by
-// a body it has run into: what the body can do about the blow, and what the point
-// takes back along the normal.
-double PlaygroundRoom::answerPointOnBody(std::size_t index, Vec3 pointPosition, Vec3 pointVelocity, Vec3 normal) {
+// A point of the room meets a body. The same law as every other contact: the
+// closing speed along the normal is what the two of them answer, the body's share
+// of the answer is its inverse mass plus its lever about the centre, and the
+// impulse is given at the place the dot touched -- so a dot landing on the far end
+// of a shape turns it, which is what it always should have done.
+double PlaygroundRoom::answerPointOnBody(std::size_t index, Vec3 pointPosition, Vec3 pointVelocity,
+                                         Vec3 normal) {
     Body& body = bodies_[index];
-    const std::size_t struck = nearestCorner(body, pointPosition);
-    // A body on the plane cannot be pushed down into it -- the plane only answers
-    // the part of a blow that drives into it. The rest of that impulse runs along
-    // the plane and the body must take it. A dot dropped straight down onto the
-    // triangle's 45 degree face arrives with all its momentum vertical and the
-    // face turns that into a push along its normal, so the triangle is shoved
-    // sideways. Letting the floor answer the whole blow is what used to swallow
-    // such a hit and leave the triangle untouched.
-    bool supported = false;
-    for (std::size_t i = 0; i < body.count; ++i) supported = supported || body.position[i].y <= kSurfaceY + 1e-9;
-    const bool held = bodyHeld(index);
-    const Vec3 answer = held ? Vec3{} : (supported ? Vec3{normal.x, 0, 0} : normal);
-    const bool canMove = length(answer) > 1e-9;
-    const Vec3 cornerVelocity = canMove ? body.velocity[struck] : Vec3{};
-    const double closing = dot(pointVelocity - cornerVelocity, normal);
+    if (bodyHeld(index)) return 0.0;
+    const double closing = dot(pointVelocity - pointSpeed(body, pointPosition), normal);
     if (!(closing < 0.0)) return 0.0;
-    // The contact takes exactly the approach speed and gives none of it back,
-    // which is what the plane does to the point: nothing bounces in this room.
-    constexpr double kStruckShare = 0.5;
-    const double cornerInverseMass = canMove ? kStruckShare / kMass : 0.0;
-    const double impulse = -closing / (1.0 / kMass + cornerInverseMass);
-    if (canMove) giveBodyImpulse(index, struck, answer * -impulse);
+    const double give = 1.0 / kMass + giveAt(body, pointPosition, normal);
+    if (!(give > 1e-12)) return 0.0;
+    // The contact stops the approach and gives none of it back: nothing bounces in
+    // this room.
+    const double impulse = -closing / give;
+    pushBody(body, pointPosition, normal * -impulse, ForceKind::Contact);
     return impulse;
 }
 
@@ -657,7 +600,7 @@ void PlaygroundRoom::tick() {
             // horizontally, the only way a body on the plane can go.
             if (restingBody_ >= 0 && dragTarget_ != DragTarget::Body && std::abs(lost.x) > 1e-12) {
                 const std::size_t index = std::size_t(restingBody_);
-                giveBodyImpulse(index, nearestCorner(bodies_[index], point_), Vec3{-lost.x, 0, 0});
+                pushBody(bodies_[index], point_, Vec3{-lost.x, 0, 0}, ForceKind::Contact);
             }
         }
     }
@@ -679,24 +622,11 @@ void PlaygroundRoom::tick() {
     // ball's is tested against it. That is what finds a body dropped onto a ball
     // lying still -- a ball that is not going anywhere has no travel of its own to
     // find anything with.
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        if (body.frozen) {
-            // A body that is not stepped still has to own its last position, or
-            // the first tick it is woken the travel it is measured over runs back
-            // to wherever it froze, and the ball answers that instead of the
-            // motion that just happened.
-            body.previous = body.position;
-            for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
-        } else {
-            tickBody(index);
-        }
-    }
-    // And then the bodies against each other, once every one of them has been
-    // stepped. A body's own tick cannot do this: it would be answering a pair
-    // against a body that has not moved yet this tick, and the first body in the
-    // list would always be the one that gave way.
-    bodiesAnswer();
+    // Every body is stepped together, because a step one of them takes is a step
+    // the others have to be answered for at the same instant: the walk looks for
+    // the first meeting of anything with anything, and that meeting is answered on
+    // both sides at once.
+    tickBodies();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
     haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
@@ -823,16 +753,19 @@ void PlaygroundRoom::advance(double seconds) {
         if (!pointFrozen_) {
             tick();
         } else {
+            // The dot is asleep, so the bodies and the ball are stepped on their
+            // own. The dot's own handle is the only thing left out.
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 Body& body = bodies_[index];
                 if (body.frozen) {
+                    body.previousCentre = body.centre;
+                    body.previousAngle = body.angle;
                     body.previous = body.position;
-                    for (std::size_t i = 0; i < body.count; ++i) body.velocity[i] = {};
-                } else {
-                    tickBody(index);
+                    body.velocity = {};
+                    body.spin = 0.0;
                 }
             }
-            bodiesAnswer();
+            tickBodies();
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
@@ -870,11 +803,15 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
         for (std::size_t i = 0; i < body.count; ++i)
             if (body.position[i].y <= lowest + 1e-6) ++carrying;
         if (carrying == 0) continue;
+        // Every corner is a piece of the plate and carries its share of the body's
+        // mass, so the weight written at each of them is that share times g, and
+        // the contacts together answer exactly the body's weight.
+        const double piece = body.mass / static_cast<double>(body.count);
         for (std::size_t i = 0; i < body.count; ++i) {
-            addForce(body.position[i], Vec3{0.0, -kMass * kGravity, 0.0}, ForceKind::Gravity);
+            addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity);
             if (body.position[i].y <= lowest + 1e-6)
                 addForce(body.position[i],
-                         Vec3{0.0, kMass * kGravity * static_cast<double>(body.count) / static_cast<double>(carrying), 0.0},
+                         Vec3{0.0, piece * kGravity * static_cast<double>(body.count) / static_cast<double>(carrying), 0.0},
                          ForceKind::Contact);
         }
     }
@@ -918,10 +855,14 @@ void PlaygroundRoom::energyBudget(double& kinetic, double& potential) const {
     // asleep has none of either.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
-        for (std::size_t i = 0; i < body.count; ++i) {
-            kinetic += 0.5 * kMass * dot(body.velocity[i], body.velocity[i]);
-            potential += kMass * kGravity * body.position[i].y;
-        }
+        if (body.count == 0) continue;
+        // Half the mass times the square of the speed of the centre of mass, plus
+        // half the moment of inertia times the square of the turn: that is the
+        // whole of a rigid body's kinetic energy, and no corner-by-corner sum of
+        // speeds can add up to it.
+        kinetic += 0.5 * body.mass * dot(body.velocity, body.velocity);
+        kinetic += 0.5 * body.moment * body.spin * body.spin;
+        potential += body.mass * kGravity * body.centre.y;
     }
     // The ball: its travel and its turn, and the same height rule.
     kinetic += 0.5 * ball_.mass * dot(ball_.velocity, ball_.velocity);

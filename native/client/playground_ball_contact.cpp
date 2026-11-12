@@ -46,7 +46,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // real blow wakes it -- which is the only thing that should ever move a body
     // that had come to rest.
     if (body != nullptr && body->frozen) {
-        const Vec3 closingVelocity = ball.velocity - (body->position[struck] - body->previous[struck]) * (1.0 / kTick);
+        // A body asleep is a body the ball can wake, and only a real blow does it:
+        // what the two are closing at, along the normal they met on.
+        const Vec3 closingVelocity = ball.velocity - pointSpeed(*body, contactPoint);
         if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
@@ -89,11 +91,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // interpolation of the two of them -- which is what outlineTouch already says for
     // the position. Reading the average instead says a body turning on the spot is not
     // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
-    Vec3 surfaceVelocity{};
-    if (body != nullptr) {
-        const OutlineTouch touch = outlineTouch(contactPoint, body->position.data(), body->count);
-        surfaceVelocity = body->velocity[touch.a] + (body->velocity[touch.b] - body->velocity[touch.a]) * touch.t;
-    }
+    const Vec3 surfaceVelocity = body != nullptr ? pointSpeed(*body, contactPoint) : Vec3{};
 
     // A ball found through an outline is the ball's own way out: the body's tick
     // keeps its outline clear of the ball -- that is what the sweep in tickBody is
@@ -178,7 +176,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // What the struck corner actually did this tick. Its stored velocity can be
     // zero -- the floor cuts it when the corner lands -- while the corner is still
     // travelling down into the ball, and the ball has to answer the travel.
-    if (!canMove) surfaceVelocity = Vec3{};
+
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface, measured against what the
@@ -194,8 +192,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // that blow would turn it. Where the two shapes are touching, not the
             // nearest corner: the ball meeting the middle of a face turns the body
             // by nothing, and a corner of a face is not where the blow lands.
-            const BodyInertia inertia = bodyInertia(*body);
-            const double bodyShare = bodyShareAt(*body, inertia, contactPoint, answer);
+            const double bodyShare = giveAt(*body, contactPoint, answer);
             // What the ball can take of this blow is only what it is free to do with
             // it. A ball already held by a surface, or one on the floor that the
             // blow would drive downwards, has nowhere to go: the body takes the
@@ -211,7 +208,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // top of it takes none of that blow -- the floor under it does -- and a
             // friction solve given the whole of it span the ball sideways and down
             // at metres a second off a body that never touched it that way.
-            giveBodyTurn(std::size_t(bodyIndex), inertia, contactPoint, answer * -impulse, ForceKind::Ball);
+            pushBody(*body, contactPoint, answer * -impulse, ForceKind::Ball);
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.

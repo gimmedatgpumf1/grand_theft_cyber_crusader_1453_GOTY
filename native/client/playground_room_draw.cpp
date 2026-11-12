@@ -130,21 +130,16 @@ void PlaygroundRoom::interpolate() {
 }
 
 void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
-    // Interpolating corners straight from tick to tick pulls them along chords,
-    // so a turning body looks squashed; where it is and how far round it has
-    // turned is interpolated instead, and the corners rebuilt from those.
+    // What is drawn is a body between the place and the turn it had at the last
+    // tick and the place and turn the last tick left it in. Corners are read off
+    // that, never interpolated themselves: two corners of a turning body do not
+    // travel in straight lines, and drawing them as if they did squashes it.
     if (alpha >= 1.0) {
         body.shown = body.position;
         return;
     }
-    const Vec3 from = centroid(body.previous.data(), body.count);
-    const Vec3 to = centroid(body.position.data(), body.count);
-    const double fromAngle = edgeAngle(body.previous.data());
-    double turn = edgeAngle(body.position.data()) - fromAngle;
-    while (turn > 3.14159265358979323846) turn -= 2.0 * 3.14159265358979323846;
-    while (turn < -3.14159265358979323846) turn += 2.0 * 3.14159265358979323846;
-    const Vec3 centre = from + (to - from) * alpha;
-    const double angle = fromAngle + turn * alpha;
+    const Vec3 centre = body.previousCentre + (body.centre - body.previousCentre) * alpha;
+    const double angle = body.previousAngle + (body.angle - body.previousAngle) * alpha;
     const double c = std::cos(angle), s = std::sin(angle);
     for (std::size_t i = 0; i < body.count; ++i) {
         body.shown[i] = {centre.x + body.local[i].x * c - body.local[i].y * s,

@@ -11,15 +11,27 @@ namespace gtc::native {
 class RoomFreecam;
 struct ViewState;
 
-// The physics rebuild, one step at a time. A point with a mass, gravity and one
-// plane; then solid bodies made of such points, one at each corner, held at a
-// fixed distance from each other. The square is four corners and the six
-// distances between them; the triangle is three corners and the three distances
-// between them. Both go through the same code, because a body is its corners
-// and its fixed distances and nothing else. There is exactly one update per
-// 20 Hz tick. The travel of that tick is tested with a hitscan segment before
-// anything is allowed to move, and the plane stops what reaches it. A body with
-// no velocity and no net force is frozen.
+// The room's physics.
+//
+// A solid in this room is a rigid body: one mass, one moment of inertia, a place
+// and a turn, and a speed and a spin. Its corners are not simulated points that
+// have to be kept at a fixed distance from each other -- they are computed from
+// the shape and from where the body is, so a body cannot be out of shape. Nothing
+// in the room ever moves a corner: an impulse is given to the body at a place,
+// and what that does to the body is
+//
+//     v += J/m           w += (r x J)/I,        r = the place -- the centre of mass
+//
+// and the place of a corner is then read off. Gravity is the same: m*g newtons at
+// every corner, which is m*g at the centre of mass and no torque at all, because
+// the weight of each corner runs through the middle.
+//
+// A tick is walked, not sampled: the next instant at which anything would touch
+// anything is solved for, the bodies are carried exactly that far, the contact is
+// answered with an impulse, and the walk continues with what is left of the tick
+// -- so nothing can cross anything however fast it is going, and nothing is ever
+// pushed apart after the fact. There is no distance solve, no position
+// correction, and no velocity read back out of a position.
 class PlaygroundRoom {
 public:
     // The bodies in the room, in the order they are simulated.
@@ -136,114 +148,144 @@ private:
         Vec3 supportNormal{0, 1, 0};
         std::size_t faceBatch = 0, markBatch = 0;
     };
-    // A body is its corner points and the distances between them that are not
-    // allowed to change. Nothing in the room asks which body it is looking at.
-    static constexpr std::size_t kMaxCorners = 4, kMaxPairs = 6;
+    // A solid: one rigid body, with a mass, a moment of inertia, a place, a turn,
+    // a speed and a spin. Its corners are the shape, not the state.
+    static constexpr std::size_t kMaxCorners = 4;
     struct Body {
-        std::size_t count = 0, pairCount = 0;
-        std::array<Vec3, kMaxCorners> position{}, previous{}, shown{}, velocity{};
-        // What the forces of this tick add up to at each corner, in newtons. It is
-        // cleared at the start of the tick, gravity goes into it, and the
-        // integrator turns it into speed once -- so a corner moves because a force
-        // acted on it, never because something decided it should.
-        std::array<Vec3, kMaxCorners> force{};
-        std::array<std::array<int, 2>, kMaxPairs> pairs{};
-        std::array<double, kMaxPairs> rest{};
-        // The rest shape about the body's own middle, which is what the drawn
-        // body is rebuilt from between ticks.
+        std::size_t count = 0;
+        // The shape about the body's own centre of mass, at zero turn. It never
+        // changes: a body is not stretched, bent or repaired, ever.
         std::array<Vec3, kMaxCorners> local{};
-        // This body's own friction, from its shape.
+        // Where it is and how far it has turned. These two are the whole of its
+        // position, and the corners are computed from them on demand.
+        Vec3 centre{}, previousCentre{};
+        double angle = 0.0, previousAngle = 0.0;
+        // What it is doing: the speed of its centre of mass, and its turn about
+        // that centre in radians per second.
+        Vec3 velocity{};
+        double spin = 0.0;
+        // What it is: the mass of the whole body and the moment of inertia about
+        // its centre of mass, both from the shape as a uniform plate.
+        double mass = 1.0, moment = 1.0;
+        // The corners of this tick and of the last, and the ones the screen shows.
+        // They are placeCorners() of the two above, kept so that the contacts, the
+        // dot and the drawing can read them without recomputing.
+        std::array<Vec3, kMaxCorners> position{}, previous{}, shown{};
+        // This body's own friction, from its shape's material.
         double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
         int contacts = 0;
-        // Whether another body is holding this one up -- worked out every tick from
-        // the contacts it ended that tick with, exactly as the ball remembers
-        // whether it could stand on what it touched -- and where along its bottom
-        // those contacts are. A body whose weight does not pass between them is not
-        // carried by them: it turns about the last of them instead, which is what a
-        // shape hanging over an edge does.
-        bool onBody = false;
+        // What held it up this tick, worked out from the contacts it ended the tick
+        // with: which way the contact patch runs, and whether what it stands on is
+        // itself asleep. A body whose weight does not run between its supports is
+        // not carried by them -- it tips instead, which is what a shape hanging
+        // over an edge does.
+        bool touchingPlane = false, onBody = false, supportFrozen = false;
         double supportLow = 1e30, supportHigh = -1e30;
-        // And whether what it is standing on is itself at rest. A body asleep on a
-        // body that is still moving has nothing solid under it.
-        bool supportFrozen = false;
-        // Which other body this one's step was stopped by this tick, or kBodyCount
-        // for none. The sweep stops a body exactly where it touches the other one,
-        // and the solve that follows -- the fixed distances and the plane -- leaves
-        // it a fraction of a hair outside; a contact that is only recognised by
-        // measuring the gap afterwards is therefore a contact that comes and goes,
-        // and a pair whose contact comes and goes never has its closing speed
-        // answered and hangs in the air gathering speed. The ball remembers what it
-        // is touching for exactly this reason.
-        std::size_t metBody = kBodyCount;
-        // Whether a contact answered one of this body's points this tick. A body
-        // that was not touched is left exactly as it is.
-        bool touched = false;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
+
+    // The corner of a body, in the room. The only way a corner's place is ever
+    // obtained, and it is obtained from where the body is: a corner is not state.
+    static Vec3 cornerAt(const Body& body, std::size_t index) {
+        const Vec3 local = body.local[index];
+        const double c = std::cos(body.angle), s = std::sin(body.angle);
+        return {body.centre.x + local.x * c - local.y * s, body.centre.y + local.x * s + local.y * c,
+                body.centre.z};
+    }
+    // The corners of a body, written down for everything that reads them.
+    static void placeCorners(Body& body) {
+        for (std::size_t i = 0; i < body.count; ++i) body.position[i] = cornerAt(body, i);
+    }
+    // The speed of the piece of the body that is at `at`: what the centre is doing,
+    // plus what the turn carries that place along.
+    static Vec3 pointSpeed(const Body& body, Vec3 at) {
+        const Vec3 arm = at - body.centre;
+        return {body.velocity.x - body.spin * arm.y, body.velocity.y + body.spin * arm.x, body.velocity.z};
+    }
+    // How much a body gives when it is pushed at `at` along `direction`: the
+    // reciprocal of its mass plus the lever's share about its centre. This is the
+    // one number a contact is solved with.
+    static double giveAt(const Body& body, Vec3 at, Vec3 direction) {
+        const Vec3 arm = at - body.centre;
+        const double lever = arm.x * direction.y - arm.y * direction.x;
+        return 1.0 / body.mass + lever * lever / body.moment;
+    }
+
     void tick();
-    void tickBody(std::size_t index);
+    // One tick of every body at once. The forces are applied first, then the tick
+    // is walked: the earliest meeting of anything with anything is solved for, the
+    // bodies are carried exactly that far, the meeting is answered with an impulse
+    // at the place it happens, and the walk goes on with what is left of the tick.
+    void tickBodies();
+    void applyBodyForces();
+    // Carries every body that is being simulated by `seconds` of its own speed and
+    // turn. This is the only place a body's place or turn is ever changed by the
+    // simulation, and it integrates -- it never corrects.
+    double advanceBodies(double seconds);
+    // The first fraction of `remaining` at which anything would touch anything, or
+    // `remaining` itself when nothing will. The walk stops there and answers it.
+    double timeToContact(double remaining) const;
+    // Whether two bodies' outlines are into each other at all, and by how much.
+    bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
+    // One contact: this body pushed out of the other side, at a place, along a
+    // normal. `other` is kBodyCount when the other side is the floor, which cannot
+    // move. The impulses are accumulated over the passes of one solve, and written
+    // into the ledger once the tick has finished.
+    struct Contact {
+        std::size_t body = 0, other = kBodyCount, corner = 0;
+        bool ball = false;  // the other side is the ball rather than a body
+        Vec3 point{}, normal{};
+        double normalImpulse = 0.0, tangentImpulse = 0.0;
+        ForceKind kind = ForceKind::Contact;
+    };
+    static constexpr std::size_t kMaxTickContacts = 16;
+    struct ContactSet {
+        std::array<Contact, kMaxTickContacts> items{};
+        std::size_t count = 0;
+        void add(const Contact& contact) { if (count < items.size()) items[count++] = contact; }
+        void clear() { count = 0; }
+    };
+    // Every contact at the configuration the walk has stopped at, and the answer
+    // to all of them at once. The answer is sequential impulses: each contact takes
+    // its share of the closing speed along its normal, and its grip along the
+    // surface is limited by mu times what the normal has carried so far.
+    void gatherContacts(ContactSet& contacts) const;
+    bool solveContacts(ContactSet& contacts);
+    // A body's state of rest, decided from its own motion and from what is under
+    // it rather than from how little it happened to move.
+    void settleBodies();
+    // One impulse, given to one body at one place. The ledger is written here too:
+    // this is the only door into a body's motion, so what is on screen cannot
+    // disagree with what was solved.
+    void pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind);
+    // The ball is a rigid body too, so a blow given to it at a place changes its
+    // speed and its turn by the same law -- m and I of a solid sphere.
+    Vec3 ballPointSpeed(Vec3 at) const {
+        const Vec3 arm = at - ball_.position;
+        return {ball_.velocity.x - ball_.spin * arm.y, ball_.velocity.y + ball_.spin * arm.x, ball_.velocity.z};
+    }
+    double ballGiveAt(Vec3 at, Vec3 direction) const {
+        const Vec3 arm = at - ball_.position;
+        const double lever = arm.x * direction.y - arm.y * direction.x;
+        const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+        return 1.0 / ball_.mass + lever * lever / moment;
+    }
+    void pushBall(Vec3 at, Vec3 impulse, ForceKind kind);
+    void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind);
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
     bool bodyHeld(std::size_t body) const { return dragTarget_ == DragTarget::Body && dragBody_ == body; }
-    // The point meets a body: energy into the corner it struck, a push back
-    // along the normal.
-    void hitBody(std::size_t body, Vec3 normal, double into);
-    // Which of a body's corners a blow lands on, and what a body does with a blow
-    // it is given there: the struck corner takes half and the rest share it. This
-    // is how a point's blow reaches a body -- the dot's collision, and the reaction
-    // to the friction of a body the dot is sliding on.
-    std::size_t nearestCorner(const Body& body, Vec3 point) const;
-    void giveBodyImpulse(std::size_t body, std::size_t struck, Vec3 momentum);
-    // What a body is when a blow lands on it: where its corners balance, and the
-    // moment of inertia of them about that middle. `shareAt` is how much of the
-    // body's mass lies the way the impulse points from there, which is the
-    // reciprocal the impulse is solved against, and `giveTurn` is what the body is
-    // left doing when it takes that impulse at that point. The ball's strike on a
-    // body and a body's strike on a body are both answered by these three.
-    struct BodyInertia {
-        Vec3 middle{};
-        double moment = 1.0;
-    };
-    BodyInertia bodyInertia(const Body& body) const;
-    double bodyShareAt(const Body& body, const BodyInertia& inertia, Vec3 contact, Vec3 direction) const;
-    // `kind` is which force is handing the momentum over, so the ledger records it
-    // as the thing it is: a pair contact, or the ball. When `accumulate` is given,
-    // the momentum is added to it instead of being written down: a contact that is
-    // solved in passes hands the same contact several impulses in one tick, and the
-    // force is their sum, not one arrow per pass.
-    void giveBodyTurn(std::size_t body, const BodyInertia& inertia, Vec3 contact, Vec3 momentum,
-                      ForceKind kind = ForceKind::Pair, Vec3* accumulate = nullptr);
-    // A point of mass kMass meets a body: the impulse the point takes along the
-    // normal is returned so the dot's own velocity can be given it back. Nothing
-    // bounces, and a body on the plane only takes the part of the blow that runs
-    // along it.
+    // The point meets a body: the impulse the point takes along the normal is
+    // returned so the dot's own speed can be given it back.
     double answerPointOnBody(std::size_t body, Vec3 pointPosition, Vec3 pointVelocity, Vec3 normal);
+    void hitBody(std::size_t body, Vec3 normal, double into);
     static Vec3 outwardNormalAt(const Body& body, Vec3 point);
-    // A body and the ball, from the body's side. How far the body's step can go
-    // before the whole of its outline reaches the ball, and how far the ball has
-    // the outline inside it and which way out. Both are the ball's geometry
-    // against a body's outline, so both live with the ball.
-    double bodyBallReach(std::size_t index, const Vec3* target) const;
-    // A body and another body. How far this body's step can be walked before one of
-    // its corners crosses another body's outline; the corners each puts back out of
-    // the other; and what the two of them are still closing at, answered for both
-    // sides at once once every body has been stepped. The same geometry and the
-    // same answer for every pair -- nothing in there knows which shapes it is
-    // looking at, and a corner is a point with no size of its own.
-    double bodiesReach(std::size_t index, const Vec3* target, Vec3* wayOut, std::size_t* metWith,
-                       Vec3* metAt) const;
-    double pushBodyOutOfBody(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
-    void separateBodies();
-    // Moves a body as one rigid piece so that the piece of it at `at` travels by
-    // `displacement`: that is what a correction at a contact is. It is here because
-    // the floor, the ball and another body all have to correct a body the same way,
-    // and correcting a body any other way -- pinning the one point that is out and
-    // letting the fixed distances sort out the rest -- does not keep its shape.
-    void pushBodyAtPoint(std::size_t index, Vec3 at, Vec3 displacement, std::array<Vec3, kMaxCorners>* lift);
-    void bodiesAnswer();
-    double pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift);
+    // The gap between a body's outline and the ball's surface, which way the body
+    // has to go to be clear of it, and the place they would touch. Negative when
+    // the ball is already into the outline.
+    double bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const;
     void tickBall();
     // What the ball was against this tick, so the grip at each of them can be
     // worked out against the others instead of one after another.
@@ -335,6 +377,17 @@ private:
     std::array<std::array<std::size_t, kArrowsPerKind>, std::size_t(ForceKind::KindCount)> arrowHead_{};
     std::array<ForceSample, kMaxForceSamples> forces_{};
     std::size_t forceCount_ = 0;
+    // Every impulse handed to a body this tick, added up at the place it acted, so
+    // that a contact solved in eight passes is one force and not eight arrows.
+    struct RecordedImpulse {
+        Vec3 at{}, impulse{};
+        ForceKind kind = ForceKind::Contact;
+    };
+    static constexpr std::size_t kMaxRecordedImpulses = 24;
+    std::array<RecordedImpulse, kMaxRecordedImpulses> impulses_{};
+    std::size_t impulseCount_ = 0;
+    void clearImpulses() { impulseCount_ = 0; }
+    void writeImpulses();
     bool showForces_ = false, showNewtons_ = false;
     // The numbers are quads like everything else: they are laid out here and handed
     // to the same batcher the rest of the interface goes through.

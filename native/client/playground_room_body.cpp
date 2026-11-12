@@ -1,423 +1,386 @@
-// One body's tick, on its own.
+// One tick of every solid in the room.
 //
-// A body is its corner points of equal mass. Every tick each corner is given
-// gravity and asked to travel its own v/20, its own hitscan segment is traced
-// against the plane, and then the fixed distances are pushed back to what they
-// were. A corner that moves therefore pulls and pushes the others through those
-// distances: that is the whole of the coupling.
+// A body is a rigid body: a mass, a moment of inertia, a place, a turn, a speed
+// and a spin. Nothing here moves a corner. A force is applied at a place, the
+// impulse it delivers over the tick is turned into a change of the body's speed
+// and of its turn, and the corners are then read off the shape.
 //
-// It is here, away from the room's own tick, because it is the longest single
-// thing in the room and the room had grown to within a hair of the line the
-// build refuses to cross. Nothing about it changed in the move.
+// The tick is walked, not sampled. Every instant at which anything would begin to
+// touch anything else is solved for -- a corner reaching the floor, a corner
+// reaching another body's outline, an outline reaching the ball -- and the bodies
+// are carried exactly that far, the contact is answered with an impulse at the
+// place it happens, and the walk goes on with what is left of the tick. That is
+// what makes a fast body stop at the surface it hits instead of being found
+// inside it afterwards, and it is why there is no position correction anywhere in
+// this file: nothing ever gets in.
 
+#include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace gtc::native {
 using namespace playground_detail;
 using namespace playground_tick;
 
-void PlaygroundRoom::tickBody(std::size_t index) {
-    Body& body = bodies_[index];
-    body.previous = body.position;
-    body.metBody = kBodyCount;
-    const std::size_t count = body.count;
-    if (bodyHeld(index)) {
-        // The mouse owns this body: it is placed, not simulated, so nothing here
-        // may move it or decide it has come to rest.
-        for (std::size_t i = 0; i < count; ++i) {
-            body.velocity[i] = {};
-            body.previous[i] = body.position[i];
-        }
-        body.frozen = false;
-        return;
-    }
-    std::array<bool, kMaxCorners> onPlane{};
-    // Where this tick's step would put each corner, before anything is committed.
-    std::array<Vec3, kMaxCorners> target{};
-    // Gravity is a force at every corner, and it is the same force at every corner:
-    // m*g newtons downwards on each of them. It is a force and nothing else -- it
-    // goes into the same accumulator every other force goes into, and the one
-    // integrator below turns the total into speed. Writing "the speed falls by g
-    // times dt" instead would be a rule about gravity that the room's other forces
-    // do not obey, and a rule like that is where made-up motion starts.
-    const Vec3 weight{0.0, -kMass * kGravity, 0.0};
-    for (std::size_t i = 0; i < count; ++i) {
-        body.force[i] = {};
-        addForce(body.position[i], weight, ForceKind::Gravity, &body.force[i]);
-    }
-    // The integrator: p += F*dt, one line, for every corner, whatever the forces are.
-    for (std::size_t i = 0; i < count; ++i) {
-        body.velocity[i] = accelerated(body.velocity[i], body.force[i], kMass);
-        target[i] = body.position[i] + body.velocity[i] * kTick;
-    }
-    // The shape's step is swept against the ball before any of it is spent,
-    // exactly as a corner's step is swept against the plane -- but along the whole
-    // outline, because a face lying across a ball has no corner anywhere near it
-    // and a corner's own hitscan says nothing about it. What the sweep answers
-    // with is the last fraction of the step at which every piece of the outline is
-    // still clear of the ball; the step is walked that far, and what is left of
-    // the tick is a contact, solved below against the piece of the outline the
-    // ball is actually holding. Without this the whole step is carried into the
-    // ball and then pushed back out of it, and coming back to the same place every
-    // tick is a shape perched on a ball for ever, never turning about it.
-    Vec3 metWay{0, 1, 0};
-    Vec3 metAt{};
-    const double bodyReach = bodiesReach(index, target.data(), &metWay, &body.metBody, &metAt);
-    const double ballReach = bodyBallReach(index, target.data());
-    // And the floor, swept the same way the other two are: the first fraction of the
-    // step at which any of this body's corners arrives at it.
-    //
-    // This is the whole of what a landing is. Clamping each corner after the step has
-    // been taken is not a sweep: it lets the corners that reached the floor stop while
-    // the rest of the body carries on through the tick, so the shape is squashed flat
-    // by however far it fell in that one tick -- a metre and a half a second squashes a
-    // cube by a quarter of a metre -- and then the fixed distances have to put it back,
-    // and the only way they can is to shove the corners sideways. A cube landing flat
-    // on the floor then slides seven centimetres for no reason at all.
-    //
-    // A corner already on the floor is not arriving at it: it is being carried by it,
-    // and gravity would otherwise find an arrival at the first instant of every tick
-    // and hold the body still for ever. Only a corner that starts clear of the floor
-    // and ends below it has arrived.
-    double planeReach = 1.0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (body.position[i].y <= kSurfaceY + kContactTolerance) continue;
-        if (!(target[i].y < kSurfaceY)) continue;
-        const double along = (kSurfaceY - body.position[i].y) / (target[i].y - body.position[i].y);
-        if (along < planeReach) planeReach = along;
-    }
-    const double reach = std::min(std::min(ballReach, bodyReach), planeReach);
-    const bool metPlane = planeReach < 1.0 && planeReach <= ballReach && planeReach <= bodyReach;
-    // The floor's way out is straight up, whatever the other sweeps found: it is the
-    // floor that cut this step short.
-    if (metPlane) metWay = Vec3{0, 1, 0};
-    // What each corner was trying to do this tick, before anything cut it short.
-    //
-    // A body stopped by another body must not have its speed read back off the
-    // shortened step. Reading it back hands every corner the same fraction of its
-    // own travel, which is a support under the body's middle -- and a body standing
-    // on the point of another is not held under its middle, that is the whole of why
-    // it tips. The blow at such a contact is answered where the two bodies met, by
-    // bodiesAnswer, from the approach both of them arrived with; the step is only
-    // where they ended up.
-    std::array<Vec3, kMaxCorners> attempted{};
-    for (std::size_t i = 0; i < count; ++i) attempted[i] = body.velocity[i];
-    // A body that met another body keeps the speed it arrived with, because the blow
-    // is answered at the point they met by bodiesAnswer. The ball answers its own
-    // contact. The floor is answered at the corners it holds, below.
-    const bool metBody = bodyReach < ballReach && bodyReach < planeReach && bodyReach < 1.0;
-    if (reach < 1.0) {
-        for (std::size_t i = 0; i < count; ++i)
-            body.position[i] = body.previous[i] + (target[i] - body.previous[i]) * reach;
-        // What is left of the step is spent along the surface that was met, and not
-        // into it -- and it is spent as *one* motion, because the body is one object.
-        //
-        // Taking the inward part of each corner's own travel away, corner by corner,
-        // is not one motion: a body that is turning has a different travel at every
-        // corner, so trimming each corner separately bends the shape. The fixed
-        // distances then have to pull it straight, and that pull moves the whole body
-        // sideways -- which is a body sliding along a surface with nothing pushing it.
-        // That is what the triangle balanced on one corner on the cube did: the way
-        // out it was handed was the cube's own top corner's diagonal, a step of equal
-        // parts up and across, and every tick it was trimmed along that and pulled
-        // straight again, so it climbed and walked off the cube by a thousandth of a
-        // metre a tick that only ever added up.
-        //
-        // So the speed at the place they met is what the surface answers, and what it
-        // answers it with is taken off the whole body: every corner loses the same
-        // amount, the turn between them is untouched, and the body goes on turning
-        // about the point it is standing on -- which is what a body on a corner does.
-        // Which corner is the one that arrived: the corner nearest the place they met
-        // when another body cut the step, and the lowest corner when it was the floor.
-        std::size_t arrived = 0;
-        if (metBody) {
-            arrived = nearestCorner(body, metAt);
-        } else {
-            for (std::size_t i = 1; i < count; ++i)
-                if (body.position[i].y < body.position[arrived].y) arrived = i;
-        }
-        const double inward = std::min(0.0, dot(body.velocity[arrived], metWay));
-        for (std::size_t i = 0; i < count; ++i) {
-            body.velocity[i] = body.velocity[i] - metWay * inward;
-            target[i] = body.position[i] + body.velocity[i] * (kTick * (1.0 - reach));
-        }
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-        const Vec3 from = body.position[i];
-        const Vec3 to = target[i];
-        // The same hitscan the point uses, once per corner: the first thing the
-        // corner's step reaches is where that corner stops, however far the tick
-        // would have carried it. The ball is the other thing in the way, and it
-        // was already walked against the whole outline above, so a corner can no
-        // longer reach it on its own.
-        double along = 2.0;
-        bool onFloor = false;
-        if (to.y < kSurfaceY) {
-            along = std::clamp((kSurfaceY - from.y) / (to.y - from.y), 0.0, 1.0);
-            onFloor = true;
-        }
-        if (along <= 1.0) {
-            body.position[i] = from + (to - from) * along;
-            if (onFloor) body.position[i].y = kSurfaceY;
-        } else {
-            body.position[i] = to;
-        }
-        onPlane[i] = body.position[i].y <= kSurfaceY + 1e-12;
-    }
-    // The shape and the plane are solved together until both are satisfied. A
-    // pass pushes every fixed distance back to its rest length, then puts any
-    // corner the pass pushed through the plane back on it, and that repeats
-    // until neither is out by more than a nanometre. Solving the distances and
-    // then clamping once -- or clamping inside the distance loop without
-    // checking the distances again -- is what leaves a body permanently out of
-    // shape: it is the clamp that opens the distance error, so the distance
-    // solve has to see the clamp.
-    // How far the plane lifted each corner. Lifting a corner is a correction,
-    // not motion: the body did not travel upwards, the floor put it back. That
-    // lift has to be kept so it can be taken back out of the velocity, or a
-    // corner pushed down by a blow turns into the whole body hopping upwards.
-    // Which corners the plane is holding up. It holds their height and nothing
-    // else -- a corner standing on the floor can still slide along it -- so a
-    // fixed distance that wants to move such a corner downwards has to put that
-    // motion into the corner at the other end instead. Sharing it equally is
-    // what leaves a tall body balanced on a corner the floor cannot carry,
-    // because the corner it leaned on never actually went anywhere.
-    std::array<bool, kMaxCorners> held{};
-    for (std::size_t i = 0; i < count; ++i) held[i] = onPlane[i];
-    // How far the plane lifted each corner. Lifting a corner is a correction,
-    // not motion: the body did not travel upwards, the floor put it back. That
-    // lift has to be kept so it can be taken back out of the velocity, or a
-    // corner pushed down by a blow turns into the whole body hopping upwards.
-    std::array<Vec3, kMaxCorners> lift{};
-    // The same for the ball, once: how far it had to put the body's own step back
-    // out of it. Later passes are the shape re-arranging itself about the contact,
-    // which is the shape turning, and that is motion.
-    std::array<Vec3, kMaxCorners> ballLift{};
-    // And the same for another body: how far it put this body's own step back out
-    // of itself. Later passes are the shape re-arranging about the contact, which is
-    // the shape turning, and that is motion.
-    std::array<Vec3, kMaxCorners> bodyLift{};
+namespace {
+// How close to a surface counts as being on it. A micrometre: the walk stops at
+// the touching instant to an arithmetic fraction of a step, and this is the width
+// of the band in which the two are the same place.
+constexpr double kOnSurface = 1e-6;
+// How many times one tick may stop for a contact. A body landing on the floor and
+// then tipping onto its other corner is two; a pair of shapes settling against
+// each other is a handful. This is a guard against a pathological arrangement
+// looping for ever, never a limit on what is answered: the walk leaves as soon as
+// nothing is closing.
+constexpr int kMaxWalkStops = 8;
+// How many passes the contacts of one stop are solved in. Sequential impulses
+// converge quickly for a handful of contacts; this is the point at which a solve
+// that is still moving is taken to be a corner case, not a solve.
+constexpr int kSolvePasses = 16;
+constexpr double kSolveTolerance = 1e-9;  // m/s
+}  // namespace
 
-    for (int pass = 0; pass < kMaxDistancePasses; ++pass) {
-        double worstDistance = 0.0;
-        // Both ways round every pass. Pushing the distances back in one fixed
-        // order lets the order itself move the body: whatever the first pair
-        // does, the next one is projected onto a slightly different shape, and
-        // over a second that steady lean adds up. Sweeping forwards and then
-        // backwards takes it out again, so no pair is ever favoured.
-        for (int step = 0; step < int(body.pairCount) * 2; ++step) {
-            const std::size_t pair = step < int(body.pairCount) ? std::size_t(step)
-                                                                : std::size_t(int(body.pairCount) * 2 - 1 - step);
-            const std::size_t a = std::size_t(body.pairs[pair][0]), b = std::size_t(body.pairs[pair][1]);
-            const Vec3 delta = body.position[b] - body.position[a];
-            const double current = length(delta);
-            if (!(current > 1e-12)) continue;
-            const Vec3 direction = delta / current;
-            const double deviation = current - body.rest[pair];
-            if (step < int(body.pairCount)) worstDistance = std::max(worstDistance, std::abs(deviation));
-            // How much of the correction each end can take: half each across the
-            // floor, but none of it downwards at a corner the plane is holding.
-            const double acrossA = 0.5, acrossB = 0.5;
-            const double downA = held[a] ? 0.0 : 0.5, downB = held[b] ? 0.0 : 0.5;
-            const double reach = 2.0 * acrossA * direction.x * direction.x +
-                                 (downA + downB) * direction.y * direction.y;
-            if (!(reach > 1e-12)) continue;
-            const double share = deviation / reach;
-            body.position[a] += Vec3{direction.x * share * acrossA, direction.y * share * downA, 0};
-            body.position[b] -= Vec3{direction.x * share * acrossB, direction.y * share * downB, 0};
+// Gravity, and nothing else, before the walk: m*g newtons at every corner, which
+// is the whole body's weight at its centre of mass and no torque at all. The
+// corners are treated exactly as the material points they are -- each one gets the
+// impulse its own weight delivers over the tick -- so the body is not told that it
+// is heavy, it is pulled at every point and the sum of those pulls is what it
+// feels.
+void PlaygroundRoom::applyBodyForces() {
+    const double share = kMass;  // every corner is a point of the body's mass
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        body.previousCentre = body.centre;
+        body.previousAngle = body.angle;
+        body.previous = body.position;
+        body.touchingPlane = false;
+        body.onBody = false;
+        body.supportLow = 1e30;
+        body.supportHigh = -1e30;
+        body.supportFrozen = false;
+        if (body.count == 0) continue;
+        if (body.frozen || bodyHeld(index)) continue;
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 weight{0.0, -share * kGravity, 0.0};
+            addForce(body.position[i], weight, ForceKind::Gravity);
+            // The impulse the weight delivers over one tick, at that very corner.
+            // Written out rather than short-circuited to g*dt: what a body feels is
+            // a force at a place, and this is that force at that place.
+            const Vec3 jog = weight * kTick;
+            const Vec3 arm = body.position[i] - body.centre;
+            body.velocity = body.velocity + jog * (1.0 / body.mass);
+            body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
         }
-        double deepest = 0.0;
-        for (std::size_t i = 0; i < count; ++i) {
-            if (body.position[i].y < kSurfaceY) {
-                const double amount = kSurfaceY - body.position[i].y;
-                deepest = std::max(deepest, amount);
-                // The floor corrects the body it is holding the way the ball and
-                // another body do: rigidly, at the corner that is through it. Pinning
-                // that one corner and letting the fixed distances pull the rest of the
-                // body into line is what let a cube come down at seventeen degrees and
-                // arrive flat, its top corners thrown a metre and a half sideways, and
-                // what left a corner of it sitting under the floor afterwards.
-                pushBodyAtPoint(index, body.position[i], Vec3{0, amount, 0}, &lift);
-                onPlane[i] = true;
-                held[i] = true;
+    }
+}
+
+// Carries every simulated body by `seconds` of its own speed and turn. The only
+// place a body's place or turn is ever changed by the simulation.
+double PlaygroundRoom::advanceBodies(double seconds) {
+    if (!(seconds > 0.0)) return 0.0;
+    const auto move = [&](double time) {
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            Body& body = bodies_[index];
+            if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+            body.centre = body.centre + body.velocity * time;
+            body.angle += body.spin * time;
+            placeCorners(body);
+        }
+    };
+    std::array<Vec3, kBodyCount> centres{};
+    std::array<double, kBodyCount> angles{};
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        centres[index] = bodies_[index].centre;
+        angles[index] = bodies_[index].angle;
+    }
+    move(seconds);
+    // The walk stops at an instant solved for to within a rounding of the step, so
+    // the shapes are apart when they should be touching and never the other way
+    // round. This is the check that keeps that true: if a step has left a corner
+    // under the floor or two outlines into each other, the step is shortened until
+    // it has not. It is not a correction -- nothing is moved back out. The step
+    // that would have gone in is simply not taken.
+    double used = seconds;
+    for (int guard = 0; guard < 40; ++guard) {
+        bool inside = false;
+        for (std::size_t index = 0; index < kBodyCount && !inside; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+            for (std::size_t i = 0; i < body.count; ++i)
+                if (body.position[i].y < -1e-12) inside = true;
+            Vec3 way{};
+            for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
+                if (bodies_[other].count == 0) continue;
+                double depth = 0.0;
+                if (bodiesIntoEachOther(index, other, way, depth) && depth > 1e-12) inside = true;
             }
         }
-        // The ball is the second thing that holds the shape: the piece of the
-        // outline the ball is against is put back outside it, and the distances
-        // are solved again, so the corner the ball is not holding is the one that
-        // gives way. That is the whole of what makes a shape tip off a ball instead
-        // of resting on it.
-        deepest = std::max(deepest, pushBodyOutOfBall(index, pass == 0 ? &ballLift : nullptr));
-        // And another body is the third thing that holds the shape, by the same
-        // rule: the corner that has gone into it is put back out, and the distances
-        // are solved again, so the corner that is not held is the one that gives
-        // way. That is what makes a shape tip on the corner of another instead of
-        // lying across it.
-        deepest = std::max(deepest, pushBodyOutOfBody(index, pass == 0 ? &bodyLift : nullptr));
-        // The floor is not finished with until every corner is out of it. Asking the
-        // loop only after the distances are closed lets it leave with a corner still
-        // under the floor, and a corner under the floor is a shape being squashed for
-        // a whole tick -- which is what the next tick then spends its passes undoing.
-        double under = 0.0;
-        for (std::size_t i = 0; i < count; ++i) under = std::max(under, kSurfaceY - body.position[i].y);
-        if (worstDistance <= kDistanceTolerance && deepest <= kDistanceTolerance && under <= 0.0) break;
-    }
-    // Whatever the loop left, no corner may be under the floor when the tick ends:
-    // the floor is not a suggestion. Correcting it the way the floor's own pass does
-    // -- rigidly, at the corner that is through it -- keeps the shape.
-    for (std::size_t i = 0; i < count; ++i) {
-        if (body.position[i].y < kSurfaceY - kDistanceTolerance) {
-            pushBodyAtPoint(index, body.position[i], Vec3{0, kSurfaceY - body.position[i].y, 0}, &lift);
-            onPlane[i] = true;
-            held[i] = true;
+        if (!inside) break;
+        used *= 0.5;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            bodies_[index].centre = centres[index];
+            bodies_[index].angle = angles[index];
+            placeCorners(bodies_[index]);
         }
+        move(used);
     }
-    // How much of this body is lying on the floor: the length of the contact
-    // between the corners that are actually on it. A longer contact grips
-    // harder, so the square's 0.70 m footprint is the reference and the
-    // triangle's 2.10 m footprint gets three times its friction for the same
-    // coefficients.
-    double leftmost = 1e30, rightmost = -1e30;
-    bool touchingPlane = false;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (body.position[i].y > kSurfaceY + kContactTolerance) continue;
-        touchingPlane = true;
-        leftmost = std::min(leftmost, body.position[i].x);
-        rightmost = std::max(rightmost, body.position[i].x);
-    }
-    const double footprint = touchingPlane ? std::max(0.0, rightmost - leftmost) / kCubeSide : 0.0;
-    // Friction is a fraction of the force pressing the floor, and a force over a
-    // tick is an impulse: mu * N * dt, in newton seconds. N here is the body's own
-    // weight, m*g newtons, times how much of its footprint is down. What that
-    // impulse can do to a mass is the momentum it can take out of it, which is the
-    // only thing the grip is ever compared with.
-    const double floorPressure = kMass * kGravity * footprint;  // N
-    const double holdImpulse = body.staticFriction * floorPressure * kTick;   // N*s
-    const double slideImpulse = body.kineticFriction * floorPressure * kTick;  // N*s
+    return used;
+}
 
-    // Which corners are touching the plane now, after the solve has finished
-    // moving them. A clamp from an earlier pass is not a contact: the solve may
-    // have lifted that corner back off the plane, and a corner in the air has to
-    // keep falling instead of being held and rubbed by the floor.
-    for (std::size_t i = 0; i < count; ++i) onPlane[i] = body.position[i].y <= kSurfaceY + kContactTolerance;
-    // What the plane hands this corner over the tick, in newton seconds: its normal
-    // impulse and its grip, added up as they happen so the corner gets one arrow
-    // rather than a crowd of them.
-    std::array<Vec3, kMaxCorners> floorImpulse{};
-    for (std::size_t i = 0; i < count; ++i) {
-        // What the corner actually did this tick, solved shape and all: a shape
-        // that is turning about something is doing that, and the turn is motion.
-        //
-        // A corner that another body stopped keeps what it was trying to do. The
-        // contact is answered from the approach the body arrived with, at the place
-        // the two of them met, and not by trimming the travel afterwards.
-        Vec3 velocity = metBody ? attempted[i] : (body.position[i] - body.previous[i]) / kTick;
-        // Take the corrections back out: what is left is what the corner was
-        // actually doing. The floor's is upwards; the ball's is outwards.
-        velocity = velocity - lift[i] * (1.0 / kTick);
-        velocity = velocity - ballLift[i] * (1.0 / kTick);
-        velocity = velocity - bodyLift[i] * (1.0 / kTick);
-        if (onPlane[i] && velocity.y < 0.0) {
-            // The plane holds this corner: it cannot travel into the plane. That is
-            // not a number being set to zero, it is the floor handing back the
-            // momentum the corner was driving into it -- J = -m*v_y upwards, at the
-            // corner, which is the impulse of a normal force over the tick. Sideways
-            // is friction's business, and that is done for the body as a whole just
-            // below.
-            const Vec3 normalImpulse{0.0, -velocity.y * kMass, 0.0};
-            velocity = velocity + normalImpulse * (1.0 / kMass);
-            floorImpulse[i] = floorImpulse[i] + normalImpulse;
+// The first fraction of `remaining` at which anything would touch anything.
+double PlaygroundRoom::timeToContact(double remaining) const {
+    double first = remaining;
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        // The floor. A corner already on it is not on its way to it: it is there,
+        // and if it is being driven down the contact is now.
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const double height = body.position[i].y;
+            const double falling = pointSpeed(body, body.position[i]).y;
+            if (!(falling < 0.0)) continue;
+            if (height <= kOnSurface) return 0.0;
+            first = std::min(first, height / -falling);
         }
-        body.velocity[i] = velocity;
+        // The ball. The ball is stepped after the bodies, so for the length of this
+        // walk it is a surface that is not going anywhere, and the bodies stop on
+        // it; what the ball does about the meeting is its own tick's business.
+        {
+            Vec3 way{0, 1, 0}, at{};
+            const double gap = bodyBallGap(index, way, at);
+            const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
+            if (closing > 1e-12) first = std::min(first, std::max(0.0, gap) / closing);
+        }
+        // Another body, seen from the place they are closest.
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == index || bodies_[other].count == 0) continue;
+            const Body& solid = bodies_[other];
+            const playground_detail::OutlinePairGap gap =
+                pairGap(body.position.data(), body.count, solid.position.data(), solid.count);
+            // The relative speed of the two pieces that are closest: both bodies
+            // are carried through this walk, so both of them count.
+            const Vec3 closingSpeed = pointSpeed(body, gap.one) - pointSpeed(solid, gap.two);
+            const double closing = -dot(closingSpeed, gap.normal);
+            if (closing > 1e-12) first = std::min(first, std::max(0.0, gap.gap) / closing);
+        }
     }
-    // Friction is a force at the contact patch, and the patch pushes the body,
-    // not one corner of it. Taking the slide off each corner on its own does
-    // nothing once the floor has pinned that corner, which is why the body used
-    // to stop dead no matter what coefficients it had: the body's own sideways
-    // motion is what mu_s has to hold and mu_k has to slow, and the fixed
-    // distances carry that to every corner.
-    if (touchingPlane) {
-        Vec3 middleVelocity{};
-        for (std::size_t i = 0; i < count; ++i) middleVelocity += body.velocity[i];
-        middleVelocity = middleVelocity / static_cast<double>(count);
-        const double sideways = middleVelocity.x;
-        // The momentum the body is carrying along the floor, corner by corner, and
-        // what the grip can take out of it. Static friction answers the whole of it
-        // when mu_s * N * dt is enough; kinetic friction takes mu_k * N * dt of it
-        // when it is not. Neither is a clamped speed: each corner is handed an
-        // impulse, and the impulse is written down as the force it is over a tick.
-        const double carried = sideways * kMass;  // N*s of sideways momentum, per corner
-        const double taken = std::abs(carried) <= holdImpulse ? carried : std::copysign(slideImpulse, carried);
-        if (taken != 0.0) {
-            for (std::size_t i = 0; i < count; ++i) {
-                const Vec3 gripImpulse{-taken, 0.0, 0.0};
-                body.velocity[i] = body.velocity[i] + gripImpulse * (1.0 / kMass);
-                floorImpulse[i] = floorImpulse[i] + gripImpulse;
+    return std::clamp(first, 0.0, remaining);
+}
+
+// Every contact at the configuration the walk has stopped at. The floor is met by
+// a corner; another body is met by a corner of one against the outline of the
+// other, on both sides, so a face lying on a face is two contacts and a corner
+// standing on a face is one.
+void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
+    contacts.clear();
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        for (std::size_t i = 0; i < body.count; ++i) {
+            if (body.position[i].y > kOnSurface) continue;
+            Contact contact;
+            contact.body = index;
+            contact.other = kBodyCount;
+            contact.corner = i;
+            contact.point = Vec3{body.position[i].x, body.position[i].y, 0.0};
+            contact.normal = Vec3{0, 1, 0};
+            contacts.add(contact);
+        }
+    }
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        Vec3 way{0, 1, 0}, at{};
+        if (bodyBallGap(index, way, at) <= kOnSurface) {
+            Contact contact;
+            contact.body = index;
+            contact.ball = true;
+            contact.point = at;
+            contact.normal = way * -1.0;  // out of the ball, into the body
+            contact.kind = ForceKind::Ball;
+            contacts.add(contact);
+        }
+    }
+    for (std::size_t one = 0; one < kBodyCount; ++one) {
+        const Body& body = bodies_[one];
+        if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
+        for (std::size_t two = 0; two < kBodyCount; ++two) {
+            if (two == one || bodies_[two].count == 0) continue;
+            const Body& solid = bodies_[two];
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(body.position[i], solid.position.data(),
+                                                  solid.position.data(), solid.count, 1.0);
+                if (gap.gap > kOnSurface) continue;
+                Contact contact;
+                contact.body = one;
+                contact.other = two;
+                contact.corner = i;
+                contact.point = body.position[i];
+                contact.normal = gap.normal;  // out of the other body, into this one
+                contact.kind = ForceKind::Pair;
+                contacts.add(contact);
             }
         }
     }
-    // Nothing moved it this tick. The floor puts a corner back on itself exactly,
-    // so a body resting on the floor moves by nothing at all; a body resting on
-    // another body is put back by the constraint solve, which is exact only to its
-    // own tolerance -- and a body that is still being moved by the width of the
-    // solver's own rounding is not moving.
-    bool quiet = true;
-    for (std::size_t i = 0; i < count; ++i) {
-        quiet = quiet && length(body.position[i] - body.previous[i]) < kDistanceTolerance;
+}
+
+// The answer to a whole configuration of contacts at once: sequential impulses.
+// Each contact takes the closing speed it finds along its normal, applied to both
+// bodies at the place they meet, and the grip along the surface is what the normal
+// has carried so far times mu. Nothing bounces: the answer is exactly enough to
+// stop the approach and no more.
+bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
+    double delivered = 0.0;
+    for (int pass = 0; pass < kSolvePasses; ++pass) {
+        double worst = 0.0;
+        for (std::size_t c = 0; c < contacts.count; ++c) {
+            Contact& contact = contacts.items[c];
+            Body& body = bodies_[contact.body];
+            Body* other = (!contact.ball && contact.other < kBodyCount) ? &bodies_[contact.other] : nullptr;
+            // The other side of the contact: a body, the ball, or the floor. Each
+            // one contributes its own speed at the place they meet and its own
+            // willingness to be moved; the floor contributes neither.
+            const auto otherSpeed = [&](Vec3 at) {
+                if (other != nullptr) return pointSpeed(*other, at);
+                if (contact.ball) return ballPointSpeed(at);
+                return Vec3{};
+            };
+            const auto otherGive = [&](Vec3 at, Vec3 direction) {
+                if (other != nullptr) return bodyHeld(contact.other) ? 0.0 : giveAt(*other, at, direction);
+                if (contact.ball) return ballGiveAt(at, direction);
+                return 0.0;
+            };
+            const auto pushOther = [&](Vec3 at, Vec3 impulse) {
+                if (other != nullptr) {
+                    if (!bodyHeld(contact.other)) pushBody(*other, at, impulse, contact.kind);
+                } else if (contact.ball) {
+                    pushBall(at, impulse, contact.kind);
+                }
+            };
+            const auto relativeSpeed = [&](Vec3 at) { return pointSpeed(body, at) - otherSpeed(at); };
+            const double give = giveAt(body, contact.point, contact.normal) +
+                                otherGive(contact.point, contact.normal);
+            if (!(give > 1e-12)) continue;
+            const double closing = dot(relativeSpeed(contact.point), contact.normal);
+            if (closing < 0.0) {
+                const double impulse = -closing / give;
+                contact.normalImpulse += impulse;
+                pushBody(body, contact.point, contact.normal * impulse, contact.kind);
+                pushOther(contact.point, contact.normal * -impulse);
+                delivered += impulse;
+                worst = std::max(worst, -closing);
+                // What is under this contact now decides what it can carry. A
+                // contact on the floor and a contact on another body are the same
+                // question, so they are answered by the same lines.
+                if (contact.normal.y > 0.5) {
+                    if (other == nullptr && !contact.ball) {
+                        body.touchingPlane = true;
+                    } else if (other != nullptr) {
+                        body.onBody = true;
+                        body.supportFrozen = other->frozen;
+                    }
+                    body.supportLow = std::min(body.supportLow, contact.point.x);
+                    body.supportHigh = std::max(body.supportHigh, contact.point.x);
+                }
+            }
+            // The grip. Coulomb's rule, in its two forms: mu_s holds the slide
+            // while the grip can carry what holding it would take, and once it
+            // cannot, mu_k carries what it can and the rest slips.
+            const Vec3 tangent{contact.normal.y, -contact.normal.x, 0.0};
+            const double giveTangent = giveAt(body, contact.point, tangent) +
+                                       otherGive(contact.point, tangent);
+            if (!(giveTangent > 1e-12)) continue;
+            const double slide = dot(relativeSpeed(contact.point), tangent);
+            double muStatic = body.staticFriction, muKinetic = body.kineticFriction;
+            if (other != nullptr) {
+                muStatic = 0.5 * (muStatic + other->staticFriction);
+                muKinetic = 0.5 * (muKinetic + other->kineticFriction);
+            } else if (contact.ball) {
+                muStatic = std::min(muStatic, ball_shape::kBallStaticFriction);
+                muKinetic = std::min(muKinetic, ball_shape::kBallKineticFriction);
+            }
+            double next = contact.tangentImpulse - slide / giveTangent;
+            const double hold = muStatic * contact.normalImpulse;
+            if (std::abs(next) > hold) {
+                const double slip = muKinetic * contact.normalImpulse;
+                next = std::copysign(std::min(std::abs(next), slip), next);
+            }
+            const double delta = next - contact.tangentImpulse;
+            if (delta != 0.0) {
+                contact.tangentImpulse = next;
+                pushBody(body, contact.point, tangent * delta, contact.kind);
+                pushOther(contact.point, tangent * -delta);
+            }
+        }
+        if (worst < kSolveTolerance) break;
     }
-    // A body is carried by the plane only if its weight passes between the
-    // corners that are actually touching it. Balanced on one corner it is not
-    // held up at all -- it topples -- so it is not allowed to freeze there and
-    // the solve is left to tip it onto the corners that can carry it. Without
-    // this a body can be caught at the instant it is standing on a single
-    // corner, and stop in mid-air.
-    const Vec3 middle = centroid(body.position.data(), count);
-    const bool carriedByPlane = touchingPlane && middle.x >= leftmost - 1e-6 && middle.x <= rightmost + 1e-6;
-    // And another body carries it the same way: what it is standing on has to be
-    // under the weight, and it has to be at rest itself.
-    //
-    // What it is standing on also has to have some extent. A single contact point
-    // is a round surface with no radius in it -- the triangle's corner, or the top
-    // of a ball -- and a shape on one of those is carried only in the one
-    // configuration where its weight runs straight down the point, which is not a
-    // rest but a knife edge: the smallest thing tips it. Freezing it there is what
-    // left a cube perched on the point of the triangle for ever. A support with
-    // extent can carry it, and that is a face or a pair of corners, not a point.
-    const bool carriedByBody = body.onBody && body.supportFrozen && body.supportHigh > body.supportLow &&
-                               middle.x >= body.supportLow - 1e-6 && middle.x <= body.supportHigh + 1e-6;
-    const bool carried = carriedByPlane || carriedByBody;
-    // Resting on the plane and no longer going anywhere: there is no force left
-    // to resolve, so the body is frozen and its ticks stop costing anything.
-    // Only the plane can do that. A ball is a round surface: it carries a shape
-    // only where the shape's weight runs straight down through the point of
-    // contact, which is one configuration out of the whole of the ball, so a shape
-    // left on a ball is never at rest -- it tips and it slides off. Freezing it
-    // there because its corners happen to be moving very little is what left a
-    // shape perched on the top of a ball for ever.
-    // A body asleep on another body that is no longer under it has nothing holding
-    // it: the plane never goes anywhere, so only a body without its own corner on
-    // the floor can lose a support that way.
-    // And the floor's own arrows, one per corner it answered: the normal impulse
-    // and the grip at that corner added together, because they are one surface
-    // pressing one point. They were written down as they were applied -- see
-    // floorImpulse below -- and this is that sum over the tick, in newtons.
-    for (std::size_t i = 0; i < count; ++i) {
-        if (length(floorImpulse[i]) > 1e-9) addForce(body.position[i], floorImpulse[i] * (1.0 / kTick), ForceKind::Contact);
-    }
-    if (quiet && carried && !bodyHeld(index)) {
-        body.frozen = true;
-        for (std::size_t i = 0; i < count; ++i) {
-            body.velocity[i] = {};
-            body.previous[i] = body.position[i];
-            body.shown[i] = body.position[i];
+    return delivered > 0.0;
+}
+
+// A body's rest, decided from its own motion and from what is under it. A shape
+// whose weight does not run between the places it is supported at is not carried
+// by them -- it tips, and that is what the physics does on its own, without a rule
+// that says so.
+void PlaygroundRoom::settleBodies() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0) continue;
+        if (bodyHeld(index)) continue;
+        if (body.frozen) {
+            // Asleep is asleep: no speed, no turn, and the tick that finds it so
+            // leaves it exactly where it is.
+            body.velocity = {};
+            body.spin = 0.0;
+            continue;
+        }
+        const bool still = length(body.velocity) < kRestSpeed && std::abs(body.spin) < kRestSpeed;
+        const bool carriedByPlane = body.touchingPlane && body.supportHigh > body.supportLow &&
+                                    body.centre.x >= body.supportLow - 1e-6 &&
+                                    body.centre.x <= body.supportHigh + 1e-6;
+        const bool carriedByBody = body.onBody && body.supportFrozen && body.supportHigh > body.supportLow &&
+                                   body.centre.x >= body.supportLow - 1e-6 &&
+                                   body.centre.x <= body.supportHigh + 1e-6;
+        if (still && (carriedByPlane || carriedByBody)) {
+            body.frozen = true;
+            body.velocity = {};
+            body.spin = 0.0;
         }
     }
+}
+
+// One tick of every body. The forces first, then the walk.
+void PlaygroundRoom::tickBodies() {
+    applyBodyForces();
+    double remaining = kTick;
+    for (int stop = 0; stop < kMaxWalkStops && remaining > 1e-12; ++stop) {
+        const double step = timeToContact(remaining);
+        if (step > 0.0) {
+            remaining -= advanceBodies(step);
+            if (step <= 0.0) break;
+        }
+        ContactSet contacts;
+        gatherContacts(contacts);
+        if (contacts.count == 0) {
+            // Nothing is touching: the rest of the tick is free travel.
+            if (remaining > 1e-12) advanceBodies(remaining);
+            remaining = 0.0;
+            break;
+        }
+        const bool answered = solveContacts(contacts);
+        if (!answered && remaining > 1e-12) {
+            // The contacts are there and nothing is closing at any of them: the
+            // rest of the tick is travel along them.
+            advanceBodies(remaining);
+            remaining = 0.0;
+            break;
+        }
+    }
+    settleBodies();
+    writeImpulses();
 }
 
 }  // namespace gtc::native

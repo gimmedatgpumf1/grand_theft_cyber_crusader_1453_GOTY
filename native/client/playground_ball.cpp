@@ -35,60 +35,24 @@ bool PlaygroundRoom::ballNeighboursMoving() const {
     return false;
 }
 
-// How far a body's step can go before the whole of its outline reaches the
-// ball. A corner's own hitscan is no help with a face lying across a ball -- every
-// corner of that face can be a quarter of a metre from the ball while the face
-// itself is touching it -- so what is walked here is the outline: the corners
-// taken as they are at a fraction of the step, and the nearest piece of the shape
-// they make. The answer is the last fraction at which that piece is still clear.
-double PlaygroundRoom::bodyBallReach(std::size_t index, const Vec3* target) const {
-    const Body& body = bodies_[index];
-    if (body.count == 0) return 1.0;
-    if (outlineGap(ball_.position, body.previous.data(), target, body.count, 1.0).gap >= ball_.radius) return 1.0;
-    double clear = 0.0, met = 1.0;
-    for (int step = 0; step < kBisections; ++step) {
-        const double middle = 0.5 * (clear + met);
-        if (outlineGap(ball_.position, body.previous.data(), target, body.count, middle).gap >= ball_.radius)
-            clear = middle;
-        else
-            met = middle;
-    }
-    return clear;
-}
-
-// The outline may not be inside the ball. What the ball is against is one piece
-// of that outline, and that piece is what it pushes out -- in proportion to how
-// close the ball is to either end of it, so a ball under the middle of a long
-// edge lifts that edge and leaves the rest of the shape where it is. The fixed
-// distances then carry that to every corner, and the shape turns about the ball.
-// Lifting every corner by the same amount is a shape being carried by a ball
-// without so much as tipping, which is what a shape sitting on top of a ball for
-// ever looked like.
+// The gap between a body's outline and the ball's surface: how far apart they are,
+// which way the body has to travel to be further from the ball, and the place the
+// two of them would touch. Negative when the ball is already into the outline.
 //
-// Which way is out is the outline's own business: the piece the ball is against
-// faces away from the shape's middle, and the shape goes the other way. Taking it
-// from the ball's middle to the nearest point instead says a ball underneath the
-// cube's bottom face pushes the cube downwards, which drives it into the floor.
-double PlaygroundRoom::pushBodyOutOfBall(std::size_t index, std::array<Vec3, kMaxCorners>* lift) {
-    Body& body = bodies_[index];
-    if (body.count == 0) return 0.0;
-    const OutlineGap gap = outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
-    const double through = ball_.radius - gap.gap;
-    if (!(through > 0.0)) return 0.0;
-    const Vec3 away = gap.normal * -1.0;
+// The bodies are walked first and the ball afterwards, so for the length of the
+// bodies' walk the ball is a surface that stays where it is; this is what the walk
+// measures its step against, and what it stops at.
+double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const {
+    const Body& body = bodies_[index];
+    way = Vec3{0, 1, 0};
+    at = ball_.position;
+    if (body.count == 0) return 1e30;
+    const OutlineGap gap =
+        outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
     const OutlineTouch touch = outlineTouch(ball_.position, body.position.data(), body.count);
-    const auto push = [&](std::size_t corner, double share) {
-        const Vec3 amount = away * (through * share);
-        body.position[corner] = body.position[corner] + amount;
-        if (lift != nullptr) (*lift)[corner] = (*lift)[corner] + amount;
-    };
-    if (touch.a == touch.b) {
-        push(touch.a, 1.0);
-    } else {
-        push(touch.a, 1.0 - touch.t);
-        push(touch.b, touch.t);
-    }
-    return through;
+    way = gap.normal * -1.0;
+    at = touch.point;
+    return gap.gap - ball_.radius;
 }
 
 void PlaygroundRoom::tickBall() {
@@ -322,7 +286,7 @@ void PlaygroundRoom::tickBall() {
                 // it. Anything left over from an earlier contact in the same tick --
                 // a body pressing the ball down onto the floor -- is answered here,
                 // which is what lets a ball carry a weight instead of humming.
-                const Vec3 closing = ball.velocity - (body.velocity[edge] + body.velocity[top]) * 0.5;
+                const Vec3 closing = ball.velocity - pointSpeed(body, a + side * t);
                 const double into = dot(closing, normal);
                 if (into < 0.0) ball.velocity = ball.velocity - normal * into;
             }
