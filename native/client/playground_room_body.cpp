@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -604,13 +606,25 @@ void PlaygroundRoom::tickBodies() {
     // still through. An arrival later in the tick joins the same set, keeping what
     // the ends it shares already carry, so the tick converges on one answer for each
     // meeting instead of answering the same one again.
+    const auto dump = [&](const char* tag) {
+        if (std::getenv("WOBDUMP") == nullptr) return;
+        const auto& b = bodies_[0];
+        std::fprintf(stderr, "  %-10s c(%.8f,%.8f) a %+.10f v(%+.5f,%+.5f) w %+.5f y: %.9f %.9f\n", tag,
+                     b.centre.x, b.centre.y, b.angle, b.velocity.x, b.velocity.y, b.spin,
+                     b.position[0].y, b.position[1].y);
+    };
+    if (std::getenv("WOBDUMP")) std::fprintf(stderr, "TICK %s\n", "");
+    dump("start");
     ManifoldSet patches;
     gatherContacts(patches);
     solveContacts(patches);
+    dump("startSolve");
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
+        if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  stop %d step %.9f rem %.9f\n", stop, step, remaining);
         if (step > 0.0) remaining -= advanceBodies(step);
+        dump("advanced");
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
