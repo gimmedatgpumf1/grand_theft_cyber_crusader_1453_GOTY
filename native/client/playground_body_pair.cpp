@@ -255,23 +255,23 @@ void PlaygroundRoom::separateBall() {
         Vec3 at{};
         const double gap = bodyBallGap(index, way, at);
         if (!(gap < 0.0)) continue;
-        bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
-        if (ballMoves) {
-            const Vec3 wanted = ball_.position - way * (-gap) * 0.5;
-            if (wanted.y < ball_.radius - kSkin) ballMoves = false;
-        }
-        const double mine = 1.0 / body.mass;
-        const double theirs = ballMoves ? 1.0 / ball_.mass : 0.0;
-        const double share = mine / (mine + theirs);
-        // `way` runs out of the ball and into the body, so the body leaves along it
-        // and the ball leaves against it.
-        const Vec3 move = way * (-gap) * share;
-        body.centre = body.centre + move;
-        placeCorners(body);
-        if (ballMoves) {
-            if (getenv("GTC_MOVE")) std::fprintf(stderr, "SEPARATE %+.6f m\n", (-gap) * (1.0 - share));
-            ball_.position = ball_.position - way * (-gap) * (1.0 - share);
-        }
+        // The shape gives way, and it gives way *first*, because it is the shape that
+        // is where it should not be. Splitting the overlap by mass share -- which is
+        // what this used to do -- handed three quarters of it to the ball, because
+        // the ball is the lighter of the two, and 75 % of a two-centimetre overlap
+        // is a ball moved fifteen millimetres in a tick by nothing at all. That is
+        // the teleport; this room does not do teleports.
+        //
+        // So `way`, which runs out of the ball and into the body, is the direction
+        // the body leaves along, and pushBodyOutOfBall does the moving -- including
+        // refusing when the body has nowhere to go, because it is on the floor.
+        if (pushBodyOutOfBall(index, way * -1.0, -gap)) continue;
+        // Nowhere to go: the ball gives the rest of it, and only what is left.
+        if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;
+        const Vec3 wanted = ball_.position - way * (-gap);
+        if (wanted.y < ball_.radius - kSkin) continue;
+        if (getenv("GTC_MOVE")) std::fprintf(stderr, "SEPARATE %+.6f m\n", -gap);
+        ball_.position = wanted;
     }
 }
 
