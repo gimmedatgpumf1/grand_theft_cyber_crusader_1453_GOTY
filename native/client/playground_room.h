@@ -407,6 +407,9 @@ private:
     // wall: it wakes, so that what leans on it is answered against its mass. See the
     // file.
     void wakeLoadedBodies(double band);
+    // One body's weight: the same pull at every corner, and the impulse it delivers
+    // over the tick. Used by the gravity pass, and for a body woken after it.
+    void applyBodyWeight(std::size_t index);
     // One impulse, given to one body at one place. The ledger is written here too:
     // this is the only door into a body's motion, so what is on screen cannot
     // disagree with what was solved.

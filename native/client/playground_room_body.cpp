@@ -88,17 +88,24 @@ void PlaygroundRoom::applyBodyForces() {
         // Only a body that is about to be solved for forgets what it was given last
         // tick; a sleeping body keeps it, because that is what it is standing on.
         body.appliedCount = 0;
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 weight{0.0, -share * kGravity, 0.0};
-            addForce(body.position[i], weight, ForceKind::Gravity, nullptr, index);
-            // The impulse the weight delivers over one tick, at that very corner.
-            // Written out rather than short-circuited to g*dt: what a body feels is
-            // a force at a place, and this is that force at that place.
-            const Vec3 jog = weight * kTick;
-            const Vec3 arm = body.position[i] - body.centre;
-            body.velocity = body.velocity + jog * (1.0 / body.mass);
-            body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
-        }
+        applyBodyWeight(index);
+    }
+}
+
+// One body's own weight, corner by corner.
+void PlaygroundRoom::applyBodyWeight(std::size_t index) {
+    Body& body = bodies_[index];
+    const double share = kMass;  // every corner is a point of the body's mass
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 weight{0.0, -share * kGravity, 0.0};
+        addForce(body.position[i], weight, ForceKind::Gravity, nullptr, index);
+        // The impulse the weight delivers over one tick, at that very corner.
+        // Written out rather than short-circuited to g*dt: what a body feels is
+        // a force at a place, and this is that force at that place.
+        const Vec3 jog = weight * kTick;
+        const Vec3 arm = body.position[i] - body.centre;
+        body.velocity = body.velocity + jog * (1.0 / body.mass);
+        body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
     }
 }
 
@@ -736,6 +743,12 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
         body.restTicks = 0;
         body.restLow = body.restHigh = body.centre;
         body.restAngleLow = body.restAngleHigh = body.angle;
+        // This wake happens after the tick's gravity pass, and a woken body is not
+        // replayed either -- so without this the one tick a body is woken on would
+        // be the one tick it is drawn with no weight at all. Its corners are pulled
+        // here exactly as they would have been there, and its contacts are solved
+        // afterwards in the same tick, so nothing is counted twice.
+        applyBodyWeight(index);
     }
 }
 
