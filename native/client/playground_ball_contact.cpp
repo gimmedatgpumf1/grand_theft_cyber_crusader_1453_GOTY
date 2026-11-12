@@ -205,7 +205,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // resting on it, gave the ball no say in the blow, and a ball that ran
             // into the side of a cube stopped dead instead of bouncing off it.
             // Bounciness is not a property of up, and a side hit is a hit.
-            const bool pressing = normal.y < -kSkin && ball.position.y <= ball.radius + kTouch;
+            // "Over the ball" is a statement about the face, and the question it
+            // answers is which of the two it is: a face that is more above than
+            // beside, or more beside than above. A face whose normal is closer to
+            // straight down than to level is over the ball and the floor under it
+            // wins; a face that is nearer level is a wall, and a ball pressed against
+            // a wall rolls along the floor out of its way. Anything with a number in
+            // it -- "more than a microradian", "more than a millionth" -- answers a
+            // different question, the one about how level a face happens to be in
+            // floating point, and says a brick wall is a low ceiling.
+            const bool pressing =
+                -normal.y > std::abs(normal.x) && ball.position.y <= ball.radius + kTouch;
             const bool ballGives = !ballHeld && !pressing;
             if (std::getenv("DBGB"))
                 std::fprintf(stderr, "      gives: ballHeld %d normal.y %.17g posY %.17g radius %.17g pressing %d ballGives %d\n",
