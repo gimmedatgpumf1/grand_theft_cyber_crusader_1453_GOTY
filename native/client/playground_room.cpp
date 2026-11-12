@@ -469,7 +469,21 @@ void PlaygroundRoom::tick() {
         const double swift = length(slip);
         Vec3 friction{};
         if (swift > kRestSpeed) {
-            friction = slip * (-kPointKineticFriction * carried / swift);
+            // Coulomb, in the one form that does not hum. The surface rubs against
+            // the slide with mu_k * N -- and it can never do more than take the
+            // slide away, because friction stops a thing, it does not send it back.
+            // Asking for the whole of mu_k * N when a centimetre a second is left
+            // reverses the point, the next tick reverses it again, and a dot that
+            // has come to rest sits there buzzing for ever. What friction gives is
+            // whatever is needed to leave no slip, up to what the load can carry;
+            // and if the load can carry it, the point holds and does not slide at
+            // all, which is static friction, which is the same law.
+            const double toStop = kMass * swift / kTick;  // N, what would stop it dead
+            const double grip = std::min(toStop, (toStop <= kPointStaticFriction * carried)
+                                                     ? toStop
+                                                     : kPointKineticFriction * carried);
+            friction = slip * (-grip / swift);
+            if (toStop <= kPointStaticFriction * carried) heldStill_ = true;
         } else if (length(along) <= kPointStaticFriction * carried) {
             friction = along * -1.0;
             heldStill_ = true;
