@@ -332,6 +332,14 @@ void PlaygroundRoom::tick() {
             point_, body.position.data(), body.position.data(), body.count, 1.0);
         if (!(gap.gap < kPointRadius)) continue;
         point_ = point_ + gap.normal * (kPointRadius - gap.gap);
+        // And the face has answered what put it there. Putting the dot back out
+        // without touching its speed is a ratchet: the dot slides a little way in
+        // every tick, is lifted back to the surface, and keeps the speed that drove
+        // it -- so it never comes to rest, its speed is never spent, and it never
+        // freezes, because it is always moving, always failing to go anywhere. A
+        // surface that a dot is pressed against holds it, and holding it means this:
+        // the part of the speed driving into the face is gone.
+        if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
         restingBody_ = int(index);
         resting_ = true;
         supportNormal_ = gap.normal;
@@ -608,6 +616,7 @@ void PlaygroundRoom::tick() {
             point_, body.position.data(), body.position.data(), body.count, 1.0);
         if (!(gap.gap < kPointRadius)) continue;
         point_ = point_ + gap.normal * (kPointRadius - gap.gap);
+        if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
     }
     // Kinetic friction over the part of the tick the point spent on something.
     // The line that is drawn is the travel that was actually walked this tick.
