@@ -442,6 +442,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             // what the pair does when it is pressed at each of them.
             std::size_t order[kMaxPatchEnds] = {}, dofs = 0;
             double u[kMaxPatchEnds] = {}, g[kMaxPatchEnds][kMaxPatchEnds] = {};
+            // The face's own clearance: the least of the ends still carrying, since
+            // that is the one that meets the surface first. One number for the whole
+            // face -- see where it is used below for why it cannot be one per end.
+            double faceGap = 1e30;
+            for (std::size_t k = 0; k < count; ++k)
+                if (live[k]) faceGap = std::min(faceGap, patch.gap[k]);
+            if (!(faceGap < 1e30)) faceGap = 0.0;
+            const double faceBias = faceGap > 0.0 ? faceGap * (1.0 / kTick) : faceGap * (kRecovery / kTick);
             for (std::size_t k = 0; k < count; ++k) {
                 if (!live[k]) continue;
                 order[dofs] = k;
@@ -480,9 +488,48 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // nothing in the room gave either body, which is energy out of the
                 // arithmetic; a fifth of it a tick is a push the hand's own work pays
                 // for, and the state is gone in a quarter of a second.
-                const double bias = patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick)
-                                                       : patch.gap[k] * (kRecovery / kTick);
-                u[dofs] = away(patch.point[k], patch.normal) + bias;
+                //
+                // One clearance for the whole face, not one per end.
+                //
+                // The two ends of a patch are two ends of one rigid face, and a
+                // rigid face has exactly one distance to a flat surface: the least
+                // of its corners'. Given a gap each, the ends are told they may
+                // close different distances over the same tick, and the only way a
+                // rigid body can do that is to turn. So the solver turns it -- a
+                // degree of freedom no load asked for, made out of the difference
+                // between two numbers that are both noise: a resting shape sits with
+                // its corners a ten-thousandth of a millimetre either side of the
+                // surface it is standing on, and that difference was being read as
+                // the shape leaning.
+                //
+                // That turn is not harmless, because friction is real. The next
+                // thing the same tick does with the spin it has just invented is
+                // convert it: an end that is turning has a speed along the surface,
+                // and the grip answers that speed with an impulse along the surface.
+                // Both ends get one, and they do not cancel -- they were not equal,
+                // because the loads were not -- so the pair is left with a small net
+                // push sideways. A cube and a triangle resting on each other were
+                // walking slowly to the right for ever, on a level floor, with no
+                // arrow on the screen pointing right: because there was no force
+                // pushing them, only a contact being asked to hold a face that it had
+                // been told was turning.
+                //
+                // So the face is given the one clearance it has. The deepest corner
+                // decides how far the face may come before it is on the surface, and
+                // every end is answered against that same distance -- which is what a
+                // rigid face resting on something actually is.
+                //
+                // A gap that is *clear* is allowed to close over exactly one tick:
+                // that is a shape arriving at a surface, and the answer leaves it on
+                // the surface when the tick ends. A gap that is already *inside* is
+                // different -- it is not motion, it is a state that should never have
+                // existed, made by a hand dragging one shape into another -- and it is
+                // given back over a few ticks rather than in one. Paying a deep
+                // interpenetration off in a single tick means a separating speed that
+                // nothing in the room gave either body, which is energy out of the
+                // arithmetic; a fifth of it a tick is a push the hand's own work pays
+                // for, and the state is gone in a quarter of a second.
+                u[dofs] = away(patch.point[k], patch.normal) + faceBias;
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
