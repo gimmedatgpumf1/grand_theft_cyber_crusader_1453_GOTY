@@ -765,6 +765,10 @@ void PlaygroundRoom::tickBodies() {
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         const double used = step > 0.0 ? advanceBodies(step) : 0.0;
+        if (std::getenv("DBG"))
+            std::fprintf(stderr, "   walk stop%d step %.6f used %.6f rem %.6f fz0 %d rest %d v0(%.3f,%.3f)\n", stop, step,
+                         used, remaining - used, int(bodies_[0].frozen), bodies_[0].restTicks, bodies_[0].velocity.x,
+                         bodies_[0].velocity.y);
         remaining -= used;
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
