@@ -383,6 +383,10 @@ void PlaygroundRoom::settleBodies() {
             continue;
         }
         const bool still = length(body.velocity) < kRestSpeed && std::abs(body.spin) < kRestSpeed;
+        if (std::getenv("DBGW") && index == 0)
+            std::fprintf(stderr, "  settle cube |v| %.3e w %.3e still %d plane %d low %.3f high %.3f\n",
+                         length(body.velocity), body.spin, int(still), int(body.touchingPlane), body.supportLow,
+                         body.supportHigh);
         const bool carriedByPlane = body.touchingPlane && body.supportHigh > body.supportLow &&
                                     body.centre.x >= body.supportLow - 1e-6 &&
                                     body.centre.x <= body.supportHigh + 1e-6;
