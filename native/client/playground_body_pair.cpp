@@ -218,6 +218,7 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     if (index >= kBodyCount || !(through > 0.0)) return false;
     Body& body = bodies_[index];
     if (body.count == 0 || bodyHeld(index)) return false;
+    if (getenv("GTC_PUSH")) std::fprintf(stderr, "push body %zu through %.6f normal(%+.3f,%+.3f) c(%+.3f,%+.3f)\n", index, through, normal.x, normal.y, body.centre.x, body.centre.y);
     const Vec3 was = body.centre;
     // How far the shape already reaches below the floor, which is a state it may
     // keep -- it was put there by its own step and the separation above -- but may
@@ -236,6 +237,7 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // moving, which is the honest last resort.
     for (std::size_t i = 0; i < body.count; ++i) {
         if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) {
+            if (getenv("GTC_PUSH")) std::fprintf(stderr, "  refused: corner %zu below the floor by %.6f (allowed %.6f)\n", i, playground_tick::kSurfaceY - body.position[i].y, below);
             body.centre = was;
             placeCorners(body);
             return false;
