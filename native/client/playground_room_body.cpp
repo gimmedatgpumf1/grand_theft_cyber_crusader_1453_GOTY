@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -405,11 +403,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // single corner and rocked it; answered together, a face that has landed flat is
     // stopped where it lands.
     const auto patchPass = [&](Manifold& patch) {
-        if (std::getenv("WOB") && getenv("WOB")[0] == '1')
-            std::fprintf(stderr, "  patch body %zu other %zu ball %d ends %zu p0(%.4f,%.4f) p1(%.4f,%.4f) n(%.3f,%.3f)\n",
-                         patch.body, patch.other, int(patch.ball), patch.ends, patch.point[0].x, patch.point[0].y,
-                         patch.ends > 1 ? patch.point[1].x : 0.0, patch.ends > 1 ? patch.point[1].y : 0.0,
-                         patch.normal.x, patch.normal.y);
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
@@ -464,6 +457,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // is two numbers, because the load is what a body standing on the floor
         // decides with: it is the difference between the two ends that holds a body
         // flat instead of tipping it.
+        const std::size_t dofs = count + 1;
         Vec3 point[2 * kMaxPatchEnds], direction[2 * kMaxPatchEnds];
         for (std::size_t k = 0; k < count; ++k) {
             point[k] = patch.point[k];
@@ -485,124 +479,61 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             worst = std::max(worst, std::abs(u[k]));
         }
         // The reduced system: the two loads and the one grip, in the grip's own
-        // basis, so that what is solved is exactly what is applied. Answering the
-        // whole patch at once is what holds a face flat; the constraints are then
-        // checked one at a time and the ones the floor cannot honour are let go, so
-        // that what is left is answered exactly rather than approximately.
-        double loadCarried[2] = {patch.normalImpulse[0], count == 2 ? patch.normalImpulse[1] : 0.0};
-        const double carriedGrip = count == 2 ? 0.5 * (patch.tangentImpulse[0] + patch.tangentImpulse[1])
-                                              : patch.tangentImpulse[0];
+        // basis, so that what is solved is exactly what is applied.
+        double matrix[3][4] = {};
+        for (std::size_t i = 0; i < count; ++i) {
+            matrix[i][dofs] = -u[i];
+            for (std::size_t j = 0; j < count; ++j) matrix[i][j] = g[i][j];
+            double cross = 0.0;
+            for (std::size_t j = 0; j < 2 * count; ++j) cross += share[j] * g[i][j];
+            matrix[i][count] = cross;
+            matrix[count][i] = cross;
+        }
+        {
+            double self = 0.0, target = 0.0;
+            for (std::size_t i = 0; i < 2 * count; ++i) {
+                target += share[i] * u[i];
+                for (std::size_t j = 0; j < 2 * count; ++j) self += share[i] * share[j] * g[i][j];
+            }
+            matrix[count][count] = self;
+            matrix[count][dofs] = -target;
+        }
+        for (std::size_t col = 0; col < dofs; ++col) {
+            std::size_t pivot = col;
+            for (std::size_t row = col + 1; row < dofs; ++row)
+                if (std::abs(matrix[row][col]) > std::abs(matrix[pivot][col])) pivot = row;
+            if (!(std::abs(matrix[pivot][col]) > 1e-18)) return;
+            if (pivot != col)
+                for (std::size_t j = 0; j <= dofs; ++j) std::swap(matrix[col][j], matrix[pivot][j]);
+            for (std::size_t row = 0; row < dofs; ++row) {
+                if (row == col) continue;
+                const double factor = matrix[row][col] / matrix[col][col];
+                if (factor == 0.0) continue;
+                for (std::size_t j = col; j <= dofs; ++j) matrix[row][j] -= factor * matrix[col][j];
+            }
+        }
+        double answer[3] = {};
+        for (std::size_t i = 0; i < dofs; ++i) answer[i] = matrix[i][dofs] / matrix[i][i];
+        double load[2] = {};
+        for (std::size_t k = 0; k < count; ++k) {
+            load[k] = patch.normalImpulse[k] + answer[k];
+            // The floor presses and does not pull.
+            if (!(load[k] > 0.0)) load[k] = 0.0;
+        }
         double mu = body->staticFriction;
         if (other != nullptr) {
             mu = 0.5 * (mu + other->staticFriction);
         } else if (patch.ball) {
             mu = std::min(mu, ball_shape::kBallStaticFriction);
         }
-        bool useLoad[2] = {true, count == 2};
-        bool useGrip = true;
-        double answer[3] = {};
-        double gripFixed = 0.0;  // the grip already applied, when it is at its limit
-        double gripHeld = carriedGrip;
-        for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::size_t active = (useLoad[0] ? 1u : 0u) + (useLoad[1] ? 1u : 0u) + (useGrip ? 1u : 0u);
-            if (active == 0) break;
-            std::size_t dofOf[3] = {3, 3, 3};  // 3 = not in the system
-            std::size_t dofs = 0;
-            for (std::size_t k = 0; k < count; ++k)
-                if (useLoad[k]) dofOf[k] = dofs++;
-            if (useGrip) dofOf[2] = dofs++;
-            double matrix[3][4] = {};
-            for (std::size_t i = 0; i < count; ++i) {
-                if (!useLoad[i]) continue;
-                matrix[dofOf[i]][dofs] = -u[i];
-                for (std::size_t j = 0; j < count; ++j)
-                    if (useLoad[j]) matrix[dofOf[i]][dofOf[j]] = g[i][j];
-                if (useGrip) {
-                    double cross = 0.0;
-                    for (std::size_t j = 0; j < 2 * count; ++j) cross += share[j] * g[i][j];
-                    matrix[dofOf[i]][dofOf[2]] = cross;
-                    matrix[dofOf[2]][dofOf[i]] = cross;
-                }
-            }
-            if (useGrip) {
-                double self = 0.0, target = 0.0;
-                for (std::size_t i = 0; i < 2 * count; ++i) {
-                    target += share[i] * u[i];
-                    for (std::size_t j = 0; j < 2 * count; ++j) self += share[i] * share[j] * g[i][j];
-                }
-                matrix[dofOf[2]][dofOf[2]] = self;
-                matrix[dofOf[2]][dofs] = -target;
-            }
-            bool singular = false;
-            for (std::size_t col = 0; col < dofs && !singular; ++col) {
-                std::size_t pivot = col;
-                for (std::size_t row = col + 1; row < dofs; ++row)
-                    if (std::abs(matrix[row][col]) > std::abs(matrix[pivot][col])) pivot = row;
-                if (!(std::abs(matrix[pivot][col]) > 1e-18)) singular = true;
-                if (singular) break;
-                if (pivot != col)
-                    for (std::size_t j = 0; j <= dofs; ++j) std::swap(matrix[col][j], matrix[pivot][j]);
-                for (std::size_t row = 0; row < dofs; ++row) {
-                    if (row == col) continue;
-                    const double factor = matrix[row][col] / matrix[col][col];
-                    if (factor == 0.0) continue;
-                    for (std::size_t j = col; j <= dofs; ++j) matrix[row][j] -= factor * matrix[col][j];
-                }
-            }
-            if (singular) return;
-            for (std::size_t i = 0; i < 3; ++i) answer[i] = 0.0;
-            if (std::getenv("WOB") && getenv("WOB")[0] == '2')
-                std::fprintf(stderr, "        attempt %d loads %d%d grip %d u %.5f %.5f t %.6f %.6f\n", attempt,
-                             int(useLoad[0]), int(useLoad[1]), int(useGrip), u[0], u[1], u[count], u[count + 1]);
-            for (std::size_t i = 0; i < 3; ++i)
-                if (dofOf[i] < dofs) answer[i] = matrix[dofOf[i]][dofs] / matrix[dofOf[i]][dofOf[i]];
-            // A load the floor cannot give is a pull: that end lifts off, and the
-            // patch is answered again without it, so what is left is exact.
-            bool changed = false;
-            for (std::size_t k = 0; k < count; ++k) {
-                if (!useLoad[k]) continue;
-                const double wouldBe = loadCarried[k] + answer[k];
-                if (wouldBe < 0.0) {
-                    useLoad[k] = false;
-                    changed = true;
-                }
-            }
-            if (changed) continue;
-            double total = 0.0;
-            for (std::size_t k = 0; k < count; ++k)
-                if (useLoad[k]) total += loadCarried[k] + answer[k];
-            // Grip is only ever as much as the load under it can hold. When it asks
-            // for more than that, the rest slides: the grip goes to the limit, is
-            // applied as a fixed blow, and the loads are answered again under it.
-            if (useGrip) {
-                const double wouldBe = gripHeld + answer[2];
-                const double limit = mu * total;
-                if (std::abs(wouldBe) > limit) {
-                    gripFixed = std::copysign(limit, wouldBe);
-                    const double delta = gripFixed - gripHeld;
-                    if (delta != 0.0)
-                        for (std::size_t k = 0; k < count; ++k) {
-                            pushBody(*body, patch.point[k], tangent * (delta * share[count + k]), patch.kind);
-                            pushOther(patch.point[k], tangent * -(delta * share[count + k]));
-                        }
-                    gripHeld = gripFixed;
-                    useGrip = false;
-                    changed = true;
-                }
-            }
-            if (!changed) break;
-        }
-        if (std::getenv("WOB") && getenv("WOB")[0] == '2')
-            std::fprintf(stderr, "        -> loads %.4f %.4f grip %.4f carried %.4f %.4f %.4f\n",
-                         (useLoad[0] || !(loadCarried[0] > 0.0)) ? loadCarried[0] + answer[0] : loadCarried[0],
-                         (useLoad[1] || !(loadCarried[1] > 0.0)) ? loadCarried[1] + answer[1] : loadCarried[1],
-                         gripFixed, loadCarried[0], loadCarried[1], carriedGrip);
-        double load[2] = {};
+        // The grip is only ever as much as the load under it can hold: Coulomb over
+        // the whole patch, which is the same rule as at one point, summed.
+        const double carriedGrip = count == 2 ? 0.5 * (patch.tangentImpulse[0] + patch.tangentImpulse[1])
+                                              : patch.tangentImpulse[0];
+        double grip = carriedGrip + answer[count];
+        const double hold = mu * (load[0] + (count == 2 ? load[1] : 0.0));
+        if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
         for (std::size_t k = 0; k < count; ++k) {
-            load[k] = loadCarried[k] + (useLoad[k] || !(loadCarried[k] > 0.0) ? answer[k] : 0.0);
-            // A load the floor cannot give is a pull: the floor presses and does not
-            // pull, so nothing is carried there.
-            if (!(load[k] > 0.0)) load[k] = 0.0;
             const double loadDelta = load[k] - patch.normalImpulse[k];
             if (loadDelta != 0.0) {
                 patch.normalImpulse[k] = load[k];
@@ -623,8 +554,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
         }
         // The grip, half at each end, as the one resultant it is.
-        if (useGrip) gripFixed = gripHeld + answer[2];
-        const double gripDelta = gripFixed - carriedGrip;
+        const double gripDelta = grip - carriedGrip;
         if (gripDelta != 0.0) {
             for (std::size_t k = 0; k < count; ++k) {
                 patch.tangentImpulse[k] += gripDelta * share[count + k];
@@ -722,7 +652,8 @@ void PlaygroundRoom::tickBodies() {
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        if (step > 0.0) remaining -= advanceBodies(step);
+        const double used = step > 0.0 ? advanceBodies(step) : 0.0;
+        remaining -= used;
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
