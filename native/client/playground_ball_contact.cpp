@@ -207,6 +207,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // Bounciness is not a property of up, and a side hit is a hit.
             const bool pressing = normal.y < -kSkin && ball.position.y <= ball.radius + kTouch;
             const bool ballGives = !ballHeld && !pressing;
+            if (std::getenv("DBGB"))
+                std::fprintf(stderr, "      gives: ballHeld %d normal.y %.17g posY %.17g radius %.17g pressing %d ballGives %d\n",
+                             ballHeld ? 1 : 0, normal.y, ball.position.y, ball.radius, pressing ? 1 : 0,
+                             ballGives ? 1 : 0);
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
             if (std::getenv("DBGB"))
