@@ -113,15 +113,22 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const Body& body = bodies_[index];
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             for (std::size_t i = 0; i < body.count; ++i)
-                if (body.position[i].y < -1e-12) inside = true;
+                if (body.position[i].y < -1e-12) {
+                    inside = true;
+                    if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: floor body %zu corner %zu y %.9f\n", index, i, body.position[i].y);
+                }
             Vec3 way{};
             for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
                 if (bodies_[other].count == 0) continue;
                 double depth = 0.0;
-                if (bodiesIntoEachOther(index, other, way, depth) && depth > 1e-12) inside = true;
+                if (bodiesIntoEachOther(index, other, way, depth) && depth > 1e-12) {
+                    inside = true;
+                    if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: pair %zu/%zu depth %.9f\n", index, other, depth);
+                }
             }
         }
         if (!inside) break;
+        if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: inside, halving used %.9f\n", used);
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             bodies_[index].centre = centres[index];
