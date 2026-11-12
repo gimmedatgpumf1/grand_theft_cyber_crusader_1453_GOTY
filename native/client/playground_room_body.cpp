@@ -702,7 +702,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             bool lifting = false;
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
-                if (carried[k] + delta[i] > 0.0) continue;
+                // An end is let go only when the load it would be left with is a
+                // pull. An end that needs exactly nothing keeps its place: it is
+                // still standing on something, and the pass after this one may well
+                // find it closing again.
+                if (carried[k] + delta[i] >= 0.0) continue;
                 // A pull: the floor lets go here. What this end took is given back
                 // and the rest of the patch is answered again without it.
                 pushEnd(k, patch.normal * -carried[k], patch.kind);
