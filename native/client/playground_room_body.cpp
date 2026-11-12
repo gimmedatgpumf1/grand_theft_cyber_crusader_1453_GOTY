@@ -45,16 +45,10 @@ constexpr double kContactBand = 1e-4;
 // physical length and nothing in the simulation is decided by it; it is what the
 // walk's own bookkeeping allows when it asks whether a step went anywhere.
 constexpr double kArithmetic = 1e-9;
-// How many times one tick may stop for a contact. A body landing on the floor and
-// then tipping onto its other corner is two; a pair of shapes settling against
-// each other is a handful. This is a guard against a pathological arrangement
-// looping for ever, never a limit on what is answered: the walk leaves as soon as
-// nothing is closing.
-constexpr int kMaxWalkStops = 8;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-constexpr int kSolvePasses = 256;
+constexpr int kSolvePasses = 32;
 // A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
 // a whole tick: slower than the arithmetic of the positions can even show, and
@@ -188,212 +182,8 @@ double PlaygroundRoom::advanceBodies(double seconds) {
         centres[index] = bodies_[index].centre;
         angles[index] = bodies_[index].angle;
     }
-    // How deep one body is inside anything else at the pose it is standing at: the
-    // floor under a corner, the ball's surface, another shape's outline. Measured per
-    // body, because one shape's arithmetic is not another shape's business -- a shape
-    // standing still leaves a corner a hundredth of a nanometre under the floor, and
-    // that must not cost a shape that is moving half of its step.
-    const auto depthOf = [&](std::size_t index) {
-        const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) return 0.0;
-        double worst = 0.0;
-        for (std::size_t i = 0; i < body.count; ++i) worst = std::max(worst, -body.position[i].y);
-        Vec3 way{}, at{};
-        worst = std::max(worst, -bodyBallGap(index, way, at));
-        for (std::size_t other = 0; other < kBodyCount; ++other) {
-            if (other == index || bodies_[other].count == 0) continue;
-            // Corner by corner, the same measure the contacts are gathered with. A
-            // single corner of one shape inside the other's face is a meeting, and an
-            // overlap test that only counts edges crossing edges does not see it.
-            for (std::size_t i = 0; i < body.count; ++i)
-                worst = std::max(worst, -ball_shape::outlineGap(body.position[i], bodies_[other].position.data(),
-                                                               bodies_[other].position.data(), bodies_[other].count, 1.0)
-                                             .gap);
-            for (std::size_t i = 0; i < bodies_[other].count; ++i)
-                worst = std::max(worst, -ball_shape::outlineGap(bodies_[other].position[i], body.position.data(),
-                                                               body.position.data(), body.count, 1.0)
-                                             .gap);
-        }
-        return worst;
-    };
-    // ... and a step is refused when it puts a body deeper in than it was by more
-    // than the width of the arithmetic itself. That number is not a tolerance on the
-    // physics: it is five hundred thousand times smaller than the contact band, it
-    // exists because two positions either side of a surface are compared with a
-    // subtraction, and without it a shape standing still refuses every step the room
-    // takes.
-    std::array<double, kBodyCount> before{};
-    for (std::size_t index = 0; index < kBodyCount; ++index) before[index] = depthOf(index);
     move(seconds);
-    double used = seconds;
-    for (int guard = 0; guard < 40; ++guard) {
-        bool deeper = false;
-        for (std::size_t index = 0; index < kBodyCount && !deeper; ++index)
-            // A body may not end a step deeper inside something than it already
-            // is -- but a body that is *clear* of everything may travel: being a
-            // little less clear is what walking towards a surface is. Measured
-            // against the clearance it started with, a shape falling onto a ball
-            // eleven millimetres above it refuses every step it takes, because each
-            // one brings it nearer, and then it hangs in the air with its speed
-            // still on and nothing to answer it.
-            if (depthOf(index) > std::max(before[index], 0.0) + kArithmetic) deeper = true;
-        if (!deeper) break;
-        used *= 0.5;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            bodies_[index].centre = centres[index];
-            bodies_[index].angle = angles[index];
-            placeCorners(bodies_[index]);
-        }
-        move(used);
-    }
-    return used;
-}
-
-// The first fraction of `remaining` at which anything would *arrive* at anything.
-//
-// Arriving is the whole of it: a corner already lying on the floor is not on its
-// way to the floor, and stopping the walk at it every tick would eat the tick
-// before it ever got spent. What counts is closing -- being driven into a surface
-// it is already touching -- or reaching one it is clear of. That distinction is
-// the difference between a walk and a stutter.
-//
-// The instant is solved for on the configuration that will actually happen, corner
-// by corner: a corner on a turning body travels an arc, not a line, and taking the
-// line through it is what leaves a shape a hair inside the floor. The gap at a
-// given time is measured, the rate it is closing is measured, and the crossing is
-// bisected to the width of the arithmetic.
-double PlaygroundRoom::timeToContact(double remaining) const {
-    // Where every body's corners would be after `time`: carried by its speed and
-    // turned by its spin, with the corners read off that. A body that is asleep or
-    // held is a surface that stays where it is.
-    std::array<std::array<Vec3, kMaxCorners>, kBodyCount> corners{};
-    const auto place = [&](double time) {
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            if (body.count == 0) continue;
-            if (body.frozen || bodyHeld(index)) {
-                corners[index] = body.position;
-                continue;
-            }
-            const double angle = body.angle + body.spin * time;
-            const Vec3 centre = body.centre + body.velocity * time;
-            const double c = std::cos(angle), s = std::sin(angle);
-            for (std::size_t i = 0; i < body.count; ++i) {
-                const Vec3 local = body.local[i];
-                corners[index][i] = Vec3{centre.x + local.x * c - local.y * s,
-                                         centre.y + local.x * s + local.y * c, centre.z};
-            }
-        }
-    };
-    const auto moving = [&](std::size_t index) {
-        const Body& body = bodies_[index];
-        return body.count != 0 && !body.frozen && !bodyHeld(index);
-    };
-    // The gap between a body and the ball, at the corners it has now.
-    const auto ballGap = [&](std::size_t index) {
-        return ball_shape::outlineGap(ball_.position, corners[index].data(), corners[index].data(),
-                                      bodies_[index].count, 1.0)
-                   .gap -
-               ball_.radius;
-    };
-    // The nearest corner of `one` that is *still clear* of `two`. A pair of shapes
-    // that are already touching are answered by the patch, which is why the walk does
-    // not stop for them a second time -- but a pair is not one meeting, it is as many
-    // meetings as it has corners near each other, and a corner that has not arrived
-    // yet is a corner the walk still has to catch. Watched by the pair's least gap
-    // alone, a shape whose first corner is down stops being watched altogether, and
-    // the corner that comes down after it is never seen: it goes in, the step that
-    // took it there is refused, and the shape grinds to a crawl against the surface it
-    // is lying on. That was a cube sliding down a slope at a hundredth of its speed.
-    const auto clearGap = [&](std::size_t one, std::size_t two) {
-        double least = 1e30;
-        const auto near = [&](std::size_t from, std::size_t into) {
-            for (std::size_t i = 0; i < bodies_[from].count; ++i) {
-                const double gap = ball_shape::outlineGap(corners[from][i], corners[into].data(), corners[into].data(),
-                                                          bodies_[into].count, 1.0)
-                                       .gap;
-                if (gap > kArithmetic) least = std::min(least, gap);
-            }
-        };
-        near(one, two);
-        near(two, one);
-        // And edge to edge. A corner-to-outline measure is blind to a wide face
-        // coming down across a narrow one -- every corner of it is out in the open
-        // until the step that puts the middle of the face through the other shape.
-        least = std::min(least, pair_shape::gap(corners[one].data(), bodies_[one].count, corners[two].data(),
-                                                bodies_[two].count));
-        return least;
-    };
-    // Which meetings are worth watching: the ones that are not already touching.
-    // A meeting already in the contact band is answered by the patch, not by the
-    // walk.
-    bool watchCorner[kBodyCount][kMaxCorners] = {};
-    bool watchBall[kBodyCount] = {};
-    bool watchPair[kBodyCount][kBodyCount] = {};
-    place(0.0);
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        if (!moving(index)) continue;
-        // Watched until it is *on* the surface, not until it is inside the contact
-        // band: a corner that stops being watched the moment it enters the band is a
-        // corner whose arrival is never caught -- the walk sees the gap vanish from
-        // the list rather than close to nothing, and the step that took it in is left
-        // to the guard. The band is where the solver answers; the geometric boundary
-        // is where the walk stops.
-        for (std::size_t i = 0; i < bodies_[index].count; ++i)
-            watchCorner[index][i] = corners[index][i].y > kArithmetic;
-        watchBall[index] = ballGap(index) > kContactBand;
-        for (std::size_t other = 0; other < kBodyCount; ++other) {
-            if (other == index || bodies_[other].count == 0) continue;
-            watchPair[index][other] = clearGap(index, other) < 1e29;
-        }
-    }
-    // The smallest gap anywhere, over the watched meetings, at `time`.
-    const auto gapAfter = [&](double time) {
-        place(time);
-        double least = 1e30;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            if (!moving(index)) continue;
-            for (std::size_t i = 0; i < bodies_[index].count; ++i)
-                if (watchCorner[index][i]) least = std::min(least, corners[index][i].y);
-            if (watchBall[index]) least = std::min(least, ballGap(index));
-        }
-        for (std::size_t one = 0; one < kBodyCount; ++one) {
-            if (!moving(one)) continue;
-            for (std::size_t two = 0; two < kBodyCount; ++two)
-                if (watchPair[one][two]) least = std::min(least, clearGap(one, two));
-        }
-        return least;
-    };
-    // Nothing comes within touch over the whole of what is left: the tick is travel.
-    if (gapAfter(remaining) > 0.0) return remaining;
-    // Something does. Walk forward to the instant: how fast the gap is closing is
-    // measured rather than assumed, so the step to the surface is the distance over
-    // the rate, and the crossing is then bisected.
-    double time = 0.0;
-    double gap = gapAfter(0.0);
-    for (int step = 0; step < 32 && time < remaining; ++step) {
-        if (!(gap > 0.0)) break;
-        const double probe = 1e-6;
-        const double closing = (gap - gapAfter(time + probe)) / probe;
-        if (!(closing > 1e-12)) return remaining;
-        const double arrive = std::min(remaining, time + gap / closing);
-        if (gapAfter(arrive) > 0.0) {
-            time = arrive;
-            gap = gapAfter(time);
-            continue;
-        }
-        double low = time, high = arrive;
-        for (int i = 0; i < 60; ++i) {
-            const double middle = 0.5 * (low + high);
-            if (gapAfter(middle) > 0.0) {
-                low = middle;
-            } else {
-                high = middle;
-            }
-        }
-        return high;
-    }
-    return time;
+    return seconds;
 }
 
 // Every patch at the configuration the walk has stopped at.
@@ -424,7 +214,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             // metre up is not an end of a contact patch, it is a corner in the air,
             // and taking it as one asks the floor to hold the face by a corner it is
             // not touching -- which it cannot do without pulling, so it lets go.
-            if (height > kContactBand) continue;
+            if (height > contactBand_) continue;
             for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                 if (height < lowest[k]) {
                     for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -445,7 +235,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         // A face whose ends are all still in the air is a body falling, and a body
         // falling is the walk's business: it is not answered here, where all it
         // would get is a stop a tick early.
-        if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
+        if (patch.ends > 0 && patch.gap[0] <= contactBand_) patches.add(patch);
     }
     // The ball, met at the one place a body's outline comes closest to it.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -453,7 +243,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
-        if (gap > kContactBand) continue;
+        if (gap > contactBand_) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
@@ -462,80 +252,38 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
+        patches.add(patch);
     }
-    // Another body, met by the corners of this one against its outline. The outline
-    // of a convex face is a segment too, so the corners of this body that are on it
-    // are the ends of one load as well.
+    // Another shape, met over the whole span the two of them share. The separating
+    // axis gives the way the load can go and the span of the face lying on the other
+    // one gives where it acts; each end of that span carries its own distance, so an
+    // end that is still in the air is not answered as though it were down.
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         const Body& body = bodies_[one];
         if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
             const Body& solid = bodies_[two];
+            pair_shape::PairManifold meeting;
+            if (!pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
+                                     contactBand_, meeting))
+                continue;
             Manifold patch;
             patch.body = one;
             patch.other = two;
             patch.kind = ForceKind::Pair;
-            double nearest[kMaxPatchEnds] = {1e30, 1e30};
-            Vec3 way[kMaxPatchEnds];
-            for (std::size_t i = 0; i < body.count; ++i) {
-                const ball_shape::OutlineGap gap = ball_shape::outlineGap(
-                    body.position[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
-                if (gap.gap > kContactBand) continue;
-                for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
-                    if (gap.gap < nearest[k]) {
-                        for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
-                            nearest[j] = nearest[j - 1];
-                            patch.corner[j] = patch.corner[j - 1];
-                            patch.point[j] = patch.point[j - 1];
-                            patch.gap[j] = patch.gap[j - 1];
-                            way[j] = way[j - 1];
-                        }
-                        nearest[k] = gap.gap;
-                        patch.corner[k] = i;
-                        patch.point[k] = body.position[i];
-                        patch.gap[k] = gap.gap;
-                        way[k] = gap.normal;  // out of the other body, into this one
-                        break;
-                    }
-                }
+            patch.normal = meeting.normal;
+            for (std::size_t k = 0; k < meeting.ends && k < kMaxPatchEnds; ++k) {
+                patch.corner[k] = kMaxCorners;  // a place on a face, not a corner
+                patch.point[k] = meeting.at[k];
+                // Signed, like every other gap: inside is negative, and what is left
+                // of it after the tick is the position pass's business.
+                patch.gap[k] = -meeting.depth[k];
+                patch.normalImpulse[k] = 0.0;
+                patch.tangentImpulse[k] = 0.0;
             }
-            // The way out of the body this one is meeting is the way at the place
-            // they are nearest, which is where the load is.
-            patch.normal = way[0];
-            while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
-            if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
-            // No corner of either shape is inside the other, and they are still
-            // meeting: a wide face lying across a narrow one, where what touches is
-            // two edges crossing and nothing else. Gathered where they cross, which
-            // for that case is the two ends of the span that actually carries it.
-            if (patch.ends == 0) {
-                pair_shape::PairManifold meeting;
-                // Asked for the contact band, so a pair that is one hair apart is
-                // gathered too: the walk stops a shape exactly at a surface, and at
-                // exactly a surface two outlines overlap by nothing at all, which is
-                // not an overlap and used to leave the shape hanging there.
-                if (pair_shape::separate(body.position.data(), body.count, solid.position.data(), solid.count,
-                                         meeting, kContactBand) &&
-                    meeting.overlap > -kContactBand && meeting.ends > 0) {
-                    Manifold edge;
-                    edge.body = one;
-                    edge.other = two;
-                    edge.kind = ForceKind::Pair;
-                    edge.normal = meeting.normal;
-                    for (std::size_t k = 0; k < meeting.ends && k < kMaxPatchEnds; ++k) {
-                        edge.corner[k] = kMaxCorners;
-                        edge.point[k] = meeting.at[k];
-                        // Signed, like every other gap: inside is negative, and the
-                        // position pass is what takes it out again.
-                        edge.gap[k] = -meeting.depth[k];
-                        edge.normalImpulse[k] = 0.0;
-                        edge.tangentImpulse[k] = 0.0;
-                    }
-                    edge.ends = meeting.ends;
-                    patches.add(edge);
-                }
-            }
+            patch.ends = meeting.ends;
+            patches.add(patch);
         }
     }
 }
@@ -692,7 +440,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // it coming, and it is the walk's business: the surface it is in is a
                 // hard constraint on where the shape may be, and being stopped there
                 // is a clamp on position, not a gift of momentum.
-                u[dofs] = away(patch.point[k], patch.normal);
+                // ... and the distance it has left is part of what it may do. An
+                // end that is a millimetre clear of the surface is allowed to close
+                // exactly that millimetre over the tick and not one micron more, so
+                // the answer is the one that leaves it *on* the surface when the tick
+                // ends. This is why a shape arriving at a surface lands on it instead
+                // of stopping short, hanging there, and being answered a tick late
+                // from inside: the tick's own travel is what the constraint knows
+                // about, and nothing has to be pushed apart afterwards.
+                u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] * (1.0 / kTick);
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
@@ -891,33 +647,38 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
     }
 }
 
-// One tick of every body. The forces first, then the walk.
+// One tick of every body: the forces, the contacts, and then the travel.
 //
-// The walk stops at every arrival -- the first instant anything would meet
-// anything else -- and answers it there before spending what is left of the tick.
-// An arrival at the very last instant of the tick is answered too: a body that
-// lands as the tick ends would otherwise begin the next one already closing on the
-// surface it is standing on, and be answered a tick late, from inside.
+// There is no walking and no stopping short any more. A tick is one step: the air and
+// the weight are given to the bodies as impulses, every contact the tick's own travel
+// can reach is gathered and answered, and then each body is carried by the speed it
+// is left with for exactly one tick. A contact is answered against the distance the
+// end still has to travel, so a shape arriving at a surface lands *on* it rather than
+// stopping a hair short of it; and because the band is the travel, nothing can arrive
+// between the pose the contacts were gathered at and the pose the tick ends at.
+//
+// This is the plainest thing a contact solver can do and the reason to do it is that
+// it cannot lie about motion: a body's speed is what moves it, every tick, and there
+// is no state in which a shape is held still while its speed keeps growing. That
+// state is what a walk that refuses steps produces, and it is a body with a weight
+// that never lands and a drag arrow from a speed it does not have.
 void PlaygroundRoom::tickBodies() {
     // What every body arrived with, and how many contacts it had already been given.
     //
-    // A body that spends a whole tick in the air has followed a parabola, and a
-    // parabola is a thing that can be drawn exactly. A tick that gives the body its
-    // weight as one burst of speed at the start and then carries it for the whole
-    // tick at the speed it now has does not: it lands the body half a step further
-    // along than the path went, and half a step further, every tick, are energy
-    // that the arithmetic has made out of nothing. The correction is the exact one
-    // and it is only a move: the trapezoid rule's half of the speed the forces
-    // changed, times the tick, added back to where the body ends up. Nothing is
-    // added to or taken from a speed, so a body cannot be sped up by it. It is
-    // applied only to a body that was given no contacts at all this tick -- a shape
-    // that met something was stopped by that something, and its travel is the
-    // solver's answer, not a parabola's.
+    // A body that spends a whole tick in free flight has followed a parabola, and a
+    // parabola can be drawn exactly. One burst of speed at the top of the tick and a
+    // whole tick's travel at that speed does not: it lands the body half a step
+    // further along than the path went, every tick, in the direction of the weight --
+    // energy out of the arithmetic and out of nothing else. The exact rule is the
+    // trapezoid, and it is only a move: half of the speed the forces changed, times
+    // the tick. Nothing is added to any speed, so it cannot speed a body up. A body
+    // that was given contacts is left out of it, because its travel is the solver's
+    // answer and not a parabola's.
     std::array<Vec3, kBodyCount> arrival{};
-    std::array<int, kBodyCount> touchedBefore{};
+    std::array<int, kBodyCount> metBefore{};
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
-        touchedBefore[index] = bodies_[index].met;
+        metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();
     // The air first, on the motion the body arrived with -- the speed its own weight
@@ -925,45 +686,35 @@ void PlaygroundRoom::tickBodies() {
     // still must feel none of it.
     applyAirDrag();
     applyBodyForces();
-    // One set of patches for the whole tick, carried through the walk. The patches
-    // that are there when the tick starts are answered first -- the weight of a shape
-    // standing on the floor arrives as one tick's worth of impulse, and a patch that
-    // answers none of it leaves the shape moving through a tick it should be standing
-    // still through. An arrival later in the tick joins the same set, keeping what
-    // the ends it shares already carry, so the tick converges on one answer for each
-    // meeting instead of answering the same one again.
+    // How far anything can get before this tick is over. Every end within that is a
+    // contact *this tick*: it could arrive before the tick ends, so it is answered
+    // now, against the distance it has left.
+    double reach = kContactBand;
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        double furthest = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+        reach = std::max(reach, (length(body.velocity) + std::abs(body.spin) * furthest) * kTick);
+    }
+    reach = std::max(reach, length(ball_.velocity) * kTick);
+    contactBand_ = reach;
     ManifoldSet patches;
     gatherContacts(patches);
     solveContacts(patches);
-    double remaining = kTick;
-    for (int stop = 0; stop < kMaxWalkStops; ++stop) {
-        const double step = timeToContact(remaining);
-        const double used = step > 0.0 ? advanceBodies(step) : 0.0;
-            remaining -= used;
-        // A meeting at the very last instant of the tick is left to the next tick,
-        // which begins by answering every patch the bodies are touching at -- that
-        // is the same meeting, seen with a whole tick to spend on it.
-        if (!(remaining > 0.0)) break;
-        gatherContacts(patches);
-        const bool touching = solveContacts(patches);
-            if (!touching) {
-            // Nothing new is touching and nothing already touching is closing: what
-            // is left of the tick is travel along the way the bodies are going.
-            remaining -= advanceBodies(remaining);
-            break;
-        }
-    }
-    // Whatever the tick's walk could not keep out of anything is put out now, by
-    // position alone. It is the last thing done to the shapes and the only thing
-    // that moves one without an impulse: see separateBodies.
-    // The parabola, finished: a body that met nothing this tick is put where the
-    // exact path from its arrival speed would have put it. See the note above.
+    advanceBodies(kTick);
+    // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index) || body.met != touchedBefore[index]) continue;
+        if (body.count == 0 || body.frozen || bodyHeld(index) || body.met != metBefore[index]) continue;
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
+    // Whatever a spinning corner carried into a surface within the tick -- the one
+    // thing a single straight step cannot see -- is put back out, by position alone.
+    // It is the only thing in the room that moves a shape without an impulse, and
+    // with the contacts answered against their own distances there is normally
+    // nothing left for it to do.
     separateBodies();
     settleBodies();
     writeImpulses();

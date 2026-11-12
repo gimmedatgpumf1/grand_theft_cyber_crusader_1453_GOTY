@@ -91,113 +91,132 @@ inline double segmentSegment(Vec3 a1, Vec3 a2, Vec3 b1, Vec3 b2, Vec3& nearest) 
 
 }  // namespace detail
 
-// The way out of `b` for `a`, and how far in they are.
+// Two convex outlines meeting: how far apart they are, and where.
 //
-// Separated on every face normal of both shapes, which for two convex outlines is
-// every way there is to be apart: the axis of least overlap is the shortest way out,
-// and if any axis shows a clear gap the two are not touching at all.
-inline bool separate(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb, PairManifold& out,
-                     double band = 0.0) {
+// This is the separating-axis test, and it is the whole of shape against shape: every
+// edge of both outlines is a candidate axis, the pair's separation is the *largest*
+// of the clearances those axes measure, and if that is bigger than the band the two
+// are simply not touching. The axis that wins is the one they are closest on, which
+// for two convex outlines is the one the closest faces share -- the way the load
+// between them can go.
+//
+// The places they touch are the part of the other shape's near face that lies within
+// the winner's face, clipped out exactly. That is not a corner picked out of the two
+// outlines: a wide shape lying across a narrow one touches along the whole of the
+// narrow one's face and no corner of either, and a corner picked instead is a lever
+// the load does not act at. One point per end of the clipped span, each with its own
+// signed separation, is a load that can sit anywhere between them -- which is what
+// lets a shape stand on a surface instead of rocking on a corner.
+//
+// The separations are signed and exact. Positive is how much further that end has to
+// travel to arrive; negative is how deep it already is. The solver needs the first to
+// know how much of the tick an end may spend closing, and the second to know it has
+// to give way. Nothing here is a tolerance on the physics.
+inline bool collide(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb, double band,
+                    PairManifold& out) {
     if (na < 3 || nb < 3) return false;
-    double least = 1e30;
-    Vec3 axis{0.0, 1.0, 0.0};
-    bool found = false;
-    // Every face of both shapes, as an outward normal and the line it lies on.
-    const auto tryFace = [&](const Vec3* shape, std::size_t count, std::size_t edge, const Vec3* other,
-                             std::size_t otherCount) {
-        const Vec3 from = shape[edge], to = shape[(edge + 1) % count];
-        const Vec3 side = to - from;
-        const double span = std::hypot(side.x, side.y);
-        if (!(span > 1e-12)) return;
-        // The outline runs one way round, so this is out of the shape.
-        const Vec3 normal{side.y / span, -side.x / span, 0.0};
-        // How far the other shape reaches behind this face.
-        double deepest = -1e30;
-        for (std::size_t i = 0; i < otherCount; ++i) {
-            const Vec3 p = other[i] - from;
-            deepest = std::max(deepest, -(normal.x * p.x + normal.y * p.y));
-        }
-        if (!found || deepest < least) {
-            least = deepest;
-            axis = normal;
-            found = true;
+    // The face of either shape that the other one is furthest outside of.
+    double least = -1e30;
+    Vec3 faceNormal{};
+    bool faceIsA = true;
+    std::size_t faceEdge = 0;
+    const auto tryFaces = [&](const Vec3* shape, std::size_t count, const Vec3* other, std::size_t otherCount,
+                              bool isA) {
+        for (std::size_t e = 0; e < count; ++e) {
+            const Vec3 from = shape[e], to = shape[(e + 1) % count];
+            const Vec3 side = to - from;
+            const double span = std::hypot(side.x, side.y);
+            if (!(span > 1e-12)) continue;
+            // The outline runs one way round, so this is out of the shape.
+            const Vec3 normal{side.y / span, -side.x / span, 0.0};
+            // How far the other shape's nearest corner is outside this face. If every
+            // corner is in front of it, the two are apart along this axis by that much.
+            double nearest = 1e30;
+            for (std::size_t i = 0; i < otherCount; ++i) {
+                const Vec3 p = other[i] - from;
+                nearest = std::min(nearest, normal.x * p.x + normal.y * p.y);
+            }
+            if (nearest > least) {
+                least = nearest;
+                faceNormal = normal;
+                faceIsA = isA;
+                faceEdge = e;
+            }
         }
     };
-    for (std::size_t e = 0; e < na; ++e) tryFace(a, na, e, b, nb);
-    for (std::size_t e = 0; e < nb; ++e) tryFace(b, nb, e, a, na);
-    // A pair that is only just apart is still a pair. `least` is the distance by
-    // which one shape is behind the other's face; when the two have not met yet it
-    // is negative, and how negative is exactly how far apart they are. Asked for a
-    // band, this answers with a meeting that has not happened yet -- a speculative
-    // one -- so that a shape arriving at a surface this tick is answered by the
-    // surface instead of being walked up to it and left there with its speed still
-    // on. An overlap deeper than anything the band allows is a real meeting, and it
-    // is answered as one whatever the band says.
-    if (!found || least <= -band) return false;
-    // The normal came out of whichever shape owned that face; the answer is wanted
-    // out of `b` and into `a`, so point it that way.
-    double centre = 0.0;
-    for (std::size_t i = 0; i < na; ++i) centre += axis.x * a[i].x + axis.y * a[i].y;
-    centre /= static_cast<double>(na);
-    double otherCentre = 0.0;
-    for (std::size_t i = 0; i < nb; ++i) otherCentre += axis.x * b[i].x + axis.y * b[i].y;
-    otherCentre /= static_cast<double>(nb);
-    if (centre < otherCentre) axis = axis * -1.0;
-    out.normal = axis;
-    out.overlap = least;
-    // Where they are touching: their edges where they cross. For two shapes meeting
-    // along a face that is the two ends of the overlap, which is the segment the load
-    // between them sits on.
+    tryFaces(a, na, b, nb, true);
+    tryFaces(b, nb, a, na, false);
+    // Further apart than the band on the closest axis: not touching. The band is how
+    // far anything can travel before this tick is over.
+    if (!(least <= band)) return false;
+    // Out of the other shape and into this one, the way every patch in the room is
+    // written: against the outward normal when the face is this shape's own, along it
+    // when the face belongs to the other one.
+    out.normal = faceIsA ? faceNormal * -1.0 : faceNormal;
+    const Vec3* owner = faceIsA ? a : b;
+    const std::size_t ownerCount = faceIsA ? na : nb;
+    const Vec3* other = faceIsA ? b : a;
+    const std::size_t otherCount = faceIsA ? nb : na;
+    const Vec3 faceFrom = owner[faceEdge];
+    const Vec3 faceTo = owner[(faceEdge + 1) % ownerCount];
+    // The near face of the other shape: the one whose outward normal is most against
+    // the face the load goes through. That is the one lying on it.
+    std::size_t incident = 0;
+    double mostAgainst = 1e30;
+    for (std::size_t e = 0; e < otherCount; ++e) {
+        const Vec3 from = other[e], to = other[(e + 1) % otherCount];
+        const Vec3 side = to - from;
+        const double span = std::hypot(side.x, side.y);
+        if (!(span > 1e-12)) continue;
+        const Vec3 normal{side.y / span, -side.x / span, 0.0};
+        const double against = faceNormal.x * normal.x + faceNormal.y * normal.y;
+        if (against < mostAgainst) {
+            mostAgainst = against;
+            incident = e;
+        }
+    }
+    // Clip that face to the span of the face it is lying on. A point of the incident
+    // face past the end of the surface is beyond the surface, not on it.
+    Vec3 low = other[incident], high = other[(incident + 1) % otherCount];
+    const Vec3 along = faceTo - faceFrom;
+    const double lowBound = along.x * faceFrom.x + along.y * faceFrom.y;
+    const double highBound = along.x * faceTo.x + along.y * faceTo.y;
+    const double boundLow = std::min(lowBound, highBound), boundHigh = std::max(lowBound, highBound);
+    for (int side = 0; side < 2; ++side) {
+        const double bound = side == 0 ? boundLow : boundHigh;
+        const double atLow = along.x * low.x + along.y * low.y - bound;
+        const double atHigh = along.x * high.x + along.y * high.y - bound;
+        const bool lowIn = side == 0 ? atLow >= 0.0 : atLow <= 0.0;
+        const bool highIn = side == 0 ? atHigh >= 0.0 : atHigh <= 0.0;
+        if (lowIn && highIn) continue;
+        if (!lowIn && !highIn) return false;
+        const double t = atLow / (atLow - atHigh);
+        const Vec3 crossing = low + (high - low) * t;
+        if (lowIn) high = crossing;
+        else low = crossing;
+    }
     out.ends = 0;
-    for (std::size_t i = 0; i < na && out.ends < kMaxPoints; ++i) {
-        const Vec3 a1 = a[i], a2 = a[(i + 1) % na];
-        for (std::size_t j = 0; j < nb && out.ends < kMaxPoints; ++j) {
-            const Vec3 b1 = b[j], b2 = b[(j + 1) % nb];
-            Vec3 nearest;
-            if (!(detail::segmentSegment(a1, a2, b1, b2, nearest) <= 1e-12)) continue;
-            // One arrow per place, the way the patch solver expects.
-            bool seen = false;
-            for (std::size_t k = 0; k < out.ends; ++k) seen = seen || std::hypot(nearest.x - out.at[k].x,
-                                                                                nearest.y - out.at[k].y) < 1e-9;
-            if (seen) continue;
-            out.at[out.ends] = nearest;
-            out.depth[out.ends] = least;
-            ++out.ends;
+    out.overlap = 0.0;
+    for (int which = 0; which < 2; ++which) {
+        const Vec3 at = which == 0 ? low : high;
+        if (which == 1) {
+            const Vec3 apart = at - low;
+            if (std::hypot(apart.x, apart.y) < 1e-9) break;
         }
+        const Vec3 from = at - faceFrom;
+        const double separation = faceNormal.x * from.x + faceNormal.y * from.y;
+        out.at[out.ends] = at;
+        out.depth[out.ends] = -separation;  // positive is overlap, as it always was
+        out.overlap = std::max(out.overlap, -separation);
+        ++out.ends;
     }
-    // Two edges that cross nowhere can still be pressed face to face. Then the place
-    // they touch is the deepest corner of the overlap, which is a crossing of the
-    // near edges when there is one and otherwise the middle of the shorter side.
-    if (out.ends == 0) {
-        double deepest = 1e30;
-        Vec3 where{};
-        for (std::size_t i = 0; i < na; ++i) {
-            const double d = out.normal.x * a[i].x + out.normal.y * a[i].y;
-            if (d < deepest) { deepest = d; where = a[i]; }
-        }
-        out.at[0] = where;
-        out.depth[0] = least;
-        out.ends = 1;
-    }
-    return true;
+    return out.ends > 0;
 }
 
-// The least gap between two outlines, measured the way a walk needs it: corner to
-// outline, and edge to edge, so a wide shape coming down on a narrow one is seen
-// while it is still coming. Never negative -- an overlap is a gap of nothing.
-inline double gap(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb) {
-    if (na < 3 || nb < 3) return 1e30;
-    PairManifold manifold;
-    if (separate(a, na, b, nb, manifold)) return 0.0;
-    double least = 1e30;
-    for (std::size_t i = 0; i < na; ++i) {
-        const Vec3 a1 = a[i], a2 = a[(i + 1) % na];
-        for (std::size_t j = 0; j < nb; ++j) {
-            Vec3 nearest;
-            least = std::min(least, detail::segmentSegment(a1, a2, b[j], b[(j + 1) % nb], nearest));
-        }
-    }
-    return least;
+// Kept for the position pass, which only ever asks how far inside something is.
+inline bool separate(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb, PairManifold& out) {
+    if (!collide(a, na, b, nb, 0.0, out)) return false;
+    return out.overlap > 0.0;
 }
 
 }  // namespace gtc::native::pair_shape
