@@ -895,7 +895,7 @@ void PlaygroundRoom::tickBodies() {
     if (trace) std::fprintf(stderr, "  tick %d START %.9f\n", ticks_, phase);
     const auto mark = [&](const char* what) {
         const double now = phaseEnergy();
-        if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y);
+        if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f  v0 %+.4f s0 %+.4f v1 %+.4f s1 %+.4f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[1].velocity.y, bodies_[1].spin);
         phase = now;
     };
     // What every body arrived with, and how many contacts it had already been given.
