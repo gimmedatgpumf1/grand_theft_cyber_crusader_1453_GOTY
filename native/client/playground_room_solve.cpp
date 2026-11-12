@@ -311,21 +311,30 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             break;
         }
-        // The grip, end by end, against the load that end is carrying.
+        // The grip, over the face, against the load the face as a whole carries.
         //
-        // Coulomb, in the two forms it has, and it is the same law in both: the
-        // surface holds along itself with whatever it takes to leave the face still
-        // against it, up to what the load under it can hold. The coefficient is what
-        // differs. An end that is already slipping is held by the sliding
-        // coefficient, and it is held by that much *only against the slip* -- a
-        // surface can stop a slide and can never drive one backwards, so an end that
-        // is moving is never given more than it takes to bring it to rest.
+        // Coulomb, in the two forms it has, and it is the same law in both: a surface
+        // holds along itself with whatever it takes to leave the face still against
+        // it, up to what the load on it can hold. The coefficient is what differs. A
+        // face that is already slipping is held by the sliding coefficient, and it is
+        // held by that much *only against the slip* -- a surface can stop a slide and
+        // can never drive one backwards.
         //
-        // End by end, and accumulated, so that a sweep that comes round again finds
-        // the grip where it left it and adds to it instead of starting from nothing.
-        // What matters is that the sweep keeps coming round: the load and the grip
-        // change each other, so a tick's answer is where the two agree, and the sweep
-        // only agrees with itself once it has stopped changing anything.
+        // Over the face and not at its ends, because friction is a traction: it is
+        // spread across the area that is pressed, and its resultant runs through the
+        // middle of that area. Answered at one end and not at the other, friction that
+        // is nothing but a force along the surface arrives with a moment attached to
+        // it, and that moment is what turns a shape that is standing still. The two
+        // ends of a flat face on a flat surface have the same way of moving along it
+        // -- a rigid face cannot slide at one end and not the other -- so the answer
+        // is one impulse, shared equally between the ends that carry load. On a face
+        // that is turning, the two ends do slip differently, and the share is still
+        // equal in the sweep because the moment it must carry is in the levers, where
+        // the ends are; the sweep comes round again and again until the tractions
+        // agree with the load and the load agrees with them.
+        //
+        // A face with one end is the same rule with one share, which is the ordinary
+        // point contact.
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
             : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
@@ -334,33 +343,70 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
             : patch.ball   ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
                            : body->kineticFriction;
+        // The ends that are pressed, how much load is under the whole face, and the
+        // face's own slip: the slip of each pressed end, averaged, and what an equal
+        // share of impulse at every pressed end does to that average.
+        std::size_t pressed = 0;
+        double load = 0.0, slip = 0.0, response = 0.0;
         for (std::size_t k = 0; k < count; ++k) {
-            if (!(patch.normalImpulse[k] > 0.0)) {
-                // No pressure, nothing to grip with.
-                if (patch.tangentImpulse[k] != 0.0) {
-                    pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
-                    worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
-                    patch.tangentImpulse[k] = 0.0;
+            if (!(patch.normalImpulse[k] > 0.0)) continue;
+            ++pressed;
+            load += patch.normalImpulse[k];
+            slip += away(patch.point[k], tangent);
+        }
+        if (pressed > 0) {
+            slip /= static_cast<double>(pressed);
+            // What a share of one newton second at each pressed end does to that
+            // average: the sum of the whole coupling over the face, over the square of
+            // the count. The ends' levers are in it, so a share that turns the body is
+            // answered for as the turn it makes.
+            double total = 0.0;
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!(patch.normalImpulse[k] > 0.0)) continue;
+                for (std::size_t j = 0; j < count; ++j) {
+                    if (!(patch.normalImpulse[j] > 0.0)) continue;
+                    total += give(patch.point[k], tangent, patch.point[j], tangent);
                 }
-                continue;
             }
-            const double sliding = away(patch.point[k], tangent);
-            const double giveT = give(patch.point[k], tangent, patch.point[k], tangent);
-            if (!(giveT > 1e-12)) continue;
-            const double mu = std::abs(sliding) > kRestSpeed ? kineticMu : staticMu;
-            const double hold = mu * patch.normalImpulse[k];
-            double grip = patch.tangentImpulse[k] - sliding / giveT;
+            const double n = static_cast<double>(pressed);
+            response = total / (n * n);
+        }
+        // The grip the face is holding with now, as one number: each pressed end
+        // carries an equal share of it.
+        double held = 0.0;
+        if (pressed > 0) {
+            held = patch.tangentImpulse[0];
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!(patch.normalImpulse[k] > 0.0)) {
+                    // An end that is not pressed is not gripping, and an end that has
+                    // been let go must give back what it was holding.
+                    if (patch.tangentImpulse[k] != 0.0) {
+                        pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
+                        worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
+                        patch.tangentImpulse[k] = 0.0;
+                    }
+                }
+            }
+        }
+        if (pressed > 0 && response > 1e-12) {
+            const double mu = std::abs(slip) > kRestSpeed ? kineticMu : staticMu;
+            const double hold = mu * load;
+            double grip = held - slip / response;
             if (std::abs(grip) > hold) {
                 // More than the surface can hold: it slips, and what it is given is
                 // what the surface can give -- the rest of the slip is left in the
                 // body's motion, where it belongs.
                 grip = std::copysign(hold, grip);
             }
-            const double delta = grip - patch.tangentImpulse[k];
-            if (delta == 0.0) continue;
-            pushEnd(k, tangent * delta, ForceKind::Friction);
-            worst = std::max(worst, std::abs(delta));
-            patch.tangentImpulse[k] = grip;
+            const double share = grip / static_cast<double>(pressed);
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!(patch.normalImpulse[k] > 0.0)) continue;
+                const double delta = share - patch.tangentImpulse[k];
+                if (delta == 0.0) continue;
+                pushEnd(k, tangent * delta, ForceKind::Friction);
+                worst = std::max(worst, std::abs(delta));
+                patch.tangentImpulse[k] = share;
+            }
         }
         // What is under each end decides what the body is standing on.
         for (std::size_t k = 0; k < count; ++k) {
