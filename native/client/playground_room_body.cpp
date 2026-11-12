@@ -48,6 +48,14 @@ constexpr int kMaxWalkStops = 8;
 // that is still moving is taken to be a corner case, not a solve.
 constexpr int kSolvePasses = 32;
 constexpr double kSolveTolerance = 1e-12;  // m/s
+// How long a body's pose has to stay inside one small box before it is at rest,
+// and how small that box is. A shape standing on its supports does not go
+// anywhere; the last thing it does is settle, and settling is measured, not
+// declared. The box is the width of the contact band over a second -- a millimetre
+// a tick -- which is far below anything that can be seen at the scale of a body.
+constexpr int kRestTicks = 20;
+constexpr double kRestBox = 6e-3;      // m
+constexpr double kRestTurn = 1.2e-2;   // rad
 }  // namespace
 
 // Gravity, and nothing else, before the walk: m*g newtons at every corner, which
@@ -388,17 +396,41 @@ void PlaygroundRoom::settleBodies() {
             body.spin = 0.0;
             continue;
         }
-        const bool still = length(body.velocity) < kRestSpeed && std::abs(body.spin) < kRestSpeed;
-        const bool carriedByPlane = body.touchingPlane && body.supportHigh > body.supportLow &&
-                                    body.centre.x >= body.supportLow - 1e-6 &&
-                                    body.centre.x <= body.supportHigh + 1e-6;
-        const bool carriedByBody = body.onBody && body.supportFrozen && body.supportHigh > body.supportLow &&
-                                   body.centre.x >= body.supportLow - 1e-6 &&
-                                   body.centre.x <= body.supportHigh + 1e-6;
-        if (still && (carriedByPlane || carriedByBody)) {
+        const bool carriedByPlane = body.touchingPlane && body.centre.x >= body.supportLow - kContactBand &&
+                                    body.centre.x <= body.supportHigh + kContactBand;
+        const bool carriedByBody = body.onBody && body.supportFrozen &&
+                                   body.centre.x >= body.supportLow - kContactBand &&
+                                   body.centre.x <= body.supportHigh + kContactBand;
+        const bool carried = carriedByPlane || carriedByBody;
+        // Nothing is at rest that is not being held up: a shape in the air is
+        // falling, whatever its arithmetic says.
+        if (!carried) {
+            body.restTicks = 0;
+            body.restLow = body.restHigh = body.centre;
+            body.restAngleLow = body.restAngleHigh = body.angle;
+            continue;
+        }
+        if (body.restTicks == 0) {
+            body.restLow = body.restHigh = body.centre;
+            body.restAngleLow = body.restAngleHigh = body.angle;
+        }
+        body.restLow = Vec3{std::min(body.restLow.x, body.centre.x), std::min(body.restLow.y, body.centre.y), 0};
+        body.restHigh = Vec3{std::max(body.restHigh.x, body.centre.x), std::max(body.restHigh.y, body.centre.y), 0};
+        body.restAngleLow = std::min(body.restAngleLow, body.angle);
+        body.restAngleHigh = std::max(body.restAngleHigh, body.angle);
+        ++body.restTicks;
+        const bool anywhere = body.restHigh.x - body.restLow.x < kRestBox &&
+                             body.restHigh.y - body.restLow.y < kRestBox &&
+                             body.restAngleHigh - body.restAngleLow < kRestTurn;
+        // Asleep, or not yet: a body that has been inside one small box for a
+        // second is standing still on what is holding it up, and a body that has
+        // been anywhere is not, and starts its second again.
+        if (body.restTicks >= kRestTicks && anywhere) {
             body.frozen = true;
             body.velocity = {};
             body.spin = 0.0;
+        } else if (body.restTicks >= kRestTicks && !anywhere) {
+            body.restTicks = 0;
         }
     }
 }

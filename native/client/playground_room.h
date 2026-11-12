@@ -182,6 +182,12 @@ private:
         // over an edge does.
         bool touchingPlane = false, onBody = false, supportFrozen = false;
         double supportLow = 1e30, supportHigh = -1e30;
+        // The box its pose has stayed inside, and for how many ticks: a shape that
+        // has not been anywhere for a second is standing still, whether the
+        // arithmetic of its contacts leaves it a hair of a rock or not.
+        Vec3 restLow{1e30, 1e30, 0}, restHigh{-1e30, -1e30, 0};
+        double restAngleLow = 1e30, restAngleHigh = -1e30;
+        int restTicks = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
