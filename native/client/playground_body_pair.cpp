@@ -241,6 +241,7 @@ void PlaygroundRoom::clampBodiesToBall() {
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * met.along;
         placeCorners(body);
         ++bodyStepClamped_;
+        if (getenv("GTC_TRACE")) std::fprintf(stderr, "CLAMP body %zu at %.4f of step, gap now %.6f before %.6f\n", index, met.along, now.gap, ball_shape::outlineGap(ball_.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap);
     }
 }
 

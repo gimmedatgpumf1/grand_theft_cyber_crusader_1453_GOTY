@@ -217,6 +217,7 @@ void PlaygroundRoom::tickBall() {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
+                if (getenv("GTC_TRACE")) std::fprintf(stderr, "REST body %zu inside by %.6f m (depth %.6f) at (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, hit.depth, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
                 if (on.gap < ball.radius) {
                     // Counted only when it is a real miss and not the last bit of a
                     // double: a ball resting on a surface is one radius from it to

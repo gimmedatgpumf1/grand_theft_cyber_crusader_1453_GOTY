@@ -103,6 +103,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                       : through;
             const double byBall = std::min(through, ground);
             ballLiftedOut_ += byBall > kSkin ? 1 : 0;
+            if (getenv("GTC_TRACE")) std::fprintf(stderr, "LIFT body %d by %.6f m (through %.6f, ground %.6f, depth %.6f)\n", bodyIndex, byBall, through, ground, depth);
             ball.position = ball.position + normal * byBall;
             const double left = through - byBall;
             if (body != nullptr && left > kSkin) {
