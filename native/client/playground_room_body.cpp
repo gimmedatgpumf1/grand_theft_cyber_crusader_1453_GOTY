@@ -406,7 +406,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // stopped where it lands.
     const auto patchPass = [&](Manifold& patch) {
         const std::size_t count = patch.ends;
-        const std::size_t dofs = 2 * count;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
         const bool otherFixed = other != nullptr && bodyHeld(patch.other);
@@ -445,21 +444,34 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 pushBall(at, impulse, patch.kind);
             }
         };
-        Vec3 point[2 * kMaxPatchEnds], direction[2 * kMaxPatchEnds];
-        double carried[2 * kMaxPatchEnds] = {};
+        // Three unknowns: the load at each end of the patch, and the grip over it.
+        //
+        // The grip is one number and not two. A face sliding on a surface slides as
+        // a whole -- the two ends of it have the same way along the surface -- so two
+        // separate grips would be two unknowns for one question, and the friction of
+        // a face is one resultant acting where the face is, which is what a uniform
+        // grip over a flat face is. The load is two numbers, because the load is what
+        // a body standing on the floor decides with: it is the difference between the
+        // two ends that holds a body flat instead of tipping it.
+        const std::size_t dofs = count + 1;
+        Vec3 point[3], direction[3];
+        double carried[3] = {};
         for (std::size_t k = 0; k < count; ++k) {
             point[k] = patch.point[k];
             direction[k] = patch.normal;
             carried[k] = patch.normalImpulse[k];
-            point[count + k] = patch.point[k];
-            direction[count + k] = tangent;
-            carried[count + k] = patch.tangentImpulse[k];
         }
+        // The grip acts half at each end: its resultant is at the middle of the patch
+        // and it lands no couple of its own, which is a uniform grip and nothing more.
+        const Vec3 gripPoint = count == 2 ? (patch.point[0] + patch.point[1]) * 0.5 : patch.point[0];
+        point[count] = gripPoint;
+        direction[count] = tangent;
+        carried[count] = 0.5 * (patch.tangentImpulse[0] + (count == 2 ? patch.tangentImpulse[1] : 0.0));
         // The system: what each unknown does to the speed of every place it acts on,
-        // and the closing speed that is there to be answered. Both are measured on
-        // the body as it is, so what it has already carried is accounted for and the
-        // answer is the change, not the total.
-        double matrix[4][5] = {};
+        // and the closing that is there to be answered. Measured on the body as it
+        // is, so what it has already carried is accounted for and the answer is the
+        // change, not the total.
+        double matrix[3][4] = {};
         for (std::size_t i = 0; i < dofs; ++i) {
             const double closing = dot(pointSpeed(*body, point[i]) - otherSpeed(point[i]), direction[i]);
             matrix[i][dofs] = -closing;
@@ -467,10 +479,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 if (closing < -kRestSpeed) closingAtAll = true;
                 worst = std::max(worst, std::abs(closing));
             }
-            for (std::size_t j = 0; j < dofs; ++j)
-                matrix[i][j] = give(point[i], direction[i], point[j], direction[j]);
+            for (std::size_t j = 0; j < dofs; ++j) {
+                // A load at one end of the grip's basis is half of the grip.
+                const double shareI = i == count ? 0.5 : 1.0;
+                const double shareJ = j == count ? 0.5 : 1.0;
+                matrix[i][j] = give(point[i], direction[i], point[j], direction[j]) * shareI * shareJ;
+            }
         }
-        // Four by four, solved outright: no sweep, no order, no last word.
         for (std::size_t col = 0; col < dofs; ++col) {
             std::size_t pivot = col;
             for (std::size_t row = col + 1; row < dofs; ++row)
@@ -485,34 +500,31 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 for (std::size_t j = col; j <= dofs; ++j) matrix[row][j] -= factor * matrix[col][j];
             }
         }
-        double answer[2 * kMaxPatchEnds] = {};
+        double answer[3] = {};
         for (std::size_t i = 0; i < dofs; ++i) answer[i] = matrix[i][dofs] / matrix[i][i];
+        double load[2] = {};
         for (std::size_t k = 0; k < count; ++k) {
-            // The floor presses and does not pull, and the grip is only ever as much
-            // as the load under it can hold. Both are applied as what this answer
-            // asks for, and the sweep comes round again on what is left.
-            double load = carried[k] + answer[k];
-            if (!(load > 0.0)) load = 0.0;
-            double mu = body->staticFriction;
-            if (other != nullptr) {
-                mu = 0.5 * (mu + other->staticFriction);
-            } else if (patch.ball) {
-                mu = std::min(mu, ball_shape::kBallStaticFriction);
-            }
-            double grip = carried[count + k] + answer[count + k];
-            const double hold = mu * load;
-            if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
-            const double loadDelta = load - patch.normalImpulse[k];
+            load[k] = carried[k] + answer[k];
+            // The floor presses and does not pull.
+            if (!(load[k] > 0.0)) load[k] = 0.0;
+        }
+        double mu = body->staticFriction;
+        if (other != nullptr) {
+            mu = 0.5 * (mu + other->staticFriction);
+        } else if (patch.ball) {
+            mu = std::min(mu, ball_shape::kBallStaticFriction);
+        }
+        // The grip is only ever as much as the load under it can hold: Coulomb over
+        // the whole patch, which is the same rule as at one point, summed.
+        double grip = carried[count] + answer[count];
+        const double hold = mu * (load[0] + (count == 2 ? load[1] : 0.0));
+        if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
+        for (std::size_t k = 0; k < count; ++k) {
+            const double loadDelta = load[k] - patch.normalImpulse[k];
             if (loadDelta != 0.0) {
-                patch.normalImpulse[k] = load;
+                patch.normalImpulse[k] = load[k];
                 pushBody(*body, patch.point[k], patch.normal * loadDelta, patch.kind);
                 pushOther(patch.point[k], patch.normal * -loadDelta);
-            }
-            const double gripDelta = grip - patch.tangentImpulse[k];
-            if (gripDelta != 0.0) {
-                patch.tangentImpulse[k] = grip;
-                pushBody(*body, patch.point[k], tangent * gripDelta, patch.kind);
-                pushOther(patch.point[k], tangent * -gripDelta);
             }
             // What is under this end decides what the body is standing on.
             if (patch.normalImpulse[k] > 0.0 && patch.normal.y > 0.5) {
@@ -525,6 +537,16 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 }
                 body->supportLow = std::min(body->supportLow, patch.point[k].x);
                 body->supportHigh = std::max(body->supportHigh, patch.point[k].x);
+            }
+        }
+        // The grip, half at each end, as the one resultant it is.
+        const double gripDelta = grip - carried[count];
+        if (gripDelta != 0.0) {
+            for (std::size_t k = 0; k < count; ++k) {
+                const double share = count == 2 ? 0.5 : 1.0;
+                patch.tangentImpulse[k] += gripDelta * share;
+                pushBody(*body, patch.point[k], tangent * (gripDelta * share), patch.kind);
+                pushOther(patch.point[k], tangent * -(gripDelta * share));
             }
         }
     };
