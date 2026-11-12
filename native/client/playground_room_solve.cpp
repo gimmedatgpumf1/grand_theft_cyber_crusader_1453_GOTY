@@ -46,11 +46,12 @@ constexpr double kSolveTolerance = 1e-12;// A sweep of the patches is over when 
 // question: the sweep now stops when the *answer* has stopped moving rather than when
 // the surfaces have stopped closing.
 constexpr double kImpulseTolerance = 1e-12;  // N s
-// How many times a patch is asked for its load, then its grip, then its load again.
-// Grip lands a moment on a body that changes where it presses, so the two answers
-// change each other; three rounds is more than enough for the last round to make a
-// difference of nothing at all.
-constexpr int kGripRounds = 3;
+// The most times a patch is asked for its load, then its grip, then its load again
+// before the room is taken as answered. Grip lands a moment on a body that changes
+// where it presses, so the two answers change each other, and a round that changes
+// nothing is what says they agree. The count is a ceiling and not a cost: a resting
+// room agrees in two or three rounds, and stops there.
+constexpr int kGripRoundsMax = 48;
 }  // namespace
 
 // The answer to a whole configuration of patches at once.
@@ -468,9 +469,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (worst < kImpulseTolerance && pass > 0) break;
         }
     };
-    for (int round = 0; round < kGripRounds; ++round) {
+    for (int round = 0; round < kGripRoundsMax; ++round) {
         sweep(false);
+        const double loadWorst = worst;
         sweep(true);
+        const double gripWorst = worst;
+        // Both answers have stopped moving: the load the room is carrying and the
+        // grip holding it agree with each other, which is where the sweep is done.
+        if (loadWorst < kImpulseTolerance && gripWorst < kImpulseTolerance) break;
     }
     sweep(false);
     return closingAtAll;
