@@ -138,7 +138,15 @@ void PlaygroundRoom::separatePoint() {
         // the side, at the height it was caught at, and that is the repair.
         Vec3 normalUsed = gap.normal;
         Vec3 target = point_ + normalUsed * (kPointRadius - gap.gap);
-        if (!(target.y >= kSurfaceY + kPointRadius) || target.y > point_.y + 1e-12) {
+        // A hair of overlap is repaired where it is, straight out along the face.
+        // The search below is only for the shape that has swallowed the dot whole:
+        // there is no local way out of that one, and the question is which way to
+        // carry it. Asking it of a rounding overlap picks whichever far face
+        // happens to be cheapest to reach, and a dot sliding down a slope is
+        // carried across the room to the shape's other side for a micrometre of
+        // overlap.
+        const bool swallowed = ball_shape::insideOutline(point_, body.position.data(), body.count);
+        if (swallowed && (!(target.y >= kSurfaceY + kPointRadius) || target.y > point_.y + 1e-12)) {
             double best = 1e30;
             bool found = false;
             for (std::size_t edge = 0; edge < body.count; ++edge) {
@@ -170,6 +178,13 @@ void PlaygroundRoom::separatePoint() {
                     normalUsed = Vec3{0, 1, 0};
                 }
             }
+        } else if (target.y < kSurfaceY + kPointRadius) {
+            // A disc overlapping the underside of a shape lying on the floor has no
+            // room to be pushed straight out: the floor is in the way. It is put on
+            // the floor, which is where it is anyway, and the rest of the overlap is
+            // the shape's -- sideways is a push it will get from its own travel.
+            target.y = kSurfaceY + kPointRadius;
+            normalUsed = Vec3{0, 1, 0};
         }
         point_ = target;
         if (dot(velocity_, normalUsed) < 0.0) velocity_ = velocity_ - normalUsed * dot(velocity_, normalUsed);
