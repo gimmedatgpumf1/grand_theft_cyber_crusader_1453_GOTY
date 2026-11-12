@@ -401,6 +401,15 @@ private:
     // the tick began with, and a shape turning fast enough swings its outline past
     // that point in the same tick. This is the step itself, clamped to the meeting.
     void clampBodiesToBall();
+
+public:
+    // Read by the checks and the probes: how much of this room is prevention and how
+    // much is repair.
+    std::size_t ballFoundThroughCount() const { return ballFoundThrough_; }
+    std::size_t bodyStepClampedCount() const { return bodyStepClamped_; }
+    std::size_t ballLiftedOutCount() const { return ballLiftedOut_; }
+    void clearRepairCounts() { ballFoundThrough_ = bodyStepClamped_ = ballLiftedOut_ = 0; }
+private:
     // Whether the body carrying `index` actually carries it: its own replayed forces
     // are where it would be felt, so a support with no load of this body in them was
     // never carrying anything. See the file.
@@ -595,5 +604,14 @@ private:
     // Which body is holding the point up, or -1 when none is.
     int restingBody_ = -1;
     bool restingOnBall_ = false;
+    // How often the room has had to *repair* an overlap instead of preventing it:
+    // a ball found already through a shape at the start of its own tick, a body
+    // carried back to where it met the ball, and a ball lifted out sideways from
+    // under something. Prevention is the rule and these are the last resort, so
+    // they are counted -- a number that only ever goes up in a room where something
+    // is still being missed is how the thing being missed gets found.
+    std::size_t ballFoundThrough_ = 0;
+    std::size_t bodyStepClamped_ = 0;
+    std::size_t ballLiftedOut_ = 0;
 };
 } // namespace gtc::native

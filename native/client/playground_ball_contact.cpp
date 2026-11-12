@@ -103,6 +103,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                       ? std::max(0.0, (ball.radius - ball.position.y) / normal.y)
                                       : through;
             const double byBall = std::min(through, ground);
+            ballLiftedOut_ += byBall > kSkin ? 1 : 0;
             ball.position = ball.position + normal * byBall;
             const double left = through - byBall;
             if (body != nullptr && left > kSkin) {

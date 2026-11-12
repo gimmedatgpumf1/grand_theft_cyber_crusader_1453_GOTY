@@ -229,6 +229,7 @@ void PlaygroundRoom::clampBodiesToBall() {
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * met.along;
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * met.along;
         placeCorners(body);
+        ++bodyStepClamped_;
     }
 }
 
