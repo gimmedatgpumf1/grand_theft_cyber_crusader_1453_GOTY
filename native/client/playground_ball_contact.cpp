@@ -33,13 +33,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // two met, because that is where it acts.
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
-    const auto dbg = [&](const char* what) {
-        if (!getenv("GTC_BOUNCE")) return;
-        std::fprintf(stderr, "   [%s] body %d depth %.6f normal(%+.3f,%+.3f) v(%+.4f,%+.4f) arrival(%+.4f,%+.4f) exchange %d\n",
-                     what, bodyIndex, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y,
-                     ball.arrival.x, ball.arrival.y, (int)exchange);
-    };
-    dbg("enter");
     // The body's side is written by giveBodyTurn, which is the call that hands it
     // over; what is left for this one is the ball's own change, recorded at the
     // place the two met.
@@ -64,14 +57,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // it faster and faster. So a resting body answers as the solid it is, and a
     // real blow wakes it -- which is the only thing that should ever move a body
     // that had come to rest.
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   A v(%+.4f,%+.4f) frozen %d\n", ball.velocity.x, ball.velocity.y, (int)(body ? body->frozen : 0));
     if (body != nullptr && body->frozen) {
         // A body asleep is a body the ball can wake, and only a real blow does it:
         // what the two are closing at, along the normal they met on.
         const Vec3 closingVelocity = ball.velocity - pointSpeed(*body, contactPoint);
         if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
     }
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   B v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
     if (body != nullptr) {
         // The ball's contact is answered by the body's own mass and its lever about
         // the body's centre -- the same law every other contact in the room
@@ -91,7 +82,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // interpolation of the two of them -- which is what outlineTouch already says for
     // the position. Reading the average instead says a body turning on the spot is not
     // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   C v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
     const Vec3 surfaceVelocity = body != nullptr ? pointSpeed(*body, contactPoint) : Vec3{};
 
     // A ball found through an outline is the ball's own way out: the body's tick
@@ -99,7 +89,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // for -- so what is left for the ball is where the ball itself has come to be
     // inside the shape. The ball goes back out along the way it is nearest to
     // being outside, and the floor is the one thing it cannot go out through.
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   D v(%+.4f,%+.4f) depth %.6f\n", ball.velocity.x, ball.velocity.y, depth);
     // A depth under a micrometre is touching, not buried. The sweep lands the ball
     // on the surface and the bisection leaves it a nanometre either side of it, so
     // "any depth at all" entered this recovery path on a contact that was perfectly
@@ -174,7 +163,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // steadily. Anything still pointing into the surface after the answer is
         // taken off at the end of the tick, where it belongs.
     }
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   E v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
 
     if (!exchange) {
         // The blow for this body was struck earlier in the tick. What is left is
@@ -198,7 +186,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
 
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
-    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   TERMS body %d closing %.4f arrived %.4f surface(%+.4f,%+.4f) v(%+.4f,%+.4f) canMove %d frozen %d\n", bodyIndex, closing, arrivedSpeed, surfaceVelocity.x, surfaceVelocity.y, ball.velocity.x, ball.velocity.y, (int)canMove, (int)(body ? body->frozen : 0));
     // A bounce is the answer to arriving at a surface, measured against what the
     // ball arrived with rather than the speed gravity lent it on the way: a ball on
     // the floor gets that every tick, and bouncing it would be bouncing it off
@@ -241,7 +228,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const bool ballGives = !ballHeld && !pressing;
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
-        if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   impulse %.4f from closing %.4f rebound %.4f ballShare %.1f bodyShare %.5f canMove %d pressing %d\n", impulse, closing, rebound, ballShare, bodyShare, (int)canMove, (int)pressing);
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
             // What this surface can rub against the ball is what it can press the
             // ball with, and the ball is only pressed by the part of the blow it
@@ -254,7 +240,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
-            if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   NOWHERE impulse %.4f closing %.4f rebound %.4f arrived %.4f surface(%+.4f,%+.4f) frozen %d\n", impulse, closing, rebound, arrivedSpeed, surfaceVelocity.x, surfaceVelocity.y, (int)(body ? body->frozen : 0));
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             pressed = impulse;
         }
@@ -311,12 +296,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // itself through a face that has already finished moving -- which is exactly
     // what a ball landing on a shape that gives a little under it does. A bounce has
     // turned the ball around before this runs, so nothing that was leaving is caught.
-    dbg("before-into");
     {
         const double into = dot(ball.velocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
-    dbg("leave");
     recordBall();
 }
 
