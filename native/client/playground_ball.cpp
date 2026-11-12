@@ -202,7 +202,20 @@ void PlaygroundRoom::tickBall() {
             // arithmetic that rests a ball at exactly one radius lands it a
             // nanometre either side, and reading that as inside pinned a ball under
             // a shape where it was, gathering turn on the spot.
-            if (hit.depth <= kSkin && hit.resting && !restingAnswered[index]) {
+            // A ball on a surface, including one that is through it. The first case is
+            // a contact for the whole tick. The second is not a meeting at all: it is a
+            // state that should never have existed, and speed has nothing to say about
+            // it -- "do not close" is already true of something that is not closing.
+            // It was answered with nothing, and the walk then gave up on it entirely
+            // (see the break below), so a ball that got through a face stayed through
+            // it for the rest of the session: the cube in front of it moved away and
+            // the ball sat inside where the cube had been.
+            //
+            // So it is put back on the surface, along the way out that is nearest, by
+            // position and nothing else -- the same answer a corner of a shape gets.
+            // Nothing is added to its speed, so nothing is conjured; it is a place
+            // corrected, once, and then the ordinary contact rules apply to it again.
+            if (hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
@@ -269,6 +282,11 @@ void PlaygroundRoom::tickBall() {
             ball.position.y = std::max(ball.position.y, ball.radius);
             if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
         }
+        // A surface that is still met at the very start of the remaining time has
+        // already been answered as far as it can be, and going round again would
+        // divide the tick by zero. Every surface that could be is put back out above,
+        // so what is left here is a guard and not an escape: the ball is not left
+        // inside anything, it is only not advanced further this tick.
         if (depth > kSkin && first <= 1e-9) break;
         // Not "the ball stopped, so stop looking": a ball standing still still has
         // something on its way to it -- a body is stepped before the ball, and its
