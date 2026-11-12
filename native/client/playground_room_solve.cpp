@@ -45,7 +45,13 @@ constexpr double kSolveTolerance = 1e-12;// A sweep of the patches is over when 
 // see. It is a separate number from the one above because it answers a separate
 // question: the sweep now stops when the *answer* has stopped moving rather than when
 // the surfaces have stopped closing.
-constexpr double kImpulseTolerance = 1e-12;}  // namespace
+constexpr double kImpulseTolerance = 1e-12;  // N s
+// How many times a patch is asked for its load, then its grip, then its load again.
+// Grip lands a moment on a body that changes where it presses, so the two answers
+// change each other; three rounds is more than enough for the last round to make a
+// difference of nothing at all.
+constexpr int kGripRounds = 3;
+}  // namespace
 
 // The answer to a whole configuration of patches at once.
 //
@@ -97,7 +103,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // and grip are swept in that order -- grip lands a moment on the body that
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
-    const auto patchPass = [&](Manifold& patch) {
+    const auto patchPass = [&](Manifold& patch, bool withGrip) {
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
@@ -182,7 +188,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             live[k] = true;
             carried[k] = patch.normalImpulse[k];
         }
-        for (std::size_t attempt = 0; attempt <= count; ++attempt) {
+        for (std::size_t attempt = 0; withGrip ? false : attempt <= count; ++attempt) {
             // The system over the ends still carrying: what each is closing at, and
             // what the pair does when it is pressed at each of them.
             std::size_t order[kMaxPatchEnds] = {}, dofs = 0;
@@ -335,6 +341,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         //
         // A face with one end is the same rule with one share, which is the ordinary
         // point contact.
+        if (withGrip) {
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
             : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
@@ -402,6 +409,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 }
             }
         }
+        }
         // What is under each end decides what the body is standing on.
         for (std::size_t k = 0; k < count; ++k) {
             if (!(patch.normalImpulse[k] > 0.0) || !(patch.normal.y > 0.5)) continue;
@@ -418,11 +426,36 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
-    for (int pass = 0; pass < kSolvePasses; ++pass) {
-        worst = 0.0;
-        for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m]);
-        if (worst < kImpulseTolerance && pass > 0) break;
+    // A patch's load and its grip are swept one after the other and not together,
+    // and the difference is the difference between a shape standing still and a shape
+    // walking to one side.
+    //
+    // A sweep passes through states the room is never in. In the middle of one, a
+    // body has been answered against the floor it stands on but not yet against what
+    // stands on it, so it is falling and turning in a way nothing in the room is
+    // doing -- and grip, which is read off the slip between two surfaces, reads the
+    // transient and holds against it. Held with a force the shape never really felt,
+    // the pair is pushed a little apart every tick: a slow walk, with nothing on
+    // screen to explain it, which is exactly what it is.
+    //
+    // So the load is answered first, on its own, and to convergence: at the end of
+    // that sweep the bodies are standing as they will stand. Then the grip is read
+    // off that state, against the load that state carries, and laid down. Grip lands
+    // a moment on a body that changes where it presses, so the load is asked again
+    // after it, and the two are asked again until they agree. The sweep ends on the
+    // load, so no tick finishes with a corner being driven into the floor.
+    const auto sweep = [&](bool withGrip) {
+        for (int pass = 0; pass < kSolvePasses; ++pass) {
+            worst = 0.0;
+            for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m], withGrip);
+            if (worst < kImpulseTolerance && pass > 0) break;
+        }
+    };
+    for (int round = 0; round < kGripRounds; ++round) {
+        sweep(false);
+        sweep(true);
     }
+    sweep(false);
     return closingAtAll;
 }
 
