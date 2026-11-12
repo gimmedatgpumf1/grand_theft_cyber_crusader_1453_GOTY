@@ -543,7 +543,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             break;
         }
-        // The grip, end by end, against the load that end is carrying.
+        // The grip, over both ends together, against the load they share.
         //
         // Coulomb, in the two forms it has, and it is the same law in both: the
         // surface holds along itself with whatever it takes to leave the face still
@@ -552,6 +552,31 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // coefficient, and it is held by that much *only against the slip* -- a
         // surface can stop a slide and can never drive one backwards, so an end that
         // is moving is never given more than it takes to bring it to rest.
+        //
+        // Both ends are answered as one system, and that is the whole of it.
+        //
+        // A face lying on a surface has two places it can be held and two ways it can
+        // move along the surface: it can slide, and it can turn. Answering one end and
+        // then the other is answering the same two things twice with the first answer
+        // already in the way, and the sweep only approaches the right answer if it is
+        // allowed to run long enough. It was not: the sweep stopped when the *load*
+        // looked settled, which says nothing about the grip, so the grip was left
+        // wherever the second end's impulse happened to put it.
+        //
+        // What was left was not noise. A body pressed down on two ends with slightly
+        // different loads gets slightly different grips at them, and if those two
+        // grips do not cancel exactly, what is left is a force along the surface that
+        // nothing in the room is applying. A cube and a triangle resting on each other
+        // walked slowly along a level floor for ever, in the same direction, with no
+        // arrow on the screen pointing that way: they were being pushed by the
+        // difference between two friction impulses that should have been a couple.
+        //
+        // Solved together they cannot do that. The unknowns are the two ends' grips,
+        // the equations are that neither end is left slipping, and a rigid face has
+        // exactly two ways to slide so the system is square: the answer is the one
+        // that leaves the face still, and if it cannot be still -- the load is not
+        // enough to hold it -- the end that is over its cone is pinned there and the
+        // rest is answered again, exactly as an end that lifts is.
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
             : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
@@ -560,33 +585,81 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
             : patch.ball   ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
                            : body->kineticFriction;
-        for (std::size_t k = 0; k < count; ++k) {
-            if (!(patch.normalImpulse[k] > 0.0)) {
-                // No pressure, nothing to grip with.
-                if (patch.tangentImpulse[k] != 0.0) {
-                    pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
-                    worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
-                    patch.tangentImpulse[k] = 0.0;
+        {
+            bool carrying[kMaxPatchEnds] = {false, false};
+            bool pinned[kMaxPatchEnds] = {false, false};
+            double grip[kMaxPatchEnds] = {}, cone[kMaxPatchEnds] = {};
+            double slipping[kMaxPatchEnds] = {};
+            for (std::size_t k = 0; k < count; ++k) {
+                grip[k] = patch.tangentImpulse[k];
+                if (!(patch.normalImpulse[k] > 0.0)) {
+                    // No pressure, nothing to grip with. Whatever this end had is
+                    // given back, so the ledger and the motion agree.
+                    if (grip[k] != 0.0) {
+                        pushEnd(k, tangent * -grip[k], ForceKind::Friction);
+                        worst = std::max(worst, std::abs(grip[k]));
+                        grip[k] = 0.0;
+                        patch.tangentImpulse[k] = 0.0;
+                    }
+                    continue;
                 }
-                continue;
+                carrying[k] = true;
+                slipping[k] = away(patch.point[k], tangent);
+                const double mu = std::abs(slipping[k]) > kRestSpeed ? kineticMu : staticMu;
+                cone[k] = mu * patch.normalImpulse[k];
             }
-            const double sliding = away(patch.point[k], tangent);
-            const double giveT = give(patch.point[k], tangent, patch.point[k], tangent);
-            if (!(giveT > 1e-12)) continue;
-            const double mu = std::abs(sliding) > kRestSpeed ? kineticMu : staticMu;
-            const double hold = mu * patch.normalImpulse[k];
-            double grip = patch.tangentImpulse[k] - sliding / giveT;
-            if (std::abs(grip) > hold) {
-                // More than the surface can hold: it slips, and what it is given is
-                // what the surface can give -- the rest of the slip is left in the
-                // body's motion, where it belongs.
-                grip = std::copysign(hold, grip);
+            for (std::size_t attempt = 0; attempt <= count; ++attempt) {
+                std::size_t order[kMaxPatchEnds] = {}, dofs = 0;
+                double u[kMaxPatchEnds] = {}, g[kMaxPatchEnds][kMaxPatchEnds] = {};
+                for (std::size_t k = 0; k < count; ++k) {
+                    if (!carrying[k] || pinned[k]) continue;
+                    order[dofs] = k;
+                    u[dofs] = away(patch.point[k], tangent);
+                    for (std::size_t j = 0; j <= dofs; ++j)
+                        g[j][dofs] = give(patch.point[order[j]], tangent, patch.point[k], tangent);
+                    ++dofs;
+                }
+                if (dofs == 0) break;
+                double delta[kMaxPatchEnds] = {};
+                if (dofs == 1) {
+                    if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
+                } else {
+                    const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
+                    if (std::abs(det) > 1e-18) {
+                        delta[0] = (-u[0] * g[1][1] + u[1] * g[0][1]) / det;
+                        delta[1] = (-u[1] * g[0][0] + u[0] * g[1][0]) / det;
+                    }
+                }
+                // What the cone will not allow: that end holds as hard as it can and
+                // the other is answered again without it. Beyond that the face slips,
+                // and the slip is left in its motion, where it belongs.
+                bool overCone = false;
+                for (std::size_t i = 0; i < dofs; ++i) {
+                    const std::size_t k = order[i];
+                    const double total = grip[k] + delta[i];
+                    if (std::abs(total) <= cone[k]) continue;
+                    const double held = std::copysign(cone[k], total);
+                    const double change = held - grip[k];
+                    if (change != 0.0) {
+                        pushEnd(k, tangent * change, ForceKind::Friction);
+                        worst = std::max(worst, std::abs(change));
+                    }
+                    grip[k] = held;
+                    patch.tangentImpulse[k] = held;
+                    pinned[k] = true;
+                    overCone = true;
+                }
+                if (overCone) continue;
+                for (std::size_t i = 0; i < dofs; ++i) {
+                    const std::size_t k = order[i];
+                    if (delta[i] == 0.0) continue;
+                    pushEnd(k, tangent * delta[i], ForceKind::Friction);
+                    worst = std::max(worst, std::abs(delta[i]));
+                    grip[k] += delta[i];
+                    patch.tangentImpulse[k] = grip[k];
+                }
+                break;
             }
-            const double delta = grip - patch.tangentImpulse[k];
-            if (delta == 0.0) continue;
-            pushEnd(k, tangent * delta, ForceKind::Friction);
-            worst = std::max(worst, std::abs(delta));
-            patch.tangentImpulse[k] = grip;
         }
         // What is under each end decides what the body is standing on.
         for (std::size_t k = 0; k < count; ++k) {
