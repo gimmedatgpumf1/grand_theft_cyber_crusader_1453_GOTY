@@ -71,7 +71,6 @@ void PlaygroundRoom::applyBodyForces() {
         body.previousCentre = body.centre;
         body.previousAngle = body.angle;
         body.previous = body.position;
-        body.appliedCount = 0;
         body.touchingPlane = false;
         body.onBody = false;
         body.supportLow = 1e30;
@@ -79,6 +78,9 @@ void PlaygroundRoom::applyBodyForces() {
         body.supportFrozen = false;
         if (body.count == 0) continue;
         if (body.frozen || bodyHeld(index)) continue;
+        // Only a body that is about to be solved for forgets what it was given last
+        // tick; a sleeping body keeps it, because that is what it is standing on.
+        body.appliedCount = 0;
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 weight{0.0, -share * kGravity, 0.0};
             addForce(body.position[i], weight, ForceKind::Gravity);
