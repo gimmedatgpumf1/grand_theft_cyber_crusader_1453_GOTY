@@ -305,6 +305,10 @@ void PlaygroundRoom::tickBall() {
                 contactPoint = hit.contact;
             }
         }
+        if (getenv("GTC_WALK"))
+            std::fprintf(stderr, "  step %d rem %.4f ball(%+.4f,%+.4f) v(%+.3f,%+.3f) -> first %.4f what %d depth %.5f n(%+.3f,%+.3f)\n",
+                         step, remaining, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
+                         first, what, depth, normal.x, normal.y);
         if (restart) continue;
         if (first > 1.0) {
             ball.position = playground_tick::resolvedMove(ball.position, next);
