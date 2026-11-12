@@ -33,6 +33,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // two met, because that is where it acts.
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
+    const auto dbg = [&](const char* what) {
+        if (!getenv("GTC_BOUNCE")) return;
+        std::fprintf(stderr, "   [%s] body %d depth %.6f normal(%+.3f,%+.3f) v(%+.4f,%+.4f) arrival(%+.4f,%+.4f) exchange %d\n",
+                     what, bodyIndex, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y,
+                     ball.arrival.x, ball.arrival.y, (int)exchange);
+    };
+    dbg("enter");
     // The body's side is written by giveBodyTurn, which is the call that hands it
     // over; what is left for this one is the ball's own change, recorded at the
     // place the two met.
@@ -217,6 +224,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const bool ballGives = !ballHeld && !pressing;
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
+        if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   impulse %.4f from closing %.4f rebound %.4f ballShare %.1f bodyShare %.5f canMove %d pressing %d\n", impulse, closing, rebound, ballShare, bodyShare, (int)canMove, (int)pressing);
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
             // What this surface can rub against the ball is what it can press the
             // ball with, and the ball is only pressed by the part of the blow it
@@ -285,10 +293,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // itself through a face that has already finished moving -- which is exactly
     // what a ball landing on a shape that gives a little under it does. A bounce has
     // turned the ball around before this runs, so nothing that was leaving is caught.
+    dbg("before-into");
     {
         const double into = dot(ball.velocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
+    dbg("leave");
     recordBall();
 }
 
