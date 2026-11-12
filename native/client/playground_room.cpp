@@ -272,9 +272,24 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     }
     body.frozen = false;
     // Kept for the day this body falls asleep: a body at rest has no tick to be
-    // solved in, and what is holding it up is what was solved for it here.
-    if (body.appliedCount < Body::kMaxRestForces)
-        body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
+    // solved in, and what is holding it up is what was solved for it here. The
+    // solver gives a contact its answer in pieces, pass by pass, so what is kept is
+    // the total at each place and of each kind -- one arrow per place, which is what
+    // the eye reads and what the body actually feels.
+    {
+        std::size_t slot = body.appliedCount;
+        for (std::size_t i = 0; i < body.appliedCount; ++i) {
+            if (body.applied[i].kind != kind) continue;
+            if (length(body.applied[i].at - at) > 1e-9) continue;
+            slot = i;
+            break;
+        }
+        if (slot < body.appliedCount) {
+            body.applied[slot].impulse = body.applied[slot].impulse + impulse;
+        } else if (body.appliedCount < Body::kMaxRestForces) {
+            body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
+        }
+    }
     recordImpulse(at, impulse, kind);
 }
 
