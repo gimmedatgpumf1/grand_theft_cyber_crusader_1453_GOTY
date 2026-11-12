@@ -894,6 +894,28 @@ void PlaygroundRoom::tickBodies() {
     // still must feel none of it.
     applyAirDrag();
     applyBodyForces();
+    // What every body arrived with, and how much it had already been touched.
+    //
+    // A body that spends the whole tick in the air has followed a parabola, and a
+    // parabola is a thing that can be drawn exactly. The tick does not: it gives the
+    // body its weight as a burst of speed and then carries it for the whole tick at
+    // the speed it now has, which lands it half a step too far from the speed it
+    // started with -- and half a step too far, every tick, in the direction the
+    // weight pulls is energy that the arithmetic has made out of nothing. For a four
+    // kilogram shape that is nought point four eight joules a tick, which is a body
+    // that never lands and keeps getting faster for no reason at all.
+    //
+    // The correction is the exact one, and it is only a move: half of the change the
+    // forces made, times the tick, added back to where the body ends up. Nothing is
+    // added to or taken from a speed. It is applied only to a body that met nothing
+    // -- a shape that touched something was stopped by something, and its travel is
+    // the walk's answer, not a parabola's.
+    std::array<Vec3, kBodyCount> arrival{};
+    std::array<int, kBodyCount> touchedBefore{};
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        arrival[index] = bodies_[index].velocity;
+        touchedBefore[index] = bodies_[index].contacts;
+    }
     // One set of patches for the whole tick, carried through the walk. The patches
     // that are there when the tick starts are answered first -- the weight of a shape
     // standing on the floor arrives as one tick's worth of impulse, and a patch that
@@ -929,6 +951,15 @@ void PlaygroundRoom::tickBodies() {
     // Whatever the tick's walk could not keep out of anything is put out now, by
     // position alone. It is the last thing done to the shapes and the only thing
     // that moves one without an impulse: see separateBodies.
+    // The parabola, finished: a body that met nothing this tick is put where the
+    // exact path from its arrival speed would have put it. See the note above.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index) || body.contacts != touchedBefore[index]) continue;
+        body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
+        placeCorners(body);
+    }
+    mark("parabola");
     separateBodies();
     mark("separate");
     settleBodies();
