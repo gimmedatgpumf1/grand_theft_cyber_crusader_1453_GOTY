@@ -699,6 +699,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
+            if (std::getenv("DBGI"))
+                std::fprintf(stderr, "  patch b%zu o%zu n(%+.3f,%+.3f) ends %zu dofs %zu u %.6f %.6f d %.6f %.6f v0 %+.5f v1 %+.5f\n",
+                             patch.body, patch.other, patch.normal.x, patch.normal.y, count, dofs, u[0], u[1], delta[0], delta[1],
+                             bodies_[0].velocity.y, bodies_[1].velocity.y);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
