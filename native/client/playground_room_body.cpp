@@ -712,6 +712,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
+            if (patch.ball && std::getenv("DBGB2"))
+                std::fprintf(stderr, "    ballpass u %+.5f dofs %zu d %+.5f carried %+.5f v %+.5f\n", u[0], dofs, delta[0], carried[0], body->velocity.y);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
