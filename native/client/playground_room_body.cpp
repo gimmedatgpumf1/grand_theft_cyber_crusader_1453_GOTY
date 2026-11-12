@@ -505,9 +505,13 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             // for that case is the two ends of the span that actually carries it.
             if (patch.ends == 0) {
                 pair_shape::PairManifold meeting;
+                // Asked for the contact band, so a pair that is one hair apart is
+                // gathered too: the walk stops a shape exactly at a surface, and at
+                // exactly a surface two outlines overlap by nothing at all, which is
+                // not an overlap and used to leave the shape hanging there.
                 if (pair_shape::separate(body.position.data(), body.count, solid.position.data(), solid.count,
-                                         meeting) &&
-                    meeting.overlap > 0.0 && meeting.ends > 0) {
+                                         meeting, kContactBand) &&
+                    meeting.overlap > -kContactBand && meeting.ends > 0) {
                     Manifold edge;
                     edge.body = one;
                     edge.other = two;

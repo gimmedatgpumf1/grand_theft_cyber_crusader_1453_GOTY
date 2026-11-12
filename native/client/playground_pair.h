@@ -96,7 +96,8 @@ inline double segmentSegment(Vec3 a1, Vec3 a2, Vec3 b1, Vec3 b2, Vec3& nearest) 
 // Separated on every face normal of both shapes, which for two convex outlines is
 // every way there is to be apart: the axis of least overlap is the shortest way out,
 // and if any axis shows a clear gap the two are not touching at all.
-inline bool separate(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb, PairManifold& out) {
+inline bool separate(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb, PairManifold& out,
+                     double band = 0.0) {
     if (na < 3 || nb < 3) return false;
     double least = 1e30;
     Vec3 axis{0.0, 1.0, 0.0};
@@ -124,7 +125,15 @@ inline bool separate(const Vec3* a, std::size_t na, const Vec3* b, std::size_t n
     };
     for (std::size_t e = 0; e < na; ++e) tryFace(a, na, e, b, nb);
     for (std::size_t e = 0; e < nb; ++e) tryFace(b, nb, e, a, na);
-    if (!found || least <= 0.0) return false;
+    // A pair that is only just apart is still a pair. `least` is the distance by
+    // which one shape is behind the other's face; when the two have not met yet it
+    // is negative, and how negative is exactly how far apart they are. Asked for a
+    // band, this answers with a meeting that has not happened yet -- a speculative
+    // one -- so that a shape arriving at a surface this tick is answered by the
+    // surface instead of being walked up to it and left there with its speed still
+    // on. An overlap deeper than anything the band allows is a real meeting, and it
+    // is answered as one whatever the band says.
+    if (!found || least <= -band) return false;
     // The normal came out of whichever shape owned that face; the answer is wanted
     // out of `b` and into `a`, so point it that way.
     double centre = 0.0;
