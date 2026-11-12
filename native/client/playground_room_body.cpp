@@ -144,41 +144,43 @@ double PlaygroundRoom::advanceBodies(double seconds) {
         centres[index] = bodies_[index].centre;
         angles[index] = bodies_[index].angle;
     }
-    move(seconds);
-    // The walk stops at an instant solved for to within a rounding of the step, so
-    // the shapes are apart when they should be touching and never the other way
-    // round. This is the check that keeps that true: if a step has left a corner
-    // under the floor or two outlines into each other, the step is shortened until
-    // it has not. It is not a correction -- nothing is moved back out. The step
-    // that would have gone in is simply not taken.
-    double used = seconds;
-    for (int guard = 0; guard < 40; ++guard) {
-        bool inside = false;
-        for (std::size_t index = 0; index < kBodyCount && !inside; ++index) {
+    // How deep anything is inside anything else, at the configuration the bodies
+    // were just moved to. One number for the whole room: the floor under a corner,
+    // the ball's surface, and the other shapes' outlines.
+    const auto penetration = [&]() {
+        double worst = 0.0;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-            for (std::size_t i = 0; i < body.count; ++i)
-                if (body.position[i].y < -kOnSurface) {
-                    inside = true;
-                }
-            // The ball is a surface too, and one that cannot be travelled into: a
-            // step that would put the outline into the ball is not taken. The
-            // momentum the meeting carries is answered by the contact solve; this
-            // is only about not walking through it while that answer settles.
-            {
-                Vec3 way{}, at{};
-                if (bodyBallGap(index, way, at) < -kOnSurface) inside = true;
-            }
-            Vec3 way{};
-            for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
+            for (std::size_t i = 0; i < body.count; ++i) worst = std::max(worst, -body.position[i].y);
+            Vec3 way{}, at{};
+            worst = std::max(worst, -bodyBallGap(index, way, at));
+            Vec3 towards{};
+            for (std::size_t other = index + 1; other < kBodyCount; ++other) {
                 if (bodies_[other].count == 0) continue;
                 double depth = 0.0;
-                if (bodiesIntoEachOther(index, other, way, depth) && depth > kOnSurface) {
-                    inside = true;
-                }
+                if (bodiesIntoEachOther(index, other, towards, depth)) worst = std::max(worst, depth);
             }
         }
-        if (!inside) break;
+        return worst;
+    };
+    // The walk has put the bodies where the tick took them. This is the check that
+    // keeps that honest: a step that puts them deeper into something than they
+    // already were is not a step they may take, and it is shortened until it is not.
+    //
+    // It is measured against the depth they arrived with, not against zero, and that
+    // is the whole point of it. A corner a couple of microns inside a surface is not
+    // a state this room can leave by pushing it out -- nothing here is ever pushed
+    // out -- but it is still a corner that may slide *along* that surface, and only
+    // a step that drives it further in is refused. Judged against zero instead, such
+    // a corner refuses every step there is: the shape keeps its speed, never moves,
+    // and is stuck for ever. That was a shape standing still in the air with its
+    // velocity climbing.
+    const double before = penetration();
+    move(seconds);
+    double used = seconds;
+    for (int guard = 0; guard < 40; ++guard) {
+        if (penetration() <= before + 1e-12) break;
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             bodies_[index].centre = centres[index];
