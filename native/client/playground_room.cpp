@@ -755,6 +755,11 @@ void PlaygroundRoom::advance(double seconds) {
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
+        // Whatever a turn carried through the ball is put back out, once, after both
+        // halves of the tick have moved. It is here rather than inside either of them
+        // because it is about the state the tick ends in, whichever of the two put it
+        // there -- and the ball's sweep cannot see a shape turning into it.
+        separateBall();
         freezeCheck();
         // What is still acting, now that the tick has finished with everything. It
         // is written here, at the end, because that is when it is known which things

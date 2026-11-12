@@ -381,6 +381,10 @@ private:
     // is refused for being inside something never moves at all while its weight goes
     // on arriving -- which is a shape that gains energy without ever moving.
     void separateBodies();
+    // Nothing ends a tick inside the ball: the sweep cannot see a shape turning into
+    // it, so what a turn carried through it is put back out, by place alone. See the
+    // file: it is the same rule a shape inside another shape gets.
+    void separateBall();
     // Whether the surface a sleeping body is lying on is still there. A body that
     // was put to rest by a floor, a shape or the ball, and that is touching nothing
     // at all, is a body that has nothing holding it up any more -- and it wakes to

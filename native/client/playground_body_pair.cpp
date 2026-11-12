@@ -109,49 +109,6 @@ void PlaygroundRoom::separateBodies() {
             body.centre.y += deepest;
             placeCorners(body);
         }
-        // The ball. It is a shape in this room like any other -- a circle of one
-        // radius with a mass of its own -- and a body whose outline is through it is
-        // inside it exactly as it would be inside another shape, and is answered the
-        // same way: moved out along the way it is least inside, by the depth it is
-        // inside, and the pair share the move by inverse mass. A body asleep, and a
-        // ball asleep or in the mouse's hand, take none of it, because neither of
-        // them is the one that moved into anything.
-        //
-        // This is the last of the ball's answers, not the first: a meeting on the way
-        // *in* is stopped by the ball's sweep, which is a contact and a speed. What is
-        // left here is the state the sweep cannot leave -- a shape that arrived in the
-        // same tick the ball was stopped by the floor, and is now a couple of
-        // centimetres through it -- and it is answered by place alone, with nothing
-        // added to anyone's speed.
-        {
-            Vec3 way{}, at{};
-            const double gap = bodyBallGap(one, way, at);
-            if (gap < 0.0) {
-                bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
-                // A ball that is against the floor cannot be given ground, for the same
-                // reason nothing else in this room can be below it: the move would put
-                // it through the floor, and the floor's answer would put it straight
-                // back where it was -- which is a pair that never separates at all. So
-                // the floor takes the ball and the whole of the move. This is the one
-                // case where a shape can be inside a ball for more than a tick: a cube
-                // landing on a ball that the floor is already holding, both of them
-                // falling at nearly the same speed, so that the tick's own contact saw
-                // nothing closing.
-                if (ballMoves) {
-                    const Vec3 wanted = ball_.position - way * (-gap) * 0.5;
-                    if (wanted.y < ball_.radius - kSkin) ballMoves = false;
-                }
-                const double mine = 1.0 / body.mass;
-                const double theirs = ballMoves ? 1.0 / ball_.mass : 0.0;
-                const double share = mine / (mine + theirs);
-                // `way` runs out of the ball and into the body, so the body leaves
-                // along it and the ball leaves against it.
-                const Vec3 move = way * (-gap) * share;
-                body.centre = body.centre + move;
-                placeCorners(body);
-                if (ballMoves) ball_.position = ball_.position - way * (-gap) * (1.0 - share);
-            }
-        }
         // Another shape.
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
@@ -213,6 +170,48 @@ void PlaygroundRoom::separateBodies() {
                 placeCorners(body);
             }
         }
+    }
+}
+
+
+// Nothing in this room ends a tick inside anything -- the ball included.
+//
+// A body is answered by the sweep before it steps, and by separateBodies() after,
+// so a shape that arrives somewhere it may not be is either stopped or moved out.
+// The ball has the same two halves and needs the same second one, because there is
+// one thing its sweep cannot see: a shape that *turns* into it. The ball's sweep
+// subtracts the shape's travel, which is exact for a shape that slides, and says
+// nothing about a corner coming round -- a triangle spinning at a radian and a half
+// a second walks its own corners through a ball while its middle has barely moved.
+// A ball that a spinning corner has just swept through must not be left there.
+//
+// So it is answered where it is, exactly as a shape inside another shape is: moved
+// out along the way out of the ball, by the depth it is inside, the pair sharing the
+// move by inverse mass, and nothing added to anybody's speed. A ball against the
+// floor cannot be given ground and the floor takes the whole of the move, for the
+// same reason nothing in this room can be below it.
+void PlaygroundRoom::separateBall() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        Vec3 way{};
+        Vec3 at{};
+        const double gap = bodyBallGap(index, way, at);
+        if (!(gap < 0.0)) continue;
+        bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
+        if (ballMoves) {
+            const Vec3 wanted = ball_.position - way * (-gap) * 0.5;
+            if (wanted.y < ball_.radius - kSkin) ballMoves = false;
+        }
+        const double mine = 1.0 / body.mass;
+        const double theirs = ballMoves ? 1.0 / ball_.mass : 0.0;
+        const double share = mine / (mine + theirs);
+        // `way` runs out of the ball and into the body, so the body leaves along it
+        // and the ball leaves against it.
+        const Vec3 move = way * (-gap) * share;
+        body.centre = body.centre + move;
+        placeCorners(body);
+        if (ballMoves) ball_.position = ball_.position - way * (-gap) * (1.0 - share);
     }
 }
 
