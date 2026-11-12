@@ -28,9 +28,6 @@ constexpr int kMaxContacts = 4;
 // and they are scaled by the length of the contact they actually have.
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
-// How far a sleeping dot may drift from the surface it is lying on and still be
-// lying on it. A micrometre: the same "these two are the same place" the walk uses.
-constexpr double kPointSupportBand = 1e-6;
 
 } // namespace
 
@@ -623,18 +620,6 @@ void PlaygroundRoom::tick() {
             }
         }
     }
-    // Nothing may be left inside a body: a contact is found just before it, and
-    // the walk stops there, but rounding can leave the disc a hair deep. The dot
-    // is a ball of a known radius, and its disc stands that radius clear of every
-    // face it is beside.
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        const ball_shape::OutlineGap gap = ball_shape::outlineGap(
-            point_, body.position.data(), body.position.data(), body.count, 1.0);
-        if (!(gap.gap < kPointRadius)) continue;
-        point_ = point_ + gap.normal * (kPointRadius - gap.gap);
-        if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
-    }
     // Kinetic friction over the part of the tick the point spent on something.
     // The line that is drawn is the travel that was actually walked this tick.
     traceTo_ = point_;
@@ -685,88 +670,6 @@ void PlaygroundRoom::tick() {
 // against the plane, and then the fixed distances are pushed back to what they
 // were. A corner that moves therefore pulls and pushes the others through those
 // distances: that is the whole of the coupling.
-// Whether the dot's own support has gone away underneath it.
-//
-// A dot goes to sleep on a floor, a shape or the ball, and while it sleeps nothing
-// moves it. Take the thing it is lying on out from under it -- drag the shape, roll
-// the ball away -- and it would hang in the air for ever: asleep, and wrong. So the
-// surface it was resting on is asked, every tick, whether it is still there, and if
-// it is not the dot wakes and falls, which is what it was about to do anyway.
-bool PlaygroundRoom::pointSupportGone() const {
-    if (restingOnBall_) {
-        const Vec3 gap{point_.x - ball_.position.x, point_.y - ball_.position.y, 0.0};
-        return length(gap) > ball_.radius + kPointSupportBand;
-    }
-    if (restingBody_ >= 0 && restingBody_ < int(kBodyCount)) {
-        const Body& body = bodies_[std::size_t(restingBody_)];
-        if (body.count == 0) return true;
-        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return false;
-        const ball_shape::OutlineGap gap =
-            ball_shape::outlineGap(point_, body.position.data(), body.position.data(), body.count, kPointRadius);
-        return gap.gap > kPointSupportBand;
-    }
-    return point_.y > kSurfaceY + kPointSupportBand;
-}
-
-// Whether any body's step this tick has arrived at the point.
-//
-// The dot is a point with a radius, and a body arriving at it is a face or a corner
-// arriving at a circle -- the same question the ball's own hitscan answers, so it is
-// asked here with the same geometry. What it is for is the one thing a sleeping point
-// cannot do for itself: a point that is not stepped has no sweep, and a body that
-// falls on it while it sleeps has nothing to stop it. The point wakes, and from then
-// on its own tick -- which does have a sweep -- answers whatever met it.
-bool PlaygroundRoom::pointReachedByBodies() const {
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        if (body.count == 0) continue;
-        // It has already overtaken the point: wherever the point is, a body's outline
-        // around it is a meeting that has happened and has to be answered. A body that
-        // has come to rest is not skipped here: it is asleep, but the point inside it
-        // is still inside it, and a sleeping shape is exactly what a shape that landed
-        // on a sleeping dot becomes -- skip it and the dot is left inside it for ever.
-        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return true;
-        if (body.frozen) continue;
-        // And where the shape was, to where it is now: the piece of its outline the
-        // step swept, and every corner of it through the same travel. A body falling a
-        // quarter of a metre a tick is swept, not sampled.
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 before = body.previous[i], after = body.position[i];
-            const Vec3 side = body.position[(i + 1) % body.count] - body.position[i];
-            const Vec3 sideBefore = body.previous[(i + 1) % body.count] - body.previous[i];
-            if (length(side) <= 0.0 && length(sideBefore) <= 0.0) continue;
-            // A corner's travel, against the point's own radius.
-            const Vec3 travel = after - before;
-            const double lengthSquared = dot(travel, travel);
-            const double along = lengthSquared > 1e-18 ? std::clamp(dot(point_ - before, travel) / lengthSquared, 0.0, 1.0) : 0.0;
-            if (length(point_ - (before + travel * along)) <= kPointRadius) return true;
-            // And the side swept through the tick, which is what catches a face coming
-            // down flat across the point with neither of its ends anywhere near it.
-            for (const double fraction : {0.0, 0.5, 1.0}) {
-                const Vec3 a = body.previous[i] + travel * fraction;
-                const Vec3 b = body.previous[(i + 1) % body.count] + travel * fraction;
-                const Vec3 edge = b - a;
-                const double edgeSquared = dot(edge, edge);
-                const double place = edgeSquared > 1e-18 ? std::clamp(dot(point_ - a, edge) / edgeSquared, 0.0, 1.0) : 0.0;
-                if (length(point_ - (a + edge * place)) <= kPointRadius) return true;
-            }
-        }
-    }
-    return false;
-}
-
-void PlaygroundRoom::freezeCheck() {
-    // A dot at rest is a dot with nothing left to spend: it is on something, it is
-    // not moving, and the surface is holding it. "On the floor" is the top of the
-    // floor, which is the plane the dot's own radius makes -- the floor is a plane
-    // through kSurfaceY and the dot is a ball that stands its radius clear of it.
-    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
-        (point_.y <= kSurfaceY + kPointRadius || restingBody_ >= 0 || restingOnBall_)) {
-        pointFrozen_ = true;
-        velocity_ = {};
-    }
-}
-
 void PlaygroundRoom::advance(double seconds) {
     if (!(seconds > 0.0) || !std::isfinite(seconds)) return;
     if (dragTarget_ != DragTarget::None) updateDrag();
@@ -851,6 +754,10 @@ void PlaygroundRoom::advance(double seconds) {
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         separateBall();
+        // The dot is put back out of anything that has moved into it. It is done
+        // here, after the shapes and the ball have moved and before anything looks
+        // at the room, so that no frame is ever drawn with the dot inside a shape.
+        separatePoint();
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
