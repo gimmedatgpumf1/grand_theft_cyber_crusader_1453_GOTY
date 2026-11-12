@@ -133,6 +133,13 @@ void PlaygroundRoom::tickBall() {
     // reason: being on a surface is not arriving at it, and a ball that answered
     // that touch every time the walk looked at it would never spend a tick.
     std::array<bool, kBodyCount> restingAnswered{};
+    // The bodies this tick has already stopped at the ball. A body that has met the
+    // ball has spent its step there: it is carried back to the instant of the
+    // meeting -- the turn and the translation by the same fraction -- and what is
+    // left of the tick is the ball's alone. Prevention
+    // is the whole point: the shape stops at the ball instead of being kicked out
+    // of it afterwards.
+    std::array<bool, kBodyCount> bodyStopped{};
     const auto anybodyMoving = [this]() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].frozen) continue;
@@ -169,30 +176,20 @@ void PlaygroundRoom::tickBall() {
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
-            // What the body itself did this tick. The bodies are stepped before the
-            // ball, so by the time the ball looks, the shape is already at the end of
-            // its own travel -- and the distance between the two of them closed by
-            // both of them moving. Sweeping the ball's own travel against the finished
-            // pose asks only "could the ball have reached where the shape now is", and
-            // that is the wrong question whenever the shape is the one arriving: a
-            // cube coming down on a ball the floor has already stopped closes eight
-            // centimetres on it in a tick while the ball travels none of it, and a
-            // sweep that does not subtract the shape's step sees no approach at all.
-            // It saw none, and the cube's face went through the ball.
-            //
-            // So the sweep is done in the shape's own frame: the ball's travel, less
-            // the shape's travel. That is exactly the motion of one against the other,
-            // and it is what a hitscan between two moving things is. Nothing is
-            // sampled and nothing is stepped: the meeting is still solved outright,
-            // which is what makes it independent of how fast either of them is going.
-            // The body is where it is, and it is not moving: it was stepped before
-            // this, and the sweep that stops *it* at the ball is the other half of
-            // the same question (clampBodiesToBall, in the body's own tick). What is
-            // swept here is the ball's travel against the outline as it stands --
-            // which is a hitscan, solved outright, so no speed of the ball's is too
-            // fast to see.
+            // A body that is already stopped against the ball this tick is not
+            // moving any more: its step was spent at the meeting (below). What is
+            // left of the tick is swept against where it came to rest.
+            const Vec3* was = bodyStopped[index] ? body.position.data() : body.previous.data();
+            // The body is stepped before the ball, and stepping it moves the piece of
+            // outline the ball would have met. So the meeting is solved between two
+            // *moving* things: the ball's travel and the body's, corner by corner,
+            // through the tick. Conservative advancement at a micrometre a pass, with
+            // the moment bracketed and closed in on, so neither how fast the ball is
+            // going nor how fast the body is turning can hide the arrival between two
+            // samples. That is the hitscan: solved outright, not stepped towards.
             OutlineHit hit;
-            if (!circleHitsBody(ball.position, travel, body.position.data(), body.count, ball.radius, hit))
+            if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
+                                        ball.radius, kTick * remaining, hit))
                 continue;
 
             // Already on this surface when the tick began: a contact for the whole
@@ -220,11 +217,6 @@ void PlaygroundRoom::tickBall() {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
-                if (getenv("GTC_BALL")) std::fprintf(stderr, "  tick: body %zu already through by %.6f m, ball (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
-                if (getenv("GTC_BALL"))
-                    std::fprintf(stderr, "THROUGH body %zu by %.6f m: ball (%+.6f,%+.6f) v(%+.4f,%+.4f) | body c(%+.6f,%+.6f) a%+.6f prev c(%+.6f,%+.6f) a%+.6f\n",
-                                 index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
-                                 body.centre.x, body.centre.y, body.angle, body.previousCentre.x, body.previousCentre.y, body.previousAngle);
                 if (on.gap < ball.radius) {
                     // Counted only when it is a real miss and not the last bit of a
                     // double: a ball resting on a surface is one radius from it to
@@ -271,6 +263,20 @@ void PlaygroundRoom::tickBall() {
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
         // put down, or the first meeting in a tick would be counted as the second.
+        // The shape is carried back to the instant the two met. The ball was stopped
+        // there; leaving the shape at the end of its own step would put the ball
+        // inside it the moment the tick ended, and the next tick would find it there
+        // and have to lift it out -- which is the kick this prevents. The centre and
+        // the turn are the body's whole step, so both go back by the same fraction of
+        // the tick that the ball had spent when it arrived.
+        if (what >= 0) {
+            Body& met = bodies_[std::size_t(what)];
+            const double when = (1.0 - remaining) + first * remaining;
+            met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
+            met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
+            placeCorners(met);
+            bodyStopped[std::size_t(what)] = true;
+        }
         const bool exchange = what < 0 || !answered[std::size_t(what)];
         if (what >= 0 && std::size_t(what) < kBodyCount) answered[std::size_t(what)] = true;
         if (what == -2) {

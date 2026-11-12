@@ -231,9 +231,6 @@ void PlaygroundRoom::clampBodiesToBall() {
         // smaller than the ball. Nothing is sampled, so how fast the shape is turning
         // does not change where the meeting is found.
         const double target = std::min(ball_.radius, now.gap) - playground_tick::kQuantum;
-        if (getenv("GTC_BALL"))
-            std::fprintf(stderr, "clamp? body %zu gap %.6f target %.6f deepest-step %.6f\n", index, now.gap, target,
-                         [&] { const ball_shape::OutlineGap p = ball_shape::outlineGap(ball_.position, body.previous.data(), body.previous.data(), body.count, 1.0); return p.gap; }());
         ball_shape::OutlineHit met;
         if (!ball_shape::sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count,
                                                 ball_.position, Vec3{}, target, kTick, met))
