@@ -273,6 +273,69 @@ double PlaygroundRoom::timeToContact(double remaining) const {
     return time;
 }
 
+// What each corner standing on a surface carries, for a body that is at rest.
+//
+// A body that is not moving is held up by its contacts, and statics says exactly
+// what they carry: together they answer its weight, and together they leave no
+// moment about its centre of mass -- otherwise it would turn, and it does not.
+// Those are two equations on the loads, so two contacts on one face are determined
+// by them outright: a corner with the body's weight directly over it carries more
+// than a corner with only a taper over it. A shape balanced on a corner carries its
+// whole weight there. It is not a share and it is not a fudge: it is the reading a
+// scale under each corner would give.
+//
+// When more corners are down than the two the equations need, the floor and a
+// perfectly rigid body between them do not say which carries what, and the answer
+// is the one that leaves the body strained least -- the least sum of squares of the
+// loads. That is chosen, not invented, and it keeps the two equations exactly.
+//
+// `along` is where each contact is measured along the surface; `centre` is where
+// the body's weight runs through.
+void PlaygroundRoom::staticLoads(const double* along, std::size_t count, double centre,
+                                 double (&share)[kMaxCorners]) {
+    for (std::size_t i = 0; i < count; ++i) share[i] = 0.0;
+    if (count == 0) return;
+    // Only the contacts still carrying take part; one the equations would load in
+    // tension is off the surface, and the rest are answered again without it.
+    bool live[kMaxCorners] = {};
+    for (std::size_t i = 0; i < count; ++i) live[i] = true;
+    for (std::size_t attempt = 0; attempt < count; ++attempt) {
+        double n = 0.0, sumD = 0.0, sumDD = 0.0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!live[i]) continue;
+            const double d = along[i] - centre;
+            n += 1.0;
+            sumD += d;
+            sumDD += d * d;
+        }
+        // The least-norm loads under  sum w = 1  and  sum w*d = 0  are
+        // w_i = p + q*d_i, with (p, q) solving the two equations read backwards.
+        const double det = n * sumDD - sumD * sumD;
+        double p = 0.0, q = 0.0;
+        if (n > 1.0 && std::abs(det) > 1e-18) {
+            p = sumDD / det;
+            q = -sumD / det;
+        } else {
+            // All of them at the same place: there is nothing to balance, and the
+            // load is shared equally because every one of them is the same place.
+            p = n > 0.0 ? 1.0 / n : 0.0;
+        }
+        bool cut = false;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!live[i]) continue;
+            const double w = p + q * (along[i] - centre);
+            if (w < 0.0) {
+                live[i] = false;
+                cut = true;
+            }
+        }
+        if (cut) continue;
+        for (std::size_t i = 0; i < count; ++i)
+            if (live[i]) share[i] = p + q * (along[i] - centre);
+        return;
+    }
+}
+
 // Every patch at the configuration the walk has stopped at.
 //
 // A body meets the floor with the face it is standing on, and a convex face on a

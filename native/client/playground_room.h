@@ -300,6 +300,9 @@ private:
     // the patches are swept until they agree with each other.
     void gatherContacts(ManifoldSet& patches) const;
     bool solveContacts(ManifoldSet& patches);
+    // What each corner standing on a surface carries, for a body that is at rest.
+    static void staticLoads(const double* along, std::size_t count, double centre,
+                            double (&share)[kMaxCorners]);
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
