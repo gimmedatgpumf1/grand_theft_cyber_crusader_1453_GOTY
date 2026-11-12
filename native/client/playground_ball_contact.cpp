@@ -100,7 +100,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // inside the shape. The ball goes back out along the way it is nearest to
     // being outside, and the floor is the one thing it cannot go out through.
     if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   D v(%+.4f,%+.4f) depth %.6f\n", ball.velocity.x, ball.velocity.y, depth);
-    if (depth > 0.0) {
+    // A depth under a micrometre is touching, not buried. The sweep lands the ball
+    // on the surface and the bisection leaves it a nanometre either side of it, so
+    // "any depth at all" entered this recovery path on a contact that was perfectly
+    // ordinary -- and the path cancels the speed the ball arrived with, before the
+    // bounce has been worked out. That is a ball that stops dead on one bounce and
+    // bounces properly on the next, decided by which side of a nanometre it landed.
+    if (depth > playground_tick::kQuantum) {
         const OutlineGap now = outlineGap(ball.position, body ? body->previous.data() : nullptr,
                                           body ? body->position.data() : nullptr, body ? body->count : 0, 1.0);
         normal = now.normal;
@@ -160,8 +166,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             }
             contactPoint = contactPoint - normal * (through);
         }
-        const double into = dot(ball.velocity - surfaceVelocity, normal);
-        if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+        // The speed it arrived with is not cancelled here. Putting the ball back on
+        // the surface says where it is; what it does next is the contact's answer,
+        // and that is worked out below -- the bounce included. Cancelling it first
+        // left the answer with nothing to be about, which is how a ball dropped on a
+        // cube stopped dead halfway through its bounces instead of losing height
+        // steadily. Anything still pointing into the surface after the answer is
+        // taken off at the end of the tick, where it belongs.
     }
     if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   E v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
 
