@@ -448,7 +448,13 @@ private:
             window_.captureMouse(true); captured_=true; return;
         }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') { leavePlayground(); return; }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') { stopPlaygroundDrag(); playground_.reset(); return; }
+        // R puts the room back the way it starts: the shapes at their starting poses,
+        // the dot at the top of the room, the ball on its stand, nothing carried, and
+        // the camera back at the opening view. A reset that leaves the camera over the
+        // far end of the room is not a reset of the room, it is a reset of the shapes.
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') {
+            stopPlaygroundDrag(); playground_.reset(); playgroundCamera_.reset({0,1.4,3.2},0,0); return;
+        }
         // F shows what is pushing what, as arrows scaled by the force. N adds the
         // numbers in newtons and the room's energy, so the arrows can be read as
         // amounts rather than as directions only.
