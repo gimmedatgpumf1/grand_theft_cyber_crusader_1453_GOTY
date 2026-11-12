@@ -723,9 +723,13 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
                         bodies_[other].count).gap <= band)
                 pressed = true;
         }
-        Vec3 way{}, at{};
-        if (!pressed && (!ball_.frozen || ballNeighboursMoving()) && bodyBallGap(index, way, at) <= band)
-            pressed = true;
+        // The ball is not a reason to wake a shape, and must not be made one. Its own
+        // sweep answers every body it meets, asleep or not, and it answers with the
+        // ball's own bounciness; a body woken by a ball rolling up to it takes the
+        // meeting into the pair solver instead, which is a resting contact and gives
+        // nothing back -- a ball fired at a cube went from bouncing off it to sticking
+        // to it and being dragged along, at exactly the wall's speed. So the ball is
+        // left out here: it does not need the shape to be awake to be stopped by it.
         if (!pressed) continue;
         body.frozen = false;
         body.woken = true;
