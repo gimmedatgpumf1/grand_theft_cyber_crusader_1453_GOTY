@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -121,7 +119,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             for (std::size_t i = 0; i < body.count; ++i)
                 if (body.position[i].y < -kOnSurface) {
                     inside = true;
-                    if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: floor body %zu corner %zu y %.9f\n", index, i, body.position[i].y);
                 }
             Vec3 way{};
             for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
@@ -129,12 +126,10 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 double depth = 0.0;
                 if (bodiesIntoEachOther(index, other, way, depth) && depth > kOnSurface) {
                     inside = true;
-                    if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: pair %zu/%zu depth %.9f\n", index, other, depth);
                 }
             }
         }
         if (!inside) break;
-        if (std::getenv("DBGW")) std::fprintf(stderr, "  guard: inside, halving used %.9f\n", used);
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             bodies_[index].centre = centres[index];
@@ -331,7 +326,6 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
             // long as the grip can carry what holding it would take, and once it
             // cannot, mu_k carries what it can and the rest slips.
             const Vec3 tangent{contact.normal.y, -contact.normal.x, 0.0};
-            if (std::getenv("NOFRICTION")) continue;
             if (!(contact.normalImpulse > 0.0)) {
                 if (contact.tangentImpulse != 0.0) {
                     pushBody(body, contact.point, tangent * -contact.tangentImpulse, contact.kind);
@@ -368,15 +362,6 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
                 delivered = true;
             }
         }
-        if (std::getenv("DBG2")) {
-            std::fprintf(stderr, "   pass %d worst %.3e B0 v(%.4f,%.4f) w %.4f | B1 v(%.4f,%.4f) w %.4f |", pass, worst,
-                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
-                         bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
-            for (std::size_t q = 0; q < contacts.count; ++q)
-                std::fprintf(stderr, " [b%zu n%.3f t%.3f]", contacts.items[q].body, contacts.items[q].normalImpulse,
-                             contacts.items[q].tangentImpulse);
-            std::fprintf(stderr, "\n");
-        }
         if (worst < kSolveTolerance && pass > 0) break;
     }
     (void)delivered;
@@ -400,10 +385,6 @@ void PlaygroundRoom::settleBodies() {
             continue;
         }
         const bool still = length(body.velocity) < kRestSpeed && std::abs(body.spin) < kRestSpeed;
-        if (std::getenv("DBGW") && index == 0)
-            std::fprintf(stderr, "  settle cube |v| %.3e w %.3e still %d plane %d low %.3f high %.3f\n",
-                         length(body.velocity), body.spin, int(still), int(body.touchingPlane), body.supportLow,
-                         body.supportHigh);
         const bool carriedByPlane = body.touchingPlane && body.supportHigh > body.supportLow &&
                                     body.centre.x >= body.supportLow - 1e-6 &&
                                     body.centre.x <= body.supportHigh + 1e-6;
@@ -440,11 +421,6 @@ void PlaygroundRoom::tickBodies() {
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        if (std::getenv("DBG5")) {
-            const Body& b = bodies_[0];
-            std::fprintf(stderr, " walk stop %d step %.6f ang %+.5f w %+.4f y %.5f c0y %.5f c1y %.5f\n", stop, step,
-                         b.angle, b.spin, b.centre.y, b.position[0].y, b.position[1].y);
-        }
         if (step > 0.0) remaining -= advanceBodies(step);
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every contact the bodies are touching at -- that
