@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -39,6 +37,11 @@ constexpr double kOnSurface = 1e-6;
 // because the face is a hundredth of a millimetre up is a contact set that lets the
 // shape rock. This is the band in which two surfaces are touching.
 constexpr double kContactBand = 1e-4;
+// The width of the arithmetic: how far two numbers that should be equal can differ
+// after a few hundred multiplications at the scale of this room. It is not a
+// physical length and nothing in the simulation is decided by it; it is what the
+// walk's own bookkeeping allows when it asks whether a step went anywhere.
+constexpr double kArithmetic = 1e-9;
 // How many times one tick may stop for a contact. A body landing on the floor and
 // then tipping onto its other corner is two; a pair of shapes settling against
 // each other is a handful. This is a guard against a pathological arrangement
@@ -146,45 +149,41 @@ double PlaygroundRoom::advanceBodies(double seconds) {
         centres[index] = bodies_[index].centre;
         angles[index] = bodies_[index].angle;
     }
-    // How deep anything is inside anything else, at the configuration the bodies
-    // were just moved to. One number for the whole room: the floor under a corner,
-    // the ball's surface, and the other shapes' outlines.
-    const auto penetration = [&]() {
+    // How deep one body is inside anything else at the pose it is standing at: the
+    // floor under a corner, the ball's surface, another shape's outline. Measured per
+    // body, because one shape's arithmetic is not another shape's business -- a shape
+    // standing still leaves a corner a hundredth of a nanometre under the floor, and
+    // that must not cost a shape that is moving half of its step.
+    const auto depthOf = [&](std::size_t index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) return 0.0;
         double worst = 0.0;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-            for (std::size_t i = 0; i < body.count; ++i) worst = std::max(worst, -body.position[i].y);
-            Vec3 way{}, at{};
-            worst = std::max(worst, -bodyBallGap(index, way, at));
-            Vec3 towards{};
-            for (std::size_t other = index + 1; other < kBodyCount; ++other) {
-                if (bodies_[other].count == 0) continue;
-                double depth = 0.0;
-                if (bodiesIntoEachOther(index, other, towards, depth)) worst = std::max(worst, depth);
-            }
+        for (std::size_t i = 0; i < body.count; ++i) worst = std::max(worst, -body.position[i].y);
+        Vec3 way{}, at{};
+        worst = std::max(worst, -bodyBallGap(index, way, at));
+        Vec3 towards{};
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == index || bodies_[other].count == 0) continue;
+            double depth = 0.0;
+            if (bodiesIntoEachOther(index, other, towards, depth)) worst = std::max(worst, depth);
         }
         return worst;
     };
-    // The walk has put the bodies where the tick took them. This is the check that
-    // keeps that honest: a step that puts them deeper into something than they
-    // already were is not a step they may take, and it is shortened until it is not.
-    //
-    // It is measured against the depth they arrived with, not against zero, and that
-    // is the whole point of it. A corner a couple of microns inside a surface is not
-    // a state this room can leave by pushing it out -- nothing here is ever pushed
-    // out -- but it is still a corner that may slide *along* that surface, and only
-    // a step that drives it further in is refused. Judged against zero instead, such
-    // a corner refuses every step there is: the shape keeps its speed, never moves,
-    // and is stuck for ever. That was a shape standing still in the air with its
-    // velocity climbing.
-    const double before = penetration();
+    // ... and a step is refused when it puts a body deeper in than it was by more
+    // than the width of the arithmetic itself. That number is not a tolerance on the
+    // physics: it is five hundred thousand times smaller than the contact band, it
+    // exists because two positions either side of a surface are compared with a
+    // subtraction, and without it a shape standing still refuses every step the room
+    // takes.
+    std::array<double, kBodyCount> before{};
+    for (std::size_t index = 0; index < kBodyCount; ++index) before[index] = depthOf(index);
     move(seconds);
     double used = seconds;
     for (int guard = 0; guard < 40; ++guard) {
-        if (penetration() <= before + 1e-12) break;
-        if (std::getenv("DBG"))
-            std::fprintf(stderr, "    guard halve: before %.3e after %.3e (used %.6f)\n", before, penetration(), used);
+        bool deeper = false;
+        for (std::size_t index = 0; index < kBodyCount && !deeper; ++index)
+            if (depthOf(index) > before[index] + kArithmetic) deeper = true;
+        if (!deeper) break;
         used *= 0.5;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             bodies_[index].centre = centres[index];
@@ -544,10 +543,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
-        if (std::getenv("DBG") && patch.other < kBodyCount)
-            std::fprintf(stderr, "    pair b%zu o%zu e%zu n(%+.3f,%+.3f) p0(%.3f,%.3f) g%.7f u0 %.4f\n", patch.body,
-                         patch.other, count, patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y,
-                         patch.gap[0], away(patch.point[0], patch.normal));
         // What the ends were closing at before this answer, for the walk.
         for (std::size_t k = 0; k < count; ++k) {
             const double closing = away(patch.point[k], patch.normal);
@@ -786,21 +781,11 @@ void PlaygroundRoom::tickBodies() {
     // meeting instead of answering the same one again.
     ManifoldSet patches;
     gatherContacts(patches);
-    if (std::getenv("DBG"))
-        for (std::size_t m = 0; m < patches.count; ++m)
-            std::fprintf(stderr, "   patch b%zu o%zu ball%d e%zu p0(%.3f,%.3f) g%.6f n(%.2f,%.2f)\n", patches.items[m].body,
-                         patches.items[m].other, int(patches.items[m].ball), patches.items[m].ends, patches.items[m].point[0].x,
-                         patches.items[m].point[0].y, patches.items[m].gap[0], patches.items[m].normal.x,
-                         patches.items[m].normal.y);
     solveContacts(patches);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         const double used = step > 0.0 ? advanceBodies(step) : 0.0;
-        if (std::getenv("DBG"))
-            std::fprintf(stderr, "   walk stop%d step %.6f used %.6f rem %.6f fz0 %d rest %d v0(%.3f,%.3f)\n", stop, step,
-                         used, remaining - used, int(bodies_[0].frozen), bodies_[0].restTicks, bodies_[0].velocity.x,
-                         bodies_[0].velocity.y);
         remaining -= used;
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
@@ -813,26 +798,6 @@ void PlaygroundRoom::tickBodies() {
             remaining -= advanceBodies(remaining);
             break;
         }
-    }
-    if (std::getenv("DBG")) {
-        Vec3 way{};
-        double depth = 0.0;
-        const bool inside = bodiesIntoEachOther(0, 1, way, depth);
-        (void)inside;
-        Vec3 bway{}, at{};
-        const auto g = ball_shape::outlineGap;
-        (void)g;
-        double gap = 1e9;
-        for (std::size_t i = 0; i < bodies_[0].count; ++i) {
-            const auto res = ball_shape::outlineGap(bodies_[0].position[i], bodies_[1].position.data(),
-                                                    bodies_[1].position.data(), bodies_[1].count, 1.0);
-            gap = std::min(gap, res.gap);
-        }
-        std::fprintf(stderr, "  GAP nearest %.6f c0(%.3f,%.3f) c1(%.3f,%.3f) fz0 %d v(%.3f,%.3f)\n", gap,
-                     bodies_[0].centre.x, bodies_[0].centre.y, bodies_[1].centre.x, bodies_[1].centre.y,
-                     int(bodies_[0].frozen), bodies_[0].velocity.x, bodies_[0].velocity.y);
-        (void)bway;
-        (void)at;
     }
     settleBodies();
     writeImpulses();
