@@ -213,7 +213,7 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
     double safe = 0.0;
     double unsafe = 2.0;
     double fraction = 0.0;
-    for (int step = 0; step < 64; ++step) {
+    for (int step = 0; step < 200; ++step) {
         outlineAt(previous, current, count, fraction, corners);
         const Vec3 at = ballPosition + ballVelocity * (tick * fraction);
         const OutlineGap gap = outlineGap(at, corners, corners, count, 1.0);
@@ -235,10 +235,25 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
         fraction += needed / tick;
         if (fraction > 1.0) return false;
     }
-    // Not bracketed at all: every step was still clear when the search ran out of
-    // passes, so there is nothing to meet inside this tick. Reporting the last clear
-    // place as a meeting is how a shape gets stopped short of a ball it never reached.
-    if (!(unsafe <= 1.0)) return false;
+    // Out of passes with the gap still closing. The bound above is deliberately
+    // generous -- it is the fastest *any* part of the outline can move -- so the
+    // advance creeps when only a nearby face is really coming, and 64 passes is not
+    // always enough to bracket the meeting even when there certainly is one. Saying
+    // "no meeting" here is how a shape turning at six radians a second walked 72 mm
+    // into a ball the search had been asked to stop.
+    //
+    // So the bracket is closed the other way. `safe` is known clear and the end of
+    // the tick is looked at: if the shape is inside the ball there, the two met
+    // inside this tick, and the meeting lies in between. It is bisected for, which
+    // cannot miss a crossing that both ends bracket, and could only ever report one
+    // slightly late -- and late is a shape stopped closer to the ball than it need
+    // be, which is the harmless direction.
+    if (!(unsafe <= 1.0)) {
+        outlineAt(previous, current, count, 1.0, corners);
+        const Vec3 end = ballPosition + ballVelocity * tick;
+        if (!(outlineGap(end, corners, corners, count, 1.0).gap <= radius)) return false;
+        unsafe = 1.0;
+    }
     // Close the bracket in on the meeting. This is a time found by solving for the
     // distance, not by sampling for it, so where it lands does not depend on how
     // fast anything is going.
