@@ -136,10 +136,47 @@ void PlaygroundRoom::tickBall() {
     // The bodies this tick has already stopped at the ball. A body that has met the
     // ball has spent its step there: it is carried back to the instant of the
     // meeting -- the turn and the translation by the same fraction -- and what is
-    // left of the tick is the ball's alone. Prevention
-    // is the whole point: the shape stops at the ball instead of being kicked out
-    // of it afterwards.
+    // left of the tick is the ball's alone. Prevention is the whole point: the shape
+    // stops at the ball instead of being kicked out of it afterwards.
     std::array<bool, kBodyCount> bodyStopped{};
+    // Nothing is driven into the ball. A shape that was clear of it when the tick
+    // began, and whose own step would carry its outline inside it, is stopped at the
+    // instant the two touch -- the shape carried back to that instant, since the
+    // meeting is one moment and not two.
+    //
+    // It is asked of every shape once, before the ball's own walk begins, and not
+    // from inside the walk: the walk moves the ball and answers contacts as it meets
+    // them, so a shape re-measured halfway through it is being measured against a
+    // ball that is no longer where it was, and a step that is already partly spent.
+    // One question, one answer, at the one moment when both are still where the tick
+    // found them.
+    //
+    // What it prevents is the arrival, not the contact. A shape already against the
+    // ball is in contact, and contact is answered by the contact -- refusing its step
+    // every tick would hold it up for ever with the speed it arrived with, which is
+    // not a solve, it is a shape standing on nothing.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0) continue;
+        const double startGap =
+            ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
+        if (!(startGap > ball.radius + kTouch)) continue;
+        // It may come as near as the ball's surface and no nearer, and where that is
+        // is solved rather than sampled: the speed of the ball and the speed of the
+        // turn make no difference to where it lands.
+        OutlineHit stop;
+        if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
+                                    ball.velocity, ball.radius, kTick, stop))
+            continue;
+        if (!(stop.along < 1.0)) continue;
+        body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
+        body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
+        placeCorners(body);
+        bodyStopped[index] = true;
+        ++bodyStepClamped_;
+        if (getenv("GTC_TRACE"))
+            std::fprintf(stderr, "STOP body %zu at %.5f of its step (start gap %.6f)\n", index, stop.along, startGap);
+    }
     const auto anybodyMoving = [this]() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].frozen) continue;
@@ -176,51 +213,6 @@ void PlaygroundRoom::tickBall() {
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             Body& body = bodies_[index];
-            // Nothing is driven into the ball. A shape that was clear of it when the
-            // tick began, and whose own step would carry its outline inside it, is
-            // stopped at the instant the two touch -- both of them carried back to
-            // that instant, since the meeting is one moment and not two. That is
-            // prevention, and it is the whole reason the sweep below exists: what it
-            // stops is the shape that got there first, not the ball being thrown out
-            // of it afterwards.
-            //
-            // The distance it may not close past is the ball's radius, or where the
-            // shape already was if that is nearer -- a shape resting against a ball
-            // is not allowed a micrometre more than it has, which is what "touching"
-            // is here. Whether that is a hair's width or half a metre of step makes no
-            // difference to where it stops, because this is solved, not sampled.
-            if (!bodyStopped[index]) {
-                const double startGap =
-                    ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count,
-                                           1.0)
-                        .gap;
-                // Only an *arrival* is stopped here. A shape already against the ball
-                // is in contact, and contact is answered by the contact: refusing its
-                // step every tick would hold it up for ever with the speed it arrived
-                // with, which is not a solve, it is a shape standing on nothing.
-                if (startGap > ball.radius + kTouch) {
-                    // It may come as near as the ball's surface, or as near as it
-                    // already is if that is nearer: a shape already against the ball
-                    // has no allowance left. A step that would take it further in is
-                    // refused at the instant it starts to, which for a shape already
-                    // touching is the start of its step -- the turn and the travel are
-                    // given up and the contact answers the rest.
-                    const double limit = std::min(ball.radius, startGap);
-                    OutlineHit stop;
-                    if (sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
-                                               ball.velocity, limit, kTick * remaining, stop, false)) {
-                        const double when = (1.0 - remaining) + stop.along * remaining;
-                        body.centre = body.previousCentre + (body.centre - body.previousCentre) * when;
-                        body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;
-                        placeCorners(body);
-                        bodyStopped[index] = true;
-                        ++bodyStepClamped_;
-                        if (getenv("GTC_TRACE"))
-                            std::fprintf(stderr, "STOP body %zu at %.5f of its step (start gap %.6f)\n", index,
-                                         when, startGap);
-                    }
-                }
-            }
             // A body that is already stopped against the ball this tick is not
             // moving any more: its step was spent at the meeting (above). What is
             // left of the tick is swept against where it came to rest.
