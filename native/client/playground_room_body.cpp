@@ -881,11 +881,13 @@ void PlaygroundRoom::tickBodies() {
         energyBudget(k, p);
         return k + p;
     };
+    static int ticks_ = 0;
+    ++ticks_;
     const bool trace = std::getenv("DBGP") != nullptr;
     double phase = phaseEnergy();
     const auto mark = [&](const char* what) {
         const double now = phaseEnergy();
-        if (trace && now > phase + 1e-6) std::fprintf(stderr, "  tick gained %+.6f J at: %s\n", now - phase, what);
+        if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y);
         phase = now;
     };
     wakeUnsupportedBodies();
