@@ -127,7 +127,20 @@ void PlaygroundRoom::separateBodies() {
             Vec3 way{}, at{};
             const double gap = bodyBallGap(one, way, at);
             if (gap < 0.0) {
-                const bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
+                bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
+                // A ball that is against the floor cannot be given ground, for the same
+                // reason nothing else in this room can be below it: the move would put
+                // it through the floor, and the floor's answer would put it straight
+                // back where it was -- which is a pair that never separates at all. So
+                // the floor takes the ball and the whole of the move. This is the one
+                // case where a shape can be inside a ball for more than a tick: a cube
+                // landing on a ball that the floor is already holding, both of them
+                // falling at nearly the same speed, so that the tick's own contact saw
+                // nothing closing.
+                if (ballMoves) {
+                    const Vec3 wanted = ball_.position - way * (-gap) * 0.5;
+                    if (wanted.y < ball_.radius - kSkin) ballMoves = false;
+                }
                 const double mine = 1.0 / body.mass;
                 const double theirs = ballMoves ? 1.0 / ball_.mass : 0.0;
                 const double share = mine / (mine + theirs);
