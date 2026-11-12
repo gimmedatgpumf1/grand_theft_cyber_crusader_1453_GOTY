@@ -48,7 +48,7 @@ constexpr int kMaxWalkStops = 8;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-constexpr int kSolvePasses = 16;
+constexpr int kSolvePasses = 32;
 constexpr double kSolveTolerance = 1e-12;  // m/s
 }  // namespace
 
