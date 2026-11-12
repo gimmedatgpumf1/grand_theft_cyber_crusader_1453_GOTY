@@ -772,8 +772,18 @@ void PlaygroundRoom::tickBodies() {
             const Body& b = bodies_[1];
             double sum = 0.0;
             for (std::size_t i = 0; i < b.appliedCount; ++i) sum += b.applied[i].impulse.y / kTick;
-            std::fprintf(stderr, "  T%d tri applied %zu sumFy %+.4f v(%.8f,%.8f) w %.8f\n", n, b.appliedCount, sum,
-                         b.velocity.x, b.velocity.y, b.spin);
+            double grav = 0.0, drag = 0.0;
+            for (std::size_t i = 0; i < forces_.size(); ++i) {
+                (void)i;
+            }
+            for (std::size_t i = 0; i < forceCount_; ++i) {
+                const ForceSample& f = forces_[i];
+                if (f.at.x > 0.5) continue;
+                if (f.kind == ForceKind::Gravity) grav += f.force.y;
+                if (f.kind == ForceKind::Drag) drag += f.force.y;
+            }
+            std::fprintf(stderr, "  T%d tri applied %zu sumFy %+.4f ledgerGrav %+.4f drag %+.4f v(%.8f,%.8f)\n", n,
+                         b.appliedCount, sum, grav, drag, b.velocity.x, b.velocity.y);
         }
     }
     settleBodies();
