@@ -109,6 +109,36 @@ void PlaygroundRoom::separateBodies() {
             body.centre.y += deepest;
             placeCorners(body);
         }
+        // The ball. It is a shape in this room like any other -- a circle of one
+        // radius with a mass of its own -- and a body whose outline is through it is
+        // inside it exactly as it would be inside another shape, and is answered the
+        // same way: moved out along the way it is least inside, by the depth it is
+        // inside, and the pair share the move by inverse mass. A body asleep, and a
+        // ball asleep or in the mouse's hand, take none of it, because neither of
+        // them is the one that moved into anything.
+        //
+        // This is the last of the ball's answers, not the first: a meeting on the way
+        // *in* is stopped by the ball's sweep, which is a contact and a speed. What is
+        // left here is the state the sweep cannot leave -- a shape that arrived in the
+        // same tick the ball was stopped by the floor, and is now a couple of
+        // centimetres through it -- and it is answered by place alone, with nothing
+        // added to anyone's speed.
+        {
+            Vec3 way{}, at{};
+            const double gap = bodyBallGap(one, way, at);
+            if (gap < 0.0) {
+                const bool ballMoves = !ball_.frozen && dragTarget_ != DragTarget::Ball;
+                const double mine = 1.0 / body.mass;
+                const double theirs = ballMoves ? 1.0 / ball_.mass : 0.0;
+                const double share = mine / (mine + theirs);
+                // `way` runs out of the ball and into the body, so the body leaves
+                // along it and the ball leaves against it.
+                const Vec3 move = way * (-gap) * share;
+                body.centre = body.centre + move;
+                placeCorners(body);
+                if (ballMoves) ball_.position = ball_.position - way * (-gap) * (1.0 - share);
+            }
+        }
         // Another shape.
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
