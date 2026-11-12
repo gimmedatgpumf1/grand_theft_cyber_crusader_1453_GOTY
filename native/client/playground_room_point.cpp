@@ -122,17 +122,56 @@ void PlaygroundRoom::separatePoint() {
         const ball_shape::OutlineGap gap = ball_shape::outlineGap(
             point_, body.position.data(), body.position.data(), body.count, 1.0);
         if (!(gap.gap < kPointRadius)) continue;
-        // Out of the shape, along the way that is nearest, and never through the
-        // floor. The floor is a plane and the dot is a ball: its middle can never be
-        // lower than its own radius above it. A ball squeezed between a shape and
-        // the floor is caught; the floor is not negotiable, so what is left of the
-        // push is sideways along the floor.
+        // Out of the shape, along the way that is nearest -- and never through the
+        // floor, and never upwards.
+        //
+        // The floor is a plane and the dot is a ball: its middle can never be lower
+        // than its own radius above it, so a push that would take it under the floor
+        // is no push at all.
+        //
+        // And nothing is lifted. This is a repair, not a force: it is here for the
+        // one thing the dot cannot answer for itself, which is a shape that has
+        // moved onto it rather than the other way round. Repairing an overlap by
+        // raising the dot in a gravity field does work that nothing did -- it is
+        // energy out of nowhere, which is the one thing this room may never do. A
+        // ball caught under a shape does not rise into the air: it is squeezed out
+        // the side, at the height it was caught at, and that is the repair.
         Vec3 normalUsed = gap.normal;
-        point_ = point_ + normalUsed * (kPointRadius - gap.gap);
-        if (point_.y < kSurfaceY + kPointRadius) {
-            point_.y = kSurfaceY + kPointRadius;
-            normalUsed = Vec3{0, 1, 0};
+        Vec3 target = point_ + normalUsed * (kPointRadius - gap.gap);
+        if (!(target.y >= kSurfaceY + kPointRadius) || target.y > point_.y + 1e-12) {
+            double best = 1e30;
+            bool found = false;
+            for (std::size_t edge = 0; edge < body.count; ++edge) {
+                const Vec3 a = body.position[edge];
+                const Vec3 b = body.position[(edge + 1) % body.count];
+                const Vec3 side = b - a;
+                const double length2 = dot(side, side);
+                if (!(length2 > 1e-18)) continue;
+                const double sideLength = std::sqrt(length2);
+                Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+                // Out of the shape, not into it: the shape's own middle is inside.
+                if (dot(body.centre - a, outward) > 0.0) outward = outward * -1.0;
+                const double along = std::clamp(dot(point_ - a, side) / length2, 0.0, 1.0);
+                const Vec3 candidate = a + side * along + outward * kPointRadius;
+                if (!(candidate.y >= kSurfaceY + kPointRadius)) continue;
+                if (candidate.y > point_.y + 1e-12) continue;
+                const double move = length(candidate - point_);
+                if (move < best) {
+                    best = move;
+                    target = candidate;
+                    normalUsed = outward;
+                    found = true;
+                }
+            }
+            if (!found) {
+                target = point_ + gap.normal * (kPointRadius - gap.gap);
+                if (target.y < kSurfaceY + kPointRadius) {
+                    target.y = kSurfaceY + kPointRadius;
+                    normalUsed = Vec3{0, 1, 0};
+                }
+            }
         }
+        point_ = target;
         if (dot(velocity_, normalUsed) < 0.0) velocity_ = velocity_ - normalUsed * dot(velocity_, normalUsed);
         // Being beside a shape is not standing on it: only a face with an upward
         // part is something the dot's weight can rest on.
