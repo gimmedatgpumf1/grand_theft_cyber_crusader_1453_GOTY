@@ -433,41 +433,36 @@ void PlaygroundRoom::settleBodies() {
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     applyBodyForces();
-    // The contacts that are there when the tick starts are answered first, and
-    // they are answered for the whole tick: the weight of a shape standing on the
-    // floor arrives as one tick's worth of impulse, and a contact that answers none
-    // of it leaves the shape moving for a tick it should be standing still through.
-    // This is the same solve as an arrival's; what makes it different is only that
-    // nothing has moved.
-    ContactSet touching;
-    gatherContacts(touching);
-    if (touching.count > 0) solveContacts(touching);
-    // And then the walk: every arrival, answered where it happens, with what is
-    // left of the tick carried on from there.
+    // One set of contacts for the whole tick, carried through the walk. The
+    // contacts that are there when the tick starts are answered first -- the weight
+    // of a shape standing on the floor arrives as one tick's worth of impulse, and a
+    // contact that answers none of it leaves the shape moving through a tick it
+    // should be standing still through. An arrival later in the tick joins the same
+    // set, keeping what the contacts it shares already carry, so the tick converges
+    // on one answer for each meeting instead of answering the same one again.
+    ContactSet contacts;
+    gatherContacts(contacts);
+    solveContacts(contacts);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         if (step > 0.0) remaining -= advanceBodies(step);
-        // A meeting at the very last instant of the tick is not answered here: the
-        // next tick starts by answering every contact the bodies are touching at,
-        // and that is the same meeting seen with a whole tick to spend on it. An
-        // impulse handed out here would be a whole tick's worth for no time at all.
+        // A meeting at the very last instant of the tick is left to the next tick,
+        // which begins by answering every contact the bodies are touching at -- that
+        // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
-        ContactSet contacts;
+        const std::size_t before = contacts.count;
         gatherContacts(contacts);
-        if (contacts.count == 0 || !solveContacts(contacts)) {
-            // Nothing is touching, or nothing that is touching is closing: what is
-            // left of the tick is travel along the way the bodies are going.
+        if (contacts.count == before && !solveContacts(contacts)) {
+            // Nothing new is touching and nothing already touching is closing: what
+            // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
             break;
         }
-    }
-    if (std::getenv("DBG4")) {
-        const Body& b = bodies_[0];
-        std::printf("  cube v(%.5f,%.5f) w %+.5f ang %.6f c(%.4f,%.4f) corners", b.velocity.x, b.velocity.y, b.spin,
-                    b.angle, b.centre.x, b.centre.y);
-        for (std::size_t i = 0; i < b.count; ++i) std::printf(" (%.4f,%.4f)", b.position[i].x, b.position[i].y);
-        std::printf("\n");
+        if (!solveContacts(contacts)) {
+            remaining -= advanceBodies(remaining);
+            break;
+        }
     }
     settleBodies();
     writeImpulses();

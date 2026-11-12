@@ -244,7 +244,22 @@ private:
     struct ContactSet {
         std::array<Contact, kMaxTickContacts> items{};
         std::size_t count = 0;
-        void add(const Contact& contact) { if (count < items.size()) items[count++] = contact; }
+        // A contact that is found again is the same contact: it keeps what it has
+        // already carried, so a solve that runs more than once over one tick
+        // converges instead of answering the same meeting twice. That is what makes
+        // a shape resting on the floor stand still rather than rock.
+        void add(const Contact& contact) {
+            for (std::size_t i = 0; i < count; ++i) {
+                Contact& known = items[i];
+                if (known.body != contact.body || known.other != contact.other || known.ball != contact.ball)
+                    continue;
+                if (!contact.ball && known.corner != contact.corner) continue;
+                known.point = contact.point;
+                known.normal = contact.normal;
+                return;
+            }
+            if (count < items.size()) items[count++] = contact;
+        }
         void clear() { count = 0; }
     };
     // Every contact at the configuration the walk has stopped at, and the answer
