@@ -33,6 +33,12 @@ namespace {
 // the touching instant to an arithmetic fraction of a step, and this is the width
 // of the band in which the two are the same place.
 constexpr double kOnSurface = 1e-6;
+// How near a surface counts as resting on it. A shape lying flat on the floor and
+// a shape balanced on one corner of it differ by the floor's own flatness -- at the
+// scale of this room, a few microns -- and a contact set that sees only the corner
+// because the face is a hundredth of a millimetre up is a contact set that lets the
+// shape rock. This is the band in which two surfaces are touching.
+constexpr double kContactBand = 1e-4;
 // How many times one tick may stop for a contact. A body landing on the floor and
 // then tipping onto its other corner is two; a pair of shapes settling against
 // each other is a handful. This is a guard against a pathological arrangement
@@ -206,7 +212,7 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         for (std::size_t i = 0; i < body.count; ++i) {
-            if (body.position[i].y > kOnSurface) continue;
+            if (body.position[i].y > kContactBand) continue;
             Contact contact;
             contact.body = index;
             contact.other = kBodyCount;
@@ -220,7 +226,7 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
-        if (bodyBallGap(index, way, at) <= kOnSurface) {
+        if (bodyBallGap(index, way, at) <= kContactBand) {
             Contact contact;
             contact.body = index;
             contact.ball = true;
@@ -239,7 +245,7 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
             for (std::size_t i = 0; i < body.count; ++i) {
                 const ball_shape::OutlineGap gap = ball_shape::outlineGap(body.position[i], solid.position.data(),
                                                   solid.position.data(), solid.count, 1.0);
-                if (gap.gap > kOnSurface) continue;
+                if (gap.gap > kContactBand) continue;
                 Contact contact;
                 contact.body = one;
                 contact.other = two;
