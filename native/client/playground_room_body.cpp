@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -571,6 +573,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushEnd(k, tangent * delta);
             patch.tangentImpulse[k] = grip;
         }
+        if (std::getenv("WOB"))
+            std::fprintf(stderr, " P b%zu o%zu ball%d n(%+.2f,%+.2f) e%zu [p0 %+.4f,%+.4f g%.2e J%.4f T%.4f] [p1 %+.4f,%+.4f g%.2e J%.4f T%.4f]\n",
+                         patch.body, patch.other, int(patch.ball), patch.normal.x, patch.normal.y, patch.ends,
+                         patch.point[0].x, patch.point[0].y, patch.gap[0], patch.normalImpulse[0], patch.tangentImpulse[0],
+                         count > 1 ? patch.point[1].x : 0.0, count > 1 ? patch.point[1].y : 0.0,
+                         count > 1 ? patch.gap[1] : 0.0, count > 1 ? patch.normalImpulse[1] : 0.0,
+                         count > 1 ? patch.tangentImpulse[1] : 0.0);
         // What is under each end decides what the body is standing on.
         for (std::size_t k = 0; k < count; ++k) {
             if (!(patch.normalImpulse[k] > 0.0) || !(patch.normal.y > 0.5)) continue;
