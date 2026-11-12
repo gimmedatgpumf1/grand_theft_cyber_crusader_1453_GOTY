@@ -41,6 +41,11 @@ void PlaygroundRoom::settleBallFriction() {
     Ball& ball = ball_;
     const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
     std::array<Vec3, kMaxBallTouches> tangents{}, arms{};
+    // What each face's grip actually gave the ball this tick, in N.s. The passes
+    // below are one solve and the totals are what the ball felt, so this is what
+    // the ledger gets -- the same rule as every other contact in the room: the
+    // arrows are the impulses that were applied, and nothing else.
+    std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
         arms[i] = ballTouches_[i].normal * -ball.radius;
@@ -117,6 +122,7 @@ void PlaygroundRoom::settleBallFriction() {
             const double impulse = holds ? wanted : (wanted > 0.0 ? limit : -limit);
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
             ball.spin += lever * impulse / inertia;
+            taken[i] += impulse;
         }
         if (!clashing) break;
     }
@@ -130,6 +136,16 @@ void PlaygroundRoom::settleBallFriction() {
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;
+        taken.fill(0.0);
+    }
+    // Grip, written down: a force along the face at the place the ball meets it.
+    // Without this a ball rolling along the floor was drawn with a normal and
+    // nothing else, and the thing that was actually slowing it down -- the friction
+    // holding the bottom of it still against the ground -- was nowhere on screen.
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        if (taken[i] == 0.0) continue;
+        addForce(ball.position + arms[i], tangents[i] * (taken[i] / ball_shape::kTick), ForceKind::Friction,
+                 nullptr, kBallOwner);
     }
     ballTouchCount_ = 0;
 }

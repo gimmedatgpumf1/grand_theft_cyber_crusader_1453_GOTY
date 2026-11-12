@@ -883,9 +883,18 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // point is the true total, not an approximation of it.
     if (ball_.frozen && !ballStepped) {
         const Vec3 weight{0.0, -ball_.mass * kGravity, 0.0};
+        const Vec3 at = ball_.position + ball_.supportNormal * (-ball_.radius);
         addForce(ball_.position, weight, ForceKind::Gravity, nullptr, kBallOwner);
-        addForce(ball_.position + ball_.supportNormal * (-ball_.radius), weight * -1.0, ForceKind::Contact,
-                 nullptr, kBallOwner);
+        // Split the way the dot's is, and for the same reason: what the ground
+        // answers is a normal and a friction, and replaying the weight as one arrow
+        // squeezed the friction out of sight. A ball held still on anything that is
+        // not level is held by both, and both are drawn.
+        const Vec3 normal = ball_.supportNormal;
+        const double into = dot(weight, normal);
+        const double carried = std::max(0.0, -into);
+        addForce(at, normal * carried, ForceKind::Contact, nullptr, kBallOwner);
+        const Vec3 along = weight - normal * into;
+        if (length(along) > 0.0) addForce(at, along * -1.0, ForceKind::Friction, nullptr, kBallOwner);
     }
     // The dot, asleep on something, is the same pair of forces at one point -- and
     // the point it is pressed at is the one its own support says.
