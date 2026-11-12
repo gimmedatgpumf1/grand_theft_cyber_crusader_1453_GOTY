@@ -131,19 +131,27 @@ double PlaygroundRoom::advanceBodies(double seconds) {
     return used;
 }
 
-// The first fraction of `remaining` at which anything would touch anything.
+// The first fraction of `remaining` at which anything would *arrive* at anything.
+//
+// Arriving is the whole of it: a corner already lying on the floor is not on its
+// way to the floor, and stopping the walk at it every tick would eat the tick
+// before it ever got spent. What counts is closing -- being driven into a surface
+// it is already touching -- or reaching one it is clear of. That distinction is
+// the difference between a walk and a stutter.
 double PlaygroundRoom::timeToContact(double remaining) const {
     double first = remaining;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        // The floor. A corner already on it is not on its way to it: it is there,
-        // and if it is being driven down the contact is now.
+        // The floor.
         for (std::size_t i = 0; i < body.count; ++i) {
             const double height = body.position[i].y;
             const double falling = pointSpeed(body, body.position[i]).y;
             if (!(falling < 0.0)) continue;
-            if (height <= kOnSurface) return 0.0;
+            if (height <= kOnSurface) {
+                first = 0.0;
+                continue;
+            }
             first = std::min(first, height / -falling);
         }
         // The ball. The ball is stepped after the bodies, so for the length of this
@@ -153,7 +161,12 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             Vec3 way{0, 1, 0}, at{};
             const double gap = bodyBallGap(index, way, at);
             const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
-            if (closing > 1e-12) first = std::min(first, std::max(0.0, gap) / closing);
+            if (!(closing > 1e-12)) continue;
+            if (gap <= kOnSurface) {
+                first = 0.0;
+                continue;
+            }
+            first = std::min(first, gap / closing);
         }
         // Another body, seen from the place they are closest.
         for (std::size_t other = 0; other < kBodyCount; ++other) {
@@ -161,11 +174,14 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const Body& solid = bodies_[other];
             const playground_detail::OutlinePairGap gap =
                 pairGap(body.position.data(), body.count, solid.position.data(), solid.count);
-            // The relative speed of the two pieces that are closest: both bodies
-            // are carried through this walk, so both of them count.
             const Vec3 closingSpeed = pointSpeed(body, gap.one) - pointSpeed(solid, gap.two);
             const double closing = -dot(closingSpeed, gap.normal);
-            if (closing > 1e-12) first = std::min(first, std::max(0.0, gap.gap) / closing);
+            if (!(closing > 1e-12)) continue;
+            if (gap.gap <= kOnSurface) {
+                first = 0.0;
+                continue;
+            }
+            first = std::min(first, gap.gap / closing);
         }
     }
     return std::clamp(first, 0.0, remaining);
