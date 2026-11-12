@@ -958,6 +958,7 @@ void PlaygroundRoom::tickBodies() {
     // exact path from its arrival speed would have put it. See the note above.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
+        if (trace) std::fprintf(stderr, "    body %zu skip? count %zu frozen %d held %d contacts %d/%d\n", index, body.count, int(body.frozen), int(bodyHeld(index)), body.contacts, touchedBefore[index]);
         if (body.count == 0 || body.frozen || bodyHeld(index) || body.contacts != touchedBefore[index]) continue;
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
