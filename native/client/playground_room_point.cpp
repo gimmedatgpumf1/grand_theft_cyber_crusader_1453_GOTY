@@ -113,13 +113,53 @@ void PlaygroundRoom::freezeCheck() {
 // moving and never going anywhere. A surface a dot is pressed against holds it,
 // and holding it means this: the part of the speed driving into the face is gone.
 void PlaygroundRoom::separatePoint() {
+    // The floor is a plane and the dot is a ball: its middle can never be lower
+    // than its own radius above it. That is not a correction, it is where the
+    // floor is -- but it is worth saying, because a ball squeezed between a shape
+    // and the floor has one honest way out and it is sideways.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         const ball_shape::OutlineGap gap = ball_shape::outlineGap(
             point_, body.position.data(), body.position.data(), body.count, 1.0);
         if (!(gap.gap < kPointRadius)) continue;
-        point_ = point_ + gap.normal * (kPointRadius - gap.gap);
-        if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
+        // Where the dot has to be to be clear of this shape: the nearest face it
+        // can actually stand tangent to. The nearest of all is the obvious one --
+        // until that face is the one lying on the floor, where being clear of the
+        // shape means being under the floor. A ball caught between a shape and the
+        // floor is squeezed out of the side, so the faces that would put its middle
+        // below the floor are not answers at all.
+        Vec3 target = point_ + gap.normal * (kPointRadius - gap.gap);
+        Vec3 way = gap.normal;
+        if (!(target.y >= kSurfaceY + kPointRadius - 1e-12)) {
+            double best = 1e30;
+            bool found = false;
+            Vec3 inward = body.centre;
+            for (std::size_t edge = 0; edge < body.count; ++edge) {
+                const Vec3 a = body.position[edge];
+                const Vec3 b = body.position[(edge + 1) % body.count];
+                const Vec3 side = b - a;
+                const double length2 = dot(side, side);
+                if (!(length2 > 1e-18)) continue;
+                const double sideLength = std::sqrt(length2);
+                Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
+                // Out of the shape, not into it: the shape's own middle is inside.
+                if (dot(inward - a, outward) > 0.0) outward = outward * -1.0;
+                const double along = std::clamp(dot(point_ - a, side) / length2, 0.0, 1.0);
+                const Vec3 candidate = a + side * along + outward * kPointRadius;
+                if (!(candidate.y >= kSurfaceY + kPointRadius - 1e-12)) continue;
+                const double move = length(candidate - point_);
+                if (move < best) {
+                    best = move;
+                    target = candidate;
+                    way = outward;
+                    found = true;
+                }
+            }
+            if (!found) continue;
+        }
+        point_ = target;
+        const Vec3 normalUsed = way;
+        if (dot(velocity_, normalUsed) < 0.0) velocity_ = velocity_ - normalUsed * dot(velocity_, normalUsed);
         // A sleeping dot is not woken here. What wakes it is a shape arriving at
         // it, which is asked and answered in the room's own tick; waking it for
         // every hair of separation would be waking it every tick it lies in
