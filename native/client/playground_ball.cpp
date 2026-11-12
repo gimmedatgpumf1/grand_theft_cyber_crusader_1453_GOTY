@@ -254,12 +254,17 @@ void PlaygroundRoom::tickBall() {
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
                 if (getenv("GTC_TRACE")) std::fprintf(stderr, "REST body %zu inside by %.6f m (depth %.6f) at (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, hit.depth, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
-                if (on.gap < ball.radius) {
+                // A micrometre in is touching. Only a depth the room's own resolution
+                // can tell from touching is one to put back, and only then is it a
+                // miss worth counting: a shape stopped at the ball by the sweep above
+                // sits exactly one micrometre in by construction, every tick, and that
+                // is the rule doing its job, not the room failing at it.
+                if (ball.radius - on.gap > playground_tick::kQuantum) {
                     // Counted only when it is a real miss and not the last bit of a
                     // double: a ball resting on a surface is one radius from it to
                     // within rounding, every tick, and that is not the room failing
                     // to prevent anything.
-                    if (ball.radius - on.gap > playground_tick::kQuantum) ++ballFoundThrough_;
+                    ++ballFoundThrough_;
                     ball.position = ball.position + on.normal * (ball.radius - on.gap);
                 }
                 ball.touching = true;

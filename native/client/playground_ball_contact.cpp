@@ -3,6 +3,7 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
+#include "client/playground_room_tick.h"
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -93,7 +94,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                           body ? body->position.data() : nullptr, body ? body->count : 0, 1.0);
         normal = now.normal;
         const double through = ball.radius - now.gap;
-        if (through > 0.0) {
+        // A ball a micrometre in is touching, not inside: the room's resolution is a
+        // micrometre in a tick, so moving it back by less than one is moving it by
+        // nothing, and only a depth the simulation can tell from touching is a depth
+        // to be put right.
+        if (through > playground_tick::kQuantum) {
             // The floor is under the ball, so a way out that goes downwards is no
             // way out: what is left over is the ball rolling along the floor, out
             // from under whatever is on it, rather than being left with a shape cut
