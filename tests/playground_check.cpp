@@ -237,6 +237,65 @@ void restingStatics() {
     check(std::abs(weight - support) < 1e-9 && std::abs(weight - 4.0 * 9.8) < 1e-9, "the cube's weight", detail);
 }
 
+// ---- a load resting on a body is carried by that body, awake or asleep
+void aLoadIsCarried() {
+    say("\na load is carried by what it rests on\n");
+    {
+        // The triangle set down on the cube's top face: sixty eight point six newtons
+        // of weight arrive at the floor through the cube, so the floor's two arrows on
+        // the cube must add up to that -- not to the cube's own weight, and not to
+        // twice anything. That single number is the whole test: it is only right if the
+        // triangle's weight was really passed down through the pair, if the pair was
+        // solved with both sides, and if no force was written into the ledger twice.
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        const Vec3 cube = room.bodyMiddle(0);
+        carryTo(room, 1, cube.x, cube.y + 0.90);
+        settle(room, 400);
+        double floorCarry = 0.0, netY = 0.0, netX = 0.0;
+        for (std::size_t i = 0; i < room.forceCount(); ++i) {
+            const auto& sample = room.forces_[i];
+            if (sample.owner != 0) continue;
+            netX += sample.force.x;
+            netY += sample.force.y;
+            if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
+        }
+        char detail[220];
+        std::snprintf(detail, sizeof detail, "cube on the floor, triangle on the cube: floor carries %.3f N (39.2 + 29.4 = 68.6), net F (%.3f, %.3f) N",
+                      floorCarry, netX, netY);
+        // A fifth of a newton on a load of nearly seventy: the solver's tolerance, not a
+        // force anyone could see.
+        check(std::abs(floorCarry - 68.6) < 0.2 && std::abs(netX) < 0.2 && std::abs(netY) < 0.2,
+              "the whole stack comes down through it", detail);
+    }
+    {
+        // And while a cube leans on the triangle's slope, the triangle's floor arrows
+        // must carry the triangle *and* the cube -- the cube's weight does not vanish
+        // because it is at an angle. The load the cube presses with is what the pair and
+        // the pair's friction put on the triangle; the floor has to answer exactly that
+        // on top of the triangle's own weight.
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        carryTo(room, 0, room.bodyMiddle(1).x - 0.4, 1.6);
+        room.advance(1.0 / 20.0);
+        double floorCarry = 0.0, pressed = 0.0;
+        for (std::size_t i = 0; i < room.forceCount(); ++i) {
+            const auto& sample = room.forces_[i];
+            if (sample.owner != 1) continue;
+            const bool pair = sample.kind == PlaygroundRoom::ForceKind::Pair || sample.kind == PlaygroundRoom::ForceKind::Friction;
+            if (pair && sample.at.y > 0.5) pressed -= sample.force.y;
+            if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
+        }
+        char detail[220];
+        std::snprintf(detail, sizeof detail, "cube leaning on the slope: triangle floor carries %.3f N, own weight 29.400, cube presses %.3f N",
+                      floorCarry, pressed);
+        check(pressed > 5.0 && std::abs(floorCarry - 29.4 - pressed) < 0.05,
+              "and a leaning load gets carried too", detail);
+    }
+}
+
 void frictionIsAForce() {
     say("\nfriction is a force of its own, against the sliding\n");
     PlaygroundRoom room;
@@ -602,6 +661,7 @@ int main() {
     resetIsAReset();
     energyNeverRises();
     restingStatics();
+    aLoadIsCarried();
     frictionIsAForce();
     airDependsOnSpeed();
     bounceIsTheSameEveryWay();
