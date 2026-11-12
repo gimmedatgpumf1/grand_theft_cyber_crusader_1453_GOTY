@@ -131,7 +131,7 @@ void PlaygroundRoom::updateDrag() {
         // from the two, as they always do.
         Body& body = bodies_[dragBody_ < kBodyCount ? dragBody_ : 0];
         const Vec3 centre{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
-                          std::max(kSurfaceY, hit.y + grabOffset_.y), 0};
+                          std::max(kSurfaceY + kPointRadius, hit.y + grabOffset_.y), 0};
         // A body, like the ball, cannot be put down inside a solid: a shape let go
         // of inside another one is the one state the simulation has no honest answer
         // to, because nothing in this room is ever driven out of anything.
@@ -148,12 +148,12 @@ void PlaygroundRoom::updateDrag() {
         body.spin = 0.0;
         return;
     }
-    point_ = {std::clamp(hit.x, -5.0, 5.0), std::max(kSurfaceY, hit.y), 0};
+    point_ = {std::clamp(hit.x, -5.0, 5.0), std::max(kSurfaceY + kPointRadius, hit.y), 0};
     // A dragged point is not a simulated one: it belongs to the mouse and has
     // no previous tick to glide away from.
     previous_ = point_;
     velocity_ = {};
-    resting_ = point_.y <= kSurfaceY;
+    resting_ = point_.y <= kSurfaceY + kPointRadius;
     restingBody_ = -1;
     haveTrace_ = false;
 }

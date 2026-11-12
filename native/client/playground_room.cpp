@@ -300,7 +300,9 @@ bool PlaygroundRoom::supportedBy(std::size_t index) const {
     if (!onGround) return false;
     double height = 0.0;
     if (!bodyTopAt(index, point_.x, height)) return false;
-    return std::abs(point_.y - height) < 1e-4;
+    // The dot is a ball: its middle stands its own radius clear of the face it is
+    // lying on, and it is still lying on it when it is exactly that far above.
+    return std::abs(point_.y - (height + kPointRadius)) < 1e-4;
 }
 
 void PlaygroundRoom::tick() {
