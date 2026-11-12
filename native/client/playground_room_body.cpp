@@ -623,6 +623,9 @@ void PlaygroundRoom::tickBodies() {
             std::fprintf(stderr, "  stop %d step %.10f used %.10f rem %.10f v(%.6f,%.6f) w %.6f y %.9f %.9f\n",
                          stop, step, used, remaining, bodies_[0].velocity.x, bodies_[0].velocity.y,
                          bodies_[0].spin, bodies_[0].position[0].y, bodies_[0].position[1].y);
+        if (std::getenv("WOB"))
+            std::fprintf(stderr, "        tri y %.9f %.9f %.9f inside?\n", bodies_[1].position[0].y,
+                         bodies_[1].position[1].y, bodies_[1].position[2].y);
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
