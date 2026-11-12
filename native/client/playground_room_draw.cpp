@@ -59,6 +59,9 @@ const char* kindColour(std::size_t kind) {
     switch (PlaygroundRoom::ForceKind(kind)) {
         case PlaygroundRoom::ForceKind::Gravity: return "#5aa9ff";
         case PlaygroundRoom::ForceKind::Contact: return "#7ce38b";
+        // Friction, in its own colour: the force along the surface, so a shape being
+        // held on a slope and a shape sliding down one both show what is doing it.
+        case PlaygroundRoom::ForceKind::Friction: return "#ffe066";
         case PlaygroundRoom::ForceKind::Pair: return "#ffb454";
         case PlaygroundRoom::ForceKind::Ball: return "#e07bd8";
         case PlaygroundRoom::ForceKind::Drag: return "#b9ccc4";

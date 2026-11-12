@@ -76,7 +76,11 @@ public:
     // it is doing -- not a separate diagnostic that could drift from the physics.
     // The arrows drawn on F are these numbers, and the figures on N are the same
     // numbers again, so what is on screen cannot disagree with what was solved.
-    enum class ForceKind { Gravity = 0, Contact = 1, Pair = 2, Ball = 3, Drag = 4, KindCount = 5 };
+    // Friction is its own line in the ledger and not part of the contact's. It is a
+    // different force -- one along the surface, holding or sliding -- so it gets its
+    // own arrow, with its own length and its own account, and the two can be read
+    // apart: the normal is what presses, the friction is what holds.
+    enum class ForceKind { Gravity = 0, Contact = 1, Friction = 2, Pair = 3, Ball = 4, Drag = 5, KindCount = 6 };
     // Room for a whole tick's worth of every kind at once: two bodies of four
     // corners, the dot, the ball, and the contacts and pairs between them. The
     // number is a bound on the array, not a cut: nothing is ever dropped quietly,
@@ -191,6 +195,20 @@ private:
         Vec3 restLow{1e30, 1e30, 0}, restHigh{-1e30, -1e30, 0};
         double restAngleLow = 1e30, restAngleHigh = -1e30;
         int restTicks = 0;
+        // The contact forces this body was actually given in its last simulated
+        // tick, as impulses, one per place they acted. A body that falls asleep has
+        // no tick to be solved in, and a shape at rest is still standing on
+        // something -- so what it is standing on is replayed exactly as it was last
+        // solved, not invented afterwards. This is what the arrows show while a body
+        // sleeps, and it is why a body on a slope shows its friction and a body on
+        // the level floor shows none.
+        static constexpr std::size_t kMaxRestForces = 12;
+        struct Applied {
+            Vec3 at{}, impulse{};
+            ForceKind kind = ForceKind::Contact;
+        };
+        std::array<Applied, kMaxRestForces> applied{};
+        std::size_t appliedCount = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
     };
@@ -300,12 +318,14 @@ private:
     // the patches are swept until they agree with each other.
     void gatherContacts(ManifoldSet& patches) const;
     bool solveContacts(ManifoldSet& patches);
-    // What each corner standing on a surface carries, for a body that is at rest.
-    static void staticLoads(const double* along, std::size_t count, double centre,
-                            double (&share)[kMaxCorners]);
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
+    // Whether the surface a sleeping body is lying on is still there. A body that
+    // was put to rest by a floor, a shape or the ball, and that is touching nothing
+    // at all, is a body that has nothing holding it up any more -- and it wakes to
+    // fall, because that is what it is doing.
+    void wakeUnsupportedBodies();
     // One impulse, given to one body at one place. The ledger is written here too:
     // this is the only door into a body's motion, so what is on screen cannot
     // disagree with what was solved.
@@ -376,6 +396,8 @@ private:
     // through it. This is the hitscan that wakes it: the step every body took this
     // tick, swept against the dot's own radius.
     bool pointReachedByBodies() const;
+    // Whether the surface the dot went to sleep on has gone away underneath it.
+    bool pointSupportGone() const;
     void freezeCheck();
     void updateDrag();
     // One force, written down as it is applied. Called from the tick itself and

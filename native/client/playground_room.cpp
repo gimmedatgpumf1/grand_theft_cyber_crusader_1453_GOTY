@@ -28,6 +28,9 @@ constexpr int kMaxContacts = 4;
 // and they are scaled by the length of the contact they actually have.
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
+// How far a sleeping dot may drift from the surface it is lying on and still be
+// lying on it. A micrometre: the same "these two are the same place" the walk uses.
+constexpr double kPointSupportBand = 1e-6;
 
 } // namespace
 
@@ -268,6 +271,10 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
         body.restAngleLow = body.restAngleHigh = body.angle;
     }
     body.frozen = false;
+    // Kept for the day this body falls asleep: a body at rest has no tick to be
+    // solved in, and what is holding it up is what was solved for it here.
+    if (body.appliedCount < Body::kMaxRestForces)
+        body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
     recordImpulse(at, impulse, kind);
 }
 
@@ -408,6 +415,19 @@ void PlaygroundRoom::tick() {
     const Vec3 weight{0.0, -kMass * kGravity, 0.0};
     pointForce_ = {};
     addForce(point_, weight, ForceKind::Gravity, &pointForce_);
+    // And the air. The dot is a small sphere and it pushes through the same air the
+    // ball does: F = half rho Cd A v^2, against its own motion. At the speeds it
+    // reaches here it is a fraction of a newton, which is exactly what it should be
+    // -- but it is a force in the ledger, drawn like the rest, and a dot falling in
+    // a vacuum is a dot that is not in this room.
+    {
+        const double swift = length(velocity_);
+        if (swift > 0.0) {
+            const double area = ball_shape::kPi * kPointRadius * kPointRadius;
+            const double drag = 0.5 * ball_shape::kAirDensity * ball_shape::kBallDragCoefficient * area * swift * swift;
+            addForce(point_, velocity_ * (-drag / swift), ForceKind::Drag, &pointForce_);
+        }
+    }
     heldStill_ = false;
     if (dragTarget_ == DragTarget::Point) {
         // The mouse holds it: the hold is the force that carries its weight.
@@ -652,6 +672,29 @@ void PlaygroundRoom::tick() {
 // against the plane, and then the fixed distances are pushed back to what they
 // were. A corner that moves therefore pulls and pushes the others through those
 // distances: that is the whole of the coupling.
+// Whether the dot's own support has gone away underneath it.
+//
+// A dot goes to sleep on a floor, a shape or the ball, and while it sleeps nothing
+// moves it. Take the thing it is lying on out from under it -- drag the shape, roll
+// the ball away -- and it would hang in the air for ever: asleep, and wrong. So the
+// surface it was resting on is asked, every tick, whether it is still there, and if
+// it is not the dot wakes and falls, which is what it was about to do anyway.
+bool PlaygroundRoom::pointSupportGone() const {
+    if (restingOnBall_) {
+        const Vec3 gap{point_.x - ball_.position.x, point_.y - ball_.position.y, 0.0};
+        return length(gap) > ball_.radius + kPointSupportBand;
+    }
+    if (restingBody_ >= 0 && restingBody_ < int(kBodyCount)) {
+        const Body& body = bodies_[std::size_t(restingBody_)];
+        if (body.count == 0) return true;
+        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return false;
+        const ball_shape::OutlineGap gap =
+            ball_shape::outlineGap(point_, body.position.data(), body.position.data(), body.count, kPointRadius);
+        return gap.gap > kPointSupportBand;
+    }
+    return point_.y > kSurfaceY + kPointSupportBand;
+}
+
 // Whether any body's step this tick has arrived at the point.
 //
 // The dot is a point with a radius, and a body arriving at it is a face or a corner
@@ -741,7 +784,7 @@ void PlaygroundRoom::advance(double seconds) {
         // answered a tick later, from inside, which is the clipping. So the dot is
         // asked, every tick, whether a body has arrived at it -- and if one has, the
         // point wakes and its own tick answers it.
-        if (pointFrozen_ && pointReachedByBodies()) {
+        if (pointFrozen_ && (pointReachedByBodies() || pointSupportGone())) {
             pointFrozen_ = false;
             resting_ = false;
             restingBody_ = -1;
@@ -798,38 +841,25 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // shape would be drawn as a shape with no forces on it at all, which is the one
     // thing a body at rest is not.
     //
-    // What holds it up is not invented: a body that is not accelerating has its
-    // contacts carrying exactly its weight, and the contacts are at the corners it
-    // is actually standing on -- the lowest ones. Which of them carries how much is
-    // statics: the contacts together answer the weight and together leave the body
-    // with no moment about its centre of mass, and a corner the equations would put
-    // in tension is a corner off the surface. So a corner with the weight over it
-    // carries more than a corner with a taper over it, and the arrows a shape at rest
-    // shows are the ones it showed while it was still being solved -- the same
-    // numbers, from the same law.
+    // What holds it up is not invented here either: it is the answer the solver
+    // gave for this body in the last tick it was awake. A shape comes to rest over
+    // twenty ticks inside one small box, so that last tick is a tick of a body
+    // standing still, and its contacts are exactly the ones holding it: two loads
+    // under a face, the load and the friction under a shape on a slope, the blow a
+    // neighbour is leaning on it with. That is what is written back out, at the
+    // places it was given, in newtons -- so a sleeping body's arrows are its own
+    // solved forces, and not a share of them worked out afterwards. A body on the
+    // level floor shows its two reactions and no friction; a body resting on a slope
+    // shows the friction that is holding it up, because that friction was solved for
+    // and it is in the ledger like any other force.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (!body.frozen || stepped[index] || body.count == 0) continue;
-        double lowest = 1e30;
-        for (std::size_t i = 0; i < body.count; ++i) lowest = std::min(lowest, body.position[i].y);
-        double along[kMaxCorners] = {};
-        std::size_t carrying = 0;
-        for (std::size_t i = 0; i < body.count; ++i)
-            if (body.position[i].y <= lowest + 1e-6) along[carrying++] = body.position[i].x;
-        if (carrying == 0) continue;
-        double share[kMaxCorners] = {};
-        staticLoads(along, carrying, body.centre.x, share);
-        // Every corner is a piece of the plate and carries its share of the body's
-        // mass, so the weight written at each of them is that share times g, and the
-        // contacts together answer exactly the body's weight.
         const double piece = body.mass / static_cast<double>(body.count);
-        std::size_t down = 0;
-        for (std::size_t i = 0; i < body.count; ++i) {
+        for (std::size_t i = 0; i < body.count; ++i)
             addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity);
-            if (body.position[i].y > lowest + 1e-6) continue;
-            const double load = share[down++] * body.mass * kGravity;
-            if (load > 0.0) addForce(body.position[i], Vec3{0.0, load, 0.0}, ForceKind::Contact);
-        }
+        for (std::size_t i = 0; i < body.appliedCount; ++i)
+            addForce(body.applied[i].at, body.applied[i].impulse * (1.0 / kTick), body.applied[i].kind);
     }
     // The ball asleep on something is the same pair again: its weight, and the
     // surface carrying it. A ball at rest has no other forces -- no drag, because

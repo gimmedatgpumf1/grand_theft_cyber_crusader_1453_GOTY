@@ -24,6 +24,12 @@ inline constexpr double kPointRadius = 0.07;
 // physics: a speed of a nanometre per second moves an object a fiftieth of a
 // picometre in a tick, which no double here can tell from standing still.
 inline constexpr double kRestSpeed = 1e-9;  // m/s
+// Air, for the solids and the dot. The same air the ball already falls through:
+// half its density, the drag coefficient of a flat plate square to the flow, and
+// the area the shape presents. A body is a plate one metre deep, so the piece of
+// outline a corner owns is the area it presents.
+inline constexpr double kPlateDragCoefficient = 1.28;
+inline constexpr double kRoomDepth = 1.0;  // m, into the screen
 inline constexpr double kHalfSize = 0.35;
 inline constexpr double kCubeSide = 2.0 * kHalfSize;
 inline constexpr double kTriangleLeg = 3.0 * kCubeSide;

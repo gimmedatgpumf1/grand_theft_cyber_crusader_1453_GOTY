@@ -71,6 +71,7 @@ void PlaygroundRoom::applyBodyForces() {
         body.previousCentre = body.centre;
         body.previousAngle = body.angle;
         body.previous = body.position;
+        body.appliedCount = 0;
         body.touchingPlane = false;
         body.onBody = false;
         body.supportLow = 1e30;
@@ -88,6 +89,25 @@ void PlaygroundRoom::applyBodyForces() {
             const Vec3 arm = body.position[i] - body.centre;
             body.velocity = body.velocity + jog * (1.0 / body.mass);
             body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
+            // And the air it has to push through. A plate does not fall through air
+            // as if there were none: F = half rho Cd A v^2, against the way it is
+            // moving. Each corner carries the piece of the plate nearest it -- half
+            // of each side that meets there, one metre deep -- and each piece is
+            // moving with the body, turn included, so a spinning shape is slowed by
+            // the air it is turning through and not only by what it is sliding on.
+            const Vec3 before = body.position[(i + body.count - 1) % body.count];
+            const Vec3 after = body.position[(i + 1) % body.count];
+            const double piece = 0.5 * (length(body.position[i] - before) + length(after - body.position[i]));
+            const Vec3 speed = pointSpeed(body, body.position[i]);
+            const double swift = length(speed);
+            if (!(swift > 0.0) || !(piece > 0.0)) continue;
+            const double drag = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth *
+                               swift * swift;  // N
+            const Vec3 air = speed * (-drag / swift);
+            addForce(body.position[i], air, ForceKind::Drag);
+            const Vec3 puff = air * kTick;
+            body.velocity = body.velocity + puff * (1.0 / body.mass);
+            body.spin += (arm.x * puff.y - arm.y * puff.x) / body.moment;
         }
     }
 }
@@ -271,69 +291,6 @@ double PlaygroundRoom::timeToContact(double remaining) const {
         return high;
     }
     return time;
-}
-
-// What each corner standing on a surface carries, for a body that is at rest.
-//
-// A body that is not moving is held up by its contacts, and statics says exactly
-// what they carry: together they answer its weight, and together they leave no
-// moment about its centre of mass -- otherwise it would turn, and it does not.
-// Those are two equations on the loads, so two contacts on one face are determined
-// by them outright: a corner with the body's weight directly over it carries more
-// than a corner with only a taper over it. A shape balanced on a corner carries its
-// whole weight there. It is not a share and it is not a fudge: it is the reading a
-// scale under each corner would give.
-//
-// When more corners are down than the two the equations need, the floor and a
-// perfectly rigid body between them do not say which carries what, and the answer
-// is the one that leaves the body strained least -- the least sum of squares of the
-// loads. That is chosen, not invented, and it keeps the two equations exactly.
-//
-// `along` is where each contact is measured along the surface; `centre` is where
-// the body's weight runs through.
-void PlaygroundRoom::staticLoads(const double* along, std::size_t count, double centre,
-                                 double (&share)[kMaxCorners]) {
-    for (std::size_t i = 0; i < count; ++i) share[i] = 0.0;
-    if (count == 0) return;
-    // Only the contacts still carrying take part; one the equations would load in
-    // tension is off the surface, and the rest are answered again without it.
-    bool live[kMaxCorners] = {};
-    for (std::size_t i = 0; i < count; ++i) live[i] = true;
-    for (std::size_t attempt = 0; attempt < count; ++attempt) {
-        double n = 0.0, sumD = 0.0, sumDD = 0.0;
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!live[i]) continue;
-            const double d = along[i] - centre;
-            n += 1.0;
-            sumD += d;
-            sumDD += d * d;
-        }
-        // The least-norm loads under  sum w = 1  and  sum w*d = 0  are
-        // w_i = p + q*d_i, with (p, q) solving the two equations read backwards.
-        const double det = n * sumDD - sumD * sumD;
-        double p = 0.0, q = 0.0;
-        if (n > 1.0 && std::abs(det) > 1e-18) {
-            p = sumDD / det;
-            q = -sumD / det;
-        } else {
-            // All of them at the same place: there is nothing to balance, and the
-            // load is shared equally because every one of them is the same place.
-            p = n > 0.0 ? 1.0 / n : 0.0;
-        }
-        bool cut = false;
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!live[i]) continue;
-            const double w = p + q * (along[i] - centre);
-            if (w < 0.0) {
-                live[i] = false;
-                cut = true;
-            }
-        }
-        if (cut) continue;
-        for (std::size_t i = 0; i < count; ++i)
-            if (live[i]) share[i] = p + q * (along[i] - centre);
-        return;
-    }
 }
 
 // Every patch at the configuration the walk has stopped at.
@@ -536,17 +493,17 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             return value;
         };
-        const auto pushOther = [&](Vec3 at, Vec3 impulse) {
+        const auto pushOther = [&](Vec3 at, Vec3 impulse, ForceKind kind) {
             if (other != nullptr) {
-                if (!otherFixed) pushBody(*other, at, impulse, patch.kind);
+                if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                pushBall(at, impulse, patch.kind);
+                pushBall(at, impulse, kind);
             }
         };
-        const auto pushEnd = [&](std::size_t k, Vec3 impulse) {
+        const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
-            pushBody(*body, patch.point[k], impulse, patch.kind);
-            pushOther(patch.point[k], impulse * -1.0);
+            pushBody(*body, patch.point[k], impulse, kind);
+            pushOther(patch.point[k], impulse * -1.0, kind);
         };
         // What the ends were closing at before this answer, for the walk.
         for (std::size_t k = 0; k < count; ++k) {
@@ -598,7 +555,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 if (carried[k] + delta[i] > 0.0) continue;
                 // A pull: the floor lets go here. What this end took is given back
                 // and the rest of the patch is answered again without it.
-                pushEnd(k, patch.normal * -carried[k]);
+                pushEnd(k, patch.normal * -carried[k], patch.kind);
                 carried[k] = 0.0;
                 patch.normalImpulse[k] = 0.0;
                 live[k] = false;
@@ -608,36 +565,58 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
-                pushEnd(k, patch.normal * delta[i]);
+                pushEnd(k, patch.normal * delta[i], patch.kind);
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
             }
             break;
         }
         // The grip, end by end, against the load that end is carrying.
-        double mu = body->staticFriction;
-        if (other != nullptr) {
-            mu = 0.5 * (mu + other->staticFriction);
-        } else if (patch.ball) {
-            mu = std::min(mu, ball_shape::kBallStaticFriction);
-        }
+        //
+        // Coulomb, in the two forms it has. A surface that is not moving along
+        // itself is held by static friction, and how much that takes is whatever
+        // answers the sideways force entirely -- no more, and no less. A surface that
+        // is already moving along itself is held by kinetic friction, which asks for
+        // mu_k times the load and never for less, and always against the slip: that
+        // is why a sliding shape slows down instead of sticking to the floor, and
+        // why the two coefficients are different numbers instead of one.
+        const double staticMu =
+            other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
+            : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
+                           : body->staticFriction;
+        const double kineticMu =
+            other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
+            : patch.ball   ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
+                           : body->kineticFriction;
         for (std::size_t k = 0; k < count; ++k) {
             if (!(patch.normalImpulse[k] > 0.0)) {
                 // No pressure, nothing to grip with.
                 if (patch.tangentImpulse[k] != 0.0) {
-                    pushEnd(k, tangent * -patch.tangentImpulse[k]);
+                    pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
                     patch.tangentImpulse[k] = 0.0;
                 }
                 continue;
             }
+            const double sliding = away(patch.point[k], tangent);
             const double giveT = give(patch.point[k], tangent, patch.point[k], tangent);
-            if (!(giveT > 1e-12)) continue;
-            double grip = patch.tangentImpulse[k] - away(patch.point[k], tangent) / giveT;
-            const double hold = mu * patch.normalImpulse[k];
-            if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
+            const double load = patch.normalImpulse[k];
+            double grip;
+            if (std::abs(sliding) > kRestSpeed) {
+                // Sliding: the surface answers with mu_k times the load, against the
+                // slip, whatever else is going on.
+                grip = -std::copysign(kineticMu * load, sliding);
+            } else {
+                if (!(giveT > 1e-12)) continue;
+                grip = patch.tangentImpulse[k] - sliding / giveT;
+                // Asking for more than the surface can hold is asking to slide. It
+                // gets what static friction can hold, and next tick the slip is real
+                // and kinetic friction takes over.
+                const double hold = staticMu * load;
+                if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
+            }
             const double delta = grip - patch.tangentImpulse[k];
             if (delta == 0.0) continue;
-            pushEnd(k, tangent * delta);
+            pushEnd(k, tangent * delta, ForceKind::Friction);
             patch.tangentImpulse[k] = grip;
         }
         // What is under each end decides what the body is standing on.
@@ -721,6 +700,35 @@ void PlaygroundRoom::settleBodies() {
     }
 }
 
+// A body that is asleep is asleep on something. Take that something away -- drag
+// the shape it leans on, roll the ball out from under it, open the floor -- and it
+// is not at rest any more, it is a body with nothing holding it up, and it falls.
+// Nothing here decides how a body should move: it only asks whether the surface it
+// was resting on is still where it was, and if it is not, hands the body back to
+// the simulation, which then does what gravity and its contacts say.
+void PlaygroundRoom::wakeUnsupportedBodies() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (!body.frozen || body.count == 0 || bodyHeld(index)) continue;
+        bool touching = false;
+        for (std::size_t i = 0; i < body.count && !touching; ++i)
+            if (body.position[i].y <= kOnSurface) touching = true;
+        for (std::size_t other = 0; other < kBodyCount && !touching; ++other) {
+            if (other == index || bodies_[other].count == 0) continue;
+            if (pairGap(body.position.data(), body.count, bodies_[other].position.data(), bodies_[other].count).gap <=
+                kContactBand)
+                touching = true;
+        }
+        Vec3 way{}, at{};
+        if (!touching && bodyBallGap(index, way, at) <= kContactBand) touching = true;
+        if (touching) continue;
+        body.frozen = false;
+        body.restTicks = 0;
+        body.restLow = body.restHigh = body.centre;
+        body.restAngleLow = body.restAngleHigh = body.angle;
+    }
+}
+
 // One tick of every body. The forces first, then the walk.
 //
 // The walk stops at every arrival -- the first instant anything would meet
@@ -729,6 +737,7 @@ void PlaygroundRoom::settleBodies() {
 // lands as the tick ends would otherwise begin the next one already closing on the
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
+    wakeUnsupportedBodies();
     applyBodyForces();
     // One set of patches for the whole tick, carried through the walk. The patches
     // that are there when the tick starts are answered first -- the weight of a shape
