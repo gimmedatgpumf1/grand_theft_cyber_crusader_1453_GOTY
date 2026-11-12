@@ -320,35 +320,9 @@ void PlaygroundRoom::tick() {
     // Its own walk keeps its disc out of everything it moves towards, but a body
     // moves too, and the body's tick does not know the dot is there -- so a shape
     // settling onto a dot, or sliding under one, can leave the dot's disc inside
-    // it. The sweep cannot repair that itself, because it reports arrivals and
-    // stops. Left alone, a dot a little way in is nudged out by a hair each tick
-    // and creeps along the face it is inside instead of sliding down it -- and a
-    // dot whose *middle* is on the face is a dot half inside the shape, which is
-    // the one thing a dot may never be.
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        const ball_shape::OutlineGap gap = ball_shape::outlineGap(
-            point_, body.position.data(), body.position.data(), body.count, 1.0);
-        if (!(gap.gap < kPointRadius)) continue;
-        point_ = point_ + gap.normal * (kPointRadius - gap.gap);
-        // And the face has answered what put it there. Putting the dot back out
-        // without touching its speed is a ratchet: the dot slides a little way in
-        // every tick, is lifted back to the surface, and keeps the speed that drove
-        // it -- so it never comes to rest, its speed is never spent, and it never
-        // freezes, because it is always moving, always failing to go anywhere. A
-        // surface that a dot is pressed against holds it, and holding it means this:
-        // the part of the speed driving into the face is gone.
-        if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
-        // A face that carries weight is a support; a face that cannot is something
-        // the dot is beside. Leaning on a wall is not standing on it -- and calling
-        // a wall the ground takes away the floor's friction, so a dot sliding along
-        // the floor into a shape slides for ever with nothing to slow it.
-        if (gap.normal.y > 0.0) {
-            restingBody_ = int(index);
-            resting_ = true;
-            supportNormal_ = gap.normal;
-        }
-    }
+    // it. The repair is the same one the end of the tick makes, in the same place:
+    // one answer to "the dot is inside a shape", not two that can disagree.
+    separatePoint();
     // Forces: gravity is m*g downwards, always. What is holding the point up
     // answers only the part of that force which drives into it; whatever is left
     // over still acts, and on a slope that is a real force down the slope. The

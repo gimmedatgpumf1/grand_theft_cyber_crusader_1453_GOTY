@@ -174,7 +174,13 @@ void PlaygroundRoom::separatePoint() {
         point_ = target;
         if (dot(velocity_, normalUsed) < 0.0) velocity_ = velocity_ - normalUsed * dot(velocity_, normalUsed);
         // Being beside a shape is not standing on it: only a face with an upward
-        // part is something the dot's weight can rest on.
+        // part is something the dot's weight can rest on -- and calling a wall the
+        // ground takes the floor's friction away from a dot sliding along it.
+        if (normalUsed.y > 0.0) {
+            restingBody_ = int(index);
+            resting_ = true;
+            supportNormal_ = normalUsed;
+        }
         // A sleeping dot is not woken here. What wakes it is a shape arriving at
         // it, which is asked and answered in the room's own tick; waking it for
         // every hair of separation would be waking it every tick it lies in
