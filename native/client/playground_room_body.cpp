@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -163,11 +161,19 @@ double PlaygroundRoom::advanceBodies(double seconds) {
         for (std::size_t i = 0; i < body.count; ++i) worst = std::max(worst, -body.position[i].y);
         Vec3 way{}, at{};
         worst = std::max(worst, -bodyBallGap(index, way, at));
-        Vec3 towards{};
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == index || bodies_[other].count == 0) continue;
-            double depth = 0.0;
-            if (bodiesIntoEachOther(index, other, towards, depth)) worst = std::max(worst, depth);
+            // Corner by corner, the same measure the contacts are gathered with. A
+            // single corner of one shape inside the other's face is a meeting, and an
+            // overlap test that only counts edges crossing edges does not see it.
+            for (std::size_t i = 0; i < body.count; ++i)
+                worst = std::max(worst, -ball_shape::outlineGap(body.position[i], bodies_[other].position.data(),
+                                                               bodies_[other].position.data(), bodies_[other].count, 1.0)
+                                             .gap);
+            for (std::size_t i = 0; i < bodies_[other].count; ++i)
+                worst = std::max(worst, -ball_shape::outlineGap(bodies_[other].position[i], body.position.data(),
+                                                               body.position.data(), body.count, 1.0)
+                                             .gap);
         }
         return worst;
     };
@@ -260,7 +266,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
                 const double gap = ball_shape::outlineGap(corners[from][i], corners[into].data(), corners[into].data(),
                                                           bodies_[into].count, 1.0)
                                        .gap;
-                if (gap > kContactBand) least = std::min(least, gap);
+                if (gap > kArithmetic) least = std::min(least, gap);
             }
         };
         near(one, two);
@@ -276,8 +282,14 @@ double PlaygroundRoom::timeToContact(double remaining) const {
     place(0.0);
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         if (!moving(index)) continue;
+        // Watched until it is *on* the surface, not until it is inside the contact
+        // band: a corner that stops being watched the moment it enters the band is a
+        // corner whose arrival is never caught -- the walk sees the gap vanish from
+        // the list rather than close to nothing, and the step that took it in is left
+        // to the guard. The band is where the solver answers; the geometric boundary
+        // is where the walk stops.
         for (std::size_t i = 0; i < bodies_[index].count; ++i)
-            watchCorner[index][i] = corners[index][i].y > kContactBand;
+            watchCorner[index][i] = corners[index][i].y > kArithmetic;
         watchBall[index] = ballGap(index) > kContactBand;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == index || bodies_[other].count == 0) continue;
@@ -441,9 +453,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             // The way out of the body this one is meeting is the way at the place
             // they are nearest, which is where the load is.
             patch.normal = way[0];
-            if (std::getenv("DBG"))
-                std::fprintf(stderr, "   gather pair b%zu o%zu ends %zu nearest %.6f %.6f\n", one, two,
-                             patch.ends, nearest[0], nearest[1]);
             while (patch.ends < kMaxPatchEnds && nearest[patch.ends] < 1e29) ++patch.ends;
             if (patch.ends > 0 && patch.gap[0] <= kContactBand) patches.add(patch);
         }
