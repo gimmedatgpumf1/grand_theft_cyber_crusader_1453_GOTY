@@ -194,12 +194,17 @@ void PlaygroundRoom::tickBall() {
                     ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count,
                                            1.0)
                         .gap;
-                if (startGap > ball.radius - playground_tick::kQuantum) {
-                    const double limit = std::min(ball.radius, startGap) - playground_tick::kQuantum;
+                if (startGap + kTouch > ball.radius) {
+                    // It may come as near as the ball's surface, or as near as it
+                    // already is if that is nearer: a shape already against the ball
+                    // has no allowance left. A step that would take it further in is
+                    // refused at the instant it starts to, which for a shape already
+                    // touching is the start of its step -- the turn and the travel are
+                    // given up and the contact answers the rest.
+                    const double limit = std::min(ball.radius, startGap);
                     OutlineHit stop;
                     if (sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
-                                               ball.velocity, limit, kTick * remaining, stop, false) &&
-                        stop.along > 0.0) {
+                                               ball.velocity, limit, kTick * remaining, stop, false)) {
                         const double when = (1.0 - remaining) + stop.along * remaining;
                         body.centre = body.previousCentre + (body.centre - body.previousCentre) * when;
                         body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;

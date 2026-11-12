@@ -142,6 +142,18 @@ static void outlineAt(const Vec3* previous, const Vec3* current, std::size_t cou
     for (std::size_t i = 0; i < count; ++i) corners[i] = previous[i] + (current[i] - previous[i]) * fraction;
 }
 
+// How fast the piece of outline nearest `point` is travelling, from the two corners
+// that own it. The piece between two corners moves at the lever's interpolation of
+// the two of them -- which is exactly what a rigid body's rotation does along an
+// edge, and what a body turning on the spot does to the place it is touching.
+static Vec3 outlineSpeed(const Vec3* previous, const Vec3* current, std::size_t count, Vec3 point,
+                         double tick) {
+    const OutlineTouch touch = outlineTouch(point, current, count);
+    const Vec3 stepA = current[touch.a] - previous[touch.a];
+    const Vec3 stepB = current[touch.b] - previous[touch.b];
+    return (stepA * (1.0 - touch.t) + stepB * touch.t) * (1.0 / tick);
+}
+
 // The fastest the outline can come at a ball along `normal` this tick, and the
 // fastest the ball can come at it. This has to be an *upper* bound, because it is
 // the step of a conservative advance: a bound that is too small does not make the
@@ -243,6 +255,15 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
     outlineAt(previous, current, count, high, corners);
     const Vec3 at = ballPosition + ballVelocity * (tick * high);
     const OutlineGap met = outlineGap(at, corners, corners, count, 1.0);
+    // The bound above is what keeps the search from stepping over the meeting. It is
+    // deliberately generous, so a shape sliding along a ball it is touching also
+    // "could" be closing on it -- and stopping a shape for that would stop it for
+    // rolling under a ball it is merely carrying. So the meeting is only reported
+    // when the two pieces that meet are really closing: at the instant found, the
+    // outline there is coming at the ball along the normal it meets it on. A graze is
+    // not an arrival.
+    const Vec3 surfaceHere = outlineSpeed(previous, current, count, at, tick);
+    if (!(-dot(ballVelocity - surfaceHere, met.normal) > 0.0)) return false;
     hit.along = high;
     hit.normal = met.normal;
     hit.contact = at - met.normal * radius;
