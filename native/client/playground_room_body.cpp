@@ -573,13 +573,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         // The grip, end by end, against the load that end is carrying.
         //
-        // Coulomb, in the two forms it has. A surface that is not moving along
-        // itself is held by static friction, and how much that takes is whatever
-        // answers the sideways force entirely -- no more, and no less. A surface that
-        // is already moving along itself is held by kinetic friction, which asks for
-        // mu_k times the load and never for less, and always against the slip: that
-        // is why a sliding shape slows down instead of sticking to the floor, and
-        // why the two coefficients are different numbers instead of one.
+        // Coulomb, in the two forms it has, and it is the same law in both: the
+        // surface holds along itself with whatever it takes to leave the face still
+        // against it, up to what the load under it can hold. The coefficient is what
+        // differs. An end that is already slipping is held by the sliding
+        // coefficient, and it is held by that much *only against the slip* -- a
+        // surface can stop a slide and can never drive one backwards, so an end that
+        // is moving is never given more than it takes to bring it to rest.
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
             : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
@@ -599,20 +599,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             const double sliding = away(patch.point[k], tangent);
             const double giveT = give(patch.point[k], tangent, patch.point[k], tangent);
-            const double load = patch.normalImpulse[k];
-            double grip;
-            if (std::abs(sliding) > kRestSpeed) {
-                // Sliding: the surface answers with mu_k times the load, against the
-                // slip, whatever else is going on.
-                grip = -std::copysign(kineticMu * load, sliding);
-            } else {
-                if (!(giveT > 1e-12)) continue;
-                grip = patch.tangentImpulse[k] - sliding / giveT;
-                // Asking for more than the surface can hold is asking to slide. It
-                // gets what static friction can hold, and next tick the slip is real
-                // and kinetic friction takes over.
-                const double hold = staticMu * load;
-                if (std::abs(grip) > hold) grip = std::copysign(hold, grip);
+            if (!(giveT > 1e-12)) continue;
+            const double mu = std::abs(sliding) > kRestSpeed ? kineticMu : staticMu;
+            const double hold = mu * patch.normalImpulse[k];
+            double grip = patch.tangentImpulse[k] - sliding / giveT;
+            if (std::abs(grip) > hold) {
+                // More than the surface can hold: it slips, and what it is given is
+                // what the surface can give -- the rest of the slip is left in the
+                // body's motion, where it belongs.
+                grip = std::copysign(hold, grip);
             }
             const double delta = grip - patch.tangentImpulse[k];
             if (delta == 0.0) continue;
