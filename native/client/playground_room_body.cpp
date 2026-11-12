@@ -55,6 +55,14 @@ constexpr double kRecovery = 0.2;
 // a whole tick: slower than the arithmetic of the positions can even show, and
 // small enough that what is left over cannot pump a stacked pair.
 constexpr double kSolveTolerance = 1e-12;  // m/s
+// A sweep of the patches is over when it has stopped changing the answer. Every
+// impulse it applies is a change, so this is measured in newton seconds: a thousandth
+// of a micronewton second is nothing next to a corner's weight over a tick (half a
+// newton second), and it is far smaller than anything the eye or the integrator can
+// see. It is a separate number from the one above because it answers a separate
+// question: the sweep now stops when the *answer* has stopped moving rather than when
+// the surfaces have stopped closing.
+constexpr double kImpulseTolerance = 1e-12;  // N s
 // How long a body's pose has to stay inside one small box before it is at rest,
 // and how small that box is. A shape standing on its supports does not go
 // anywhere; the last thing it does is settle, and settling is measured, not
@@ -325,6 +333,9 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
 // nothing goes into anything.
 bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     bool closingAtAll = false;
+    // The largest change the last sweep made, in newton seconds. A sweep is over when
+    // it has nothing left to say -- see kImpulseTolerance for why the question is
+    // asked about the answer and not about how fast the surfaces are closing.
     double worst = 0.0;
 
     // A patch is one face meeting one surface, and it is answered as a whole.
@@ -427,7 +438,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         for (std::size_t k = 0; k < count; ++k) {
             const double closing = away(patch.point[k], patch.normal);
             if (closing < -kRestSpeed) closingAtAll = true;
-            worst = std::max(worst, std::abs(closing));
         }
         // The ends that are carrying, and what each of them has carried so far this
         // tick.
@@ -516,6 +526,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // A pull: the floor lets go here. What this end took is given back
                 // and the rest of the patch is answered again without it.
                 pushEnd(k, patch.normal * -carried[k], patch.kind);
+                worst = std::max(worst, std::abs(carried[k]));
                 carried[k] = 0.0;
                 patch.normalImpulse[k] = 0.0;
                 live[k] = false;
@@ -526,6 +537,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
+                worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
             }
@@ -553,6 +565,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // No pressure, nothing to grip with.
                 if (patch.tangentImpulse[k] != 0.0) {
                     pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
+                    worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
                     patch.tangentImpulse[k] = 0.0;
                 }
                 continue;
@@ -572,6 +585,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             const double delta = grip - patch.tangentImpulse[k];
             if (delta == 0.0) continue;
             pushEnd(k, tangent * delta, ForceKind::Friction);
+            worst = std::max(worst, std::abs(delta));
             patch.tangentImpulse[k] = grip;
         }
         // What is under each end decides what the body is standing on.
@@ -597,7 +611,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             const std::size_t two = patches.items[m].other;
             patchPass(patches.items[m]);
         }
-        if (worst < kSolveTolerance && pass > 0) break;
+        if (worst < kImpulseTolerance && pass > 0) break;
     }
     return closingAtAll;
 }
