@@ -199,6 +199,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const bool ballGives = !ballHeld && !(normal.y < 0.0 && ball.position.y <= ball.radius + kTouch);
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
+            if (std::getenv("DBGB"))
+                std::fprintf(stderr, "      canMove: bodyShare %.4f ballShare %.1f impulse %+.4f -> v(%+.3f,%+.3f)\n",
+                             bodyShare, ballShare, impulse, ball.velocity.x + normal.x * (impulse * ballShare / ball.mass),
+                             ball.velocity.y + normal.y * (impulse * ballShare / ball.mass));
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
             // What this surface can rub against the ball is what it can press the
             // ball with, and the ball is only pressed by the part of the blow it
