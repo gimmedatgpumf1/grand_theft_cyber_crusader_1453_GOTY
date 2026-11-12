@@ -331,6 +331,7 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
             // long as the grip can carry what holding it would take, and once it
             // cannot, mu_k carries what it can and the rest slips.
             const Vec3 tangent{contact.normal.y, -contact.normal.x, 0.0};
+            if (std::getenv("NOFRICTION")) continue;
             if (!(contact.normalImpulse > 0.0)) {
                 if (contact.tangentImpulse != 0.0) {
                     pushBody(body, contact.point, tangent * -contact.tangentImpulse, contact.kind);
