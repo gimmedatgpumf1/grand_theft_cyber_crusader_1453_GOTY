@@ -6,6 +6,10 @@ The native path is C++20 and offline-only. It does not start a browser, execute 
 - `gtc-native-smoke` runs two real networked citizens through replication, customization, movement, pathfinding, and toilet-action checks.
 - `gtc-native-fit` is the portrait fitting and review tool; it does not call a landmark detector during optimization.
 
+`gtc-native-smoke` and `gtc-native-fit` are built by `native/build.sh`. `native/build.cmd` -- the
+Windows build -- produces `gtc-native-client.exe` only; the two tools are not part of it, because
+they are run on the machine that develops the physics and rendering, not on the one that plays.
+
 ## Build
 
 Linux (ccache is selected through the repository's content-hash configuration):

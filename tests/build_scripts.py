@@ -94,8 +94,16 @@ def main():
     for source in sorted(linux_sources):
         if not (ROOT / source).exists():
             failures.append(f'build.sh compiles a file that is not there: {source}')
+    # The window backends are one each, by nature. The rest of these are Linux-only
+    # on purpose: the portrait fitter and the two-client network smoke run are built
+    # and run here, from build.sh, and never on the machine that only plays the game.
+    # Building them for Windows meant an object nobody linked and a binary nobody
+    # started, so they are absent there and that is not a disagreement between the
+    # two lists.
+    linux_only_names = {'window_x11.cpp', 'fit.cpp', 'io.cpp', 'render.cpp', 'main.cpp',
+                        'smoke.cpp', 'smoke_motion.cpp'}
     only_windows = {source for source in sources if source.split('/')[-1] in {'window_win32.cpp'}}
-    only_linux = {source for source in linux_sources if source.split('/')[-1] in {'window_x11.cpp'}}
+    only_linux = {source for source in linux_sources if source.split('/')[-1] in linux_only_names}
     for source in sorted(linux_sources - sources - only_linux):
         failures.append(f'build.sh has {source}, build.cmd does not')
     for source in sorted(sources - linux_sources - only_windows):

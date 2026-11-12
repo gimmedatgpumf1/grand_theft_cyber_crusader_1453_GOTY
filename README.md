@@ -94,8 +94,7 @@ MSVC C++ tools and a **Windows 10 or 11 SDK**. The build uses the standard
 `/std:c++20` option.
 
 1. Double-click **`build.cmd`** (or run **`build.ps1`**) for the authoritative server.
-2. Double-click **`native\\build.cmd`** (or **`native\\build.ps1`**) for the native client,
-   smoke driver, and fitter.
+2. Double-click **`native\\build.cmd`** (or **`native\\build.ps1`**) for the native client.
 3. Or skip these manual steps and double-click **`run.cmd`**; it performs both builds, starts the
    server, waits for the port, and opens `gtc-native-client.exe` automatically.
 
@@ -117,13 +116,15 @@ an older C++ mode. C++20 feature availability varies by compiler version.
 
 ```bash
 ./build.sh          # authoritative server
-./native/build.sh   # native client, smoke driver, and fitter
+./native/build.sh   # native client, smoke driver, and fitter (Linux builds all three)
 ./run.sh            # build and run the server
 # or: ./build.sh --run
 ```
 
 Server output goes to `build/bin/gtc1453`; native outputs are `gtc-native-client`,
-`gtc-native-smoke`, and `gtc-native-fit`. Committed Linux x86-64 copies and checksums live under
+`gtc-native-smoke`, and `gtc-native-fit`. The Windows build (`native\build.cmd`) produces
+`gtc-native-client.exe` and nothing else: the smoke driver and the fitter are Linux tools,
+built and run from `native/build.sh`. Committed Linux x86-64 copies and checksums live under
 `prebuilt/linux-x86_64/`. The build uses the
 vendored ccache 4.14.2 automatically, with system ccache and direct compilation as fallbacks.
 The server binds **0.0.0.0:1453** by default. Advanced overrides:
@@ -191,8 +192,9 @@ check compares incremental and forced full uploads; it does not validate Windows
 ## Native C++ runtime and portrait fitter
 
 The native-only path is in [`native/`](native/README.md). Build `./native/build.sh` (or
-`native\\build.cmd` with Visual Studio 2022 or newer). `gtc-native-client` is the interactive/headless
-multiplayer client; `gtc-native-smoke` is the two-player network test. For portrait work,
+`native\\build.cmd` with Visual Studio 2022 or newer, which builds the client alone).
+`gtc-native-client` is the interactive/headless multiplayer client; `gtc-native-smoke` is the
+two-player network test, built by the Linux script. For portrait work,
 `./build/bin/gtc-native-fit --iterations 8` performs direct numeric universal-morph/camera fitting
 and writes separate **480×640**
 CPU-rasterized initial/final PNGs for visual review. It does not use a browser, JavaScript,
