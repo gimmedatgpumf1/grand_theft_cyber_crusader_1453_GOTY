@@ -451,42 +451,67 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const auto normalPass = [&](Manifold& patch) {
         const Ends ends = endsOf(patch);
         const std::size_t count = patch.ends;
-        // Nothing is closing where the load is a pull: the floor lets go and the
-        // patch is carried by whatever is left.
-        double closing[kMaxPatchEnds] = {};
-        for (std::size_t k = 0; k < count; ++k) {
-            closing[k] = dot(relativeSpeed(patch, ends, patch.point[k]), patch.normal);
-            if (closing[k] < -kRestSpeed) closingAtAll = true;
-        }
-        double next[kMaxPatchEnds] = {};
-        if (count == 1) {
-            const double compliance = give(patch, ends, patch.point[0], patch.normal, patch.point[0], patch.normal);
-            if (!(compliance > 1e-12)) return;
-            next[0] = patch.normalImpulse[0] - closing[0] / compliance;
-        } else {
-            const double a = give(patch, ends, patch.point[0], patch.normal, patch.point[0], patch.normal);
-            const double b = give(patch, ends, patch.point[0], patch.normal, patch.point[1], patch.normal);
-            const double c = give(patch, ends, patch.point[1], patch.normal, patch.point[0], patch.normal);
-            const double d = give(patch, ends, patch.point[1], patch.normal, patch.point[1], patch.normal);
-            const double det = a * d - b * c;
-            if (std::abs(det) > 1e-18) {
-                next[0] = patch.normalImpulse[0] + (-closing[0] * d + closing[1] * b) / det;
-                next[1] = patch.normalImpulse[1] + (closing[0] * c - closing[1] * a) / det;
-            } else {
-                next[0] = a > 1e-12 ? patch.normalImpulse[0] - closing[0] / a : 0.0;
-                next[1] = d > 1e-12 ? patch.normalImpulse[1] - closing[1] / d : 0.0;
-            }
-        }
-        for (std::size_t k = 0; k < count; ++k) {
-            worst = std::max(worst, std::abs(closing[k]));
-            // A patch can press and cannot pull. An end whose share would be a pull
-            // carries nothing, and the other end carries the load.
-            if (!(next[k] > 0.0)) next[k] = 0.0;
-            const double delta = next[k] - patch.normalImpulse[k];
-            if (delta == 0.0) continue;
-            patch.normalImpulse[k] = next[k];
+        const auto closingAt = [&](std::size_t k) {
+            return dot(relativeSpeed(patch, ends, patch.point[k]), patch.normal);
+        };
+        const auto complianceAt = [&](std::size_t k, std::size_t l) {
+            return give(patch, ends, patch.point[k], patch.normal, patch.point[l], patch.normal);
+        };
+        const auto apply = [&](std::size_t k, double carried) {
+            worst = std::max(worst, std::abs(carried - patch.normalImpulse[k]));
+            if (!(carried > 0.0)) carried = 0.0;
+            const double delta = carried - patch.normalImpulse[k];
+            if (delta == 0.0) return;
+            patch.normalImpulse[k] = carried;
             pushBody(*ends.body, patch.point[k], patch.normal * delta, patch.kind);
             pushOther(patch, ends, patch.point[k], patch.normal * -delta);
+        };
+        double closing[kMaxPatchEnds] = {};
+        for (std::size_t k = 0; k < count; ++k) {
+            closing[k] = closingAt(k);
+            if (closing[k] < -kRestSpeed) closingAtAll = true;
+        }
+        if (count == 1) {
+            const double compliance = complianceAt(0, 0);
+            if (!(compliance > 1e-12)) return;
+            apply(0, patch.normalImpulse[0] - closing[0] / compliance);
+            return;
+        }
+        // One load over two ends: the impulse at one end moves the other, and that
+        // coupling is what a patch has and a corner does not. The two are solved
+        // together, so a face is answered as a face and not as two corners that
+        // each stop themselves and leave the body turning between them.
+        const double a = complianceAt(0, 0), b = complianceAt(0, 1);
+        const double c = complianceAt(1, 0), d = complianceAt(1, 1);
+        const double det = a * d - b * c;
+        double next0 = patch.normalImpulse[0];
+        double next1 = patch.normalImpulse[1];
+        if (std::abs(det) > 1e-18) {
+            next0 += (-closing[0] * d + closing[1] * b) / det;
+            next1 += (closing[0] * c - closing[1] * a) / det;
+        } else {
+            if (a > 1e-12) next0 -= closing[0] / a;
+            if (d > 1e-12) next1 -= closing[1] / d;
+        }
+        if (next0 >= 0.0 && next1 >= 0.0) {
+            apply(0, next0);
+            apply(1, next1);
+            return;
+        }
+        // The floor lets go where the load would be a pull, and the patch is carried
+        // by the end that is left -- which is a body lifting off at one end, decided
+        // by the load and not by a rule about corners.
+        if (next0 < 0.0 && next1 < 0.0) {
+            apply(0, 0.0);
+            apply(1, 0.0);
+            return;
+        }
+        if (next0 < 0.0) {
+            apply(0, 0.0);
+            if (d > 1e-12) apply(1, patch.normalImpulse[1] - closingAt(1) / d);
+        } else {
+            apply(1, 0.0);
+            if (a > 1e-12) apply(0, patch.normalImpulse[0] - closingAt(0) / a);
         }
     };
     const auto gripPass = [&](Manifold& patch) {
