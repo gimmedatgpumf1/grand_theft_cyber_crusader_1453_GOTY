@@ -462,6 +462,13 @@ void PlaygroundRoom::tickBodies() {
             break;
         }
     }
+    if (std::getenv("DBG4")) {
+        const Body& b = bodies_[0];
+        std::printf("  cube v(%.5f,%.5f) w %+.5f ang %.6f c(%.4f,%.4f) corners", b.velocity.x, b.velocity.y, b.spin,
+                    b.angle, b.centre.x, b.centre.y);
+        for (std::size_t i = 0; i < b.count; ++i) std::printf(" (%.4f,%.4f)", b.position[i].x, b.position[i].y);
+        std::printf("\n");
+    }
     settleBodies();
     writeImpulses();
 }
