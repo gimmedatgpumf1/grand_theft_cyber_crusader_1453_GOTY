@@ -276,10 +276,13 @@ double PlaygroundRoom::timeToContact(double remaining) const {
 // Every patch at the configuration the walk has stopped at.
 //
 // A body meets the floor with the face it is standing on, and a convex face on a
-// plane touches along a segment: the corners of the body that are on the plane are
-// that segment's ends. They are gathered as one patch, not as separate contacts,
+// plane touches along a segment: the two lowest corners of the body are that
+// segment's ends. They are gathered as one patch, not as separate contacts,
 // because the load between them is one distributed load -- and a load that can sit
 // anywhere between two ends is the reason a body can stand on the floor at all.
+// Both ends are gathered as soon as one of them is down, and each is answered
+// against the distance it still has to fall, so a face that is a hair off the floor
+// at one end is a face landing on it, not a face held up at one corner.
 // A ball touches at one point and nowhere else, so its patch has one end.
 void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
     patches.clear();
