@@ -279,14 +279,22 @@ void aLoadIsCarried() {
         room.reset();
         settle(room, 300);
         carryTo(room, 0, room.bodyMiddle(1).x - 0.4, 1.6);
-        room.advance(1.0 / 20.0);
         double floorCarry = 0.0, pressed = 0.0;
-        for (std::size_t i = 0; i < room.forceCount(); ++i) {
-            const auto& sample = room.forces_[i];
-            if (sample.owner != 1) continue;
-            const bool pair = sample.kind == PlaygroundRoom::ForceKind::Pair || sample.kind == PlaygroundRoom::ForceKind::Friction;
-            if (pair && sample.at.y > 0.5) pressed -= sample.force.y;
-            if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
+        // The cube is set down where the slope is, which takes a tick or two to sort
+        // out; the first tick it is really lying on the slope is the one to read.
+        for (int tick = 0; tick < 12; ++tick) {
+            room.advance(1.0 / 20.0);
+            floorCarry = 0.0;
+            pressed = 0.0;
+            for (std::size_t i = 0; i < room.forceCount(); ++i) {
+                const auto& sample = room.forces_[i];
+                if (sample.owner != 1) continue;
+                const bool pair =
+                    sample.kind == PlaygroundRoom::ForceKind::Pair || sample.kind == PlaygroundRoom::ForceKind::Friction;
+                if (pair && sample.at.y > 0.5) pressed -= sample.force.y;
+                if (sample.kind == PlaygroundRoom::ForceKind::Contact && sample.at.y < 0.05) floorCarry += sample.force.y;
+            }
+            if (pressed > 5.0) break;
         }
         char detail[220];
         std::snprintf(detail, sizeof detail, "cube leaning on the slope: triangle floor carries %.3f N, own weight 29.400, cube presses %.3f N",
