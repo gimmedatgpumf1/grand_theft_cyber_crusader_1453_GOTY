@@ -38,7 +38,7 @@ constexpr double kOnSurface = 1e-6;
 // scale of this room, a few microns -- and a contact set that sees only the corner
 // because the face is a hundredth of a millimetre up is a contact set that lets the
 // shape rock. This is the band in which two surfaces are touching.
-constexpr double kContactBand = 1e-6;
+constexpr double kContactBand = 1e-4;
 // How many times one tick may stop for a contact. A body landing on the floor and
 // then tipping onto its other corner is two; a pair of shapes settling against
 // each other is a handful. This is a guard against a pathological arrangement
@@ -163,10 +163,10 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double height = body.position[i].y;
             const double falling = pointSpeed(body, body.position[i]).y;
             if (!(falling < 0.0)) continue;
-            if (height <= kOnSurface) {
-                if (falling < -kRestSpeed) first = 0.0;
-                continue;
-            }
+            // A corner already resting on the floor is not on its way to it: it is
+            // answered by the contact solve, not by the walk, and stopping the walk
+            // at it would stop the whole tick at its first instant.
+            if (height <= kContactBand) continue;
             first = std::min(first, height / -falling);
         }
         // The ball. The ball is stepped after the bodies, so for the length of this
@@ -177,10 +177,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double gap = bodyBallGap(index, way, at);
             const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
             if (!(closing > 1e-12)) continue;
-            if (gap <= kOnSurface) {
-                if (closing > kRestSpeed) first = 0.0;
-                continue;
-            }
+            if (gap <= kContactBand) continue;
             first = std::min(first, gap / closing);
         }
         // Another body, seen from the place they are closest.
@@ -192,10 +189,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const Vec3 closingSpeed = pointSpeed(body, gap.one) - pointSpeed(solid, gap.two);
             const double closing = -dot(closingSpeed, gap.normal);
             if (!(closing > 1e-12)) continue;
-            if (gap.gap <= kOnSurface) {
-                if (closing > kRestSpeed) first = 0.0;
-                continue;
-            }
+            if (gap.gap <= kContactBand) continue;
             first = std::min(first, gap.gap / closing);
         }
     }
