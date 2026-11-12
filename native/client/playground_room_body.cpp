@@ -21,8 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -83,6 +81,17 @@ void PlaygroundRoom::applyBodyForces() {
         // Only a body that is about to be solved for forgets what it was given last
         // tick; a sleeping body keeps it, because that is what it is standing on.
         body.appliedCount = 0;
+        // The motion the body arrives with. Everything that acts on it over this
+        // tick acts on *this*, not on the speed its own weight has just given it: the
+        // weight of the tick is not air it has travelled through, and a shape standing
+        // still must feel no air at all. Measuring the drag against the speed the
+        // body had when the tick began is what makes that true.
+        const Vec3 arriving = body.velocity;
+        const double arrivingSpin = body.spin;
+        const auto arrivingAt = [&](Vec3 at) {
+            const Vec3 arm = at - body.centre;
+            return Vec3{arriving.x - arrivingSpin * arm.y, arriving.y + arrivingSpin * arm.x, arriving.z};
+        };
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 weight{0.0, -share * kGravity, 0.0};
             addForce(body.position[i], weight, ForceKind::Gravity);
@@ -98,11 +107,11 @@ void PlaygroundRoom::applyBodyForces() {
             // moving. Each corner carries the piece of the plate nearest it -- half
             // of each side that meets there, one metre deep -- and each piece is
             // moving with the body, turn included, so a spinning shape is slowed by
-            // the air it is turning through and not only by what it is sliding on.
+            // the air it turns through as well as by what it slides on.
             const Vec3 before = body.position[(i + body.count - 1) % body.count];
             const Vec3 after = body.position[(i + 1) % body.count];
             const double piece = 0.5 * (length(body.position[i] - before) + length(after - body.position[i]));
-            const Vec3 speed = pointSpeed(body, body.position[i]);
+            const Vec3 speed = arrivingAt(body.position[i]);
             const double swift = length(speed);
             if (!(swift > 0.0) || !(piece > 0.0)) continue;
             const double drag = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth *
@@ -763,27 +772,6 @@ void PlaygroundRoom::tickBodies() {
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
             break;
-        }
-    }
-    if (std::getenv("DBG")) {
-        static int n = 0;
-        ++n;
-        if (n > 16) {
-            const Body& b = bodies_[1];
-            double sum = 0.0;
-            for (std::size_t i = 0; i < b.appliedCount; ++i) sum += b.applied[i].impulse.y / kTick;
-            double grav = 0.0, drag = 0.0;
-            for (std::size_t i = 0; i < forces_.size(); ++i) {
-                (void)i;
-            }
-            for (std::size_t i = 0; i < forceCount_; ++i) {
-                const ForceSample& f = forces_[i];
-                if (f.at.x > 0.5) continue;
-                if (f.kind == ForceKind::Gravity) grav += f.force.y;
-                if (f.kind == ForceKind::Drag) drag += f.force.y;
-            }
-            std::fprintf(stderr, "  T%d tri applied %zu sumFy %+.4f ledgerGrav %+.4f drag %+.4f v(%.8f,%.8f)\n", n,
-                         b.appliedCount, sum, grav, drag, b.velocity.x, b.velocity.y);
         }
     }
     settleBodies();

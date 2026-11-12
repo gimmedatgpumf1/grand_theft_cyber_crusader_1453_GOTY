@@ -315,9 +315,6 @@ void PlaygroundRoom::tickBall() {
         }
     }
 
-    if (std::getenv("DBG"))
-        std::fprintf(stderr, "  ENDWALK y %.9f vy %+8.5f touching %d standing %d\n", ball.position.y, ball.velocity.y,
-                     int(ball.touching), int(ball.standing));
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
     settleBallFriction();

@@ -8,8 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 namespace gtc::native {
@@ -877,12 +875,6 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
             addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity);
         for (std::size_t i = 0; i < body.appliedCount; ++i)
             addForce(body.applied[i].at, body.applied[i].impulse * (1.0 / kTick), body.applied[i].kind);
-        if (std::getenv("DBG")) {
-            double sum = 0.0;
-            for (std::size_t i = 0; i < body.appliedCount; ++i) sum += body.applied[i].impulse.y * (1.0 / kTick);
-            std::fprintf(stderr, "  body %zu frozen with %zu applied, sum Fy %+.4f (weight %.3f) v(%.6f,%.6f)\n",
-                         index, body.appliedCount, sum, body.mass * kGravity, body.velocity.x, body.velocity.y);
-        }
     }
     // The ball asleep on something is the same pair again: its weight, and the
     // surface carrying it. A ball at rest has no other forces -- no drag, because
