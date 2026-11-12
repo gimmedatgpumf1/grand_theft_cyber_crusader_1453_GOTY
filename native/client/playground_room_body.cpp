@@ -197,7 +197,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
 // against the distance it still has to fall, so a face that is a hair off the floor
 // at one end is a face landing on it, not a face held up at one corner.
 // A ball touches at one point and nowhere else, so its patch has one end.
-void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
+void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
     patches.clear();
     // The floor, met by the lowest corners of each body.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -214,7 +214,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             // metre up is not an end of a contact patch, it is a corner in the air,
             // and taking it as one asks the floor to hold the face by a corner it is
             // not touching -- which it cannot do without pulling, so it lets go.
-            if (height > contactBand_) continue;
+            if (height > band) continue;
             for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                 if (height < lowest[k]) {
                     for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
@@ -235,7 +235,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         // A face whose ends are all still in the air is a body falling, and a body
         // falling is the walk's business: it is not answered here, where all it
         // would get is a stop a tick early.
-        if (patch.ends > 0 && patch.gap[0] <= contactBand_) patches.add(patch);
+        if (patch.ends > 0 && patch.gap[0] <= band) patches.add(patch);
     }
     // The ball, met at the one place a body's outline comes closest to it.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -243,7 +243,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
-        if (gap > contactBand_) continue;
+        if (gap > band) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
@@ -266,7 +266,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
             const Body& solid = bodies_[two];
             pair_shape::PairManifold meeting;
             if (!pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
-                                     contactBand_, meeting))
+                                     band, meeting))
                 continue;
             Manifold patch;
             patch.body = one;
@@ -692,15 +692,18 @@ void PlaygroundRoom::tickBodies() {
     double reach = kContactBand;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        if (body.count == 0) continue;
+        // A sleeping body is still a surface something can arrive at, so its absence
+        // of speed is not what the band is measured by -- but neither does it need to
+        // be, because what arrives at it has its own speed and its own band.
         double furthest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
         reach = std::max(reach, (length(body.velocity) + std::abs(body.spin) * furthest) * kTick);
     }
     reach = std::max(reach, length(ball_.velocity) * kTick);
-    contactBand_ = reach;
+    const double band = reach;
     ManifoldSet patches;
-    gatherContacts(patches);
+    gatherContacts(patches, band);
     solveContacts(patches);
     const auto report = [&](const char* when) {
         if (!std::getenv("DBGR")) return;
@@ -718,7 +721,7 @@ void PlaygroundRoom::tickBodies() {
             }
         }
         std::fprintf(stderr, "  %-8s band %.6f overlap %.9f | b0 y %.6f v %+.5f w %+.5f %s | b1 y %.6f v %+.5f w %+.5f %s\n",
-                     when, contactBand_, overlap, bodies_[0].centre.y, bodies_[0].velocity.x, bodies_[0].spin,
+                     when, band, overlap, bodies_[0].centre.y, bodies_[0].velocity.x, bodies_[0].spin,
                      bodies_[0].frozen ? "Z" : "", bodies_[1].centre.y, bodies_[1].velocity.x, bodies_[1].spin,
                      bodies_[1].frozen ? "Z" : "");
         for (std::size_t m = 0; m < patches.count; ++m)
