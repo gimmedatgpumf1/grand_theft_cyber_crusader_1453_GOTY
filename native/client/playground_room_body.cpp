@@ -361,11 +361,15 @@ bool PlaygroundRoom::solveContacts(ContactSet& contacts) {
                 delivered = true;
             }
         }
-        if (std::getenv("DBG2"))
-            std::fprintf(stderr, "   pass %d worst %.3e v (%.4f,%.4f) w %.4f n0 %.4f n1 %.4f\n", pass, worst,
+        if (std::getenv("DBG2")) {
+            std::fprintf(stderr, "   pass %d worst %.3e B0 v(%.4f,%.4f) w %.4f | B1 v(%.4f,%.4f) w %.4f |", pass, worst,
                          bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
-                         contacts.count > 0 ? contacts.items[0].normalImpulse : 0.0,
-                         contacts.count > 1 ? contacts.items[1].normalImpulse : 0.0);
+                         bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
+            for (std::size_t q = 0; q < contacts.count; ++q)
+                std::fprintf(stderr, " [b%zu n%.3f t%.3f]", contacts.items[q].body, contacts.items[q].normalImpulse,
+                             contacts.items[q].tangentImpulse);
+            std::fprintf(stderr, "\n");
+        }
         if (worst < kSolveTolerance && pass > 0) break;
     }
     return delivered;
