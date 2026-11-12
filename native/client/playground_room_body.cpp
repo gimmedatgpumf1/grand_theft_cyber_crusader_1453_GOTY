@@ -44,6 +44,12 @@ constexpr double kContactBand = 1e-4;
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
 constexpr int kSolvePasses = 32;
+// How much of an interpenetration is paid off in one tick, as a fraction. A gap that
+// is already inside something is not motion; it is a state the physics never put the
+// room in, and giving all of it back in one tick would be a separating speed neither
+// body was given. A fifth a tick is the usual positional-bias rule, and it is gone in
+// a quarter of a second without anything being launched.
+constexpr double kRecovery = 0.2;
 // A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
 // a whole tick: slower than the arithmetic of the positions can even show, and
@@ -457,7 +463,19 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // of stopping short, hanging there, and being answered a tick late
                 // from inside: the tick's own travel is what the constraint knows
                 // about, and nothing has to be pushed apart afterwards.
-                u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] * (1.0 / kTick);
+                // A gap that is *clear* is allowed to close over exactly one tick:
+                // that is a shape arriving at a surface, and the answer leaves it on
+                // the surface when the tick ends. A gap that is already *inside* is
+                // different -- it is not motion, it is a state that should never have
+                // existed, made by a hand dragging one shape into another -- and it is
+                // given back over a few ticks rather than in one. Paying a deep
+                // interpenetration off in a single tick means a separating speed that
+                // nothing in the room gave either body, which is energy out of the
+                // arithmetic; a fifth of it a tick is a push the hand's own work pays
+                // for, and the state is gone in a quarter of a second.
+                const double bias = patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick)
+                                                       : patch.gap[k] * (kRecovery / kTick);
+                u[dofs] = away(patch.point[k], patch.normal) + bias;
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
