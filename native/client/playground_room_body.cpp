@@ -171,9 +171,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             Vec3 way{0, 1, 0}, at{};
             const double gap = bodyBallGap(index, way, at);
             const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
-            if (!(closing > 1e-12)) continue;
-            if (gap <= kContactBand) continue;
-            first = std::min(first, gap / closing);
+            if (closing > 1e-12 && gap > kContactBand) first = std::min(first, gap / closing);
         }
         // Another body, seen from the place they are closest.
         for (std::size_t other = 0; other < kBodyCount; ++other) {
@@ -183,9 +181,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
                 pairGap(body.position.data(), body.count, solid.position.data(), solid.count);
             const Vec3 closingSpeed = pointSpeed(body, gap.one) - pointSpeed(solid, gap.two);
             const double closing = -dot(closingSpeed, gap.normal);
-            if (!(closing > 1e-12)) continue;
-            if (gap.gap <= kContactBand) continue;
-            first = std::min(first, gap.gap / closing);
+            if (closing > 1e-12 && gap.gap > kContactBand) first = std::min(first, gap.gap / closing);
         }
     }
     return std::clamp(first, 0.0, remaining);
@@ -220,7 +216,7 @@ void PlaygroundRoom::gatherContacts(ContactSet& contacts) const {
             contact.body = index;
             contact.ball = true;
             contact.point = at;
-            contact.normal = way * -1.0;  // out of the ball, into the body
+            contact.normal = way;  // out of the ball, into the body
             contact.kind = ForceKind::Ball;
             contacts.add(contact);
         }
