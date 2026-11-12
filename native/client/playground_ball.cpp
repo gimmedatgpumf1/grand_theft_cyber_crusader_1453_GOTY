@@ -111,7 +111,9 @@ void PlaygroundRoom::tickBall() {
             addForce(ball.position, ball.velocity * (-drag / speed), ForceKind::Drag, &ball.force, kBallOwner);
         }
     }
-    ball.velocity = playground_tick::accelerated(ball.velocity, ball.force, ball.mass);
+    // And the room's resolution, as everywhere else: a ball that cannot carry
+    // itself a micrometre in a tick is not moving.
+    ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
 
     ball.touching = false;
     ball.standing = true;
@@ -250,10 +252,10 @@ void PlaygroundRoom::tickBall() {
         }
         if (restart) continue;
         if (first > 1.0) {
-            ball.position = next;
+            ball.position = playground_tick::resolvedMove(ball.position, next);
             break;
         }
-        ball.position = ball.position + travel * first;
+        ball.position = playground_tick::resolvedMove(ball.position, ball.position + travel * first);
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
         // put down, or the first meeting in a tick would be counted as the second.

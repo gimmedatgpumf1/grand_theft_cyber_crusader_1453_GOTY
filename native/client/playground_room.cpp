@@ -404,7 +404,7 @@ void PlaygroundRoom::tick() {
         if (length(friction) > 0.0)
             addForce(point_, friction, ForceKind::Friction, &pointForce_, kDotOwner);
     }
-    velocity_ = accelerated(velocity_, pointForce_, kMass);
+    velocity_ = resolved(accelerated(velocity_, pointForce_, kMass));
     traceFrom_ = point_;
     resting_ = false;
     restingBody_ = -1;
@@ -437,7 +437,7 @@ void PlaygroundRoom::tick() {
         Vec3 normal{0, 1, 0};
         bool wall = false;
         bool ballHit = false;
-        if (!metFloor && next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
+        if (!metFloor && next.y < kSurfaceY && std::abs(next.y - point_.y) > kQuantum) {
             first = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
             wall = true;
         }
@@ -448,9 +448,17 @@ void PlaygroundRoom::tick() {
             Vec3 facing{0, 1, 0};
             if (!segmentHitsPolygon(point_, next, body.position.data(), body.count, along, facing)) continue;
             // A point lying on a face and moving along it is touching, not
-            // arriving. Answering that as a contact would stop the walk dead at
-            // the very start, every tick, and the point would stutter downhill.
-            if (along <= 1e-9 && dot(velocity_, facing) >= 0.0) continue;
+            // arriving -- and the room has one answer to what "touching" means:
+            // the two are nearer than a micrometre, and what is left of this
+            // tick's travel would take the point less than a micrometre into the
+            // face. Answering that as a contact costs none of the tick -- it is
+            // met at the very start of the time that is left -- so the walk goes
+            // round, meets the same face in the same place, and spends every step
+            // it has on it, and the tick ends with the point exactly where it
+            // began and all of its speed still in it. That is the dot that used to
+            // stop dead at the foot of the slope with four metres a second of
+            // unused motion, and this is the line that says it is not arriving.
+            if (along <= kQuantum && -dot(velocity_, facing) * (kTick * remaining) < kQuantum) continue;
             if (along < first) {
                 first = along;
                 hitIndex = index;
@@ -464,7 +472,7 @@ void PlaygroundRoom::tick() {
             double along = 2.0;
             Vec3 facing{0, 1, 0};
             if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
-                !(along <= 1e-9 && dot(velocity_, facing) >= 0.0) && along < first) {
+                !(along <= kQuantum && -dot(velocity_, facing) * (kTick * remaining) < kQuantum) && along < first) {
                 first = along;
                 normal = facing;
                 ballHit = true;
@@ -521,7 +529,7 @@ void PlaygroundRoom::tick() {
     // on the floor never arrives at it. Without this it kept its sideways speed
     // forever, because nothing ever told friction there was a surface.
     if (slideSpan_ <= 0.0) {
-        if (point_.y <= kSurfaceY + 1e-9) {
+        if (point_.y <= kSurfaceY + kQuantum) {
             resting_ = true;
             restingBody_ = -1;
             supportNormal_ = {0, 1, 0};
@@ -542,7 +550,7 @@ void PlaygroundRoom::tick() {
                     if (gap < nearest) { nearest = gap; normal = outward; }
                 }
                 // Only a face that can carry weight counts as standing on it.
-                if (nearest > 1e-6 || normal.y < 0.5) continue;
+                if (!touching(nearest) || normal.y < 0.5) continue;
                 resting_ = true;
                 restingBody_ = int(index);
                 supportNormal_ = normal;
@@ -556,8 +564,9 @@ void PlaygroundRoom::tick() {
             if (!resting_) {
                 const Vec3 gap = point_ - ball_.position;
                 const double distance = length(gap);
-                const double touching = kPointRadius + ball_.radius;
-                if (distance <= touching + 1e-9 && distance > 0.0 && gap.y > 0.0) {
+                const double reach = kPointRadius + ball_.radius;
+                const double room = distance - reach;
+                if (room < kQuantum && distance > 0.0 && gap.y > 0.0) {
                     resting_ = true;
                     restingBody_ = -1;
                     restingOnBall_ = true;
@@ -609,8 +618,8 @@ void PlaygroundRoom::tick() {
     tickBodies();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
-    haveTrace_ = length(traceTo_ - traceFrom_) > 1e-6;
-    if (length(point_ - from) > 1e-9) {
+    haveTrace_ = length(traceTo_ - traceFrom_) > kQuantum;
+    if (length(point_ - from) > kQuantum) {
         ghosts_[ghostNext_] = point_;
         ghostNext_ = (ghostNext_ + 1) % ghosts_.size();
         ghostCount_ = std::min(ghostCount_ + 1, ghosts_.size());
@@ -693,7 +702,7 @@ bool PlaygroundRoom::pointReachedByBodies() const {
 }
 
 void PlaygroundRoom::freezeCheck() {
-    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
+    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) * kTick < kQuantum &&
         (point_.y <= kSurfaceY || restingBody_ >= 0 || restingOnBall_)) {
         pointFrozen_ = true;
         velocity_ = {};
@@ -723,7 +732,7 @@ void PlaygroundRoom::advance(double seconds) {
         // The same for a ball: take it away and the dot has nothing under it.
         if (pointFrozen_ && restingOnBall_) {
             const double distance = length(point_ - ball_.position);
-            if (distance > kPointRadius + ball_.radius + 1e-9) {
+            if (distance > kPointRadius + ball_.radius + kQuantum) {
                 pointFrozen_ = false;
                 resting_ = false;
                 restingOnBall_ = false;

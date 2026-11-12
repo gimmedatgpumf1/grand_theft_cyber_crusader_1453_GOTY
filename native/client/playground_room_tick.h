@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 // The numbers a body's tick is solved with.
 //
 // They live here rather than in one of the two files that solve a body, because
@@ -20,6 +22,20 @@ inline constexpr double kSurfaceY = 0.0;  // the plane, y = 0
 // The distance solve runs until every distance is back to its rest length,
 // not for a chosen number of passes. The bound is only a guard against a
 // numerical corner case looping forever.
+// The room's resolution: one micrometre.
+//
+// Nothing in this room is smaller than this. A displacement shorter than it is
+// no displacement at all, and two surfaces nearer than it are not merely close,
+// they are touching. It is a statement about what the room can resolve, not a
+// tolerance: a point at the foot of a slope that "closes" on the edge it is
+// sliding along by a fraction of a micrometre in a whole tick is not arriving at
+// anything, and a shape that has crept a thousandth of a micron in a tick has not
+// moved. Every argument this room has ever had with itself has come from the last
+// few significant figures of a double, and they are all below this line.
+inline constexpr double kQuantum = 1e-6;  // metres
+// And the slowest motion that exists: the speed that covers a quantum in a tick.
+// Anything slower does not move this tick, so its speed is nothing.
+inline constexpr double kQuantumSpeed = kQuantum / kTick;  // m/s
 inline constexpr int kMaxDistancePasses = 256;
 inline constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is
@@ -43,6 +59,31 @@ inline constexpr int kContactPasses = 32;
 // a body a large force acts on, and that is all.
 inline Vec3 accelerated(Vec3 velocity, Vec3 force, double mass) {
     return velocity + force * (kTick / mass);
+}
+
+// What is left of a speed once the room's resolution is applied: a speed that
+// cannot carry something a whole micrometre in a tick is not a speed, it is the
+// arithmetic talking to itself.
+inline Vec3 resolved(Vec3 velocity) {
+    return length(velocity) * kTick < kQuantum ? Vec3{} : velocity;
+}
+
+// And a shape's turn, measured where it shows: the furthest corner of a body is
+// the furthest anything on it travels for a given angle. A turn that carries that
+// corner less than a micrometre has not turned.
+inline double resolvedTurn(double spin, double furthest) {
+    return std::abs(spin) * furthest * kTick < kQuantum ? 0.0 : spin;
+}
+
+// Where a move of less than a micrometre goes: nowhere. The position it started
+// at *is* the position it arrives at.
+inline Vec3 resolvedMove(Vec3 from, Vec3 to) {
+    return length(to - from) < kQuantum ? from : to;
+}
+
+// Whether two surfaces are touching: nearer than the room can resolve.
+inline bool touching(double gap) {
+    return gap < kQuantum;
 }
 
 }  // namespace gtc::native::playground_tick

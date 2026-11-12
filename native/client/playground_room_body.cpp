@@ -33,13 +33,13 @@ namespace {
 // How close to a surface counts as being on it. A micrometre: the walk stops at
 // the touching instant to an arithmetic fraction of a step, and this is the width
 // of the band in which the two are the same place.
-constexpr double kOnSurface = 1e-6;
-// How near a surface counts as resting on it. A shape lying flat on the floor and
-// a shape balanced on one corner of it differ by the floor's own flatness -- at the
-// scale of this room, a few microns -- and a contact set that sees only the corner
-// because the face is a hundredth of a millimetre up is a contact set that lets the
-// shape rock. This is the band in which two surfaces are touching.
-constexpr double kContactBand = 1e-4;
+constexpr double kOnSurface = kQuantum;
+// How near a surface counts as resting on it. Two surfaces are touching when they
+// are nearer than the room can resolve -- a micrometre. The band a contact is
+// gathered with is the same number, because it is the same question: a face a
+// hundredth of a millimetre off the floor is not touching the floor, and answering
+// it as a contact is answering something that is not there.
+constexpr double kContactBand = kQuantum;
   // m
   // m/s
   // N s
@@ -163,12 +163,20 @@ void PlaygroundRoom::applyAirDrag() {
 // place a body's place or turn is ever changed by the simulation.
 double PlaygroundRoom::advanceBodies(double seconds) {
     if (!(seconds > 0.0)) return 0.0;
+    // The step itself, under the room's resolution: a shape whose centre would
+    // move less than a micrometre this tick does not move, and a shape whose turn
+    // would carry its furthest corner less than a micrometre does not turn. Below
+    // that the numbers are not describing the room any more; they are describing
+    // the last few bits of a double, and a body that spends a second of them is a
+    // body that is standing still and does not know it.
     const auto move = [&](double time) {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             Body& body = bodies_[index];
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-            body.centre = body.centre + body.velocity * time;
-            body.angle += body.spin * time;
+            double furthest = 0.0;
+            for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+            body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
+            body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
             placeCorners(body);
         }
     };
