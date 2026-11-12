@@ -54,6 +54,10 @@ constexpr int kMaxWalkStops = 8;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
+int solvePassesFor() {
+    const char* v = std::getenv("SOLVEPASSES");
+    return v ? std::atoi(v) : 32;
+}
 constexpr int kSolvePasses = 32;
 constexpr double kSolveTolerance = 1e-12;  // m/s
 // How long a body's pose has to stay inside one small box before it is at rest,
@@ -777,7 +781,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         const Body& b = bodies_[index];
         return 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin;
     };
-    for (int pass = 0; pass < kSolvePasses; ++pass) {
+    const int passes = solvePassesFor();
+    for (int pass = 0; pass < passes; ++pass) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const std::size_t one = patches.items[m].body;
