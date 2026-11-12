@@ -199,7 +199,16 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // that blow would turn it. Where the two shapes are touching, not the
             // nearest corner: the ball meeting the middle of a face turns the body
             // by nothing, and a corner of a face is not where the blow lands.
-            const double bodyShare = giveAt(*body, contactPoint, answer);
+            // Is the shape the ball is hitting standing on the floor? Its lowest
+            // corner within a micrometre of it is the shape being carried, and a
+            // shape being carried cannot be pushed further into what carries it.
+            bool onFloor = false;
+            if (normal.y > 0.0 && body->count > 0) {
+                double lowest = body->position[0].y;
+                for (std::size_t i = 1; i < body->count; ++i) lowest = std::min(lowest, body->position[i].y);
+                onFloor = lowest <= playground_tick::kSurfaceY + playground_tick::kQuantum;
+            }
+            const double bodyShare = giveAtHeld(*body, contactPoint, answer, onFloor);
             // What the ball can take of this blow is only what it is free to do with
             // it. A ball already held by a surface, or one on the floor that the
             // blow would drive downwards, has nowhere to go: the body takes the
@@ -235,7 +244,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // top of it takes none of that blow -- the floor under it does -- and a
             // friction solve given the whole of it span the ball sideways and down
             // at metres a second off a body that never touched it that way.
-            pushBody(*body, contactPoint, answer * -impulse, ForceKind::Ball);
+            // What the shape is given is what it can take. The downward part of the
+            // blow is the floor's to answer, so the shape is not handed it: it would
+            // only be cancelled again by the floor on the next tick, and cancelled
+            // momentum is momentum the room has lost track of. The ball's share was
+            // solved against that same refusal, so the pair still adds up.
+            Vec3 handed = answer * -impulse;
+            if (onFloor) handed.y = std::max(handed.y, 0.0);
+            pushBody(*body, contactPoint, handed, ForceKind::Ball);
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
