@@ -464,10 +464,13 @@ private:
         ForceKind kind = ForceKind::Contact;
         std::size_t on = 0;
     };
-    // A whole tick's worth, merged by (body, kind, place). Sixty-four is far more
-    // than a room of this size can produce and the merge is what keeps it small; the
-    // array is a bound, never a cut.
-    static constexpr std::size_t kMaxRecordedImpulses = 64;
+    // A whole tick's worth, merged by (body, kind, place). The merge is what keeps
+    // this small -- a corner, one kind of force, one arrow -- and the array is sized
+    // to what the room can actually hold: every body's corners against every kind of
+    // force, with room to spare. It is a bound, never a cut: a tick that silently
+    // dropped impulses would draw a body with arrows that do not add up to what it
+    // actually felt.
+    static constexpr std::size_t kMaxRecordedImpulses = 4 * kBodyCount * std::size_t(ForceKind::KindCount) + 8;
     std::array<RecordedImpulse, kMaxRecordedImpulses> impulses_{};
     std::size_t impulseCount_ = 0;
     void clearImpulses() { impulseCount_ = 0; }
