@@ -56,7 +56,7 @@ constexpr int kMaxWalkStops = 8;
 // that is still moving is taken to be a corner case, not a solve.
 int solvePassesFor() {
     const char* v = std::getenv("SOLVEPASSES");
-    return v ? std::atoi(v) : 32;
+    return v ? std::atoi(v) : 256;
 }
 constexpr int kSolvePasses = 256;
 // A sweep of the patches is over when nothing it can still see is closing faster
