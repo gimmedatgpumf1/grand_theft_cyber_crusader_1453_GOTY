@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -458,6 +460,16 @@ void PlaygroundRoom::settleBodies() {
     }
 }
 
+template <class B> static void dumpBody(const char* tag, const B& body) {
+    if (std::getenv("WOBDUMP") == nullptr || body.count == 0) return;
+    std::fprintf(stderr, "  %-14s c(%.7f,%.7f) a %+.7f v(%+.5f,%+.5f) w %+.5f  y:", tag, body.centre.x,
+                 body.centre.y, body.angle, body.velocity.x, body.velocity.y, body.spin);
+    for (std::size_t i = 0; i < body.count; ++i) std::fprintf(stderr, " %.7f", body.position[i].y);
+    std::fprintf(stderr, " x:");
+    for (std::size_t i = 0; i < body.count; ++i) std::fprintf(stderr, " %.5f", body.position[i].x);
+    std::fprintf(stderr, "\n");
+}
+
 // One tick of every body. The forces first, then the walk.
 //
 // The walk stops at every arrival -- the first instant anything would meet
@@ -474,9 +486,13 @@ void PlaygroundRoom::tickBodies() {
     // should be standing still through. An arrival later in the tick joins the same
     // set, keeping what the contacts it shares already carry, so the tick converges
     // on one answer for each meeting instead of answering the same one again.
+    if (std::getenv("WOBDUMP")) std::fprintf(stderr, "TICK\n");
+    dumpBody("after-last", bodies_[0]);
     ContactSet contacts;
     gatherContacts(contacts);
+    if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  start contacts %zu\n", contacts.count);
     solveContacts(contacts);
+    dumpBody("post-gravity+solve", bodies_[0]);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
@@ -497,6 +513,8 @@ void PlaygroundRoom::tickBodies() {
             remaining -= advanceBodies(remaining);
             break;
         }
+        if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  after stop %d (remaining %.6f) contacts %zu\n", stop, remaining, contacts.count);
+        dumpBody("stopped", bodies_[0]);
     }
     settleBodies();
     writeImpulses();
