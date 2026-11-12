@@ -164,43 +164,113 @@ double PlaygroundRoom::advanceBodies(double seconds) {
 // before it ever got spent. What counts is closing -- being driven into a surface
 // it is already touching -- or reaching one it is clear of. That distinction is
 // the difference between a walk and a stutter.
+//
+// The instant is solved for on the configuration that will actually happen, corner
+// by corner: a corner on a turning body travels an arc, not a line, and taking the
+// line through it is what leaves a shape a hair inside the floor. The gap at a
+// given time is measured, the rate it is closing is measured, and the crossing is
+// bisected to the width of the arithmetic.
 double PlaygroundRoom::timeToContact(double remaining) const {
-    double first = remaining;
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
+    // Where every body's corners would be after `time`: carried by its speed and
+    // turned by its spin, with the corners read off that. A body that is asleep or
+    // held is a surface that stays where it is.
+    std::array<std::array<Vec3, kMaxCorners>, kBodyCount> corners{};
+    const auto place = [&](double time) {
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            if (body.frozen || bodyHeld(index)) {
+                corners[index] = body.position;
+                continue;
+            }
+            const double angle = body.angle + body.spin * time;
+            const Vec3 centre = body.centre + body.velocity * time;
+            const double c = std::cos(angle), s = std::sin(angle);
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const Vec3 local = body.local[i];
+                corners[index][i] = Vec3{centre.x + local.x * c - local.y * s,
+                                         centre.y + local.x * s + local.y * c, centre.z};
+            }
+        }
+    };
+    const auto moving = [&](std::size_t index) {
         const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        // The floor.
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const double height = body.position[i].y;
-            const double falling = pointSpeed(body, body.position[i]).y;
-            if (!(falling < 0.0)) continue;
-            // A corner already resting on the floor is not on its way to it: it is
-            // answered by the contact solve, not by the walk, and stopping the walk
-            // at it would stop the whole tick at its first instant.
-            if (height <= kContactBand) continue;
-            first = std::min(first, height / -falling);
-        }
-        // The ball. The ball is stepped after the bodies, so for the length of this
-        // walk it is a surface that is not going anywhere, and the bodies stop on
-        // it; what the ball does about the meeting is its own tick's business.
-        {
-            Vec3 way{0, 1, 0}, at{};
-            const double gap = bodyBallGap(index, way, at);
-            const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
-            if (closing > 1e-12 && gap > kContactBand) first = std::min(first, gap / closing);
-        }
-        // Another body, seen from the place they are closest.
+        return body.count != 0 && !body.frozen && !bodyHeld(index);
+    };
+    // The gap between a body and the ball, at the corners it has now.
+    const auto ballGap = [&](std::size_t index) {
+        return ball_shape::outlineGap(ball_.position, corners[index].data(), corners[index].data(),
+                                      bodies_[index].count, 1.0)
+                   .gap -
+               ball_.radius;
+    };
+    const auto bodyGap = [&](std::size_t one, std::size_t two) {
+        return pairGap(corners[one].data(), bodies_[one].count, corners[two].data(), bodies_[two].count).gap;
+    };
+    // Which meetings are worth watching: the ones that are not already touching.
+    // A meeting already in the contact band is answered by the patch, not by the
+    // walk.
+    bool watchCorner[kBodyCount][kMaxCorners] = {};
+    bool watchBall[kBodyCount] = {};
+    bool watchPair[kBodyCount][kBodyCount] = {};
+    place(0.0);
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        if (!moving(index)) continue;
+        for (std::size_t i = 0; i < bodies_[index].count; ++i)
+            watchCorner[index][i] = corners[index][i].y > kContactBand;
+        watchBall[index] = ballGap(index) > kContactBand;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == index || bodies_[other].count == 0) continue;
-            const Body& solid = bodies_[other];
-            const playground_detail::OutlinePairGap gap =
-                pairGap(body.position.data(), body.count, solid.position.data(), solid.count);
-            const Vec3 closingSpeed = pointSpeed(body, gap.one) - pointSpeed(solid, gap.two);
-            const double closing = -dot(closingSpeed, gap.normal);
-            if (closing > 1e-12 && gap.gap > kContactBand) first = std::min(first, gap.gap / closing);
+            watchPair[index][other] = bodyGap(index, other) > kContactBand;
         }
     }
-    return std::clamp(first, 0.0, remaining);
+    // The smallest gap anywhere, over the watched meetings, at `time`.
+    const auto gapAfter = [&](double time) {
+        place(time);
+        double least = 1e30;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            if (!moving(index)) continue;
+            for (std::size_t i = 0; i < bodies_[index].count; ++i)
+                if (watchCorner[index][i]) least = std::min(least, corners[index][i].y);
+            if (watchBall[index]) least = std::min(least, ballGap(index));
+        }
+        for (std::size_t one = 0; one < kBodyCount; ++one) {
+            if (!moving(one)) continue;
+            for (std::size_t two = 0; two < kBodyCount; ++two)
+                if (watchPair[one][two]) least = std::min(least, bodyGap(one, two));
+        }
+        return least;
+    };
+    // Nothing comes within touch over the whole of what is left: the tick is travel.
+    if (gapAfter(remaining) > 0.0) return remaining;
+    // Something does. Walk forward to the instant: how fast the gap is closing is
+    // measured rather than assumed, so the step to the surface is the distance over
+    // the rate, and the crossing is then bisected.
+    double time = 0.0;
+    double gap = gapAfter(0.0);
+    for (int step = 0; step < 32 && time < remaining; ++step) {
+        if (!(gap > 0.0)) break;
+        const double probe = 1e-6;
+        const double closing = (gap - gapAfter(time + probe)) / probe;
+        if (!(closing > 1e-12)) return remaining;
+        const double arrive = std::min(remaining, time + gap / closing);
+        if (gapAfter(arrive) > 0.0) {
+            time = arrive;
+            gap = gapAfter(time);
+            continue;
+        }
+        double low = time, high = arrive;
+        for (int i = 0; i < 60; ++i) {
+            const double middle = 0.5 * (low + high);
+            if (gapAfter(middle) > 0.0) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return high;
+    }
+    return time;
 }
 
 // Every patch at the configuration the walk has stopped at.
