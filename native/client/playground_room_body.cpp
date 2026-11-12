@@ -493,6 +493,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (a > 1e-12) next0 -= closing[0] / a;
             if (d > 1e-12) next1 -= closing[1] / d;
         }
+        if (std::getenv("WOB"))
+            std::fprintf(stderr, "        n cl %.6f %.6f acc %.4f %.4f next %.4f %.4f y %.9f %.9f\n", closing[0],
+                         closing[1], patch.normalImpulse[0], patch.normalImpulse[1], next0, next1,
+                         patch.point[0].y, patch.point[1].y);
         if (next0 >= 0.0 && next1 >= 0.0) {
             apply(0, next0);
             apply(1, next1);
