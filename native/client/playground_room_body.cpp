@@ -569,6 +569,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             } else if (other != nullptr) {
                 body->onBody = true;
                 body->supportFrozen = other->frozen;
+                body->supportBody = patch.other;
             }
             body->supportLow = std::min(body->supportLow, patch.point[k].x);
             body->supportHigh = std::max(body->supportHigh, patch.point[k].x);
@@ -605,7 +606,21 @@ void PlaygroundRoom::settleBodies() {
         }
         const bool carriedByPlane = body.touchingPlane && body.centre.x >= body.supportLow - kContactBand &&
                                     body.centre.x <= body.supportHigh + kContactBand;
-        const bool carriedByBody = body.onBody && body.supportFrozen &&
+        // Being held up by another body counts only if that body is *carrying* it.
+        // A shape asleep is treated as a surface, and a surface never feels anything:
+        // a cube propped against a sleeping triangle is stopped by a wall of infinite
+        // mass, held by friction that wall never paid for, creeps into a still state
+        // and then goes to sleep -- and from then on the pair is two sleeping bodies
+        // that cannot wake each other, with the cube standing on a slope at an angle
+        // no friction could hold and the triangle's arrows showing its own weight and
+        // nothing else. That is the construction that looks impossible and is.
+        //
+        // So the support has to be a solved one: the body under this one must have this
+        // one's load in the forces it was left with. If it has not, this body is not
+        // being held, it is only touching, and it stays awake -- and because it stays
+        // awake, the body under it is woken too, and the pair is solved with both of
+        // them from the next tick, which is when the load first becomes real.
+        const bool carriedByBody = body.onBody && body.supportFrozen && carriedBySolvedSupport(index) &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
         const bool carried = carriedByPlane || carriedByBody;
@@ -797,6 +812,36 @@ void PlaygroundRoom::tickBodies() {
     separateBodies();
     settleBodies();
     writeImpulses();
+}
+
+
+// Was the frozen body under `index` ever given this body's load?
+//
+// The forces a sleeping body replays are the ones the solver last left it with, so if
+// it is really carrying something, the thing it carries is in that list: an impulse at
+// the place the two meet, of the pair kind. If nothing of the sort is there, the pair
+// was never solved with both sides, which means the shape above is leaning on a wall
+// that no longer exists as a physical thing -- it is only frozen.
+bool PlaygroundRoom::carriedBySolvedSupport(std::size_t index) const {
+    const Body& body = bodies_[index];
+    if (body.count == 0) return false;
+    for (std::size_t other = 0; other < kBodyCount; ++other) {
+        if (other == index) continue;
+        const Body& support = bodies_[other];
+        if (!support.frozen || support.count == 0) continue;
+        pair_shape::PairManifold meeting;
+        if (!pair_shape::collide(body.position.data(), body.count, support.position.data(), support.count,
+                                 kContactBand, meeting))
+            continue;
+        for (std::size_t i = 0; i < support.appliedCount; ++i) {
+            const Body::Applied& applied = support.applied[i];
+            if (applied.kind != ForceKind::Pair) continue;
+            for (std::size_t k = 0; k < meeting.ends; ++k)
+                if (length(Vec3{applied.at.x - meeting.at[k].x, applied.at.y - meeting.at[k].y, 0}) < 0.05)
+                    return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace gtc::native

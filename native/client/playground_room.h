@@ -233,6 +233,11 @@ private:
         // not carried by them -- it tips instead, which is what a shape hanging
         // over an edge does.
         bool touchingPlane = false, onBody = false, supportFrozen = false;
+        // Which body is under this one, when one is: `supportFrozen` alone cannot
+        // tell a stack that was solved together from a shape propped against
+        // something that has already gone to sleep and never felt it (see
+        // carriedBySolvedSupport()).
+        std::size_t supportBody = kBodyCount;
         double supportLow = 1e30, supportHigh = -1e30;
         // The box its pose has stayed inside, and for how many ticks: a shape that
         // has not been anywhere for a second is standing still, whether the
@@ -389,6 +394,10 @@ private:
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.
     void separateBall();
+    // Whether the body carrying `index` actually carries it: its own replayed forces
+    // are where it would be felt, so a support with no load of this body in them was
+    // never carrying anything. See the file.
+    bool carriedBySolvedSupport(std::size_t index) const;
     // Whether the surface a sleeping body is lying on is still there. A body that
     // was put to rest by a floor, a shape or the ball, and that is touching nothing
     // at all, is a body that has nothing holding it up any more -- and it wakes to
