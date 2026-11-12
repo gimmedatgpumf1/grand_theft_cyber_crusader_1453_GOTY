@@ -457,7 +457,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // is two numbers, because the load is what a body standing on the floor
         // decides with: it is the difference between the two ends that holds a body
         // flat instead of tipping it.
-        const std::size_t dofs = count + 1;
         Vec3 point[2 * kMaxPatchEnds], direction[2 * kMaxPatchEnds];
         for (std::size_t k = 0; k < count; ++k) {
             point[k] = patch.point[k];
