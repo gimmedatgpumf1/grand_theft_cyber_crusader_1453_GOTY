@@ -105,33 +105,52 @@ void PlaygroundRoom::applyBodyForces() {
 // This is a force in its own right and it is applied in a pass of its own, before
 // the weight and independently of it -- not as something that happens to a body
 // because it is falling. A shape sliding along the floor at speed is slowed by the
-// air exactly as a shape dropping through it is; a shape turning on the spot is
-// slowed by the air it turns through; a dot thrown sideways is slowed the same way,
-// and so is the ball. Nothing that moves is exempt, and nothing has to be falling
-// to feel it.
+// air exactly as a shape dropping through it is, a shape turning is slowed by the
+// air it turns through, a dot thrown sideways is slowed the same way, and so is the
+// ball. Nothing that moves is exempt, and nothing has to be falling to feel it.
 //
-// The law is the drag equation: F = half rho Cd A v^2, against the way the piece is
-// moving. A body is a plate a metre deep, so each corner owns the piece of outline
-// nearest it -- half of each side that meets there -- and each piece moves with the
-// body, its turn included. That is why the air slows a spin as well as a slide: the
-// force is applied at the place, so an arm from the centre is a moment.
+// The law is the flat-plate pressure law, which is what drag *is* for a body like
+// these: each face of the outline takes the pressure of the air it is pushing into,
+// and the pressure is the drag equation with the area that face actually presents --
+//
+//     F = half * rho * Cd * L * depth * v_n^2,     along the face's outward normal,
+//
+// applied at the middle of the face, where that pressure acts. v_n is the speed of
+// the face through the air *along its own normal*, so a face edge-on to the flow is
+// not dragged at all, and only the faces the air is being driven into take anything:
+// the lee side of a shape is not pushed, it is a shadow.
+//
+// Two things follow from doing it this way, and both of them matter. The area is the
+// face's own L * depth, so a square presents the one face it is driving into and not
+// the sum of every side it happens to have -- asking each corner for half of each of
+// its sides asked for four times the shape. And the force acts along the normal of
+// the face, at the middle of the face, so a shape moving straight through the air
+// takes a force through its middle and does not turn: a body is only turned by the
+// air when the air is taking hold of it unevenly, which is a real effect -- a shape
+// falling at an angle does turn, and that is why a leaf tumbles -- but a shape with
+// no turn of its own must not be given one.
 void PlaygroundRoom::applyAirDrag() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0 || body.frozen) continue;
         for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 before = body.position[(i + body.count - 1) % body.count];
-            const Vec3 after = body.position[(i + 1) % body.count];
-            const double piece = 0.5 * (length(body.position[i] - before) + length(after - body.position[i]));
-            const Vec3 speed = pointSpeed(body, body.position[i]);
-            const double swift = length(speed);
-            if (!(swift > 0.0) || !(piece > 0.0)) continue;
-            const double drag =
-                0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * piece * kRoomDepth * swift * swift;  // N
-            const Vec3 air = speed * (-drag / swift);
-            addForce(body.position[i], air, ForceKind::Drag, nullptr, index);
+            const Vec3 from = body.position[i];
+            const Vec3 to = body.position[(i + 1) % body.count];
+            const Vec3 along = to - from;
+            const double span = length(along);
+            if (!(span > 0.0)) continue;
+            // The outline runs one way round, so this is the way out of the shape.
+            const Vec3 out{along.y / span, -along.x / span, 0.0};
+            const Vec3 at = from + along * 0.5;
+            const double vn = dot(pointSpeed(body, at), out);
+            // Only a face the air is being driven into is pressed; the one behind is
+            // in the shape's shadow and the air there is not pushing it anywhere.
+            if (!(vn < 0.0)) continue;
+            const double press = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * span * kRoomDepth * vn * vn;
+            const Vec3 air = out * press;
+            addForce(at, air, ForceKind::Drag, nullptr, index);
             const Vec3 puff = air * kTick;
-            const Vec3 arm = body.position[i] - body.centre;
+            const Vec3 arm = at - body.centre;
             body.velocity = body.velocity + puff * (1.0 / body.mass);
             body.spin += (arm.x * puff.y - arm.y * puff.x) / body.moment;
         }
