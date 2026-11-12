@@ -47,10 +47,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double turned = inertia * (ball.spin - spinBefore) / kTick;
         if (std::abs(turned) > 1e-9) addCouple(contactPoint, turned, Vec3{}, ForceKind::Ball, kBallOwner);
     };
-    if (std::getenv("DBGB"))
-        std::fprintf(stderr, "contact body %d depth %.6f exchange %d normal(%+.2f,%+.2f) v(%+.2f,%+.2f) at(%.3f,%.3f)\n",
-                     bodyIndex, depth, exchange ? 1 : 0, normal.x, normal.y, ball.velocity.x, ball.velocity.y,
-                     contactPoint.x, contactPoint.y);
     Vec3 answer = normal;
     bool canMove = false;
     // A body at rest is not stepped, and what it is not stepping it cannot give
@@ -178,10 +174,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // the floor gets that every tick, and bouncing it would be bouncing it off
     // nothing.
     const double rebound = arrivedSpeed < 0.0 ? -kBallRestitution * arrivedSpeed : 0.0;
-    if (std::getenv("DBGB"))
-        std::fprintf(stderr, "    arrival(%+.2f,%+.2f) surf(%+.2f,%+.2f) arrivedSpeed %+.3f closing %+.3f rebound %+.3f canMove %d\n",
-                     ball.arrival.x, ball.arrival.y, surfaceVelocity.x, surfaceVelocity.y, arrivedSpeed, closing,
-                     rebound, canMove ? 1 : 0);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
@@ -217,16 +209,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             const bool pressing =
                 -normal.y > std::abs(normal.x) && ball.position.y <= ball.radius + kTouch;
             const bool ballGives = !ballHeld && !pressing;
-            if (std::getenv("DBGB"))
-                std::fprintf(stderr, "      gives: ballHeld %d normal.y %.17g posY %.17g radius %.17g pressing %d ballGives %d\n",
-                             ballHeld ? 1 : 0, normal.y, ball.position.y, ball.radius, pressing ? 1 : 0,
-                             ballGives ? 1 : 0);
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
-            if (std::getenv("DBGB"))
-                std::fprintf(stderr, "      canMove: bodyShare %.4f ballShare %.1f impulse %+.4f -> v(%+.3f,%+.3f)\n",
-                             bodyShare, ballShare, impulse, ball.velocity.x + normal.x * (impulse * ballShare / ball.mass),
-                             ball.velocity.y + normal.y * (impulse * ballShare / ball.mass));
             ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
             // What this surface can rub against the ball is what it can press the
             // ball with, and the ball is only pressed by the part of the blow it

@@ -106,9 +106,7 @@ void PlaygroundRoom::separateBodies() {
         double deepest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
         if (deepest > 0.0) {
-            if (std::getenv("DBGS")) std::fprintf(stderr, "sep b%zu floor up %.9f\n", one, deepest);
             body.centre.y += deepest;
-            if (std::getenv("DBGS")) std::fprintf(stderr, "sep floor b%zu up %.6f\n", one, deepest);
             placeCorners(body);
         }
         // Another shape.
@@ -127,7 +125,6 @@ void PlaygroundRoom::separateBodies() {
                                                                          solid.position.data(), solid.count, 1.0);
                 if (!(gap.gap < 0.0)) continue;
                 const Vec3 move = gap.normal * (-gap.gap);
-                if (std::getenv("DBGS")) std::fprintf(stderr, "sep corner b%zu by (%.6f,%.6f)\n", one, move.x, move.y);
                 body.centre = body.centre + move * share;
                 if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
                 placeCorners(body);
@@ -153,7 +150,6 @@ void PlaygroundRoom::separateBodies() {
                         inside(solid.position.data(), solid.count, body.position.data(), body.count);
                     if (!cornersInside) {
                         const Vec3 move = meeting.normal * meeting.overlap;
-                        if (std::getenv("DBGS")) std::fprintf(stderr, "sep edge b%zu by (%.6f,%.6f) overlap %.6f\n", one, move.x, move.y, meeting.overlap);
                         body.centre = body.centre + move * share;
                         if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
                         placeCorners(body);
