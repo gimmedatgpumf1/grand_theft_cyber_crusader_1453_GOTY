@@ -746,7 +746,15 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     report("advanced");
-    separateBodies();
+    {
+        const Vec3 was0 = bodies_[0].centre, was1 = bodies_[1].centre;
+        separateBodies();
+        if (std::getenv("DBGS")) {
+            const Vec3 d0 = bodies_[0].centre - was0, d1 = bodies_[1].centre - was1;
+            if (length(d0) > 1e-12 || length(d1) > 1e-12)
+                std::fprintf(stderr, "  SEP b0 (%+.3e,%+.3e) b1 (%+.3e,%+.3e)\n", d0.x, d0.y, d1.x, d1.y);
+        }
+    }
     report("separate");
     settleBodies();
     report("settled");
