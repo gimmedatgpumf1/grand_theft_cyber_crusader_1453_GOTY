@@ -728,10 +728,10 @@ void PlaygroundRoom::tickBodies() {
                     overlap = std::max(overlap, m.overlap);
             }
         }
-        std::fprintf(stderr, "  %-8s band %.6f overlap %.9f | b0 y %.6f v %+.5f w %+.5f %s | b1 y %.6f v %+.5f w %+.5f %s\n",
-                     when, band, overlap, bodies_[0].centre.y, bodies_[0].velocity.x, bodies_[0].spin,
-                     bodies_[0].frozen ? "Z" : "", bodies_[1].centre.y, bodies_[1].velocity.x, bodies_[1].spin,
-                     bodies_[1].frozen ? "Z" : "");
+        std::fprintf(stderr, "  %-8s E %.9f b0 (y %.6f vy %+.5f vx %+.5f w %+.5f) b1 (y %.6f vy %+.5f vx %+.5f w %+.5f)\n",
+                     when, totalEnergy(), bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].velocity.x,
+                     bodies_[0].spin, bodies_[1].centre.y, bodies_[1].velocity.y, bodies_[1].velocity.x,
+                     bodies_[1].spin);
         for (std::size_t m = 0; m < patches.count; ++m)
             std::fprintf(stderr, "      patch b%zu o%zu n(%+.3f,%+.3f) ends %zu gap %.9f %.9f imp %.5f %.5f tan %.5f %.5f\n",
                          patches.items[m].body, patches.items[m].other, patches.items[m].normal.x,
