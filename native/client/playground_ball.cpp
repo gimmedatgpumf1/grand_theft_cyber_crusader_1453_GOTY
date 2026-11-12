@@ -196,6 +196,9 @@ void PlaygroundRoom::tickBall() {
     // What the ball was doing as the walk began. The drawing needs the piece of the
     // path before the first meeting, and it is this velocity that made it.
     const Vec3 walkStart = ball.velocity;
+    // Set while the meeting is being recorded and cleared once the contact has had
+    // its say: what the ball leaves with is the answer, not what it arrived with.
+    bool bendRecording = false;
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = ball.position + ball.velocity * (kTick * remaining);
         const Vec3 travel = next - ball.position;
@@ -327,10 +330,10 @@ void PlaygroundRoom::tickBall() {
         // of path between two of those is too short to draw.
         if (!ball.bent) {
             ball.bent = true;
+            bendRecording = true;
             ball.bendAt = (1.0 - remaining) + first * remaining;
             ball.bendPoint = ball.position;
             ball.bendIn = walkStart;
-            ball.bendOut = ball.velocity;
         }
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
@@ -354,12 +357,14 @@ void PlaygroundRoom::tickBall() {
         if (what == -2) {
             floorAnswered = true;
             ballContact(normal, -1);
+            if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
             // One blow per body per tick. A body met again in what is left of the
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
             ballContact(normal, what, held, contactPoint, depth, exchange);
+            if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
         // A ball that started the tick already through something has been put back
         // on its surface, and there is no honest travel left to spend. Touching is
