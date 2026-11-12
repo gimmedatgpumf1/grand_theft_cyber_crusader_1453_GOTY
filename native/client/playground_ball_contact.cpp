@@ -99,6 +99,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // for -- so what is left for the ball is where the ball itself has come to be
     // inside the shape. The ball goes back out along the way it is nearest to
     // being outside, and the floor is the one thing it cannot go out through.
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   D v(%+.4f,%+.4f) depth %.6f\n", ball.velocity.x, ball.velocity.y, depth);
     if (depth > 0.0) {
         const OutlineGap now = outlineGap(ball.position, body ? body->previous.data() : nullptr,
                                           body ? body->position.data() : nullptr, body ? body->count : 0, 1.0);
@@ -162,6 +163,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double into = dot(ball.velocity - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   E v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
 
     if (!exchange) {
         // The blow for this body was struck earlier in the tick. What is left is
