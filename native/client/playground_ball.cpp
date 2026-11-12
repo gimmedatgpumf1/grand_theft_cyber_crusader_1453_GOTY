@@ -49,9 +49,15 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
     if (body.count == 0) return 1e30;
     const OutlineGap gap =
         outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
-    const OutlineTouch touch = outlineTouch(ball_.position, body.position.data(), body.count);
     way = gap.normal * -1.0;
-    at = touch.point;
+    // Where the two meet is on the ball's own surface, in the direction the body
+    // lies from its centre. It is not the body's nearest point: a round ball pressed
+    // against a flat face touches at the foot of the perpendicular, and the body's
+    // nearest point is the same place only while the centre is over the face. Take
+    // the body's point and a ball wedged on the end of a face is answered half a
+    // metre from where it is really pressed, which is a lever about the ball's
+    // centre that nothing in the room gave it.
+    at = ball_.position + way * ball_.radius;
     return gap.gap - ball_.radius;
 }
 
