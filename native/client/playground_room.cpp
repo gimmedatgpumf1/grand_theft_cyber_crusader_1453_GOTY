@@ -518,20 +518,22 @@ void PlaygroundRoom::tick() {
             // middle, not the middle itself.
             hitBody(hitIndex, normal, into);
         }
-        // And that exchange is the whole of the answer.
+        // And that exchange is the whole of the answer -- but it is an answer
+        // about the two surfaces, not about the room.
         //
-        // A body is not the floor. The floor cannot yield, so all a dot driving
-        // into it can do is stop -- what runs along stays, nothing else survives.
-        // A body yields: it takes part of the approach as speed of its own, and
-        // what the dot keeps is the difference. Flattening the dot onto the face
-        // afterwards as if the face were a wall throws that difference away, and
-        // it throws away momentum with it: the dot arrived with four metres a
-        // second, the cube left with a third of one, and the rest of the motion
-        // went nowhere at all -- not into the cube, not into friction, not into
-        // heat. Only motion that still drives into a face is removed, so the
-        // separation the impulse has just produced is left alone to run.
-        if (velocity_.x * normal.x + velocity_.y * normal.y < 0.0)
-            velocity_ = velocity_ - normal * dot(velocity_, normal);
+        // The floor cannot yield: all a dot driving into it can do is stop, and
+        // flattening it onto the plane afterwards says exactly that. A body
+        // yields. It takes part of the approach as motion of its own, and what the
+        // dot keeps is the rest -- the two surfaces part company at nought. So
+        // what is removed here is what still drives the dot into the face *relative
+        // to the face moving away under it*, and nothing else. Flattening the dot
+        // onto the face as if the face were a wall throws the rest away, and with
+        // it momentum: the dot arrived at three and a half metres a second, the cube
+        // left with half a metre a second, and everything between vanished into
+        // nothing -- not into the cube, not into friction, not into heat.
+        const Vec3 face = pointSpeed(bodies_[hitIndex], point_);
+        const Vec3 relative = velocity_ - face;
+        if (dot(relative, normal) < 0.0) velocity_ = face + (relative - normal * dot(relative, normal));
         resting_ = true;
         restingBody_ = int(hitIndex);
         supportNormal_ = normal;
