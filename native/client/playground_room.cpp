@@ -29,6 +29,69 @@ constexpr int kMaxContacts = 4;
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
 
+// What each corner standing on a surface carries, for a body that is at rest.
+//
+// A body that is not moving is held up by its contacts, and statics says exactly
+// what they carry: together they answer its weight, and together they leave no
+// moment about its centre of mass -- otherwise it would turn, and it does not.
+// Those are two equations on the loads, so two contacts on one face are determined
+// by them outright: a corner with the body's weight directly over it carries more
+// than a corner with only a taper over it. A shape balanced on a corner carries its
+// whole weight there. It is not a share and it is not a fudge: it is the reading a
+// scale under each corner would give.
+//
+// When more corners are down than the two the equations need, the floor and a
+// perfectly rigid body between them do not say which carries what, and the answer
+// is the one that leaves the body strained least -- the least sum of squares of the
+// loads. That is chosen, not invented, and it keeps the two equations exactly.
+//
+// `along` is where each contact is measured along the surface; `centre` is where
+// the body's weight runs through.
+void staticLoads(const double* along, std::size_t count, double centre,
+                 double (&share)[PlaygroundRoom::kMaxCorners]) {
+    for (std::size_t i = 0; i < count; ++i) share[i] = 0.0;
+    if (count == 0) return;
+    // Only the contacts still carrying take part; one the equations would load in
+    // tension is off the surface, and the rest are answered again without it.
+    bool live[PlaygroundRoom::kMaxCorners] = {};
+    for (std::size_t i = 0; i < count; ++i) live[i] = true;
+    for (std::size_t attempt = 0; attempt < count; ++attempt) {
+        double n = 0.0, sumD = 0.0, sumDD = 0.0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!live[i]) continue;
+            const double d = along[i] - centre;
+            n += 1.0;
+            sumD += d;
+            sumDD += d * d;
+        }
+        // The least-norm loads under  sum w = 1  and  sum w*d = 0  are
+        // w_i = p + q*d_i, with (p, q) solving the two equations read backwards.
+        const double det = n * sumDD - sumD * sumD;
+        double p = 0.0, q = 0.0;
+        if (n > 1.0 && std::abs(det) > 1e-18) {
+            p = sumDD / det;
+            q = -sumD / det;
+        } else {
+            // All of them at the same place: there is nothing to balance, and the
+            // load is shared equally because every one of them is the same place.
+            p = n > 0.0 ? 1.0 / n : 0.0;
+        }
+        bool cut = false;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!live[i]) continue;
+            const double w = p + q * (along[i] - centre);
+            if (w < 0.0) {
+                live[i] = false;
+                cut = true;
+            }
+        }
+        if (cut) continue;
+        for (std::size_t i = 0; i < count; ++i)
+            if (live[i]) share[i] = p + q * (along[i] - centre);
+        return;
+    }
+}
+
 } // namespace
 
 Vec3 PlaygroundRoom::outwardNormalAt(const Body& body, Vec3 point) {
@@ -801,28 +864,34 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // What holds it up is not invented: a body that is not accelerating has its
     // contacts carrying exactly its weight, and the contacts are at the corners it
     // is actually standing on -- the lowest ones. Which of them carries how much is
-    // not something a rigid body at rest decides (any distribution that sums to the
-    // weight leaves it still), so it is shared equally, and the two columns add up
-    // to nothing to the newton.
+    // statics: the contacts together answer the weight and together leave the body
+    // with no moment about its centre of mass, and a corner the equations would put
+    // in tension is a corner off the surface. So a corner with the weight over it
+    // carries more than a corner with a taper over it, and the arrows a shape at rest
+    // shows are the ones it showed while it was still being solved -- the same
+    // numbers, from the same law.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (!body.frozen || stepped[index] || body.count == 0) continue;
         double lowest = 1e30;
         for (std::size_t i = 0; i < body.count; ++i) lowest = std::min(lowest, body.position[i].y);
+        double along[kMaxCorners] = {};
         std::size_t carrying = 0;
         for (std::size_t i = 0; i < body.count; ++i)
-            if (body.position[i].y <= lowest + 1e-6) ++carrying;
+            if (body.position[i].y <= lowest + 1e-6) along[carrying++] = body.position[i].x;
         if (carrying == 0) continue;
+        double share[kMaxCorners] = {};
+        staticLoads(along, carrying, body.centre.x, share);
         // Every corner is a piece of the plate and carries its share of the body's
-        // mass, so the weight written at each of them is that share times g, and
-        // the contacts together answer exactly the body's weight.
+        // mass, so the weight written at each of them is that share times g, and the
+        // contacts together answer exactly the body's weight.
         const double piece = body.mass / static_cast<double>(body.count);
+        std::size_t down = 0;
         for (std::size_t i = 0; i < body.count; ++i) {
             addForce(body.position[i], Vec3{0.0, -piece * kGravity, 0.0}, ForceKind::Gravity);
-            if (body.position[i].y <= lowest + 1e-6)
-                addForce(body.position[i],
-                         Vec3{0.0, piece * kGravity * static_cast<double>(body.count) / static_cast<double>(carrying), 0.0},
-                         ForceKind::Contact);
+            if (body.position[i].y > lowest + 1e-6) continue;
+            const double load = share[down++] * body.mass * kGravity;
+            if (load > 0.0) addForce(body.position[i], Vec3{0.0, load, 0.0}, ForceKind::Contact);
         }
     }
     // The ball asleep on something is the same pair again: its weight, and the

@@ -36,6 +36,10 @@ class PlaygroundRoom {
 public:
     // The bodies in the room, in the order they are simulated.
     static constexpr std::size_t kCube = 0, kTriangle = 1, kBodyCount = 2;
+    // The most corners a shape in the room has. A body's corners are the shape, and
+    // the load it stands on is worked out one per corner, so this is also the number
+    // of contacts a resting body can carry.
+    static constexpr std::size_t kMaxCorners = 4;
     // Puts the point back at the top of the room, with the velocity it starts
     // with. Zero velocity is the plain drop; anything else is a launch.
     bool reset(Vec3 start = {0, 1.9, 0}, Vec3 startVelocity = {});
@@ -150,7 +154,6 @@ private:
     };
     // A solid: one rigid body, with a mass, a moment of inertia, a place, a turn,
     // a speed and a spin. Its corners are the shape, not the state.
-    static constexpr std::size_t kMaxCorners = 4;
     struct Body {
         std::size_t count = 0;
         // The shape about the body's own centre of mass, at zero turn. It never
