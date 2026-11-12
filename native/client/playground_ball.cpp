@@ -172,11 +172,9 @@ void PlaygroundRoom::tickBall() {
         // rather than sampled: the speed of the ball and the speed of the turn make
         // no difference to where it lands.
         OutlineHit stop;
-        const bool met = sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
-                                                ball.velocity, limit, kTick, stop, false);
-        if (getenv("GTC_PRE")) std::fprintf(stderr, "pre body %zu startGap %.6f limit %.6f met %d along %.5f\n", index, startGap, limit, (int)met, stop.along);
-        if (!met) continue;
-        if (getenv("GTC_PRE")) std::fprintf(stderr, "pre body %zu startGap %.6f limit %.6f along %.5f\n", index, startGap, limit, stop.along);
+        if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
+                                    ball.velocity, limit, kTick, stop, false))
+            continue;
         if (!(stop.along < 1.0)) continue;
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
@@ -273,10 +271,8 @@ void PlaygroundRoom::tickBall() {
                     // through the floor -- does the ball step aside, and only then is
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
-                    if (getenv("GTC_PRE")) std::fprintf(stderr, "resting-in: body %zu through %.6f stopped=%d\n", index, through, (int)bodyStopped[index]);
                     if (!pushBodyOutOfBall(index, on.normal, through)) {
                         ++ballFoundThrough_;
-                        if (getenv("GTC_MOVE")) std::fprintf(stderr, "FOUNDTHROUGH %+.6f m\n", through);
                         ball.position = ball.position + on.normal * through;
                     }
                 }

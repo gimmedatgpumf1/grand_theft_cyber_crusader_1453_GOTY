@@ -215,14 +215,11 @@ void PlaygroundRoom::separateBodies() {
 // it: no speed is changed, so no energy is made, and the ball's own tick then finds
 // it exactly where a contact belongs and answers it as one.
 bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
-    if (getenv("GTC_PUSH")) std::fprintf(stderr, "push? %zu through %.6f\n", index, through);
     if (index >= kBodyCount || !(through > 0.0)) return false;
     Body& body = bodies_[index];
     if (body.count == 0 || bodyHeld(index)) {
-        if (getenv("GTC_PUSH")) std::fprintf(stderr, "  no: count %zu held %d\n", body.count, (int)bodyHeld(index));
         return false;
     }
-    if (getenv("GTC_PUSH")) std::fprintf(stderr, "push body %zu through %.6f normal(%+.3f,%+.3f) c(%+.3f,%+.3f)\n", index, through, normal.x, normal.y, body.centre.x, body.centre.y);
     const Vec3 was = body.centre;
     // How far the shape already reaches below the floor, which is a state it may
     // keep -- it was put there by its own step and the separation above -- but may
@@ -241,7 +238,6 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // moving, which is the honest last resort.
     for (std::size_t i = 0; i < body.count; ++i) {
         if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) {
-            if (getenv("GTC_PUSH")) std::fprintf(stderr, "  refused: corner %zu below the floor by %.6f (allowed %.6f)\n", i, playground_tick::kSurfaceY - body.position[i].y, below);
             body.centre = was;
             placeCorners(body);
             return false;
@@ -274,7 +270,9 @@ void PlaygroundRoom::separateBall() {
         if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;
         const Vec3 wanted = ball_.position - way * (-gap);
         if (wanted.y < ball_.radius - kSkin) continue;
-        if (getenv("GTC_MOVE")) std::fprintf(stderr, "SEPARATE %+.6f m\n", -gap);
+        // Counted, because this is the room moving the ball by hand: the shape had
+        // nowhere to go and the ball was the only thing left that could.
+        ++ballFoundThrough_;
         ball_.position = wanted;
     }
 }
