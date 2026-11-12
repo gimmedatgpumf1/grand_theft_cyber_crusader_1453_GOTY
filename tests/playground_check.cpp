@@ -18,6 +18,8 @@
 
 #define private public
 #include "client/playground_pair.h"
+#include "client/playground_ball_shape.h"
+#include "client/playground_shapes.h"
 #include "client/playground_room.h"
 #undef private
 #include "client/renderer.h"
@@ -129,6 +131,14 @@ bool anythingOverlapping(PlaygroundRoom& room) {
         Vec3 way{};
         Vec3 at{};
         if (room.bodyBallGap(one, way, at) < -1e-6) return true;
+        // And the dot. It is a ball of a known radius in the room like any other
+        // object, so a pose that starts with its disc inside a shape is the same
+        // fault as a shape starting inside another shape: the arrangement put them
+        // there, and lifting one out of the other is the arrangement being repaired,
+        // not the room conjuring the energy to do it.
+        if (ball_shape::outlineGap(room.point(), body.position.data(), body.position.data(), body.count, 1.0).gap <
+            playground_detail::kPointRadius - 1e-6)
+            return true;
         for (std::size_t two = 0; two < PlaygroundRoom::kBodyCount; ++two) {
             if (two == one) continue;
             pair_shape::PairManifold meeting;
