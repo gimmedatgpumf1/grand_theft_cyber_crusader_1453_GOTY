@@ -38,7 +38,7 @@ constexpr double kOnSurface = 1e-6;
 // scale of this room, a few microns -- and a contact set that sees only the corner
 // because the face is a hundredth of a millimetre up is a contact set that lets the
 // shape rock. This is the band in which two surfaces are touching.
-constexpr double kContactBand = 1e-4;
+constexpr double kContactBand = 1e-6;
 // How many times one tick may stop for a contact. A body landing on the floor and
 // then tipping onto its other corner is two; a pair of shapes settling against
 // each other is a handful. This is a guard against a pathological arrangement
