@@ -21,6 +21,8 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 namespace gtc::native {
@@ -757,9 +759,22 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
+    const auto kineticOf = [&](std::size_t index) {
+        const Body& b = bodies_[index];
+        return 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin;
+    };
     for (int pass = 0; pass < kSolvePasses; ++pass) {
         worst = 0.0;
-        for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m]);
+        for (std::size_t m = 0; m < patches.count; ++m) {
+            const std::size_t one = patches.items[m].body;
+            const std::size_t two = patches.items[m].other;
+            const double before = kineticOf(one) + (two < kBodyCount ? kineticOf(two) : 0.0);
+            patchPass(patches.items[m]);
+            const double after = kineticOf(one) + (two < kBodyCount ? kineticOf(two) : 0.0);
+            if (std::getenv("DBGK") && after > before + 1e-9)
+                std::fprintf(stderr, "pass %2d patch b%zu o%zu ends %zu kind %d KE %+.6f -> %+.6f (+%.6f)\n", pass, one,
+                             two, patches.items[m].ends, int(patches.items[m].kind), before, after, after - before);
+        }
         if (worst < kSolveTolerance && pass > 0) break;
     }
     return closingAtAll;
