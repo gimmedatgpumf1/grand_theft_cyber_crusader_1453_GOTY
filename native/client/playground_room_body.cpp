@@ -241,8 +241,28 @@ double PlaygroundRoom::timeToContact(double remaining) const {
                    .gap -
                ball_.radius;
     };
-    const auto bodyGap = [&](std::size_t one, std::size_t two) {
-        return pairGap(corners[one].data(), bodies_[one].count, corners[two].data(), bodies_[two].count).gap;
+    // The nearest corner of `one` that is *still clear* of `two`. A pair of shapes
+    // that are already touching are answered by the patch, which is why the walk does
+    // not stop for them a second time -- but a pair is not one meeting, it is as many
+    // meetings as it has corners near each other, and a corner that has not arrived
+    // yet is a corner the walk still has to catch. Watched by the pair's least gap
+    // alone, a shape whose first corner is down stops being watched altogether, and
+    // the corner that comes down after it is never seen: it goes in, the step that
+    // took it there is refused, and the shape grinds to a crawl against the surface it
+    // is lying on. That was a cube sliding down a slope at a hundredth of its speed.
+    const auto clearGap = [&](std::size_t one, std::size_t two) {
+        double least = 1e30;
+        const auto near = [&](std::size_t from, std::size_t into) {
+            for (std::size_t i = 0; i < bodies_[from].count; ++i) {
+                const double gap = ball_shape::outlineGap(corners[from][i], corners[into].data(), corners[into].data(),
+                                                          bodies_[into].count, 1.0)
+                                       .gap;
+                if (gap > kContactBand) least = std::min(least, gap);
+            }
+        };
+        near(one, two);
+        near(two, one);
+        return least;
     };
     // Which meetings are worth watching: the ones that are not already touching.
     // A meeting already in the contact band is answered by the patch, not by the
@@ -258,7 +278,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
         watchBall[index] = ballGap(index) > kContactBand;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == index || bodies_[other].count == 0) continue;
-            watchPair[index][other] = bodyGap(index, other) > kContactBand;
+            watchPair[index][other] = clearGap(index, other) < 1e29;
         }
     }
     // The smallest gap anywhere, over the watched meetings, at `time`.
@@ -274,7 +294,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
         for (std::size_t one = 0; one < kBodyCount; ++one) {
             if (!moving(one)) continue;
             for (std::size_t two = 0; two < kBodyCount; ++two)
-                if (watchPair[one][two]) least = std::min(least, bodyGap(one, two));
+                if (watchPair[one][two]) least = std::min(least, clearGap(one, two));
         }
         return least;
     };
