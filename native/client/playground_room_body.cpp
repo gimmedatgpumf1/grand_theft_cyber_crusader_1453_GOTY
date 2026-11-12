@@ -699,6 +699,23 @@ void PlaygroundRoom::tickBodies() {
         }
         (void)before;
     }
+    if (std::getenv("WOB")) {
+        static int tickNo = 0;
+        ++tickNo;
+        if (tickNo >= 17 && tickNo <= 26) {
+            std::fprintf(stderr, "T%d c0(%.4f,%.6f) c1(%.4f,%.6f) c2(%.4f,%.4f) c3(%.4f,%.4f) v(%.3f,%.3f) w(%.3f)\n", tickNo,
+                         bodies_[0].position[0].x, bodies_[0].position[0].y, bodies_[0].position[1].x, bodies_[0].position[1].y,
+                         bodies_[0].position[2].x, bodies_[0].position[2].y, bodies_[0].position[3].x, bodies_[0].position[3].y,
+                         bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin);
+            for (std::size_t m = 0; m < patches.count; ++m) {
+                const Manifold& q = patches.items[m];
+                if (q.body != 0) continue;
+                std::fprintf(stderr, "    m e%zu [%.4f,%.6f g%.6f J%.4f] [%.4f,%.6f g%.6f J%.4f]\n", q.ends, q.point[0].x,
+                             q.point[0].y, q.gap[0], q.normalImpulse[0], q.point[1].x, q.point[1].y, q.gap[1],
+                             q.normalImpulse[1]);
+            }
+        }
+    }
     settleBodies();
     writeImpulses();
 }
