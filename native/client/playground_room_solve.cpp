@@ -52,6 +52,11 @@ constexpr double kImpulseTolerance = 1e-12;  // N s
 // nothing is what says they agree. The count is a ceiling and not a cost: a resting
 // room agrees in two or three rounds, and stops there.
 constexpr int kGripRoundsMax = 48;
+// What the two answers are asked to agree to, in newton seconds. A thousandth of a
+// micronewton second over a tick is a force of twenty nanonewtons: far below the
+// weight of a speck, and far below anything the eye can find in a shape's travel over
+// an hour. Asking for more than this buys nothing but arithmetic.
+constexpr double kAgree = 1e-9;  // N s
 }  // namespace
 
 // The answer to a whole configuration of patches at once.
@@ -476,7 +481,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         const double gripWorst = worst;
         // Both answers have stopped moving: the load the room is carrying and the
         // grip holding it agree with each other, which is where the sweep is done.
-        if (loadWorst < kImpulseTolerance && gripWorst < kImpulseTolerance) break;
+        if (loadWorst < kAgree && gripWorst < kAgree) break;
     }
     sweep(false);
     return closingAtAll;
