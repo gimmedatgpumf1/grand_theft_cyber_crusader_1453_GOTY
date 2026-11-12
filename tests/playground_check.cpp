@@ -20,6 +20,8 @@
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
 #undef private
+#include "client/renderer.h"
+#include "client/room_freecam.h"
 
 using namespace gtc::native;
 
@@ -41,6 +43,39 @@ void check(bool holds, const char* what, const char* detail = "") {
         say("   FAIL  %s %s\n", what, detail);
         ++failures;
     }
+}
+
+// A renderer that draws nothing and says it drew it. The scene is still built and
+// every transform still placed -- which is the part being checked here: what the
+// room asks the screen to draw, not what a GPU does with it.
+bool drawNothing(const GpuScene&, NativeFrame&) { return true; }
+
+// Puts a room through one frame exactly as the client does: build the scene if it
+// has none, interpolate to the frame, place every marker. This is the only way the
+// drawing handles are ever set, so a room that has never been rendered has none.
+void drawFrame(PlaygroundRoom& room) {
+    ViewState view;
+    view.width = 1168;
+    view.height = 672;
+    RoomFreecam camera;
+    camera.reset({0, 1.4, 3.2}, 0, 0);
+    NativeFrame frame;
+    frame.width = view.width;
+    frame.height = view.height;
+    room.render(frame, view, camera);
+}
+
+// Where the screen is told to put one corner of one body: the translation of the
+// batch that corner was given. If this is not the corner's place, the room is
+// drawing something other than what it is simulating.
+Vec3 drawnCorner(const PlaygroundRoom& room, std::size_t body, std::size_t corner) {
+    const auto& matrix = room.scene_.batches[room.bodies_[body].cornerBatches[corner]].modelMatrix;
+    return {matrix[12], matrix[13], matrix[14]};
+}
+
+Vec3 drawnBall(const PlaygroundRoom& room) {
+    const auto& matrix = room.scene_.batches[room.ball_.faceBatch].modelMatrix;
+    return {matrix[12], matrix[13], matrix[14]};
 }
 
 void ray(PlaygroundRoom& room, double x, double y) {
@@ -409,6 +444,51 @@ void resetIsAReset() {
     worst = std::max(worst, std::abs(used.ball_.position.y - fresh.ball_.position.y));
     std::snprintf(detail, sizeof detail, "largest difference from a room that was never touched: %.3e", worst);
     check(worst == 0.0, "every position is the starting one", detail);
+
+    // And it is drawn there. A reset that puts the simulation back at the start but
+    // leaves the screen showing the old places is not a reset of the room: the eye,
+    // the mouse and every click land where the picture is, not where the numbers are.
+    // The scene is not rebuilt by a reset, so the handles each body's face, edges and
+    // corners were given must survive it -- and on the first frame after R every one
+    // of them must be where a room that has never been touched puts it.
+    setGpuRenderer(&drawNothing);
+    drawFrame(fresh);
+    drawFrame(used);
+    double drawnApart = 0.0;
+    bool shownThere = true;
+    for (std::size_t b = 0; b < PlaygroundRoom::kBodyCount; ++b) {
+        for (std::size_t i = 0; i < used.bodies_[b].count; ++i) {
+            const Vec3 was = drawnCorner(fresh, b, i), now = drawnCorner(used, b, i);
+            drawnApart = std::max(drawnApart, std::max(std::abs(was.x - now.x), std::abs(was.y - now.y)));
+            // Where the body actually is, not just where a fresh room is: a pair of
+            // rooms agreeing with each other about the wrong place is still wrong.
+            shownThere = shownThere && std::abs(now.x - used.bodies_[b].position[i].x) < 1e-9 &&
+                         std::abs(now.y - used.bodies_[b].position[i].y) < 1e-9;
+        }
+    }
+    const Vec3 ballWas = drawnBall(fresh), ballNow = drawnBall(used);
+    drawnApart = std::max(drawnApart, std::max(std::abs(ballWas.x - ballNow.x), std::abs(ballWas.y - ballNow.y)));
+    shownThere = shownThere && std::abs(ballNow.x - used.ball_.position.x) < 1e-9 &&
+                 std::abs(ballNow.y - used.ball_.position.y) < 1e-9;
+    std::snprintf(detail, sizeof detail, "the screen differs from a fresh room's by %.3e", drawnApart);
+    check(drawnApart == 0.0, "the first frame after R draws the starting room", detail);
+    check(shownThere, "every corner and the ball are drawn where they are", "");
+
+    // Which is also why the mouse has to work again: a click on a body that is drawn
+    // there takes that body. Clicking a picture of a body that has moved away is
+    // exactly the "I can drag the background but not the objects" report.
+    bool takesBodies = true;
+    for (std::size_t b = 0; b < PlaygroundRoom::kBodyCount; ++b) {
+        const Vec3 middle = used.bodies_[b].centre;
+        // At the body's own middle, which is unambiguously inside it rather than on
+        // the edge, where the dot sitting on the body might be the nearer thing.
+        used.setDragRay(Vec3{middle.x, middle.y, 1.0}, Vec3{0, 0, -1});
+        used.beginDrag();
+        takesBodies = takesBodies && used.dragBody_ == b;
+        used.endDrag();
+    }
+    check(takesBodies, "a click on a body takes that body", "");
+    setGpuRenderer(nullptr);
     // And the room it becomes is the same room: four hundred ticks of it land where
     // four hundred ticks of a never-touched room land, to the last bit.
     settle(used, 400);
