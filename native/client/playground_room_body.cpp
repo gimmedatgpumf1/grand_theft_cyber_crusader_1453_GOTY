@@ -132,7 +132,12 @@ void PlaygroundRoom::applyBodyForces() {
 void PlaygroundRoom::applyAirDrag() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen) continue;
+        // A body the mouse is carrying is not being accelerated by anything: its
+        // speed is put there by the hand that holds it, and the hand is the force.
+        // The weight pass leaves such a body alone for the same reason, and the air
+        // does too -- otherwise a shape being carried across the room is drawn with
+        // a drag that is nowhere in the motion that actually happened.
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 from = body.position[i];
             const Vec3 to = body.position[(i + 1) % body.count];
