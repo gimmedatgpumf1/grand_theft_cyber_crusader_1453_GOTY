@@ -526,6 +526,9 @@ void PlaygroundRoom::tickBodies() {
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
+    // And the shape may not be carried through the ball. It has moved without the
+    // ball moving, so the step is stopped where the two first touch.
+    clampBodiesToBall();
     // Whatever a spinning corner carried into a surface within the tick -- the one
     // thing a single straight step cannot see -- is put back out, by position alone.
     // It is the only thing in the room that moves a shape without an impulse, and

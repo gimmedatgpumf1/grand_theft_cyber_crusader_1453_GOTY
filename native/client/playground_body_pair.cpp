@@ -190,6 +190,48 @@ void PlaygroundRoom::separateBodies() {
 // move by inverse mass, and nothing added to anybody's speed. A ball against the
 // floor cannot be given ground and the floor takes the whole of the move, for the
 // same reason nothing in this room can be below it.
+// A shape may not be carried through the ball.
+//
+// The bodies are stepped before the ball, so between the contact solve and the
+// ball's own tick there is nobody looking at the two of them. The contact solve
+// answers the speed they are closing at along the normal of the contact point the
+// tick *began* with -- and a shape that turns swings that point along its own
+// outline, so the surface it actually carries into the ball is somewhere else by the
+// end of the tick. A triangle rocking at one radian a second put a ball thirty three
+// millimetres inside itself that way, and a hard one eighty seven; what the ball then
+// did about it was the recovery, and the recovery is a kick.
+//
+// So the shape's step is stopped where the meeting is. This is the same hitscan the
+// ball's own sweep uses, asked the other way round: the ball is standing where it is
+// (it has not been stepped yet), the outline travels its tick, and what comes back is
+// the fraction of the tick at which the two first touch. The shape is carried that
+// far and no further, and its angle with it -- the body is a rigid thing and half of
+// its motion is its turn.
+//
+// Nothing is added to anything by this. The shape is put where it would have been if
+// it had stopped when it hit something, which is where a contact would have stopped
+// it: no speed is changed, so no energy is made, and the ball's own tick then finds
+// it exactly where a contact belongs and answers it as one.
+void PlaygroundRoom::clampBodiesToBall() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || bodyHeld(index)) continue;
+        const ball_shape::OutlineGap now =
+            ball_shape::outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
+        if (now.gap >= ball_.radius) continue;
+        ball_shape::OutlineHit met;
+        if (!ball_shape::sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count,
+                                                ball_.position, Vec3{}, ball_.radius, kTick, met))
+            continue;
+        if (met.resting) continue;
+        // Carried back along its own step, to the meeting. The centre and the turn
+        // are the body's whole motion, so both are taken back by the same fraction.
+        body.centre = body.previousCentre + (body.centre - body.previousCentre) * met.along;
+        body.angle = body.previousAngle + (body.angle - body.previousAngle) * met.along;
+        placeCorners(body);
+    }
+}
+
 void PlaygroundRoom::separateBall() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
