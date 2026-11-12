@@ -7,6 +7,7 @@
 // something, which is why nothing here ever has to put two shapes apart.
 
 #include "client/playground_ball_shape.h"
+#include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_shapes.h"
 
@@ -80,4 +81,97 @@ bool PlaygroundRoom::bodyPlacementClear(std::size_t index, const std::array<Vec3
     return true;
 }
 
-} // namespace gtc::native
+// Out of whatever a shape is inside, by its position and nothing else.
+//
+// Every other answer in this room is an impulse: the surface stops what is coming
+// at it, and what is coming at it is a speed. That works because a contact is met
+// on the way *in*. A corner that is already inside something was never met on the
+// way in -- it is there because the walk could not see it coming, because the shape
+// was put there by the mouse, or because the arithmetic that put it on a surface
+// left it a nanometre the wrong side. A constraint on speed has nothing to say about
+// it: "do not close" is already satisfied by something that is not closing.
+//
+// So it is answered where it is: the shape is moved out along the way it is least
+// inside, by the depth it is inside. Nothing is added to its speed and nothing is
+// taken from it, so no energy is made; the two shapes share the move by their
+// inertia, so a heavy one gives less ground than a light one; and a shape asleep is
+// not moved at all, because it is not the one that moved into anything.
+void PlaygroundRoom::separateBodies() {
+    for (std::size_t one = 0; one < kBodyCount; ++one) {
+        Body& body = bodies_[one];
+        if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
+        // The floor.
+        double deepest = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
+        if (deepest > 0.0) {
+            body.centre.y += deepest;
+            if (std::getenv("DBGS")) std::fprintf(stderr, "sep floor b%zu up %.6f\n", one, deepest);
+            placeCorners(body);
+        }
+        // Another shape.
+        for (std::size_t two = 0; two < kBodyCount; ++two) {
+            if (two == one || bodies_[two].count == 0) continue;
+            Body& solid = bodies_[two];
+            // How much of the move this shape has to make: by inverse mass, so the
+            // pair share it the way two bodies share any push between them. A shape
+            // asleep or in the mouse's hand is not going anywhere, and takes none.
+            const bool solidMoves = !solid.frozen && !bodyHeld(two);
+            const double mine = 1.0 / body.mass;
+            const double theirs = solidMoves ? 1.0 / solid.mass : 0.0;
+            const double share = mine / (mine + theirs);
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(body.position[i], solid.position.data(),
+                                                                         solid.position.data(), solid.count, 1.0);
+                if (!(gap.gap < 0.0)) continue;
+                const Vec3 move = gap.normal * (-gap.gap);
+                if (std::getenv("DBGS")) std::fprintf(stderr, "sep corner b%zu by (%.6f,%.6f)\n", one, move.x, move.y);
+                body.centre = body.centre + move * share;
+                if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
+                placeCorners(body);
+                if (solidMoves) placeCorners(solid);
+            }
+            // And the same for two shapes meeting along their edges, where no corner
+            // of either is inside the other: the pair is moved apart along the axis
+            // it is least inside on.
+            {
+                pair_shape::PairManifold meeting;
+                if (pair_shape::separate(body.position.data(), body.count, solid.position.data(), solid.count,
+                                         meeting) &&
+                    meeting.overlap > 0.0) {
+                    const auto inside = [](const Vec3* from, std::size_t count, const Vec3* outline,
+                                           std::size_t outlineCount) {
+                        for (std::size_t i = 0; i < count; ++i)
+                            if (ball_shape::outlineGap(from[i], outline, outline, outlineCount, 1.0).gap < 0.0)
+                                return true;
+                        return false;
+                    };
+                    const bool cornersInside =
+                        inside(body.position.data(), body.count, solid.position.data(), solid.count) ||
+                        inside(solid.position.data(), solid.count, body.position.data(), body.count);
+                    if (!cornersInside) {
+                        const Vec3 move = meeting.normal * meeting.overlap;
+                        if (std::getenv("DBGS")) std::fprintf(stderr, "sep edge b%zu by (%.6f,%.6f) overlap %.6f\n", one, move.x, move.y, meeting.overlap);
+                        body.centre = body.centre + move * share;
+                        if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
+                        placeCorners(body);
+                        if (solidMoves) placeCorners(solid);
+                    }
+                }
+            }
+            // And the other way round: a corner of the other shape inside this one
+            // is the same overlap seen from the other side.
+            for (std::size_t i = 0; i < solid.count; ++i) {
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(solid.position[i], body.position.data(),
+                                                                         body.position.data(), body.count, 1.0);
+                if (!(gap.gap < 0.0)) continue;
+                const Vec3 move = gap.normal * (-gap.gap);
+                if (solidMoves) solid.centre = solid.centre + move * (1.0 - share);
+                body.centre = body.centre - move * share;
+                if (solidMoves) placeCorners(solid);
+                placeCorners(body);
+            }
+        }
+    }
+}
+
+}  // namespace gtc::native
