@@ -187,6 +187,10 @@ private:
         // arithmetic of its contacts leaves it a hair of a rock or not.
         Vec3 restLow{1e30, 1e30, 0}, restHigh{-1e30, -1e30, 0};
         double restAngleLow = 1e30, restAngleHigh = -1e30;
+        // The lowest pose it held while it was settling: where a shape that has
+        // stopped rocking is actually standing, and where it is put to sleep.
+        Vec3 restPose{};
+        double restPoseAngle = 0;
         int restTicks = 0;
         std::size_t faceBatch = 0;
         std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};

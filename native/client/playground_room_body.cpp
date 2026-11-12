@@ -413,6 +413,15 @@ void PlaygroundRoom::settleBodies() {
         if (body.restTicks == 0) {
             body.restLow = body.restHigh = body.centre;
             body.restAngleLow = body.restAngleHigh = body.angle;
+            body.restPose = body.centre;
+            body.restPoseAngle = body.angle;
+        }
+        // Where it is standing: the lowest pose of the settling, which is the one
+        // it comes back to every rock and the one it would be left in if the rock
+        // were taken away.
+        if (body.centre.y <= body.restLow.y) {
+            body.restPose = body.centre;
+            body.restPoseAngle = body.angle;
         }
         body.restLow = Vec3{std::min(body.restLow.x, body.centre.x), std::min(body.restLow.y, body.centre.y), 0};
         body.restHigh = Vec3{std::max(body.restHigh.x, body.centre.x), std::max(body.restHigh.y, body.centre.y), 0};
@@ -429,6 +438,12 @@ void PlaygroundRoom::settleBodies() {
             body.frozen = true;
             body.velocity = {};
             body.spin = 0.0;
+            // Asleep where it was standing, not at whatever phase of its last
+            // twitch the arithmetic happened to end on.
+            body.centre = body.restPose;
+            body.angle = body.restPoseAngle;
+            placeCorners(body);
+            body.shown = body.position;
         } else if (body.restTicks >= kRestTicks && !anywhere) {
             body.restTicks = 0;
         }
