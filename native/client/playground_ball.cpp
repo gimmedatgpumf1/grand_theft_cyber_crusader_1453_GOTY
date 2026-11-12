@@ -221,6 +221,7 @@ void PlaygroundRoom::tickBall() {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
+                if (getenv("GTC_BALL")) std::fprintf(stderr, "  tick: body %zu already through by %.6f m, ball (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
                 if (on.gap < ball.radius) ball.position = ball.position + on.normal * (ball.radius - on.gap);
                 ball.touching = true;
                 const bool answer = !answered[index];

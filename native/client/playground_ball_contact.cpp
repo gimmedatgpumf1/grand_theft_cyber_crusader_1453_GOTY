@@ -32,6 +32,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // two met, because that is where it acts.
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
+    if (getenv("GTC_BALL")) std::fprintf(stderr, "  contact body %d depth %.6f normal(%+.6f,%+.6f) ballv(%+.4f,%+.4f) exchange %d\n", bodyIndex, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y, (int)exchange);
     // The body's side is written by giveBodyTurn, which is the call that hands it
     // over; what is left for this one is the ball's own change, recorded at the
     // place the two met.
@@ -283,6 +284,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double into = dot(ball.velocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
+    if (getenv("GTC_BALL") && length(ball.velocity - ballBefore) > 0.05)
+        std::fprintf(stderr, "    -> ball speed %+.4f -> %+.4f (change %+.4f)\n", length(ballBefore), length(ball.velocity), length(ball.velocity)-length(ballBefore));
     recordBall();
 }
 
