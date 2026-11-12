@@ -385,7 +385,14 @@ void PlaygroundRoom::tick() {
         // out of it, and friction along it. They are written into the ledger apart,
         // so the arrow that holds a dot still on a slope can be seen to be friction
         // and the arrow that presses it into the slope can be seen to be the normal.
-        const Vec3 normal = supportNormal_;
+        // What holds the weight up. A wall does not: a dot pressed into the side of
+        // a shape and lying on the floor is carried by the floor, and taking the
+        // wall for its ground leaves it with no friction under it at all -- it
+        // slides along the floor for ever, slowed by nothing but air. So a support
+        // that cannot lift is only a support if there is nothing under the dot to
+        // lift it.
+        Vec3 normal = supportNormal_;
+        if (normal.y <= 0.0 && point_.y <= kSurfaceY + kPointRadius + 1e-9) normal = Vec3{0, 1, 0};
         const double into = dot(weight, normal);      // negative when pressing in
         const Vec3 along = weight - normal * into;    // what the surface cannot answer
         const double carried = std::max(0.0, -into);  // N, how hard it is pressed
