@@ -425,6 +425,28 @@ void PlaygroundRoom::tick() {
     restingBody_ = -1;
     restingOnBall_ = false;
     slideSpan_ = 0.0;
+    // How fast each shape was already moving when this tick began.
+    //
+    // What a contact is about is the two surfaces coming together, so the sweep
+    // asks where the face will be -- and the answer is the face's *own* motion,
+    // the motion it had when the tick started. It is not the motion the dot is
+    // about to give it: that comes out of the impulse at the contact, and taking it
+    // as the face running away means the walk decides the two are not approaching,
+    // lets the dot fall, and leaves it inside the shape. Which is what happened: a
+    // dot lying on a cube pressed it downwards, read its own press as the cube
+    // fleeing, and spent every tick five millimetres into its top.
+    Vec3 startVelocity[kBodyCount];
+    double startSpin[kBodyCount];
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        startVelocity[index] = bodies_[index].velocity;
+        startSpin[index] = bodies_[index].spin;
+    }
+    const Vec3 startBallVelocity = ball_.velocity;
+    const auto surfaceSpeed = [&](std::size_t index, Vec3 at) {
+        const Vec3 arm = at - bodies_[index].centre;
+        return Vec3{startVelocity[index].x - startSpin[index] * arm.y, startVelocity[index].y + startSpin[index] * arm.x,
+                    startVelocity[index].z};
+    };
     // The tick's travel, walked from contact to contact: find where the segment
     // meets something, move to it, answer it, and carry on with the time that is
     // left. However much time is left and however fast the point is going, it
@@ -467,7 +489,7 @@ void PlaygroundRoom::tick() {
             // tick began: the face turns up into the dot and the dot is left
             // millimetres inside it -- five of them, on a slope struck by a falling
             // dot, which is the one thing a dot may never be.
-            const Vec3 face = pointSpeed(body, point_);
+            const Vec3 face = surfaceSpeed(index, point_);
             const Vec3 travel = next - point_;
             ball_shape::OutlineHit touch;
             if (!ball_shape::circleHitsBody(point_, travel - face * (kTick * remaining), body.position.data(),
@@ -502,7 +524,7 @@ void PlaygroundRoom::tick() {
             Vec3 facing{0, 1, 0};
             // The ball is moving too, and for the same reason the sweep is taken
             // relative to it: a contact is the two surfaces coming together.
-            if (segmentHitsCircle(point_, next - ball_.velocity * (kTick * remaining), ball_.position,
+            if (segmentHitsCircle(point_, next - startBallVelocity * (kTick * remaining), ball_.position,
                                   kPointRadius + ball_.radius, along, facing) &&
                 !(along <= 1e-9 && dot(velocity_, facing) >= 0.0) && along < first) {
                 first = along;
@@ -561,7 +583,7 @@ void PlaygroundRoom::tick() {
         // it momentum: the dot arrived at three and a half metres a second, the cube
         // left with half a metre a second, and everything between vanished into
         // nothing -- not into the cube, not into friction, not into heat.
-        const Vec3 relative = velocity_ - pointSpeed(bodies_[hitIndex], point_);
+        const Vec3 relative = velocity_ - surfaceSpeed(hitIndex, point_);
         if (dot(relative, normal) < 0.0)
             velocity_ = velocity_ - normal * dot(relative, normal);
         resting_ = true;
