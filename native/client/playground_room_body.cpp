@@ -625,9 +625,35 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
                 } else {
                     const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
-                    if (std::abs(det) > 1e-18) {
+                    if (std::abs(det) > 1e-6 * std::max(1e-18, std::abs(g[0][0] * g[1][1]))) {
                         delta[0] = (-u[0] * g[1][1] + u[1] * g[0][1]) / det;
                         delta[1] = (-u[1] * g[0][0] + u[0] * g[1][0]) / det;
+                    } else {
+                        // A face lying flat is one grip, not two.
+                        //
+                        // Its two ends are at the same height, so a push along the
+                        // surface at one end and a push along it at the other are the
+                        // same push as far as the shape is concerned: two forces along
+                        // one line, which can add up and cannot twist anything. There
+                        // is no way to split that push that the face can tell apart,
+                        // and asking for a split anyway is asking a singular system
+                        // for an answer -- which is no answer at all, and friction
+                        // that never fires.
+                        //
+                        // So the smallest split that does the job is taken, which is
+                        // an equal share of one impulse: the pseudo-inverse of the
+                        // system, and the only one of the infinitely many answers that
+                        // does not invent a difference between two places the physics
+                        // says are the same. If one end's share is more than its own
+                        // load can hold, it is pinned at its cone below and the other
+                        // is answered again -- which is a face whose light end slips
+                        // while its loaded end holds, as it should.
+                        const double aa = g[0][0] * g[0][0] + g[0][1] * g[1][0];
+                        if (aa > 1e-18) {
+                            const double factor = -(g[0][0] * u[0] + g[0][1] * u[1]) / aa;
+                            delta[0] = factor * g[0][0];
+                            delta[1] = factor * g[0][1];
+                        }
                     }
                 }
                 // What the cone will not allow: that end holds as hard as it can and
