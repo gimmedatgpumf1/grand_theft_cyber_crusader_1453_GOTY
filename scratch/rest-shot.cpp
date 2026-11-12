@@ -71,10 +71,8 @@ static void shoot(PlaygroundRoom& room, RoomFreecam& cam, const std::string& pat
 
 static void report(const PlaygroundRoom& room, int tick) {
     const Vec3 cube = room.bodyMiddle(0), tri = room.bodyMiddle(1);
-    const Vec3 dot = room.point();
-    std::printf("tick %4d: cube (%+.6f,%+.6f) a%+.6f | triangle (%+.6f,%+.6f) a%+.6f | dot (%+.6f,%+.6f) v(%+.3e,%+.3e) asleep %d\n",
-                tick, cube.x, cube.y, room.bodies_[0].angle, tri.x, tri.y, room.bodies_[1].angle, dot.x, dot.y,
-                room.velocity().x, room.velocity().y, (int)room.pointFrozen());
+    std::printf("tick %4d: cube (%+.6f,%+.6f) a%+.6f | triangle (%+.6f,%+.6f) a%+.6f\n", tick, cube.x, cube.y,
+                room.bodies_[0].angle, tri.x, tri.y, room.bodies_[1].angle);
 }
 
 int main() {

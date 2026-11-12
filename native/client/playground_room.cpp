@@ -28,6 +28,9 @@ constexpr int kMaxContacts = 4;
 // and they are scaled by the length of the contact they actually have.
 constexpr double kPointStaticFriction = 0.40;
 constexpr double kPointKineticFriction = 0.30;
+// How far a sleeping dot may drift from the surface it is lying on and still be
+// lying on it. A micrometre: the same "these two are the same place" the walk uses.
+constexpr double kPointSupportBand = 1e-6;
 
 } // namespace
 
@@ -300,9 +303,7 @@ bool PlaygroundRoom::supportedBy(std::size_t index) const {
     if (!onGround) return false;
     double height = 0.0;
     if (!bodyTopAt(index, point_.x, height)) return false;
-    // The dot is a ball: its middle stands its own radius clear of the face it is
-    // lying on, and it is still lying on it when it is exactly that far above.
-    return std::abs(point_.y - (height + kPointRadius)) < 1e-4;
+    return std::abs(point_.y - height) < 1e-4;
 }
 
 void PlaygroundRoom::tick() {
@@ -316,13 +317,17 @@ void PlaygroundRoom::tick() {
         resting_ = false;
         pointFrozen_ = false;
     }
-    // A dot that ended the last tick overlapping a body is put back clear of it.
-    // Its own walk keeps its disc out of everything it moves towards, but a body
-    // moves too, and the body's tick does not know the dot is there -- so a shape
-    // settling onto a dot, or sliding under one, can leave the dot's disc inside
-    // it. The repair is the same one the end of the tick makes, in the same place:
-    // one answer to "the dot is inside a shape", not two that can disagree.
-    separatePoint();
+    // A point that ended the last tick inside a body is put back on its
+    // boundary. The sweep cannot do that itself -- it reports a crossing and
+    // stops -- so a point already inside would be nudged out by a hair each tick
+    // and creep along the face it is inside instead of sliding down it.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (!pushOutOfPolygon(point_, body.position.data(), body.count)) continue;
+        restingBody_ = int(index);
+        resting_ = true;
+        supportNormal_ = outwardNormalAt(body, point_);
+    }
     // Forces: gravity is m*g downwards, always. What is holding the point up
     // answers only the part of that force which drives into it; whatever is left
     // over still acts, and on a slope that is a real force down the slope. The
@@ -359,49 +364,42 @@ void PlaygroundRoom::tick() {
         // out of it, and friction along it. They are written into the ledger apart,
         // so the arrow that holds a dot still on a slope can be seen to be friction
         // and the arrow that presses it into the slope can be seen to be the normal.
-        // What holds the weight up. A wall does not: a dot pressed into the side of
-        // a shape and lying on the floor is carried by the floor, and taking the
-        // wall for its ground leaves it with no friction under it at all -- it
-        // slides along the floor for ever, slowed by nothing but air. So a support
-        // that cannot lift is only a support if there is nothing under the dot to
-        // lift it.
-        Vec3 normal = supportNormal_;
-        if (normal.y <= 0.0 && point_.y <= kSurfaceY + kPointRadius + 1e-9) normal = Vec3{0, 1, 0};
+        const Vec3 normal = supportNormal_;
         const double into = dot(weight, normal);      // negative when pressing in
         const Vec3 along = weight - normal * into;    // what the surface cannot answer
         const double carried = std::max(0.0, -into);  // N, how hard it is pressed
         addForce(point_, normal * carried, ForceKind::Contact, &pointForce_, kDotOwner);
-        // Static friction holds while the surface can answer whatever it takes to
-        // leave no slip; past that the surfaces slide, and kinetic friction acts
-        // against the slide at mu_k times the load. That is what makes a dot on a
-        // steep face accelerate down it instead of standing on it, and it is a
-        // force like any other, not a rule about when to stop.
-        //
-        // "Whatever it takes to leave no slip" is two things, and it has to be
-        // both of them at once. One is the slide already in hand: the surface must
-        // take that away, or the dot keeps the motion it had. The other is the
-        // push it is about to receive: what is left of the weight after the normal
-        // has answered its share drives along the face, and if friction answers
-        // nothing for it, that drive is a fresh slide every tick. Answering only
-        // the first leaves the second, tick after tick after tick -- a dot lying
-        // apparently still on a face that is a ten-millionth of a degree off level
-        // creeps a micrometre every few seconds for ever, and it is not a bug in
-        // the friction: it is friction being asked the wrong question.
+        // Static friction holds while the point is not moving along the surface and
+        // the surface can answer what is pushing it sideways; past that it slips, and
+        // then kinetic friction acts, against the slip, at mu_k times the load. That
+        // is what makes a dot on a steep face accelerate down it instead of standing
+        // on it, and it is a force like any other, not a rule about when to stop.
         const Vec3 slip = velocity_ - normal * dot(velocity_, normal);
         const double swift = length(slip);
-        const Vec3 hold = along + slip * (kMass / kTick);  // N, to leave no slip at all
-        const double demand = length(hold);
         Vec3 friction{};
-        if (demand <= kPointStaticFriction * carried) {
-            // The load can carry it. The surfaces do not move against each other,
-            // and the force that says so is exactly the one needed, no more.
-            friction = hold * -1.0;
+        if (swift > kRestSpeed) {
+            // Coulomb, in the one form that does not hum. The surface rubs against
+            // the slide with mu_k * N -- and it can never do more than take the
+            // slide away, because friction stops a thing, it does not send it back.
+            // Asking for the whole of mu_k * N when a centimetre a second is left
+            // reverses the point, the next tick reverses it again, and a dot that
+            // has come to rest sits there buzzing for ever. What friction gives is
+            // whatever is needed to leave no slip, up to what the load can carry;
+            // and if the load can carry it, the point holds and does not slide at
+            // all, which is static friction, which is the same law.
+            const double toStop = kMass * swift / kTick;  // N, what would stop it dead
+            const double grip = std::min(toStop, (toStop <= kPointStaticFriction * carried)
+                                                     ? toStop
+                                                     : kPointKineticFriction * carried);
+            friction = slip * (-grip / swift);
+            if (toStop <= kPointStaticFriction * carried) heldStill_ = true;
+        } else if (length(along) <= kPointStaticFriction * carried) {
+            friction = along * -1.0;
             heldStill_ = true;
-        } else if (demand > 0.0) {
-            // The load cannot. They slide, and what slides is answered against the
-            // slide at mu_k, which can never send the dot back the way it came.
-            const Vec3 against = swift > kRestSpeed ? slip * (1.0 / swift) : hold * (1.0 / demand);
-            friction = against * (-kPointKineticFriction * carried);
+        } else if (length(along) > 0.0) {
+            // Not moving yet, and not held: it is about to slide the way it is being
+            // pushed, and until it does, the surface resists with all it has.
+            friction = along * (-kPointStaticFriction * carried / length(along));
         }
         if (length(friction) > 0.0)
             addForce(point_, friction, ForceKind::Friction, &pointForce_, kDotOwner);
@@ -412,34 +410,25 @@ void PlaygroundRoom::tick() {
     restingBody_ = -1;
     restingOnBall_ = false;
     slideSpan_ = 0.0;
-    // How fast each shape was already moving when this tick began.
-    //
-    // What a contact is about is the two surfaces coming together, so the sweep
-    // asks where the face will be -- and the answer is the face's *own* motion,
-    // the motion it had when the tick started. It is not the motion the dot is
-    // about to give it: that comes out of the impulse at the contact, and taking it
-    // as the face running away means the walk decides the two are not approaching,
-    // lets the dot fall, and leaves it inside the shape. Which is what happened: a
-    // dot lying on a cube pressed it downwards, read its own press as the cube
-    // fleeing, and spent every tick five millimetres into its top.
-    Vec3 startVelocity[kBodyCount];
-    double startSpin[kBodyCount];
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        startVelocity[index] = bodies_[index].velocity;
-        startSpin[index] = bodies_[index].spin;
-    }
-    const Vec3 startBallVelocity = ball_.velocity;
-    const auto surfaceSpeed = [&](std::size_t index, Vec3 at) {
-        const Vec3 arm = at - bodies_[index].centre;
-        return Vec3{startVelocity[index].x - startSpin[index] * arm.y, startVelocity[index].y + startSpin[index] * arm.x,
-                    startVelocity[index].z};
-    };
     // The tick's travel, walked from contact to contact: find where the segment
     // meets something, move to it, answer it, and carry on with the time that is
     // left. However much time is left and however fast the point is going, it
     // cannot pass through anything, and it never loses speed it did not spend on
     // a contact.
     double remaining = 1.0;
+    // The surfaces this tick's travel has already been answered against.
+    //
+    // A contact that is met at the very start of the time that is left costs none
+    // of that time, and it is still there at the start of the next try, so a walk
+    // that does not remember it meets it again, answers it again, and is done --
+    // the tick is spent on one face and the point has not moved at all. That is a
+    // point sitting on the floor at the foot of a slope with four metres a second
+    // still in it: every tick it is "arriving" at the edge it is lying on, the walk
+    // runs out of steps, and its speed is never spent. A surface answered once this
+    // tick is a surface the point is sliding along, and sliding along it is the
+    // only thing left to do -- so it is not in the way again.
+    bool metBody[kBodyCount] = {};
+    bool metFloor = false, metBall = false;
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = point_ + velocity_ * (kTick * remaining);
         // Whichever surface is met first: the plane, or an edge of a body.
@@ -448,54 +437,19 @@ void PlaygroundRoom::tick() {
         Vec3 normal{0, 1, 0};
         bool wall = false;
         bool ballHit = false;
-        // The floor is a plane through kSurfaceY, and the dot's middle can come no
-        // closer to it than the dot's own radius: the thing that touches the floor
-        // is the underside of a ball, not the middle of one.
-        const double floorY = kSurfaceY + kPointRadius;
-        if (next.y < floorY && std::abs(next.y - point_.y) > 1e-12) {
-            first = std::clamp((floorY - point_.y) / (next.y - point_.y), 0.0, 1.0);
+        if (!metFloor && next.y < kSurfaceY && std::abs(next.y - point_.y) > 1e-12) {
+            first = std::clamp((kSurfaceY - point_.y) / (next.y - point_.y), 0.0, 1.0);
             wall = true;
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
+            if (metBody[index]) continue;
             const Body& body = bodies_[index];
-            // The dot is a ball of its own radius, not a bare point: the picture
-            // draws it that size, the ball meets it at that size, and the bodies
-            // must meet it at that size too. Swept as a circle, its middle stops a
-            // radius off the face -- where the surface of it is -- instead of at
-            // the face, which is what put half of it inside the floor and let it
-            // slip exactly through the corner where a shape meets the ground.
-            // The face is not standing still either. What a contact is about is the
-            // two surfaces coming together, so what is swept is the dot's travel
-            // *relative to the surface*: the face's own speed at the dot, taken off
-            // the travel. Where the meeting is finds a time, and the dot is carried
-            // that fraction of its own travel, not of the relative one -- it is the
-            // dot that moves through the room.
-            //
-            // Without this a shape that is being hammered swings a centimetre in a
-            // tick, and the dot's walk only ever sees where the shape was when the
-            // tick began: the face turns up into the dot and the dot is left
-            // millimetres inside it -- five of them, on a slope struck by a falling
-            // dot, which is the one thing a dot may never be.
-            const Vec3 face = surfaceSpeed(index, point_);
-            const Vec3 travel = next - point_;
-            ball_shape::OutlineHit touch;
-            if (!ball_shape::circleHitsBody(point_, travel - face * (kTick * remaining), body.position.data(),
-                                            body.count, kPointRadius, touch))
-                continue;
-            const double along = touch.along;
-            const Vec3 facing = touch.normal;
-            // Touching is not arriving, and neither is a course that would put the
-            // dot a hair into the face by the end of the tick -- a face is never
-            // exactly where the arithmetic thinks it is, and a settled shape is
-            // square to a part in ten million. A dot running along that face at
-            // five metres a second then closes at a fraction of a micrometre in
-            // the whole tick, thinner than a surface. Answered as an arrival that
-            // costs no time at all, the walk goes round, meets the same face in the
-            // same place, and spends every step it has on it: the tick ends where
-            // it began with all its speed still in it. That is the dot that stops
-            // dead at the foot of the slope with four metres a second unused.
-            // Below the thickness of a surface it is not arriving, it is lying on
-            // it, and lying on it is the position pass's business.
+            double along = 2.0;
+            Vec3 facing{0, 1, 0};
+            if (!segmentHitsPolygon(point_, next, body.position.data(), body.count, along, facing)) continue;
+            // A point lying on a face and moving along it is touching, not
+            // arriving. Answering that as a contact would stop the walk dead at
+            // the very start, every tick, and the point would stutter downhill.
             if (along <= 1e-9 && dot(velocity_, facing) >= 0.0) continue;
             if (along < first) {
                 first = along;
@@ -506,13 +460,10 @@ void PlaygroundRoom::tick() {
         }
         // The ball is one more thing in the way: a point with a radius, so the
         // point meets it when their surfaces touch.
-        {
+        if (!metBall) {
             double along = 2.0;
             Vec3 facing{0, 1, 0};
-            // The ball is moving too, and for the same reason the sweep is taken
-            // relative to it: a contact is the two surfaces coming together.
-            if (segmentHitsCircle(point_, next - startBallVelocity * (kTick * remaining), ball_.position,
-                                  kPointRadius + ball_.radius, along, facing) &&
+            if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
                 !(along <= 1e-9 && dot(velocity_, facing) >= 0.0) && along < first) {
                 first = along;
                 normal = facing;
@@ -527,6 +478,7 @@ void PlaygroundRoom::tick() {
         point_ = point_ + (next - point_) * first;
         remaining *= 1.0 - first;
         if (ballHit) {
+            metBall = true;
             // Same rule as a body: what drives into the ball is answered by both
             // sides, and what runs along it is left alone.
             pointAgainstBall(normal);
@@ -539,6 +491,7 @@ void PlaygroundRoom::tick() {
             continue;
         }
         if (wall) {
+            metFloor = true;
             // The plane answers only what drives into it. What is running along
             // it is the point's kinetic energy and friction is what takes that.
             if (velocity_.y < 0.0) velocity_.y = 0.0;
@@ -550,29 +503,13 @@ void PlaygroundRoom::tick() {
         }
         // The same rule for a body: only the part of the speed that drives into
         // the face is answered here.
+        metBody[hitIndex] = true;
+        const Vec3 along = velocity_ - normal * dot(velocity_, normal);
         const double into = dot(velocity_, normal);
         if (into < 0.0) {
-            // Where the two surfaces met: the body's lever is measured from the
-            // place on it the dot is touching, which is a radius out from the dot's
-            // middle, not the middle itself.
             hitBody(hitIndex, normal, into);
         }
-        // And that exchange is the whole of the answer -- but it is an answer
-        // about the two surfaces, not about the room.
-        //
-        // The floor cannot yield: all a dot driving into it can do is stop, and
-        // flattening it onto the plane afterwards says exactly that. A body
-        // yields. It takes part of the approach as motion of its own, and what the
-        // dot keeps is the rest -- the two surfaces part company at nought. So
-        // what is removed here is what still drives the dot into the face *relative
-        // to the face moving away under it*, and nothing else. Flattening the dot
-        // onto the face as if the face were a wall throws the rest away, and with
-        // it momentum: the dot arrived at three and a half metres a second, the cube
-        // left with half a metre a second, and everything between vanished into
-        // nothing -- not into the cube, not into friction, not into heat.
-        const Vec3 relative = velocity_ - surfaceSpeed(hitIndex, point_);
-        if (dot(relative, normal) < 0.0)
-            velocity_ = velocity_ - normal * dot(relative, normal);
+        velocity_ = along;
         resting_ = true;
         restingBody_ = int(hitIndex);
         supportNormal_ = normal;
@@ -584,7 +521,7 @@ void PlaygroundRoom::tick() {
     // on the floor never arrives at it. Without this it kept its sideways speed
     // forever, because nothing ever told friction there was a surface.
     if (slideSpan_ <= 0.0) {
-        if (point_.y <= kSurfaceY + kPointRadius + 1e-9) {
+        if (point_.y <= kSurfaceY + 1e-9) {
             resting_ = true;
             restingBody_ = -1;
             supportNormal_ = {0, 1, 0};
@@ -604,9 +541,8 @@ void PlaygroundRoom::tick() {
                     const double gap = std::abs(dot(point_ - a, outward));
                     if (gap < nearest) { nearest = gap; normal = outward; }
                 }
-                // Only a face that can carry weight counts as standing on it, and
-                // the middle of the dot stands a radius clear of it.
-                if (std::abs(nearest - kPointRadius) > 1e-6 || normal.y < 0.5) continue;
+                // Only a face that can carry weight counts as standing on it.
+                if (nearest > 1e-6 || normal.y < 0.5) continue;
                 resting_ = true;
                 restingBody_ = int(index);
                 supportNormal_ = normal;
@@ -630,6 +566,11 @@ void PlaygroundRoom::tick() {
                 }
             }
         }
+    }
+    // Nothing may be left inside a body: a contact is found just before it, and
+    // the walk stops there, but rounding can leave a point a hair deep.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        pushOutOfPolygon(point_, bodies_[index].position.data(), bodies_[index].count);
     }
     // Kinetic friction over the part of the tick the point spent on something.
     // The line that is drawn is the travel that was actually walked this tick.
@@ -681,6 +622,84 @@ void PlaygroundRoom::tick() {
 // against the plane, and then the fixed distances are pushed back to what they
 // were. A corner that moves therefore pulls and pushes the others through those
 // distances: that is the whole of the coupling.
+// Whether the dot's own support has gone away underneath it.
+//
+// A dot goes to sleep on a floor, a shape or the ball, and while it sleeps nothing
+// moves it. Take the thing it is lying on out from under it -- drag the shape, roll
+// the ball away -- and it would hang in the air for ever: asleep, and wrong. So the
+// surface it was resting on is asked, every tick, whether it is still there, and if
+// it is not the dot wakes and falls, which is what it was about to do anyway.
+bool PlaygroundRoom::pointSupportGone() const {
+    if (restingOnBall_) {
+        const Vec3 gap{point_.x - ball_.position.x, point_.y - ball_.position.y, 0.0};
+        return length(gap) > ball_.radius + kPointSupportBand;
+    }
+    if (restingBody_ >= 0 && restingBody_ < int(kBodyCount)) {
+        const Body& body = bodies_[std::size_t(restingBody_)];
+        if (body.count == 0) return true;
+        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return false;
+        const ball_shape::OutlineGap gap =
+            ball_shape::outlineGap(point_, body.position.data(), body.position.data(), body.count, kPointRadius);
+        return gap.gap > kPointSupportBand;
+    }
+    return point_.y > kSurfaceY + kPointSupportBand;
+}
+
+// Whether any body's step this tick has arrived at the point.
+//
+// The dot is a point with a radius, and a body arriving at it is a face or a corner
+// arriving at a circle -- the same question the ball's own hitscan answers, so it is
+// asked here with the same geometry. What it is for is the one thing a sleeping point
+// cannot do for itself: a point that is not stepped has no sweep, and a body that
+// falls on it while it sleeps has nothing to stop it. The point wakes, and from then
+// on its own tick -- which does have a sweep -- answers whatever met it.
+bool PlaygroundRoom::pointReachedByBodies() const {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0) continue;
+        // It has already overtaken the point: wherever the point is, a body's outline
+        // around it is a meeting that has happened and has to be answered. A body that
+        // has come to rest is not skipped here: it is asleep, but the point inside it
+        // is still inside it, and a sleeping shape is exactly what a shape that landed
+        // on a sleeping dot becomes -- skip it and the dot is left inside it for ever.
+        if (ball_shape::insideOutline(point_, body.position.data(), body.count)) return true;
+        if (body.frozen) continue;
+        // And where the shape was, to where it is now: the piece of its outline the
+        // step swept, and every corner of it through the same travel. A body falling a
+        // quarter of a metre a tick is swept, not sampled.
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 before = body.previous[i], after = body.position[i];
+            const Vec3 side = body.position[(i + 1) % body.count] - body.position[i];
+            const Vec3 sideBefore = body.previous[(i + 1) % body.count] - body.previous[i];
+            if (length(side) <= 0.0 && length(sideBefore) <= 0.0) continue;
+            // A corner's travel, against the point's own radius.
+            const Vec3 travel = after - before;
+            const double lengthSquared = dot(travel, travel);
+            const double along = lengthSquared > 1e-18 ? std::clamp(dot(point_ - before, travel) / lengthSquared, 0.0, 1.0) : 0.0;
+            if (length(point_ - (before + travel * along)) <= kPointRadius) return true;
+            // And the side swept through the tick, which is what catches a face coming
+            // down flat across the point with neither of its ends anywhere near it.
+            for (const double fraction : {0.0, 0.5, 1.0}) {
+                const Vec3 a = body.previous[i] + travel * fraction;
+                const Vec3 b = body.previous[(i + 1) % body.count] + travel * fraction;
+                const Vec3 edge = b - a;
+                const double edgeSquared = dot(edge, edge);
+                const double place = edgeSquared > 1e-18 ? std::clamp(dot(point_ - a, edge) / edgeSquared, 0.0, 1.0) : 0.0;
+                if (length(point_ - (a + edge * place)) <= kPointRadius) return true;
+            }
+        }
+    }
+    return false;
+}
+
+void PlaygroundRoom::freezeCheck() {
+    if (!pointFrozen_ && dragTarget_ != DragTarget::Point && resting_ && length(velocity_) < 1e-9 &&
+        (point_.y <= kSurfaceY || restingBody_ >= 0 || restingOnBall_)) {
+        pointFrozen_ = true;
+        velocity_ = {};
+    }
+}
+
 void PlaygroundRoom::advance(double seconds) {
     if (!(seconds > 0.0) || !std::isfinite(seconds)) return;
     if (dragTarget_ != DragTarget::None) updateDrag();
@@ -765,10 +784,6 @@ void PlaygroundRoom::advance(double seconds) {
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         separateBall();
-        // The dot is put back out of anything that has moved into it. It is done
-        // here, after the shapes and the ball have moved and before anything looks
-        // at the room, so that no frame is ever drawn with the dot inside a shape.
-        separatePoint();
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;

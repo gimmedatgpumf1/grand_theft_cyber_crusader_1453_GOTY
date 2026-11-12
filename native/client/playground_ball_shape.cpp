@@ -141,31 +141,15 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
     hit.contact = from - atStart.normal * radius;
     hit.depth = std::max(0.0, radius - atStart.gap);
     if (hit.resting) {
-        // On the surface already. What the rest of the tick has to be swept for is
-        // going deeper -- rounding the end of a face puts the ball inside the face
-        // it is beside -- and a ball that only looked at where it started ended the
-        // tick millimetres in. A ball that is already that far in is stopped where
-        // it touches.
-        if (hit.depth > kSkin) {
-            hit.along = 0.0;
-            return true;
-        }
-        // And a ball lying on a face and running along it is not arriving at that
-        // face at all: its distance to the face is the same at the end of the tick
-        // as at the start, to the last bit of the arithmetic. Asking whether the
-        // swept circle ever comes `radius - kTouch` from the outline still finds a
-        // time, because "the same to the last bit" is not "the same", and that time
-        // is a contact that costs none of the tick: the walk answers it, finds it
-        // again a hair further on, answers it again, and spends the whole tick on
-        // a surface it is sliding along without moving along it at all. That is the
-        // ball that runs down a slope and stops dead with all its speed left. So
-        // the question is asked of the geometry: does the travel end up closer to
-        // the outline than the thickness of a surface? If it does not, there is
-        // nothing to meet -- only something to slide along, which is what the
-        // resting contact at the end of the tick is for.
-        const OutlineGap atEnd = outlineGap(from + travel, corners, corners, count, 1.0);
-        if (!(atEnd.gap < radius - kSkin) && !(atEnd.gap < atStart.gap - kSkin)) return false;
-        hit.along = firstTouch(from, travel, corners, count, radius - kTouch);
+        // On the surface already: a contact for the whole tick, and the ball rolls
+        // along it. What the rest of the tick still has to be swept for is going
+        // deeper -- rounding the end of a face puts the ball inside the face it is
+        // beside -- and a ball that only looked at where it started ended the tick
+        // millimetres in. The margin is the rounding allowance itself, so a ball
+        // simply lying on a surface spends its travel and one being pressed into
+        // it is stopped where it touches it.
+        hit.along = hit.depth > kSkin ? 0.0 : firstTouch(from, travel, corners, count,
+                                                        std::min(radius, atStart.gap) - kTouch);
         return true;
     }
     const double first = firstTouch(from, travel, corners, count, radius);
