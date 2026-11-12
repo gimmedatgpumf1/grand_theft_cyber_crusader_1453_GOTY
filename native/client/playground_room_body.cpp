@@ -369,31 +369,27 @@ void PlaygroundRoom::settleBodies() {
 }
 
 // One tick of every body. The forces first, then the walk.
+//
+// The walk stops at every arrival -- the first instant anything would meet
+// anything else -- and answers it there before spending what is left of the tick.
+// An arrival at the very last instant of the tick is answered too: a body that
+// lands as the tick ends would otherwise begin the next one already closing on the
+// surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
     applyBodyForces();
     double remaining = kTick;
-    for (int stop = 0; stop < kMaxWalkStops && remaining > 1e-12; ++stop) {
+    for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
-        if (step > 0.0) {
-            remaining -= advanceBodies(step);
-            if (step <= 0.0) break;
-        }
+        if (step > 0.0) remaining -= advanceBodies(step);
         ContactSet contacts;
         gatherContacts(contacts);
-        if (contacts.count == 0) {
-            // Nothing is touching: the rest of the tick is free travel.
-            if (remaining > 1e-12) advanceBodies(remaining);
-            remaining = 0.0;
+        if (contacts.count == 0 || !solveContacts(contacts)) {
+            // Nothing is touching, or nothing that is touching is closing: what is
+            // left of the tick is travel along the way the bodies are going.
+            if (remaining > 0.0) remaining -= advanceBodies(remaining);
             break;
         }
-        const bool answered = solveContacts(contacts);
-        if (!answered && remaining > 1e-12) {
-            // The contacts are there and nothing is closing at any of them: the
-            // rest of the tick is travel along them.
-            advanceBodies(remaining);
-            remaining = 0.0;
-            break;
-        }
+        if (!(remaining > 1e-12)) break;
     }
     settleBodies();
     writeImpulses();
