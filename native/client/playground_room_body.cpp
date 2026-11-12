@@ -54,10 +54,6 @@ constexpr int kMaxWalkStops = 8;
 // How many passes the contacts of one stop are solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-int solvePassesFor() {
-    const char* v = std::getenv("SOLVEPASSES");
-    return v ? std::atoi(v) : 256;
-}
 constexpr int kSolvePasses = 256;
 // A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
@@ -459,8 +455,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
-        if (std::getenv("DBGB2")) std::fprintf(stderr, "ball patch b%zu gap %.9f n(%+.3f,%+.3f) at(%.3f,%.3f) v %+.4f\n", index, gap, way.x, way.y, at.x, at.y, bodies_[index].velocity.y);
-        patches.add(patch);
     }
     // Another body, met by the corners of this one against its outline. The outline
     // of a convex face is a segment too, so the corners of this body that are on it
@@ -716,8 +710,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
-            if (patch.ball && std::getenv("DBGB2"))
-                std::fprintf(stderr, "    ballpass b%zu u %+.5f dofs %zu d %+.5f v %+.5f | bal v %+.4f spin %+.3f y %.4f frz %d\n", patch.body, u[0], dofs, delta[0], body->velocity.y, ball_.velocity.y, ball_.spin, ball_.position.y, int(ball_.frozen));
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
@@ -785,8 +777,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
-    const int passes = solvePassesFor();
-    for (int pass = 0; pass < passes; ++pass) {
+    for (int pass = 0; pass < kSolvePasses; ++pass) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const std::size_t one = patches.items[m].body;
@@ -893,22 +884,6 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
 // lands as the tick ends would otherwise begin the next one already closing on the
 // surface it is standing on, and be answered a tick late, from inside.
 void PlaygroundRoom::tickBodies() {
-    // Phase accounting: which part of a tick makes energy, if any does.
-    const auto phaseEnergy = [&]() {
-        double k = 0, p = 0;
-        energyBudget(k, p);
-        return k + p;
-    };
-    static int ticks_ = 0;
-    ++ticks_;
-    const bool trace = std::getenv("DBGP") != nullptr;
-    double phase = phaseEnergy();
-    if (trace) std::fprintf(stderr, "  tick %d START %.9f\n", ticks_, phase);
-    const auto mark = [&](const char* what) {
-        const double now = phaseEnergy();
-        if (trace) std::fprintf(stderr, "  tick %d %+.6f J at: %s  y0 %.6f y1 %.6f  v0 %+.4f s0 %+.4f v1 %+.4f s1 %+.4f\n", ticks_, now - phase, what, bodies_[0].centre.y, bodies_[1].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[1].velocity.y, bodies_[1].spin);
-        phase = now;
-    };
     // What every body arrived with, and how many contacts it had already been given.
     //
     // A body that spends a whole tick in the air has followed a parabola, and a
@@ -942,25 +917,21 @@ void PlaygroundRoom::tickBodies() {
     // still through. An arrival later in the tick joins the same set, keeping what
     // the ends it shares already carry, so the tick converges on one answer for each
     // meeting instead of answering the same one again.
-    mark("forces and air");
     ManifoldSet patches;
     gatherContacts(patches);
     solveContacts(patches);
-    mark("first solve");
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
         const double step = timeToContact(remaining);
         const double used = step > 0.0 ? advanceBodies(step) : 0.0;
-        mark("walk");
-        remaining -= used;
+            remaining -= used;
         // A meeting at the very last instant of the tick is left to the next tick,
         // which begins by answering every patch the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
         gatherContacts(patches);
         const bool touching = solveContacts(patches);
-        mark("later solve");
-        if (!touching) {
+            if (!touching) {
             // Nothing new is touching and nothing already touching is closing: what
             // is left of the tick is travel along the way the bodies are going.
             remaining -= advanceBodies(remaining);
@@ -978,12 +949,8 @@ void PlaygroundRoom::tickBodies() {
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
-    mark("parabola");
     separateBodies();
-    mark("separate");
     settleBodies();
-    mark("settle");
-    mark("end of tick");
     writeImpulses();
 }
 
