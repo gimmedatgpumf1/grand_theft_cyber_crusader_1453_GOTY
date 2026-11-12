@@ -317,16 +317,24 @@ void PlaygroundRoom::tick() {
         resting_ = false;
         pointFrozen_ = false;
     }
-    // A point that ended the last tick inside a body is put back on its
-    // boundary. The sweep cannot do that itself -- it reports a crossing and
-    // stops -- so a point already inside would be nudged out by a hair each tick
-    // and creep along the face it is inside instead of sliding down it.
+    // A dot that ended the last tick overlapping a body is put back clear of it.
+    // Its own walk keeps its disc out of everything it moves towards, but a body
+    // moves too, and the body's tick does not know the dot is there -- so a shape
+    // settling onto a dot, or sliding under one, can leave the dot's disc inside
+    // it. The sweep cannot repair that itself, because it reports arrivals and
+    // stops. Left alone, a dot a little way in is nudged out by a hair each tick
+    // and creeps along the face it is inside instead of sliding down it -- and a
+    // dot whose *middle* is on the face is a dot half inside the shape, which is
+    // the one thing a dot may never be.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
-        if (!pushOutOfPolygon(point_, body.position.data(), body.count)) continue;
+        const ball_shape::OutlineGap gap = ball_shape::outlineGap(
+            point_, body.position.data(), body.position.data(), body.count, 1.0);
+        if (!(gap.gap < kPointRadius)) continue;
+        point_ = point_ + gap.normal * (kPointRadius - gap.gap);
         restingBody_ = int(index);
         resting_ = true;
-        supportNormal_ = outwardNormalAt(body, point_);
+        supportNormal_ = gap.normal;
     }
     // Forces: gravity is m*g downwards, always. What is holding the point up
     // answers only the part of that force which drives into it; whatever is left
@@ -591,9 +599,15 @@ void PlaygroundRoom::tick() {
         }
     }
     // Nothing may be left inside a body: a contact is found just before it, and
-    // the walk stops there, but rounding can leave a point a hair deep.
+    // the walk stops there, but rounding can leave the disc a hair deep. The dot
+    // is a ball of a known radius, and its disc stands that radius clear of every
+    // face it is beside.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        pushOutOfPolygon(point_, bodies_[index].position.data(), bodies_[index].count);
+        const Body& body = bodies_[index];
+        const ball_shape::OutlineGap gap = ball_shape::outlineGap(
+            point_, body.position.data(), body.position.data(), body.count, 1.0);
+        if (!(gap.gap < kPointRadius)) continue;
+        point_ = point_ + gap.normal * (kPointRadius - gap.gap);
     }
     // Kinetic friction over the part of the tick the point spent on something.
     // The line that is drawn is the travel that was actually walked this tick.
