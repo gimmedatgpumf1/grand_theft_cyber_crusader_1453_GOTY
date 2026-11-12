@@ -185,15 +185,17 @@ void PlaygroundRoom::tickBall() {
             // and it is what a hitscan between two moving things is. Nothing is
             // sampled and nothing is stepped: the meeting is still solved outright,
             // which is what makes it independent of how fast either of them is going.
-            Vec3 bodyStep{};
-            for (std::size_t i = 0; i < body.count; ++i) bodyStep = bodyStep + (body.position[i] - body.previous[i]);
-            bodyStep = bodyStep * (1.0 / static_cast<double>(body.count));
-            // One test per body, not one per edge: the sweep walks the ball's path
-            // against the whole outline as the body moves through the tick, and
-            // answers with the first piece of it the ball's surface reaches.
+            // The body's step is a translation *and a turn*, and the turn is the
+            // half that gets forgotten: a shape rotating about its middle carries one
+            // edge backwards and the other forwards, and no single "average step" is
+            // the motion of the piece of outline the ball actually meets. So the
+            // sweep is done against the body's motion corner by corner, both of them
+            // moving through the tick, and the meeting is where their relative motion
+            // closes -- which is what a hitscan between two moving things is. One
+            // test per body, not one per edge.
             OutlineHit hit;
-            if (!circleHitsBody(ball.position, travel - bodyStep, body.position.data(), body.count, ball.radius,
-                                hit))
+            if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
+                                        ball.velocity, ball.radius, kTick, hit))
                 continue;
 
             // Already on this surface when the tick began: a contact for the whole
@@ -240,7 +242,8 @@ void PlaygroundRoom::tickBall() {
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
             if (hit.depth <= kSkin && hit.along <= kTouch) {
-                const Vec3 surfaceVelocity = bodyStep * (1.0 / kTick);
+                const Vec3 surfaceVelocity =
+                    pointSpeed(body, hit.contact) ;
                 if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
             }
             if (hit.along < first) {
