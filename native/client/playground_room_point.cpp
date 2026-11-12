@@ -120,12 +120,10 @@ void PlaygroundRoom::separatePoint() {
         if (!(gap.gap < kPointRadius)) continue;
         point_ = point_ + gap.normal * (kPointRadius - gap.gap);
         if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
-        if (pointFrozen_) {
-            pointFrozen_ = false;
-            resting_ = false;
-            restingBody_ = -1;
-            restingOnBall_ = false;
-        }
+        // A sleeping dot is not woken here. What wakes it is a shape arriving at
+        // it, which is asked and answered in the room's own tick; waking it for
+        // every hair of separation would be waking it every tick it lies in
+        // contact with anything, which is every tick it is asleep on a shape.
     }
 }
 
