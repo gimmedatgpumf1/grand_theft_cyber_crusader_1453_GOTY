@@ -219,15 +219,23 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     Body& body = bodies_[index];
     if (body.count == 0 || bodyHeld(index)) return false;
     const Vec3 was = body.centre;
+    // How far the shape already reaches below the floor, which is a state it may
+    // keep -- it was put there by its own step and the separation above -- but may
+    // not make worse. Measured against that, not against zero: a corner a micrometre
+    // under the floor is not a reason to refuse, or the shape could never give way
+    // about anything again.
+    double below = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i)
+        below = std::max(below, playground_tick::kSurfaceY - body.position[i].y);
     // Out of the ball means along -normal, because the normal runs from the shape to
     // the ball: the shape leaves the way the ball would have.
     body.centre = body.centre - normal * through;
     placeCorners(body);
     // The floor is under everything, so a shape cannot be the one to give way if
-    // giving way would take it through the floor. What is left is the ball moving,
-    // which is the honest last resort.
+    // giving way would take it further through the floor. What is left is the ball
+    // moving, which is the honest last resort.
     for (std::size_t i = 0; i < body.count; ++i) {
-        if (body.position[i].y < playground_tick::kSurfaceY - playground_tick::kQuantum) {
+        if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) {
             body.centre = was;
             placeCorners(body);
             return false;
