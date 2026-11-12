@@ -513,7 +513,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // stopped there; an end a hair above it, with the face tipping onto
                 // it, is left free to come down onto it in this very tick instead of
                 // being held off it and rocking.
-                u[dofs] = away(patch.point[k], patch.normal);
+                u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] / kTick;
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
                 ++dofs;
