@@ -501,8 +501,15 @@ void PlaygroundRoom::tickBodies() {
         // which begins by answering every contact the bodies are touching at -- that
         // is the same meeting, seen with a whole tick to spend on it.
         if (!(remaining > 0.0)) break;
+        if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  -- pre-stop pos:\n");
+        dumpBody("pre-stop", bodies_[0]);
         const std::size_t before = contacts.count;
         gatherContacts(contacts);
+        if (std::getenv("WOBDUMP"))
+            for (std::size_t c = 0; c < contacts.count; ++c)
+                std::fprintf(stderr, "     contact corner %zu at (%.6f,%.9f)  carried %.6f\n",
+                             contacts.items[c].corner, contacts.items[c].point.x, contacts.items[c].point.y,
+                             contacts.items[c].normalImpulse);
         if (contacts.count == before && !solveContacts(contacts)) {
             // Nothing new is touching and nothing already touching is closing: what
             // is left of the tick is travel along the way the bodies are going.
@@ -513,6 +520,10 @@ void PlaygroundRoom::tickBodies() {
             remaining -= advanceBodies(remaining);
             break;
         }
+        if (std::getenv("WOBDUMP"))
+            for (std::size_t c = 0; c < contacts.count; ++c)
+                std::fprintf(stderr, "     -> corner %zu  n %.6f  t %.6f\n", contacts.items[c].corner,
+                             contacts.items[c].normalImpulse, contacts.items[c].tangentImpulse);
         if (std::getenv("WOBDUMP")) std::fprintf(stderr, "  after stop %d (remaining %.6f) contacts %zu\n", stop, remaining, contacts.count);
         dumpBody("stopped", bodies_[0]);
     }
