@@ -58,7 +58,11 @@ int solvePassesFor() {
     const char* v = std::getenv("SOLVEPASSES");
     return v ? std::atoi(v) : 32;
 }
-constexpr int kSolvePasses = 32;
+constexpr int kSolvePasses = 256;
+// A sweep of the patches is over when nothing it can still see is closing faster
+// than this. A millionth of a metre per second is a thousandth of a millimetre in
+// a whole tick: slower than the arithmetic of the positions can even show, and
+// small enough that what is left over cannot pump a stacked pair.
 constexpr double kSolveTolerance = 1e-12;  // m/s
 // How long a body's pose has to stay inside one small box before it is at rest,
 // and how small that box is. A shape standing on its supports does not go
@@ -707,13 +711,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
-            if (std::getenv("DBGI"))
-                std::fprintf(stderr, "  patch b%zu o%zu n(%+.3f,%+.3f) ends %zu dofs %zu u %.6f %.6f d %.6f %.6f v0 %+.5f v1 %+.5f\n",
-                             patch.body, patch.other, patch.normal.x, patch.normal.y, count, dofs, u[0], u[1], delta[0], delta[1],
-                             bodies_[0].velocity.y, bodies_[1].velocity.y);
-            if (std::getenv("DBGI"))
-                std::fprintf(stderr, "      arm0 (%+.3f,%+.3f) spin %.4f corner %zu\n", patch.point[0].x - body->centre.x,
-                             patch.point[0].y - body->centre.y, body->spin, patch.corner[0]);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
@@ -781,22 +778,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
     };
 
-    const auto kineticOf = [&](std::size_t index) {
-        const Body& b = bodies_[index];
-        return 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin;
-    };
     const int passes = solvePassesFor();
     for (int pass = 0; pass < passes; ++pass) {
         worst = 0.0;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const std::size_t one = patches.items[m].body;
             const std::size_t two = patches.items[m].other;
-            const double before = kineticOf(one) + (two < kBodyCount ? kineticOf(two) : 0.0);
             patchPass(patches.items[m]);
-            const double after = kineticOf(one) + (two < kBodyCount ? kineticOf(two) : 0.0);
-            if (std::getenv("DBGK") && after > before + 1e-9)
-                std::fprintf(stderr, "pass %2d patch b%zu o%zu ends %zu kind %d KE %+.6f -> %+.6f (+%.6f)\n", pass, one,
-                             two, patches.items[m].ends, int(patches.items[m].kind), before, after, after - before);
         }
         if (worst < kSolveTolerance && pass > 0) break;
     }
@@ -979,9 +967,7 @@ void PlaygroundRoom::tickBodies() {
     // exact path from its arrival speed would have put it. See the note above.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
-        if (trace) std::fprintf(stderr, "    body %zu skip? count %zu frozen %d held %d contacts %d/%d\n", index, body.count, int(body.frozen), int(bodyHeld(index)), body.contacts, touchedBefore[index]);
         if (body.count == 0 || body.frozen || bodyHeld(index) || body.met != touchedBefore[index]) continue;
-        if (trace) std::fprintf(stderr, "    body %zu parabola arr %.6f vel %.6f dy %+.9f\n", index, arrival[index].y, body.velocity.y, (arrival[index].y - body.velocity.y) * 0.5 * kTick);
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
