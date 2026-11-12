@@ -120,6 +120,14 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 if (body.position[i].y < -kOnSurface) {
                     inside = true;
                 }
+            // The ball is a surface too, and one that cannot be travelled into: a
+            // step that would put the outline into the ball is not taken. The
+            // momentum the meeting carries is answered by the contact solve; this
+            // is only about not walking through it while that answer settles.
+            {
+                Vec3 way{}, at{};
+                if (bodyBallGap(index, way, at) < -kOnSurface) inside = true;
+            }
             Vec3 way{};
             for (std::size_t other = index + 1; other < kBodyCount && !inside; ++other) {
                 if (bodies_[other].count == 0) continue;
