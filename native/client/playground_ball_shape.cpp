@@ -133,6 +133,102 @@ double firstTouch(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count
     return first;
 }
 
+// The outline at one fraction of a tick, corner by corner, each corner on its own
+// straight step from where it was to where it is. That is what the body actually
+// did: the room carries a shape by moving its centre and turning it, and the
+// corners' steps are what that motion left behind.
+static void outlineAt(const Vec3* previous, const Vec3* current, std::size_t count, double fraction,
+                      Vec3* corners) {
+    for (std::size_t i = 0; i < count; ++i) corners[i] = previous[i] + (current[i] - previous[i]) * fraction;
+}
+
+// How fast the piece of outline nearest `point` is travelling, from the two corners
+// that own it. The piece between two corners moves at the lever's interpolation of
+// the two of them -- which is exactly what a rigid body's rotation does along an
+// edge, and what a body turning on the spot does to the place it is touching.
+static Vec3 outlineSpeed(const Vec3* previous, const Vec3* current, std::size_t count, Vec3 point,
+                         double tick) {
+    const OutlineTouch touch = outlineTouch(point, current, count);
+    const Vec3 stepA = current[touch.a] - previous[touch.a];
+    const Vec3 stepB = current[touch.b] - previous[touch.b];
+    return (stepA * (1.0 - touch.t) + stepB * touch.t) * (1.0 / tick);
+}
+
+bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size_t count,
+                            Vec3 ballPosition, Vec3 ballVelocity, double radius, double tick,
+                            OutlineHit& hit) {
+    Vec3 corners[kMaxOutlineCorners];
+    // Where the ball is at the start: already against the surface or already
+    // through it. That is not a meeting to find, it is the state the tick begins
+    // in, and the caller has an answer for it (a contact for the whole tick).
+    outlineAt(previous, current, count, 0.0, corners);
+    const OutlineGap start = outlineGap(ballPosition, corners, corners, count, 1.0);
+    if (start.gap <= radius + kTouch) {
+        hit.resting = true;
+        hit.along = 0.0;
+        hit.normal = start.normal;
+        hit.depth = std::max(0.0, radius - start.gap);
+        hit.contact = ballPosition - start.normal * radius;
+        return true;
+    }
+    hit.resting = false;
+    // Conservative advancement. `safe` is the last fraction known to be clear, and
+    // `unsafe` the first known to be touching; when a step lands inside, the two
+    // bracket the meeting and it is closed in on -- so a body that swings quickly
+    // through the ball cannot hide the moment it arrived between two steps.
+    double safe = 0.0;
+    double unsafe = 2.0;
+    double fraction = 0.0;
+    for (int step = 0; step < 64; ++step) {
+        outlineAt(previous, current, count, fraction, corners);
+        const Vec3 at = ballPosition + ballVelocity * (tick * fraction);
+        const OutlineGap gap = outlineGap(at, corners, corners, count, 1.0);
+        if (gap.gap <= radius) {
+            unsafe = fraction;
+            break;
+        }
+        // The distance to close, at the rate the two surfaces are closing at.
+        const Vec3 surface = outlineSpeed(previous, current, count, at, tick);
+        const double closing = -dot(ballVelocity - surface, gap.normal);
+        // Not closing: whatever happens later in the tick, these two are moving
+        // apart along the way they would meet, and there is no meeting to report.
+        if (!(closing > 0.0)) return false;
+        const double needed = (gap.gap - radius) / closing;  // seconds
+        if (!(needed > 0.0)) {
+            unsafe = fraction;
+            break;
+        }
+        safe = fraction;
+        fraction += needed / tick;
+        if (fraction > 1.0) return false;
+    }
+    if (!(unsafe <= 1.0)) {
+        if (!(fraction <= 1.0)) return false;
+        unsafe = fraction;
+    }
+    // Close the bracket in on the meeting. This is a time found by solving for the
+    // distance, not by sampling for it, so where it lands does not depend on how
+    // fast anything is going.
+    double low = safe, high = std::min(unsafe, 1.0);
+    for (int bisect = 0; bisect < kBisections; ++bisect) {
+        const double middle = 0.5 * (low + high);
+        outlineAt(previous, current, count, middle, corners);
+        const Vec3 at = ballPosition + ballVelocity * (tick * middle);
+        if (outlineGap(at, corners, corners, count, 1.0).gap <= radius)
+            high = middle;
+        else
+            low = middle;
+    }
+    outlineAt(previous, current, count, high, corners);
+    const Vec3 at = ballPosition + ballVelocity * (tick * high);
+    const OutlineGap met = outlineGap(at, corners, corners, count, 1.0);
+    hit.along = high;
+    hit.normal = met.normal;
+    hit.contact = at - met.normal * radius;
+    hit.depth = std::max(0.0, radius - met.gap);
+    return true;
+}
+
 bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double radius,
                     OutlineHit& hit) {
     const OutlineGap atStart = outlineGap(from, corners, corners, count, 1.0);

@@ -83,6 +83,10 @@ constexpr double kSkin = 1e-6;
 // samples, and the ball would be a hair into whatever it passed too fast to see.
 constexpr int kBisections = 24;
 
+// The most corners a body in this room has. A scratch array of corners is sized by
+// it in the swept tests, so that nothing in a contact allocates.
+constexpr std::size_t kMaxOutlineCorners = 4;
+
 // One meeting of the ball's circle with a body's outline.
 //
 // This is the whole of the ball's collision detection, and it is a hitscan: the
@@ -115,5 +119,21 @@ double firstTouch(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count
 // going deeper than the rounding allowance it is already inside by.
 bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t count, double radius,
                     OutlineHit& hit);
+
+// The same question asked of a body that is *moving*: the circle travels at
+// `ballVelocity`, and the outline travels from `previous` to `current` over one
+// tick -- every corner along its own step, which is the body's translation and its
+// turn together. Two moving things meet where their relative motion closes, and
+// that is the only question a contact may be found with: a shape turning into a
+// ball at a radian a second sweeps its outline through twenty millimetres of it in
+// a tick, and a sweep that only looks at where the shape finished cannot see the
+// ball it has already swallowed.
+//
+// It is solved by conservative advancement, and it is conservative in the sense the
+// word is for: every step is the time the distance has left to close at the speed
+// it is closing, so it can stop early (and then it looks again) but never late. The
+// ball cannot be overtaken by a face, at any speed either of them is going.
+bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size_t count,
+                            Vec3 ballPosition, Vec3 ballVelocity, double radius, double tick, OutlineHit& hit);
 
 }  // namespace gtc::native::ball_shape
