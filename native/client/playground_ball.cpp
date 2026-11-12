@@ -185,17 +185,14 @@ void PlaygroundRoom::tickBall() {
             // and it is what a hitscan between two moving things is. Nothing is
             // sampled and nothing is stepped: the meeting is still solved outright,
             // which is what makes it independent of how fast either of them is going.
-            // The body's step is a translation *and a turn*, and the turn is the
-            // half that gets forgotten: a shape rotating about its middle carries one
-            // edge backwards and the other forwards, and no single "average step" is
-            // the motion of the piece of outline the ball actually meets. So the
-            // sweep is done against the body's motion corner by corner, both of them
-            // moving through the tick, and the meeting is where their relative motion
-            // closes -- which is what a hitscan between two moving things is. One
-            // test per body, not one per edge.
+            // The body is where it is, and it is not moving: it was stepped before
+            // this, and the sweep that stops *it* at the ball is the other half of
+            // the same question (clampBodiesToBall, in the body's own tick). What is
+            // swept here is the ball's travel against the outline as it stands --
+            // which is a hitscan, solved outright, so no speed of the ball's is too
+            // fast to see.
             OutlineHit hit;
-            if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
-                                        ball.velocity, ball.radius, kTick, hit))
+            if (!circleHitsBody(ball.position, travel, body.position.data(), body.count, ball.radius, hit))
                 continue;
 
             // Already on this surface when the tick began: a contact for the whole
