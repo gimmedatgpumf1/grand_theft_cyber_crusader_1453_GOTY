@@ -446,6 +446,10 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
+        if (std::getenv("DBGB3") && index == 0 && bodies_[0].velocity.y < -2.0)
+            std::fprintf(stderr, "      b0 v %+.3f ball (%.4f,%.4f) gap %.6f n(%+.3f,%+.3f) at(%.4f,%.4f) frozen %d\n",
+                         bodies_[0].velocity.y, ball_.position.x, ball_.position.y, gap, way.x, way.y, at.x, at.y,
+                         int(ball_.frozen));
         if (gap > kContactBand) continue;
         Manifold patch;
         patch.body = index;
