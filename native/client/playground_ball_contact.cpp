@@ -196,7 +196,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // blow would drive downwards, has nowhere to go: the body takes the
             // whole answer, and stops on the ball instead of sinking into it and
             // being answered again next tick.
-            const bool ballGives = !ballHeld && !(normal.y < 0.0 && ball.position.y <= ball.radius + kTouch);
+            // A face above the ball pressing it down is a face the ball has
+            // nowhere to go under: the floor is under it and the floor wins. But
+            // "above" has to mean above. A face that is level points sideways, and
+            // in floating point it points sideways by about a part in a million
+            // billion -- so testing the sign alone said a horizontal face was
+            // pressing the ball into the floor whenever the ball happened to be
+            // resting on it, gave the ball no say in the blow, and a ball that ran
+            // into the side of a cube stopped dead instead of bouncing off it.
+            // Bounciness is not a property of up, and a side hit is a hit.
+            const bool pressing = normal.y < -kSkin && ball.position.y <= ball.radius + kTouch;
+            const bool ballGives = !ballHeld && !pressing;
             const double ballShare = ballGives ? 1.0 : 0.0;
             const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
             if (std::getenv("DBGB"))
