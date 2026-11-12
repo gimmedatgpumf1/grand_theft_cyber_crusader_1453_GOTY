@@ -967,6 +967,7 @@ void PlaygroundRoom::tickBodies() {
     mark("separate");
     settleBodies();
     mark("settle");
+    mark("end of tick");
     writeImpulses();
 }
 
