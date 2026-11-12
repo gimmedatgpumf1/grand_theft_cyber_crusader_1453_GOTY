@@ -465,6 +465,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         double share[2 * kMaxPatchEnds] = {};
         for (std::size_t k = 0; k < count; ++k) share[count + k] = count == 2 ? 0.5 : 1.0;
         // What each of those acts on, and how hard the body answers it.
+        if (std::getenv("WOB") && body == &bodies_[1])
+            std::fprintf(stderr, "        in ends %zu v(%.4f,%.4f) w %.4f p0(%.4f,%.4f) p1(%.4f,%.4f) n(%.3f,%.3f)\n",
+                         count, body->velocity.x, body->velocity.y, body->spin, patch.point[0].x,
+                         patch.point[0].y, patch.point[1].x, patch.point[1].y, patch.normal.x, patch.normal.y);
         double u[2 * kMaxPatchEnds] = {};
         double g[2 * kMaxPatchEnds][2 * kMaxPatchEnds] = {};
         for (std::size_t i = 0; i < 2 * count; ++i) {
