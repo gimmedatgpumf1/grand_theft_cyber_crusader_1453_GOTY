@@ -326,11 +326,22 @@ private:
                 Manifold& known = items[i];
                 if (known.body != patch.body || known.other != patch.other || known.ball != patch.ball)
                     continue;
+                // An end is the same end when it is in the same *place*, which is
+                // what it has always been: the place the load acts. Matching by
+                // corner number looked equivalent and was not -- an end where two
+                // edges cross is not any corner at all, so both ends of a shape
+                // lying across another one matched the same corner, and each
+                // inherited the whole of what that one had carried. The solver then
+                // started every iteration believing a load was already there when
+                // it was not, and answered it again: a shape rocking on another one
+                // with an amplitude that grew instead of dying -- energy out of the
+                // arithmetic, which is exactly what a warm start must never do.
                 double carried[kMaxPatchEnds]{}, grip[kMaxPatchEnds]{};
                 for (std::size_t k = 0; k < patch.ends; ++k) {
                     for (std::size_t j = 0; j < known.ends; ++j) {
-                        if (!patch.ball && known.corner[j] != patch.corner[k]) continue;
                         if (patch.ball && j != k) continue;
+                        const Vec3 apart = known.point[j] - patch.point[k];
+                        if (std::hypot(apart.x, apart.y) > 1e-6) continue;
                         carried[k] = known.normalImpulse[j];
                         grip[k] = known.tangentImpulse[j];
                     }
