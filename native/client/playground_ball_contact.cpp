@@ -237,6 +237,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
+            if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   NOWHERE impulse %.4f closing %.4f rebound %.4f arrived %.4f surface(%+.4f,%+.4f) frozen %d\n", impulse, closing, rebound, arrivedSpeed, surfaceVelocity.x, surfaceVelocity.y, (int)(body ? body->frozen : 0));
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             pressed = impulse;
         }
