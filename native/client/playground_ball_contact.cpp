@@ -233,35 +233,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // it is moving there, and how hard it is pressed.
     if (pressed > 0.0 && ballTouchCount_ < kMaxBallTouches)
         ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed};
-    const Vec3 tangent{normal.y, -normal.x, 0};
-
-    // Rolling resistance, F = Crr * N, at the same contact and in the same way:
-    // the normal force presses the ball into the surface, the surface does not
-    // give that back perfectly, and the loss acts against the way the ball is
-    // going. It is applied through the same lever as friction, so a rolling ball
-    // slows and its turn slows with it and it goes on rolling; it is not a rule
-    // that switches anything off, and it does nothing to a ball that is not
-    // touching anything. N here is exactly the impulse this contact carried.
-    if (pressed > 0.0) {
-        const double travel = dot(ball.velocity - surfaceVelocity, tangent);
-        if (travel != 0.0) {
-            // F = Crr * N against the way the ball is going, and only against that.
-            // It is a loss, so it takes the travel and the turn together: the grip
-            // re-establishes rolling on the next contact, which is where the turn
-            // follows the slower roll. Handing it the same lever as friction -- as
-            // though it were a fourth kind of friction -- turned the speed it took
-            // out of the travel straight into spin, which is not a loss at all: a
-            // ball rolled for ever, and the energy check below rightly refused it.
-            // It acts on the travel: the ball is slowed, and the grip brings the
-            // turn down to match it on the next contact. Doing it through the
-            // friction lever as well would take the travel out of the ball and put
-            // it straight into the turn, which is not a loss, and a ball would roll
-            // for ever -- the energy check below is what caught that.
-            const double limit = kBallRollingResistance * pressed * kTick;
-            const double impulse = std::clamp(travel * ball.mass, -limit, limit);
-            ball.velocity = ball.velocity - tangent * (impulse / ball.mass);
-        }
-    }
+    // Rolling resistance is not done here, and it is not a force taken off the
+    // ball's speed. It is a couple, it is applied to the ball's turn, and it is
+    // applied once for the whole tick in settleBallFriction(), against the load the
+    // contacts are really carrying. See that function: a ball that is rolling
+    // perfectly has nothing sliding anywhere for friction to act on, and something
+    // has to be what stops it rolling for ever.
 
     // And whatever is left pointing into the surface is speed the ball cannot spend.
     // The bodies are stepped before the ball, so what a body gave way by is already

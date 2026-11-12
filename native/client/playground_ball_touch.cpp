@@ -4,7 +4,9 @@
 // changes what is left to slip at every other -- so it is its own step, run once
 // all of a tick's contacts are known. This file is that step and nothing else.
 
+#include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
+#include "client/playground_shapes.h"
 
 #include <cmath>
 
@@ -48,8 +50,52 @@ void PlaygroundRoom::settleBallFriction() {
         const Vec3 turned{-spin * arms[i].y, spin * arms[i].x, 0};
         return dot(velocity + turned - ballTouches_[i].surfaceVelocity, tangents[i]);
     };
+    // The load the ground is carrying, in newtons, which is what both friction and
+    // rolling resistance are measured against.
+    double press = 0.0;
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) press += ballTouches_[i].pressed;
+    const double normalForce = press / ball_shape::kTick;
     const Vec3 velocityBefore = ball.velocity;
     const double spinBefore = ball.spin;
+    // The rolling resistance couple, before the grip has its say.
+    //
+    // M = Crr * N * r, against the roll. That is the whole of it, and it comes from
+    // the geometry of the thing rather than from a rule: the ball and the floor both
+    // flatten a little where they meet, so the pressure under the ball is not
+    // symmetric about the bottom -- it is heavier in front of it than behind -- and
+    // the resultant of the ground's push therefore acts a little ahead of the
+    // bottom of the ball by delta = Crr * r. A push N at an offset delta is a moment
+    // N * delta = Crr * N * r about the middle of the ball, and it is a moment and
+    // nothing else: the same weight, in the same place, doing the same job of
+    // holding the ball up. It opposes the roll, so it is the one thing in the room
+    // that takes the turn out of a ball with no sliding anywhere to rub.
+    //
+    // It is applied to the turn, not to the speed. What slows the *ball* down is the
+    // grip: the ball is now turning slower than it is travelling, the bottom of it
+    // slips forward by that much, and friction answers the slip -- which is exactly
+    // what happens to a real ball. Taking the speed off by hand -- clamping the
+    // travel to Crr * N * dt as this room used to -- was not rolling resistance at
+    // all: it was a brake, it never touched the spin, and it was invisible in the
+    // ledger because it happened to a velocity instead of to the ball.
+    if (normalForce > 0.0 && ball.spin != 0.0) {
+        const double couple = ball_shape::kBallRollingResistance * normalForce * ball.radius;  // N.m
+        const double take = couple * ball_shape::kTick / inertia;                              // rad/s, this tick
+        const double turn = std::copysign(std::min(std::abs(ball.spin), take), ball.spin);
+        ball.spin -= turn;
+        // Drawn as the force that couple is worth at the rolling radius, against the
+        // way the ball is going, at the place it meets the ground. A couple has no
+        // place of its own to be drawn at; this is the honest way to put one on a
+        // picture, and the ledger knows it is a couple.
+        const Vec3 at = ball.position + Vec3{0.0, -ball.radius, 0.0};
+        // The way it is going: its own travel, or -- for a ball spinning on the
+        // spot, where the travel is nothing -- the way that turn would carry it.
+        Vec3 way = ball.velocity;
+        if (!(length(way) > 1e-9)) way = Vec3{-ball.spin, 0.0, 0.0};
+        if (length(way) > 1e-9) {
+            const Vec3 against = way * (-1.0 / length(way));
+            addCouple(at, couple, against * (couple / ball.radius), ForceKind::Rolling, kBallOwner);
+        }
+    }
     const double energyBefore = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     // Until the faces agree. Each pass is one pass over them, and the slip a face
     // sees is measured against what the passes before it have already done -- that

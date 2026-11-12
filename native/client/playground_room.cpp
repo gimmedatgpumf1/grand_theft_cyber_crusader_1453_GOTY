@@ -635,34 +635,15 @@ void PlaygroundRoom::tick() {
     // Kinetic friction over the part of the tick the point spent on something.
     // The line that is drawn is the travel that was actually walked this tick.
     traceTo_ = point_;
-    // Kinetic friction, once, for the part of the tick the point was actually
-    // touching something, and only across the surface -- never into it, which the
-    // contact has already answered. It slows sliding; it does not decide whether
-    // there is sliding, because that is static friction's job above, done with
-    // the forces. Doing both jobs with a leftover velocity is what used to catch
-    // a point on a slope and hold it there, creeping.
-    if (slideSpan_ > 0.0 && !heldStill_ && dragTarget_ != DragTarget::Point) {
-        const Vec3 normal = supportNormal_;
-        const Vec3 across = velocity_ - normal * dot(velocity_, normal);
-        const double speed = length(across);
-        // The normal force the surface presses the point with is the part of its
-        // weight that goes into it, m*g*cos, and friction is a fraction of that
-        // force held for the part of the tick the point was on it.
-        const double normalForce = kMass * kGravity * std::abs(normal.y);  // N
-        const double slide = kPointKineticFriction * normalForce * slideSpan_ / kMass;
-        if (speed > 1e-12) {
-            const double keep = speed <= slide ? 0.0 : (speed - slide) / speed;
-            const Vec3 lost = across * (1.0 - keep);
-            velocity_ = velocity_ - lost;
-            // Friction has two ends: the surface rubs the point, so the point
-            // rubs the surface, and the momentum does not vanish. It goes in
-            // horizontally, the only way a body on the plane can go.
-            if (restingBody_ >= 0 && dragTarget_ != DragTarget::Body && std::abs(lost.x) > 1e-12) {
-                const std::size_t index = std::size_t(restingBody_);
-                pushBody(bodies_[index], point_, Vec3{-lost.x, 0, 0}, ForceKind::Contact);
-            }
-        }
-    }
+    // Friction is not taken out of the speed here, and it never was meant to be.
+    // It has already acted as what it is: a force along the surface, written into
+    // the ledger at the top of this tick and turned into speed by the same
+    // integrator that turns the weight into speed. What used to happen after the
+    // walk -- the slide taken off the velocity by hand, against a normal force
+    // written down as m*g*cos, whether or not that was the load the surface was
+    // actually carrying, and whether or not the force above had already taken it --
+    // charged the dot friction twice, the second time at a pressure nothing had
+    // measured. There is one friction in this room and it is a force.
     slideSpan_ = 0.0;
     if (dragTarget_ != DragTarget::Point && resting_ && !(length(velocity_) > kRestSpeed) && heldStill_) {
         // No speed and no net force: this point cannot do anything next tick.
@@ -911,7 +892,19 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     if (pointFrozen_ && !pointStepped) {
         const Vec3 weight{0.0, -kMass * kGravity, 0.0};
         addForce(point_, weight, ForceKind::Gravity, nullptr, kDotOwner);
-        addForce(point_, weight * -1.0, ForceKind::Contact, nullptr, kDotOwner);
+        // The surface holds it in two parts, and it is drawn in two parts: the
+        // normal that presses it out of the face, and the friction that stops it
+        // running along the face. Replaying the whole of the weight back as one
+        // arrow said the face was answering straight up, which on anything but a
+        // level floor is simply not what is happening -- and it hid the friction
+        // completely, because a friction that is part of another arrow cannot be
+        // seen as the thing holding the dot up.
+        const Vec3 normal = supportNormal_;
+        const double into = dot(weight, normal);       // negative when pressing in
+        const double carried = std::max(0.0, -into);
+        addForce(point_, normal * carried, ForceKind::Contact, nullptr, kDotOwner);
+        const Vec3 along = weight - normal * into;     // what the face cannot answer
+        if (length(along) > 0.0) addForce(point_, along * -1.0, ForceKind::Friction, nullptr, kDotOwner);
     }
 }
 

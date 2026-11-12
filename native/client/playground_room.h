@@ -87,7 +87,17 @@ public:
     // different force -- one along the surface, holding or sliding -- so it gets its
     // own arrow, with its own length and its own account, and the two can be read
     // apart: the normal is what presses, the friction is what holds.
-    enum class ForceKind { Gravity = 0, Contact = 1, Friction = 2, Pair = 3, Ball = 4, Drag = 5, KindCount = 6 };
+    // Rolling resistance is its own kind because it is its own thing. Friction is
+    // a force along a surface that acts to stop one face sliding on another;
+    // rolling resistance is a *couple* that exists because a surface and a ball
+    // both give a little where they meet, so the ground's push is not centred on
+    // the bottom of the ball but a little ahead of it, and that offset is a moment
+    // that turns the roll slower. It acts on a ball that is rolling perfectly, with
+    // no sliding anywhere to rub, which is exactly why friction can never account
+    // for it.
+    enum class ForceKind {
+        Gravity = 0, Contact = 1, Friction = 2, Pair = 3, Ball = 4, Drag = 5, Rolling = 6, KindCount = 7
+    };
     // Room for a whole tick's worth of every kind at once: two bodies of four
     // corners, the dot, the ball, and the contacts and pairs between them. The
     // number is a bound on the array, not a cut: nothing is ever dropped quietly,
@@ -103,6 +113,14 @@ public:
         // as two identical arrows in two places -- one on each shape -- and there is
         // no way to add up what any one of them feels.
         std::size_t owner = 0;
+        // A couple, in newton metres about z, for the one kind of thing in this
+        // room that is a moment and not a force. `force` is then only how the
+        // moment is drawn: a couple has no point to be drawn at, so it is shown as
+        // the force that would be its equal at the rolling radius, M/r, at the
+        // place the ball meets the ground. `couple` says as much, so nothing that
+        // adds the ledger up mistakes it for a force.
+        double moment = 0.0;
+        bool couple = false;
     };
     void toggleForceArrows() { showForces_ = !showForces_; }
     void toggleForceNewtons() { showNewtons_ = !showNewtons_; }
@@ -424,6 +442,11 @@ private:
     void addForce(Vec3 at, Vec3 force, ForceKind kind, Vec3* accumulator, std::size_t owner) {
         if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, force, kind, owner};
         if (accumulator != nullptr) *accumulator = *accumulator + force;
+    }
+    // A couple, written the same way and in the same ledger, with the force it is
+    // drawn as. See ForceSample: the moment is the physics, the force is the pen.
+    void addCouple(Vec3 at, double moment, Vec3 drawn, ForceKind kind, std::size_t owner) {
+        if (forceCount_ < kMaxForceSamples) forces_[forceCount_++] = ForceSample{at, drawn, kind, owner, moment, true};
     }
     void clearForces() { forceCount_ = 0; }
     // What is still acting on the things that are no longer stepped. A body at

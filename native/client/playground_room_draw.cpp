@@ -65,6 +65,10 @@ const char* kindColour(std::size_t kind) {
         case PlaygroundRoom::ForceKind::Pair: return "#ffb454";
         case PlaygroundRoom::ForceKind::Ball: return "#e07bd8";
         case PlaygroundRoom::ForceKind::Drag: return "#b9ccc4";
+        // Rolling resistance, apart from friction and in its own colour, because
+        // it is not friction: it is the ground pushing a little ahead of the
+        // bottom of the ball, and it is what stops a ball rolling for ever.
+        case PlaygroundRoom::ForceKind::Rolling: return "#d98c5f";
         case PlaygroundRoom::ForceKind::KindCount: break;
     }
     return "#ffffff";
