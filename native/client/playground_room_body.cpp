@@ -674,6 +674,50 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
     }
 }
 
+// A body that is asleep is asleep on something, and it is also *under* something
+// whenever anything is standing on it -- and a load is not a wall.
+//
+// Asleep, a body is treated as an immovable surface, which is right for the floor and
+// for the room's own fixtures and wrong for another shape. The pair patch made against
+// it is answered entirely on the other side: the shape leaning on it is stopped, and
+// the load it is leaning with is thrown away, because as far as the arithmetic goes
+// there is nothing there to feel it. That is how a cube can sit on a triangle's slope
+// with the triangle's own arrows showing forty newtons of nothing but gravel: the cube
+// weighs 39.2 N, the triangle under it carries 29.4 N, and the missing 39.2 N went
+// nowhere at all. Worse than the arrows: the triangle could not tip. A shape at rest
+// under a load is not at rest -- it is a shape carrying a load, and whether it can
+// carry it is exactly the question a shape leaning on it is asking.
+//
+// So a sleeping body with something awake pressing on it is woken, and the solver
+// answers the pair with both sides. Once both have settled they sleep again together,
+// which is where it stops: two bodies asleep cannot wake each other, so this is not a
+// pulse. It is one wake, on the tick a load arrives, and the load is in the ledger from
+// then on because a body that goes to sleep carries what it was holding.
+void PlaygroundRoom::wakeLoadedBodies() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (!body.frozen || body.count == 0 || bodyHeld(index)) continue;
+        bool pressed = false;
+        for (std::size_t other = 0; other < kBodyCount && !pressed; ++other) {
+            if (other == index || bodies_[other].count == 0) continue;
+            // Something asleep cannot press on anything: it has no speed and no weight
+            // of its own to spend. Only an awake neighbour is a load arriving.
+            if (bodies_[other].frozen) continue;
+            if (pairGap(body.position.data(), body.count, bodies_[other].position.data(),
+                        bodies_[other].count).gap <= kContactBand)
+                pressed = true;
+        }
+        Vec3 way{}, at{};
+        if (!pressed && (!ball_.frozen || ballNeighboursMoving()) && bodyBallGap(index, way, at) <= kContactBand)
+            pressed = true;
+        if (!pressed) continue;
+        body.frozen = false;
+        body.restTicks = 0;
+        body.restLow = body.restHigh = body.centre;
+        body.restAngleLow = body.restAngleHigh = body.angle;
+    }
+}
+
 // One tick of every body: the forces, the contacts, and then the travel.
 //
 // There is no walking and no stopping short any more. A tick is one step: the air and
@@ -708,6 +752,7 @@ void PlaygroundRoom::tickBodies() {
         metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();
+    wakeLoadedBodies();
     // The air first, on the motion the body arrived with -- the speed its own weight
     // has given it this tick is not air it has travelled through, and a shape standing
     // still must feel none of it.

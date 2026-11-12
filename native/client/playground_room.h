@@ -390,6 +390,10 @@ private:
     // at all, is a body that has nothing holding it up any more -- and it wakes to
     // fall, because that is what it is doing.
     void wakeUnsupportedBodies();
+    // A sleeping body with a load arriving on it is a shape carrying a load, not a
+    // wall: it wakes, so that what leans on it is answered against its mass. See the
+    // file.
+    void wakeLoadedBodies();
     // One impulse, given to one body at one place. The ledger is written here too:
     // this is the only door into a body's motion, so what is on screen cannot
     // disagree with what was solved.
