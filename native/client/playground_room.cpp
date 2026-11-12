@@ -339,9 +339,15 @@ void PlaygroundRoom::tick() {
         // surface that a dot is pressed against holds it, and holding it means this:
         // the part of the speed driving into the face is gone.
         if (dot(velocity_, gap.normal) < 0.0) velocity_ = velocity_ - gap.normal * dot(velocity_, gap.normal);
-        restingBody_ = int(index);
-        resting_ = true;
-        supportNormal_ = gap.normal;
+        // A face that carries weight is a support; a face that cannot is something
+        // the dot is beside. Leaning on a wall is not standing on it -- and calling
+        // a wall the ground takes away the floor's friction, so a dot sliding along
+        // the floor into a shape slides for ever with nothing to slow it.
+        if (gap.normal.y > 0.0) {
+            restingBody_ = int(index);
+            resting_ = true;
+            supportNormal_ = gap.normal;
+        }
     }
     // Forces: gravity is m*g downwards, always. What is holding the point up
     // answers only the part of that force which drives into it; whatever is left
