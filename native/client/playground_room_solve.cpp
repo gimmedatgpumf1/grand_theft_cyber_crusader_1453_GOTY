@@ -343,68 +343,63 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
             : patch.ball   ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
                            : body->kineticFriction;
-        // The ends that are pressed, how much load is under the whole face, and the
-        // face's own slip: the slip of each pressed end, averaged, and what an equal
-        // share of impulse at every pressed end does to that average.
+        // The ends that are pressed, and how much load is under the whole face.
+        //
+        // The grip is taken back and laid down afresh every sweep rather than added
+        // to, and the difference is the difference between a force and a memory of
+        // one. A sweep passes through states the room is never in -- a load answered
+        // before the shape above it has been answered -- and grip that is only ever
+        // added to keeps what it took in those moments and goes on holding with it:
+        // a face standing still on a surface, gripped by a force that is no longer
+        // needed, pushing the shape along until the sweep's end. Taken back first,
+        // grip is what the face needs *now*: a face that is not slipping is not being
+        // pushed, and a tick that ends at rest ends with no friction in it at all.
         std::size_t pressed = 0;
-        double load = 0.0, slip = 0.0, response = 0.0;
+        double load = 0.0;
         for (std::size_t k = 0; k < count; ++k) {
+            if (patch.tangentImpulse[k] != 0.0) {
+                pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
+                worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
+                patch.tangentImpulse[k] = 0.0;
+            }
             if (!(patch.normalImpulse[k] > 0.0)) continue;
             ++pressed;
             load += patch.normalImpulse[k];
-            slip += away(patch.point[k], tangent);
         }
         if (pressed > 0) {
-            slip /= static_cast<double>(pressed);
-            // What a share of one newton second at each pressed end does to that
-            // average: the sum of the whole coupling over the face, over the square of
-            // the count. The ends' levers are in it, so a share that turns the body is
-            // answered for as the turn it makes.
-            double total = 0.0;
+            // The face's slip: the slip of each pressed end, averaged, and what an
+            // equal share of impulse at every pressed end does to that average. The
+            // ends' levers are in it, so a share that turns the body is answered for
+            // as the turn it makes.
+            double slip = 0.0, total = 0.0;
             for (std::size_t k = 0; k < count; ++k) {
                 if (!(patch.normalImpulse[k] > 0.0)) continue;
+                slip += away(patch.point[k], tangent);
                 for (std::size_t j = 0; j < count; ++j) {
                     if (!(patch.normalImpulse[j] > 0.0)) continue;
                     total += give(patch.point[k], tangent, patch.point[j], tangent);
                 }
             }
             const double n = static_cast<double>(pressed);
-            response = total / (n * n);
-        }
-        // The grip the face is holding with now, as one number: each pressed end
-        // carries an equal share of it.
-        double held = 0.0;
-        for (std::size_t k = 0; k < count; ++k) {
-            if (!(patch.normalImpulse[k] > 0.0)) {
-                // An end that is not pressed is not gripping, and an end that has been
-                // let go must give back what it was holding.
-                if (patch.tangentImpulse[k] != 0.0) {
-                    pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
-                    worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
-                    patch.tangentImpulse[k] = 0.0;
+            slip /= n;
+            const double response = total / (n * n);
+            if (response > 1e-12) {
+                const double mu = std::abs(slip) > kRestSpeed ? kineticMu : staticMu;
+                const double hold = mu * load;
+                double grip = -slip / response;
+                if (std::abs(grip) > hold) {
+                    // More than the surface can hold: it slips, and what it is given
+                    // is what the surface can give -- the rest of the slip is left in
+                    // the body's motion, where it belongs.
+                    grip = std::copysign(hold, grip);
                 }
-                continue;
-            }
-            held += patch.tangentImpulse[k];
-        }
-        if (pressed > 0 && response > 1e-12) {
-            const double mu = std::abs(slip) > kRestSpeed ? kineticMu : staticMu;
-            const double hold = mu * load;
-            double grip = held - slip / response;
-            if (std::abs(grip) > hold) {
-                // More than the surface can hold: it slips, and what it is given is
-                // what the surface can give -- the rest of the slip is left in the
-                // body's motion, where it belongs.
-                grip = std::copysign(hold, grip);
-            }
-            const double share = grip / static_cast<double>(pressed);
-            for (std::size_t k = 0; k < count; ++k) {
-                if (!(patch.normalImpulse[k] > 0.0)) continue;
-                const double delta = share - patch.tangentImpulse[k];
-                if (delta == 0.0) continue;
-                pushEnd(k, tangent * delta, ForceKind::Friction);
-                worst = std::max(worst, std::abs(delta));
-                patch.tangentImpulse[k] = share;
+                const double share = grip / n;
+                for (std::size_t k = 0; k < count; ++k) {
+                    if (!(patch.normalImpulse[k] > 0.0)) continue;
+                    pushEnd(k, tangent * share, ForceKind::Friction);
+                    worst = std::max(worst, std::abs(share));
+                    patch.tangentImpulse[k] = share;
+                }
             }
         }
         // What is under each end decides what the body is standing on.
