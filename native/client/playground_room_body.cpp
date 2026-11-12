@@ -151,6 +151,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double falling = pointSpeed(body, body.position[i]).y;
             if (!(falling < 0.0)) continue;
             if (height <= kOnSurface) {
+                if (std::getenv("DBGW")) std::fprintf(stderr, "   floor stop body %zu corner %zu y %.9f vy %.4f\n", index, i, height, falling);
                 first = 0.0;
                 continue;
             }
@@ -165,6 +166,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
             if (!(closing > 1e-12)) continue;
             if (gap <= kOnSurface) {
+                if (std::getenv("DBGW")) std::fprintf(stderr, "   ball stop body %zu gap %.9f\n", index, gap);
                 first = 0.0;
                 continue;
             }
@@ -180,6 +182,7 @@ double PlaygroundRoom::timeToContact(double remaining) const {
             const double closing = -dot(closingSpeed, gap.normal);
             if (!(closing > 1e-12)) continue;
             if (gap.gap <= kOnSurface) {
+                if (std::getenv("DBGW")) std::fprintf(stderr, "   pair stop %zu/%zu gap %.9f closing %.4f\n", index, other, gap.gap, closing);
                 first = 0.0;
                 continue;
             }
