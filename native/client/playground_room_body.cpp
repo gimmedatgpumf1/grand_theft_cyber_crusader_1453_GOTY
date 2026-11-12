@@ -511,6 +511,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         double answer[3] = {};
         for (std::size_t i = 0; i < dofs; ++i) answer[i] = matrix[i][dofs] / matrix[i][i];
+        if (std::getenv("WOB") && body == &bodies_[1])
+            std::fprintf(stderr, "        patch ends %zu dofs %zu M[0] %.4f %.4f %.4f rhs %.5f -> ans %.5f %.5f %.5f\n",
+                         count, dofs, matrix[0][0], dofs > 1 ? matrix[0][1] : 0.0, dofs > 2 ? matrix[0][2] : 0.0,
+                         matrix[0][dofs], answer[0], dofs > 1 ? answer[1] : 0.0, dofs > 2 ? answer[2] : 0.0);
         double load[2] = {};
         for (std::size_t k = 0; k < count; ++k) {
             load[k] = patch.normalImpulse[k] + answer[k];
