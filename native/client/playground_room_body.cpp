@@ -732,6 +732,69 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     return closingAtAll;
 }
 
+// Out of whatever a shape is inside, by its position and nothing else.
+//
+// Every other answer in this room is an impulse: the surface stops what is coming
+// at it, and what is coming at it is a speed. That works because a contact is met
+// on the way *in*. A corner that is already inside something was never met on the
+// way in -- it is there because the walk could not see it coming, because the shape
+// was put there by the mouse, or because the arithmetic that put it on a surface
+// left it a nanometre the wrong side. A constraint on speed has nothing to say about
+// it: "do not close" is already satisfied by something that is not closing.
+//
+// So it is answered where it is: the shape is moved out along the way it is least
+// inside, by the depth it is inside. Nothing is added to its speed and nothing is
+// taken from it, so no energy is made; the two shapes share the move by their
+// inertia, so a heavy one gives less ground than a light one; and a shape asleep is
+// not moved at all, because it is not the one that moved into anything.
+void PlaygroundRoom::separateBodies() {
+    for (std::size_t one = 0; one < kBodyCount; ++one) {
+        Body& body = bodies_[one];
+        if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
+        // The floor.
+        double deepest = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
+        if (deepest > 0.0) {
+            body.centre.y += deepest;
+            placeCorners(body);
+        }
+        // Another shape.
+        for (std::size_t two = 0; two < kBodyCount; ++two) {
+            if (two == one || bodies_[two].count == 0) continue;
+            Body& solid = bodies_[two];
+            // How much of the move this shape has to make: by inverse mass, so the
+            // pair share it the way two bodies share any push between them. A shape
+            // asleep or in the mouse's hand is not going anywhere, and takes none.
+            const bool solidMoves = !solid.frozen && !bodyHeld(two);
+            const double mine = 1.0 / body.mass;
+            const double theirs = solidMoves ? 1.0 / solid.mass : 0.0;
+            const double share = mine / (mine + theirs);
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(body.position[i], solid.position.data(),
+                                                                         solid.position.data(), solid.count, 1.0);
+                if (!(gap.gap < 0.0)) continue;
+                const Vec3 move = gap.normal * (-gap.gap);
+                body.centre = body.centre + move * share;
+                if (solidMoves) solid.centre = solid.centre - move * (1.0 - share);
+                placeCorners(body);
+                if (solidMoves) placeCorners(solid);
+            }
+            // And the other way round: a corner of the other shape inside this one
+            // is the same overlap seen from the other side.
+            for (std::size_t i = 0; i < solid.count; ++i) {
+                const ball_shape::OutlineGap gap = ball_shape::outlineGap(solid.position[i], body.position.data(),
+                                                                         body.position.data(), body.count, 1.0);
+                if (!(gap.gap < 0.0)) continue;
+                const Vec3 move = gap.normal * (-gap.gap);
+                if (solidMoves) solid.centre = solid.centre + move * (1.0 - share);
+                body.centre = body.centre - move * share;
+                if (solidMoves) placeCorners(solid);
+                placeCorners(body);
+            }
+        }
+    }
+}
+
 // A body's rest, decided from its own motion and from what is under it. A shape
 // whose weight does not run between the places it is supported at is not carried
 // by them -- it tips, and that is what the physics does on its own, without a rule
@@ -860,6 +923,10 @@ void PlaygroundRoom::tickBodies() {
             break;
         }
     }
+    // Whatever the tick's walk could not keep out of anything is put out now, by
+    // position alone. It is the last thing done to the shapes and the only thing
+    // that moves one without an impulse: see separateBodies.
+    separateBodies();
     settleBodies();
     writeImpulses();
 }

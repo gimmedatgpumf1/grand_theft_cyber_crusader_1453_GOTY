@@ -354,6 +354,14 @@ private:
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
+    // A shape found overlapping another shape, or the floor, is moved out of it by
+    // its position alone -- no speed is given it and none is taken away. This is the
+    // one thing a velocity solver cannot do: a constraint on speed says "do not come
+    // any closer", and a corner that is already inside never came closer, it is
+    // there. Left to the velocities it stays there for ever, and a body whose step
+    // is refused for being inside something never moves at all while its weight goes
+    // on arriving -- which is a shape that gains energy without ever moving.
+    void separateBodies();
     // Whether the surface a sleeping body is lying on is still there. A body that
     // was put to rest by a floor, a shape or the ball, and that is touching nothing
     // at all, is a body that has nothing holding it up any more -- and it wakes to
