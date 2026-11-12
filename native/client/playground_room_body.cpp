@@ -760,6 +760,12 @@ void PlaygroundRoom::tickBodies() {
     // meeting instead of answering the same one again.
     ManifoldSet patches;
     gatherContacts(patches);
+    if (std::getenv("DBG"))
+        for (std::size_t m = 0; m < patches.count; ++m)
+            std::fprintf(stderr, "   patch b%zu o%zu ball%d e%zu p0(%.3f,%.3f) g%.6f n(%.2f,%.2f)\n", patches.items[m].body,
+                         patches.items[m].other, int(patches.items[m].ball), patches.items[m].ends, patches.items[m].point[0].x,
+                         patches.items[m].point[0].y, patches.items[m].gap[0], patches.items[m].normal.x,
+                         patches.items[m].normal.y);
     solveContacts(patches);
     double remaining = kTick;
     for (int stop = 0; stop < kMaxWalkStops; ++stop) {
