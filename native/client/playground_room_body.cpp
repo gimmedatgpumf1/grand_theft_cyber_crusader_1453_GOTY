@@ -386,7 +386,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                     lowest[k] = height;
                     patch.corner[k] = i;
                     patch.point[k] = body.position[i];
-                    patch.gap[k] = std::max(0.0, height);
+                    patch.gap[k] = height;
                     break;
                 }
             }
@@ -409,7 +409,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
         patch.ball = true;
         patch.ends = 1;
         patch.point[0] = at;
-        patch.gap[0] = std::max(0.0, gap);
+        patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
         patches.add(patch);
@@ -444,7 +444,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches) const {
                         nearest[k] = gap.gap;
                         patch.corner[k] = i;
                         patch.point[k] = body.position[i];
-                        patch.gap[k] = std::max(0.0, gap.gap);
+                        patch.gap[k] = gap.gap;
                         way[k] = gap.normal;  // out of the other body, into this one
                         break;
                     }
@@ -585,6 +585,16 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // stopped there; an end a hair above it, with the face tipping onto
                 // it, is left free to come down onto it in this very tick instead of
                 // being held off it and rocking.
+                //
+                // The gap is signed, and that is the other half of it. An end that is
+                // already a little way inside a surface has a negative gap, and what
+                // the constraint then asks is that it be *out* by the end of the tick
+                // -- the distance, spread over the tick. Nothing is teleported and no
+                // shape is pushed out of another behind the physics' back: the body is
+                // simply given the speed that takes it clear, and the walk carries it
+                // there. Without it a corner that got a millimetre in could only ever
+                // stay a millimetre in, because a constraint that stops closing cannot
+                // undo what has already closed.
                 u[dofs] = away(patch.point[k], patch.normal) + patch.gap[k] / kTick;
                 for (std::size_t j = 0; j <= dofs; ++j)
                     g[j][dofs] = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
