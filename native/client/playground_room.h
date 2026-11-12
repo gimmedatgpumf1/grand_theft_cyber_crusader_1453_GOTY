@@ -290,13 +290,6 @@ private:
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.
     double advanceBodies(double seconds);
-    // How far anything in the room can get before this tick is over: its speed times
-    // the tick, plus what its turn carries its furthest corner. A contact is gathered
-    // whenever an end is within that, because an end that could arrive before the tick
-    // ends has to be answered now -- it is a contact this tick, not one next tick.
-    // This is what makes the tick's own travel the only thing that decides whether two
-    // things can meet, and it is why nothing ever has to be pushed back out.
-    double band_ = 1e-4;
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
     // One patch: a face of a body resting on a surface. Its two ends are the ends

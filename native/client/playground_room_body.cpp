@@ -40,12 +40,7 @@ constexpr double kOnSurface = 1e-6;
 // because the face is a hundredth of a millimetre up is a contact set that lets the
 // shape rock. This is the band in which two surfaces are touching.
 constexpr double kContactBand = 1e-4;
-// The width of the arithmetic: how far two numbers that should be equal can differ
-// after a few hundred multiplications at the scale of this room. It is not a
-// physical length and nothing in the simulation is decided by it; it is what the
-// walk's own bookkeeping allows when it asks whether a step went anywhere.
-constexpr double kArithmetic = 1e-9;
-// How many passes the contacts of one stop are solved in. Sequential impulses
+// How many sweeps of the patches one tick is solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
 constexpr int kSolvePasses = 32;
