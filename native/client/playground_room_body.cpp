@@ -263,14 +263,16 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
+            // One meeting, one patch. Two shapes touching are one load, not two: if
+            // each of them gathered its own patch against the other, the pair would be
+            // answered twice, in opposite directions, from two different ends -- and a
+            // load that doubles itself every sweep is a shape that rocks for ever on
+            // nothing at all. The lower-numbered awake body carries the meeting, and a
+            // body asleep can only be the surface in someone else's patch, which is
+            // why the ordering is skipped when the other one is not awake.
+            if (two < one && !bodies_[two].frozen) continue;
             const Body& solid = bodies_[two];
             pair_shape::PairManifold meeting;
-            const bool met = pair_shape::collide(body.position.data(), body.count, solid.position.data(),
-                                                 solid.count, band, meeting);
-            if (std::getenv("DBGP2"))
-                std::fprintf(stderr, "   pair %zu/%zu -> %d ends %zu endsA %zu\n", one, two, int(met), meeting.ends,
-                             pair_shape::collide(solid.position.data(), solid.count, body.position.data(), body.count,
-                                                 band, meeting) ? meeting.ends : 999);
             if (!pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
                                      band, meeting))
                 continue;
