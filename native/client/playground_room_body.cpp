@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -775,6 +777,24 @@ void PlaygroundRoom::tickBodies() {
             remaining -= advanceBodies(remaining);
             break;
         }
+    }
+    if (std::getenv("DBG")) {
+        Vec3 way{};
+        double depth = 0.0;
+        const bool inside = bodiesIntoEachOther(0, 1, way, depth);
+        Vec3 bway{}, at{};
+        const auto g = ball_shape::outlineGap;
+        (void)g;
+        double gap = 1e9;
+        for (std::size_t i = 0; i < bodies_[0].count; ++i) {
+            const auto res = ball_shape::outlineGap(bodies_[0].position[i], bodies_[1].position.data(),
+                                                    bodies_[1].position.data(), bodies_[1].count, 1.0);
+            gap = std::min(gap, res.gap);
+        }
+        std::fprintf(stderr, "  GAP nearest %.6f inside %d depth %.9f n(%.3f,%.3f) v(%.3f,%.3f)\n", gap, int(inside),
+                     depth, way.x, way.y, bodies_[0].velocity.x, bodies_[0].velocity.y);
+        (void)bway;
+        (void)at;
     }
     settleBodies();
     writeImpulses();
