@@ -624,6 +624,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
+        // This body and its partner have now been answered at a patch: whatever
+        // the patch's ends go on to do, the body has met something this tick, and
+        // its travel is the solver's answer rather than a free fall.
+        if (count > 0) {
+            ++body->met;
+            if (other != nullptr) ++other->met;
+        }
         // What the ends were closing at before this answer, for the walk.
         for (std::size_t k = 0; k < count; ++k) {
             const double closing = away(patch.point[k], patch.normal);
@@ -909,7 +916,7 @@ void PlaygroundRoom::tickBodies() {
     std::array<int, kBodyCount> touchedBefore{};
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
-        touchedBefore[index] = bodies_[index].contacts;
+        touchedBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();
     // The air first, on the motion the body arrived with -- the speed its own weight
@@ -957,7 +964,7 @@ void PlaygroundRoom::tickBodies() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (trace) std::fprintf(stderr, "    body %zu skip? count %zu frozen %d held %d contacts %d/%d\n", index, body.count, int(body.frozen), int(bodyHeld(index)), body.contacts, touchedBefore[index]);
-        if (body.count == 0 || body.frozen || bodyHeld(index) || body.contacts != touchedBefore[index]) continue;
+        if (body.count == 0 || body.frozen || bodyHeld(index) || body.met != touchedBefore[index]) continue;
         if (trace) std::fprintf(stderr, "    body %zu parabola arr %.6f vel %.6f dy %+.9f\n", index, arrival[index].y, body.velocity.y, (arrival[index].y - body.velocity.y) * 0.5 * kTick);
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);

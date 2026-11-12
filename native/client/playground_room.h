@@ -212,6 +212,12 @@ private:
         double staticFriction = 0, kineticFriction = 0;
         bool frozen = false;
         int contacts = 0;
+        // How many contact patches this body has been answered in since the room was
+        // reset. It is a counter and not a flag so that a tick can tell, by comparing
+        // with what it started from, whether the body met anything at all while it
+        // was being stepped -- which is what decides whether its travel this tick was
+        // a free fall or a supported one.
+        int met = 0;
         // What held it up this tick, worked out from the contacts it ended the tick
         // with: which way the contact patch runs, and whether what it stands on is
         // itself asleep. A body whose weight does not run between its supports is
