@@ -371,6 +371,82 @@ void bounceIsTheSameEveryWay() {
           "a hit below the middle turns the cube, and the turn is taken out of the bounce", detail);
 }
 
+// The ball is the one thing in the room small enough to be swallowed, and the one
+// thing whose collision has to be a hitscan rather than a search: at 40 m/s it
+// crosses two metres in a tick. Every one of these shots is solved outright, so no
+// speed may be too fast to see -- and what is measured is not the sweep but the room
+// after the tick, because a sweep that finds the surface and then leaves the ball a
+// millimetre into it is not a hitscan that works.
+//
+// The second half is the case a sweep alone cannot be: a shape arriving at a ball the
+// floor has already stopped, where the tick's own contact sees nothing closing (both
+// of them falling at the same speed) and the overlap is made by the two positions.
+// That is what put a cube around a ball and left it there for the rest of a session.
+void nothingIsEverInsideAnything() {
+    say("\nnothing ends a tick inside the ball\n");
+    // A deterministic spread of shots, from every side, at speeds a hand can give a
+    // ball and speeds it cannot.
+    const double speeds[] = {0.5, 2.0, 6.0, 15.0, 40.0};
+    double worst = 0.0;
+    int ticks = 0;
+    int worstTrial = -1;
+    for (int trial = 0; trial < 60; ++trial) {
+        const double angle = -3.141592653589793 + 6.283185307179586 * trial / 60.0;
+        const double speed = speeds[trial % 5];
+        PlaygroundRoom room;
+        room.reset();
+        const Vec3 cube = room.bodyMiddle(0);
+        const Vec3 start{cube.x - 1.6 * std::cos(angle), cube.y + 1.2 * std::sin(angle), 0};
+        if (!room.ballPlacementClear(start)) continue;
+        room.ball_.position = start;
+        room.ball_.velocity = Vec3{std::cos(angle), std::sin(angle), 0} * speed;
+        room.ball_.frozen = false;
+        for (int tick = 0; tick < 40; ++tick) {
+            room.advance(1.0 / 20.0);
+            ++ticks;
+            for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
+                Vec3 way{}, at{};
+                const double inside = -room.bodyBallGap(index, way, at);
+                if (inside > worst) {
+                    worst = inside;
+                    worstTrial = trial;
+                }
+            }
+        }
+    }
+    char detail[200];
+    std::snprintf(detail, sizeof detail, "%d ticks of shots from every side, worst %.6f m inside", ticks, worst);
+    check(worst < 1e-6, "a ball fired at anything is stopped by it", detail);
+
+    // A cube dropped onto a ball that is sitting on the floor: the shapes are the ones
+    // arriving, and the ball has nowhere to go.
+    double dropped = 0.0;
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        const Vec3 under{room.bodyMiddle(0).x, 0.5, 0};
+        room.ball_.position = Vec3{under.x + 1.2, room.ball_.radius, 0};
+        room.ball_.velocity = {};
+        room.ball_.frozen = false;
+        // The cube, straight above it, falling.
+        room.bodies_[0].centre = Vec3{under.x + 1.2, 2.4, 0};
+        room.bodies_[0].angle = 0.0;
+        room.bodies_[0].frozen = false;
+        room.bodies_[0].velocity = Vec3{0, -6.0, 0};
+        room.bodies_[0].spin = 0.0;
+        room.placeCorners(room.bodies_[0]);
+        room.bodies_[0].previous = room.bodies_[0].position;
+        for (int tick = 0; tick < 60; ++tick) {
+            room.advance(1.0 / 20.0);
+            Vec3 way{}, at{};
+            dropped = std::max(dropped, -room.bodyBallGap(0, way, at));
+        }
+    }
+    std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
+    check(dropped < 1e-6, "nor is one that arrives at the ball", detail);
+}
+
 void interactionDoesNotStick() {
     say("\nnothing sticks to anything\n");
     {
@@ -529,6 +605,7 @@ int main() {
     frictionIsAForce();
     airDependsOnSpeed();
     bounceIsTheSameEveryWay();
+    nothingIsEverInsideAnything();
     interactionDoesNotStick();
     costOfATick();
     say("\n%s\n", failures == 0 ? "playground: PASS" : "playground: FAIL");
