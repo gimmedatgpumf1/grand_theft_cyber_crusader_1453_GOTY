@@ -66,6 +66,8 @@ void PlaygroundRoom::tickBall() {
     ballTouchCount_ = 0;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
+    // A tick starts straight: whatever the last one bent at is spent.
+    ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
         ball.velocity = {};
         ball.spin = 0.0;
@@ -191,6 +193,9 @@ void PlaygroundRoom::tickBall() {
         return length(point_ - Vec3{}) >= 0.0 && !pointFrozen_ && length(velocity_) > 0.0;
     };
     double remaining = 1.0;
+    // What the ball was doing as the walk began. The drawing needs the piece of the
+    // path before the first meeting, and it is this velocity that made it.
+    const Vec3 walkStart = ball.velocity;
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = ball.position + ball.velocity * (kTick * remaining);
         const Vec3 travel = next - ball.position;
@@ -315,6 +320,18 @@ void PlaygroundRoom::tickBall() {
             break;
         }
         ball.position = playground_tick::resolvedMove(ball.position, ball.position + travel * first);
+        // The bent tick, recorded where the ball is stopped and before anything has
+        // had a chance to answer it: where the meeting was, when it was, and what
+        // the ball was doing on each side of it. Only the first one in a tick is
+        // kept -- the rest are a ball lying on what it has just hit, and the piece
+        // of path between two of those is too short to draw.
+        if (!ball.bent) {
+            ball.bent = true;
+            ball.bendAt = (1.0 - remaining) + first * remaining;
+            ball.bendPoint = ball.position;
+            ball.bendIn = walkStart;
+            ball.bendOut = ball.velocity;
+        }
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
         // put down, or the first meeting in a tick would be counted as the second.

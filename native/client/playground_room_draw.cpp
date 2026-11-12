@@ -134,7 +134,19 @@ void PlaygroundRoom::interpolate() {
     // The ball is one point: where it is and how far it has turned, both spread
     // over the frames the same way as everything else.
     const double ballAlpha = ball_.frozen || dragTarget_ == DragTarget::Ball ? 1.0 : fraction;
-    ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
+    // Two straight pieces when it bent, one when it did not. This is not the drawing
+    // inventing a path: it is the path the tick took. The ball went to the meeting
+    // at one speed and left it at another, and the only place the two pieces of that
+    // motion join is the place it touched. Spreading the tick as a single line put
+    // the join halfway up the rebound instead, which is why a ball landing fast
+    // looked like it bounced on air a hand's width above the cube.
+    if (ball_.bent && ballAlpha < 1.0) {
+        const double when = ball_.bendAt;
+        ball_.shown = ballAlpha <= when ? ball_.previous + ball_.bendIn * (kTick * ballAlpha)
+                                        : ball_.bendPoint + ball_.bendOut * (kTick * (ballAlpha - when));
+    } else {
+        ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
+    }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
     // the ball turned a fifteenth of the way it rolled and the seams looked

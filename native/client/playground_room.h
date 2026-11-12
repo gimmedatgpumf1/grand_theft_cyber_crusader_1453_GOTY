@@ -170,6 +170,20 @@ private:
         // what the ball arrived with -- not against the speed gravity lent it on
         // the way, which a ball already lying on the floor has too.
         Vec3 arrival{};
+        // Where the tick bent. A ball that meets something takes the answer there and
+        // spends the rest of the tick going elsewhere, so its path through a tick is
+        // two straight pieces and not one. Drawn as one piece it never goes near the
+        // surface: a ball landing at eight metres a second is at eight tenths of a
+        // metre above the face at the frame before the meeting and a quarter of a
+        // metre above it at the frame after, and it looks for all the world as if it
+        // bounced on air. It did not -- it bounced where it was told to, between two
+        // frames. This is the record of that meeting, so the drawing can follow the
+        // path that was actually taken. The physics does not read any of it.
+        bool bent = false;
+        double bendAt = 0.0;   // the fraction of the tick the meeting happened at
+        Vec3 bendPoint{};      // where the ball was when it happened
+        Vec3 bendIn{};         // what it was doing up to the meeting
+        Vec3 bendOut{};        // and what it was doing after it
         double radius = 0.12;   // basketball: 0.24 m across
         double mass = 0.62;     // kg, a real basketball
         double spin = 0.0;      // radians per second about z
