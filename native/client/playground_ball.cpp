@@ -194,7 +194,11 @@ void PlaygroundRoom::tickBall() {
                     ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count,
                                            1.0)
                         .gap;
-                if (startGap + kTouch > ball.radius) {
+                // Only an *arrival* is stopped here. A shape already against the ball
+                // is in contact, and contact is answered by the contact: refusing its
+                // step every tick would hold it up for ever with the speed it arrived
+                // with, which is not a solve, it is a shape standing on nothing.
+                if (startGap > ball.radius + kTouch) {
                     // It may come as near as the ball's surface, or as near as it
                     // already is if that is nearer: a shape already against the ball
                     // has no allowance left. A step that would take it further in is
@@ -261,9 +265,7 @@ void PlaygroundRoom::tickBall() {
                 if (getenv("GTC_TRACE")) std::fprintf(stderr, "REST body %zu inside by %.6f m (depth %.6f) at (%+.5f,%+.5f) v(%+.3f,%+.3f)\n", index, ball.radius - on.gap, hit.depth, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
                 // A micrometre in is touching. Only a depth the room's own resolution
                 // can tell from touching is one to put back, and only then is it a
-                // miss worth counting: a shape stopped at the ball by the sweep above
-                // sits exactly one micrometre in by construction, every tick, and that
-                // is the rule doing its job, not the room failing at it.
+                // miss worth counting.
                 if (ball.radius - on.gap > playground_tick::kQuantum) {
                     // Counted only when it is a real miss and not the last bit of a
                     // double: a ball resting on a surface is one radius from it to
