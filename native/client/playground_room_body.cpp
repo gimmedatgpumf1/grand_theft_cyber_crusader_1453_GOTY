@@ -693,7 +693,7 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
 // which is where it stops: two bodies asleep cannot wake each other, so this is not a
 // pulse. It is one wake, on the tick a load arrives, and the load is in the ledger from
 // then on because a body that goes to sleep carries what it was holding.
-void PlaygroundRoom::wakeLoadedBodies() {
+void PlaygroundRoom::wakeLoadedBodies(double band) {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (!body.frozen || body.count == 0 || bodyHeld(index)) continue;
@@ -704,11 +704,11 @@ void PlaygroundRoom::wakeLoadedBodies() {
             // of its own to spend. Only an awake neighbour is a load arriving.
             if (bodies_[other].frozen) continue;
             if (pairGap(body.position.data(), body.count, bodies_[other].position.data(),
-                        bodies_[other].count).gap <= kContactBand)
+                        bodies_[other].count).gap <= band)
                 pressed = true;
         }
         Vec3 way{}, at{};
-        if (!pressed && (!ball_.frozen || ballNeighboursMoving()) && bodyBallGap(index, way, at) <= kContactBand)
+        if (!pressed && (!ball_.frozen || ballNeighboursMoving()) && bodyBallGap(index, way, at) <= band)
             pressed = true;
         if (!pressed) continue;
         body.frozen = false;
@@ -752,7 +752,6 @@ void PlaygroundRoom::tickBodies() {
         metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();
-    wakeLoadedBodies();
     // The air first, on the motion the body arrived with -- the speed its own weight
     // has given it this tick is not air it has travelled through, and a shape standing
     // still must feel none of it.
@@ -774,6 +773,9 @@ void PlaygroundRoom::tickBodies() {
     }
     reach = std::max(reach, length(ball_.velocity) * kTick);
     const double band = reach;
+    // A load that arrives before this tick ends is a load arriving, so the wake is
+    // asked with the same reach the patches are gathered with.
+    wakeLoadedBodies(band);
     ManifoldSet patches;
     gatherContacts(patches, band);
     solveContacts(patches);
