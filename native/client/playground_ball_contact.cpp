@@ -64,12 +64,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // it faster and faster. So a resting body answers as the solid it is, and a
     // real blow wakes it -- which is the only thing that should ever move a body
     // that had come to rest.
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   A v(%+.4f,%+.4f) frozen %d\n", ball.velocity.x, ball.velocity.y, (int)(body ? body->frozen : 0));
     if (body != nullptr && body->frozen) {
         // A body asleep is a body the ball can wake, and only a real blow does it:
         // what the two are closing at, along the normal they met on.
         const Vec3 closingVelocity = ball.velocity - pointSpeed(*body, contactPoint);
         if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
     }
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   B v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
     if (body != nullptr) {
         // The ball's contact is answered by the body's own mass and its lever about
         // the body's centre -- the same law every other contact in the room
@@ -89,6 +91,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // interpolation of the two of them -- which is what outlineTouch already says for
     // the position. Reading the average instead says a body turning on the spot is not
     // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
+    if (getenv("GTC_BOUNCE")) std::fprintf(stderr, "   C v(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y);
     const Vec3 surfaceVelocity = body != nullptr ? pointSpeed(*body, contactPoint) : Vec3{};
 
     // A ball found through an outline is the ball's own way out: the body's tick
