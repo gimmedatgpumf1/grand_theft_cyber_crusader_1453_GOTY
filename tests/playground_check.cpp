@@ -268,34 +268,45 @@ void airDependsOnSpeed() {
     }
 }
 
+// A bounce is one number, and it must be the same number whichever way the surface
+// happens to point. It is measured on the speed the two bodies *close* at and the
+// speed they *separate* at: a cube the ball can move takes part of the blow with it,
+// and that is conservation of momentum, not a softer bounce.
+//
+// The hit has to land on the middle of the face, though. A ball fired from a metre
+// away has fallen a hand's width by the time it arrives -- gravity, which is the whole
+// point of the room -- so it strikes below the middle, and a blow below the middle
+// turns the cube as well as moving it. The bounce is then smaller because some of it
+// became a turn. That is not a weaker coefficient, so it is checked separately, and
+// what is checked about it is that the missing bounce is in the cube's spin.
 void bounceIsTheSameEveryWay() {
     say("\nbounciness is not only for vertical hits\n");
     PlaygroundRoom room;
     room.reset();
     settle(room, 300);
     const Vec3 cube = room.bodyMiddle(0);
-    double side = 0.0, floor = 0.0;
-    {
+    // Fire the ball at the flat middle of a face: a hand's width away, so that what
+    // gravity takes out of its line on the way is nearly nothing.
+    const auto hitTheSide = [&](double away, double& separation) {
+        separation = 0.0;
         PlaygroundRoom into;
         into.reset();
         settle(into, 300);
-        into.ball_.position = Vec3{cube.x - 1.2, cube.y, 0};
+        into.ball_.position = Vec3{cube.x - 0.35 - into.ball_.radius - away, cube.y, 0};
         into.ball_.velocity = Vec3{6.0, 0, 0};
         into.ball_.frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
-            // Restitution is a property of the pair, so it is measured on the speed
-            // the two of them *close* at and the speed they *separate* at, not on the
-            // ball alone: a cube that is free to move takes some of the bounce with
-            // it, which is conservation of momentum, not a weaker bounce.
             const double approach = into.ballVelocity().x - into.bodies_[0].velocity.x;
             into.advance(1.0 / 20.0);
             if (approach > 0.5 && into.ballVelocity().x < into.bodies_[0].velocity.x) {
-                const double apart = into.bodies_[0].velocity.x - into.ballVelocity().x;
-                side = apart / approach;
-                break;
+                separation = (into.bodies_[0].velocity.x - into.ballVelocity().x) / approach;
+                return into.bodies_[0].spin;
             }
         }
-    }
+        return 0.0;
+    };
+    double side = 0.0, floor = 0.0;
+    hitTheSide(0.02, side);
     {
         PlaygroundRoom down;
         down.reset();
@@ -312,11 +323,17 @@ void bounceIsTheSameEveryWay() {
             }
         }
     }
-    char detail[200];
-    std::snprintf(detail, sizeof detail, "side restitution %.3f, floor %.3f", side, floor);
+    char detail[220];
+    std::snprintf(detail, sizeof detail, "side restitution %.4f, floor %.4f", side, floor);
     check(side > 0.5 && floor > 0.5, "the ball leaves both a side and the floor", detail);
-    check(std::abs(side - floor) < 0.1, "by the same amount, within what a free body absorbing part of the blow allows",
-          detail);
+    check(std::abs(side - floor) < 0.01, "by exactly the same amount", detail);
+
+    double lowSide = 0.0;
+    const double spin = hitTheSide(1.2, lowSide);
+    std::snprintf(detail, sizeof detail, "hit a hand's width low: restitution %.4f, the cube turned at %.3f rad/s",
+                  lowSide, spin);
+    check(lowSide > 0.6 && lowSide < side && spin > 0.5,
+          "a hit below the middle turns the cube, and the turn is taken out of the bounce", detail);
 }
 
 void interactionDoesNotStick() {
