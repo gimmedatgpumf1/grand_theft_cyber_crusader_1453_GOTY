@@ -450,72 +450,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     };
     const auto normalPass = [&](Manifold& patch) {
         const Ends ends = endsOf(patch);
-        const std::size_t count = patch.ends;
-        const auto closingAt = [&](std::size_t k) {
-            return dot(relativeSpeed(patch, ends, patch.point[k]), patch.normal);
-        };
-        const auto complianceAt = [&](std::size_t k, std::size_t l) {
-            return give(patch, ends, patch.point[k], patch.normal, patch.point[l], patch.normal);
-        };
-        const auto apply = [&](std::size_t k, double carried) {
-            worst = std::max(worst, std::abs(carried - patch.normalImpulse[k]));
+        // Each end of the patch, in turn: the impulse that stops it closing, kept
+        // as what it has carried so far and never allowed to become a pull. The
+        // sweep is repeated, so an impulse given at one end -- which turns the body
+        // and so moves the other end -- is answered at the other end on the next
+        // pass, and the patch settles on one load instead of two separate ones.
+        for (std::size_t k = 0; k < patch.ends; ++k) {
+            const double closing = dot(relativeSpeed(patch, ends, patch.point[k]), patch.normal);
+            if (closing < -kRestSpeed) closingAtAll = true;
+            worst = std::max(worst, std::abs(closing));
+            const double compliance = give(patch, ends, patch.point[k], patch.normal, patch.point[k], patch.normal);
+            if (!(compliance > 1e-12)) continue;
+            double carried = patch.normalImpulse[k] - closing / compliance;
             if (!(carried > 0.0)) carried = 0.0;
             const double delta = carried - patch.normalImpulse[k];
-            if (delta == 0.0) return;
+            if (delta == 0.0) continue;
             patch.normalImpulse[k] = carried;
             pushBody(*ends.body, patch.point[k], patch.normal * delta, patch.kind);
             pushOther(patch, ends, patch.point[k], patch.normal * -delta);
-        };
-        double closing[kMaxPatchEnds] = {};
-        for (std::size_t k = 0; k < count; ++k) {
-            closing[k] = closingAt(k);
-            if (closing[k] < -kRestSpeed) closingAtAll = true;
-        }
-        if (count == 1) {
-            const double compliance = complianceAt(0, 0);
-            if (!(compliance > 1e-12)) return;
-            apply(0, patch.normalImpulse[0] - closing[0] / compliance);
-            return;
-        }
-        // One load over two ends: the impulse at one end moves the other, and that
-        // coupling is what a patch has and a corner does not. The two are solved
-        // together, so a face is answered as a face and not as two corners that
-        // each stop themselves and leave the body turning between them.
-        const double a = complianceAt(0, 0), b = complianceAt(0, 1);
-        const double c = complianceAt(1, 0), d = complianceAt(1, 1);
-        const double det = a * d - b * c;
-        double next0 = patch.normalImpulse[0];
-        double next1 = patch.normalImpulse[1];
-        if (std::abs(det) > 1e-18) {
-            next0 += (-closing[0] * d + closing[1] * b) / det;
-            next1 += (closing[0] * c - closing[1] * a) / det;
-        } else {
-            if (a > 1e-12) next0 -= closing[0] / a;
-            if (d > 1e-12) next1 -= closing[1] / d;
-        }
-        if (std::getenv("WOB"))
-            std::fprintf(stderr, "        n cl %.6f %.6f acc %.4f %.4f next %.4f %.4f y %.9f %.9f\n", closing[0],
-                         closing[1], patch.normalImpulse[0], patch.normalImpulse[1], next0, next1,
-                         patch.point[0].y, patch.point[1].y);
-        if (next0 >= 0.0 && next1 >= 0.0) {
-            apply(0, next0);
-            apply(1, next1);
-            return;
-        }
-        // The floor lets go where the load would be a pull, and the patch is carried
-        // by the end that is left -- which is a body lifting off at one end, decided
-        // by the load and not by a rule about corners.
-        if (next0 < 0.0 && next1 < 0.0) {
-            apply(0, 0.0);
-            apply(1, 0.0);
-            return;
-        }
-        if (next0 < 0.0) {
-            apply(0, 0.0);
-            if (d > 1e-12) apply(1, patch.normalImpulse[1] - closingAt(1) / d);
-        } else {
-            apply(1, 0.0);
-            if (a > 1e-12) apply(0, patch.normalImpulse[0] - closingAt(0) / a);
         }
     };
     const auto gripPass = [&](Manifold& patch) {
