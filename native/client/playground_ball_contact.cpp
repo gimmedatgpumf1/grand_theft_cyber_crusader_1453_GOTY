@@ -35,7 +35,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
         if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball);
     };
-    std::size_t struck = 0;
     Vec3 answer = normal;
     bool canMove = false;
     // A body at rest is not stepped, and what it is not stepping it cannot give
@@ -52,33 +51,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
-        double nearest = 1e30;
-        for (std::size_t i = 0; i < body->count; ++i) {
-            const double distance = length(ball.position - body->position[i]);
-            if (distance < nearest) {
-                nearest = distance;
-                struck = i;
-            }
-        }
-        bool supported = false;
-        for (std::size_t i = 0; i < body->count; ++i) supported = supported || body->position[i].y <= kSurfaceY + 1e-9;
-        // The floor carries a body standing on it, so the body cannot be driven
-        // down into the floor -- a ball resting on top of the cube presses it down
-        // and the floor answers that, not the cube. Anything else the body is free
-        // to do, and being lifted is one of those things: a body coming down on a
-        // ball has to be able to stop on it. A body held by the mouse has nowhere
-        // to go at all.
-        const bool drivenDown = normal.y > 0.0;
-        answer = (dragTarget_ == DragTarget::Body || body->frozen)
-                     ? Vec3{}
-                     : (supported && drivenDown ? Vec3{normal.x, 0, 0} : normal);
-        // What the body can do about this contact is only the part of its freedom
-        // that lies along the normal. A face is never exactly level in floating
-        // point, so its normal carries a horizontal part of 1e-16; taking that for
-        // a body that can move made a cube standing on the floor share a blow with
-        // a ball resting on top of it, over and over, and never settle. The same
-        // dot is what the impulse below is solved against, so the two of them are
-        // always talking about the same thing.
+        // The ball's contact is answered by the body's own mass and its lever about
+        // the body's centre -- the same law every other contact in the room
+        // follows, at the place the two of them actually met. A body the mouse is
+        // carrying has nowhere to go, and neither has one that is asleep until a
+        // real blow wakes it.
+        answer = (dragTarget_ == DragTarget::Body || body->frozen) ? Vec3{} : normal;
         canMove = dot(answer, normal) > 1e-9;
     }
     // What the body's step was before anything below shortens it. A corner's stored
