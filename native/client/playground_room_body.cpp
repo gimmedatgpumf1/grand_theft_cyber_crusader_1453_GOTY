@@ -405,6 +405,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // single corner and rocked it; answered together, a face that has landed flat is
     // stopped where it lands.
     const auto patchPass = [&](Manifold& patch) {
+        if (std::getenv("WOB") && getenv("WOB")[0] == '1')
+            std::fprintf(stderr, "  patch body %zu other %zu ball %d ends %zu p0(%.4f,%.4f) p1(%.4f,%.4f) n(%.3f,%.3f)\n",
+                         patch.body, patch.other, int(patch.ball), patch.ends, patch.point[0].x, patch.point[0].y,
+                         patch.ends > 1 ? patch.point[1].x : 0.0, patch.ends > 1 ? patch.point[1].y : 0.0,
+                         patch.normal.x, patch.normal.y);
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
@@ -546,7 +551,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             if (singular) return;
             for (std::size_t i = 0; i < 3; ++i) answer[i] = 0.0;
-            if (std::getenv("WOB") && u[0] < -0.002 && u[1] < -0.02)
+            if (std::getenv("WOB") && getenv("WOB")[0] == '2')
                 std::fprintf(stderr, "        attempt %d loads %d%d grip %d u %.5f %.5f t %.6f %.6f\n", attempt,
                              int(useLoad[0]), int(useLoad[1]), int(useGrip), u[0], u[1], u[count], u[count + 1]);
             for (std::size_t i = 0; i < 3; ++i)
@@ -587,7 +592,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             if (!changed) break;
         }
-        if (std::getenv("WOB") && u[0] < -0.002 && u[1] < -0.02)
+        if (std::getenv("WOB") && getenv("WOB")[0] == '2')
             std::fprintf(stderr, "        -> loads %.4f %.4f grip %.4f carried %.4f %.4f %.4f\n",
                          (useLoad[0] || !(loadCarried[0] > 0.0)) ? loadCarried[0] + answer[0] : loadCarried[0],
                          (useLoad[1] || !(loadCarried[1] > 0.0)) ? loadCarried[1] + answer[1] : loadCarried[1],
