@@ -230,9 +230,23 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
     double first = span + 1.0;  // no meeting at all
     const auto take = [&](double u) {
-        if (getenv("GTC_HS")) std::fprintf(stderr, "HS cand u%+.6f (a%+.6f) first%+.6f\n", u, way * u, first);
         if (u > 0.0 && u < first) first = u;
     };
+    // The very first micrometre of the turn. A body that is already against something
+    // -- resting on a shape, standing on the floor -- is on the boundary with nothing
+    // to spare, so the turn *into* it has no distance to run before it is inside, and
+    // a crossing found by solving is a crossing at nought. Asked as a depth at a
+    // micrometre of travel, that is answered exactly, and it is answered before any
+    // root is looked for: a turn whose beginning is already inside is not a turn.
+    //
+    // It is only the beginning. Turning *away* is free, and that is what lets a plank
+    // a hair inside something turn out of it instead of being frozen there with the
+    // contact still feeding the axle a torque -- the pump the King saw.
+    const auto freeAt = [&](double angle) {
+        return pivotFloorDepthAt(body, angle) <= playground_tick::kQuantum &&
+               pivotObjectDepthAt(body, angle) <= allowance + playground_tick::kQuantum;
+    };
+    if (!freeAt(body.angle + way * nudge)) return 0.0;
     const auto cornerAt = [&](Vec3 local, double angle) {
         return Vec3{pin.x + local.x * std::cos(angle) - local.y * std::sin(angle),
                     pin.y + local.x * std::sin(angle) + local.y * std::cos(angle), 0.0};
@@ -282,7 +296,8 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
                         if (!(u > 0.0 && u <= span)) continue;
-                        if (erosionDepth(solid.position.data(), solid.count, cornerAt(local, way * u), allowance) < 0.0)
+                        if (erosionDepth(solid.position.data(), solid.count, cornerAt(local, way * (u + nudge)),
+                                         allowance) <= 0.0)
                             continue;
                         take(u);
                     }
@@ -313,8 +328,8 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         double u = 0.0;
                         if (!firstSinusoidCrossing(k1, way * k2, dot(a0, outward) - allowance, span, u)) continue;
                         std::array<Vec3, kMaxCorners> corners{};
-                        pivotCornersAt(body, body.angle + way * u, corners);
-                        if (erosionDepth(corners.data(), body.count, point, allowance) < 0.0) continue;
+                        pivotCornersAt(body, body.angle + way * (u + nudge), corners);
+                        if (erosionDepth(corners.data(), body.count, point, allowance) <= 0.0) continue;
                         take(u);
                     }
                 }
