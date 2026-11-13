@@ -328,14 +328,22 @@ void PlaygroundRoom::separateBodies() {
                 placeCorners(body);
             }
         }
-        // And the floor, last of all.
-        //
-        // It used to be answered first, and an overlap with another shape was then
-        // taken out of this body afterwards -- downwards, if the other shape was on
-        // top of it -- with the ground it had just been put back on top of already
-        // spent. A cube under a seesaw's end ended up seventeen centimetres into the
-        // floor that way. The floor is not a suggestion: nothing in this room is below
-        // it, and that is decided here, after everything else has had its say.
+    }
+    // And the floor, once, for everything in the room, after everything else has
+    // had its say.
+    //
+    // It used to be answered first, and an overlap with another shape was then taken
+    // out of the same body afterwards -- downwards, if the other shape was on top of
+    // it -- with the ground it had just been put back on top of already spent. A cube
+    // under a seesaw's end was pushed seventeen centimetres into the floor that way.
+    // It cannot be answered body by body either: a shape that is put right in its own
+    // turn can be pushed back under by the next one, because the shape it is sharing
+    // an overlap with is moved after it. The floor is not a suggestion and it is not
+    // one body's business: nothing in this room is below it, and that is decided here,
+    // at the end, for all of them.
+    for (std::size_t one = 0; one < kBodyCount; ++one) {
+        Body& body = bodies_[one];
+        if (body.count == 0 || body.frozen || bodyHeld(one) || body.pivoted) continue;
         double deepest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i)
             deepest = std::max(deepest, playground_tick::kSurfaceY - body.position[i].y);
