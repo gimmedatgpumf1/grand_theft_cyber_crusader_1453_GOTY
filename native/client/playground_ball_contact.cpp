@@ -314,7 +314,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // friction at all. The seam stood still while the ball ran away down the face
     // and then jumped when the next blow arrived. What the surface carries when it
     // is only holding the ball up is the weight pressed into it, over the tick.
-    if (!(pressed > 0.0)) pressed = kGravity * ball.mass * std::max(0.0, normal.y) * kTick;
+    // A face over the ball is not holding it up, so the ball's own weight is not
+    // pressed into it: what is pressed into it is whatever stands on the ball, and
+    // that is read from the body over it in settleBallFriction().
+    if (!(pressed > 0.0) && normal.y > 0.0)
+        pressed = kGravity * ball.mass * normal.y * kTick;
 
     // Friction is not applied here. A grip at one surface changes what is left to
     // slip at every other surface the ball is against, so the whole tick's contacts
