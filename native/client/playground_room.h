@@ -405,6 +405,12 @@ private:
     // room's rule is that nothing is ever placed inside anything -- not even for the
     // length of one tick.
     double pivotTurnAllowed(const Body& body, double turn) const;
+    // A free body's turn against the floor. How deep it would be at an angle, the
+    // rest of a turn taken about the corner it is standing on, and the whole turn
+    // walked in steps so that no arc passes through the floor unseen.
+    double turnDepthAt(const Body& body, double angle) const;
+    bool turnAboutFloor(Body& body, double rest) const;
+    void turnBody(Body& body, double turn);
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
     // One patch: a face of a body resting on a surface. Its two ends are the ends

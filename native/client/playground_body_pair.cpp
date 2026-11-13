@@ -157,6 +157,109 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     return 1.0;
 }
 
+// How far the lowest corner of a free body would reach below the floor if it were
+// turned to `angle` where its middle stands. Zero means clear.
+double PlaygroundRoom::turnDepthAt(const Body& body, double angle) const {
+    const double c = std::cos(angle), s = std::sin(angle);
+    double deepest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 local = body.local[i];
+        const double y = body.centre.y + local.x * s + local.y * c;
+        deepest = std::max(deepest, playground_tick::kSurfaceY - y);
+    }
+    return deepest;
+}
+
+// The rest of a turn, taken about the corner the body is standing on.
+//
+// A body whose corner is on the floor is a body whose corner cannot go through it,
+// so a turn that would carry that corner down is not a turn about the middle at
+// all: it is a turn about the contact. That is what pivoting on a surface is, and
+// it is the reason a shape lying on the floor does not sink into it while it rolls
+// or topples -- its middle swings up and over the point it is resting on instead.
+//
+// There is nothing added here and nothing taken away: the body is the same body,
+// turned about a different point for the part of the tick the floor allows. Its
+// speeds are untouched, so the contact still has the whole of what it was given to
+// answer. The corner is tried on both sides, because a shape lying on a face has
+// two of them down and which one it turns on is decided by which way it is turning.
+bool PlaygroundRoom::turnAboutFloor(Body& body, double rest) const {
+    const Vec3 centre = body.centre;
+    const double angle = body.angle;
+    const double c = std::cos(rest), s = std::sin(rest);
+    bool found = false;
+    Vec3 bestCentre{};
+    double bestDeep = 1e30;
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 pivot = body.position[i];
+        if (pivot.y > playground_tick::kSurfaceY + playground_tick::kQuantum) continue;
+        const Vec3 arm = centre - pivot;
+        const Vec3 moved{pivot.x + arm.x * c - arm.y * s, pivot.y + arm.x * s + arm.y * c, centre.z};
+        body.centre = moved;
+        const double deep = turnDepthAt(body, angle + rest);
+        if (deep < bestDeep) {
+            bestDeep = deep;
+            bestCentre = moved;
+            found = true;
+        }
+    }
+    body.centre = found ? bestCentre : centre;
+    body.angle = found && bestDeep <= playground_tick::kQuantum ? angle + rest : angle;
+    placeCorners(body);
+    return found && bestDeep <= playground_tick::kQuantum;
+}
+
+// A free body's turn, walked the way its travel is.
+//
+// The pinned plank's turn is swept by pivotTurnAllowed(), and a free body's turn is
+// travel in exactly the same sense: a corner covers an arc, and an arc that ends
+// above the floor can have gone through it on the way. What a free body does about
+// that is different, though, and it is not "stop": it turns on the corner that is
+// already down. So the turn is walked in steps small enough that the furthest corner
+// moves a few millimetres -- the thinnest thing in this room is a quarter of a metre,
+// so such a step cannot pass over anything -- and the step where the floor is met is
+// bisected to the instant of the meeting. The rest of that step is taken about the
+// contact. Nothing is placed inside anything and no turn is invented.
+void PlaygroundRoom::turnBody(Body& body, double turn) {
+    if (body.count == 0 || turn == 0.0) {
+        placeCorners(body);
+        return;
+    }
+    double furthest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+    const double step = furthest > 0.0 ? std::min(0.25, 0.004 / furthest) : 0.25;
+    const int steps = std::min(4096, std::max(1, int(std::abs(turn) / step) + 1));
+    const double piece = turn / double(steps);
+    for (int n = 0; n < steps; ++n) {
+        const double was = body.angle;
+        if (turnDepthAt(body, was + piece) <= playground_tick::kQuantum) {
+            body.angle = was + piece;
+            placeCorners(body);
+            continue;
+        }
+        // Where the floor is met, as the fraction of this piece of the turn. The
+        // start of the piece is clear -- it is where the last one ended.
+        double low = 0.0, high = 1.0;
+        for (int bisect = 0; bisect < 60; ++bisect) {
+            const double mid = 0.5 * (low + high);
+            if (turnDepthAt(body, was + piece * mid) <= playground_tick::kQuantum)
+                low = mid;
+            else
+                high = mid;
+        }
+        body.angle = was + piece * low;
+        placeCorners(body);
+        const double rest = piece * (1.0 - low);
+        if (rest == 0.0) continue;
+        // And the rest of the piece is taken on the contact, which is a point of the
+        // floor and not a point of the turn's choosing. If the body is not on the
+        // floor at all -- a corner swinging down onto it in mid air -- there is
+        // nothing to turn on, and the turn simply stops at the meeting, exactly as
+        // the plank's does.
+        turnAboutFloor(body, rest);
+    }
+}
+
 // Out of whatever a shape is inside, by its position and nothing else.
 //
 // Every other answer in this room is an impulse: the surface stops what is coming

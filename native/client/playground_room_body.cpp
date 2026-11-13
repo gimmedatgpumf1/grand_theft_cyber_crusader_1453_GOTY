@@ -257,13 +257,15 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double rise = time - fall;
                 const Vec3 step = body.hitArrival * fall + body.velocity * rise;
                 body.centre = resolvedMove(body.centre, body.centre + step);
-                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
-                placeCorners(body);
+                // The turn is travel and is walked as such -- see turnBody(). A free
+                // body sliding on the floor turns on the corner that is already down,
+                // so a corner never goes through the floor between two ticks and the
+                // place the ball finds it stopped at is a place it could have been.
+                turnBody(body, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
                 continue;
             }
             body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
-            body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
-            placeCorners(body);
+            turnBody(body, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
         }
     };
     std::array<Vec3, kBodyCount> centres{};
