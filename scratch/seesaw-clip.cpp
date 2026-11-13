@@ -123,7 +123,13 @@ int main() {
                             r.bodies_[0].velocity.x, r.bodies_[0].velocity.y, r.bodies_[0].spin, int(r.bodies_[0].frozen),
                             s.angle, s.spin, int(s.frozen));
             if (inP > worstCube) { worstCube = inP; worstCubeCase = trial; worstCubeTick = k; }
-            worstTri = std::max(worstTri, bodyInsidePlank(r, 1));
+            const double inT = bodyInsidePlank(r, 1);
+            if (inT > 0.02 && std::getenv("CLIPT"))
+                std::printf(" tri  t%3d k%3d deep %.5f | tri (%+.3f,%+.3f) a%+.3f v(%+.2f,%+.2f) w%+.2f frz%d | plank a%+.3f w%+.2f frz%d\n",
+                            trial, k, inT, r.bodies_[1].centre.x, r.bodies_[1].centre.y, r.bodies_[1].angle,
+                            r.bodies_[1].velocity.x, r.bodies_[1].velocity.y, r.bodies_[1].spin, int(r.bodies_[1].frozen),
+                            s.angle, s.spin, int(s.frozen));
+            worstTri = std::max(worstTri, inT);
             if (inCube > 0.05 && std::getenv("CLIPB")) std::printf("  cube t%3d k%3d ball (%+.3f,%+.3f) cube c(%+.3f,%+.3f) a%+.3f deep %.5f\n", trial, k, r.ball_.position.x, r.ball_.position.y, r.bodies_[0].centre.x, r.bodies_[0].centre.y, r.bodies_[0].angle, inCube);
             if (inTri > 1e-6 && std::getenv("CLIPB")) std::printf("  tri  t%3d k%3d ball (%+.3f,%+.3f) tri c(%+.3f,%+.3f) a%+.3f deep %.5f\n", trial, k, r.ball_.position.x, r.ball_.position.y, r.bodies_[1].centre.x, r.bodies_[1].centre.y, r.bodies_[1].angle, inTri);
             worstInCube = std::max(worstInCube, inCube);

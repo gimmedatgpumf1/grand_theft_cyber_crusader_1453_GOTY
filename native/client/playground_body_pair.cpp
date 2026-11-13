@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -428,14 +429,15 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
 // the ball's prevention uses, for the same reason.
 double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre,
                                        double toAngle, bool mayBeginInContact) const {
-    const Body& body = bodies_[index < kBodyCount ? index : 0];
+    const std::size_t self = index < kBodyCount ? index : 0;
+    const Body& body = bodies_[self];
     if (body.count == 0) return 1.0;
     const Vec3 travel = toCentre - fromCentre;
     const double turn = toAngle - fromAngle;
     double furthest = 0.0;
     for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
-    const double swiftest = length(travel) + std::abs(turn) * furthest;
-    if (!(swiftest > playground_tick::kQuantum)) return 1.0;
+    if (!(length(travel) + std::abs(turn) * furthest > playground_tick::kQuantum)) return 1.0;
+
     std::array<Vec3, kMaxCorners> here{};
     const auto poseAt = [&](double t) {
         const Vec3 middle = fromCentre + travel * t;
@@ -445,39 +447,97 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             here[i] = Vec3{middle.x + body.local[i].x * c - body.local[i].y * s,
                            middle.y + body.local[i].x * s + body.local[i].y * c, 0.0};
     };
-    // How far the nearest part of anything is from the body at that point of the step:
-    // the floor, another shape's outline either way round, and the ball's surface.
-    const auto clearance = [&](double t) {
-        poseAt(t);
-        double gap = 1e30;
-        for (std::size_t i = 0; i < body.count; ++i) gap = std::min(gap, here[i].y - playground_tick::kSurfaceY);
-        for (std::size_t other = 0; other < kBodyCount; ++other) {
-            if (other == index || bodies_[other].count == 0) continue;
-            const Body& solid = bodies_[other];
-            for (std::size_t i = 0; i < body.count; ++i)
-                gap = std::min(gap, outlineGap(here[i], solid.position.data(), solid.position.data(), solid.count, 1.0).gap);
-            for (std::size_t i = 0; i < solid.count; ++i)
-                gap = std::min(gap, outlineGap(solid.position[i], here.data(), here.data(), body.count, 1.0).gap);
-        }
-        gap = std::min(gap, outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0).gap - ball_.radius);
-        return gap;
+
+    // One thing standing between the outline and something else: how far there is to
+    // go (`gap`, negative when already through), which way out (`normal`), and the two
+    // speeds that decide how fast that distance is being eaten.
+    struct Approach {
+        double gap = 0.0;
+        Vec3 normal{0, 1, 0};
+        Vec3 closingSpeed{0, 0, 0};
     };
-    // What counts as a meeting. In contact and touching is not inside, so a body that
-    // begins against something is let be -- the contact solver has it. The hand asked
-    // the same question would stop at a touch and could never put a body down on the
-    // floor at all, so the hand's line is the room's own: inside is deeper than a
-    // micrometre, and touching is not inside.
-    const double meeting = mayBeginInContact ? playground_tick::kQuantum : -playground_tick::kQuantum;
-    if (mayBeginInContact && clearance(0.0) <= meeting) return 1.0;
+    std::vector<Approach> approaches;
+    approaches.reserve(4 * kMaxCorners);
+    const auto survey = [&] {
+        approaches.clear();
+        for (std::size_t i = 0; i < body.count; ++i) {
+            Approach row;
+            row.gap = here[i].y - playground_tick::kSurfaceY;
+            row.normal = Vec3{0, 1, 0};
+            row.closingSpeed = pointSpeed(body, here[i]);
+            approaches.push_back(row);
+        }
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == self || bodies_[other].count == 0) continue;
+            const Body& solid = bodies_[other];
+            for (std::size_t i = 0; i < body.count; ++i) {
+                const OutlineGap gap =
+                    ball_shape::outlineGap(here[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
+                Approach row;
+                row.gap = gap.gap;
+                row.normal = gap.normal;
+                row.closingSpeed = pointSpeed(body, here[i]) - pointSpeed(solid, here[i]);
+                approaches.push_back(row);
+            }
+            for (std::size_t i = 0; i < solid.count; ++i) {
+                const OutlineGap gap =
+                    ball_shape::outlineGap(solid.position[i], here.data(), here.data(), body.count, 1.0);
+                Approach row;
+                row.gap = gap.gap;
+                row.normal = gap.normal;
+                row.closingSpeed = pointSpeed(body, solid.position[i]) - pointSpeed(solid, solid.position[i]);
+                approaches.push_back(row);
+            }
+        }
+        {
+            const OutlineGap gap = ball_shape::outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0);
+            Approach row;
+            row.gap = gap.gap - ball_.radius;
+            row.normal = gap.normal;
+            row.closingSpeed = pointSpeed(body, ball_.position) - ball_.velocity;
+            approaches.push_back(row);
+        }
+    };
+
+    // Where the step may not take the body: through anything, deeper than a micrometre.
+    // A body that begins its step already through something -- a hair through, from the
+    // last tick's arithmetic -- may not get any deeper, and that is the same line: the
+    // rule is about the body getting in, not about where it happened to start.
+    poseAt(0.0);
+    survey();
+    double startGap = 1e30;
+    for (const Approach& row : approaches) startGap = std::min(startGap, row.gap);
+    const double limit = (mayBeginInContact && startGap < -playground_tick::kQuantum)
+                             ? startGap
+                             : -playground_tick::kQuantum;
+
+    // The soonest any part of the body could be `limit` deep into anything: how much
+    // distance is left, over how fast that distance is closing. Written as a time, not
+    // as a fraction of the step and not as a distance to walk, so the answer is the
+    // meeting itself -- no step size, nothing to tune, and no speed or spin, however
+    // large, that can carry the outline through a plank between two looks. A part that
+    // is not closing at all is not going to close anything, however long the step is.
+    const auto soonestMeeting = [&](double t) {
+        poseAt(t);
+        survey();
+        double soonest = 1e30;
+        for (const Approach& row : approaches) {
+            const double need = row.gap - limit;
+            if (!(need > 0.0)) return 0.0;
+            const double closing = -dot(row.closingSpeed, row.normal);
+            if (!(closing > 0.0)) continue;
+            soonest = std::min(soonest, need / closing);
+        }
+        return soonest;
+    };
+
     double t = 0.0;
     for (int pass = 0; pass < 96; ++pass) {
-        const double gap = clearance(t);
-        if (gap <= meeting) return t;
-        // Where the clearance it has now could first be gone. If that is past the end
-        // of the step, the step is clear: nothing can have been met.
-        const double soonest = t + gap / swiftest;
-        if (!(soonest < 1.0)) return 1.0;
-        t = soonest;
+        const double soonest = soonestMeeting(t);
+        if (!(soonest > playground_tick::kQuantum)) return t;  // there, or nearly enough
+        const double next = t + soonest;
+        if (!(next < 1.0)) return 1.0;
+        t = next;
     }
     return t;
 }
