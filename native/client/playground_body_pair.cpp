@@ -13,10 +13,7 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <cmath>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -279,16 +276,16 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     {
         const double mine = floorDepth(body.angle);
         const double past = floorDepth(body.angle + way * nudge);
-        if (past > playground_tick::kQuantum && past > mine + 1e-12) return 0.0;
+        if (past > mine + 1e-12) return 0.0;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
             const double a0 = objectDepth(body.angle, other);
             const double a1 = objectDepth(body.angle + way * nudge, other);
-            if (a1 > playground_tick::kQuantum && a1 > a0 + 1e-12) return 0.0;
+            if (a1 > a0 + 1e-12) return 0.0;
         }
         const double b0 = ballDepth(body.angle);
         const double b1 = ballDepth(body.angle + way * nudge);
-        if (b1 > playground_tick::kQuantum && b1 > b0 + 1e-12) return 0.0;
+        if (b1 > b0 + 1e-12) return 0.0;
     }
     const auto take = [&](double u, double past, const auto& depth) {
         if (!(u > -nudge && u <= span)) return;
@@ -306,7 +303,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         {
             double u = 0.0;
             if (firstSinusoidCrossing(local.y, local.x, -pin.y, body.angle, way, span, u))
-                take(u, u + nudge, [&](double t) { return floorDepth(way * t); });
+                take(u, u + nudge, [&](double t) { return floorDepth(body.angle + way * t); });
         }
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
@@ -334,7 +331,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         double u = way * (normalPhase + which * spread - phase - body.angle);
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
-                        take(u, u + nudge, [&](double t) { return objectDepth(way * t, other); });
+                        take(u, u + nudge, [&](double t) { return objectDepth(body.angle + way * t, other); });
                     }
                 }
             }
@@ -358,7 +355,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         const double k2 = arm.y * outward.x - arm.x * outward.y;
                         double u = 0.0;
                         if (!firstSinusoidCrossing(k1, k2, dot(a0, outward), body.angle, way, span, u)) continue;
-                        take(u, u + nudge, [&](double t) { return objectDepth(way * t, other); });
+                        take(u, u + nudge, [&](double t) { return objectDepth(body.angle + way * t, other); });
                     }
                 }
             }
@@ -377,7 +374,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
                     while (u <= -span) u += 2.0 * kPi;
-                    take(u, u + nudge, [&](double t) { return ballDepth(way * t); });
+                    take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
                 }
             }
             Vec3 localMiddle{};
@@ -395,7 +392,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 double u = 0.0;
                 if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball_.radius, body.angle, way, span, u))
                     continue;
-                take(u, u + nudge, [&](double t) { return ballDepth(way * t); });
+                take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
             }
         }
     }
