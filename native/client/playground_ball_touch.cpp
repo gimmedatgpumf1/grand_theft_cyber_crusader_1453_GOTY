@@ -196,6 +196,10 @@ void PlaygroundRoom::settleBallFriction() {
                 next = std::clamp(next, -limit, limit);
             }
             const double impulse = next - lambda[i];
+            if (getenv("GTC_P"))
+                std::fprintf(stderr, "    p%d i%zu slip %+.4f load %.4f lam %+.4f next %+.4f imp %+.4f ballv(%+.3f,%+.3f) spin %+.3f body %zu\n",
+                             pass, i, slip, load, lambda[i], next, impulse, ball.velocity.x, ball.velocity.y, ball.spin,
+                             ballTouches_[i].body);
             if (impulse == 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
