@@ -256,6 +256,16 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
+        // The ball's bounciness, read here, once, off the speed the shape arrived at
+        // it with. Everything else in the room is answered inelastically; the ball is
+        // the one thing that gives a blow back, and a shape landing on it is answered
+        // by the same number the ball answers the floor with. Without this a cube
+        // dropped on the ball stopped dead on it, because the patch it was solved
+        // against had no way to leave it faster than it arrived.
+        {
+            const double closing = dot(pointSpeed(body, at) - ballPointSpeed(at), way);
+            if (closing < 0.0) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+        }
         patches.add(patch);
     }
     // Another shape, met over the whole span the two of them share. The separating

@@ -360,6 +360,13 @@ private:
         // allowed to close exactly that hair over the tick -- and no more.
         double gap[kMaxPatchEnds]{};
         double normalImpulse[kMaxPatchEnds]{}, tangentImpulse[kMaxPatchEnds]{};
+        // How fast this end has to be left *leaving* after the answer, in m/s. Zero
+        // everywhere the room is inelastic, which is everywhere but the ball: the
+        // ball is the one thing in the room with a bounciness, so a contact against
+        // it is the one contact that has to give some of the approach back. It is
+        // read once, from the speed the pair arrived at, and not again on each sweep,
+        // or a contact solved twice would bounce twice.
+        double rebound[kMaxPatchEnds]{};
         ForceKind kind = ForceKind::Contact;
     };
     static constexpr std::size_t kMaxTickManifolds = 12;

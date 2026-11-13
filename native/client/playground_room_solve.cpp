@@ -287,7 +287,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 order[dofs] = k;
                 const double bias =
                     lying ? faceClose : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
-                u[dofs] = away(patch.point[k], patch.normal) + bias;
+                u[dofs] = away(patch.point[k], patch.normal) + bias - patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
