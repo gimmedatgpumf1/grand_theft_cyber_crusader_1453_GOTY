@@ -154,8 +154,15 @@ void PlaygroundRoom::updateDrag() {
         // the cursor did. It is the same sweep the step takes.
         const double along =
             bodyStepAllowed(dragBody_ < kBodyCount ? dragBody_ : 0, body.centre, body.angle, centre, body.angle, false);
-        if (along < 1.0) return;
-        body.centre = centre;
+        // Carried as far as it may go and no further. Refusing the whole step was a
+        // cursor that outran the shape it was holding: the hand asked for a place past
+        // a plank, was told no, and the shape stayed where it was while the mouse went
+        // on without it -- a shape that looks stuck, and then jumps when the cursor
+        // comes back. What the hand may carry it through is a solve, not a yes or no:
+        // it stops against the plank, where a hand carrying something against a plank
+        // would stop, and comes away with it when the cursor does.
+        body.centre = body.centre + (centre - body.centre) * along;
+        if (!(along > 0.0)) return;
         placeCorners(body);
         body.previousCentre = body.centre;
         body.previousAngle = body.angle;

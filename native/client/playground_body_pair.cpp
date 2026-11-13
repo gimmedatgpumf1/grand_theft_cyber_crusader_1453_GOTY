@@ -14,8 +14,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 namespace gtc::native {
@@ -864,10 +862,7 @@ void PlaygroundRoom::separateBall() {
         // Nowhere to go: the ball gives the rest of it, and only what is left.
         if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;
         const Vec3 wanted = ball_.position - way * (-gap);
-        if (wanted.y < ball_.radius - kSkin) {
-            if (std::getenv("GTC_SEP")) std::printf("   sep: body %zu would take the ball to y %.4f from %.4f (gap %.4f) -- refused\n", index, wanted.y, ball_.position.y, gap);
-            continue;
-        }
+        if (wanted.y < ball_.radius - kSkin) continue;
         // Counted, because this is the room moving the ball by hand: the shape had
         // nowhere to go and the ball was the only thing left that could.
         ++ballFoundThrough_;

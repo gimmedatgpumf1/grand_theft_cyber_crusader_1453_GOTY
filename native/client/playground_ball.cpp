@@ -153,7 +153,6 @@ void PlaygroundRoom::tickBall() {
     // erased, and the ball went on being greased under a weight it was pressing on.
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
-    if (std::getenv("GTC_BALL")) std::printf("  tickBall entry ball (%+.4f,%+.4f) v(%+.2f,%+.2f) foundThrough %d\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(ballFoundThrough_));
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
@@ -413,11 +412,6 @@ void PlaygroundRoom::tickBall() {
                     // through the floor -- does the ball step aside, and only then is
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
-                    if (std::getenv("GTC_BALL")) {
-                        std::printf("    resting push body %zu through %.4f normal (%+.3f,%+.3f) at (%+.3f,%+.3f) gap %.4f corners:", index, through, on.normal.x, on.normal.y, ball.position.x, ball.position.y, on.gap);
-                        for (std::size_t q = 0; q < body.count; ++q) std::printf(" (%+.3f,%+.3f)", body.position[q].x, body.position[q].y);
-                        std::printf("\n");
-                    }
                     if (!pushBodyOutOfBall(index, on.normal, through)) {
                         ++ballFoundThrough_;
                         ball.position = ball.position + on.normal * through;
@@ -465,7 +459,6 @@ void PlaygroundRoom::tickBall() {
                 contactPoint = hit.contact;
             }
         }
-        if (std::getenv("GTC_BALL")) std::printf("   walk s%d rem %.4f first %.5f what %d deep %.5f ball (%+.4f,%+.4f) v(%+.2f,%+.2f)\n", step, remaining, first, what, depth, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
         if (restart) continue;
         if (first > 1.0) {
             ball.position = playground_tick::resolvedMove(ball.position, next);

@@ -225,10 +225,7 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
         // the whole outline, so a corner coming over the ball is never missed by it.
         const double closing = closingSpeed(previous, current, count, ballVelocity, tick);
         // Neither of them moving: there is nothing to meet, however long the tick is.
-        if (!(closing > 0.0)) {
-            if (std::getenv("GTC_SWEEP")) std::printf("    sweep: no closing (fraction %.5f gap %.6f)\n", fraction, gap.gap);
-            return false;
-        }
+        if (!(closing > 0.0)) return false;
         const double needed = (gap.gap - radius) / closing;  // seconds
         if (!(needed > 0.0)) {
             unsafe = fraction;
@@ -236,10 +233,7 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
         }
         safe = fraction;
         fraction += needed / tick;
-        if (fraction > 1.0) {
-            if (std::getenv("GTC_SWEEP")) std::printf("    sweep: ran past the tick (fraction %.5f gap %.6f closing %.3f)\n", fraction, gap.gap, closing);
-            return false;
-        }
+        if (fraction > 1.0) return false;
     }
     // Out of passes with the gap still closing. The bound above is deliberately
     // generous -- it is the fastest *any* part of the outline can move -- so the
@@ -257,10 +251,7 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
     if (!(unsafe <= 1.0)) {
         outlineAt(previous, current, count, 1.0, corners);
         const Vec3 end = ballPosition + ballVelocity * tick;
-        if (!(outlineGap(end, corners, corners, count, 1.0).gap <= radius)) {
-            if (std::getenv("GTC_SWEEP")) std::printf("    sweep: the end is clear (start %.6f end %.6f radius %.4f)\n", start.gap, outlineGap(end, corners, corners, count, 1.0).gap, radius);
-            return false;
-        }
+        if (!(outlineGap(end, corners, corners, count, 1.0).gap <= radius)) return false;
         unsafe = 1.0;
     }
     // Close the bracket in on the meeting. This is a time found by solving for the
@@ -287,12 +278,7 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
     // outline there is coming at the ball along the normal it meets it on. A graze is
     // not an arrival.
     const Vec3 surfaceHere = outlineSpeed(previous, current, count, at, tick);
-    if (!(-dot(ballVelocity - surfaceHere, met.normal) > 0.0)) {
-        if (std::getenv("GTC_SWEEP"))
-            std::printf("    sweep: graze gate killed it: along %.5f gap %.5f normal (%+.3f,%+.3f) v(%+.2f,%+.2f) surf(%+.2f,%+.2f)\n",
-                        high, met.gap, met.normal.x, met.normal.y, ballVelocity.x, ballVelocity.y, surfaceHere.x, surfaceHere.y);
-        return false;
-    }
+    if (!(-dot(ballVelocity - surfaceHere, met.normal) > 0.0)) return false;
     hit.along = high;
     hit.normal = met.normal;
     hit.contact = at - met.normal * radius;
