@@ -235,8 +235,17 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     // enough past a crossing to tell an entry from a leaving, and no more.
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
     double first = span + 1.0;  // no meeting at all
+    // A meeting at the very start of the turn is a meeting: a body standing on a face
+    // is exactly on it, so the crossing is at nought and every root found for a turn
+    // that begins in contact is nought, to within the rounding in the cosine. Refusing
+    // those -- "a crossing must be strictly after the start" -- let a resting body turn
+    // straight into what it was resting on. Nothing is taken on trust: such a root is
+    // only kept when the turn really goes deeper a micrometre later, which is what the
+    // checks below ask.
     const auto take = [&](double u) {
-        if (u > 0.0 && u < first) first = u;
+        if (u < -nudge) return;
+        u = std::max(0.0, u);
+        if (u < first) first = u;
     };
     // The very first micrometre of the turn. A body that is already against something
     // -- resting on a shape, standing on the floor -- is on the boundary with nothing
@@ -252,7 +261,6 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         return pivotFloorDepthAt(body, angle) <= playground_tick::kQuantum &&
                pivotObjectDepthAt(body, angle) <= allowance + playground_tick::kQuantum;
     };
-    if (getenv("GTC_HS")) std::fprintf(stderr, "HS start a%+.9f nudge%+.3e floor0%+.3e floor1%+.3e obj0%+.3e obj1%+.3e allow%+.3e span%+.4f way%+.0f\n", body.angle, nudge, pivotFloorDepthAt(body, body.angle), pivotFloorDepthAt(body, body.angle + way * nudge), pivotObjectDepthAt(body, body.angle), pivotObjectDepthAt(body, body.angle + way * nudge), allowance, span, way);
     if (!freeAt(body.angle + way * nudge)) return 0.0;
     const auto cornerAt = [&](Vec3 local, double angle) {
         return Vec3{pin.x + local.x * std::cos(angle) - local.y * std::sin(angle),
@@ -302,7 +310,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         // Into the u's this turn covers, however many turns round it is.
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
-                        if (!(u > 0.0 && u <= span)) continue;
+                        if (!(u > -nudge && u <= span)) continue;
                         if (erosionDepth(solid.position.data(), solid.count, cornerAt(local, way * (u + nudge)),
                                          allowance) <= 0.0)
                             continue;
@@ -364,7 +372,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     double u = way * (middle + which * spread - phase);
                     while (u > span) u -= 2.0 * kPi;
                     while (u <= -span) u += 2.0 * kPi;
-                    if (!(u > 0.0 && u <= span)) continue;
+                    if (!(u > -nudge && u <= span)) continue;
                     const Vec3 where = cornerAt(local, way * u);
                     // An entry only: a micrometre further on must be deeper in.
                     const Vec3 aLittle = cornerAt(local, way * (u + nudge));
@@ -387,6 +395,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
                 if (!firstSinusoidCrossing(k1, way * k2, dot(a0, outward) + big, span, u)) continue;
+                if (u < -nudge) continue;
                 const double at = body.angle + way * (u + nudge);
                 std::array<Vec3, kMaxCorners> corners{};
                 pivotCornersAt(body, at, corners);
