@@ -17,6 +17,9 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -544,7 +547,15 @@ void PlaygroundRoom::tickBodies() {
     ManifoldSet patches;
     gatherContacts(patches, band);
     solveContacts(patches);
+    if (getenv("GTC_ST")) {
+        std::fprintf(stderr, "  ST pre-adv b0 c(%+.6f,%+.6f) v(%+.4f) sp%+.3f a%+.4f\n", bodies_[0].centre.x,
+                     bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].angle);
+    }
     advanceBodies(kTick);
+    if (getenv("GTC_ST")) {
+        std::fprintf(stderr, "  ST post-adv b0 c(%+.6f,%+.6f) v(%+.4f) sp%+.3f a%+.4f\n", bodies_[0].centre.x,
+                     bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].angle);
+    }
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -557,7 +568,15 @@ void PlaygroundRoom::tickBodies() {
     // It is the only thing in the room that moves a shape without an impulse, and
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
+    if (getenv("GTC_ST")) {
+        std::fprintf(stderr, "  ST post-para b0 c(%+.6f,%+.6f) v(%+.4f) sp%+.3f a%+.4f\n", bodies_[0].centre.x,
+                     bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].angle);
+    }
     separateBodies();
+    if (getenv("GTC_ST")) {
+        std::fprintf(stderr, "  ST post-sep b0 c(%+.6f,%+.6f) v(%+.4f) sp%+.3f a%+.4f\n", bodies_[0].centre.x,
+                     bodies_[0].centre.y, bodies_[0].velocity.y, bodies_[0].spin, bodies_[0].angle);
+    }
     settleBodies();
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
