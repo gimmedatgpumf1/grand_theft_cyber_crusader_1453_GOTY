@@ -2,6 +2,8 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
+#include <cstdlib>
+
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -188,6 +190,7 @@ void PlaygroundRoom::tickBall() {
         // millimetres, which is a force that never moved anything, and the energy it
         // was supposed to have spent never left it. That is a pump, and it is where
         // the King's squeeze came from.
+        if (getenv("GTC_NOPREV")) continue;
         const double endGap =
             ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
         if (endGap >= ball.radius - kTouch) continue;
