@@ -135,6 +135,14 @@ void PlaygroundRoom::settleBallSurfaces() {
     }
 }
 
+namespace {
+// How far a ball's middle is from a body's outline at the end of its travel. The
+// plain question the walk asks when the ball is already touching: is it still out?
+double ballShapeEndGap(Vec3 at, const Vec3* corners, std::size_t count) {
+    return ball_shape::outlineGap(at, corners, corners, count, 1.0).gap;
+}
+}  // namespace
+
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
     // The list of faces is not emptied here. The tick opens it before the bodies are
@@ -432,9 +440,22 @@ void PlaygroundRoom::tickBall() {
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
             if (hit.depth <= kSkin && hit.along <= kTouch) {
-                const Vec3 surfaceVelocity =
-                    pointSpeed(body, hit.contact) ;
-                if (dot(ball.velocity - surfaceVelocity, hit.normal) >= 0.0) continue;
+                // Asked of where the ball would be when the tick ends, not of which way
+                // it is going. "Not closing" was read off the surface's own speed, and a
+                // plank turning away from a ball it is touching is not closing -- so the
+                // ball was let keep its travel, and the travel took it through the face
+                // the plank had not finished leaving. It ended a centimetre and a half
+                // inside a face that was still there, wedged between the plank and the
+                // floor, with nowhere to be put: the one state this room may not reach.
+                // The honest question is the plain one -- does what is left of the tick
+                // put the ball inside? A ball rolling along a face it is touching ends
+                // the tick at one radius from it, and is left alone; a ball whose travel
+                // would take it in is stopped at the surface, whichever way the surface
+                // is going.
+                const Vec3 endAt = ball.position + ball.velocity * (kTick * remaining);
+                const double endGap =
+                    ballShapeEndGap(endAt, body.position.data(), body.count);
+                if (endGap >= ball.radius - playground_tick::kQuantum) continue;
             }
             if (hit.along < first) {
                 first = hit.along;
