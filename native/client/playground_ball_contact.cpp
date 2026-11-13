@@ -38,7 +38,7 @@ using namespace playground_detail;
 // the ball into the shape. The load is not written here: what a face carries is a
 // question about the whole stack and settleBallFriction() works it out from what is
 // standing on the ball.
-void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at, double normalImpulse) {
+void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
     if (body >= kBodyCount || ballTouchCount_ >= kMaxBallTouches) return;
     const Vec3 surfaceVelocity = pointSpeed(bodies_[body], at);
     // One face, one contact: the same meeting can be reported by the walk and by the
@@ -49,10 +49,9 @@ void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at, doubl
         if (dot(ballTouches_[i].normal, normal) < 0.999) continue;
         if (length(ballTouches_[i].surfaceVelocity) < length(surfaceVelocity))
             ballTouches_[i].surfaceVelocity = surfaceVelocity;
-        ballTouches_[i].normalImpulse = std::max(ballTouches_[i].normalImpulse, normalImpulse);
         return;
     }
-    ballTouches_[ballTouchCount_] = BallTouch{normal, surfaceVelocity, 0.0, body, normalImpulse};
+    ballTouches_[ballTouchCount_] = BallTouch{normal, surfaceVelocity, 0.0, body};
     ++ballTouchCount_;
 }
 
@@ -381,10 +380,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             break;
         }
         if (slot == ballTouchCount_) {
-            ballTouches_[slot] = BallTouch{normal, surfaceVelocity, pressed, mate, pressed};
+            ballTouches_[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
             ++ballTouchCount_;
         } else {
-            ballTouches_[slot].normalImpulse = std::max(ballTouches_[slot].normalImpulse, pressed);
             ballTouches_[slot].pressed = std::max(ballTouches_[slot].pressed, pressed);
             if (length(ballTouches_[slot].surfaceVelocity) < length(surfaceVelocity))
                 ballTouches_[slot].surfaceVelocity = surfaceVelocity;

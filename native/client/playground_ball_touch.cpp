@@ -132,7 +132,7 @@ void PlaygroundRoom::settleBallFriction() {
     // the extra grip is answered by the prevention sweep, which hands back a shape's
     // travel while leaving it the speed that made it. That pair of faults has to be
     // put right before the stronger load can be switched on, and until then the
-    // weaker, statics-based load is what ships. See Body::normalImpulse.
+    // weaker, statics-based load is what ships.
     // The load the ball's faces are carrying altogether, in newtons, which is what
     // both friction and rolling resistance are measured against.
     double press = 0.0;
