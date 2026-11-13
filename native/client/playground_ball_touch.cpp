@@ -66,6 +66,11 @@ void PlaygroundRoom::settleBallFriction() {
     // the ledger gets -- the same rule as every other contact in the room: the
     // arrows are the impulses that were applied, and nothing else.
     std::array<double, kMaxBallTouches> taken{};
+    if (getenv("GTC_P"))
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            std::fprintf(stderr, "   touch %zu n(%+.2f,%+.2f) body %zu pressed %.4f surf(%+.3f,%+.3f)\n", i,
+                         ballTouches_[i].normal.x, ballTouches_[i].normal.y, ballTouches_[i].body, ballTouches_[i].pressed,
+                         ballTouches_[i].surfaceVelocity.x, ballTouches_[i].surfaceVelocity.y);
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
         arms[i] = ballTouches_[i].normal * -ball.radius;
