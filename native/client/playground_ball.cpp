@@ -77,10 +77,7 @@ void PlaygroundRoom::tickBall() {
         ball.standing = true;
         return;
     }
-    if (ball.frozen && !ballNeighboursMoving()) {
-        if (getenv("GTC_BW")) std::fprintf(stderr, "  ball asleep and nobody moving -- skipped\n");
-        return;
-    }
+    if (ball.frozen && !ballNeighboursMoving()) return;
     ball.frozen = false;
 
     // What the ball arrived with is recorded once for the whole tick, before
@@ -241,12 +238,9 @@ void PlaygroundRoom::tickBall() {
             // going nor how fast the body is turning can hide the arrival between two
             // samples. That is the hitscan: solved outright, not stepped towards.
             OutlineHit hit;
-            const bool met = sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position,
-                                                     ball.velocity, ball.radius, kTick * remaining, hit);
-            if (getenv("GTC_BW"))
-                std::fprintf(stderr, "  walk: body %zu met %d along %.4f resting %d depth %.5f n(%+.2f,%+.2f)\n",
-                             index, (int)met, hit.along, (int)hit.resting, hit.depth, hit.normal.x, hit.normal.y);
-            if (!met) continue;
+            if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
+                                        ball.radius, kTick * remaining, hit))
+                continue;
 
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop

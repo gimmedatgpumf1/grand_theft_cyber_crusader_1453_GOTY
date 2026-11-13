@@ -28,11 +28,11 @@ int main() {
     {
         PlaygroundRoom r = settled();
         PlaygroundRoom::Body& cube = r.bodies_[0];
-        cube.centre = {0.46, 2.0, 0};
+        cube.centre = {0.78, 2.0, 0};
         cube.angle = 0.0; cube.velocity = {}; cube.spin = 0.0; cube.frozen = false;
         PlaygroundRoom::placeCorners(cube);
         cube.previous = cube.position; cube.previousCentre = cube.centre; cube.previousAngle = cube.angle;
-        std::printf("cube dropped onto the shoulder of a ball on the floor\n");
+        std::printf("cube dropped so its CORNER lands on the side of a ball on the floor\n");
         for (int t = 1; t <= 40; ++t) {
             r.advance(1.0 / 20.0);
             if (t <= 30 && t % 2 == 0)
