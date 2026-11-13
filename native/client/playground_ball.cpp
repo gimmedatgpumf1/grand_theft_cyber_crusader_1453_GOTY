@@ -405,6 +405,7 @@ void PlaygroundRoom::tickBall() {
                     // through the floor -- does the ball step aside, and only then is
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
+                    if (std::getenv("GTC_BALL")) std::printf("    resting push body %zu through %.4f normal (%+.3f,%+.3f) at (%+.3f,%+.3f)\n", index, through, on.normal.x, on.normal.y, ball.position.x, ball.position.y);
                     if (!pushBodyOutOfBall(index, on.normal, through)) {
                         ++ballFoundThrough_;
                         ball.position = ball.position + on.normal * through;
