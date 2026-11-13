@@ -357,14 +357,17 @@ void PlaygroundRoom::tickBall() {
         // held in place this way on every tick, however hard it was pushed along the
         // surface: it kept a speed it never spent, and the ball's grip read that
         // speed as the face it was standing on moving and span, tick after tick,
-        // under a weight that was not doing anything. Prevention is about what would
-        // be *inside* the ball; a meeting at the very start of the tick, at no depth,
-        // is a contact that already exists.
-        if (getenv("GTC_R") && what >= 0)
-            std::fprintf(stderr, "   hit body %d first %.7f depth %.7f when %.7f normal(%+.2f,%+.2f) shapeV(%+.3f,%+.3f)\n", what,
-                         first, depth, (1.0 - remaining) + first * remaining, normal.x, normal.y, bodies_[what].velocity.x,
-                         bodies_[what].velocity.y);
-        if (what >= 0 && !bodyStopped[std::size_t(what)] && (first > 0.0 || depth > 0.0)) {
+        // under a weight that was not doing anything.
+        //
+        // The question is whether the ball *travelled* to this meeting. Below the
+        // room's resolution there is no travel to speak of: a meeting that cost the
+        // ball less than a micrometre of path is a contact it already had, and the
+        // shape keeps the step it took. A shape the ball really did arrive at -- or
+        // one it finds inside itself, which is the same prevention asked afterwards
+        // -- is carried back to the instant of the meeting, as before.
+        const double spent = length(walkStart) * kTick * (first * remaining);
+        if (what >= 0 && !bodyStopped[std::size_t(what)] &&
+            (depth > 0.0 || spent >= playground_tick::kQuantum)) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
