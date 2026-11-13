@@ -248,6 +248,13 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
 }
 
 void PlaygroundRoom::separateBall() {
+    if (getenv("GTC_WALK"))
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            if (bodies_[i].count == 0) continue;
+            Vec3 w{}, a{};
+            const double g = bodyBallGap(i, w, a);
+            if (g < 0.01) std::fprintf(stderr, "    separateBall body %zu gap %+.5f\n", i, g);
+        }
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;

@@ -25,6 +25,10 @@ using namespace playground_detail;
 // than at its middle it turns the ball as well as slowing it.
 void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
                                 bool exchange) {
+    if (getenv("GTC_WALK"))
+        std::fprintf(stderr, "    ballContact n(%+.2f,%+.2f) what %d depth %.4f exchange %d ball v(%+.3f,%+.3f) frozen %d y %+.4f\n",
+                     normal.x, normal.y, bodyIndex, depth, (int)exchange, ball_.velocity.x, ball_.velocity.y,
+                     (int)ball_.frozen, ball_.position.y);
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
