@@ -278,7 +278,12 @@ bool sweptBallAgainstMoving(const Vec3* previous, const Vec3* current, std::size
     // outline there is coming at the ball along the normal it meets it on. A graze is
     // not an arrival.
     const Vec3 surfaceHere = outlineSpeed(previous, current, count, at, tick);
-    if (!(-dot(ballVelocity - surfaceHere, met.normal) > 0.0)) return false;
+    if (!(-dot(ballVelocity - surfaceHere, met.normal) > 0.0)) {
+        if (std::getenv("GTC_SWEEP"))
+            std::printf("    sweep: graze gate killed it: along %.5f gap %.5f normal (%+.3f,%+.3f) v(%+.2f,%+.2f) surf(%+.2f,%+.2f)\n",
+                        high, met.gap, met.normal.x, met.normal.y, ballVelocity.x, ballVelocity.y, surfaceHere.x, surfaceHere.y);
+        return false;
+    }
     hit.along = high;
     hit.normal = met.normal;
     hit.contact = at - met.normal * radius;
