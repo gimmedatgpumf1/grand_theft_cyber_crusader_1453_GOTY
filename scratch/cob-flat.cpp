@@ -2,9 +2,13 @@
 int main() {
     PlaygroundRoom r; r.reset();
     for (int i = 0; i < 200; ++i) r.advance(1.0 / 20.0);
+    // The ball is put where it can be seen and then *left to settle there*, so it
+    // is a ball on the floor with the floor under it -- not a ball teleported into
+    // place with the support it had somewhere else.
     r.ball_.position = {0.30, r.ball_.radius, 0};
-    r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = true;
+    r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
     r.ball_.previous = r.ball_.position;
+    for (int i = 0; i < 40; ++i) r.advance(1.0 / 20.0);
     PlaygroundRoom::Body& cube = r.bodies_[0];
     cube.centre = {0.30, r.ball_.radius + 0.12 + 0.35 + 1.00, 0};
     cube.angle = 0.0; cube.velocity = {}; cube.spin = 0.0; cube.frozen = false;
