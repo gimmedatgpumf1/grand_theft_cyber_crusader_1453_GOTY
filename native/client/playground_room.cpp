@@ -1,5 +1,8 @@
 #include "client/playground_room.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -215,6 +218,9 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     ball_.frozen = false;
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.
+    if (getenv("GTC_PBALL"))
+        std::fprintf(stderr, "    pushBall (%+.4f,%+.4f) kind %d at (%+.3f,%+.3f) -> v(%+.3f,%+.3f) spin %+.3f\n",
+                     impulse.x, impulse.y, int(kind), at.x, at.y, ball_.velocity.x, ball_.velocity.y, ball_.spin);
     recordImpulse(at, impulse, kind, kBallOwner);
 }
 
