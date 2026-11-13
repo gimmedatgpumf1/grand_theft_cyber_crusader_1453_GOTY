@@ -246,7 +246,7 @@ void PlaygroundRoom::settleBallFriction() {
                 Body& mate = bodies_[other];
                 const Vec3 at = ball.position + arms[i];
                 if (!mate.frozen && !bodyHeld(other)) {
-                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Friction);
+                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Pair);
                     ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
                 } else {
                     ballTouches_[i].surfaceVelocity = Vec3{};
