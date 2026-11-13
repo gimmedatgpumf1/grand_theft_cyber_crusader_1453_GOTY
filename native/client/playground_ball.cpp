@@ -62,6 +62,8 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 }
 
 void PlaygroundRoom::tickBall() {
+    const auto bdbg = [&](const char* t) { if (!getenv("GTC_FL")) return; const Body& b = bodies_[0]; double lo = 1e9; for (std::size_t j = 0; j < b.count; ++j) lo = std::min(lo, b.position[j].y); std::fprintf(stderr, "BL %-4s low%+.7f cy%+.7f a%+.7f w%+.6f\n", t, lo, b.centre.y, b.angle, b.spin); };
+    bdbg("in");
     Ball& ball = ball_;
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
@@ -222,6 +224,7 @@ void PlaygroundRoom::tickBall() {
             continue;
         if (!(stop.along < 1.0)) continue;
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
+        bdbg("rw1");
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
         placeCorners(body);
         bodyStopped[index] = true;
@@ -403,6 +406,7 @@ void PlaygroundRoom::tickBall() {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
+            bdbg("rw2");
             met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
             placeCorners(met);
             bodyStopped[std::size_t(what)] = true;
@@ -586,6 +590,7 @@ void PlaygroundRoom::tickBall() {
         ball.shown = ball.position;
     }
     ball.angle += ball.spin * kTick;
+    bdbg("out");
 }
 
 // The ball against something.// Whether the ball can be put down at this spot. It is the mouse that needs this,
