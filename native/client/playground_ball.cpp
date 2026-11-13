@@ -267,10 +267,10 @@ void PlaygroundRoom::tickBall() {
             // Nothing is added to its speed, so nothing is conjured; it is a place
             // corrected, once, and then the ordinary contact rules apply to it again.
             if (getenv("GTC_WALK"))
-                std::fprintf(stderr, "  walk body %zu resting %d along %.4f depth %.4f n(%+.2f,%+.2f) ball(%+.3f,%+.3f) v(%+.3f,%+.3f) at(%+.3f,%+.3f)\n",
+                std::fprintf(stderr, "  walk body %zu resting %d along %.4f depth %.4f n(%+.2f,%+.2f) ball(%+.3f,%+.3f) v(%+.3f,%+.3f) at(%+.3f,%+.3f) prevCy %+.4f cy %+.4f\n",
                              index, (int)hit.resting, hit.along, hit.depth, hit.normal.x, hit.normal.y,
                              ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
-                             hit.contact.x, hit.contact.y);
+                             hit.contact.x, hit.contact.y, bodies_[index].previousCentre.y, bodies_[index].centre.y);
             if (hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
