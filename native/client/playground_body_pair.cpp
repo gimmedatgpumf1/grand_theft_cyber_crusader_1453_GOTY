@@ -129,20 +129,20 @@ double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle) const 
     return deepest;
 }
 
-// How deep a point is inside a convex polygon shrunk by `margin`: positive means
-// inside the shrunk outline by that much.
-//
-// Shrinking the outline by a margin and asking "is the point still inside" is the
-// same question as "is the point deeper in than the margin", asked in a way that can
-// be solved instead of searched. Every edge moves inward by the margin; the point is
-// inside the shrunken polygon when it is on the inside of all of them.
 namespace {
 
-double erosionDepth(const Vec3* corners, std::size_t count, Vec3 point, double margin) {
+// How far a point is inside a convex polygon: the least distance it is inside any of
+// the polygon's faces, or nought if it is outside at least one of them.
+//
+// This is the measure a meeting is judged by. It is per face and not per separating
+// axis, so it says "how deep in" and not "how far apart they would be if pushed" --
+// and unlike the smallest separating axis it does not get smaller when a body turns
+// further into a shape, which is what made a turn look like it was not going anywhere.
+double pointInside(const Vec3* corners, std::size_t count, Vec3 point) {
     Vec3 middle{};
     for (std::size_t i = 0; i < count; ++i) middle = middle + corners[i];
     middle = middle * (1.0 / static_cast<double>(count));
-    double least = 1e30;
+    double deepest = 1e30;
     for (std::size_t i = 0; i < count; ++i) {
         const Vec3 a = corners[i];
         const Vec3 side = corners[(i + 1) % count] - a;
@@ -150,9 +150,19 @@ double erosionDepth(const Vec3* corners, std::size_t count, Vec3 point, double m
         if (!(span > 1e-12)) continue;
         Vec3 outward{side.y / span, -side.x / span, 0.0};
         if (dot(middle - a, outward) > 0.0) outward = outward * -1.0;
-        least = std::min(least, -dot(point - a, outward));
+        deepest = std::min(deepest, -dot(point - a, outward));
     }
-    return least - margin;
+    return std::max(0.0, deepest);
+}
+
+// How deep two convex outlines are into each other: the deepest any corner of either
+// is inside the other. Nought when they are apart or exactly touching, which is what
+// makes "is it deeper than it was" a question worth asking.
+double outlineInside(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb) {
+    double deepest = 0.0;
+    for (std::size_t i = 0; i < na; ++i) deepest = std::max(deepest, pointInside(b, nb, a[i]));
+    for (std::size_t i = 0; i < nb; ++i) deepest = std::max(deepest, pointInside(a, na, b[i]));
+    return deepest;
 }
 
 // The first crossing of  c1 cos(a) + c2 sin(a) = c3  over a turn that starts at `a0`
@@ -177,13 +187,12 @@ bool firstSinusoidCrossing(double c1, double c2, double c3, double a0, double wa
     if (!(amplitude > 0.0)) return false;
     // A body resting on a face is *exactly* on it, which puts this ratio at one to
     // within rounding -- and a tangency is a crossing. Asked strictly, "the line is a
-    // radius away" is false by a part in ten billion for a shape that is standing on
-    // that line, and the turn into it would not be seen at all. So the ratio is only
-    // refused when it is outside the sine's range by more than the arithmetic can
-    // explain; a root found from a rounded tangency is verified afterwards anyway.
+    // radius away" is false by a part in ten billion for a shape standing on that line,
+    // and the turn into it would not be seen at all. So the ratio is only refused when
+    // it is outside the sine's range by more than the arithmetic can explain; a root
+    // found from a rounded tangency is verified afterwards anyway.
     const double ratio = c3 / amplitude;
     if (!(std::abs(ratio) <= 1.0 + 1e-9)) return false;
-    // k1 cos t + k2 sin t = amplitude * sin(t + phase)
     const double phase = std::atan2(k1, k2);
     const double base = std::asin(std::max(-1.0, std::min(1.0, ratio)));
     bool any = false;
@@ -209,31 +218,21 @@ bool firstSinusoidCrossing(double c1, double c2, double c3, double a0, double wa
 // This is the hitscan, and it is solved rather than sampled. A turn is travel: the far
 // end of a plank sweeps an arc, and an arc that ends above the floor can still have
 // passed through it on the way. Every corner of the body sweeps a circle about the
-// pin, so every meeting there can be is where that circle meets a line -- the floor,
-// or a face of another shape -- or another circle, the ball. Those are equations with
-// exact answers, so all of a turn's meetings are written down at once, the earliest
-// one that actually enters something is taken, and the body stops there. There is no
-// step size in it, nothing is sampled, and nothing can be passed over however fast
-// the body turns or however thin the thing in the way.
+// pin, so every meeting there can be where that circle meets a line -- the floor, or a
+// face of another shape -- or another circle, the ball. Those are equations with exact
+// answers, so all of a turn's crossings are written down at once instead of being
+// stepped towards.
+//
+// A crossing on its own is not a meeting. A shape resting on the plank has its corners
+// *on* the plank's face, so every turn of that face crosses it: turning away is a
+// crossing and is nothing at all, and turning into it is a crossing and a contact. The
+// two are told apart by the one thing that distinguishes them -- whether the body is
+// deeper in a micrometre later than it is at the crossing. Turning away, the depth
+// stays where it was; turning in, it grows. Nothing is asked of the current depth, so a
+// body that is already a hair inside something can always turn out of it, and a body
+// resting against something is never held still by the arithmetic.
 double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     if (turn == 0.0) return 1.0;
-    // How deep it already is, which is a state it may keep but may not make worse.
-    //
-    // Asked of zero instead -- "a plank that is inside anything may not turn at all"
-    // -- a shape resting on the plank's tip held the whole plank still: the overlap
-    // was two millimetres, the turn was refused, and the contact went on giving the
-    // axle a torque for a plank that could not use it. The spin then climbed tick
-    // after tick with the plank never moving, which is a spin made of nothing -- the
-    // King's pumping, standing still. A plank a hair inside something can still turn
-    // every way that does not take it further in, and turning away is exactly what
-    // gets it out. The allowance is an erosion: a shape it is already that far inside
-    // is treated as that much smaller, so the turn stops where it would go deeper
-    // than it already is, and not before.
-    //
-    // The floor is not part of the allowance: a plank a millimetre under the ground is
-    // still a plank that may not go deeper, and a corner deep on one side must not buy
-    // a turn that buries the other.
-    const double allowance = std::max(0.0, pivotObjectDepthAt(body, body.angle) - playground_tick::kQuantum);
     // A turn the other way is the same turn measured the other way round: it is solved
     // in u, where the body always turns forwards, and put back at the end.
     const double span = std::abs(turn);
@@ -244,41 +243,58 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     // A micrometre of the body's own travel, which is the room's resolution: far
     // enough past a crossing to tell an entry from a leaving, and no more.
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
-    double first = span + 1.0;  // no meeting at all
-    // A meeting at the very start of the turn is a meeting: a body standing on a face
-    // is exactly on it, so the crossing is at nought and every root found for a turn
-    // that begins in contact is nought, to within the rounding in the cosine. Refusing
-    // those -- "a crossing must be strictly after the start" -- let a resting body turn
-    // straight into what it was resting on. Nothing is taken on trust: such a root is
-    // only kept when the turn really goes deeper a micrometre later, which is what the
-    // checks below ask.
-    const auto take = [&](double u) {
-        if (u < -nudge) return;
-        u = std::max(0.0, u);
-        if (u < first) first = u;
-    };
-    // The very first micrometre of the turn. A body that is already against something
-    // -- resting on a shape, standing on the floor -- is on the boundary with nothing
-    // to spare, so the turn *into* it has no distance to run before it is inside, and
-    // a crossing found by solving is a crossing at nought. Asked as a depth at a
-    // micrometre of travel, that is answered exactly, and it is answered before any
-    // root is looked for: a turn whose beginning is already inside is not a turn.
-    //
-    // It is only the beginning. Turning *away* is free, and that is what lets a plank
-    // a hair inside something turn out of it instead of being frozen there with the
-    // contact still feeding the axle a torque -- the pump the King saw.
-    const auto freeAt = [&](double angle) {
-        return pivotFloorDepthAt(body, angle) <= playground_tick::kQuantum &&
-               pivotObjectDepthAt(body, angle) <= allowance + playground_tick::kQuantum;
-    };
-    if (getenv("GTC_TA"))
-        std::fprintf(stderr, "TA a%+.6f turn%+.4f obj0%+.7f obj1%+.7f allow%+.7f floor1%+.7f\n", body.angle, turn,
-                     pivotObjectDepthAt(body, body.angle), pivotObjectDepthAt(body, body.angle + way * nudge), allowance,
-                     pivotFloorDepthAt(body, body.angle + way * nudge));
-    if (!freeAt(body.angle + way * nudge)) return 0.0;
     const auto cornerAt = [&](Vec3 local, double angle) {
         return Vec3{pin.x + local.x * std::cos(angle) - local.y * std::sin(angle),
                     pin.y + local.x * std::sin(angle) + local.y * std::cos(angle), 0.0};
+    };
+    const auto cornersAt = [&](double angle, std::array<Vec3, kMaxCorners>& into) {
+        for (std::size_t i = 0; i < body.count; ++i) into[i] = cornerAt(body.local[i], angle);
+    };
+    std::array<Vec3, kMaxCorners> here{}, next{};
+    // How deep the body is in the floor at an angle, and how deep it is in another
+    // shape -- each measure its own, because "deeper" is asked of each meeting apart.
+    const auto floorDepth = [&](double angle) {
+        double down = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i)
+            down = std::max(down, playground_tick::kSurfaceY - cornerAt(body.local[i], angle).y);
+        return down;
+    };
+    const auto objectDepth = [&](double angle, std::size_t other) {
+        cornersAt(angle, here);
+        return outlineInside(here.data(), body.count, bodies_[other].position.data(), bodies_[other].count);
+    };
+    const auto ballDepth = [&](double angle) {
+        cornersAt(angle, here);
+        const double gap = outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0).gap;
+        return std::max(0.0, ball_.radius - gap);
+    };
+    double first = span + 1.0;  // no meeting at all
+    const auto deeper = [&](double at, double past, const auto& depth) {
+        return depth(past) > depth(at) + 1e-12;
+    };
+    // A body that is already inside something and turning further in is not allowed to
+    // begin. It is only the beginning: turning *out* is free, which is what lets a shape
+    // that is a hair inside something leave it instead of being frozen there with the
+    // contact still feeding the axle a torque -- the pump the King saw.
+    {
+        const double mine = floorDepth(body.angle);
+        const double past = floorDepth(body.angle + way * nudge);
+        if (past > playground_tick::kQuantum && past > mine + 1e-12) return 0.0;
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
+            const double a0 = objectDepth(body.angle, other);
+            const double a1 = objectDepth(body.angle + way * nudge, other);
+            if (a1 > playground_tick::kQuantum && a1 > a0 + 1e-12) return 0.0;
+        }
+        const double b0 = ballDepth(body.angle);
+        const double b1 = ballDepth(body.angle + way * nudge);
+        if (b1 > playground_tick::kQuantum && b1 > b0 + 1e-12) return 0.0;
+    }
+    const auto take = [&](double u, double past, const auto& depth) {
+        if (!(u > -nudge && u <= span)) return;
+        const double at = std::max(0.0, u);
+        if (!deeper(at, past, depth)) return;
+        if (at < first) first = at;
     };
     for (std::size_t i = 0; i < body.count; ++i) {
         const Vec3 local = body.local[i];
@@ -286,113 +302,82 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         if (!(radius > 0.0)) continue;
         const double phase = std::atan2(local.y, local.x);
         // The floor. The corner's height is pin.y + local.x sin a + local.y cos a, so
-        // the crossings are where that is nought -- and whether it is going below at
-        // that angle is the slope there, which is exact.
+        // the crossings are where that is nought.
         {
             double u = 0.0;
-            if (firstSinusoidCrossing(local.y, local.x, -pin.y, body.angle, way, span, u)) {
-                const double angle = way * u;
-                const double falling = local.x * std::cos(angle) - local.y * std::sin(angle);
-                if (way * falling < 0.0) take(u);
-            }
+            if (firstSinusoidCrossing(local.y, local.x, -pin.y, body.angle, way, span, u))
+                take(u, u + nudge, [&](double t) { return floorDepth(way * t); });
         }
         for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
             const Body& solid = bodies_[other];
-            if (&solid == &body || solid.count == 0) continue;
             // This body's corners against that shape's faces. The corner's arc meets a
             // face's line where the line is a radius away from the pin at the right
-            // angle, which is a cosine to solve. The face is the shrunken one, so the
-            // meeting found is where the corner would go deeper than the allowance.
+            // angle, which is a cosine to solve.
             {
                 Vec3 middle{};
                 for (std::size_t k = 0; k < solid.count; ++k) middle = middle + solid.position[k];
                 middle = middle * (1.0 / static_cast<double>(solid.count));
                 for (std::size_t e = 0; e < solid.count; ++e) {
                     const Vec3 p = solid.position[e];
-                    const Vec3 q = solid.position[(e + 1) % solid.count];
-                    const Vec3 side = q - p;
+                    const Vec3 side = solid.position[(e + 1) % solid.count] - p;
                     const double sideSpan = length(side);
                     if (!(sideSpan > 1e-12)) continue;
                     Vec3 inward{side.y / sideSpan, -side.x / sideSpan, 0.0};
                     if (dot(middle - p, inward) < 0.0) inward = inward * -1.0;
-                    const double reach = dot(p, inward) + allowance - dot(pin, inward);
+                    // dot(corner - p, inward) = 0, with the corner on its circle.
+                    const double reach = dot(p, inward) - dot(pin, inward);
                     if (std::abs(reach) > radius) continue;
                     const double normalPhase = std::atan2(inward.y, inward.x);
                     const double spread = std::acos(std::max(-1.0, std::min(1.0, reach / radius)));
                     for (const double which : {1.0, -1.0}) {
                         double u = way * (normalPhase + which * spread - phase - body.angle);
-                        // Into the u's this turn covers, however many turns round it is.
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
-                        if (!(u > -nudge && u <= span)) continue;
-                        if (erosionDepth(solid.position.data(), solid.count, cornerAt(local, way * (u + nudge)),
-                                         allowance) <= 0.0)
-                            continue;
-                        take(u);
+                        take(u, u + nudge, [&](double t) { return objectDepth(way * t, other); });
                     }
                 }
             }
             // And the other way round: a corner of that shape against this body's own
             // faces, which are the ones turning. The distance from a fixed point to a
-            // turning face is a sinusoid in the angle, so that crossing is solved the
-            // same way.
+            // turning face is a sinusoid in the angle, so that is solved the same way.
             {
                 Vec3 localMiddle{};
                 for (std::size_t k = 0; k < body.count; ++k) localMiddle = localMiddle + body.local[k];
                 localMiddle = localMiddle * (1.0 / static_cast<double>(body.count));
                 for (std::size_t e = 0; e < body.count; ++e) {
                     const Vec3 a0 = body.local[e];
-                    const Vec3 b0 = body.local[(e + 1) % body.count];
-                    const Vec3 localSide = b0 - a0;
+                    const Vec3 localSide = body.local[(e + 1) % body.count] - a0;
                     const double localSpan = length(localSide);
                     if (!(localSpan > 1e-12)) continue;
                     Vec3 outward{localSide.y / localSpan, -localSide.x / localSpan, 0.0};
                     if (dot(localMiddle - a0, outward) > 0.0) outward = outward * -1.0;
                     for (std::size_t c = 0; c < solid.count; ++c) {
-                        const Vec3 point = solid.position[c];
-                        const Vec3 arm = point - pin;
-                        // dot(R(-a)(point - pin) - a0, outward) = -allowance
+                        const Vec3 arm = solid.position[c] - pin;
                         const double k1 = dot(arm, outward);
                         const double k2 = arm.y * outward.x - arm.x * outward.y;
                         double u = 0.0;
-                        if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) - allowance, body.angle, way, span, u))
-                            continue;
-                        std::array<Vec3, kMaxCorners> corners{};
-                        pivotCornersAt(body, body.angle + way * (u + nudge), corners);
-                        if (erosionDepth(corners.data(), body.count, point, allowance) <= 0.0) continue;
-                        take(u);
+                        if (!firstSinusoidCrossing(k1, k2, dot(a0, outward), body.angle, way, span, u)) continue;
+                        take(u, u + nudge, [&](double t) { return objectDepth(way * t, other); });
                     }
                 }
             }
         }
-        // And the ball, which is a circle rather than a face.
-        //
-        // Two circles meet at two angles and nowhere else -- the ball's own radius plus
-        // the allowance, about the ball's middle -- and that is the corner coming at the
-        // ball. The other way round is the ball coming at one of this body's faces,
-        // which is a circle meeting a *turning line*: the same sinusoid as a corner
-        // meeting a face, with the ball's radius in the offset instead of the
-        // allowance. The ball has no corners, so it is answered on the faces it is
-        // under; asked only of this body's corners, a ball lying under the middle of the
-        // plank is not looked for at all and the plank turns down onto it unseen.
+        // And the ball, which is a circle rather than a face: the corner's own circle
+        // against it, and the ball against each of this body's faces.
         {
             const Vec3 away = ball_.position - pin;
             const double reach = length(away);
-            const double big = ball_.radius + allowance;
-            if (reach > 0.0 && std::abs(radius - big) <= reach && reach <= radius + big) {
-                const double cosAt = (radius * radius + reach * reach - big * big) / (2.0 * radius * reach);
+            if (reach > 0.0 && std::abs(radius - ball_.radius) <= reach && reach <= radius + ball_.radius) {
+                const double cosAt =
+                    (radius * radius + reach * reach - ball_.radius * ball_.radius) / (2.0 * radius * reach);
                 const double spread = std::acos(std::max(-1.0, std::min(1.0, cosAt)));
                 const double middle = std::atan2(away.y, away.x);
                 for (const double which : {1.0, -1.0}) {
                     double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
                     while (u <= -span) u += 2.0 * kPi;
-                    if (!(u > -nudge && u <= span)) continue;
-                    const Vec3 where = cornerAt(local, way * u);
-                    // An entry only: a micrometre further on must be deeper in.
-                    const Vec3 aLittle = cornerAt(local, way * (u + nudge));
-                    if (!(length(aLittle - ball_.position) < length(where - ball_.position))) continue;
-                    take(u);
+                    take(u, u + nudge, [&](double t) { return ballDepth(way * t); });
                 }
             }
             Vec3 localMiddle{};
@@ -400,8 +385,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
             localMiddle = localMiddle * (1.0 / static_cast<double>(body.count));
             for (std::size_t e = 0; e < body.count; ++e) {
                 const Vec3 a0 = body.local[e];
-                const Vec3 b0 = body.local[(e + 1) % body.count];
-                const Vec3 localSide = b0 - a0;
+                const Vec3 localSide = body.local[(e + 1) % body.count] - a0;
                 const double localSpan = length(localSide);
                 if (!(localSpan > 1e-12)) continue;
                 Vec3 outward{localSide.y / localSpan, -localSide.x / localSpan, 0.0};
@@ -409,13 +393,9 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k1 = dot(away, outward);
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
-                if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + big, body.angle, way, span, u)) continue;
-                if (u < -nudge) continue;
-                const double at = body.angle + way * (u + nudge);
-                std::array<Vec3, kMaxCorners> corners{};
-                pivotCornersAt(body, at, corners);
-                if (erosionDepth(corners.data(), body.count, ball_.position, big) <= 0.0) continue;
-                take(u);
+                if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball_.radius, body.angle, way, span, u))
+                    continue;
+                take(u, u + nudge, [&](double t) { return ballDepth(way * t); });
             }
         }
     }
