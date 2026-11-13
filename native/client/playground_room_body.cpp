@@ -241,7 +241,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 // pivotTurnAllowed() -- and what is left of the spin is the contact's
                 // to answer, exactly as a shape's speed is when it lands.
                 const double turn = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
-                if (getenv("GTC_FL")) std::fprintf(stderr, "ADV in  a%+.5f turn%+.5f\n", body.angle, turn);
                 double allowed = turn;
                 if (turn != 0.0) {
                     const double fraction = pivotTurnAllowed(body, turn);
@@ -249,7 +248,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     if (!(fraction > 0.0)) body.angle = body.angle;
                 }
                 body.angle += allowed;
-                if (getenv("GTC_FL")) std::fprintf(stderr, "ADV out a%+.5f\n", body.angle);
                 body.centre = body.pivotPoint;
                 placeCorners(body);
                 continue;
@@ -641,7 +639,6 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
 void PlaygroundRoom::tickBodies() {
-    const auto dbg = [&](const char* t) { if (!getenv("GTC_FL")) return; std::fprintf(stderr, "FLT %-4s", t); for (const Body& b : bodies_) { double lo = 1e9; for (std::size_t j = 0; j < b.count; ++j) lo = std::min(lo, b.position[j].y); std::fprintf(stderr, " %+.7f", lo); } std::fprintf(stderr, "\n"); };
     // What every body arrived with, and how many contacts it had already been given.
     //
     // A body that spends a whole tick in free flight has followed a parabola, and a
@@ -713,9 +710,7 @@ void PlaygroundRoom::tickBodies() {
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
-    dbg("pre");
     advanceBodies(kTick);
-    dbg("adv");
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -728,18 +723,8 @@ void PlaygroundRoom::tickBodies() {
     // It is the only thing in the room that moves a shape without an impulse, and
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
-    dbg("presep");
     separateBodies();
-    dbg("sep");
-    if (getenv("GTC_FL"))
-        for (std::size_t i = 0; i < kBodyCount; ++i) {
-            const Body& b = bodies_[i];
-            double low = 1e9;
-            for (std::size_t j = 0; j < b.count; ++j) low = std::min(low, b.position[j].y);
-            if (low < -1e-7) std::fprintf(stderr, "FL afterSeparate body%zu low%+.6f\n", i, low);
-        }
     settleBodies();
-    dbg("set");
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
     // of the tick -- see there. Twice is harmless (the list is emptied each time) and

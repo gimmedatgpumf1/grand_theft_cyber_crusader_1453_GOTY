@@ -101,21 +101,16 @@ double PlaygroundRoom::pivotDepthAt(const Body& body, double angle) const {
     double deepest = 0.0;
     for (std::size_t i = 0; i < body.count; ++i)
         deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
-    const double floorDeep = deepest;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         const Body& solid = bodies_[other];
         if (&solid == &body || solid.count == 0) continue;
         Vec3 way{0, 1, 0};
         double amount = 0.0;
         if (outlineOverlap(corners.data(), body.count, solid.position.data(), solid.count, way, amount)) {
-            if (getenv("GTC_FL3") && amount > playground_tick::kQuantum)
-                std::fprintf(stderr, "PD body%zu other%zu amount%+.6f way(%+.2f,%+.2f)\n", std::size_t(&body - &bodies_[0]), other, amount, way.x, way.y);
             deepest = std::max(deepest, amount);
         }
     }
     const double gap = outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
-    if (getenv("GTC_FL3") && ball_.radius - gap > playground_tick::kQuantum)
-        std::fprintf(stderr, "PD body%zu ballgap%+.6f balldepth%+.6f floord%.6f ball(%+.3f,%+.3f)\n", std::size_t(&body - &bodies_[0]), gap, ball_.radius - gap, floorDeep, ball_.position.x, ball_.position.y);
     deepest = std::max(deepest, ball_.radius - gap);
     return deepest;
 }
