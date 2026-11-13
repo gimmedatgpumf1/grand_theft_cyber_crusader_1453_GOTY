@@ -190,6 +190,9 @@ void PlaygroundRoom::tickBall() {
         if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
                                     ball.velocity, limit, kTick, stop, false))
             continue;
+        if (getenv("GTC_S"))
+            std::fprintf(stderr, "  prevent body %zu startGap %+.7f along %+.4f ballv(%+.3f,%+.3f)\n", index, startGap, stop.along,
+                         ball.velocity.x, ball.velocity.y);
         if (!(stop.along < 1.0)) continue;
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
