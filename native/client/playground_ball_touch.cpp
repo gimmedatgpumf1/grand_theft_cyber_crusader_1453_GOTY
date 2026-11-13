@@ -195,14 +195,6 @@ void PlaygroundRoom::settleBallFriction() {
         const double lever = arm.x * tangents[i].y - arm.y * tangents[i].x;
         partner[i] = dot(tangents[i], tangents[i]) / mate.mass + lever * lever / mate.moment;
     }
-    if (getenv("GTC_SL")) {
-        std::fprintf(stderr, "SLP start n=%zu v(%+.3f,%+.3f) sp%+.3f\n", ballTouchCount_, ball.velocity.x,
-                     ball.velocity.y, ball.spin);
-        for (std::size_t i = 0; i < ballTouchCount_; ++i)
-            std::fprintf(stderr, "SLP   face%zu body%zu n(%+.3f,%+.3f) load%.3f pressed%.3f slip%+.4f\n", i,
-                         ballTouches_[i].body, ballTouches_[i].normal.x, ballTouches_[i].normal.y,
-                         ballTouches_[i].pressed, ballTouches_[i].pressed, slipAt(i, ball.velocity, ball.spin));
-    }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
