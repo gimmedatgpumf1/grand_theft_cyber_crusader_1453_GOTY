@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -30,11 +32,7 @@ namespace {
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
 constexpr int kSolvePasses = 32;
-// How far apart two ends of one face may be, in height above the surface, and still
-// be the same contact rather than a shape coming down on a corner. A millimetre on a
-// shape seven hundred millimetres across is a seventh of a degree: it is the noise a
-// resting pair sits in, and it is not a shape landing. Anything more is.
-constexpr double kFaceFlat = 1e-3;// A sweep of the patches is over when nothing it can still see is closing faster
+// A sweep of the patches is over when nothing it can still see is closing faster
 // than this. A millionth of a metre per second is a thousandth of a millimetre in
 // a whole tick: slower than the arithmetic of the positions can even show, and
 // small enough that what is left over cannot pump a stacked pair.
@@ -145,6 +143,21 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
+        struct Report {
+            const Manifold& patch;
+            ~Report() {
+                if (!std::getenv("GTC_PP") || patch.ball || patch.other < kBodyCount) return;
+                std::printf("   -> impulses");
+                for (std::size_t k = 0; k < patch.ends; ++k) std::printf(" [%+.6f]", patch.normalImpulse[k]);
+                std::printf("\n");
+            }
+        } report{patch};
+        if (std::getenv("GTC_PP") && !patch.ball && patch.other >= kBodyCount) {
+            std::printf("  PATCH body %zu floor ends %zu", patch.body, patch.ends);
+            for (std::size_t k = 0; k < patch.ends; ++k) std::printf(" [gap %+.6f at(%+.4f,%+.4f)]", patch.gap[k], patch.point[k].x, patch.point[k].y);
+            const Body& b = bodies_[patch.body];
+            std::printf(" spin %+.4f met %zu\n", b.spin, b.met);
+        }
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
@@ -421,18 +434,87 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 }
                 ++dofs;
             }
-            // The load each end needs to be left with no way into the surface.
+            // The load each end needs to be left with no way into the surface, and
+            // whether an end had to be let go to get it.
+            bool lifting = false;
             double delta[kMaxPatchEnds] = {};
             if (dofs == 1) {
                 if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
             } else if (dofs == 2) {
+                // Two ends of one face pressed on one surface are two unknowns, and
+                // they are only independent when the thing under them can move both
+                // ways. A body that can only turn has one degree of freedom, and both
+                // ends of a patch drive that one number -- the turn -- so the system's
+                // determinant is nought to the last bit and there is no pair of loads
+                // that satisfies both equations.
+                //
+                // Solved as it stood, a determinant of nought meant the arithmetic
+                // answered *nothing at all*, and the code took that answer: the
+                // seesaw's own end sat on the floor closing at two metres a second and
+                // the ground pushed it with nought newtons, pass after pass. That is
+                // the pump the King saw: the plank kept a spin the floor never took
+                // from it, the sweep stopped the turn every tick short of the ground,
+                // and the plank was left with a speed that carried it nowhere. Every
+                // surface it touched was then told the plank was moving, and the ball
+                // beside its tip rolled through the tip.
+                //
+                // What is really unknown here is one number, not two: how much the
+                // load turns the body between them. Everything else about the split --
+                // which end carries what -- the pin takes, and nothing in the room can
+                // see the pin. So the answer is the *smallest* turn that leaves no live
+                // end with a way into the surface, shared out between the ends in
+                // proportion to their levers, which is the least any pair of loads can
+                // be while giving that turn.
                 const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
-                if (std::abs(det) > 1e-18) {
+                const double scale = std::max(g[0][0] * g[1][1], 0.0);
+                if (std::abs(det) > 1e-12 * scale) {
                     delta[0] = (-u[0] * g[1][1] + u[1] * g[0][1]) / det;
                     delta[1] = (-u[1] * g[0][0] + u[0] * g[1][0]) / det;
+                } else if (scale > 0.0) {
+                    // The rank-one matrix, written as the outer product of one lever
+                    // per end: g = a a^T, and pressing the two ends by J changes what
+                    // each of them is closing at by a_k (a . J).
+                    const double a0 = std::sqrt(std::max(0.0, g[0][0]));
+                    const double a1 = a0 > 0.0 ? g[1][0] / a0 : 0.0;
+                    const double square = a0 * a0 + a1 * a1;
+                    // The turn wanted, as the smallest one that leaves both ends with
+                    // no way in: s >= -u_k / a_k for an end whose lever points the way
+                    // the turn goes, and the other way round for the other side.
+                    double least = 0.0, most = 1e30;
+                    bool impossible = false;
+                    const double leverOf[2] = {a0, a1};
+                    for (std::size_t i = 0; i < dofs && !impossible; ++i) {
+                        const double a = leverOf[i];
+                        if (std::abs(a) <= 1e-15 * std::sqrt(square)) {
+                            // An end right at the pin: pressing it turns nothing, so it
+                            // cannot be helped, and a load there would be a force the
+                            // pin takes and the body never feels.
+                            if (u[i] < 0.0) impossible = true;
+                            continue;
+                        }
+                        const double want = -u[i] / a;
+                        if (a > 0.0) least = std::max(least, want);
+                        else most = std::min(most, want);
+                    }
+                    if (impossible || least > most) {
+                        // The two ends cannot both be held: the one asking for the most
+                        // is let go, and the rest of the patch is answered without it.
+                        std::size_t hardest = 0;
+                        double worstWant = -1e30;
+                        for (std::size_t i = 0; i < dofs; ++i) {
+                            if (std::abs(leverOf[i]) <= 1e-15 * std::sqrt(square)) continue;
+                            if (leverOf[i] > 0.0 && -u[i] / leverOf[i] > worstWant) {
+                                worstWant = -u[i] / leverOf[i];
+                                hardest = i;
+                            }
+                        }
+                        live[order[hardest]] = false;
+                        lifting = true;
+                    } else if (square > 0.0) {
+                        for (std::size_t i = 0; i < dofs; ++i) delta[i] = least * leverOf[i] / square;
+                    }
                 }
             }
-            bool lifting = false;
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 // An end is let go only when the load it would be left with is a

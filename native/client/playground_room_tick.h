@@ -48,6 +48,17 @@ inline constexpr double kContactTolerance = 1e-9;  // metres
 // remembered. It converges in a handful for a face and in a dozen for a body on two
 // contacts at once; this is a guard against a numerical corner case, not a tuning.
 inline constexpr int kContactPasses = 32;
+// How far apart the two ends of one face may stand above a surface and still be the
+// same contact rather than a shape coming down on a corner. A millimetre on a shape
+// seven hundred of them across is a seventh of a degree: the noise a resting pair
+// sits in, and not a shape landing. Anything more is a corner.
+//
+// It is also the thickness within which a corner counts as being *at* a surface for
+// the purpose of gathering a patch, which is why it is here and not in the solver:
+// a face lying on the floor has one end a ten-thousandth of a millimetre above it,
+// and that end belongs to the contact -- the face is one contact, and answering it
+// at one corner makes it rock from corner to corner for ever.
+inline constexpr double kFaceFlat = 1e-3;  // metres
 
 // What a force does to a speed over one tick, and the only place in the room that
 // does it: a = F/m, and the speed gains a*dt.

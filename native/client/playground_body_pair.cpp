@@ -699,6 +699,7 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
 }
 
 void PlaygroundRoom::separateBall() {
+    if (std::getenv("GTC_BW")) std::printf("  SEPBALL in pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball_.position.x, ball_.position.y, ball_.velocity.x, ball_.velocity.y);
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;

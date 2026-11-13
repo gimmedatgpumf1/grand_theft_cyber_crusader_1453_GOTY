@@ -304,7 +304,31 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             // metre up is not an end of a contact patch, it is a corner in the air,
             // and taking it as one asks the floor to hold the face by a corner it is
             // not touching -- which it cannot do without pulling, so it lets go.
+            //
+            // And "within the band" is not the same question as "on the floor". The
+            // band is how far anything in the room can travel in a tick, and the far
+            // end of a shape can be well inside it while being nowhere near the
+            // ground: a seesaw lying on its tip has its other end a hand's width up,
+            // and that end is closing at metres a second as the plank comes round, so
+            // the band took it. What the floor then did was push a corner that was
+            // not touching it -- upward, on the raised side of the pin -- which is a
+            // couple nothing gave: the plank never lost the spin, and every tick its
+            // turn was stopped by the sweep while its speed said it was still going
+            // round. A body holding a speed that carries it nowhere is a body that
+            // lies to everything it touches, and the ball beside that tip was told the
+            // face was moving away from it and rolled through it -- the clipping.
+            //
+            // So a corner is an end when it can be at the surface before the tick is
+            // over: it is there now, or it is coming down fast enough to arrive. The
+            // one exception is the face that is already lying on the floor, whose ends
+            // stand a hair apart (kFaceFlat) and whose other end therefore belongs to
+            // the same contact -- answering that face at one corner makes it rock from
+            // corner to corner for ever, which is the tremor this room has had before.
             if (height > band) continue;
+            if (height > playground_tick::kFaceFlat) {
+                const double coming = -dot(pointSpeed(body, body.position[i]), Vec3{0, 1, 0});
+                if (height > std::max(0.0, coming) * kTick) continue;
+            }
             for (std::size_t k = 0; k < kMaxPatchEnds; ++k) {
                 if (height < lowest[k]) {
                     for (std::size_t j = kMaxPatchEnds - 1; j > k; --j) {
