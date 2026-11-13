@@ -228,6 +228,16 @@ void PlaygroundRoom::settleBallFriction() {
             }
             const double impulse = next - lambda[i];
             if (impulse == 0.0) continue;
+            // And it opposes the slip, always. That is the whole of what a surface
+            // does along itself: it resists the slide, and it can stop a slide, and it
+            // can never drive one backwards. A pass that pushes with the slip rather
+            // than against it is not friction, it is the solve overshooting -- the
+            // impulse asked for was measured against a compliance that does not quite
+            // describe the pair, so it takes more than the slip there was, and the next
+            // pass takes more again in the other direction. The two of them hand the
+            // ball energy, tick after tick, which is exactly what an overshooting
+            // friction solve does and exactly what must never happen here.
+            if (impulse * slip > 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
             ball.spin += lever * impulse / inertia;
