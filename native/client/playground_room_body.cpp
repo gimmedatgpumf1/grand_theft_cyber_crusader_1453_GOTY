@@ -17,6 +17,9 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -334,6 +337,9 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                 }
             }
         }
+        if (getenv("GTC_BP"))
+            std::fprintf(stderr, "  BP b%zu gap %.5f band %.5f rebound %.4f vy %+.3f\n", index, gap, band,
+                         patch.rebound[0], body.velocity.y);
         patches.add(patch);
     }
     // Another shape, met over the whole span the two of them share. The separating

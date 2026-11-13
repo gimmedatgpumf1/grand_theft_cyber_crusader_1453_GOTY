@@ -2,6 +2,9 @@
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -24,6 +27,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                 bool exchange) {
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
+    if (getenv("GTC_BC2"))
+        std::fprintf(stderr, "  BC2 b%d n(%+.2f,%+.2f) depth %.5f exchange %d\n", bodyIndex, normal.x, normal.y, depth,
+                     int(exchange));
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
