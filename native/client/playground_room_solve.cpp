@@ -126,6 +126,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // ball is answered against motion that is not happening -- and its share of
         // what an impulse gives has to be left out too, because the impulse is not
         // going to move it anywhere.
+        // A real blow wakes it. The rule for a shape asleep is the same one, and it
+        // is the same reason: what a sleeping thing may not do is be *treated as a
+        // wall* when something arrives at speed. A cube dropped onto a sleeping ball
+        // had its whole arrival cancelled by a surface that never moved -- the ball
+        // was given as a fixed wall and the cube stopped on it, and the ball took
+        // nothing, which is a ball that is not there. A contact that is merely
+        // resting closes at nothing and does not wake it, so a shape sitting on a
+        // sleeping ball still cannot buzz it awake.
+        if (patch.ball && ball_.frozen) {
+            for (std::size_t k = 0; k < count; ++k) {
+                const double closing =
+                    dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(patch.point[k]), patch.normal);
+                if (closing < -kRestSpeed) {
+                    ball_.frozen = false;
+                    break;
+                }
+            }
+        }
         const bool ballFixed = patch.ball && ball_.frozen;
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
@@ -156,7 +174,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += dot(toward, direction) / ball_.mass +
+                    // The ball gives way along the way it is free to, and not along
+                    // the way the floor under it holds it: a cube landing square on a
+                    // ball on the floor is carried by the floor, and the ball is the
+                    // thing between them, not a spring.
+                    value += dot(toward, direction) * ballFreedom(direction) / ball_.mass +
                              lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
                                  ballMoment;
             }
@@ -166,7 +188,12 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse, kind);
+                if (ballFixed) return;
+                // What the ball can take is what it is free to take. The part of the
+                // impulse that runs into the surface under it is the floor's, and it
+                // is given up to the floor here rather than turned into a speed the
+                // floor would cancel on the next tick.
+                pushBall(at, impulse * ballFreedom(impulse), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {

@@ -533,13 +533,19 @@ private:
     // the side of that same ball was given nothing as well, which is why the ball
     // sat there like a painted circle while things bounced off it. This is the
     // projection: zero along the way it cannot go, everything along the way it can.
-    double ballCompliance(Vec3 push, bool held) const {
-        if (held) return 0.0;
+    // The fraction of a unit push the ball can actually take: everything, except
+    // along the way the surface under it will not let it go. One is a ball in the
+    // air or a push along the floor; zero is a push straight down onto it.
+    double ballFreedom(Vec3 push) const {
         // Only a surface that is actually under it holds it. A ball in mid-air has
         // no support at all, and its last one is not a fact about this tick.
-        if (!ball_.touching || !ball_.standing) return 1.0 / ball_.mass;
+        if (!ball_.touching || !ball_.standing) return 1.0;
         const double into = std::max(0.0, -dot(push, ball_.supportNormal));
-        return (1.0 - into * into) / ball_.mass;
+        return 1.0 - into * into;
+    }
+    double ballCompliance(Vec3 push, bool held) const {
+        if (held) return 0.0;
+        return ballFreedom(push) / ball_.mass;
     }
     // Whether a body has arrived at the resting point this tick. A point that is
     // asleep is not stepped, and a step that is not taken runs no hitscan -- so a
