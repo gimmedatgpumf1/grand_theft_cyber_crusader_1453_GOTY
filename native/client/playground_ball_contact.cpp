@@ -239,9 +239,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(normal, ballHeld);
             const double impulse = (rebound - closing) / (ballShare + bodyShare);
-            if (getenv("GTC_D"))
-                std::fprintf(stderr, "   c: n(%+.2f,%+.2f) closing %+.3f rebound %+.3f ballShare %.4f bodyShare %.4f J %+.3f held %d onFloor %d\n",
-                             normal.x, normal.y, closing, rebound, ballShare, bodyShare, impulse, (int)ballHeld, (int)onFloor);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
@@ -259,13 +256,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // solved against that same refusal, so the pair still adds up.
             Vec3 handed = answer * -impulse;
             if (onFloor) handed.y = std::max(handed.y, 0.0);
-            if (getenv("GTC_D"))
-                std::fprintf(stderr, "     handed(%+.3f,%+.3f) ball v(%+.3f,%+.3f) body v(%+.3f,%+.3f) at(%+.3f,%+.3f)\n",
-                             handed.x, handed.y, ball.velocity.x, ball.velocity.y, body->velocity.x, body->velocity.y,
-                             contactPoint.x, contactPoint.y);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
-            if (getenv("GTC_D"))
-                std::fprintf(stderr, "     body now v(%+.3f,%+.3f)\n", body->velocity.x, body->velocity.y);
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.

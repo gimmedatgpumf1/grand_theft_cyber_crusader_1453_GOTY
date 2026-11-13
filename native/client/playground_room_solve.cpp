@@ -146,6 +146,30 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         const bool ballFixed = patch.ball && ball_.frozen;
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+        // What a ball lying on something can take of an impulse, and what the thing
+        // under it takes instead.
+        //
+        // The floor does not give. An impulse with a part pointing into the surface
+        // the ball is resting on is answered by that surface, not by the ball: the
+        // ball cannot move that way, so nothing is left for it to move. What is left
+        // of the impulse -- the part along the surface -- is the ball's, and that part
+        // does move it, which is why a shape striking the side of a ball still shoves
+        // it across the room while a shape landing on the top of it is caught.
+        //
+        // This is a projection and not a share. A share would be a number that says
+        // "the ball takes three quarters of every impulse", which is not true of any
+        // direction; the projection takes exactly the part of the impulse the ball is
+        // free to carry and leaves the rest with the floor, and it is the same
+        // projection in the answer as in what the pair is told its own mass is -- one
+        // law in both halves of the solve, or the impulse and the matrix disagree and
+        // the sweep walks away with itself.
+        const bool ballSupported = patch.ball && !ballFixed && ball_.touching && ball_.standing;
+        const Vec3 ballSupport = ball_.supportNormal;
+        const auto carriedByBall = [&](Vec3 impulse) {
+            if (!ballSupported) return impulse;
+            const double into = dot(impulse, ballSupport);
+            return into < 0.0 ? impulse - ballSupport * into : impulse;
+        };
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
         // How fast a place on the body is going away from the other side of the
@@ -173,10 +197,12 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                if (!ballFixed)
-                    value += dot(toward, direction) / ball_.mass +
-                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
+                if (!ballFixed) {
+                    const Vec3 carried = carriedByBall(direction);
+                    value += dot(toward, carried) / ball_.mass +
+                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, carried) /
                                  ballMoment;
+                }
             }
             return value;
         };
@@ -184,7 +210,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse, kind);
+                if (!ballFixed) pushBall(at, carriedByBall(impulse), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {

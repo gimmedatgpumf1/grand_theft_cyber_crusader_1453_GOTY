@@ -91,10 +91,6 @@ void PlaygroundRoom::tickBall() {
     // do -- and it is what makes "rest" actually rest instead of a floor and a
     // weight trading the same impulse back and forth every tick.
     const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed;
-    if (getenv("GTC_D"))
-        std::fprintf(stderr, "  tickBall: frozen %d touch %d stand %d speed %.4f v(%+.3f,%+.3f) y %+.4f -> held %d\n",
-                     (int)ball.frozen, (int)ball.touching, (int)ball.standing, length(ball.velocity),
-                     ball.velocity.x, ball.velocity.y, ball.position.y, (int)held);
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -121,8 +117,18 @@ void PlaygroundRoom::tickBall() {
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
 
-    ball.touching = false;
-    ball.standing = true;
+    // What the ball is standing on is not relearned halfway through the tick. It
+    // is a fact about the tick -- the state it began in -- and both halves of the
+    // tick need it: the shapes are solved first, where a shape landing on a ball the
+    // floor is holding has to know that the floor is holding it, and the ball's own
+    // contacts are answered here, where the same question is asked again. Clearing
+    // it here said, for the rest of the tick, that the ball was in mid-air, and a
+    // ball in mid-air takes the whole of any blow: a cube landing flat on a ball
+    // resting on the floor drove that ball straight down through the floor at six
+    // metres a second, the floor stopped it, and the cube was left with the wreckage
+    // of a blow that had been given to something that could not take it. The list of
+    // what it is touching is written afresh at the end of the tick, below, from where
+    // everything in the room has ended up.
     // Which bodies have already had their answer this tick. One landing is one
     // contact: the walk goes on after it with the time that is left, and the same
     // body met again in what is left of the tick would be answered a second time
@@ -267,11 +273,6 @@ void PlaygroundRoom::tickBall() {
             // position and nothing else -- the same answer a corner of a shape gets.
             // Nothing is added to its speed, so nothing is conjured; it is a place
             // corrected, once, and then the ordinary contact rules apply to it again.
-            if (getenv("GTC_D"))
-                std::fprintf(stderr, "  walk: body %zu resting %d along %.4f depth %.4f n(%+.2f,%+.2f) prevCy %+.4f cy %+.4f held %d touch %d stand %d sup(%+.2f,%+.2f)\n",
-                             index, (int)hit.resting, hit.along, hit.depth, hit.normal.x, hit.normal.y,
-                             body.previousCentre.y, body.centre.y, (int)held, (int)ball.touching, (int)ball.standing,
-                             ball.supportNormal.x, ball.supportNormal.y);
             if (hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
@@ -406,6 +407,8 @@ void PlaygroundRoom::tickBall() {
     // exactly as it does for the dot: the walk only reports arrivals, and a ball
     // already lying on something never arrives at it again.
     {
+        ball.touching = false;
+        ball.standing = true;
         const auto holds = [](Vec3 normal) {
             return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
         };
