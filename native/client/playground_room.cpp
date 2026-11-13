@@ -227,11 +227,11 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
 
 // An impulse on a ball that is resting on something: the translation it is free to
 // take and the turn of the whole impulse. See the note beside BallSupport.
-void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
+void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except) {
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - ball_.position;
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    const Vec3 free = ballFree(impulse);
+    const Vec3 free = ballFree(impulse, except);
     ball_.velocity = ball_.velocity + free * (1.0 / ball_.mass);
     // The turn comes from the impulse the ball was actually given, not from the one
     // that was offered. The part a support refuses is refused whole: it is not a push

@@ -242,9 +242,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // push itself. Written any other way the solver believes the ball
                     // answers more or less than it does, and the difference is not a
                     // rounding error: it is an impulse the pair never balances.
-                    value += dot(direction, ballFree(toward)) / ball_.mass +
+                    value += dot(direction, ballFree(toward, patch.body)) / ball_.mass +
                              lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, ballFree(toward)) / ballMoment;
+                                 lever(pushAt - ball_.position, ballFree(toward, patch.body)) / ballMoment;
                 }
             }
             return value;
@@ -264,7 +264,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // one of those radians is a surface speed the next contact answers.
                 // The lever is the radius along the normal, and the door is shut.
                 if (!ballFixed)
-                    pushBallSupported(ball_.position + patch.normal * ball_.radius, impulse, kind);
+                    pushBallSupported(ball_.position + patch.normal * ball_.radius, impulse, kind, patch.body);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {

@@ -603,7 +603,17 @@ private:
     std::array<BallSupport, kMaxBallSupports> ballSupports_{};
     std::size_t ballSupportCount_ = 0;
     void gatherBallSupports();
-    Vec3 ballFree(Vec3 push) const {
+    // `except` is a body that must not be counted among the ball's supports -- the
+    // one this push is being solved *against*. Its own contact is what the solver is
+    // working out, so counting it as a surface the ball is held by makes the answer
+    // circular: the ball is declared unable to move along the way the shape is
+    // pushing it, the whole impulse is handed to the shape, and the shape is given a
+    // blow the ball never felt. A ball that rolled into the end of the seesaw's plank
+    // took nothing from it and the plank was spun at fifteen radians a second by four
+    // hundred and seventy newton seconds that came from nowhere. Every other surface
+    // is still there: a wall on the other side of the ball is a wall.
+    static constexpr std::size_t kNoBody = kBodyCount + 2;
+    Vec3 ballFree(Vec3 push, std::size_t except = kNoBody) const {
         // The projection is onto the *orthogonal complement of all of them at once*,
         // which is not the same as taking them one after another. With one support
         // the two agree; with two they do not, and the difference is momentum.
@@ -624,12 +634,18 @@ private:
         // how a ball standing still under a seesaw's end left at eight metres a
         // second. The complement is the answer of a small linear system -- the
         // support normals' own Gram matrix -- and it is exact.
-        const std::size_t count = ballSupportCount_;
+        // The supports that count: every one but the body being solved against.
+        std::array<Vec3, kMaxBallSupports> normals{};
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < ballSupportCount_; ++i) {
+            if (ballSupports_[i].body == except) continue;
+            normals[count++] = ballSupports_[i].normal;
+        }
         if (count == 0) return push;
         double m[kMaxBallSupports][kMaxBallSupports + 1]{};
         for (std::size_t i = 0; i < count; ++i) {
-            for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(ballSupports_[i].normal, ballSupports_[j].normal);
-            m[i][count] = dot(ballSupports_[i].normal, push);
+            for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(normals[i], normals[j]);
+            m[i][count] = dot(normals[i], push);
         }
         // Gaussian elimination with partial pivoting. A row with no pivot left is a
         // support that another support already says -- two faces on the same line, or
@@ -652,7 +668,7 @@ private:
         for (std::size_t i = 0; i < count; ++i)
             if (std::abs(m[i][i]) > 1e-12) share[i] = m[i][count] / m[i][i];
         Vec3 out = push;
-        for (std::size_t i = 0; i < count; ++i) out = out - ballSupports_[i].normal * share[i];
+        for (std::size_t i = 0; i < count; ++i) out = out - normals[i] * share[i];
         return out;
     }
     // The same projection, as the share of the compliance a patch may count on: how
@@ -663,7 +679,7 @@ private:
         const Vec3 unit = way * (1.0 / size);
         return std::max(0.0, dot(unit, ballFree(unit)));
     }
-    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind);
+    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except = kNoBody);
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
