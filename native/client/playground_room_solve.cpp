@@ -170,23 +170,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
-        // How much of a push the ball can actually take: zero along the way the
-        // surface under it will not let it go, everything along the way it can. It
-        // is the same projection the ball's own contacts already use, and it has to
-        // be used here as well, because a ball resting on the floor answers a load
-        // *through* the floor and not by accelerating into it.
-        //
-        // Without it the pair is solved against a ball that sinks: a cube set down
-        // on a ball resting on the floor was given part of its own descent and left
-        // with the rest, tick after tick, until it stood there with three metres a
-        // second of fall in it that it was not doing -- a stored speed that no
-        // surface could see, whose friction read as a moving face and span the ball
-        // it was standing on.
-        const double ballTakes = 1.0;  // TRIAL: old compliance
-        // What the whole pair answers to an impulse: how fast the body's place `at`
-        // is moved along `toward` by an impulse given at `pushAt` along `direction`.
-        // The reciprocal of the mass plus the two levers, for the body and for
-        // whatever is on the other side of the patch.
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             double value = dot(toward, direction) / body->mass +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
@@ -198,9 +181,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += ballTakes * (dot(toward, direction) / ball_.mass +
-                                          lever(at - ball_.position, toward) *
-                                              lever(pushAt - ball_.position, direction) / ballMoment);
+                    value += dot(toward, direction) / ball_.mass +
+                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
+                                 ballMoment;
             }
             return value;
         };
@@ -208,7 +191,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse * ballTakes, kind);
+                if (!ballFixed) pushBall(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
