@@ -92,8 +92,9 @@ void PlaygroundRoom::tickBall() {
     // weight trading the same impulse back and forth every tick.
     const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed;
     if (getenv("GTC_D"))
-        std::fprintf(stderr, "  tickBall: frozen %d touch %d stand %d speed %.4f -> held %d\n",
-                     (int)ball.frozen, (int)ball.touching, (int)ball.standing, length(ball.velocity), (int)held);
+        std::fprintf(stderr, "  tickBall: frozen %d touch %d stand %d speed %.4f v(%+.3f,%+.3f) y %+.4f -> held %d\n",
+                     (int)ball.frozen, (int)ball.touching, (int)ball.standing, length(ball.velocity),
+                     ball.velocity.x, ball.velocity.y, ball.position.y, (int)held);
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
