@@ -526,12 +526,22 @@ void PlaygroundRoom::tickBall() {
     // no contact of its own accounts for: the weight it gains every tick, and the
     // speed the floor clips off its underside. Both are the ground's doing, and both
     // arrive here as the difference between the account and the truth.
-    if (ball.touching && ball.standing) {
+    // A ball that is against anything at all, and not only one that is standing on
+    // it. A ball bouncing off the floor is not "held up" by it -- it is not standing
+    // -- but it is still the floor that answers what the bounce did not, and leaving
+    // the answer out because the ball happened to be on its way up lost it from the
+    // picture: the ball's account was out by a fifth of a newton second, in both
+    // directions at once, on exactly the ticks it was being knocked about. Whatever
+    // is left over is what nothing solid gave it, and under a ball that is the
+    // ground, so it is written wherever the ball has a surface to be against.
+    if (ball.touching) {
         const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
         const Vec3 support = total - ballBlows_ - weight * kTick;
-        if (length(support) > 1e-9)
-            addForce(ball.position + ball.supportNormal * (-ball.radius), support * (1.0 / kTick),
-                     ForceKind::Contact, nullptr, kBallOwner);
+        if (length(support) > 1e-9) {
+            const Vec3 where = length(ball.supportNormal) > 0.0 ? ball.supportNormal : Vec3{0, 1, 0};
+            addForce(ball.position + where * (-ball.radius), support * (1.0 / kTick), ForceKind::Contact, nullptr,
+                     kBallOwner);
+        }
     }
 
     // At rest means at rest: no speed left, and every surface it is sitting on
