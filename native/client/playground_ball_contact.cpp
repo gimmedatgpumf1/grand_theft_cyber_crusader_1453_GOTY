@@ -309,6 +309,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // momentum is momentum the room has lost track of. The ball's share was
             // solved against that same refusal, so the pair still adds up.
             Vec3 handed = answer * -impulse;
+            if (getenv("GTC_PC"))
+                std::fprintf(stderr, "PC body%zu closing%+.3f rebound%+.3f ballShare%+.3f bodyShare%+.3f j%+.3f\n",
+                             body - bodies_.data(), closing, rebound, ballShare, bodyShare, impulse);
             if (onFloor) handed.y = std::max(handed.y, 0.0);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
             blown = handed * -1.0;
