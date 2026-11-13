@@ -431,7 +431,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  u[i], g[i][i], delta[i], carried[k], int(lying), patch.gap[k], ball_.velocity.x, ball_.velocity.y,
                                  ball_.spin, body->velocity.x, body->velocity.y);
                 if (delta[i] == 0.0) continue;
+                const double beforeAway = getenv("GTC_NRM") && patch.ball ? away(patch.point[k], patch.normal) : 0.0;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
+                if (getenv("GTC_NRM") && patch.ball)
+                    std::fprintf(stderr, "        applied %+.4f: away %+.4f -> %+.4f (shape |v| %+.3f, frozen %d)\n", delta[i],
+                                 beforeAway, away(patch.point[k], patch.normal), length(body->velocity), int(body->frozen));
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
