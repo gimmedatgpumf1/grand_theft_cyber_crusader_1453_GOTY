@@ -171,19 +171,21 @@ void PlaygroundRoom::tickBall() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0) continue;
-        const double startGap =
-            ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
-        // A shape already against the ball has not arrived at it: it is in contact,
-        // and its contact is answered by the contact. Asking the sweep to hold it to
-        // the gap it has asks a question the sweep cannot answer -- as a circle
-        // radius, "no nearer than now" is the same radius it is already at, so the
-        // stop lands at the very start of the tick, every tick, and the shape's step
-        // is thrown away whole. A cube resting on the ball was pinned there this way:
-        // it kept a speed it never spent, and the ball's grip read that speed as the
-        // face under it moving and span, tick after tick, under a weight that was
-        // doing nothing at all. What an allowance of zero can never describe is
-        // sliding *along* the ball, which is not coming nearer to it.
-        if (startGap <= ball.radius + kTouch) continue;
+        // Where the step it has already taken would leave the two of them. This is the
+        // question prevention is really being asked: not "did the shape come near the
+        // ball", which is true of every shape touching it and of every shape sliding
+        // along it, but "would its step have put the ball inside it". Asked the other
+        // way -- as a sweep for the first instant the distance falls to the ball's
+        // radius -- a shape that is already against the ball meets that instant at the
+        // very start of its step, every tick, and its whole step is thrown away. What
+        // it then does is keep the speed and lose the travel: a cube squeezed against
+        // the ball by the ball's own grip gathered a metre a second and moved four
+        // millimetres, which is a force that never moved anything, and the energy it
+        // was supposed to have spent never left it. That is a pump, and it is where
+        // the King's squeeze came from.
+        const double endGap =
+            ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
+        if (endGap >= ball.radius - kTouch) continue;
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
         // rather than sampled: the speed of the ball and the speed of the turn make
