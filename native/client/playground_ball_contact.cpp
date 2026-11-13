@@ -39,6 +39,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     const auto recordBall = [&]() {
         const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
         if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball, nullptr, kBallOwner);
+        (void)0;
         // And the turn it took, as the couple that turned it. A blow off the middle
         // of the ball changes its spin as well as its speed, and a blow is a force
         // whose moment is the arm it lands on -- so if the spin changed, the moment
@@ -50,6 +51,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     };
     Vec3 answer = normal;
     bool canMove = false;
+    // The blow this shape gives the ball, as an impulse along the way out of the
+    // shape. Every contact is two blows at one place, and both of them belong on
+    // screen: this is the shape's, and it is written even when the ball does not
+    // move under it -- because something under the ball did.
+    Vec3 blown = {};
     // A body at rest is not stepped, and what it is not stepping it cannot give
     // either. Letting it take a share of the ball's momentum and then discarding
     // that share is not a contact, it is a pump: the ball keeps more speed than a
@@ -257,11 +263,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             Vec3 handed = answer * -impulse;
             if (onFloor) handed.y = std::max(handed.y, 0.0);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
+            blown = handed * -1.0;
             pressed = impulse * ballShare;
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
+            blown = normal * impulse;
             pressed = impulse;
         }
     }
@@ -320,6 +328,28 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     {
         const double into = dot(ball.velocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+    }
+    // The ball is squeezed, and both squeezes are drawn.
+    //
+    // What the ball's own motion took of this contact is one number, and what the
+    // shape gave it is another, and they are the same number only when the ball is
+    // free to move. A ball resting on the floor is not free: the floor answers the
+    // blow for it, and the ball's speed does not change at all. Writing only what
+    // the ball's *motion* took left the shape's blow on screen with nothing holding
+    // the other end of it -- a cube launched off a ball by a force no ball and no
+    // floor ever felt, which is exactly what "conjuring" looks like. Nothing was
+    // conjured in the arithmetic: the floor answered, and the answer was never
+    // written down. So it is written down here, where it acts -- the support's push
+    // goes in at the foot of the ball, the shape's blow at the place the two met,
+    // and the two of them add up to what the ball's speed actually did, which is
+    // nothing at all.
+    const Vec3 taken = (ball.velocity - ballBefore) * ball.mass;
+    const Vec3 support = taken - blown;
+    if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
+    if (length(support) > 1e-9) {
+        const bool stood = ball.touching && ball.standing;
+        const Vec3 at = stood ? ball.position + ball.supportNormal * (-ball.radius) : contactPoint;
+        addForce(at, support * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
     }
     recordBall();
 }

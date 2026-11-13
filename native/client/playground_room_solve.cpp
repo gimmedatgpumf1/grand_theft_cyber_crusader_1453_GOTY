@@ -164,10 +164,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // along the floor -- the shoulder, the side -- is a ball nothing is holding
         // that way, and it is answered as the free thing it is.
         const bool ballFixed = patch.ball && (ball_.frozen || pressesIntoGround);
-        if (getenv("GTC_B") && patch.ball)
-            std::fprintf(stderr, "  patch: frozen %d press %d fixed %d n(%+.2f,%+.2f) gap %.5f rebound %+.3f touch %d stand %d\n",
-                         (int)ball_.frozen, (int)pressesIntoGround, (int)ballFixed, patch.normal.x, patch.normal.y,
-                         patch.gap[0], patch.rebound[0], (int)ball_.touching, (int)ball_.standing);
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
@@ -357,9 +353,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
-                if (getenv("GTC_B") && patch.ball)
-                    std::fprintf(stderr, "    J %+.4f  u %+.3f g %.4f fixed %d\n", delta[i], u[i], g[i][i],
-                                 (int)ballFixed);
                 pushEnd(k, patch.normal * delta[i], patch.kind);
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
