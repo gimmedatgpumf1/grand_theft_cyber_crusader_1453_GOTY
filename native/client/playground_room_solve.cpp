@@ -304,7 +304,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 order[dofs] = k;
                 const double bias =
                     lying ? faceClose : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
-                u[dofs] = away(patch.point[k], patch.normal) + bias - patch.rebound[k];
+                // A face that bounces is a face that is *arriving*, and an arrival is
+                // a moment, not a whole tick. The clearance bias lets a face spend the
+                // tick closing the gap it has -- right for a shape settling onto a
+                // surface, wrong for one that is about to bounce off it: the closing
+                // speed it is allowed to keep is exactly the speed the bounce is
+                // measured against, so the two were paid out together, tick after
+                // tick, until a cube dropped a hand's width onto the ball came away at
+                // a quarter of what it should have. A bounce is answered at the
+                // instant the two meet, and it is the walk that carries the shape to
+                // that instant -- so there is no gap left to spend here.
+                u[dofs] = away(patch.point[k], patch.normal) + (patch.rebound[k] != 0.0 ? 0.0 : bias) -
+                          patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
