@@ -180,14 +180,17 @@ int main() {
         PlaygroundRoom r = settled();
         auto& s = r.bodies_[S];
         auto& c = r.bodies_[0];
-        s.angle = -0.60;
+        // At the angle it comes to rest at with a load on that end, so the plank is
+        // already stopped and everything that moves from here is creep.
+        s.angle = -0.885167;
         PlaygroundRoom::placeCorners(s);
         s.previous = s.position;
         s.previousCentre = s.centre;
         s.previousAngle = s.angle;
         c.frozen = false;
-        c.centre = {-3.85 + 0.55 * std::cos(-0.60) - 0.0, 0.85 + 0.55 * std::sin(-0.60) + 0.35, 0};
-        c.angle = -0.60;
+        c.centre = {-3.85 + 0.55 * std::cos(-0.885167) - 0.24 * std::sin(-0.885167),
+                    0.85 + 0.55 * std::sin(-0.885167) + 0.24 * std::cos(-0.885167) + 0.35, 0};
+        c.angle = -0.885167;
         c.velocity = {};
         c.spin = 0.0;
         PlaygroundRoom::placeCorners(c);

@@ -707,12 +707,6 @@ void PlaygroundRoom::tickBodies() {
                          patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y);
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
-    if (getenv("GTC_PATCH"))
-        for (std::size_t i = 0; i < patches.count; ++i) {
-            const Manifold& m = patches.items[i];
-            std::fprintf(stderr, "PT body%zu other%zu ball%d cy%+.4f n(%+.3f,%+.3f) gap0%+.6f gap1%+.6f ends%d\n", m.body,
-                         m.other, int(m.ball), bodies_[m.body].centre.y, m.normal.x, m.normal.y, m.gap[0], m.ends > 1 ? m.gap[1] : 0.0, m.ends);
-        }
     solveContacts(patches);
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
