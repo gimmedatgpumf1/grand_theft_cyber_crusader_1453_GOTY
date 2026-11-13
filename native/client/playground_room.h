@@ -637,6 +637,13 @@ private:
     // gives up only what the body takes.
     void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
                      double depth = 0.0, bool exchange = true);
+    // A face of the ball, said once: what it is against, and which way out of the
+    // ball. The ball's grip is solved for all of its faces at once in
+    // settleBallFriction(), so every road by which the ball comes to be against
+    // something has to report the face it is against -- and a shape resting on the
+    // ball is answered as a *patch*, not through ballContact(), which is why a weight
+    // sitting on the crown had no grip at all. See noteBallTouch().
+    void noteBallTouch(std::size_t body, Vec3 normal, Vec3 at);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);

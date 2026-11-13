@@ -20,6 +20,41 @@ using namespace playground_detail;
 // other side can move, the ball keeps whatever it did not hand over. The rest of
 // the contact is friction, and because it acts at the bottom of the ball rather
 // than at its middle it turns the ball as well as slowing it.
+// A face of the ball, recorded for the grip.
+//
+// The ball is one rigid body against every surface it meets at once, so its grip is
+// solved as one system, once a tick, in settleBallFriction() -- and that solve can
+// only be as right as the faces it is told about. It used to learn them from
+// ballContact() alone, and ballContact() is the shape's meeting with the ball: a
+// weight landing on the crown, and every shape that comes to rest on the ball, is
+// answered as a *patch* in the body solver instead, which never passes through here.
+// A cube standing on the ball was therefore a face nobody had recorded, and the ball
+// gave it no grip at all -- it slid off a ball it was pulling with, and the ball
+// squirted out from under it. That is the whole of "the ball is too slippery under
+// shapes": not a coefficient, not a limit, a contact that was never in the solve.
+//
+// The normal is the one settleBallFriction() expects: out of the surface and into
+// the ball, which is the opposite of a patch's, because a patch's normal runs out of
+// the ball into the shape. The load is not written here: what a face carries is a
+// question about the whole stack and settleBallFriction() works it out from what is
+// standing on the ball.
+void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
+    if (body >= kBodyCount || ballTouchCount_ >= kMaxBallTouches) return;
+    const Vec3 surfaceVelocity = pointSpeed(bodies_[body], at);
+    // One face, one contact: the same meeting can be reported by the walk and by the
+    // patch, and it is one surface. Two copies of it would each carry half the real
+    // load, and the grip would be half what it should be.
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        if (ballTouches_[i].body != body) continue;
+        if (dot(ballTouches_[i].normal, normal) < 0.999) continue;
+        if (length(ballTouches_[i].surfaceVelocity) < length(surfaceVelocity))
+            ballTouches_[i].surfaceVelocity = surfaceVelocity;
+        return;
+    }
+    ballTouches_[ballTouchCount_] = BallTouch{normal, surfaceVelocity, 0.0, body};
+    ++ballTouchCount_;
+}
+
 void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
                                 bool exchange) {
     Ball& ball = ball_;

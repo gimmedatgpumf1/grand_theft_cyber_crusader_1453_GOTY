@@ -620,6 +620,15 @@ void PlaygroundRoom::tickBodies() {
     gatherBallSupports();
     ManifoldSet patches;
     gatherContacts(patches, band);
+    // Every patch that is a meeting with the ball is a face the ball is against, and
+    // the grip is solved over all of them at once later in the tick. See
+    // noteBallTouch(): a shape resting on the ball is answered here and not through
+    // ballContact(), and without this the ball gave it no grip whatsoever.
+    for (std::size_t i = 0; i < patches.count; ++i) {
+        const Manifold& patch = patches.items[i];
+        if (!patch.ball) continue;
+        noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
+    }
     solveContacts(patches);
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
