@@ -159,9 +159,13 @@ inline constexpr double kThird = 1.0 / 3.0;
 // The seesaw's plank: half its length and half its thickness, where its axle stands,
 // and how high the axle is. Its middle is the axle, so the pin is its centre of mass
 // and its own weight gives it no turn at all.
-inline constexpr double kSeesawHalf = 1.25;
+inline constexpr double kSeesawHalf = 1.00;
 inline constexpr double kSeesawHalfThick = 0.12;
-inline constexpr double kSeesawX = -4.60;
+// Where the axle stands. It is on the left of the room, between the triangle and the
+// wall, and the whole of it is inside the reach of the mouse -- the two and a half
+// metre plank this started as hung a quarter of itself off the end of the world, so
+// its left end could not be reached or built on at all.
+inline constexpr double kSeesawX = -3.85;
 inline constexpr double kSeesawPivotY = 0.85;
 // The axle is a bearing and not a mathematical point. A plank on a pivot has nothing
 // to slow it down -- its weight acts at the pin, so it makes no turn, and a turn it
