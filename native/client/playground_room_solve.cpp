@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -275,6 +277,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             return value;
         };
         const auto pushOther = [&](Vec3 at, Vec3 impulse, ForceKind kind) {
+            if (getenv("GTC_PO"))
+                std::fprintf(stderr, "      pushOther body %zu other %zu ball %d kind %d imp(%+.4f,%+.4f) ends %zu\n",
+                             patch.body, patch.other, int(patch.ball), int(kind), impulse.x, impulse.y, count);
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
