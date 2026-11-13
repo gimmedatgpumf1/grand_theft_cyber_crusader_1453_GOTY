@@ -254,7 +254,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBallSupported(at, impulse, kind);
+                // Where the ball is touched is on the ball, and it is on the radius
+                // that points at the face -- not at the face's own corner. A round ball
+                // pressed by a flat face meets it at one point, and that point lies on
+                // the line of the face's normal through the ball's centre. Pushed at
+                // the face's corner instead, the impulse was applied off that line, so
+                // a normal force -- which for a sphere runs through the centre and
+                // turns it by nothing -- arrived with a lever and spun the ball: two
+                // hundred radians a second, from a ball that had not moved, and every
+                // one of those radians is a surface speed the next contact answers.
+                // The lever is the radius along the normal, and the door is shut.
+                if (!ballFixed)
+                    pushBallSupported(ball_.position + patch.normal * ball_.radius, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
