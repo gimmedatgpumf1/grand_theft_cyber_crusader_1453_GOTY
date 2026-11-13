@@ -289,10 +289,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(normal, ballHeld);
             const double impulse = (rebound - closing) / (ballShare + bodyShare);
-            if (getenv("GTC_PB") && body->pivoted)
-                std::fprintf(stderr, "PB n(%+.3f,%+.3f) at(%+.3f,%+.3f) closing%+.3f rebound%+.3f ballShare%+.3f "
-                                     "bodyShare%+.3f impulse%+.3f\n", normal.x, normal.y, contactPoint.x,
-                             contactPoint.y, closing, rebound, ballShare, bodyShare, impulse);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
@@ -309,9 +305,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // momentum is momentum the room has lost track of. The ball's share was
             // solved against that same refusal, so the pair still adds up.
             Vec3 handed = answer * -impulse;
-            if (getenv("GTC_PC"))
-                std::fprintf(stderr, "PC body%zu closing%+.3f rebound%+.3f ballShare%+.3f bodyShare%+.3f j%+.3f\n",
-                             body - bodies_.data(), closing, rebound, ballShare, bodyShare, impulse);
             if (onFloor) handed.y = std::max(handed.y, 0.0);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
             blown = handed * -1.0;
