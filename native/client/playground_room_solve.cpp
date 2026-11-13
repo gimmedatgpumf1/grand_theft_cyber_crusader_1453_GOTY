@@ -221,10 +221,26 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                if (!ballFixed)
-                    value += ballTake(direction) * (dot(toward, direction) / ball_.mass) +
-                             lever(at - ball_.position, toward) *
-                                 lever(pushAt - ball_.position, direction) / ballMoment;
+                if (!ballFixed) {
+                    // The compliance the patch is solved against has to be the
+                    // compliance of the impulse it is actually going to give. The
+                    // ball is given the *projected* push (see BallSupport), so both
+                    // terms here are read off that same projected vector: the mass
+                    // term along the direction the answer is measured in, and the
+                    // lever about the ball's middle of the impulse as applied. Written
+                    // with the unprojected direction -- which is what this was -- the
+                    // two disagree, and disagreeing by a lever on a solid sphere is
+                    // not a rounding error: the solver believed a normal push at the
+                    // ball's crown turned it not at all, gave the ball a sideways
+                    // impulse that turned it hard, and then read the turn as the
+                    // surface still closing. Thirty-two sweeps of that is a ball
+                    // spun to minus two hundred and eighty radians a second by a cube
+                    // leaning on it.
+                    const Vec3 given = ballFree(toward);
+                    value += dot(direction, given) / ball_.mass +
+                             lever(at - ball_.position, direction) *
+                                 lever(pushAt - ball_.position, given) / ballMoment;
+                }
             }
             return value;
         };
