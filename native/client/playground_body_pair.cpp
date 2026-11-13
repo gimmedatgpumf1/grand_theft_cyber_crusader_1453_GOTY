@@ -484,6 +484,13 @@ void PlaygroundRoom::separateBall() {
         ++ballFoundThrough_;
         ball_.position = wanted;
     }
+    // And the floor, for the ball as well, after everything else -- the same rule in
+    // the same place as the shapes above. The ball's own contact is what rests it on
+    // the ground, and normally nothing gets it under: but a shape that has nowhere to
+    // go hands the ball the whole of a separation, and a ball pushed through the
+    // ground by a shape squeezed beside it is still a ball under the ground. Nothing
+    // is below the floor at the end of a tick, which is this line.
+    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
 }
 
 }  // namespace gtc::native
