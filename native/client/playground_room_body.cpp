@@ -22,8 +22,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -175,10 +173,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             double furthest = 0.0;
             for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
-            const Vec3 from_ = body.centre;
             body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
-            if (getenv("GTC_M3") && index == 0)
-                std::fprintf(stderr, "  adv t%.4f v(%+.4f) %.9f -> %.9f\n", time, body.velocity.x, from_.x, body.centre.x);
             body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
             placeCorners(body);
         }
