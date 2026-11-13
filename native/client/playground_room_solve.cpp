@@ -71,19 +71,27 @@ void PlaygroundRoom::gatherBallSupports() {
         if (!(size > 0.0) || ballSupportCount_ >= kMaxBallSupports) return;
         ballSupports_[ballSupportCount_++] = BallSupport{normal * (1.0 / size), body};
     };
+    // The floor, and only the floor.
+    //
+    // A support is what the ball may not be driven into and what takes the answer
+    // when it is. That is a statement about something that cannot move: the ground.
+    // A shape is not that. Listing a shape the ball is leaning on as a support says
+    // the ball cannot move along the way that shape presses it -- true, as far as it
+    // goes -- but then the whole of the impulse is handed to the shape on the other
+    // side, as though the ball were stone, and the shape that is doing the pressing
+    // is given a blow the ball never took. A ball wedged between the triangle's face
+    // and the end of the seesaw's plank was declared unable to move, and the plank
+    // was answered with four hundred and seventy newton seconds of impulse from a
+    // ball carrying two: the plank left at fifteen radians a second and the ball at
+    // thirty-three metres a second, out of a touch at three.
+    //
+    // A shape that holds the ball up is a contact and not a support, and it answers
+    // through the contact: the ball takes the push, the shape takes it back, the
+    // floor takes it from the shape. That chain is the room's own ledger, and every
+    // step of it is momentum somebody actually had. What the floor answers is
+    // answered by nobody and costs nothing, which is why it is the one that may be a
+    // support.
     if (ball_.position.y <= ball_.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        Vec3 way{}, at{};
-        if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
-        // `way` leaves the ball for the shape; the normal the ball may not be driven
-        // through is the other one.
-        hold(way * -1.0, index);
-    }
-    const Vec3 fromDot = ball_.position - point_;
-    if (length(fromDot) > 0.0 && length(fromDot) <= ball_.radius + kPointRadius + playground_tick::kQuantum)
-        hold(fromDot, kDotOwner);
 }
 
 // The answer to a whole configuration of patches at once.
