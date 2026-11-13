@@ -210,14 +210,7 @@ void PlaygroundRoom::settleBallFriction() {
         if (mate.frozen || bodyHeld(other)) continue;
         const Vec3 arm = ball.position + arms[i] - mate.centre;
         const double lever = arm.x * tangents[i].y - arm.y * tangents[i].x;
-        // What the surface can take along itself: the same law as everywhere else,
-        // and read from the same place. A pinned body's middle cannot be moved by a
-        // grip, so the share of the slip it answers is the turn alone -- read as 1/m
-        // it looked like a body that gives way where it does not, the solve took more
-        // slip than the face had, and the alternation that follows is momentum out of
-        // nothing: a ball wedged under a seesaw's end left with two hundred radians a
-        // second of turn it was never given.
-        partner[i] = dot(tangents[i], tangents[i]) * inverseMass(mate) + lever * lever / mate.moment;
+        partner[i] = dot(tangents[i], tangents[i]) / mate.mass + lever * lever / mate.moment;
     }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {

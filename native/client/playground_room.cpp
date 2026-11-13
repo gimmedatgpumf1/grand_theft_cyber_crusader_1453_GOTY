@@ -233,16 +233,7 @@ void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
     const Vec3 free = ballFree(impulse);
     ball_.velocity = ball_.velocity + free * (1.0 / ball_.mass);
-    // The turn comes from the impulse the ball was actually given, not from the one
-    // that was offered. The part a support refuses is refused whole: it is not a push
-    // on the ball, and a push that never happened cannot turn it. Taking the moment of
-    // the offered impulse spun a ball pinched against the floor -- a ball with no
-    // speed to speak of, gathering twenty-five radians a second of turn out of nothing
-    // -- and that turn is a surface speed the next contact answers, so the pair of
-    // them pumped each other, round after round, until the ball left at eight metres a
-    // second from standing still. A refused push is now nothing at all in both halves
-    // of the ball's answer, which is the only way the two add up.
-    ball_.spin += (arm.x * free.y - arm.y * free.x) / moment;
+    ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ballBlows_ = ballBlows_ + free;
     ball_.frozen = false;
     // What is written down is what the ball felt, and that is the projected impulse:

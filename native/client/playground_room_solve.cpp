@@ -245,7 +245,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // rounding error: it is an impulse the pair never balances.
                     value += dot(direction, ballFree(toward)) / ball_.mass +
                              lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, ballFree(toward)) / ballMoment;
+                                 lever(pushAt - ball_.position, toward) / ballMoment;
                 }
             }
             return value;
@@ -254,31 +254,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                // Where the ball is touched is on the ball, and it is on the radius
-                // that points at the face -- not at the face's own corner. A round ball
-                // pressed by a flat face meets it at one point, and that point lies on
-                // the line of the face's normal through the ball's centre. Pushed at
-                // the face's corner instead, the impulse was applied off that line, so
-                // a normal force -- which for a sphere runs through the centre and
-                // turns it by nothing -- arrived with a lever and spun the ball: two
-                // hundred radians a second, from a ball that had not moved, and every
-                // one of those radians is a surface speed the next contact answers.
-                // The lever is the radius along the normal, and the door is shut.
-                if (!ballFixed)
-                    pushBallSupported(ball_.position + patch.normal * ball_.radius, impulse, kind);
+                if (!ballFixed) pushBallSupported(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
-            const Vec3 bv = body->velocity;
-            const Vec3 lov = ball_.velocity;
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
-            if (getenv("GTC_ST") != nullptr && patch.ball && length(ball_.velocity - lov) > 0.2)
-                std::fprintf(stderr,
-                             "END b%zu j(%+.3f,%+.3f) bodyDV(%+.3f,%+.3f) ballDV(%+.3f,%+.3f) frozen%d piv%d\n",
-                             patch.body, impulse.x, impulse.y, body->velocity.x - bv.x, body->velocity.y - bv.y,
-                             ball_.velocity.x - lov.x, ball_.velocity.y - lov.y, int(body->frozen), int(body->pivoted));
         };
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
@@ -396,11 +378,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // answered here is the closing speed at that instant.
                 const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
-                if (patch.ball && getenv("GTC_ST") != nullptr)
-                    std::fprintf(stderr,
-                                 "LOAD b%zu k%zu away%+.4f bias%+.4f rebound%+.4f u%+.4f carried%+.4f supports%zu free%.3f\n",
-                                 patch.body, k, away(patch.point[k], patch.normal), bias, patch.rebound[k], u[dofs],
-                                 patch.normalImpulse[k], ballSupportCount_, length(ballFree(patch.normal)));
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
@@ -624,9 +601,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     };
     for (int round = 0; round < kGripRoundsMax; ++round) {
         sweep(false);
-        if (getenv("GTC_ST") != nullptr && length(ball_.velocity) > 1.0)
-            std::fprintf(stderr, "ROUND %d ball v(%+.3f,%+.3f) loadWorst %.3e\n", round, ball_.velocity.x,
-                         ball_.velocity.y, worst);
         const double loadWorst = worst;
         sweep(true);
         const double gripWorst = worst;
