@@ -6,9 +6,6 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
-
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -225,9 +222,6 @@ void PlaygroundRoom::settleBallFriction() {
                 next = std::clamp(next, -limit, limit);
             }
             const double impulse = next - lambda[i];
-            if (getenv("GTC_SL"))
-                std::fprintf(stderr, "    SLP pass%d f%zu slip%+.4f eff%.3f partner%.3f load%.3f hold%.3f j%+.4f\n",
-                             pass, i, slip, effective, partner[i], load, kBallStaticFriction * load, impulse);
             if (impulse == 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
