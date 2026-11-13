@@ -356,7 +356,16 @@ void PlaygroundRoom::tickBall() {
         // and have to lift it out -- which is the kick this prevents. The centre and
         // the turn are the body's whole step, so both go back by the same fraction of
         // the tick that the ball had spent when it arrived.
-        if (what >= 0 && !bodyStopped[std::size_t(what)]) {
+        // A body the ball is already against has not arrived at it this tick, and
+        // carrying it back to where the tick found it is not prevention -- it is
+        // erasing the step it was entitled to take. A shape resting on the ball was
+        // held in place this way on every tick, however hard it was pushed along the
+        // surface: it kept a speed it never spent, and the ball's grip read that
+        // speed as the face it was standing on moving and span, tick after tick,
+        // under a weight that was not doing anything. Prevention is about what would
+        // be *inside* the ball; a meeting at the very start of the tick, at no depth,
+        // is a contact that already exists.
+        if (what >= 0 && !bodyStopped[std::size_t(what)] && (first > 0.0 || depth > 0.0)) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
             if (getenv("GTC_S"))
