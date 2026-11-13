@@ -61,7 +61,12 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
-    ballTouchCount_ = 0;
+    // The list of faces is not emptied here. The tick opens it before the bodies are
+    // solved -- see tickBodies(), which fills it with every shape that is against the
+    // ball -- and this half of the tick only adds the faces the ball's own walk meets.
+    // Emptying it here threw away the shape the ball was carrying, which is the one
+    // face it most needs a grip on: a cube resting on the crown was registered, then
+    // erased, and the ball went on being greased under a weight it was pressing on.
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
     // A tick starts straight: whatever the last one bent at is spent.

@@ -621,6 +621,12 @@ void PlaygroundRoom::tickBodies() {
     // the patches are solved against the ball, and a ball resting on the floor is
     // answered through the floor. See gatherBallSupports().
     gatherBallSupports();
+    // The faces of the ball are this tick's, and this is where the tick opens them:
+    // before the bodies are solved, so that every shape against the ball is in the
+    // list before the ball's own walk adds the ones it meets. Emptied at the start of
+    // the tick and not at the end of the ball's half, or the shape being carried would
+    // be registered and then erased. See noteBallTouch() and settleBallFriction().
+    ballTouchCount_ = 0;
     ManifoldSet patches;
     gatherContacts(patches, band);
     // Every patch that is a meeting with the ball is a face the ball is against, and
