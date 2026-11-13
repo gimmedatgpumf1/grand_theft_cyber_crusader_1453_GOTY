@@ -183,7 +183,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // them they add up to the ball's speed not changing, which is what a ball
         // pressed into the ground does -- and not one newton of it came from nowhere.
         const bool ballFixed = patch.ball && ball_.frozen;
-        const Vec3 gtcBallBefore = patch.ball ? ball_.velocity : Vec3{};
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
@@ -270,15 +269,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
-            const Vec3 bv = body->velocity;
-            const Vec3 lov = ball_.velocity;
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
-            if (getenv("GTC_ST") != nullptr && patch.ball && length(ball_.velocity - lov) > 0.2)
-                std::fprintf(stderr,
-                             "END b%zu j(%+.3f,%+.3f) bodyDV(%+.3f,%+.3f) ballDV(%+.3f,%+.3f) frozen%d piv%d\n",
-                             patch.body, impulse.x, impulse.y, body->velocity.x - bv.x, body->velocity.y - bv.y,
-                             ball_.velocity.x - lov.x, ball_.velocity.y - lov.y, int(body->frozen), int(body->pivoted));
         };
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
@@ -396,11 +388,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // answered here is the closing speed at that instant.
                 const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
-                if (patch.ball && getenv("GTC_ST") != nullptr)
-                    std::fprintf(stderr,
-                                 "LOAD b%zu k%zu away%+.4f bias%+.4f rebound%+.4f u%+.4f carried%+.4f supports%zu free%.3f\n",
-                                 patch.body, k, away(patch.point[k], patch.normal), bias, patch.rebound[k], u[dofs],
-                                 patch.normalImpulse[k], ballSupportCount_, length(ballFree(patch.normal)));
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
@@ -588,13 +575,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 other->supportHigh = std::max(other->supportHigh, patch.point[k].x);
             }
         }
-        if (patch.ball && getenv("GTC_ST") != nullptr) {
-            const Vec3 d = ball_.velocity - gtcBallBefore;
-            if (length(d) > 0.3)
-                std::fprintf(stderr, "SOLVE b%zu other%zu ends%zu n(%+.3f,%+.3f) dv(%+.2f,%+.2f) v(%+.2f,%+.2f)\n",
-                             patch.body, patch.other, patch.ends, patch.normal.x, patch.normal.y, d.x, d.y,
-                             ball_.velocity.x, ball_.velocity.y);
-        }
     };
 
     // A patch's load and its grip are swept one after the other and not together,
@@ -624,9 +604,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     };
     for (int round = 0; round < kGripRoundsMax; ++round) {
         sweep(false);
-        if (getenv("GTC_ST") != nullptr && length(ball_.velocity) > 1.0)
-            std::fprintf(stderr, "ROUND %d ball v(%+.3f,%+.3f) loadWorst %.3e\n", round, ball_.velocity.x,
-                         ball_.velocity.y, worst);
         const double loadWorst = worst;
         sweep(true);
         const double gripWorst = worst;
