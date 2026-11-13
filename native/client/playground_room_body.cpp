@@ -17,9 +17,6 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
-
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -347,9 +344,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                 }
             }
         }
-        if (getenv("GTC_BP"))
-            std::fprintf(stderr, "  BP b%zu gap %.5f band %.5f rebound %.4f vy %+.3f\n", index, gap, band,
-                         patch.rebound[0], body.velocity.y);
         patches.add(patch);
     }
     // Another shape, met over the whole span the two of them share. The separating
@@ -619,14 +613,8 @@ void PlaygroundRoom::tickBodies() {
     gatherBallSupports();
     ManifoldSet patches;
     gatherContacts(patches, band);
-    if (getenv("GTC_SV"))
-        std::fprintf(stderr, "  SV pre-solve b0 vy%+.4f  patches %zu\n", bodies_[0].velocity.y, patches.count);
     solveContacts(patches);
-    if (getenv("GTC_SV"))
-        std::fprintf(stderr, "  SV post-solve b0 vy%+.4f\n", bodies_[0].velocity.y);
     advanceBodies(kTick);
-    if (getenv("GTC_SV"))
-        std::fprintf(stderr, "  SV post-adv  b0 vy%+.4f y%+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
