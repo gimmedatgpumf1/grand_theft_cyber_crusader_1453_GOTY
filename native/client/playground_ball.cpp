@@ -234,6 +234,13 @@ void PlaygroundRoom::tickBall() {
     // left of the tick is the ball's alone. Prevention is the whole point: the shape
     // stops at the ball instead of being kicked out of it afterwards.
     std::array<bool, kBodyCount> bodyStopped{};
+    // The shapes that have already refused this tick's travel. One refusal each: a
+    // second visit is the same answer to the same question, and asking it again is
+    // how the walk used to spend the whole tick on one shape and never reach another.
+    std::array<bool, kBodyCount> refused{};
+    // Set when a shape has refused the travel: what is left of the tick may not then be
+    // spent, because the travel is exactly what would put the ball through it.
+    bool blocked = false;
     // Nothing is driven into the ball. A shape that was clear of it when the tick
     // began, and whose own step would carry its outline inside it, is stopped at the
     // instant the two touch -- the shape carried back to that instant, since the
@@ -427,19 +434,42 @@ void PlaygroundRoom::tickBall() {
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
             if (hit.depth <= kSkin && hit.along <= kTouch) {
-                // A meeting found at the very first instant of the tick is not a meeting:
-                // it is the contact the ball already has, and a standing contact belongs
-                // to the solver that has already answered it. Stopping the walk for it
-                // stopped the ball at a shape it was merely lying against and never got
-                // as far as the shape it was actually falling onto -- a ball wedged
-                // between a cube and a slope was answered for the cube, tick after tick,
-                // and kept the whole of its fall, which is the buzz the King saw. A
-                // meeting found *part* of the way through the tick is a different thing
-                // and is always stopped for: the ball really does arrive there, whether
-                // the face it arrives at is coming or going. That is what used to be
-                // missed -- the test was on which way the two were moving, so a plank
-                // turning up out of a ball it was touching was called "not closing" and
-                // the ball's travel carried it a centimetre and a half through the face.
+                // A meeting found at the very first instant is not an arrival: it is the
+                // contact the ball already has, and a standing contact is the solver's,
+                // which has already answered it. Stopping the walk for it stopped the
+                // ball at a shape it was merely lying against and never got as far as the
+                // shape it was actually falling onto -- a ball wedged between a cube and
+                // a slope was answered for the cube, tick after tick, and kept the whole
+                // of its fall, which is the buzz the King saw.
+                //
+                // What it may not do is *travel into* that shape. So the question is put
+                // as the plain one: does what is left of the tick put the ball inside? A
+                // ball rolling along a face it is touching ends the tick at one radius
+                // from it and is left alone; a ball whose travel would take it in is
+                // stopped there, whichever way the surface is going.
+                //
+                // That second case is why the old test was wrong. It asked which way the
+                // two were moving, so a plank turning up out of a ball it was touching
+                // was called "not closing" and the ball's travel carried it a centimetre
+                // and a half through the face.
+                const Vec3 endAt = ball.position + ball.velocity * (kTick * remaining);
+                const double endGap = ball_shape::outlineGap(endAt, body.position.data(), body.position.data(),
+                                                             body.count, 1.0)
+                                          .gap;
+                if (endGap >= ball.radius - playground_tick::kQuantum) continue;
+                // It is going in, and the contact it already has is the answer to it:
+                // the shape stops what is coming, once, and the ball keeps the rest of
+                // its motion. Refused every time round the walk, though, it would stop
+                // there for ever and the shapes on the other side of the ball would
+                // never be asked -- so one refusal per shape per tick, and the walk goes
+                // on to them.
+                if (!refused[index]) {
+                    refused[index] = true;
+                    ball.touching = true;
+                    ballContact(hit.normal, int(index), held, hit.contact, 0.0, answered[index]);
+                }
+                blocked = true;
+                first = 0.0;
                 continue;
             }
             if (hit.along < first) {
@@ -453,6 +483,7 @@ void PlaygroundRoom::tickBall() {
         if (std::getenv("GTC_WALK")) std::printf("     s%d rem %.4f first %.5f what %d deep %.5f v(%+.4f,%+.4f) pos(%+.4f,%+.4f) restart %d\n", step, remaining, first, what, depth, ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y, int(restart));
         if (restart) continue;
         if (first > 1.0) {
+            if (blocked) break;  // it may not be spent: that travel goes through a face
             ball.position = playground_tick::resolvedMove(ball.position, next);
             break;
         }
