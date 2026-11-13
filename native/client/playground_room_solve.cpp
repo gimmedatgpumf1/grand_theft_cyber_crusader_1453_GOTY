@@ -134,17 +134,19 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
-        // `patch.normal` runs out of the ball and into the shape, so the ball is
-        // pushed the *other* way. It is being pressed into what holds it when that
-        // way is into the support -- which for a shape resting on the ball's crown is
-        // straight down onto the floor. Read the other way round it said a cube
-        // sitting on a ball was pushing it upwards, so the ball was never once seen
-        // to be pressed into the ground it was standing on, and a shape landing on a
-        // ball on the floor was answered by moving a ball that the floor then had to
-        // stop: the share the ball was given went nowhere, and the shape kept a blow
-        // the ball never lost.
-        const bool pressesIntoGround = patch.ball && ball_.touching && ball_.standing &&
-                                       dot(patch.normal, ball_.supportNormal) > 0.0;
+        // A ball is not made a wall by being held up.
+        //
+        // It would be tempting to say "the floor is under it, so it cannot move
+        // that way" and answer the blow as though the ball were stone. That is wrong,
+        // and it is wrong in the direction that conjures: the shape keeps a bounce
+        // off a surface that took nothing, and the floor -- which is what really
+        // answered -- is given no part in it. A ball on the floor is a ball the floor
+        // holds, and both of them take their share: the blow arrives, the ball is
+        // moved by it, the floor answers, and every one of those steps is in the
+        // ledger. Between them they add up to the ball's speed not changing, which is
+        // what a ball pressed into the ground does -- and not one newton of it came
+        // from nowhere.
+        const bool pressesIntoGround = false;
         if (patch.ball && ball_.frozen && !pressesIntoGround) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
