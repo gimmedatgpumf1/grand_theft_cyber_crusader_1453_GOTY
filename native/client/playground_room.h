@@ -220,6 +220,14 @@ private:
         // that centre in radians per second.
         Vec3 velocity{};
         double spin = 0.0;
+        // What it arrived with, before this tick's forces changed it. A bounce is
+        // the answer to an arrival: the weight it gains on the way down is what
+        // carried it here, and bouncing that back would be bouncing it off nothing --
+        // and it is not nothing at rest, where the whole of the speed is the tick's
+        // own gravity, so a shape resting on the ball was bounced a little every
+        // tick and stood humming a centimetre above it.
+        Vec3 arrivalVelocity{};
+        double arrivalSpin = 0.0;
         // What it is: the mass of the whole body and the moment of inertia about
         // its centre of mass, both from the shape as a uniform plate.
         double mass = 1.0, moment = 1.0;

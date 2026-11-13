@@ -266,7 +266,12 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // dropped on the ball stopped dead on it, because the patch it was solved
         // against had no way to leave it faster than it arrived.
         {
-            const double closing = dot(pointSpeed(body, at) - ballPointSpeed(at), way);
+            // What it arrived with and not what it has gained since: the tick's own
+            // weight is not an arrival.
+            const Vec3 arrivedArm = at - body.centre;
+            const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arrivedArm.y,
+                               body.arrivalVelocity.y + body.arrivalSpin * arrivedArm.x, 0.0};
+            const double closing = dot(arrived - ballPointSpeed(at), way);
             if (closing < 0.0) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
         }
         patches.add(patch);
@@ -501,6 +506,8 @@ void PlaygroundRoom::tickBodies() {
     std::array<int, kBodyCount> metBefore{};
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
+        bodies_[index].arrivalVelocity = bodies_[index].velocity;
+        bodies_[index].arrivalSpin = bodies_[index].spin;
         metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();
