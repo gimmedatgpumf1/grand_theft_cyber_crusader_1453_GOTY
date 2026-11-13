@@ -321,7 +321,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // are solved against each other once they are all known -- see
     // settleBallFriction(). What is recorded is what each contact is: the face, how
     // it is moving there, and how hard it is pressed.
-    if (pressed > 0.0 && ballTouchCount_ < kMaxBallTouches)
+    // Every face the tick met is recorded, whether or not this tick's answer gave it
+    // a load of its own. A face with a weight standing on it carries one whether or
+    // not anything moved, and that load is worked out over all the faces together in
+    // settleBallFriction(): a face over the ball carries what stands on it, and a
+    // face under it carries the rest. Dropping the ones whose own answer was nothing
+    // is what left the ball with no grip underneath a weight that was resting on it.
+    if (ballTouchCount_ < kMaxBallTouches)
         ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed,
                                                     bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex)};
     // Rolling resistance is not done here, and it is not a force taken off the
