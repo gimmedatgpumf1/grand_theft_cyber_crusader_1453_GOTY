@@ -566,9 +566,22 @@ private:
     void gatherBallSupports();
     Vec3 ballFree(Vec3 push) const {
         Vec3 out = push;
-        for (std::size_t i = 0; i < ballSupportCount_; ++i) {
-            const Vec3& normal = ballSupports_[i].normal;
-            out = out - normal * dot(out, normal);
+        // The projection is onto the *orthogonal complement of all of them at once*,
+        // which is not the same as taking them one after another. With one support
+        // the two agree; with two they do not, and the difference is momentum.
+        // Taking the floor's normal out of a push and then the cube's puts back a
+        // little of the floor's -- the normals are not perpendicular, so removing one
+        // does not preserve the other -- and a ball held by a floor and a shape was
+        // handed 1.7 N s *upward* by an impulse that was pressing it down. Repeating
+        // the sweep converges on the vector that is perpendicular to every normal,
+        // which is the only direction the ball has left.
+        for (int sweep = 0; sweep < 8; ++sweep) {
+            const Vec3 before = out;
+            for (std::size_t i = 0; i < ballSupportCount_; ++i) {
+                const Vec3& normal = ballSupports_[i].normal;
+                out = out - normal * dot(out, normal);
+            }
+            if (length(out - before) < 1e-15) break;
         }
         return out;
     }
