@@ -359,6 +359,9 @@ void PlaygroundRoom::tickBall() {
         if (what >= 0 && !bodyStopped[std::size_t(what)]) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
+            if (getenv("GTC_S"))
+                std::fprintf(stderr, "  rewind body %d when %.6f first %.6f depth %.6f normal(%+.3f,%+.3f) v(%+.3f,%+.3f)\n",
+                             what, when, first, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y);
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
             met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
             placeCorners(met);
