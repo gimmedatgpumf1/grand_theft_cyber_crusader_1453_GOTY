@@ -134,7 +134,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
-        if (patch.ball && ball_.frozen) {
+        const bool pressesIntoGround =
+            patch.ball && ball_.touching && ball_.standing && dot(patch.normal, ball_.supportNormal) < 0.0;
+        if (patch.ball && ball_.frozen && !pressesIntoGround) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
                     dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(patch.point[k]), patch.normal);
@@ -144,32 +146,27 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 }
             }
         }
-        const bool ballFixed = patch.ball && ball_.frozen;
+        // A ball the floor is under is a wall in the direction that would drive it
+        // through that floor, and nothing else.
+        //
+        // A patch's normal is the way out of the ball, so the shape is pushing the
+        // ball the other way; when that way is into the surface the ball is standing
+        // on, the surface is what takes the blow and the ball cannot be moved by it.
+        // A cube landing flat on the crown of a ball resting on the floor is exactly
+        // this: every newton of it goes into the floor, and the ball stays where it
+        // is -- which is what is seen, and what a ball pressed into the ground does.
+        //
+        // It has to be said here, in the one place both the answer and the pair's own
+        // mass are read, or the solve is told a ball will move and it will not: the
+        // impulse then comes out at a share of what a moving ball would take, the body
+        // is handed the rest of a blow nobody carried, and a cube that should have
+        // bounced off the ball instead sank into it and stopped there. A ball struck
+        // along the floor -- the shoulder, the side -- is a ball nothing is holding
+        // that way, and it is answered as the free thing it is.
+        const bool ballOnGround = patch.ball && ball_.touching && ball_.standing &&
+                                  dot(patch.normal, ball_.supportNormal) < 0.0;
+        const bool ballFixed = patch.ball && (ball_.frozen || ballOnGround);
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-        // What a ball lying on something can take of an impulse, and what the thing
-        // under it takes instead.
-        //
-        // The floor does not give. An impulse with a part pointing into the surface
-        // the ball is resting on is answered by that surface, not by the ball: the
-        // ball cannot move that way, so nothing is left for it to move. What is left
-        // of the impulse -- the part along the surface -- is the ball's, and that part
-        // does move it, which is why a shape striking the side of a ball still shoves
-        // it across the room while a shape landing on the top of it is caught.
-        //
-        // This is a projection and not a share. A share would be a number that says
-        // "the ball takes three quarters of every impulse", which is not true of any
-        // direction; the projection takes exactly the part of the impulse the ball is
-        // free to carry and leaves the rest with the floor, and it is the same
-        // projection in the answer as in what the pair is told its own mass is -- one
-        // law in both halves of the solve, or the impulse and the matrix disagree and
-        // the sweep walks away with itself.
-        const bool ballSupported = patch.ball && !ballFixed && ball_.touching && ball_.standing;
-        const Vec3 ballSupport = ball_.supportNormal;
-        const auto carriedByBall = [&](Vec3 impulse) {
-            if (!ballSupported) return impulse;
-            const double into = dot(impulse, ballSupport);
-            return into < 0.0 ? impulse - ballSupport * into : impulse;
-        };
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
         // How fast a place on the body is going away from the other side of the
@@ -197,12 +194,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                if (!ballFixed) {
-                    const Vec3 carried = carriedByBall(direction);
-                    value += dot(toward, carried) / ball_.mass +
-                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, carried) /
+                if (!ballFixed)
+                    value += dot(toward, direction) / ball_.mass +
+                             lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
                                  ballMoment;
-                }
             }
             return value;
         };
@@ -210,15 +205,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, carriedByBall(impulse), kind);
+                if (!ballFixed) pushBall(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
-            if (getenv("GTC_PUSH") && length(impulse) > 0.5)
-                std::fprintf(stderr, "     pushEnd k %zu J(%+.2f,%+.2f) kind %d patch body %zu ball %d n(%+.3f,%+.3f) gap %.4f rebound %+.2f carried %zu\n",
-                             k, impulse.x, impulse.y, (int)kind, patch.body, (int)patch.ball, patch.normal.x,
-                             patch.normal.y, patch.gap[k], patch.rebound[k], count);
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
@@ -364,15 +355,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
-                if (getenv("GTC_BP") && patch.ball)
-                    std::fprintf(stderr, "   ballpatch delta %+.4f u %+.3f g %.4f n(%+.3f,%+.3f) gap %.4f re %+.2f ballv(%+.2f,%+.2f) spin %+.1f\n",
-                                 delta[i], u[i], g[i][i], patch.normal.x, patch.normal.y, patch.gap[k],
-                                 patch.rebound[k], ball_.velocity.x, ball_.velocity.y, ball_.spin);
-                if (getenv("GTC_SOLVE") && std::abs(delta[i]) > 50.0)
-                    std::fprintf(stderr, "   big delta %+.3e dof %zu k %zu ball %d body %zu n(%+.3f,%+.3f) gap %.4f u %+.3f g %+.3e supp %d sup(%+.2f,%+.2f) ballv(%+.3f,%+.3f) spin %+.2f\n",
-                                 delta[i], i, k, (int)patch.ball, patch.body, patch.normal.x, patch.normal.y,
-                                 patch.gap[k], u[i], g[i][i], (int)ballSupported, ballSupport.x, ballSupport.y,
-                                 ball_.velocity.x, ball_.velocity.y, ball_.spin);
                 pushEnd(k, patch.normal * delta[i], patch.kind);
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];

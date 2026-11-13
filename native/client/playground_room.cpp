@@ -208,10 +208,6 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - ball_.position;
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    if (getenv("GTC_PUSH") && length(impulse) > 2.0)
-        std::fprintf(stderr, "      pushBall J(%+.2f,%+.2f) arm(%+.3f,%+.3f) v(%+.2f,%+.2f) spin %+.2f kind %d\n",
-                     impulse.x, impulse.y, arm.x, arm.y, ball_.velocity.x, ball_.velocity.y, ball_.spin,
-                     (int)kind);
     ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ball_.frozen = false;
