@@ -174,11 +174,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    // The ball gives way along the way it is free to, and not along
-                    // the way the floor under it holds it: a cube landing square on a
-                    // ball on the floor is carried by the floor, and the ball is the
-                    // thing between them, not a spring.
-                    value += dot(toward, direction) * ballFreedom(direction) / ball_.mass +
+                    value += dot(toward, direction) / ball_.mass +
                              lever(at - ball_.position, toward) * lever(pushAt - ball_.position, direction) /
                                  ballMoment;
             }
@@ -188,12 +184,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (ballFixed) return;
-                // What the ball can take is what it is free to take. The part of the
-                // impulse that runs into the surface under it is the floor's, and it
-                // is given up to the floor here rather than turned into a speed the
-                // floor would cancel on the next tick.
-                pushBall(at, impulse * ballFreedom(impulse), kind);
+                if (!ballFixed) pushBall(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
