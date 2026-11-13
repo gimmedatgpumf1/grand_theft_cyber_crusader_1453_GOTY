@@ -414,6 +414,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // metres a second of it, from a shape that has not touched it yet.
                 // The walk carries both of them to the instant they meet; what is
                 // answered here is the closing speed at that instant.
+                if (getenv("GTC_PC") && patch.ball)
+                    std::fprintf(stderr, "PP body%zu k%zu n(%+.3f,%+.3f) gap%+.6f away%+.4f give%.4f free%+.3f\n",
+                                 patch.body, k, patch.normal.x, patch.normal.y, patch.gap[k],
+                                 away(patch.point[k], patch.normal), give(patch.point[k], patch.normal, patch.point[k], patch.normal),
+                                 length(ballFree(patch.normal, patch.body)));
                 const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
