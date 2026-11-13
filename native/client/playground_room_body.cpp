@@ -709,6 +709,13 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
+    if (getenv("GTC_FL"))
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            const Body& b = bodies_[i];
+            double low = 1e9;
+            for (std::size_t j = 0; j < b.count; ++j) low = std::min(low, b.position[j].y);
+            if (low < -1e-7) std::fprintf(stderr, "FL afterSeparate body%zu low%+.6f\n", i, low);
+        }
     settleBodies();
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
