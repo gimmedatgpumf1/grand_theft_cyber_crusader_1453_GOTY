@@ -145,6 +145,7 @@ void PlaygroundRoom::tickBall() {
     // erased, and the ball went on being greased under a weight it was pressing on.
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
+    if (std::getenv("GTC_BALL")) std::printf("  tickBall entry ball (%+.4f,%+.4f) v(%+.2f,%+.2f) foundThrough %d\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(ballFoundThrough_));
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
