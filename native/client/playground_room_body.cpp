@@ -177,6 +177,24 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             double furthest = 0.0;
             for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+            // A blow off the ball landed partway through the tick, so the tick is
+            // two moves and not one: the fall up to the meeting, then the rebound
+            // for what is left of the tick. One move at the rebound speed for the
+            // whole tick is a body lifted off the surface it bounced on by a whole
+            // tick of its own rebound, every bounce -- the trampoline. The rebound
+            // half is a parabola like any other, so its own weight is in it: the
+            // speed handed back is the speed at the instant of the blow.
+            if (body.hitAt < 1.0) {
+                const double fall = body.hitAt * time;
+                const double rise = time - fall;
+                Vec3 step = body.hitArrival * fall;
+                step = step + body.velocity * rise + Vec3{0.0, -0.5 * ball_shape::kGravity * rise * rise, 0.0};
+                body.velocity = body.velocity + Vec3{0.0, -ball_shape::kGravity * rise, 0.0};
+                body.centre = resolvedMove(body.centre, body.centre + step);
+                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                placeCorners(body);
+                continue;
+            }
             body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
             body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
             placeCorners(body);
@@ -274,7 +292,23 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             // resting on it: the contact has to hold it up, and it can hold it up
             // without giving anything back. See Body::onBall.
             const double closing = dot(arrived - ballPointSpeed(at), way);
-            if (closing < 0.0 && !body.wasOnBall) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+            if (closing < 0.0 && !body.wasOnBall) {
+                patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+                // And when it gets there. The patch is gathered within the reach of
+                // the tick, so a fast shape is answered a band's width before it has
+                // arrived -- a cube falling at 2.85 m/s met the ball 65 mm above its
+                // surface, in mid-air. The blow belongs at the surface, so the
+                // distance still to go, over the distance the tick would cover,
+                // says how much of the tick belongs to the fall and how much to the
+                // rebound. See advanceBodies().
+                const double travel = -closing * kTick;
+                const double togo = std::max(0.0, patch.gap[0]);
+                const double when = travel > 0.0 ? std::clamp(togo / travel, 0.0, 1.0) : 1.0;
+                if (when < body.hitAt) {
+                    body.hitAt = when;
+                    body.hitArrival = body.velocity;
+                }
+            }
         }
         patches.add(patch);
     }
@@ -510,6 +544,8 @@ void PlaygroundRoom::tickBodies() {
         arrival[index] = bodies_[index].velocity;
         bodies_[index].arrivalVelocity = bodies_[index].velocity;
         bodies_[index].arrivalSpin = bodies_[index].spin;
+        bodies_[index].hitAt = 1.0;
+        bodies_[index].hitArrival = bodies_[index].velocity;
         metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();

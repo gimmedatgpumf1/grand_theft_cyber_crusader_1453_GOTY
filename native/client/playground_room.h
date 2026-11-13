@@ -255,6 +255,22 @@ private:
         // bounce then has to obey the grip, which turns it into a spin, which is the
         // squeeze the King saw.
         bool onBall = false, wasOnBall = false;
+        // When, within the tick, this body's velocity was turned around by a blow
+        // off the ball: the fraction of the tick that had passed when the two met.
+        //
+        // A blow lands at an instant, not over a whole tick. Advancing a body for a
+        // full tick at the speed the blow left it with is a body that travelled the
+        // whole tick upwards and not one instant of it downwards -- it is lifted off
+        // the surface it bounced on, by exactly one tick of its own rebound, every
+        // single bounce. A cube dropped half a metre onto the ball came back to
+        // forty-one per cent more height than its own rebound allows, which reads as
+        // a trampoline and is not one: no energy is made, the parabola is simply
+        // started a tick too early. See advanceBodies().
+        // Written while a patch is being gathered, which is a reading of the room
+        // and not a change to it: what it records is when the blow it is about to
+        // ask for lands. The move that spends it happens later in the same tick.
+        mutable double hitAt = 1.0;
+        mutable Vec3 hitArrival{};
         // How many contact patches this body has been answered in since the room was
         // reset. It is a counter and not a flag so that a tick can tell, by comparing
         // with what it started from, whether the body met anything at all while it
