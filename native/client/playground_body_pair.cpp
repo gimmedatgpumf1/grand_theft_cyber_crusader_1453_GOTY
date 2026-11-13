@@ -230,6 +230,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
     double first = span + 1.0;  // no meeting at all
     const auto take = [&](double u) {
+        if (getenv("GTC_HS")) std::fprintf(stderr, "HS cand u%+.6f (a%+.6f) first%+.6f\n", u, way * u, first);
         if (u > 0.0 && u < first) first = u;
     };
     const auto cornerAt = [&](Vec3 local, double angle) {
