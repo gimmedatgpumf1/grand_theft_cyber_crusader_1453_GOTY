@@ -191,6 +191,9 @@ double PlaygroundRoom::advanceBodies(double seconds) {
         angles[index] = bodies_[index].angle;
     }
     move(seconds);
+    if (getenv("GTC_A"))
+        std::fprintf(stderr, "    advanceBodies %.9f -> body0 d(%.6f,%.6f) from (%.6f,%.6f)\n", seconds,
+                     bodies_[0].centre.x - centres[0].x, bodies_[0].centre.y - centres[0].y, centres[0].x, centres[0].y);
     return seconds;
 }
 
