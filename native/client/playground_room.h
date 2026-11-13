@@ -399,6 +399,8 @@ private:
     // other shape, and off the ball.
     void pivotCornersAt(const Body& body, double angle, std::array<Vec3, kMaxCorners>& corners) const;
     double pivotDepthAt(const Body& body, double angle) const;
+    double pivotFloorDepthAt(const Body& body, double angle) const;
+    double pivotObjectDepthAt(const Body& body, double angle) const;
     // The first angle a pinned body's turn meets something, as a fraction of the turn
     // it was given. One means nothing was in the way. This is the hitscan the plank
     // needed and did not have: a turn is a piece of travel like any other, and the

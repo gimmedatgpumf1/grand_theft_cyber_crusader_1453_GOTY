@@ -96,11 +96,25 @@ void PlaygroundRoom::pivotCornersAt(const Body& body, double angle, std::array<V
 // How deep a pinned body would be inside anything at that angle: the floor, another
 // shape, or the ball. Zero is clear.
 double PlaygroundRoom::pivotDepthAt(const Body& body, double angle) const {
+    return std::max(pivotFloorDepthAt(body, angle), pivotObjectDepthAt(body, angle));
+}
+
+// The same two questions asked apart, because they are answered by different rules:
+// the floor is never negotiable at all, and everything else is a shape that can be a
+// hair inside a body it is standing on.
+double PlaygroundRoom::pivotFloorDepthAt(const Body& body, double angle) const {
     std::array<Vec3, kMaxCorners> corners{};
     pivotCornersAt(body, angle, corners);
     double deepest = 0.0;
     for (std::size_t i = 0; i < body.count; ++i)
         deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
+    return deepest;
+}
+
+double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle) const {
+    std::array<Vec3, kMaxCorners> corners{};
+    pivotCornersAt(body, angle, corners);
+    double deepest = 0.0;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         const Body& solid = bodies_[other];
         if (&solid == &body || solid.count == 0) continue;
@@ -138,8 +152,14 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     // King's pumping, standing still. A plank that is a hair inside something can
     // still turn every way that does not take it further in, and turning away is
     // exactly what gets it out.
-    const double already = std::max(0.0, pivotDepthAt(body, body.angle) - playground_tick::kQuantum);
-    const auto clear = [&](double angle) { return pivotDepthAt(body, angle) <= already + playground_tick::kQuantum; };
+    // The floor is not part of the allowance: a plank a millimetre under the ground is
+    // still a plank that may not go deeper, and a corner deep on one side must not buy
+    // a turn that buries the other. Only another shape's overlap is allowed to stand.
+    const double already = std::max(0.0, pivotObjectDepthAt(body, body.angle) - playground_tick::kQuantum);
+    const auto clear = [&](double angle) {
+        return pivotFloorDepthAt(body, angle) <= playground_tick::kQuantum &&
+               pivotObjectDepthAt(body, angle) <= already + playground_tick::kQuantum;
+    };
     // A step small enough that the furthest corner moves no more than a few
     // millimetres: the thinnest thing in this room is the plank itself, a quarter of
     // a metre, so a step of four millimetres cannot pass over anything.
