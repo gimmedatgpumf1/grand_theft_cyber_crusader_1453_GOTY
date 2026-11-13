@@ -412,7 +412,6 @@ private:
     double depthOfCornersExceptBall(std::size_t index) const;
     double turnDepthAt(std::size_t index, double angle) const;
     double depthOfCorners(std::size_t index, const std::array<Vec3, kMaxCorners>& corners) const;
-    bool turnAboutFloor(std::size_t index, double rest);
     void turnBody(std::size_t index, double turn);
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;

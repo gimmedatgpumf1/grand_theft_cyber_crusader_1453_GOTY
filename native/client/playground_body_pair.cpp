@@ -189,136 +189,6 @@ double PlaygroundRoom::depthOfCorners(std::size_t index, const std::array<Vec3, 
     return std::max(deepest, ball_.radius - gap);
 }
 
-// The rest of a turn, taken about the corner the body is standing on.
-//
-// A body whose corner is on the floor is a body whose corner cannot go through it,
-// so a turn that would carry that corner down is not a turn about the middle at
-// all: it is a turn about the contact. That is what pivoting on a surface is, and
-// it is the reason a shape lying on the floor does not sink into it while it rolls
-// or topples -- its middle swings up and over the point it is resting on instead.
-//
-// There is nothing added here and nothing taken away: the body is the same body,
-// turned about a different point for the part of the tick the floor allows. Its
-// speeds are untouched, so the contact still has the whole of what it was given to
-// answer. Every corner on the floor is tried, because a shape lying on a face has
-// two of them down and which one it turns on is decided by which way it is turning.
-bool PlaygroundRoom::turnAboutFloor(std::size_t index, double rest) {
-    Body& body = bodies_[index];
-    const Vec3 centre = body.centre;
-    const double angle = body.angle;
-    const double c = std::cos(rest), s = std::sin(rest);
-    bool found = false;
-    Vec3 bestCentre{};
-    std::array<Vec3, kMaxCorners> bestCorners{};
-    double bestDeep = 1e30;
-    for (std::size_t i = 0; i < body.count; ++i) {
-        const Vec3 pivot = body.position[i];
-        if (pivot.y > playground_tick::kSurfaceY + playground_tick::kQuantum) continue;
-        const Vec3 arm = centre - pivot;
-        const Vec3 moved{pivot.x + arm.x * c - arm.y * s, pivot.y + arm.x * s + arm.y * c, centre.z};
-        // The body turned about that corner: its outline is the outline it had, moved.
-        std::array<Vec3, kMaxCorners> corners{};
-        const double turned = angle + rest;
-        const double tc = std::cos(turned), ts = std::sin(turned);
-        for (std::size_t k = 0; k < body.count; ++k)
-            corners[k] = {moved.x + body.local[k].x * tc - body.local[k].y * ts,
-                          moved.y + body.local[k].x * ts + body.local[k].y * tc, 0};
-        const double deep = depthOfCorners(index, corners);
-        if (deep < bestDeep) {
-            bestDeep = deep;
-            bestCentre = moved;
-            bestCorners = corners;
-            found = true;
-        }
-    }
-    if (found && bestDeep <= playground_tick::kQuantum) {
-        body.centre = bestCentre;
-        body.angle = angle + rest;
-        for (std::size_t k = 0; k < body.count; ++k) body.position[k] = bestCorners[k];
-        return true;
-    }
-    body.centre = centre;
-    body.angle = angle;
-    placeCorners(body);
-    return false;
-}
-
-// A free body's step, walked the way a turn is walked: the meeting is found, not
-// arrived at and then undone.
-//
-// A shape falls sixteen centimetres in a tick at three metres a second, and a shape
-// that is five centimetres above another one at the top of a tick is a fifth of a
-// metre inside it by the end. Nothing in this room is placed inside anything, so the
-// step is a piece of travel like the turn and is swept the same way: walked in steps
-// small enough that the outline cannot pass over anything, the first step that is
-// inside something bisected to the instant of the meeting, and the body stops there.
-// What it was carrying is untouched -- its speed is still the speed it arrived with,
-// and the contact next tick is what answers it. Nothing is added and nothing taken.
-//
-// The floor and the other shapes are asked. The ball is not: the ball has a sweep of
-// its own and it is the ball's own tick that walks the shape against it, so stopping
-// the shape here as well would answer the same meeting twice.
-Vec3 PlaygroundRoom::sweptBodyMove(std::size_t index, Vec3 from, Vec3 to) {
-    Body& body = bodies_[index];
-    if (body.count == 0) return to;
-    const Vec3 travel = to - from;
-    const double span = length(travel);
-    if (span <= playground_tick::kQuantum) return to;
-    // Where it is now: a body that has begun the tick inside something is not swept
-    // -- it is answered by the separation, which is the only thing that can undo it.
-    const Vec3 wasCentre = body.centre;
-    if (depthOfCornersExceptBall(index) > playground_tick::kQuantum) return to;
-    double furthest = 0.0;
-    for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
-    const double step = furthest > 0.0 ? std::min(0.25, 0.004 / furthest) : 0.25;
-    const int steps = std::min(4096, std::max(1, int(span / step) + 1));
-    double clear = 0.0;
-    for (int n = 1; n <= steps; ++n) {
-        const double fraction = double(n) / double(steps);
-        body.centre = from + travel * fraction;
-        placeCorners(body);
-        if (depthOfCornersExceptBall(index) <= playground_tick::kQuantum) {
-            clear = fraction;
-            continue;
-        }
-        double low = clear, high = fraction;
-        for (int bisect = 0; bisect < 60; ++bisect) {
-            const double mid = 0.5 * (low + high);
-            body.centre = from + travel * mid;
-            placeCorners(body);
-            if (depthOfCornersExceptBall(index) <= playground_tick::kQuantum)
-                low = mid;
-            else
-                high = mid;
-        }
-        body.centre = from + travel * low;
-        placeCorners(body);
-        (void)wasCentre;
-        return body.centre;
-    }
-    body.centre = to;
-    placeCorners(body);
-    return to;
-}
-
-// How deep a body is inside the floor or another shape, with the ball left to the
-// ball's own sweep.
-double PlaygroundRoom::depthOfCornersExceptBall(std::size_t index) const {
-    double deepest = 0.0;
-    const Body& body = bodies_[index];
-    for (std::size_t i = 0; i < body.count; ++i)
-        deepest = std::max(deepest, playground_tick::kSurfaceY - body.position[i].y);
-    for (std::size_t other = 0; other < kBodyCount; ++other) {
-        if (other == index || bodies_[other].count == 0) continue;
-        const Body& solid = bodies_[other];
-        Vec3 way{0, 1, 0};
-        double amount = 0.0;
-        if (outlineOverlap(body.position.data(), body.count, solid.position.data(), solid.count, way, amount))
-            deepest = std::max(deepest, amount);
-    }
-    return deepest;
-}
-
 // A free body's turn, walked the way its travel is.
 //
 // The pinned plank's turn is swept by pivotTurnAllowed(), and a free body's turn is
@@ -326,12 +196,12 @@ double PlaygroundRoom::depthOfCornersExceptBall(std::size_t index) const {
 // above the floor can have gone through it on the way. Nothing in this room is
 // placed inside anything, not even for the length of one tick.
 //
-// What a free body does about a meeting is decided by what it met. The floor is the
-// one surface a body can turn *on*: a corner that is down is a point that cannot
-// move, so the rest of the turn goes about it and the middle swings up over it --
-// that is rolling, and it is why a shape on the floor does not sink into it. Any
-// other meeting stops the turn where it happens, exactly as the plank's is stopped,
-// and what is left of the spin is the contact's to answer.
+// What it meets, it stops at, and the turn it did not take is the contact's to
+// answer. It is deliberately not turned *about* the corner it met: lifting a body
+// over its own contact by hand is height given to it by the arithmetic and not by
+// any force, which is exactly the conjured energy this room does not have. A shape
+// that topples does so because the floor pushes its corner up, and that push is an
+// impulse in the ledger, not a place written down here.
 void PlaygroundRoom::turnBody(std::size_t index, double turn) {
     Body& body = bodies_[index];
     if (body.count == 0 || turn == 0.0) {
@@ -362,19 +232,7 @@ void PlaygroundRoom::turnBody(std::size_t index, double turn) {
         }
         body.angle = was + piece * low;
         placeCorners(body);
-        const double rest = piece * (1.0 - low);
-        if (rest == 0.0) continue;
-        // Above the floor and into a shape or the ball: the turn stops there. On the
-        // floor: the rest of it is taken on the corner the body is standing on, and
-        // if there is no corner down -- a corner swinging onto the floor in mid air --
-        // then that turn stops too, at the meeting, as everything else does.
-        const bool onFloor = [&] {
-            for (std::size_t i = 0; i < body.count; ++i)
-                if (body.position[i].y <= playground_tick::kSurfaceY + playground_tick::kQuantum) return true;
-            return false;
-        }();
-        if (!onFloor) continue;
-        turnAboutFloor(index, rest);
+        return;
     }
 }
 
@@ -393,6 +251,82 @@ void PlaygroundRoom::turnBody(std::size_t index, double turn) {
 // taken from it, so no energy is made; the two shapes share the move by their
 // inertia, so a heavy one gives less ground than a light one; and a shape asleep is
 // not moved at all, because it is not the one that moved into anything.
+// A free body's step, walked the way a turn is walked: the meeting is found, not
+// arrived at and then undone.
+//
+// A shape falls sixteen centimetres in a tick at three metres a second, and a shape
+// that is five centimetres above another one at the top of a tick is a fifth of a
+// metre inside it by the end. Nothing in this room is placed inside anything, so the
+// step is a piece of travel like the turn and is swept the same way: walked in steps
+// small enough that the outline cannot pass over anything, the first step that is
+// inside something bisected to the instant of the meeting, and the body stops there.
+// What it was carrying is untouched -- its speed is still the speed it arrived with,
+// and the contact next tick is what answers it. Nothing is added and nothing taken.
+//
+// The floor and the other shapes are asked. The ball is not: the ball has a sweep of
+// its own and it is the ball's own tick that walks the shape against it, so stopping
+// the shape here as well would answer the same meeting twice.
+Vec3 PlaygroundRoom::sweptBodyMove(std::size_t index, Vec3 from, Vec3 to) {
+    Body& body = bodies_[index];
+    if (body.count == 0) return to;
+    const Vec3 travel = to - from;
+    const double span = length(travel);
+    if (span <= playground_tick::kQuantum) return to;
+    // A body that has begun the tick inside something is not swept: it is answered by
+    // the separation, which is the only thing that can undo an overlap. Sweeping from
+    // inside would refuse every step, and a body unable to step is a body whose weight
+    // never lands.
+    if (depthOfCornersExceptBall(index) > playground_tick::kQuantum) return to;
+    double furthest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+    const double step = furthest > 0.0 ? std::min(0.25, 0.004 / furthest) : 0.25;
+    const int steps = std::min(4096, std::max(1, int(span / step) + 1));
+    double clear = 0.0;
+    for (int n = 1; n <= steps; ++n) {
+        const double fraction = double(n) / double(steps);
+        body.centre = from + travel * fraction;
+        placeCorners(body);
+        if (depthOfCornersExceptBall(index) <= playground_tick::kQuantum) {
+            clear = fraction;
+            continue;
+        }
+        double low = clear, high = fraction;
+        for (int bisect = 0; bisect < 60; ++bisect) {
+            const double mid = 0.5 * (low + high);
+            body.centre = from + travel * mid;
+            placeCorners(body);
+            if (depthOfCornersExceptBall(index) <= playground_tick::kQuantum)
+                low = mid;
+            else
+                high = mid;
+        }
+        body.centre = from + travel * low;
+        placeCorners(body);
+        return body.centre;
+    }
+    body.centre = to;
+    placeCorners(body);
+    return to;
+}
+
+// How deep a body is inside the floor or another shape, with the ball left to the
+// ball's own sweep.
+double PlaygroundRoom::depthOfCornersExceptBall(std::size_t index) const {
+    double deepest = 0.0;
+    const Body& body = bodies_[index];
+    for (std::size_t i = 0; i < body.count; ++i)
+        deepest = std::max(deepest, playground_tick::kSurfaceY - body.position[i].y);
+    for (std::size_t other = 0; other < kBodyCount; ++other) {
+        if (other == index || bodies_[other].count == 0) continue;
+        const Body& solid = bodies_[other];
+        Vec3 way{0, 1, 0};
+        double amount = 0.0;
+        if (outlineOverlap(body.position.data(), body.count, solid.position.data(), solid.count, way, amount))
+            deepest = std::max(deepest, amount);
+    }
+    return deepest;
+}
+
 void PlaygroundRoom::separateBodies() {
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         Body& body = bodies_[one];
