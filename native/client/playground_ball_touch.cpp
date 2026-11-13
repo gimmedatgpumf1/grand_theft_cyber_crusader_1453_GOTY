@@ -148,6 +148,10 @@ void PlaygroundRoom::settleBallFriction() {
         if (taken[i] == 0.0) continue;
         addForce(ball.position + arms[i], tangents[i] * (taken[i] / ball_shape::kTick), ForceKind::Friction,
                  nullptr, kBallOwner);
+        // Into the ball's account for the tick as well, or the ground's share --
+        // worked out at the end of the tick as what is left over -- would have this
+        // grip counted twice: once where it acts and once in the remainder.
+        ballBlows_ = ballBlows_ + tangents[i] * taken[i];
     }
     ballTouchCount_ = 0;
 }

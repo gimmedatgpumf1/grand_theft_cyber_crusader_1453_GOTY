@@ -377,6 +377,7 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
         const Vec3 onBall = (ball.velocity - ballBefore) * (ball.mass / kTick);
         const Vec3 onPoint = (velocity_ - pointBefore) * (kMass / kTick);
         if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball, nullptr, kBallOwner);
+        ballBlows_ = ballBlows_ + (ball.velocity - ballBefore) * ball.mass;
         const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
         const double turned = inertia * (ball.spin - spinBefore) / kTick;
         if (std::abs(turned) > 1e-9) addCouple(point_, turned, Vec3{}, ForceKind::Ball, kBallOwner);
@@ -415,6 +416,7 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
         const double impulse = (rebound - closing) / (1.0 / kMass + ballShare);
         velocity_ = velocity_ + normal * (impulse / kMass);
         ball.velocity = ball.velocity - normal * (impulse * ballShare);
+        ballBlows_ = ballBlows_ - normal * (impulse * ballShare);
         // A ball that has been struck is a ball that is doing something, and a ball
         // that is doing something is not asleep. It used to be woken here and then
         // given no speed at all, which is a ball that wakes up and stands still.
