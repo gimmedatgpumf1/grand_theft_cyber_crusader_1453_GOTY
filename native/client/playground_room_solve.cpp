@@ -244,7 +244,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBallSupported(at, impulse * -1.0, kind);
+                if (!ballFixed) pushBallSupported(at, impulse, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
