@@ -245,7 +245,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // rounding error: it is an impulse the pair never balances.
                     value += dot(direction, ballFree(toward)) / ball_.mass +
                              lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, toward) / ballMoment;
+                                 lever(pushAt - ball_.position, ballFree(toward)) / ballMoment;
                 }
             }
             return value;
