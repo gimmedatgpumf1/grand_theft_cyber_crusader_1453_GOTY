@@ -2,6 +2,8 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
+#include <cstdio>
+
 #include <cstdlib>
 
 namespace gtc::native {
@@ -340,7 +342,12 @@ void PlaygroundRoom::tickBall() {
                     // through the floor -- does the ball step aside, and only then is
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
-                    if (!pushBodyOutOfBall(index, on.normal, through)) {
+                    const bool gave = pushBodyOutOfBall(index, on.normal, through);
+                    if (getenv("GTC_FIX"))
+                        std::fprintf(stderr, "  FIX b%zu through %.6f n(%+.3f,%+.3f) gave%s | body v(%+.3f,%+.3f) y%+.4f | ball v(%+.3f,%+.3f) y%+.4f\n",
+                                     index, through, on.normal.x, on.normal.y, gave ? "1" : "0", body.velocity.x,
+                                     body.velocity.y, body.centre.y, ball.velocity.x, ball.velocity.y, ball.position.y);
+                    if (!gave) {
                         ++ballFoundThrough_;
                         ball.position = ball.position + on.normal * through;
                     }
