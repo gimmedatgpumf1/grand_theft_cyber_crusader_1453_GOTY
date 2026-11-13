@@ -177,6 +177,26 @@ void PlaygroundRoom::settleBallFriction() {
     // face of a pinch answered against a ball the first face had already moved and
     // never asked again: the ball came out of the solve still spinning under a load
     // that could not let it.
+    // How much the *other* side of each face gives when it is pushed along the
+    // tangent -- the reciprocal of a mass plus the lever's share about its own
+    // middle, the same number every other contact in the room is solved with. It
+    // belongs in the answer on the ball's side: the impulse is a pair, so the ball's
+    // slip is closed by both of them moving, and a solve that counts only the ball
+    // overshoots every time the thing it is against can move. It does not look like
+    // an overshoot -- the passes converge to a pair of impulses that alternate in
+    // sign, the ball ends where it started, and the shape it is against is left with
+    // the last one. That alternation is momentum out of nothing, and it is what
+    // squeezed the cube off the ball at a metre a second.
+    std::array<double, kMaxBallTouches> partner{};
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        const std::size_t other = ballTouches_[i].body;
+        if (other >= kBodyCount) continue;
+        const Body& mate = bodies_[other];
+        if (mate.frozen || bodyHeld(other)) continue;
+        const Vec3 arm = ball.position + arms[i] - mate.centre;
+        const double lever = arm.x * tangents[i].y - arm.y * tangents[i].x;
+        partner[i] = dot(tangents[i], tangents[i]) / mate.mass + lever * lever / mate.moment;
+    }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
@@ -185,7 +205,7 @@ void PlaygroundRoom::settleBallFriction() {
             worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
             const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
-            const double effective = 1.0 / ball.mass + lever * lever / inertia;
+            const double effective = 1.0 / ball.mass + lever * lever / inertia + partner[i];
             const double load = ballTouches_[i].pressed;
             // Static friction takes the slip away and the ball rolls from there; if
             // the whole of what it would take is more than the face can hold, it
