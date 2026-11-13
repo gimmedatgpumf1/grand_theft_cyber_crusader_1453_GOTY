@@ -221,6 +221,22 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
         return false;
     }
     const Vec3 was = body.centre;
+    // Is the shape the one that moved into the ball?
+    //
+    // A placement answers a step, and a step belongs to whoever took it. When the
+    // ball is the one that rolled into the shape -- a weight sliding down the side of
+    // it, the ball turning under the weight -- lifting the shape out of the way is
+    // lifting it for nothing: the shape did not go there, it was gone into, and every
+    // tick of that lift is height it never fell for. Measured over a slide down the
+    // shoulder, the four lifts were the only moments the room's energy went UP, by
+    // seventy millijoules, and each one was a shape being carried up a ball that had
+    // rolled under it.
+    //
+    // So the shape gives way only when the shape is what is closing on the ball. When
+    // it is not, the ball is the mover and the ball is the one that stops -- which is
+    // what the caller falls back to, and what it calls the last resort only because it
+    // was thinking of a shape arriving.
+    if (!(dot(body.velocity, normal) > 0.0)) return false;
     // How far the shape already reaches below the floor, which is a state it may
     // keep -- it was put there by its own step and the separation above -- but may
     // not make worse. Measured against that, not against zero: a corner a micrometre
