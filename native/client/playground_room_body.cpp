@@ -317,7 +317,18 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             // without giving anything back. See Body::onBall.
             const double closing = dot(arrived - ballPointSpeed(at), way);
             if (closing < 0.0 && !body.wasOnBall) {
-                patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+                // The speed it will still have when it gets there, and not the speed
+                // it had when the tick began. The weight of the tick lands on it over
+                // the whole tick; the meeting is partway through; so the blow is struck
+                // at the speed the fall has reached by then and no other. Bouncing the
+                // tick's opening speed gave back less than the bounciness asks -- a
+                // quarter of a metre drop came back at half its own height -- and
+                // bouncing the tick's closing speed would give back more. It is the
+                // speed at the surface, which is what the surfaces answer.
+                const double togo = std::max(0.0, patch.gap[0]);
+                const double when = reach > 0.0 ? std::clamp(togo / reach, 0.0, 1.0) : 1.0;
+                const double impact = closing - ball_shape::kGravity * kTick * when;
+                patch.rebound[0] = -ball_shape::kBallRestitution * impact;
                 // And when it gets there. The patch is gathered within the reach of
                 // the tick, so a fast shape is answered a band's width before it has
                 // arrived -- a cube falling at 2.85 m/s met the ball 65 mm above its
@@ -330,8 +341,6 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                 // measured with: the weight of this tick is already in it, and a
                 // shape whose gap is inside the reach does arrive, so the fraction
                 // is a real fraction of this tick and never runs past its end.
-                const double togo = std::max(0.0, patch.gap[0]);
-                const double when = reach > 0.0 ? std::clamp(togo / reach, 0.0, 1.0) : 1.0;
                 if (when < body.hitAt) {
                     body.hitAt = when;
                     body.hitArrival = body.velocity;
