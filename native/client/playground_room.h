@@ -574,6 +574,8 @@ private:
     // the ball is already into the outline.
     double bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const;
     void tickBall();
+    // The surfaces the ball is against, holding it out of themselves.
+    void settleBallSurfaces();
     // What the ball was against this tick, so the grip at each of them can be
     // worked out against the others instead of one after another.
     struct BallTouch {

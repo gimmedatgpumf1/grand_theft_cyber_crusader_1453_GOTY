@@ -61,6 +61,80 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
     return gap.gap - ball_.radius;
 }
 
+// The surfaces the ball is against, holding it out of themselves.
+//
+// A contact says one thing: the two are not closing. Everything else in the tick --
+// the walk's blows, a shape pressing the ball down, and above all the grip -- can leave
+// the ball with speed pointing into a surface it is lying against, and nothing later
+// would answer it. It is answered here, and answered wherever it is made: a ball
+// pinched in a wedge between a cube's side and the floor kept a centimetre a second
+// into the floor for ever that way, because the grip solved its friction along the
+// cube's tilted face and a tangent on a tilted face has a downward part. The ball was
+// stopped, moved nowhere, and shook for as long as the room was left alone.
+void PlaygroundRoom::settleBallSurfaces() {
+    Ball& ball = ball_;
+    {
+        ball.touching = false;
+        ball.standing = true;
+        const auto holds = [](Vec3 normal) {
+            return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        };
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            for (std::size_t edge = 0; edge < body.count; ++edge) {
+                const std::size_t top = (edge + 1) % body.count;
+                const Vec3 a = body.position[edge];
+                const Vec3 b = body.position[top];
+                const Vec3 side = b - a;
+                const double sideLength = side.x * side.x + side.y * side.y;
+                const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
+                const Vec3 gap = ball.position - (a + side * t);
+                const double distance = length(gap);
+                if (distance > ball.radius + 1e-9 || distance <= 0.0) continue;
+                const Vec3 normal = gap / distance;
+                ball.touching = true;
+                // A body above the ball is a weight on it, not something it stands
+                // on: only a surface underneath can hold it up.
+                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
+                // The surface is where the ball is, so nothing can be driven into
+                // it. Anything left over from an earlier contact in the same tick --
+                // a body pressing the ball down onto the floor -- is answered here,
+                // which is what lets a ball carry a weight instead of humming.
+                const Vec3 closing = ball.velocity - pointSpeed(body, a + side * t);
+                const double into = dot(closing, normal);
+                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+            }
+        }
+        {
+            // The dot is a surface when the ball is sitting on it, and a load when
+            // it is sitting on the ball. Only the first can hold the ball up.
+            const Vec3 gap = ball.position - point_;
+            const double distance = length(gap);
+            if (distance > 0.0 && distance <= ball.radius + kPointRadius + 1e-9) {
+                const Vec3 normal = gap / distance;
+                ball.touching = true;
+                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
+                const double into = dot(ball.velocity - velocity_, normal);
+                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+            }
+        }
+        // The floor has the last word: nothing in this room can be below it, so a
+        // ball pressed down by something above it -- or pressed into a body it is
+        // lying on -- is left standing still rather than holding a speed it has
+        // nowhere to spend.
+        // A ball on the floor is a ball within the world's own resolution of it, not
+        // a ball at the one height that arithmetic happens to produce. Aiming at
+        // exactness here said a ball rolling along the ground at a ten-millionth of
+        // a millimetre above it was a ball in mid-air: nothing held it, so nothing
+        // was written holding it, and every blow it took had no partner on screen.
+        if (ball.position.y <= ball.radius + kTouch) {
+            ball.touching = true;
+            ball.standing = ball.standing && holds(Vec3{0, 1, 0});
+            if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
+        }
+    }
+}
+
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
     // The list of faces is not emptied here. The tick opens it before the bodies are
@@ -467,67 +541,10 @@ void PlaygroundRoom::tickBall() {
     // floor that answers it. Touching when the tick ends counts as touching,
     // exactly as it does for the dot: the walk only reports arrivals, and a ball
     // already lying on something never arrives at it again.
-    {
-        ball.touching = false;
-        ball.standing = true;
-        const auto holds = [](Vec3 normal) {
-            return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
-        };
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            for (std::size_t edge = 0; edge < body.count; ++edge) {
-                const std::size_t top = (edge + 1) % body.count;
-                const Vec3 a = body.position[edge];
-                const Vec3 b = body.position[top];
-                const Vec3 side = b - a;
-                const double sideLength = side.x * side.x + side.y * side.y;
-                const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
-                const Vec3 gap = ball.position - (a + side * t);
-                const double distance = length(gap);
-                if (distance > ball.radius + 1e-9 || distance <= 0.0) continue;
-                const Vec3 normal = gap / distance;
-                ball.touching = true;
-                // A body above the ball is a weight on it, not something it stands
-                // on: only a surface underneath can hold it up.
-                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
-                // The surface is where the ball is, so nothing can be driven into
-                // it. Anything left over from an earlier contact in the same tick --
-                // a body pressing the ball down onto the floor -- is answered here,
-                // which is what lets a ball carry a weight instead of humming.
-                const Vec3 closing = ball.velocity - pointSpeed(body, a + side * t);
-                const double into = dot(closing, normal);
-                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
-            }
-        }
-        {
-            // The dot is a surface when the ball is sitting on it, and a load when
-            // it is sitting on the ball. Only the first can hold the ball up.
-            const Vec3 gap = ball.position - point_;
-            const double distance = length(gap);
-            if (distance > 0.0 && distance <= ball.radius + kPointRadius + 1e-9) {
-                const Vec3 normal = gap / distance;
-                ball.touching = true;
-                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
-                const double into = dot(ball.velocity - velocity_, normal);
-                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
-            }
-        }
-        // The floor has the last word: nothing in this room can be below it, so a
-        // ball pressed down by something above it -- or pressed into a body it is
-        // lying on -- is left standing still rather than holding a speed it has
-        // nowhere to spend.
-        // A ball on the floor is a ball within the world's own resolution of it, not
-        // a ball at the one height that arithmetic happens to produce. Aiming at
-        // exactness here said a ball rolling along the ground at a ten-millionth of
-        // a millimetre above it was a ball in mid-air: nothing held it, so nothing
-        // was written holding it, and every blow it took had no partner on screen.
-        if (ball.position.y <= ball.radius + kTouch) {
-            ball.touching = true;
-            ball.standing = ball.standing && holds(Vec3{0, 1, 0});
-            if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
-        }
-    }
-
+    // Every surface the ball is against, asked to hold it out of itself. This is the
+    // contact constraint, and it is enforced here and again after the grip: see
+    // settleBallSurfaces().
+    settleBallSurfaces();
     // The floor, met without being travelled into.
     //
     // A ball resting on the floor is in contact with it every tick, and this walk
@@ -544,6 +561,11 @@ void PlaygroundRoom::tickBall() {
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
     settleBallFriction();
+    // And the contact constraint once more, because the grip is the last thing that
+    // moved the ball and it can push it into a surface it is lying against -- see
+    // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
+    // speed last, the surfaces have the last word after it.
+    settleBallSurfaces();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
