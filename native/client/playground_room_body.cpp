@@ -175,6 +175,10 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             double furthest = 0.0;
             for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+            if (getenv("GTC_M") && index == 0)
+                std::fprintf(stderr, "    move t %.6f v(%+.4f,%+.4f) from (%.7f,%.7f) -> (%.7f,%.7f)\n", time, body.velocity.x,
+                             body.velocity.y, body.centre.x, body.centre.y, body.centre.x + body.velocity.x * time,
+                             body.centre.y + body.velocity.y * time);
             body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
             body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
             placeCorners(body);
