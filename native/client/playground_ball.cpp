@@ -78,6 +78,9 @@ void PlaygroundRoom::tickBall() {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving()) return;
+    if (getenv("GTC_TICK"))
+        std::fprintf(stderr, "  tickBall enter frozen %d neighbours %d b0 v.y %+.3f cy %+.4f\n",
+                     (int)ball.frozen, (int)ballNeighboursMoving(), bodies_[0].velocity.y, bodies_[0].centre.y);
     ball.frozen = false;
 
     // What the ball arrived with is recorded once for the whole tick, before
