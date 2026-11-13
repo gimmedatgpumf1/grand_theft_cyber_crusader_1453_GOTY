@@ -542,8 +542,15 @@ void PlaygroundRoom::tickBodies() {
     wakeLoadedBodies(band);
     ManifoldSet patches;
     gatherContacts(patches, band);
+    if (getenv("GTC_STAGE"))
+        std::fprintf(stderr, "   gather: %zu patches, b0 v.y %+.3f\n", patches.count,
+                     bodies_[0].velocity.y);
     solveContacts(patches);
+    if (getenv("GTC_STAGE"))
+        std::fprintf(stderr, "   solved: b0 v.y %+.3f cy %+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
     advanceBodies(kTick);
+    if (getenv("GTC_STAGE"))
+        std::fprintf(stderr, "   advanced: b0 v.y %+.3f cy %+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
