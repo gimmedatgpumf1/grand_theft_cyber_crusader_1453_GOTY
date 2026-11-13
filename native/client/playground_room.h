@@ -518,6 +518,30 @@ private:
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.
     void separateBall();
+    // How much of a body's step is clear, as the fraction of it that may be taken.
+    //
+    // A body's step is its middle travelling and its outline turning at once, and the
+    // room's other sweeps do not cover it: the ball has its own, and a pinned body's
+    // turn has its own, but a shape thrown across the room was simply put where its
+    // speed said and answered afterwards -- so a shape at six metres a second went
+    // through a plank seventy-seven millimetres deep in one tick, and the answer it
+    // got afterwards was the recovery, which is a kick.
+    //
+    // This is that sweep. It is conservative advancement, not sampling: the step is
+    // advanced by the time the clearance itself allows -- the gap divided by the
+    // fastest any point of the body can be closing it -- so no speed and no turn can
+    // carry the outline through anything between two looks.
+    //
+    // `mayBeginInContact` is the difference between the simulation and the hand. A
+    // body's own step may begin against something: it is in contact then, and contact
+    // is the solver's business -- refusing its step would hold it up for ever with the
+    // speed it arrived with. The hand is not in contact with anything and it is not
+    // moving anything: it puts a body somewhere, so a body resting on the floor could
+    // be picked up and carried through a plank, which is exactly what it did. The
+    // hand's sweep is therefore asked differently: it stops when anything would be
+    // *inside* the body, not when it is merely touching it.
+    double bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre, double toAngle,
+                           bool mayBeginInContact) const;
 
 public:
     // Read by the checks and the probes: how much of this room is prevention and how

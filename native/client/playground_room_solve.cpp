@@ -143,21 +143,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
-        struct Report {
-            const Manifold& patch;
-            ~Report() {
-                if (!std::getenv("GTC_PP") || patch.ball || patch.other < kBodyCount) return;
-                std::printf("   -> impulses");
-                for (std::size_t k = 0; k < patch.ends; ++k) std::printf(" [%+.6f]", patch.normalImpulse[k]);
-                std::printf("\n");
-            }
-        } report{patch};
-        if (std::getenv("GTC_PP") && !patch.ball && patch.other >= kBodyCount) {
-            std::printf("  PATCH body %zu floor ends %zu", patch.body, patch.ends);
-            for (std::size_t k = 0; k < patch.ends; ++k) std::printf(" [gap %+.6f at(%+.4f,%+.4f)]", patch.gap[k], patch.point[k].x, patch.point[k].y);
-            const Body& b = bodies_[patch.body];
-            std::printf(" spin %+.4f met %zu\n", b.spin, b.met);
-        }
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;

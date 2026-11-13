@@ -324,9 +324,6 @@ void PlaygroundRoom::tickBall() {
     // its say: what the ball leaves with is the answer, not what it arrived with.
     bool bendRecording = false;
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
-        if (std::getenv("GTC_BW"))
-            std::printf("  WALK step %d pos(%+.5f,%+.5f) v(%+.4f,%+.4f) w%+.3f rem %.4f\n", step, ball.position.x,
-                        ball.position.y, ball.velocity.x, ball.velocity.y, ball.spin, remaining);
         const Vec3 next = ball.position + ball.velocity * (kTick * remaining);
         const Vec3 travel = next - ball.position;
         double first = 2.0;
@@ -367,13 +364,8 @@ void PlaygroundRoom::tickBall() {
             OutlineHit hit;
             if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
                                         ball.radius, kTick * remaining, hit)) {
-                if (std::getenv("GTC_BW")) std::printf("    body %zu: no hit\n", index);
                 continue;
             }
-            if (std::getenv("GTC_BW"))
-                std::printf("    body %zu: resting %d along %.6f depth %.6f n(%+.3f,%+.3f) at(%+.4f,%+.4f)\n", index,
-                            int(hit.resting), hit.along, hit.depth, hit.normal.x, hit.normal.y, hit.contact.x,
-                            hit.contact.y);
 
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop
@@ -446,7 +438,6 @@ void PlaygroundRoom::tickBall() {
                 contactPoint = hit.contact;
             }
         }
-        if (std::getenv("GTC_BW")) std::printf("    -> first %.6f what %d depth %.6f n(%+.3f,%+.3f) restart %d\n", first, what, depth, normal.x, normal.y, int(restart));
         if (restart) continue;
         if (first > 1.0) {
             ball.position = playground_tick::resolvedMove(ball.position, next);
@@ -555,7 +546,6 @@ void PlaygroundRoom::tickBall() {
     // contact constraint, and it is enforced here and again after the grip: see
     // settleBallSurfaces().
     settleBallSurfaces();
-    if (std::getenv("GTC_BW")) std::printf("  P1 pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
     // The floor, met without being travelled into.
     //
     // A ball resting on the floor is in contact with it every tick, and this walk
@@ -568,19 +558,16 @@ void PlaygroundRoom::tickBall() {
     // as a grip should. The face is what it is whether or not anything moved.
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
         ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0});
-    if (std::getenv("GTC_BW")) std::printf("  P2 pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
     settleBallFriction();
-    if (std::getenv("GTC_BW")) std::printf("  P3 pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
     // speed last, the surfaces have the last word after it.
     settleBallSurfaces();
 
-    if (std::getenv("GTC_BW")) std::printf("  ENDWALK pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
     // out of the air. Below it the ball is at rest.

@@ -252,18 +252,40 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 placeCorners(body);
                 continue;
             }
+            // And the step is swept before it is taken. A shape's speed says where it
+            // would like to be; whether it may be there is a question about the space
+            // between, and it is answered here, by the one function in the room that
+            // asks it -- see bodyStepAllowed(). A body that begins against something
+            // is not limited by this at all: it is in contact, and the contact solve is
+            // what answers a contact.
+            const auto sweptStep = [&](Vec3 middle, double angle) {
+                const double along =
+                    body.count > 0 ? bodyStepAllowed(index, body.centre, body.angle, middle, angle, true) : 1.0;
+                if (along < 1.0) ++bodyStepClamped_;
+                return along;
+            };
             if (body.hitAt < 1.0) {
                 const double fall = body.hitAt * time;
                 const double rise = time - fall;
                 const Vec3 step = body.hitArrival * fall + body.velocity * rise;
-                body.centre = resolvedMove(body.centre, body.centre + step);
-                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                const double turnHere = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
+                const Vec3 wanted = body.centre + step;
+                const double along = sweptStep(wanted, body.angle + turnHere);
+                body.centre = along >= 1.0 ? resolvedMove(body.centre, wanted)
+                                           : resolvedMove(body.centre, body.centre + step * along);
+                body.angle += turnHere * along;
                 placeCorners(body);
                 continue;
             }
-            body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
-            body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
-            placeCorners(body);
+            {
+                const double turnHere = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
+                const Vec3 wanted = body.centre + body.velocity * time;
+                const double along = sweptStep(wanted, body.angle + turnHere);
+                body.centre = along >= 1.0 ? resolvedMove(body.centre, wanted)
+                                           : resolvedMove(body.centre, body.centre + (wanted - body.centre) * along);
+                body.angle += turnHere * along;
+                placeCorners(body);
+            }
         }
     };
     std::array<Vec3, kBodyCount> centres{};

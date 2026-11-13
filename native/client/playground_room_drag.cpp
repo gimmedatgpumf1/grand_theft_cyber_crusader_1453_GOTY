@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -42,22 +44,27 @@ void PlaygroundRoom::beginDrag() {
     const Vec3 hit = origin + direction * distance;
     const double toPoint = length(Vec3{hit.x - point_.x, hit.y - point_.y, 0});
     // How far outside a body's outline the click is: negative inside it.
+    //
+    // The distance to the outline itself, and not the largest of the distances to the
+    // lines its faces lie on. Those lines run on for ever: a click a metre and a half
+    // off a plank's left end is on the *outside* of every face's line but one, and one
+    // face's line can be behind the click however far away it is -- so the click was
+    // taken, the plank was caught by its middle at the far end of the room, and the
+    // mouse then carried a shape it was nowhere near. A body is grabbed where the click
+    // is on it or within a hand's width of it, and nowhere else.
     const auto outlineDistance = [&](const Body& body) {
-        double outermost = -1e30;
-        for (std::size_t i = 0; i < body.count; ++i) {
-            const Vec3 a = body.position[i];
-            const Vec3 b = body.position[(i + 1) % body.count];
-            const Vec3 side = b - a;
-            const double sideLength = std::sqrt(side.x * side.x + side.y * side.y);
-            if (!(sideLength > 1e-12)) return 1e30;
-            const Vec3 outward{side.y / sideLength, -side.x / sideLength, 0};
-            outermost = std::max(outermost, dot(hit - a, outward));
-        }
-        return outermost;
+        if (body.count < 3) return 1e30;
+        return ball_shape::outlineGap(hit, body.position.data(), body.position.data(), body.count, 1.0).gap;
     };
     std::size_t picked = kBodyCount;
     double pickedDistance = 1e30;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
+        // Not a pinned body. Its place is the room's, not the hand's: a seesaw carried
+        // off its axle is not a seesaw any more, it is a plank lying where the cursor
+        // left it, and the tick that finds it away from its pin puts it back -- which
+        // is the teleport. The pin is the one point of this room nothing may move, so
+        // nothing may take hold of it.
+        if (bodies_[index].pivoted) continue;
         const double outline = outlineDistance(bodies_[index]);
         if (outline < pickedDistance) { pickedDistance = outline; picked = index; }
     }
@@ -139,6 +146,15 @@ void PlaygroundRoom::updateDrag() {
         const Vec3 move = centre - body.centre;
         for (std::size_t i = 0; i < body.count; ++i) wanted[i] = body.position[i] + move;
         if (!bodyPlacementClear(dragBody_ < kBodyCount ? dragBody_ : 0, wanted)) return;
+        // And the place it is put in is not the whole question: the hand may not carry
+        // it *through* something to get there. The ball's drag has asked that question
+        // for a while -- a ball that jumps from one side of a cube to the other in one
+        // frame has been through the cube in a tick nobody saw -- and a shape being
+        // dragged had only its destination checked, so it crossed a plank as easily as
+        // the cursor did. It is the same sweep the step takes.
+        const double along =
+            bodyStepAllowed(dragBody_ < kBodyCount ? dragBody_ : 0, body.centre, body.angle, centre, body.angle, false);
+        if (along < 1.0) return;
         body.centre = centre;
         placeCorners(body);
         body.previousCentre = body.centre;

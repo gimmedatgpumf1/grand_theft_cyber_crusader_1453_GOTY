@@ -400,6 +400,88 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     return std::max(0.0, std::min(1.0, first / span));
 }
 
+// How much of a body's step is clear.
+//
+// A step is a pose moving to another pose: the middle travels a straight line and the
+// outline turns through an angle, and every corner of the body follows an arc laid
+// over that line. Nothing in the room is allowed to be inside anything, and the
+// question here is where along that step something first is.
+//
+// It is answered by conservative advancement, and the word conservative is the whole
+// of it: the clearance now is a distance, the fastest any point of this body can be
+// closing that distance is known -- the middle's travel plus the swing of the furthest
+// corner, added -- so the clearance cannot be gone before that distance divided by
+// that speed has passed. The step is advanced to there and looked at again. No speed
+// is too fast to see and no turn is too quick, because nothing is sampled: the walk
+// never steps *past* the instant a meeting could happen, it steps exactly to the
+// soonest it could.
+//
+// The room's other sweeps do not cover this one, which is why a shape thrown across
+// the room could go through the plank: the ball has a sweep of its own, and a pinned
+// body's turn has one, but a free body's step was simply taken -- where its speed said
+// it went, and answered afterwards. That answer is the recovery, and the recovery is a
+// kick. This is the prevention.
+//
+// A body whose step *begins* against something is not swept at all: it is in contact,
+// and contact is the solver's business -- refusing its step would hold it up for ever
+// with the speed it arrived with, which is a shape standing on nothing. The same rule
+// the ball's prevention uses, for the same reason.
+double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre,
+                                       double toAngle, bool mayBeginInContact) const {
+    const Body& body = bodies_[index < kBodyCount ? index : 0];
+    if (body.count == 0) return 1.0;
+    const Vec3 travel = toCentre - fromCentre;
+    const double turn = toAngle - fromAngle;
+    double furthest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+    const double swiftest = length(travel) + std::abs(turn) * furthest;
+    if (!(swiftest > playground_tick::kQuantum)) return 1.0;
+    std::array<Vec3, kMaxCorners> here{};
+    const auto poseAt = [&](double t) {
+        const Vec3 middle = fromCentre + travel * t;
+        const double angle = fromAngle + turn * t;
+        const double c = std::cos(angle), s = std::sin(angle);
+        for (std::size_t i = 0; i < body.count; ++i)
+            here[i] = Vec3{middle.x + body.local[i].x * c - body.local[i].y * s,
+                           middle.y + body.local[i].x * s + body.local[i].y * c, 0.0};
+    };
+    // How far the nearest part of anything is from the body at that point of the step:
+    // the floor, another shape's outline either way round, and the ball's surface.
+    const auto clearance = [&](double t) {
+        poseAt(t);
+        double gap = 1e30;
+        for (std::size_t i = 0; i < body.count; ++i) gap = std::min(gap, here[i].y - playground_tick::kSurfaceY);
+        for (std::size_t other = 0; other < kBodyCount; ++other) {
+            if (other == index || bodies_[other].count == 0) continue;
+            const Body& solid = bodies_[other];
+            for (std::size_t i = 0; i < body.count; ++i)
+                gap = std::min(gap, outlineGap(here[i], solid.position.data(), solid.position.data(), solid.count, 1.0).gap);
+            for (std::size_t i = 0; i < solid.count; ++i)
+                gap = std::min(gap, outlineGap(solid.position[i], here.data(), here.data(), body.count, 1.0).gap);
+        }
+        gap = std::min(gap, outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0).gap - ball_.radius);
+        return gap;
+    };
+    // What counts as a meeting. In contact and touching is not inside, so a body that
+    // begins against something is let be -- the contact solver has it. The hand asked
+    // the same question would stop at a touch and could never put a body down on the
+    // floor at all, so the hand's line is the room's own: inside is deeper than a
+    // micrometre, and touching is not inside.
+    const double meeting = mayBeginInContact ? playground_tick::kQuantum : -playground_tick::kQuantum;
+    if (mayBeginInContact && clearance(0.0) <= meeting) return 1.0;
+    double t = 0.0;
+    for (int pass = 0; pass < 96; ++pass) {
+        const double gap = clearance(t);
+        if (gap <= meeting) return t;
+        // Where the clearance it has now could first be gone. If that is past the end
+        // of the step, the step is clear: nothing can have been met.
+        const double soonest = t + gap / swiftest;
+        if (!(soonest < 1.0)) return 1.0;
+        t = soonest;
+    }
+    return t;
+}
+
 // How much of its own step a body may keep and still be standing above the floor.
 //
 // The pose the room draws is a body's middle and its angle, and the corners follow
@@ -699,7 +781,6 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
 }
 
 void PlaygroundRoom::separateBall() {
-    if (std::getenv("GTC_BW")) std::printf("  SEPBALL in pos(%+.5f,%+.5f) v(%+.4f,%+.4f)\n", ball_.position.x, ball_.position.y, ball_.velocity.x, ball_.velocity.y);
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;

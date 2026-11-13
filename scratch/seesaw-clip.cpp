@@ -62,7 +62,7 @@ double bodyInsidePlank(const PlaygroundRoom& r, std::size_t i) {
 int main() {
     double worstBall = 0.0, worstCube = 0.0, worstTri = 0.0;
     double worstInCube = 0.0, worstInTri = 0.0;
-    int worstBallCase = -1;
+    int worstBallCase = -1, worstCubeCase = -1, worstCubeTick = -1;
     for (int trial = 0; trial < 240; ++trial) {
         PlaygroundRoom r;
         r.reset();
@@ -116,7 +116,13 @@ int main() {
                 worstBall = deep;
                 worstBallCase = trial;
             }
-            worstCube = std::max(worstCube, bodyInsidePlank(r, 0));
+            const double inP = bodyInsidePlank(r, 0);
+            if (inP > 1e-6 && std::getenv("CLIPC"))
+                std::printf(" cube t%3d k%3d deep %.5f | cube (%+.3f,%+.3f) a%+.3f v(%+.2f,%+.2f) w%+.2f frz%d | plank a%+.3f w%+.2f frz%d\n",
+                            trial, k, inP, r.bodies_[0].centre.x, r.bodies_[0].centre.y, r.bodies_[0].angle,
+                            r.bodies_[0].velocity.x, r.bodies_[0].velocity.y, r.bodies_[0].spin, int(r.bodies_[0].frozen),
+                            s.angle, s.spin, int(s.frozen));
+            if (inP > worstCube) { worstCube = inP; worstCubeCase = trial; worstCubeTick = k; }
             worstTri = std::max(worstTri, bodyInsidePlank(r, 1));
             if (inCube > 0.05 && std::getenv("CLIPB")) std::printf("  cube t%3d k%3d ball (%+.3f,%+.3f) cube c(%+.3f,%+.3f) a%+.3f deep %.5f\n", trial, k, r.ball_.position.x, r.ball_.position.y, r.bodies_[0].centre.x, r.bodies_[0].centre.y, r.bodies_[0].angle, inCube);
             if (inTri > 1e-6 && std::getenv("CLIPB")) std::printf("  tri  t%3d k%3d ball (%+.3f,%+.3f) tri c(%+.3f,%+.3f) a%+.3f deep %.5f\n", trial, k, r.ball_.position.x, r.ball_.position.y, r.bodies_[1].centre.x, r.bodies_[1].centre.y, r.bodies_[1].angle, inTri);
@@ -126,7 +132,7 @@ int main() {
     }
     std::printf("240 throws at the plank:\n");
     std::printf("  deepest the ball got inside the plank/a shape: %.6f m (trial %d)\n", worstBall, worstBallCase);
-    std::printf("  cube %.6f m | triangle %.6f m\n", worstCube, worstTri);
+    std::printf("  cube %.6f m (trial %d tick %d) | triangle %.6f m\n", worstCube, worstCubeCase, worstCubeTick, worstTri);
     std::printf("  ball inside the cube %.6f | ball inside the triangle %.6f\n", worstInCube, worstInTri);
     return 0;
 }
