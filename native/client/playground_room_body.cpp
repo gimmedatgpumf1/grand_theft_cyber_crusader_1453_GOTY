@@ -543,8 +543,14 @@ void PlaygroundRoom::tickBodies() {
     ManifoldSet patches;
     gatherContacts(patches, band);
     if (getenv("GTC_STAGE"))
-        std::fprintf(stderr, "   gather: %zu patches, b0 v.y %+.3f\n", patches.count,
-                     bodies_[0].velocity.y);
+    {
+        std::fprintf(stderr, "   gather: %zu patches, b0 v.y %+.3f\n", patches.count, bodies_[0].velocity.y);
+        for (std::size_t i = 0; i < patches.count; ++i)
+            std::fprintf(stderr, "     patch %zu body %zu other %zu ball %d ends %zu n(%+.2f,%+.2f) gap %.4f\n",
+                         i, patches.items[i].body, patches.items[i].other, (int)patches.items[i].ball,
+                         patches.items[i].ends, patches.items[i].normal.x, patches.items[i].normal.y,
+                         patches.items[i].gap[0]);
+    }
     solveContacts(patches);
     if (getenv("GTC_STAGE"))
         std::fprintf(stderr, "   solved: b0 v.y %+.3f cy %+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
