@@ -175,7 +175,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // The blow for this body was struck earlier in the tick. What is left is
         // where the two are, and the ball may not travel into it any further.
         const double into = dot(ball.velocity - surfaceVelocity, normal);
-        if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+        if (into < 0.0) {
+            ball.velocity = ball.velocity - normal * into;
+            // Speed taken off the ball is an impulse on it, so it goes in the
+            // account where it was taken: a contact that stops the ball dead is a
+            // contact, and leaving it out of the account made the ground's share --
+            // which is worked out as what is left over -- carry it instead.
+            ballBlows_ = ballBlows_ - normal * (into * ball.mass);
+        }
         if (normal.y > 1e-9)
             ball.standing = ball.standing &&
                             kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
@@ -328,7 +335,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // turned the ball around before this runs, so nothing that was leaving is caught.
     {
         const double into = dot(ball.velocity, normal);
-        if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+        if (into < 0.0) {
+            ball.velocity = ball.velocity - normal * into;
+            ballBlows_ = ballBlows_ - normal * (into * ball.mass);
+        }
     }
     // What this shape gave the ball, drawn where the two met.
     //
