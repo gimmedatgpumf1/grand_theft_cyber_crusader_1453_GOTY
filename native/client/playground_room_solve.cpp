@@ -187,7 +187,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // second of fall in it that it was not doing -- a stored speed that no
         // surface could see, whose friction read as a moving face and span the ball
         // it was standing on.
-        const double ballTakes = patch.ball ? ballFreedom(patch.normal * -1.0) : 1.0;
+        const double ballTakes = 1.0;  // TRIAL: old compliance
         // What the whole pair answers to an impulse: how fast the body's place `at`
         // is moved along `toward` by an impulse given at `pushAt` along `direction`.
         // The reciprocal of the mass plus the two levers, for the body and for
