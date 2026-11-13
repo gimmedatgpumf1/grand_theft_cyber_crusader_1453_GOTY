@@ -10,6 +10,8 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 namespace gtc::native {
@@ -194,6 +196,9 @@ void PlaygroundRoom::settleBallFriction() {
                 next = std::clamp(next, -limit, limit);
             }
             const double impulse = next - lambda[i];
+            if (getenv("GTC_P"))
+                std::fprintf(stderr, "   p%d i%zu slip%+.4f load%.3f lam%+.4f next%+.4f imp%+.4f\n", pass, i, slip, load, lambda[i], next,
+                             impulse);
             if (impulse == 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
