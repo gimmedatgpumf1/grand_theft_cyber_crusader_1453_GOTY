@@ -802,6 +802,14 @@ void PlaygroundRoom::advance(double seconds) {
         // were stepped and which were not: a body that was woken by this tick's
         // contacts has already written the forces that woke it, and a body that is
         // still asleep has written nothing at all.
+        // Every impulse the tick applied, turned into the arrows that show it. This
+        // is the end of the tick and the only place it happens: the bodies answer
+        // first and the ball after them, and both of their blows belong to this one
+        // tick. Flushed between the two, as it used to be, the ball's half of every
+        // contact was drawn a frame later than the shape's -- a pair of forces that
+        // never appear together, which reads as one body pushing with nothing pushing
+        // back.
+        writeImpulses();
         recordStaticForces(stepped, pointStepped, ballStepped);
         ++ticks;
     }

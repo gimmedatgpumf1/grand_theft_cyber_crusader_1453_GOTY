@@ -543,7 +543,13 @@ void PlaygroundRoom::tickBodies() {
     // nothing left for it to do.
     separateBodies();
     settleBodies();
-    writeImpulses();
+    // The impulses are not turned into arrows here. This is the middle of the tick:
+    // the ball's own contacts are answered after this, and a ledger flushed here
+    // would show every blow the ball gave or took one tick after it happened. The
+    // arrows of one picture would then be half this tick and half the last, which is
+    // a contact with its two ends a frame apart -- and a force whose partner is not
+    // on screen is exactly what a conjured force looks like. One tick, one ledger:
+    // the flush is at the end of advance().
 }
 
 
