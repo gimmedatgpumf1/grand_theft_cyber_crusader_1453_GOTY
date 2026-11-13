@@ -99,7 +99,6 @@ void PlaygroundRoom::tickBall() {
     const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
     ball.force = {};
     addForce(ball.position, weight, ForceKind::Gravity, &ball.force, kBallOwner);
-    if (getenv("GTC_T")) std::fprintf(stderr, "    [tick] weight %+.3f\n", weight.y);
     if (held) {
         // The surface under it carries it, and that force is not written here: it is
         // written at the end of the tick, by the account below, together with
@@ -366,7 +365,10 @@ void PlaygroundRoom::tickBall() {
         if (what >= 0 && std::size_t(what) < kBodyCount) answered[std::size_t(what)] = true;
         if (what == -2) {
             floorAnswered = true;
-            ballContact(normal, -1);
+            // The floor is met at the ball's underside, not at its middle: an arrow
+            // drawn from the centre of a ball says the ground is pressing the ball
+            // through its own middle, and a lever drawn that way turns nothing.
+            ballContact(normal, -1, held, ball.position - normal * ball.radius);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
             // One blow per body per tick. A body met again in what is left of the
@@ -499,10 +501,6 @@ void PlaygroundRoom::tickBall() {
     if (ball.touching && ball.standing) {
         const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
         const Vec3 support = total - ballBlows_ - weight * kTick;
-        if (getenv("GTC_T"))
-            std::fprintf(stderr, "    [tick] support %+.3f N at (%+.3f,%+.3f) total %+.4f blows %+.4f sup(%+.2f,%+.2f)\n",
-                         support.y * (1.0 / kTick), ball.position.x, ball.position.y - ball.radius, total.y,
-                         ballBlows_.y, ball.supportNormal.x, ball.supportNormal.y);
         if (length(support) > 1e-9)
             addForce(ball.position + ball.supportNormal * (-ball.radius), support * (1.0 / kTick),
                      ForceKind::Contact, nullptr, kBallOwner);
