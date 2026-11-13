@@ -77,7 +77,10 @@ void PlaygroundRoom::tickBall() {
         ball.standing = true;
         return;
     }
-    if (ball.frozen && !ballNeighboursMoving()) return;
+    if (ball.frozen && !ballNeighboursMoving()) {
+        if (getenv("GTC_BW")) std::fprintf(stderr, "  ball asleep and nobody moving -- skipped\n");
+        return;
+    }
     ball.frozen = false;
 
     // What the ball arrived with is recorded once for the whole tick, before
@@ -240,6 +243,7 @@ void PlaygroundRoom::tickBall() {
             OutlineHit hit;
             if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
                                         ball.radius, kTick * remaining, hit))
+            if (getenv("GTC_BW")) std::fprintf(stderr, "  walk: body %zu hit at %.4f resting %d depth %.5f normal(%+.2f,%+.2f)\n", index, hit.along, (int)hit.resting, hit.depth, hit.normal.x, hit.normal.y);
                 continue;
 
             // Already on this surface when the tick began: a contact for the whole

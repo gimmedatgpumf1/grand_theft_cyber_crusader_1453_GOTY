@@ -3,7 +3,7 @@ static PlaygroundRoom settled() {
     PlaygroundRoom r; r.reset();
     for (int i = 0; i < 200; ++i) r.advance(1.0 / 20.0);
     // Empty floor on the left of the room, well clear of every shape.
-    r.ball_.position = {-1.0, r.ball_.radius, 0};
+    r.ball_.position = {0.30, r.ball_.radius, 0};
     r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = true;
     r.ball_.previous = r.ball_.position;
     return r;
@@ -12,7 +12,7 @@ int main() {
     // A dot dropped on the shoulder of a ball on the floor, off to one side.
     {
         PlaygroundRoom r = settled();
-        r.point_ = {-0.88, 0.95, 0};
+        r.point_ = {0.42, 0.95, 0};
         r.velocity_ = {}; r.pointFrozen_ = false; r.previous_ = r.point_;
         std::printf("dot onto the shoulder of a ball on the floor\n");
         for (int t = 1; t <= 30; ++t) {
@@ -28,7 +28,7 @@ int main() {
     {
         PlaygroundRoom r = settled();
         PlaygroundRoom::Body& cube = r.bodies_[0];
-        cube.centre = {-0.82, 2.0, 0};
+        cube.centre = {0.46, 2.0, 0};
         cube.angle = 0.0; cube.velocity = {}; cube.spin = 0.0; cube.frozen = false;
         PlaygroundRoom::placeCorners(cube);
         cube.previous = cube.position; cube.previousCentre = cube.centre; cube.previousAngle = cube.angle;
