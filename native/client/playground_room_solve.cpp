@@ -64,79 +64,34 @@ constexpr double kAgree = 1e-9;  // N s
 // Every surface the ball is already resting on, gathered before the tick is solved.
 //
 // Only a surface it is *on*, and not one it is falling towards: an arrival is the
-// walk's business, where the bounce is, and answering one here as well would take the
-// bounce off the ball and stop it dead on the floor. A ball within a micrometre of a
-// surface is on it -- that is the room's whole idea of touching -- so this asks the
-// same question the contacts ask everywhere else.
+// walk's business, where the bounce is, and calling one a support here would take the
+// bounce off the ball. A ball within a micrometre of a surface is on it -- that is
+// the room's whole idea of touching -- so this asks the same question the contacts
+// ask everywhere else.
+//
+// `bodyBallGap` reports `way` as the direction that leaves the ball for the shape, so
+// the normal this keeps is the other one: the way the ball may not be driven.
 void PlaygroundRoom::gatherBallSupports() {
     ballSupportCount_ = 0;
-    const auto hold = [&](Vec3 normal, Vec3 at, std::size_t body) {
+    const auto hold = [&](Vec3 normal, std::size_t body) {
         const double size = length(normal);
         if (!(size > 0.0)) return;
         if (ballSupportCount_ >= kMaxBallSupports) return;
-        ballSupports_[ballSupportCount_++] = BallSupport{normal / size, at, body, 0.0};
+        ballSupports_[ballSupportCount_++] = BallSupport{normal * (1.0 / size), body};
     };
     // The floor, which is under everything and answers to nothing.
-    if (ball_.position.y <= ball_.radius + playground_tick::kQuantum)
-        hold(Vec3{0, 1, 0}, ball_.position - Vec3{0, ball_.radius, 0}, kBodyCount);
-    // A shape the ball is lying on: `way` leaves the ball for the shape, so the way
-    // the ball may not go is the other one.
+    if (ball_.position.y <= ball_.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{}, at{};
         if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
-        hold(way * -1.0, at, index);
+        hold(way * -1.0, index);
     }
-    // The dot, which is a surface as well: a ball set down on it is held by it, and a
-    // shape pressing that ball down is answered through it.
+    // The dot is a surface as well: a ball set down on it is held by it.
     const Vec3 fromDot = ball_.position - point_;
-    const double reach = ball_.radius + kPointRadius;
-    if (length(fromDot) > 0.0 && length(fromDot) <= reach + playground_tick::kQuantum)
-        hold(fromDot, ball_.position - fromDot * (ball_.radius / length(fromDot)), kDotOwner);
-}
-
-// The ball held out of its supports, inside the sweeps the patches are solved in.
-//
-// The plainest constraint there is: the ball may leave a surface and may not be
-// driven into one, so the impulse along its normal accumulates and is never negative
-// -- a surface can hold a ball up and cannot hold it down. Being swept in the same
-// passes as the patches is the whole point of it: a shape pressing the ball into the
-// floor is answered by the floor in the same sweep and the two agree by the time the
-// sweep is over, instead of the ball being handed a fraction of the push and asked to
-// stand in for a surface.
-//
-// A support's normal passes through the ball's middle, so its lever is nothing and
-// it turns the ball not at all: it takes speed, not spin. What turns the ball is the
-// grip along the face, which is solved once over every face at once in
-// settleBallFriction().
-void PlaygroundRoom::solveBallSupports(double& worst) {
-    Ball& ball = ball_;
-    if (ballSupportCount_ == 0 || ball.frozen) return;
-    const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
-    for (std::size_t i = 0; i < ballSupportCount_; ++i) {
-        BallSupport& support = ballSupports_[i];
-        const Vec3 arm = support.at - ball.position;
-        const double lever = arm.x * support.normal.y - arm.y * support.normal.x;
-        const double give = 1.0 / ball.mass + lever * lever / moment;
-        if (!(give > 0.0)) continue;
-        // What the surface is doing where it presses. A shape the ball is lying on
-        // moves, and the ball is answered against it moving.
-        Vec3 carrier{};
-        if (support.body < kBodyCount) {
-            const Body& mate = bodies_[support.body];
-            if (!mate.frozen && !bodyHeld(support.body)) carrier = pointSpeed(mate, support.at);
-        } else if (support.body == kDotOwner && !pointFrozen_) {
-            carrier = velocity_;
-        }
-        const double leaving = dot(ball.velocity - carrier, support.normal);
-        const double next = std::max(0.0, support.impulse - leaving / give);
-        const double applied = next - support.impulse;
-        if (applied == 0.0) continue;
-        support.impulse = next;
-        pushBall(support.at, support.normal * applied, ForceKind::Contact);
-        worst = std::max(worst, std::abs(applied));
-    }
+    if (length(fromDot) > 0.0 && length(fromDot) <= ball_.radius + kPointRadius + playground_tick::kQuantum)
+        hold(fromDot, kDotOwner);
 }
 
 // The answer to a whole configuration of patches at once.
@@ -250,15 +205,12 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
-        // The ball takes a push as the body it is: 1/m and its lever, like every
-        // other solid in the room, and the whole of the impulse rather than a
-        // fraction of it. What the surface under it will not let it do is a second
-        // constraint, and it is solved as one -- see solveBallSupports(). The floor
-        // answers the part of the push that presses the ball into it and the ball
-        // keeps the rest, in one place and with both halves written down. Scaling the
-        // impulse here instead got the ball's answer right along the normal it was
-        // solved on and threw away the component along the floor, which the shape
-        // then kept: momentum made out of nothing, every tick a load leaned.
+        // What the ball is free to do with a push, and what that leaves for the
+        // patch to solve against. Both come from one projection of the ball's
+        // supports -- see the note on BallSupport -- so the impulse the ball is
+        // given and the compliance the patch was solved against are the same fact
+        // read twice, which is what makes the pair net to the floor's share and no
+        // more. A ball on nothing has no projection and takes the whole of it.
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             double value = dot(toward, direction) / body->mass +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
@@ -270,7 +222,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += dot(toward, direction) / ball_.mass +
+                    value += ballTake(direction) * (dot(toward, direction) / ball_.mass) +
                              lever(at - ball_.position, toward) *
                                  lever(pushAt - ball_.position, direction) / ballMoment;
             }
@@ -283,7 +235,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse * -1.0, kind);
+                if (!ballFixed) pushBall(at, ballFree(impulse * -1.0), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
@@ -609,11 +561,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         for (int pass = 0; pass < kSolvePasses; ++pass) {
             worst = 0.0;
             for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m], withGrip);
-            // The ball's supports last in the pass, so a push the patches have just
-            // given the ball has already been applied when the floor answers it --
-            // and the patches, next time round, are answered against a ball that is
-            // where the floor leaves it rather than where the push put it.
-            solveBallSupports(worst);
             if (worst < kImpulseTolerance && pass > 0) break;
         }
     };
