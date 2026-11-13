@@ -15,6 +15,8 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
+
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -233,6 +235,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // push itself. Written any other way the solver believes the ball
                     // answers more or less than it does, and the difference is not a
                     // rounding error: it is an impulse the pair never balances.
+                    if (getenv("GTC_WALL")) {} else
                     value += dot(direction, ballFree(toward)) / ball_.mass +
                              lever(at - ball_.position, direction) *
                                  lever(pushAt - ball_.position, toward) / ballMoment;

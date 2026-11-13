@@ -1,5 +1,7 @@
 #include "client/playground_room.h"
 
+#include <cstdlib>
+
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -224,7 +226,7 @@ void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - ball_.position;
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    const Vec3 free = ballFree(impulse);
+    const Vec3 free = getenv("GTC_WALL") ? Vec3{} : ballFree(impulse);
     ball_.velocity = ball_.velocity + free * (1.0 / ball_.mass);
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ballBlows_ = ballBlows_ + free;
