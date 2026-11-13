@@ -2,9 +2,6 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
-#include <cstdio>
-#include <cstdlib>
-
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -64,7 +61,6 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
-    const Vec3 tracerIn = ball.velocity;
     ballTouchCount_ = 0;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
@@ -564,9 +560,6 @@ void PlaygroundRoom::tickBall() {
         ball.shown = ball.position;
     }
     ball.angle += ball.spin * kTick;
-    if (getenv("GTC_BT"))
-        std::fprintf(stderr, "  tickBall v(%+.3f,%+.3f,sp%+.2f) -> (%+.3f,%+.3f,sp%+.2f) at (%+.3f,%+.3f)\n", tracerIn.x,
-                     tracerIn.y, tracerIn.z, ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
 }
 
 // The ball against something.// Whether the ball can be put down at this spot. It is the mouse that needs this,

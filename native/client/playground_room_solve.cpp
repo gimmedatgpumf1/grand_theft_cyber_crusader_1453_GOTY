@@ -29,7 +29,7 @@ namespace {
 // How many sweeps of the patches one tick is solved in. Sequential impulses
 // converge quickly for a handful of contacts; this is the point at which a solve
 // that is still moving is taken to be a corner case, not a solve.
-constexpr int kSolvePasses = 96;
+constexpr int kSolvePasses = 32;
 // How far apart two ends of one face may be, in height above the surface, and still
 // be the same contact rather than a shape coming down on a corner. A millimetre on a
 // shape seven hundred millimetres across is a seventh of a degree: it is the noise a
