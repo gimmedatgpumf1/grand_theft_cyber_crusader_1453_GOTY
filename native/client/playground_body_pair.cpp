@@ -107,7 +107,51 @@ void PlaygroundRoom::separateBodies() {
         // A pinned body is not separated from anything by moving it: it is where its
         // axle says it is, and a shape that has come to be inside a seesaw's plank is
         // answered by the contact, not by shifting the plank out of the way.
-        if (body.pivoted) continue;
+        //
+        // It can still be through the floor, and it is the floor's turn that answers
+        // it. A plank whose end has swung down onto the ground has one degree of
+        // freedom left, and the way out of the ground is to turn back about its pin --
+        // the same answer every other body gets, which is to be put where it is not
+        // inside anything, through the only door it has. Left to the contact alone the
+        // end came to rest six centimetres into the ground: the contact can stop the
+        // turn, but it cannot give the turn back.
+        if (body.pivoted) {
+            const auto throughFloor = [&](double angle) {
+                double deepest = 0.0;
+                const double c = std::cos(angle), s = std::sin(angle);
+                for (std::size_t i = 0; i < body.count; ++i) {
+                    const double y = body.pivotPoint.y + body.local[i].x * s + body.local[i].y * c;
+                    deepest = std::max(deepest, -y);
+                }
+                return deepest;
+            };
+            if (throughFloor(body.angle) > playground_tick::kQuantum) {
+                // The least turn, either way, that puts every corner back on the plane.
+                // The bound is grown until it clears and the answer is then bisected,
+                // so the turn given back is the smallest one that does the job and not
+                // a chosen number.
+                double outside = 0.0;
+                for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5})
+                    if (throughFloor(body.angle + reach) <= playground_tick::kQuantum || throughFloor(body.angle - reach) <= playground_tick::kQuantum) {
+                        outside = reach;
+                        break;
+                    }
+                if (outside > 0.0) {
+                    const double side = throughFloor(body.angle + outside) <= playground_tick::kQuantum ? 1.0 : -1.0;
+                    double low = 0.0, high = outside;
+                    for (int step = 0; step < 60; ++step) {
+                        const double mid = 0.5 * (low + high);
+                        if (throughFloor(body.angle + side * mid) <= playground_tick::kQuantum)
+                            high = mid;
+                        else
+                            low = mid;
+                    }
+                    body.angle += side * high;
+                    placeCorners(body);
+                }
+            }
+            continue;
+        }
         // The floor.
         double deepest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
