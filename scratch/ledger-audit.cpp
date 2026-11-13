@@ -27,7 +27,10 @@ static void run(const char* name, double dx, double dy, double drop) {
             // shove the ball never felt.
             if (f.couple) continue;
             const Vec3 impulse = f.force * playground_tick::kTick;
-            if (f.owner == 2) jBall = jBall + impulse;
+            // By the room's own ids, not by a number written here: the ball's owner is
+            // whichever body the ball comes after, and a room with a seesaw in it has
+            // one more body than a room without.
+            if (f.owner == PlaygroundRoom::kBallOwner) jBall = jBall + impulse;
             if (f.owner == 0) jCube = jCube + impulse;
         }
         const double mb = length((r.ball_.velocity - vBall) * r.ball_.mass - jBall);

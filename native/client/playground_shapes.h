@@ -163,6 +163,15 @@ inline constexpr double kSeesawHalf = 1.25;
 inline constexpr double kSeesawHalfThick = 0.12;
 inline constexpr double kSeesawX = -4.60;
 inline constexpr double kSeesawPivotY = 0.85;
+// The axle is a bearing and not a mathematical point. A plank on a pivot has nothing
+// to slow it down -- its weight acts at the pin, so it makes no turn, and a turn it
+// was given once would last for ever -- and a real one comes to rest because the pin
+// it turns on is a steel pin in a bronze bush rubbing under the weight it carries.
+// The couple is mu * N * r, the same law as the ball's rolling resistance and the
+// same reason: a real contact, a real coefficient, and a force that opposes the turn
+// and can only take it away. mu is dry bronze on steel; r is the pin's own radius.
+inline constexpr double kAxleBearingFriction = 0.12;
+inline constexpr double kAxleRadius = 0.02;
 inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
     // The square, turned so a corner leads: it lands on a corner and has to be
     // held up by the other three.

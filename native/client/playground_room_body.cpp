@@ -103,6 +103,23 @@ void PlaygroundRoom::applyBodyWeight(std::size_t index) {
         body.velocity = body.velocity + jog * (1.0 / body.mass);
         body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
     }
+    // The pin's own bearing, which is the only thing that can ever take a turn out
+    // of a body whose centre of mass is its pivot. It is a couple at the axle, against
+    // the turn, and it is worth mu * N * r where N is the weight the axle carries --
+    // the plank's own, corner by corner, and nothing else, because the pin carries the
+    // plank and the floor carries what stands on the plank. It can stop the turn and
+    // it can never drive one: the same law as the ball's rolling resistance, and
+    // applied the same way, so a plank left spinning comes to rest instead of turning
+    // for ever.
+    if (body.pivoted && body.spin != 0.0) {
+        const double carried = body.mass * kGravity;
+        const double couple = kAxleBearingFriction * carried * kAxleRadius;  // N.m
+        const double take = couple * kTick / body.moment;                    // rad/s
+        const double turn = std::copysign(std::min(std::abs(body.spin), take), body.spin);
+        body.spin -= turn;
+        if (body.spin == 0.0) body.spin = 0.0;
+        addCouple(body.pivotPoint, couple, Vec3{0.0, 0.0, 0.0}, ForceKind::Rolling, index);
+    }
 }
 
 // The air, on everything in the room that moves through it.
