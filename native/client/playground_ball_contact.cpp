@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
@@ -236,6 +237,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
 
     const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
+    if (getenv("GTC_BC"))
+        std::fprintf(stderr, "BC body%d n(%+.3f,%+.3f) arrival(%+.4f,%+.4f) v(%+.4f,%+.4f) arrived%+.4f closing%+.4f\n",
+                     bodyIndex, normal.x, normal.y, ball.arrival.x, ball.arrival.y, ball.velocity.x, ball.velocity.y,
+                     arrivedSpeed, closing);
     // A bounce is the answer to arriving at a surface, measured against what the
     // ball arrived with rather than the speed gravity lent it on the way: a ball on
     // the floor gets that every tick, and bouncing it would be bouncing it off
