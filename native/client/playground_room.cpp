@@ -175,7 +175,11 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // written as a force on the body because it acts at a point that never moves, so
     // it does no work and changes nothing the body can report -- it is the room that
     // holds the pin, exactly as the floor holds a shape standing on it.
+    const Vec3 gtcBeforeV = body.velocity;
     body.velocity = body.pivoted ? Vec3{} : body.velocity + impulse * (1.0 / body.mass);
+    if (getenv("GTC_PB") && !body.pivoted && length(impulse) > 1.5)
+        std::fprintf(stderr, "PUSHBODY mass%.1f j(%+.3f,%+.3f) kind%d dv(%+.3f,%+.3f)\n", body.mass, impulse.x,
+                     impulse.y, int(kind), body.velocity.x - gtcBeforeV.x, body.velocity.y - gtcBeforeV.y);
     body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
     // settling again from where the blow found it: it is not at rest any more, it
