@@ -9,6 +9,8 @@
 #include "client/playground_shapes.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 namespace {
@@ -62,6 +64,15 @@ void PlaygroundRoom::settleBallFriction() {
     double press = 0.0;
     for (std::size_t i = 0; i < ballTouchCount_; ++i) press += ballTouches_[i].pressed;
     const double normalForce = press / ball_shape::kTick;
+    if (getenv("GTC_F")) {
+        std::fprintf(stderr, "  friction: %zu touches, vel(%+.3f,%+.3f) spin %+.3f\n", ballTouchCount_, ball.velocity.x,
+                     ball.velocity.y, ball.spin);
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            std::fprintf(stderr, "    touch %zu n(%+.2f,%+.2f) surf v(%+.3f,%+.3f) pressed %+.5f N s (%+.2f N)\n", i,
+                         ballTouches_[i].normal.x, ballTouches_[i].normal.y, ballTouches_[i].surfaceVelocity.x,
+                         ballTouches_[i].surfaceVelocity.y, ballTouches_[i].pressed,
+                         ballTouches_[i].pressed / ball_shape::kTick);
+    }
     const Vec3 velocityBefore = ball.velocity;
     const double spinBefore = ball.spin;
     // The rolling resistance couple, before the grip has its say.
