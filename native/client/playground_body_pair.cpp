@@ -108,40 +108,67 @@ void PlaygroundRoom::separateBodies() {
         // axle says it is, and a shape that has come to be inside a seesaw's plank is
         // answered by the contact, not by shifting the plank out of the way.
         //
-        // It can still be through the floor, and it is the floor's turn that answers
-        // it. A plank whose end has swung down onto the ground has one degree of
-        // freedom left, and the way out of the ground is to turn back about its pin --
-        // the same answer every other body gets, which is to be put where it is not
-        // inside anything, through the only door it has. Left to the contact alone the
-        // end came to rest six centimetres into the ground: the contact can stop the
-        // turn, but it cannot give the turn back.
+        // It can still be inside something, and what gets it out is its turn.
+        //
+        // A pinned body has exactly one kind of place -- its angle -- so being
+        // inside the floor, inside another shape or inside the ball is answered the
+        // only way this body can answer anything: turn it back. That is not a
+        // separate rule from every other body's, it is the same one. A free shape
+        // that has ended up inside something is moved out along its position, and
+        // the only position a pinned body has is which way it is turned.
+        //
+        // Without this the plank was exempt from the room. Its turn was integrated
+        // with nothing asked about what it turned through, and nothing here could
+        // give any of it back, so a plank coming down across a cube cut seven
+        // centimetres into it and stayed there -- the contact underneath then spent
+        // every tick pushing the cube sideways out of the way, which is the drift the
+        // King saw. The plank stops where it met the cube and the axle carries the
+        // rest, exactly as it would in the yard.
         if (body.pivoted) {
-            const auto throughFloor = [&](double angle) {
-                double deepest = 0.0;
+            const auto cornersAt = [&](double angle, std::array<Vec3, kMaxCorners>& out) {
                 const double c = std::cos(angle), s = std::sin(angle);
-                for (std::size_t i = 0; i < body.count; ++i) {
-                    const double y = body.pivotPoint.y + body.local[i].x * s + body.local[i].y * c;
-                    deepest = std::max(deepest, -y);
+                for (std::size_t i = 0; i < body.count; ++i)
+                    out[i] = {body.pivotPoint.x + body.local[i].x * c - body.local[i].y * s,
+                              body.pivotPoint.y + body.local[i].x * s + body.local[i].y * c, 0};
+            };
+            // How deep this body would be in anything at that angle. Zero is clear.
+            const auto deepestAt = [&](double angle) {
+                std::array<Vec3, kMaxCorners> corners{};
+                cornersAt(angle, corners);
+                double deepest = 0.0;
+                for (std::size_t i = 0; i < body.count; ++i)
+                    deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
+                for (std::size_t two = 0; two < kBodyCount; ++two) {
+                    if (two == one || bodies_[two].count == 0) continue;
+                    Vec3 out{0, 1, 0};
+                    double amount = 0.0;
+                    if (outlineOverlap(corners.data(), body.count, bodies_[two].position.data(), bodies_[two].count,
+                                       out, amount))
+                        deepest = std::max(deepest, amount);
                 }
+                const double gap =
+                    outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
+                deepest = std::max(deepest, ball_.radius - gap);
                 return deepest;
             };
-            if (throughFloor(body.angle) > playground_tick::kQuantum) {
-                // The least turn, either way, that puts every corner back on the plane.
-                // The bound is grown until it clears and the answer is then bisected,
-                // so the turn given back is the smallest one that does the job and not
-                // a chosen number.
-                double outside = 0.0;
-                for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5})
-                    if (throughFloor(body.angle + reach) <= playground_tick::kQuantum || throughFloor(body.angle - reach) <= playground_tick::kQuantum) {
-                        outside = reach;
+            if (deepestAt(body.angle) > playground_tick::kQuantum) {
+                // The least turn, either way, that takes it clear. The bound is grown
+                // until something clears and the answer is then bisected, so the turn
+                // given back is the smallest that does the job and not a chosen number.
+                double found = -1.0;
+                for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5, 3.0, 6.29}) {
+                    if (deepestAt(body.angle + reach) <= playground_tick::kQuantum ||
+                        deepestAt(body.angle - reach) <= playground_tick::kQuantum) {
+                        found = reach;
                         break;
                     }
-                if (outside > 0.0) {
-                    const double side = throughFloor(body.angle + outside) <= playground_tick::kQuantum ? 1.0 : -1.0;
-                    double low = 0.0, high = outside;
+                }
+                if (found > 0.0) {
+                    const double side = deepestAt(body.angle + found) <= playground_tick::kQuantum ? 1.0 : -1.0;
+                    double low = 0.0, high = found;
                     for (int step = 0; step < 60; ++step) {
                         const double mid = 0.5 * (low + high);
-                        if (throughFloor(body.angle + side * mid) <= playground_tick::kQuantum)
+                        if (deepestAt(body.angle + side * mid) <= playground_tick::kQuantum)
                             high = mid;
                         else
                             low = mid;
