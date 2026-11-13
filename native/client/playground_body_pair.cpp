@@ -175,7 +175,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
 void PlaygroundRoom::separateBodies() {
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         Body& body = bodies_[one];
-        if (body.count == 0 || body.frozen || bodyHeld(one) || body.pivoted) continue;
+        if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
         // A pinned body is not separated from anything by moving it: it is where its
         // axle says it is, and a shape that has come to be inside a seesaw's plank is
         // answered by the contact, not by shifting the plank out of the way.
@@ -266,13 +266,7 @@ void PlaygroundRoom::separateBodies() {
             }
             continue;
         }
-        // The floor.
-        double deepest = 0.0;
-        for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
-        if (deepest > 0.0) {
-            body.centre.y += deepest;
-            placeCorners(body);
-        }
+        // Another shape first; the floor has the last word below.
         // Another shape.
         for (std::size_t two = 0; two < kBodyCount; ++two) {
             if (two == one || bodies_[two].count == 0) continue;
@@ -333,6 +327,21 @@ void PlaygroundRoom::separateBodies() {
                 if (solidMoves) placeCorners(solid);
                 placeCorners(body);
             }
+        }
+        // And the floor, last of all.
+        //
+        // It used to be answered first, and an overlap with another shape was then
+        // taken out of this body afterwards -- downwards, if the other shape was on
+        // top of it -- with the ground it had just been put back on top of already
+        // spent. A cube under a seesaw's end ended up seventeen centimetres into the
+        // floor that way. The floor is not a suggestion: nothing in this room is below
+        // it, and that is decided here, after everything else has had its say.
+        double deepest = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i)
+            deepest = std::max(deepest, playground_tick::kSurfaceY - body.position[i].y);
+        if (deepest > 0.0) {
+            body.centre.y += deepest;
+            placeCorners(body);
         }
     }
 }
