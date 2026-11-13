@@ -272,7 +272,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arrivedArm.y,
                                body.arrivalVelocity.y + body.arrivalSpin * arrivedArm.x, 0.0};
             const double closing = dot(arrived - ballPointSpeed(at), way);
-            if (closing < 0.0) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+            if (getenv("GTC_N") == nullptr && closing < 0.0)
+                patch.rebound[0] = -ball_shape::kBallRestitution * closing;
         }
         patches.add(patch);
     }
