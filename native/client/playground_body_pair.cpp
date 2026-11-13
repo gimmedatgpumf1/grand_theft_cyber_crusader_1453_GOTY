@@ -230,6 +230,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
     double first = span + 1.0;  // no meeting at all
     const auto take = [&](double u) {
+        if (getenv("GTC_HS")) std::fprintf(stderr, "HS take u%+.8f a%+.8f\n", u, way * u);
         if (u > 0.0 && u < first) first = u;
     };
     // The very first micrometre of the turn. A body that is already against something
@@ -292,6 +293,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     const double spread = std::acos(std::max(-1.0, std::min(1.0, reach / radius)));
                     for (const double which : {1.0, -1.0}) {
                         double u = way * (normalPhase + which * spread - phase);
+                        if (getenv("GTC_HS")) std::fprintf(stderr, "HS face cand other%zu e%zu which%+.0f raw%+.8f\n", other, e, which, u);
                         // Into the u's this turn covers, however many turns round it is.
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
