@@ -341,8 +341,16 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 }
             }
         }
-        // And the ball, which is a circle rather than a face: two circles meet at two
-        // angles and nowhere else.
+        // And the ball, which is a circle rather than a face.
+        //
+        // Two circles meet at two angles and nowhere else -- the ball's own radius plus
+        // the allowance, about the ball's middle -- and that is the corner coming at the
+        // ball. The other way round is the ball coming at one of this body's faces,
+        // which is a circle meeting a *turning line*: the same sinusoid as a corner
+        // meeting a face, with the ball's radius in the offset instead of the
+        // allowance. The ball has no corners, so it is answered on the faces it is
+        // under; asked only of this body's corners, a ball lying under the middle of the
+        // plank is not looked for at all and the plank turns down onto it unseen.
         {
             const Vec3 away = ball_.position - pin;
             const double reach = length(away);
@@ -362,6 +370,27 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     if (!(length(aLittle - ball_.position) < length(where - ball_.position))) continue;
                     take(u);
                 }
+            }
+            Vec3 localMiddle{};
+            for (std::size_t k = 0; k < body.count; ++k) localMiddle = localMiddle + body.local[k];
+            localMiddle = localMiddle * (1.0 / static_cast<double>(body.count));
+            for (std::size_t e = 0; e < body.count; ++e) {
+                const Vec3 a0 = body.local[e];
+                const Vec3 b0 = body.local[(e + 1) % body.count];
+                const Vec3 localSide = b0 - a0;
+                const double localSpan = length(localSide);
+                if (!(localSpan > 1e-12)) continue;
+                Vec3 outward{localSide.y / localSpan, -localSide.x / localSpan, 0.0};
+                if (dot(localMiddle - a0, outward) > 0.0) outward = outward * -1.0;
+                const double k1 = dot(away, outward);
+                const double k2 = away.y * outward.x - away.x * outward.y;
+                double u = 0.0;
+                if (!firstSinusoidCrossing(k1, way * k2, dot(a0, outward) + big, span, u)) continue;
+                const double at = body.angle + way * (u + nudge);
+                std::array<Vec3, kMaxCorners> corners{};
+                pivotCornersAt(body, at, corners);
+                if (erosionDepth(corners.data(), body.count, ball_.position, big) <= 0.0) continue;
+                take(u);
             }
         }
     }
