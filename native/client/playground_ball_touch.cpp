@@ -119,16 +119,20 @@ void PlaygroundRoom::settleBallFriction() {
             }
         }
     }
-    // The limit is mu times the normal force, and the normal force is what the
-    // contact is actually carrying. The statics above is one reading of that, and it
-    // is the right one for a ball holding a weight up with nothing squeezing it --
-    // but it is only an estimate, and in a squeeze it is a bad one: two surfaces
-    // pushing a ball between them press it far harder than the weight standing on it,
-    // which is the whole reason a wedge holds. The solver already knows that force;
-    // it is the normal impulse it applied at the face. Whichever is larger is the
-    // load, because a face cannot carry less than it is pressed with.
-    for (std::size_t i = 0; i < ballTouchCount_; ++i)
-        ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, ballTouches_[i].normalImpulse);
+    // The statics above is an estimate of the normal force, and in a squeeze it is a
+    // low one: two surfaces pushing a ball between them press it harder than the
+    // weight standing on it, and the solver knows the real number -- it is the normal
+    // impulse it applied at that face. Using it gives the pinch four times the grip
+    // (a ball spun under a resting cube goes 20 -> 0.15 rad/s in one tick instead of
+    // 0.63), and it is the physically right load, because Coulomb's limit is mu times
+    // the normal force and not mu times the weight.
+    //
+    // It is not in yet. Turning it on makes two of the squeeze placements gain energy
+    // (+0.0096 J and +0.0133 J), and no amount of grip is worth a joule from nowhere:
+    // the extra grip is answered by the prevention sweep, which hands back a shape's
+    // travel while leaving it the speed that made it. That pair of faults has to be
+    // put right before the stronger load can be switched on, and until then the
+    // weaker, statics-based load is what ships. See Body::normalImpulse.
     // The load the ball's faces are carrying altogether, in newtons, which is what
     // both friction and rolling resistance are measured against.
     double press = 0.0;

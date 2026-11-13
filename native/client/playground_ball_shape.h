@@ -28,11 +28,26 @@ constexpr int kMaxContacts = 4;
 // instead of skidding for ever.
 constexpr double kBallStaticFriction = 0.70;
 constexpr double kBallKineticFriction = 0.55;
-// Rolling resistance, F = Crr * N. Rubber on a wooden floor: the ball does not
-// roll for ever on a level floor, and this is the coefficient that says how fast
-// a roll dies away. It is a property of the pair of materials, measured like mu,
-// not a speed below which something changes.
-constexpr double kBallRollingResistance = 0.010;
+// Rolling resistance, F = Crr * N. The ball does not roll for ever on a level
+// floor, and this is the coefficient that says how fast a roll dies away. It is a
+// property of the pair of materials, measured like mu, and not a speed below which
+// something changes.
+//
+// This is the whole of what slows a ball that is *rolling*, and it is worth being
+// clear about why, because it is the one way a ball differs from every other shape in
+// the room. A plate sliding on the floor is slowed by friction at mu_k * N and stops
+// in a hand's width. A ball that rolls is not sliding anywhere -- the point it touches
+// the floor is at rest, which is what rolling means -- so friction along the floor
+// does no work on it and cannot slow it at all. Only the couple this coefficient
+// describes brings a roll to an end.
+//
+// It used to be 0.010, which is steel on steel, and it showed: a ball at a metre a
+// second ran seven metres, which reads as a ball on ice and is what "the ball is far
+// too slippery" is. The room is a playground with a painted concrete floor, and a ball
+// on that is nearer 0.035 -- a roll at a metre a second dies in about two metres and
+// four seconds, and a ball nudged gently stops in a few centimetres, which is what a
+// real one does.
+constexpr double kBallRollingResistance = 0.035;
 // A basketball is a gas-filled skin: it gives back three quarters of the speed it
 // lands with, which is a little over half the height.
 constexpr double kBallRestitution = 0.75;
