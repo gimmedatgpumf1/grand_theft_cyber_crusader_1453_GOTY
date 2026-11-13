@@ -834,7 +834,20 @@ void PlaygroundRoom::advance(double seconds) {
         // halves of the tick have moved. It is here rather than inside either of them
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
-        separateBall();
+        {
+            const auto under = [&](int stage) {
+                if (!getenv("GTC_FL")) return;
+                for (std::size_t i = 0; i < kBodyCount; ++i) {
+                    const Body& b = bodies_[i];
+                    double low = 1e9;
+                    for (std::size_t j = 0; j < b.count; ++j) low = std::min(low, b.position[j].y);
+                    if (low < -1e-7) std::fprintf(stderr, "FL stage%d body%zu low%+.6f frozen%d\n", stage, i, low, int(b.frozen));
+                }
+            };
+            under(0);
+            separateBall();
+            under(1);
+        }
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
