@@ -3,6 +3,7 @@
 #include "client/raster.h"
 #include "client/ui_layer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -603,24 +604,55 @@ private:
     std::size_t ballSupportCount_ = 0;
     void gatherBallSupports();
     Vec3 ballFree(Vec3 push) const {
-        Vec3 out = push;
         // The projection is onto the *orthogonal complement of all of them at once*,
         // which is not the same as taking them one after another. With one support
         // the two agree; with two they do not, and the difference is momentum.
         // Taking the floor's normal out of a push and then the cube's puts back a
         // little of the floor's -- the normals are not perpendicular, so removing one
         // does not preserve the other -- and a ball held by a floor and a shape was
-        // handed 1.7 N s *upward* by an impulse that was pressing it down. Repeating
-        // the sweep converges on the vector that is perpendicular to every normal,
-        // which is the only direction the ball has left.
-        for (int sweep = 0; sweep < 8; ++sweep) {
-            const Vec3 before = out;
-            for (std::size_t i = 0; i < ballSupportCount_; ++i) {
-                const Vec3& normal = ballSupports_[i].normal;
-                out = out - normal * dot(out, normal);
-            }
-            if (length(out - before) < 1e-15) break;
+        // handed 1.7 N s *upward* by an impulse that was pressing it down.
+        //
+        // It is solved and not swept towards. Sweeping the normals one after another
+        // is a projection only in the limit, and it converges at the cosine of the
+        // angle between them to the power of the number of sweeps: eight sweeps over a
+        // floor and a plank's end a third of a turn apart leave seven parts in a
+        // hundred of the push unaccounted for. Seven parts in a hundred is nothing
+        // until the solve starts leaning on it -- a ball wedged between two surfaces
+        // that give nothing has nowhere to go at all, so the impulse needed to stop
+        // the closing is unbounded, and every pass that leaked a little of it put a
+        // little more speed into the ball, sideways, where the leak pointed. That is
+        // how a ball standing still under a seesaw's end left at eight metres a
+        // second. The complement is the answer of a small linear system -- the
+        // support normals' own Gram matrix -- and it is exact.
+        const std::size_t count = ballSupportCount_;
+        if (count == 0) return push;
+        double m[kMaxBallSupports][kMaxBallSupports + 1]{};
+        for (std::size_t i = 0; i < count; ++i) {
+            for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(ballSupports_[i].normal, ballSupports_[j].normal);
+            m[i][count] = dot(ballSupports_[i].normal, push);
         }
+        // Gaussian elimination with partial pivoting. A row with no pivot left is a
+        // support that another support already says -- two faces on the same line, or
+        // the same face twice -- and it carries no share of its own.
+        std::array<double, kMaxBallSupports> share{};
+        for (std::size_t col = 0; col < count; ++col) {
+            std::size_t pivot = col;
+            for (std::size_t row = col + 1; row < count; ++row)
+                if (std::abs(m[row][col]) > std::abs(m[pivot][col])) pivot = row;
+            if (!(std::abs(m[pivot][col]) > 1e-12)) continue;
+            if (pivot != col)
+                for (std::size_t j = col; j <= count; ++j) std::swap(m[col][j], m[pivot][j]);
+            for (std::size_t row = 0; row < count; ++row) {
+                if (row == col) continue;
+                const double factor = m[row][col] / m[col][col];
+                if (factor == 0.0) continue;
+                for (std::size_t j = col; j <= count; ++j) m[row][j] -= factor * m[col][j];
+            }
+        }
+        for (std::size_t i = 0; i < count; ++i)
+            if (std::abs(m[i][i]) > 1e-12) share[i] = m[i][count] / m[i][i];
+        Vec3 out = push;
+        for (std::size_t i = 0; i < count; ++i) out = out - ballSupports_[i].normal * share[i];
         return out;
     }
     // The same projection, as the share of the compliance a patch may count on: how
