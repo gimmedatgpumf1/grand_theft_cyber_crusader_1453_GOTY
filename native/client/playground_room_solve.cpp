@@ -558,7 +558,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         if (patch.ball && getenv("GTC_ST") != nullptr) {
             const Vec3 d = ball_.velocity - gtcBallBefore;
-            if (length(d) > 5.0)
+            if (length(d) > 0.3)
                 std::fprintf(stderr, "SOLVE b%zu other%zu ends%zu n(%+.3f,%+.3f) dv(%+.2f,%+.2f) v(%+.2f,%+.2f)\n",
                              patch.body, patch.other, patch.ends, patch.normal.x, patch.normal.y, d.x, d.y,
                              ball_.velocity.x, ball_.velocity.y);
