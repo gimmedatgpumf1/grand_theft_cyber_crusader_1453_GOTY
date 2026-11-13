@@ -198,13 +198,17 @@ int main() {
         c.previousCentre = c.centre;
         c.previousAngle = c.angle;
         const double x0 = c.centre.x;
-        double drift = 0.0;
-        for (int i = 0; i < 600; ++i) {
+        for (int i = 0; i < 300; ++i) r.advance(kDt);
+        // It slides down the ramp -- a cube on fifty degrees does -- and then it is
+        // on the floor. What may not happen is that it keeps going once it is down.
+        const double settled = c.centre.x;
+        double crept = 0.0;
+        for (int i = 0; i < 300; ++i) {
             r.advance(kDt);
-            drift = std::max(drift, std::fabs(c.centre.x - x0));
+            crept = std::max(crept, std::fabs(c.centre.x - settled));
         }
-        std::printf("6. cube on the tilted plank drift %.9f m over 30 s | plank %+.4f cube (%+.4f,%+.4f) a%+.4f\n", drift,
-                    s.angle, c.centre.x, c.centre.y, c.angle);
+        std::printf("6. cube set on the ramp   slid %.6f m down it in 15 s, then %.9f m of creep in 15 s | cube (%+.4f,%+.4f) a%+.4f\n",
+                    settled - x0, crept, c.centre.x, c.centre.y, c.angle);
     }
     // 7. The ball rolling down the raised end and off: no energy may be made.
     {
