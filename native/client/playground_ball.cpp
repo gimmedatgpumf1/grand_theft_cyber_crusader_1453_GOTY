@@ -469,7 +469,13 @@ void PlaygroundRoom::tickBall() {
                 if (!refused[index]) {
                     refused[index] = true;
                     ball.touching = true;
-                    ballContact(hit.normal, int(index), held, hit.contact, 0.0, answered[index]);
+                    // The face it is going into when the tick ends, not the one it is
+                    // lying against now: in a converging corner the two are not the same
+                    // direction, and stopping the ball along the wrong one left it
+                    // rolling into the corner for ever at a hundredth of a metre a
+                    // second -- speed with nowhere to go.
+                    ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
+                                answered[index]);
                 }
                 blocked = true;
                 first = 0.0;
