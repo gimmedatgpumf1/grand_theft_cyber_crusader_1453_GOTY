@@ -293,7 +293,10 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // it would be held up for one tick, dropped for the next, and would walk its
         // way along the ball in a tremor. What is arriving is the shape with nothing
         // under it, and that is the only one the reach is for.
-        if (gap > reach && !body.onBall && gap > kContactBand) continue;
+        // Only a shape that is *approaching* can fail to arrive. One that is not
+        // closing at all is not on its way anywhere: it is resting, or sliding along
+        // the ball, and that is a contact whether or not it covers any ground.
+        if (reach > 0.0 && gap > reach) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
