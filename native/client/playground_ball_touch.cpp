@@ -10,6 +10,8 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 namespace gtc::native {
@@ -240,6 +242,11 @@ void PlaygroundRoom::settleBallFriction() {
     bool still = true;
     for (std::size_t i = 0; i < ballTouchCount_; ++i) still = still && length(ballTouches_[i].surfaceVelocity) <= 0.0;
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
+    static int guardCount = 0;
+    if (still && energyAfter > energyBefore) ++guardCount;
+    if (getenv("GTC_E"))
+        std::fprintf(stderr, "   grip: still %d energy %.6f -> %.6f guard %d taken0 %+.4f\n", int(still), energyBefore, energyAfter,
+                     guardCount, taken[0]);
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;
