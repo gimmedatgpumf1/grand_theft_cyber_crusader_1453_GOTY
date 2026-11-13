@@ -235,7 +235,13 @@ void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ballBlows_ = ballBlows_ + free;
     ball_.frozen = false;
-    recordImpulse(at, impulse, kind, kBallOwner);
+    // What is written down is what the ball felt, and that is the projected impulse:
+    // the part the supports refused was refused by a surface, and it appears in the
+    // ledger as that surface's answer -- which is what the account at the end of
+    // tickBall works out. Recording the whole impulse here booked the ball as taking
+    // a blow it never took, and the account was off by twenty-five newton seconds on
+    // a cube dropped a metre onto it.
+    recordImpulse(at, free, kind, kBallOwner);
 }
 
 // The ledger, written where the impulse is applied. A contact solved in many passes
