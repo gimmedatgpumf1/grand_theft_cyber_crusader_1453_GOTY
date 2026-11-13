@@ -23,7 +23,14 @@ constexpr std::uint32_t kBodyFaceId = 200, kBodySpan = 100, kBodyEdgeOffset = 10
 constexpr const char* kSky = "#101c22";
 constexpr double kGhostRadius = 0.032, kTraceHalfWidth = 0.010;
 constexpr double kCornerRadius = 0.045, kEdgeHalfWidth = 0.008;
-constexpr std::uint32_t kBallId = 400, kBallMarkId = 401;
+// The seesaw's axle, drawn as a post of this half-width and a pin of this radius.
+constexpr double kPivotPostHalf = 0.055, kPivotPinRadius = 0.075;
+// The bodies run 200, 300, 400 ..., so the ball has to start beyond the last of
+// them -- three bodies now reach 500, and a ball sharing a body's id draws the ball
+// where that body is and leaves the body itself at the last frame it was placed at.
+constexpr std::uint32_t kBallId = 600, kBallMarkId = 601;
+// The seesaw's axle: a post from the floor to the pin, and the pin itself.
+constexpr std::uint32_t kPivotPostId = 700, kPivotPinId = 701;
 // One shaft and one head per arrow. The ids are well clear of the bodies' own,
 // which run in hundreds from kBodyFaceId.
 // The ids are laid out from the room's own count of arrows per kind, so a change
@@ -188,6 +195,26 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     quad(points, faces, -6, -0.06, 6, 0.0, -0.01);
     raster.setObject(kSurfaceId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#b9ccc4"));
+
+    // The seesaw's axle: a post from the floor up to the pin, and the pin itself.
+    // It is scenery and not a body -- it never moves, so it is drawn once and left --
+    // but it is the thing the plank is held by, and a plank floating on nothing would
+    // be a lie about what is holding it up. The pin's own reaction to whatever stands
+    // on the plank goes into the ground, which is where a real axle's frame takes it.
+    if (PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
+        const auto& plank = kShapes[PlaygroundRoom::kSeesaw];
+        const double px = plank.middle.x, py = plank.middle.y;
+        points.clear();
+        faces.clear();
+        quad(points, faces, -kPivotPostHalf, 0.0, kPivotPostHalf, py, -0.004);
+        raster.setObject(kPivotPostId, {0, 0}, 0);
+        raster.mesh(points, faces, flat("#4d6e6a"));
+        points.clear();
+        faces.clear();
+        disc(points, faces, kPivotPinRadius);
+        raster.setObject(kPivotPinId, {0, 0}, 0);
+        raster.mesh(points, faces, flat("#e8e2c9"));
+    }
 
     // One marker per past tick: the 20 Hz cadence made visible.
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
