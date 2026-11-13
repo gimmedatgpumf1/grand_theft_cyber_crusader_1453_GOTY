@@ -6,6 +6,9 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -195,6 +198,18 @@ void PlaygroundRoom::settleBallFriction() {
         const double lever = arm.x * tangents[i].y - arm.y * tangents[i].x;
         partner[i] = dot(tangents[i], tangents[i]) / mate.mass + lever * lever / mate.moment;
     }
+    if (getenv("GTC_G")) {
+        std::fprintf(stderr, "GRIP v(%+.3f) sp%+.3f |", ball.velocity.x, ball.spin);
+        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+            const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
+            const double eff = 1.0 / ball.mass + lever * lever / inertia + partner[i];
+            const double slip = slipAt(i, ball.velocity, ball.spin);
+            std::fprintf(stderr, " [f%zu n(%+.2f,%+.2f) slip%+.4f load%+.3f hold%+.3f eff%.2f need%+.4f]",
+                         i, ballTouches_[i].normal.x, ballTouches_[i].normal.y, slip, ballTouches_[i].pressed,
+                         kBallStaticFriction * ballTouches_[i].pressed, eff, -slip / eff);
+        }
+        std::fprintf(stderr, "\n");
+    }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
@@ -261,6 +276,13 @@ void PlaygroundRoom::settleBallFriction() {
     for (std::size_t i = 0; i < ballTouchCount_; ++i) still = still && length(ballTouches_[i].surfaceVelocity) <= 0.0;
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     static int guardCount = 0;
+    if (getenv("GTC_G"))
+        std::fprintf(stderr, "   -> v(%+.3f) sp%+.3f | taken", ball.velocity.x, ball.spin), 
+        (void)0;
+    if (getenv("GTC_G")) {
+        for (std::size_t i = 0; i < ballTouchCount_; ++i) std::fprintf(stderr, " %+.4f", taken[i]);
+        std::fprintf(stderr, " | guard %s\n", (still && energyAfter > energyBefore) ? "REVERTED" : "ok");
+    }
     if (still && energyAfter > energyBefore) ++guardCount;
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
