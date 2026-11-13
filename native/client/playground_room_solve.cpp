@@ -215,6 +215,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
+            if (getenv("GTC_PUSH") && length(impulse) > 0.5)
+                std::fprintf(stderr, "     pushEnd k %zu J(%+.2f,%+.2f) kind %d patch body %zu ball %d n(%+.3f,%+.3f) gap %.4f rebound %+.2f carried %zu\n",
+                             k, impulse.x, impulse.y, (int)kind, patch.body, (int)patch.ball, patch.normal.x,
+                             patch.normal.y, patch.gap[k], patch.rebound[k], count);
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
