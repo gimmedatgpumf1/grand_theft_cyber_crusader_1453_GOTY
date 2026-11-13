@@ -458,10 +458,9 @@ void PlaygroundRoom::tickBall() {
                 // was called "not closing" and the ball's travel carried it a centimetre
                 // and a half through the face.
                 const Vec3 endAt = ball.position + ball.velocity * (kTick * remaining);
-                const double endGap = ball_shape::outlineGap(endAt, body.position.data(), body.position.data(),
-                                                             body.count, 1.0)
-                                          .gap;
-                if (endGap >= ball.radius - playground_tick::kQuantum) continue;
+                const OutlineGap endOut =
+                    ball_shape::outlineGap(endAt, body.position.data(), body.position.data(), body.count, 1.0);
+                if (endOut.gap >= ball.radius - playground_tick::kQuantum) continue;
                 // It is going in, and the contact it already has is the answer to it:
                 // the shape stops what is coming, once, and the ball keeps the rest of
                 // its motion. Refused every time round the walk, though, it would stop
