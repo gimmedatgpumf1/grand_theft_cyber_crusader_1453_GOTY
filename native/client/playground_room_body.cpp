@@ -248,6 +248,9 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
         if (gap > band) continue;
+        if (getenv("GTC_B"))
+            std::fprintf(stderr, "  ball patch body %zu gap %+.6f way(%+.2f,%+.2f) shape v(%+.3f,%+.3f)\n", index, gap, way.x, way.y,
+                         body.velocity.x, body.velocity.y);
         Manifold patch;
         patch.body = index;
         patch.ball = true;
