@@ -10,8 +10,6 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <cmath>
 
 namespace gtc::native {
@@ -57,9 +55,6 @@ double PlaygroundRoom::loadOver(std::size_t body) const {
 }
 
 void PlaygroundRoom::settleBallFriction() {
-    if (getenv("GTC_N"))
-        std::fprintf(stderr, "  settleBallFriction touches %zu ballv(%+.3f,%+.3f) spin %+.3f\n", ballTouchCount_,
-                     ball_.velocity.x, ball_.velocity.y, ball_.spin);
     if (ballTouchCount_ == 0) return;
     Ball& ball = ball_;
     const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
@@ -219,10 +214,6 @@ void PlaygroundRoom::settleBallFriction() {
                 next = std::clamp(next, -limit, limit);
             }
             const double impulse = next - lambda[i];
-            if (getenv("GTC_P"))
-                std::fprintf(stderr, "    p%d i%zu slip %+.4f load %.4f lam %+.4f next %+.4f imp %+.4f ballv(%+.3f,%+.3f) spin %+.3f body %zu\n",
-                             pass, i, slip, load, lambda[i], next, impulse, ball.velocity.x, ball.velocity.y, ball.spin,
-                             ballTouches_[i].body);
             if (impulse == 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
@@ -271,9 +262,6 @@ void PlaygroundRoom::settleBallFriction() {
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     static int guardCount = 0;
     if (still && energyAfter > energyBefore) ++guardCount;
-    if (getenv("GTC_E"))
-        std::fprintf(stderr, "   grip: still %d energy %.6f -> %.6f guard %d taken0 %+.4f\n", int(still), energyBefore, energyAfter,
-                     guardCount, taken[0]);
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;

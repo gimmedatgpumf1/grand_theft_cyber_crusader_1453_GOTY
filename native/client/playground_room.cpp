@@ -1,7 +1,5 @@
 #include "client/playground_room.h"
 
-#include <cstdio>
-#include <cstdlib>
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -202,9 +200,6 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
             body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
         }
     }
-    if (getenv("GTC_PB") && &body - bodies_.data() == 0)
-        std::fprintf(stderr, "    pushBody0 (%+.3f,%+.3f) kind %d -> v(%+.3f,%+.3f) spin %+.3f\n", impulse.x, impulse.y, int(kind),
-                     body.velocity.x, body.velocity.y, body.spin);
     recordImpulse(at, impulse, kind, std::size_t(&body - bodies_.data()));
 }
 
@@ -803,19 +798,7 @@ void PlaygroundRoom::advance(double seconds) {
         // halves of the tick have moved. It is here rather than inside either of them
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
-        if (getenv("GTC_T")) {
-            const Body& c = bodies_[0];
-            std::fprintf(stderr, "  pre-sep  cube (%.6f,%.6f) v(%+.4f,%+.4f) sp%+.3f | ball (%.6f,%.6f) v(%+.4f,%+.4f) sp%+.3f\n",
-                         c.centre.x, c.centre.y, c.velocity.x, c.velocity.y, c.spin, ball_.position.x, ball_.position.y,
-                         ball_.velocity.x, ball_.velocity.y, ball_.spin);
-        }
         separateBall();
-        if (getenv("GTC_T")) {
-            const Body& c = bodies_[0];
-            std::fprintf(stderr, "  post-sep cube (%.6f,%.6f) v(%+.4f,%+.4f) sp%+.3f | ball (%.6f,%.6f) v(%+.4f,%+.4f) sp%+.3f\n",
-                         c.centre.x, c.centre.y, c.velocity.x, c.velocity.y, c.spin, ball_.position.x, ball_.position.y,
-                         ball_.velocity.x, ball_.velocity.y, ball_.spin);
-        }
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;

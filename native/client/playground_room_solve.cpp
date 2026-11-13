@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -201,7 +199,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += dot(toward, free(direction)) / ball_.mass +
+                    value += ballFreedom(patch.normal * -1.0) * (dot(toward, direction) / ball_.mass) +
                              lever(at - ball_.position, toward) *
                                  lever(pushAt - ball_.position, direction) / ballMoment;
             }
@@ -211,14 +209,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, free(impulse), kind);
+                if (!ballFixed) pushBall(at, impulse * ballFreedom(patch.normal * -1.0), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
-            if (getenv("GTC_PE"))
-                std::fprintf(stderr, "      pushEnd body %zu ball %d other %zu kind %d imp (%+.4f,%+.4f) ends %zu n(%+.3f,%+.3f) gap0 %+.6f\n",
-                             patch.body, int(patch.ball), patch.other, int(kind), impulse.x, impulse.y, count,
-                             patch.normal.x, patch.normal.y, patch.gap[0]);
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
