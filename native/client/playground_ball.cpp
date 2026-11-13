@@ -459,7 +459,12 @@ void PlaygroundRoom::tickBall() {
         // ball pressed down by something above it -- or pressed into a body it is
         // lying on -- is left standing still rather than holding a speed it has
         // nowhere to spend.
-        if (ball.position.y <= ball.radius + 1e-9) {
+        // A ball on the floor is a ball within the world's own resolution of it, not
+        // a ball at the one height that arithmetic happens to produce. Aiming at
+        // exactness here said a ball rolling along the ground at a ten-millionth of
+        // a millimetre above it was a ball in mid-air: nothing held it, so nothing
+        // was written holding it, and every blow it took had no partner on screen.
+        if (ball.position.y <= ball.radius + kTouch) {
             ball.touching = true;
             ball.standing = ball.standing && holds(Vec3{0, 1, 0});
             if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
