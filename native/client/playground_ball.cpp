@@ -186,6 +186,25 @@ void PlaygroundRoom::tickBall() {
         const double endGap =
             ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
         if (endGap >= ball.radius - kTouch) continue;
+        // Was it already there? A shape whose step *began* against the ball is in
+        // contact, and contact is the contact's business: the patch answers it, and
+        // answering it is what stops it. Prevention is for the arrival -- the shape
+        // that was clear when the tick started and would be inside the ball when it
+        // ends.
+        //
+        // Asked only of the end of the step, a shape resting on the ball is caught
+        // here every tick: it began touching, so the sweep from its previous pose
+        // meets the ball at the very start of the step, the fraction is nought, and
+        // its whole travel *and* its whole turn are handed back -- with the speed
+        // that made them still in it. That is a shape held still by its own place,
+        // which the room forbids: it is the state the comment below calls a shape
+        // standing on nothing. A cube on the crown of a ball, its middle a hand's
+        // width off the crown, was put back where it stood sixty times a second and
+        // turned faster every time it was told it had not moved -- energy out of a
+        // turn that never happened, and the rise the King saw.
+        const double startGap =
+            ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
+        if (startGap < ball.radius - kTouch) continue;
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
         // rather than sampled: the speed of the ball and the speed of the turn make
