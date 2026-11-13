@@ -6,6 +6,9 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -271,6 +274,13 @@ void PlaygroundRoom::settleBallFriction() {
     // Without this a ball rolling along the floor was drawn with a normal and
     // nothing else, and the thing that was actually slowing it down -- the friction
     // holding the bottom of it still against the ground -- was nowhere on screen.
+    if (getenv("GTC_FR")) {
+        std::fprintf(stderr, "  FR n=%zu v(%+.3f) sp%+.3f |", ballTouchCount_, ball.velocity.x, ball.spin);
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            std::fprintf(stderr, " [b%zu n(%+.2f,%+.2f) p%.3f j%+.3f]", ballTouches_[i].body, ballTouches_[i].normal.x,
+                         ballTouches_[i].normal.y, ballTouches_[i].pressed, taken[i]);
+        std::fprintf(stderr, "\n");
+    }
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         if (taken[i] == 0.0) continue;
         addForce(ball.position + arms[i], tangents[i] * (taken[i] / ball_shape::kTick), ForceKind::Friction,
