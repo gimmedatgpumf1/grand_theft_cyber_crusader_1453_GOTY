@@ -34,12 +34,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
     // The body's side is written by giveBodyTurn, which is the call that hands it
-    // over; what is left for this one is the ball's own change, recorded at the
-    // place the two met.
+    // over.
+    // The ball's *turn* is written here; its speed is written further down, as the
+    // pair of blows that changed it. A blow is one force at one place, and the ball
+    // is the one thing in the room that is pressed from two sides at once: what hit
+    // it, and what is holding it up. Written as a single net push it reads as a
+    // force with no partner, which is what a conjured force looks like.
     const auto recordBall = [&]() {
-        const Vec3 push = (ball.velocity - ballBefore) * (ball.mass / kTick);
-        if (length(push) > 1e-6) addForce(contactPoint, push, ForceKind::Ball, nullptr, kBallOwner);
-        (void)0;
         // And the turn it took, as the couple that turned it. A blow off the middle
         // of the ball changes its spin as well as its speed, and a blow is a force
         // whose moment is the arm it lands on -- so if the spin changed, the moment
