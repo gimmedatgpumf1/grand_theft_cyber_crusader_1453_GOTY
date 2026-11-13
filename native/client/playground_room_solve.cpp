@@ -134,20 +134,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
-        // A ball is not made a wall by being held up.
-        //
-        // It would be tempting to say "the floor is under it, so it cannot move
-        // that way" and answer the blow as though the ball were stone. That is wrong,
-        // and it is wrong in the direction that conjures: the shape keeps a bounce
-        // off a surface that took nothing, and the floor -- which is what really
-        // answered -- is given no part in it. A ball on the floor is a ball the floor
-        // holds, and both of them take their share: the blow arrives, the ball is
-        // moved by it, the floor answers, and every one of those steps is in the
-        // ledger. Between them they add up to the ball's speed not changing, which is
-        // what a ball pressed into the ground does -- and not one newton of it came
-        // from nowhere.
-        const bool pressesIntoGround = false;
-        if (patch.ball && ball_.frozen && !pressesIntoGround) {
+        if (patch.ball && ball_.frozen) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
                     dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(patch.point[k]), patch.normal);
@@ -157,24 +144,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 }
             }
         }
-        // A ball the floor is under is a wall in the direction that would drive it
-        // through that floor, and nothing else.
+        // A ball is not made a wall by being held up.
         //
-        // A patch's normal is the way out of the ball, so the shape is pushing the
-        // ball the other way; when that way is into the surface the ball is standing
-        // on, the surface is what takes the blow and the ball cannot be moved by it.
-        // A cube landing flat on the crown of a ball resting on the floor is exactly
-        // this: every newton of it goes into the floor, and the ball stays where it
-        // is -- which is what is seen, and what a ball pressed into the ground does.
-        //
-        // It has to be said here, in the one place both the answer and the pair's own
-        // mass are read, or the solve is told a ball will move and it will not: the
-        // impulse then comes out at a share of what a moving ball would take, the body
-        // is handed the rest of a blow nobody carried, and a cube that should have
-        // bounced off the ball instead sank into it and stopped there. A ball struck
-        // along the floor -- the shoulder, the side -- is a ball nothing is holding
-        // that way, and it is answered as the free thing it is.
-        const bool ballFixed = patch.ball && (ball_.frozen || pressesIntoGround);
+        // It is tempting to say "the floor is under it, so it cannot move that way"
+        // and answer the blow as though the ball were stone. That is wrong, and it is
+        // wrong in the direction that conjures: the shape keeps a bounce off a
+        // surface that took nothing, and the floor -- which is what really answered --
+        // is given no part in it. A ball on the floor is a ball the floor holds, and
+        // both of them take their share: the blow arrives, the ball is moved by it,
+        // the floor answers, and every one of those steps is in the ledger. Between
+        // them they add up to the ball's speed not changing, which is what a ball
+        // pressed into the ground does -- and not one newton of it came from nowhere.
+        const bool ballFixed = patch.ball && ball_.frozen;
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
