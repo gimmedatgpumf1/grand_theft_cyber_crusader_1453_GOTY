@@ -163,9 +163,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // bounced off the ball instead sank into it and stopped there. A ball struck
         // along the floor -- the shoulder, the side -- is a ball nothing is holding
         // that way, and it is answered as the free thing it is.
-        const bool ballOnGround = patch.ball && ball_.touching && ball_.standing &&
-                                  dot(patch.normal, ball_.supportNormal) < 0.0;
-        const bool ballFixed = patch.ball && (ball_.frozen || ballOnGround);
+        const bool ballFixed = patch.ball && (ball_.frozen || pressesIntoGround);
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };

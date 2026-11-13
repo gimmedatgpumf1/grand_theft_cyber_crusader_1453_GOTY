@@ -398,9 +398,6 @@ void PlaygroundRoom::tickBall() {
         if (length(ball.velocity) <= 0.0 && !anybodyMoving()) break;
     }
 
-    if (getenv("GTC_END"))
-        std::fprintf(stderr, "  end of walk: ball v(%+.3e,%+.3e) spin %+.3e pos(%+.4f,%+.4f)\n", ball.velocity.x,
-                     ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     // What the ball is touching when the tick ends, and what may therefore not be
     // driven into. This runs whether or not the walk found anything, because the
     // walk answers contacts in the order it meets them and the last one it meets
