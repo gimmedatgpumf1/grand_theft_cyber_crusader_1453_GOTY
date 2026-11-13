@@ -155,14 +155,24 @@ double erosionDepth(const Vec3* corners, std::size_t count, Vec3 point, double m
     return least - margin;
 }
 
-// The first crossing of k1 cos u + k2 sin u = k3 in (0, span].
+// The first crossing of  c1 cos(a) + c2 sin(a) = c3  over a turn that starts at `a0`
+// and runs `span` radians one way (`way` is +1 or -1), as the turn's own magnitude.
 //
-// A sinusoid crosses a level twice a period and nowhere else, so the crossings are
-// the two arcsines of the ratio, offset by its phase -- an answer, not a search. This
-// is the whole of what a hitscan is: the meeting is where the equation holds, and it
-// is found by solving for it. Nothing here samples a path and hopes the meeting fell
-// between two samples.
-bool firstSinusoidCrossing(double k1, double k2, double k3, double span, double& found) {
+// A sinusoid crosses a level twice a period and nowhere else, so the crossings are the
+// two arcsines of the ratio, offset by the sinusoid's phase -- an answer, not a search.
+// This is the whole of what a hitscan is: the meeting is where the equation holds, and
+// it is found by solving for it. Nothing here samples a path and hopes the meeting fell
+// between two samples, and there is no step size to pick.
+//
+// The turn is measured from where the body is now, so the phase it starts at is part of
+// the equation and not something to be dropped: with a = a0 + way t,
+//
+//     c1 cos a + c2 sin a = cos t (c1 cos a0 + c2 sin a0) + sin t (way (c2 cos a0 - c1 sin a0))
+//
+// which is the same kind of sinusoid in t.
+bool firstSinusoidCrossing(double c1, double c2, double c3, double a0, double way, double span, double& found) {
+    const double k1 = c1 * std::cos(a0) + c2 * std::sin(a0);
+    const double k2 = way * (c2 * std::cos(a0) - c1 * std::sin(a0));
     const double amplitude = std::hypot(k1, k2);
     if (!(amplitude > 0.0)) return false;
     // A body resting on a face is *exactly* on it, which puts this ratio at one to
@@ -171,9 +181,9 @@ bool firstSinusoidCrossing(double k1, double k2, double k3, double span, double&
     // that line, and the turn into it would not be seen at all. So the ratio is only
     // refused when it is outside the sine's range by more than the arithmetic can
     // explain; a root found from a rounded tangency is verified afterwards anyway.
-    const double ratio = k3 / amplitude;
+    const double ratio = c3 / amplitude;
     if (!(std::abs(ratio) <= 1.0 + 1e-9)) return false;
-    // k1 cos u + k2 sin u = amplitude * sin(u + phase)
+    // k1 cos t + k2 sin t = amplitude * sin(t + phase)
     const double phase = std::atan2(k1, k2);
     const double base = std::asin(std::max(-1.0, std::min(1.0, ratio)));
     bool any = false;
@@ -182,9 +192,9 @@ bool firstSinusoidCrossing(double k1, double k2, double k3, double span, double&
         // The crossings repeat a full turn apart, and a body never turns a whole turn
         // in one tick, so only the nearest repeats can fall inside the span.
         for (int period = -1; period <= 1; ++period) {
-            const double u = root + 2.0 * kPi * double(period);
-            if (!(u > 0.0 && u <= span)) continue;
-            if (!any || u < found) found = u;
+            const double t = root + 2.0 * kPi * double(period);
+            if (!(t > -1e-15 && t <= span)) continue;
+            if (!any || t < found) found = t;
             any = true;
         }
     }
@@ -276,7 +286,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         // that angle is the slope there, which is exact.
         {
             double u = 0.0;
-            if (firstSinusoidCrossing(local.y, way * local.x, -pin.y, span, u)) {
+            if (firstSinusoidCrossing(local.y, way * local.x, -pin.y, body.angle, way, span, u)) {
                 const double angle = way * u;
                 const double falling = local.x * std::cos(angle) - local.y * std::sin(angle);
                 if (way * falling < 0.0) take(u);
@@ -306,7 +316,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     const double normalPhase = std::atan2(inward.y, inward.x);
                     const double spread = std::acos(std::max(-1.0, std::min(1.0, reach / radius)));
                     for (const double which : {1.0, -1.0}) {
-                        double u = way * (normalPhase + which * spread - phase);
+                        double u = way * (normalPhase + which * spread - phase - body.angle);
                         // Into the u's this turn covers, however many turns round it is.
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
@@ -341,7 +351,8 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                         const double k1 = dot(arm, outward);
                         const double k2 = arm.y * outward.x - arm.x * outward.y;
                         double u = 0.0;
-                        if (!firstSinusoidCrossing(k1, way * k2, dot(a0, outward) - allowance, span, u)) continue;
+                        if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) - allowance, body.angle, way, span, u))
+                            continue;
                         std::array<Vec3, kMaxCorners> corners{};
                         pivotCornersAt(body, body.angle + way * (u + nudge), corners);
                         if (erosionDepth(corners.data(), body.count, point, allowance) <= 0.0) continue;
@@ -369,7 +380,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double spread = std::acos(std::max(-1.0, std::min(1.0, cosAt)));
                 const double middle = std::atan2(away.y, away.x);
                 for (const double which : {1.0, -1.0}) {
-                    double u = way * (middle + which * spread - phase);
+                    double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
                     while (u <= -span) u += 2.0 * kPi;
                     if (!(u > -nudge && u <= span)) continue;
@@ -394,7 +405,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k1 = dot(away, outward);
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
-                if (!firstSinusoidCrossing(k1, way * k2, dot(a0, outward) + big, span, u)) continue;
+                if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + big, body.angle, way, span, u)) continue;
                 if (u < -nudge) continue;
                 const double at = body.angle + way * (u + nudge);
                 std::array<Vec3, kMaxCorners> corners{};
