@@ -209,7 +209,24 @@ void PlaygroundRoom::tickBall() {
         // turn that never happened, and the rise the King saw.
         const double startGap =
             ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
-        if (startGap <= ball.radius + kTouch) continue;
+        if (startGap <= ball.radius + kTouch) {
+            // Already against it: this is a contact, and a contact is answered by what
+            // the two are doing, not by where they are put. Taking the whole step away
+            // -- which is what the sweep below does when the meeting is at its very
+            // start -- leaves the shape with the speed that made the step and none of
+            // the travel, and it grows a metre a second without moving, which is a
+            // force that never moved anything.
+            //
+            // What it may not do is keep closing. The shape's speed along the way into
+            // the ball is answered here, so the depth never develops; where the pair's
+            // momentum ends up is the contact's business, and the contact is the patch
+            // that already carries this meeting.
+            Vec3 way{0, 1, 0}, at{};
+            bodyBallGap(index, way, at);
+            const double into = dot(body.velocity - ballPointSpeed(at), way);
+            if (into < 0.0) body.velocity = body.velocity - way * into;
+            continue;
+        }
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
         // rather than sampled: the speed of the ball and the speed of the turn make
