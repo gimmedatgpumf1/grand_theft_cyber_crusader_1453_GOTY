@@ -6,8 +6,6 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
-
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -242,7 +240,7 @@ void PlaygroundRoom::settleBallFriction() {
                 Body& mate = bodies_[other];
                 const Vec3 at = ball.position + arms[i];
                 if (!mate.frozen && !bodyHeld(other)) {
-                    if (!getenv("GTC_NOREACT")) pushBody(mate, at, tangents[i] * -impulse, ForceKind::Pair);
+                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Pair);
                     ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
                 } else {
                     ballTouches_[i].surfaceVelocity = Vec3{};
