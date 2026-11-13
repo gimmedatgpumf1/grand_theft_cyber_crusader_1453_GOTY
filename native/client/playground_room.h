@@ -408,11 +408,10 @@ private:
     // A free body's turn against the floor. How deep it would be at an angle, the
     // rest of a turn taken about the corner it is standing on, and the whole turn
     // walked in steps so that no arc passes through the floor unseen.
-    Vec3 sweptBodyMove(std::size_t index, Vec3 from, Vec3 to);
-    double depthOfCornersExceptBall(std::size_t index) const;
-    double turnDepthAt(std::size_t index, double angle) const;
-    double depthOfCorners(std::size_t index, const std::array<Vec3, kMaxCorners>& corners) const;
-    void turnBody(std::size_t index, double turn);
+    // The last pose along a body's own step that is still above the floor, as the
+    // fraction of the step. Used where a step has already been stopped part-way.
+    double keepAboveFloor(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre, double toAngle,
+                          double along);
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
     // One patch: a face of a body resting on a surface. Its two ends are the ends

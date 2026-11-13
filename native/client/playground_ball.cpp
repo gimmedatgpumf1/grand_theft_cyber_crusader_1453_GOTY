@@ -221,8 +221,15 @@ void PlaygroundRoom::tickBall() {
                                     ball.velocity, limit, kTick, stop, false))
             continue;
         if (!(stop.along < 1.0)) continue;
-        body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
-        body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
+        // And the pose it stops in is a pose it may be in: a shape turning as it
+        // travels bows its corner through the arc, and the straight line between
+        // where it began and where it was going cuts inside that arc. Stopped
+        // part-way, it is stopped at the last pose along its own step that is still
+        // above the floor. See keepAboveFloor().
+        const double along =
+            keepAboveFloor(index, body.previousCentre, body.previousAngle, body.centre, body.angle, stop.along);
+        body.centre = body.previousCentre + (body.centre - body.previousCentre) * along;
+        body.angle = body.previousAngle + (body.angle - body.previousAngle) * along;
         placeCorners(body);
         bodyStopped[index] = true;
         ++bodyStepClamped_;
@@ -401,7 +408,9 @@ void PlaygroundRoom::tickBall() {
         if (what >= 0 && !bodyStopped[std::size_t(what)] &&
             (depth > 0.0 || spent >= playground_tick::kQuantum)) {
             Body& met = bodies_[std::size_t(what)];
-            const double when = (1.0 - remaining) + first * remaining;
+            const double when =
+                keepAboveFloor(std::size_t(what), met.previousCentre, met.previousAngle, met.centre, met.angle,
+                               (1.0 - remaining) + first * remaining);
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
             met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
             placeCorners(met);
