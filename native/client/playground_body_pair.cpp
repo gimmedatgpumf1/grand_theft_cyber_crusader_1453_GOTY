@@ -243,6 +243,29 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
             return false;
         }
     }
+    // And the motion that carried it in.
+    //
+    // Putting the shape back where it would have stopped is only free if nothing
+    // was moving: a body lifted by its place, with the speed that took it there
+    // still in it, is a body handed the height and keeping the speed -- work done
+    // by moving a point, which is the one thing in this room that must never
+    // happen. It is not a small slip either: it is repeated every tick, because a
+    // shape resting on the ball arrives at the ball again every tick and is lifted
+    // out again, and a cube that sits on a ball's crown with its middle a hand's
+    // width off the crown was given its own fall back sixty times a second --
+    // spinning faster and faster on the crown of a ball it never moved, with the
+    // height it was standing at never changing. The energy it collected was real
+    // and came from nowhere, which is the whole of what a conjured force is.
+    //
+    // So a placement answers the speed that made it necessary, along the way it was
+    // made: what was going into the ball stops at the ball. That is a contact doing
+    // its job, and it costs nothing -- the shape keeps every part of its motion
+    // that the ball did not refuse.
+    const double closing = dot(body.velocity, normal);
+    if (closing > 0.0) {
+        body.velocity = body.velocity - normal * closing;
+        if (body.met > 0) body.velocity = body.velocity;
+    }
     ++bodyStepClamped_;
     return true;
 }
