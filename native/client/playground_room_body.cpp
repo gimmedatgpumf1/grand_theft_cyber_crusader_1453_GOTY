@@ -241,6 +241,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 // pivotTurnAllowed() -- and what is left of the spin is the contact's
                 // to answer, exactly as a shape's speed is when it lands.
                 const double turn = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
+                if (getenv("GTC_FL")) std::fprintf(stderr, "ADV in  a%+.5f turn%+.5f\n", body.angle, turn);
                 double allowed = turn;
                 if (turn != 0.0) {
                     const double fraction = pivotTurnAllowed(body, turn);
@@ -248,6 +249,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     if (!(fraction > 0.0)) body.angle = body.angle;
                 }
                 body.angle += allowed;
+                if (getenv("GTC_FL")) std::fprintf(stderr, "ADV out a%+.5f\n", body.angle);
                 body.centre = body.pivotPoint;
                 placeCorners(body);
                 continue;

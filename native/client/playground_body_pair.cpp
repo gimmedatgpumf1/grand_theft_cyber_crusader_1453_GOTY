@@ -300,6 +300,7 @@ void PlaygroundRoom::separateBodies() {
         // King saw. The plank stops where it met the cube and the axle carries the
         // rest, exactly as it would in the yard.
         if (body.pivoted) {
+            if (getenv("GTC_FL")) std::fprintf(stderr, "PB in  a%+.5f\n", body.angle);
             // The floor is never negotiable. Whatever else is in the way, a plank may
             // not be through the ground, so if there is no angle that clears
             // everything, the one that clears the floor is taken: the floor is the
@@ -367,6 +368,7 @@ void PlaygroundRoom::separateBodies() {
                     }
                 }
             }
+            if (getenv("GTC_FL")) std::fprintf(stderr, "PB out a%+.5f\n", body.angle);
             continue;
         }
         // Another shape first; the floor has the last word below.
