@@ -386,6 +386,10 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
     // was not bouncy towards: a dot dropped on a ball sank into it and stopped, and
     // a ball with a dot on it never threw it back, whatever the material said.
     const double rebound = closing < 0.0 ? -kBallRestitution * closing : 0.0;
+    if (getenv("GTC_DB"))
+        std::fprintf(stderr, "  pointAgainstBall n(%+.3f,%+.3f) closing %+.3f touching %d standing %d frozen %d support(%+.2f,%+.2f)\n",
+                     normal.x, normal.y, closing, (int)ball.touching, (int)ball.standing, (int)ball.frozen,
+                     ball.supportNormal.x, ball.supportNormal.y);
     if (closing < 0.0) {
         // The ball's say in the blow, along the direction the blow pushes it. The
         // dot pushes the ball along -normal (the normal runs from the ball to the
