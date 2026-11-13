@@ -227,7 +227,23 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 // It turns where it is. There is no place to resolve, because its place
                 // never changes: the pin is the one point of it that is not the
                 // simulation's to move.
-                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                //
+                // The turn is a piece of travel and it is swept as one. A plank's far
+                // end covers a long arc for one tick's spin, and the end of the arc is
+                // not the arc: a turn that finishes above the floor can have gone
+                // straight through it, and this room does not put anything inside
+                // anything, not even for the length of one tick. The turn stops at the
+                // first instant it meets the floor, a shape or the ball -- see
+                // pivotTurnAllowed() -- and what is left of the spin is the contact's
+                // to answer, exactly as a shape's speed is when it lands.
+                const double turn = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
+                double allowed = turn;
+                if (turn != 0.0) {
+                    const double fraction = pivotTurnAllowed(body, turn);
+                    allowed = turn * fraction;
+                    if (!(fraction > 0.0)) body.angle = body.angle;
+                }
+                body.angle += allowed;
                 body.centre = body.pivotPoint;
                 placeCorners(body);
                 continue;

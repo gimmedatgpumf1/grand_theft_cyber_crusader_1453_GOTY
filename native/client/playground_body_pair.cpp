@@ -85,6 +85,78 @@ bool PlaygroundRoom::bodyPlacementClear(std::size_t index, const std::array<Vec3
     return true;
 }
 
+// Where a pinned body's corners are, turned about the pin.
+void PlaygroundRoom::pivotCornersAt(const Body& body, double angle, std::array<Vec3, kMaxCorners>& corners) const {
+    const double c = std::cos(angle), s = std::sin(angle);
+    for (std::size_t i = 0; i < body.count; ++i)
+        corners[i] = {body.pivotPoint.x + body.local[i].x * c - body.local[i].y * s,
+                      body.pivotPoint.y + body.local[i].x * s + body.local[i].y * c, 0};
+}
+
+// How deep a pinned body would be inside anything at that angle: the floor, another
+// shape, or the ball. Zero is clear.
+double PlaygroundRoom::pivotDepthAt(const Body& body, double angle) const {
+    std::array<Vec3, kMaxCorners> corners{};
+    pivotCornersAt(body, angle, corners);
+    double deepest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i)
+        deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
+    for (std::size_t other = 0; other < kBodyCount; ++other) {
+        const Body& solid = bodies_[other];
+        if (&solid == &body || solid.count == 0) continue;
+        Vec3 way{0, 1, 0};
+        double amount = 0.0;
+        if (outlineOverlap(corners.data(), body.count, solid.position.data(), solid.count, way, amount))
+            deepest = std::max(deepest, amount);
+    }
+    const double gap = outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
+    deepest = std::max(deepest, ball_.radius - gap);
+    return deepest;
+}
+
+// The first angle of a turn that meets something, as the fraction of the turn the
+// body is allowed to take.
+//
+// This is the hitscan. A turn is travel: the far end of a plank sweeps through an
+// arc, and an arc that ends above the floor can still have passed through it on the
+// way. Asking only about the end of the turn leaves the whole of the arc unexamined,
+// and a plank turning fast enough was found on the far side of the floor with
+// nothing having stopped it -- which is exactly what "it does not hitscan the floor"
+// is. So the turn is walked in small steps, the first step that is inside something
+// is bisected to the instant of the meeting, and the body stops there. Nothing is
+// placed inside anything, not even for the length of one tick.
+double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
+    if (turn == 0.0) return 1.0;
+    if (pivotDepthAt(body, body.angle) > playground_tick::kQuantum) return 0.0;
+    // A step small enough that the furthest corner moves no more than a few
+    // millimetres: the thinnest thing in this room is the plank itself, a quarter of
+    // a metre, so a step of four millimetres cannot pass over anything.
+    double furthest = 0.0;
+    for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+    const double step = furthest > 0.0 ? std::min(0.25, 0.004 / furthest) : 0.25;
+    const int steps = std::min(4096, std::max(1, int(std::abs(turn) / step) + 1));
+    double clear = 0.0;
+    for (int i = 1; i <= steps; ++i) {
+        const double fraction = double(i) / double(steps);
+        if (pivotDepthAt(body, body.angle + turn * fraction) <= playground_tick::kQuantum) {
+            clear = fraction;
+            continue;
+        }
+        // Between the last clear step and this one. Bisected, so the stop is the
+        // instant of the meeting and not a step size.
+        double low = clear, high = fraction;
+        for (int bisect = 0; bisect < 60; ++bisect) {
+            const double mid = 0.5 * (low + high);
+            if (pivotDepthAt(body, body.angle + turn * mid) <= playground_tick::kQuantum)
+                low = mid;
+            else
+                high = mid;
+        }
+        return low;
+    }
+    return 1.0;
+}
+
 // Out of whatever a shape is inside, by its position and nothing else.
 //
 // Every other answer in this room is an impulse: the surface stops what is coming
@@ -125,56 +197,71 @@ void PlaygroundRoom::separateBodies() {
         // King saw. The plank stops where it met the cube and the axle carries the
         // rest, exactly as it would in the yard.
         if (body.pivoted) {
-            const auto cornersAt = [&](double angle, std::array<Vec3, kMaxCorners>& out) {
-                const double c = std::cos(angle), s = std::sin(angle);
-                for (std::size_t i = 0; i < body.count; ++i)
-                    out[i] = {body.pivotPoint.x + body.local[i].x * c - body.local[i].y * s,
-                              body.pivotPoint.y + body.local[i].x * s + body.local[i].y * c, 0};
-            };
-            // How deep this body would be in anything at that angle. Zero is clear.
-            const auto deepestAt = [&](double angle) {
+            // The floor is never negotiable. Whatever else is in the way, a plank may
+            // not be through the ground, so if there is no angle that clears
+            // everything, the one that clears the floor is taken: the floor is the
+            // room's own surface and the axle, not the shape standing on it, is what
+            // holds the plank up.
+            const auto throughFloorOnly = [&](double angle) {
                 std::array<Vec3, kMaxCorners> corners{};
-                cornersAt(angle, corners);
+                pivotCornersAt(body, angle, corners);
                 double deepest = 0.0;
                 for (std::size_t i = 0; i < body.count; ++i)
                     deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
-                for (std::size_t two = 0; two < kBodyCount; ++two) {
-                    if (two == one || bodies_[two].count == 0) continue;
-                    Vec3 out{0, 1, 0};
-                    double amount = 0.0;
-                    if (outlineOverlap(corners.data(), body.count, bodies_[two].position.data(), bodies_[two].count,
-                                       out, amount))
-                        deepest = std::max(deepest, amount);
-                }
-                const double gap =
-                    outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
-                deepest = std::max(deepest, ball_.radius - gap);
                 return deepest;
             };
-            if (deepestAt(body.angle) > playground_tick::kQuantum) {
+            const auto clear = [&](double angle) {
+                return pivotDepthAt(body, angle) <= playground_tick::kQuantum;
+            };
+            const auto deepest = [&](double angle) { return pivotDepthAt(body, angle); };
+            if (deepest(body.angle) > playground_tick::kQuantum) {
                 // The least turn, either way, that takes it clear. The bound is grown
                 // until something clears and the answer is then bisected, so the turn
                 // given back is the smallest that does the job and not a chosen number.
                 double found = -1.0;
                 for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5, 3.0, 6.29}) {
-                    if (deepestAt(body.angle + reach) <= playground_tick::kQuantum ||
-                        deepestAt(body.angle - reach) <= playground_tick::kQuantum) {
+                    if (clear(body.angle + reach) || clear(body.angle - reach)) {
                         found = reach;
                         break;
                     }
                 }
                 if (found > 0.0) {
-                    const double side = deepestAt(body.angle + found) <= playground_tick::kQuantum ? 1.0 : -1.0;
+                    const double side = clear(body.angle + found) ? 1.0 : -1.0;
                     double low = 0.0, high = found;
                     for (int step = 0; step < 60; ++step) {
                         const double mid = 0.5 * (low + high);
-                        if (deepestAt(body.angle + side * mid) <= playground_tick::kQuantum)
+                        if (clear(body.angle + side * mid))
                             high = mid;
                         else
                             low = mid;
                     }
                     body.angle += side * high;
                     placeCorners(body);
+                } else {
+                    // Nothing inside the whole circle is clear -- it is walled in on
+                    // every side. The floor still comes first.
+                    double foundFloor = -1.0;
+                    for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5, 3.0, 6.29}) {
+                        if (throughFloorOnly(body.angle + reach) <= playground_tick::kQuantum ||
+                            throughFloorOnly(body.angle - reach) <= playground_tick::kQuantum) {
+                            foundFloor = reach;
+                            break;
+                        }
+                    }
+                    if (foundFloor > 0.0) {
+                        const double side =
+                            throughFloorOnly(body.angle + foundFloor) <= playground_tick::kQuantum ? 1.0 : -1.0;
+                        double low = 0.0, high = foundFloor;
+                        for (int step = 0; step < 60; ++step) {
+                            const double mid = 0.5 * (low + high);
+                            if (throughFloorOnly(body.angle + side * mid) <= playground_tick::kQuantum)
+                                high = mid;
+                            else
+                                low = mid;
+                        }
+                        body.angle += side * high;
+                        placeCorners(body);
+                    }
                 }
             }
             continue;

@@ -394,6 +394,17 @@ private:
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.
     double advanceBodies(double seconds);
+    // Where a pinned body's corners are at a given angle, and how deep it would be
+    // inside anything at that angle. Zero means clear: above the floor, out of every
+    // other shape, and off the ball.
+    void pivotCornersAt(const Body& body, double angle, std::array<Vec3, kMaxCorners>& corners) const;
+    double pivotDepthAt(const Body& body, double angle) const;
+    // The first angle a pinned body's turn meets something, as a fraction of the turn
+    // it was given. One means nothing was in the way. This is the hitscan the plank
+    // needed and did not have: a turn is a piece of travel like any other, and the
+    // room's rule is that nothing is ever placed inside anything -- not even for the
+    // length of one tick.
+    double pivotTurnAllowed(const Body& body, double turn) const;
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
     // One patch: a face of a body resting on a surface. Its two ends are the ends
