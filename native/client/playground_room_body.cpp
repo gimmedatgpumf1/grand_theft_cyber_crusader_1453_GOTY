@@ -22,6 +22,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -241,6 +243,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // A face whose ends are all still in the air is a body falling, and a body
         // falling is the walk's business: it is not answered here, where all it
         // would get is a stop a tick early.
+        if (getenv("GTC_G"))
+            std::fprintf(stderr, "    floorPatch body %zu ends %zu gap0 %+.5f\n", patch.body, patch.ends, patch.gap[0]);
         if (patch.ends > 0 && patch.gap[0] <= band) patches.add(patch);
     }
     // The ball, met at the one place a body's outline comes closest to it.
@@ -276,6 +280,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             const double closing = dot(arrived - ballPointSpeed(at), way);
             if (closing < 0.0 && !body.wasOnBall) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
         }
+        if (getenv("GTC_G"))
+            std::fprintf(stderr, "    ballPatch body %zu gap %+.5f n(%+.3f,%+.3f)\n", patch.body, patch.gap[0], patch.normal.x, patch.normal.y);
         patches.add(patch);
     }
     // Another shape, met over the whole span the two of them share. The separating
@@ -304,6 +310,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             patch.body = one;
             patch.other = two;
             patch.kind = ForceKind::Pair;
+            if (getenv("GTC_G"))
+                std::fprintf(stderr, "    pairPatch %zu-%zu ends %zu n(%+.3f,%+.3f) gap0 %+.5f\n", one, two, meeting.ends, meeting.normal.x, meeting.normal.y, 0.0);
             patch.normal = meeting.normal;
             for (std::size_t k = 0; k < meeting.ends && k < kMaxPatchEnds; ++k) {
                 patch.corner[k] = kMaxCorners;  // a place on a face, not a corner
