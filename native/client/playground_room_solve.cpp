@@ -601,6 +601,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     };
     for (int round = 0; round < kGripRoundsMax; ++round) {
         sweep(false);
+        if (getenv("GTC_ST") != nullptr && length(ball_.velocity) > 1.0)
+            std::fprintf(stderr, "ROUND %d ball v(%+.3f,%+.3f) loadWorst %.3e\n", round, ball_.velocity.x,
+                         ball_.velocity.y, worst);
         const double loadWorst = worst;
         sweep(true);
         const double gripWorst = worst;
