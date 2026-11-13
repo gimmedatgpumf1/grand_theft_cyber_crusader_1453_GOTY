@@ -59,6 +59,33 @@ constexpr int kGripRoundsMax = 48;
 constexpr double kAgree = 1e-9;  // N s
 }  // namespace
 
+// Every surface the ball is already resting on, gathered before the tick is solved.
+//
+// Only a surface it is *on*, not one it is falling towards: an arrival is the walk's
+// business, where the bounce is. A ball within a micrometre of a surface is on it --
+// that is the room's whole idea of touching.
+void PlaygroundRoom::gatherBallSupports() {
+    ballSupportCount_ = 0;
+    const auto hold = [&](Vec3 normal, std::size_t body) {
+        const double size = length(normal);
+        if (!(size > 0.0) || ballSupportCount_ >= kMaxBallSupports) return;
+        ballSupports_[ballSupportCount_++] = BallSupport{normal * (1.0 / size), body};
+    };
+    if (ball_.position.y <= ball_.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        Vec3 way{}, at{};
+        if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
+        // `way` leaves the ball for the shape; the normal the ball may not be driven
+        // through is the other one.
+        hold(way * -1.0, index);
+    }
+    const Vec3 fromDot = ball_.position - point_;
+    if (length(fromDot) > 0.0 && length(fromDot) <= ball_.radius + kPointRadius + playground_tick::kQuantum)
+        hold(fromDot, kDotOwner);
+}
+
 // The answer to a whole configuration of patches at once.
 //
 // One patch is solved as one load with a pressure that runs from one end to the
@@ -198,10 +225,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                if (!ballFixed)
-                    value += ballFreedom(patch.normal * -1.0) * (dot(toward, direction) / ball_.mass) +
-                             lever(at - ball_.position, toward) *
-                                 lever(pushAt - ball_.position, direction) / ballMoment;
+                if (!ballFixed) {
+                    // The compliance has to be the compliance of the impulse that is
+                    // going to be applied. The ball is given the projected push and
+                    // the whole push's moment (see pushBallSupported), so the mass
+                    // term is read along the projection and the lever term off the
+                    // push itself. Written any other way the solver believes the ball
+                    // answers more or less than it does, and the difference is not a
+                    // rounding error: it is an impulse the pair never balances.
+                    value += dot(direction, ballFree(toward)) / ball_.mass +
+                             lever(at - ball_.position, direction) *
+                                 lever(pushAt - ball_.position, toward) / ballMoment;
+                }
             }
             return value;
         };
@@ -209,7 +244,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse * ballFreedom(patch.normal * -1.0), kind);
+                if (!ballFixed) pushBallSupported(at, impulse * -1.0, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
@@ -322,8 +357,17 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // a quarter of what it should have. A bounce is answered at the
                 // instant the two meet, and it is the walk that carries the shape to
                 // that instant -- so there is no gap left to spend here.
-                u[dofs] = away(patch.point[k], patch.normal) + (patch.rebound[k] != 0.0 ? 0.0 : bias) -
-                          patch.rebound[k];
+                // A ball spends no clearance, for the reason a bounce does not: the
+                // bias is what a *face* may pay of the distance it has left to a
+                // *plane*, and it is paid by letting the closing speed be spent over
+                // the tick. A ball is met at a point and it is round, and while the
+                // floor holds it its only way to answer a normal push is sideways --
+                // so the bias becomes a target speed the ball chases along the floor,
+                // metres a second of it, from a shape that has not touched it yet.
+                // The walk carries both of them to the instant they meet; what is
+                // answered here is the closing speed at that instant.
+                const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
+                u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that

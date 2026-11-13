@@ -1,5 +1,8 @@
 #include "client/playground_room.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -215,6 +218,23 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     ball_.frozen = false;
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.
+    recordImpulse(at, impulse, kind, kBallOwner);
+}
+
+// An impulse on a ball that is resting on something: the translation it is free to
+// take and the turn of the whole impulse. See the note beside BallSupport.
+void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
+    if (!(length(impulse) > 0.0)) return;
+    const Vec3 arm = at - ball_.position;
+    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+    const Vec3 free = ballFree(impulse);
+    if (getenv("GTC_FREE"))
+        std::fprintf(stderr, "      free imp(%+.4f,%+.4f) -> (%+.4f,%+.4f) supports %zu\n", impulse.x, impulse.y, free.x,
+                     free.y, ballSupportCount_);
+    ball_.velocity = ball_.velocity + free * (1.0 / ball_.mass);
+    ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
+    ballBlows_ = ballBlows_ + free;
+    ball_.frozen = false;
     recordImpulse(at, impulse, kind, kBallOwner);
 }
 

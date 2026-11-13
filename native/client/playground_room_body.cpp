@@ -537,6 +537,10 @@ void PlaygroundRoom::tickBodies() {
     // A load that arrives before this tick ends is a load arriving, so the wake is
     // asked with the same reach the patches are gathered with.
     wakeLoadedBodies(band);
+    // What is holding the ball up, gathered before the tick's solve moves anything:
+    // the patches are solved against the ball, and a ball resting on the floor is
+    // answered through the floor. See gatherBallSupports().
+    gatherBallSupports();
     ManifoldSet patches;
     gatherContacts(patches, band);
     solveContacts(patches);

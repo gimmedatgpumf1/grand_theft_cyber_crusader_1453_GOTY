@@ -529,6 +529,58 @@ private:
         // on top of one carries the cube.
         std::size_t body = kBodyCount;
     };
+    // What is holding the ball up, as the constraint it is.
+    //
+    // The ball is one rigid body, and the shapes are solved against it before its own
+    // tick runs, so for the length of that solve the question "may the ball move that
+    // way" has to have a real answer. It used to have a fraction: `ballFreedom`, the
+    // share of a push that is along the surface under the ball rather than into it,
+    // applied as a factor on the impulse. The fraction is right and using it as a
+    // factor is not. The impulse is one vector and the floor blocks one component of
+    // it, so scaling the whole vector hands the ball the right answer along the normal
+    // it was solved on and throws away the component along the floor -- the only part
+    // that would have moved it. Measured on a cube set down on the ball's shoulder:
+    // the shape took +0.73 N s of sideways momentum in one tick and the ball answered
+    // with -0.04, and the missing 0.69 was made again every tick until the cube was
+    // squeezed off at a metre a second with the meter reading above the drop.
+    //
+    // So the surfaces under the ball are gathered as normals, and both halves of the
+    // answer are read off one projection of them:
+    //
+    //   * the translation the ball is given is the push with those normals taken out
+    //     (ballFree) -- it slides along the floor and cannot be driven into it;
+    //   * the turn it is given is the turn of the *whole* push (pushBallSupported),
+    //     because a support's answer passes through the middle and adds no moment.
+    //
+    // Projecting before taking the moment is what spun a resting ball to two hundred
+    // and eighty radians a second: a normal push through the middle has no lever, but
+    // its projection along the floor does, and that lever is a force the floor never
+    // gave.
+    struct BallSupport {
+        Vec3 normal{};                 // out of the surface, into the ball
+        std::size_t body = kBodyCount; // kBodyCount for the floor, kDotOwner for the dot
+    };
+    static constexpr std::size_t kMaxBallSupports = 4;
+    std::array<BallSupport, kMaxBallSupports> ballSupports_{};
+    std::size_t ballSupportCount_ = 0;
+    void gatherBallSupports();
+    Vec3 ballFree(Vec3 push) const {
+        Vec3 out = push;
+        for (std::size_t i = 0; i < ballSupportCount_; ++i) {
+            const Vec3& normal = ballSupports_[i].normal;
+            out = out - normal * dot(out, normal);
+        }
+        return out;
+    }
+    // The same projection, as the share of the compliance a patch may count on: how
+    // much of a push along `way` the ball is free to answer.
+    double ballTake(Vec3 way) const {
+        const double size = length(way);
+        if (!(size > 0.0)) return 1.0;
+        const Vec3 unit = way * (1.0 / size);
+        return std::max(0.0, dot(unit, ballFree(unit)));
+    }
+    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind);
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
