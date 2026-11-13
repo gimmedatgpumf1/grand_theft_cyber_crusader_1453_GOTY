@@ -396,6 +396,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // answered here is the closing speed at that instant.
                 const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
+                if (patch.ball && getenv("GTC_ST") != nullptr)
+                    std::fprintf(stderr,
+                                 "LOAD b%zu k%zu away%+.4f bias%+.4f rebound%+.4f u%+.4f carried%+.4f supports%zu free%.3f\n",
+                                 patch.body, k, away(patch.point[k], patch.normal), bias, patch.rebound[k], u[dofs],
+                                 patch.normalImpulse[k], ballSupportCount_, length(ballFree(patch.normal)));
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
