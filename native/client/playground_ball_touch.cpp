@@ -55,6 +55,8 @@ double PlaygroundRoom::loadOver(std::size_t body) const {
 }
 
 void PlaygroundRoom::settleBallFriction() {
+    if (getenv("GTC_F") && ballTouchCount_ == 0)
+        std::fprintf(stderr, "  friction: NO TOUCHES (spin %+.3f)\n", ball_.spin);
     if (ballTouchCount_ == 0) return;
     Ball& ball = ball_;
     const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
