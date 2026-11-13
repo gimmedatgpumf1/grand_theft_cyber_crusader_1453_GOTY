@@ -201,7 +201,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += ballFreedom(patch.normal * -1.0) * (dot(toward, direction) / ball_.mass) +
+                    value += dot(toward, free(direction)) / ball_.mass +
                              lever(at - ball_.position, toward) *
                                  lever(pushAt - ball_.position, direction) / ballMoment;
             }
@@ -211,7 +211,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse * ballFreedom(patch.normal * -1.0), kind);
+                if (!ballFixed) pushBall(at, free(impulse), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
