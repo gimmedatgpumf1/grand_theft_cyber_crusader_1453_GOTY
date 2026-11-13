@@ -195,6 +195,9 @@ void PlaygroundRoom::settleBallFriction() {
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
             ball.spin += lever * impulse / inertia;
             taken[i] += impulse;
+            if (getenv("GTC_P"))
+                std::fprintf(stderr, "      pass %d i%zu slip %+.4f wanted %+.4f holds %d -> v %+.4f spin %+.4f\n", pass, i, slip,
+                             wanted, int(holds), ball.velocity.x, ball.spin);
         }
         if (!clashing) break;
     }
