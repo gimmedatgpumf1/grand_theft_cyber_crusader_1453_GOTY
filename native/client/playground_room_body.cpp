@@ -241,23 +241,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // would get is a stop a tick early.
         if (patch.ends > 0 && patch.gap[0] <= band) patches.add(patch);
     }
-    // The ball is not gathered here.
-    //
-    // It used to be: a shape meeting the ball got a patch in this solver, answered
-    // inelastically like every other contact in the room. And the ball's own tick
-    // answered the same meeting again, with the ball's law -- which has restitution
-    // and a support projection in it. Two solvers, two laws, one contact: the ball
-    // patch bounced a cube off the ball and the ball's tick then cancelled it, so a
-    // cube dropped on the ball stopped dead on it, and if the patch happened to be
-    // gathered second the ball was given nothing at all. Whichever ran last won.
-    //
-    // A contact belongs to one place. The ball is a body, and the place its contacts
-    // are solved is its own tick, where its law is: swept between two moving things,
-    // answered with its bounciness, its share split by what it is free to do. What
-    // this solver does about a shape arriving at the ball is nothing -- the shape's
-    // step is stopped at the ball, and put back to the instant of the meeting, by
-    // that same tick.
-    for (std::size_t index = 0; index < kBodyCount && false; ++index) {
+    // The ball, met at the one place a body's outline comes closest to it.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
@@ -542,21 +527,8 @@ void PlaygroundRoom::tickBodies() {
     wakeLoadedBodies(band);
     ManifoldSet patches;
     gatherContacts(patches, band);
-    if (getenv("GTC_STAGE"))
-    {
-        std::fprintf(stderr, "   gather: %zu patches, b0 v.y %+.3f\n", patches.count, bodies_[0].velocity.y);
-        for (std::size_t i = 0; i < patches.count; ++i)
-            std::fprintf(stderr, "     patch %zu body %zu other %zu ball %d ends %zu n(%+.2f,%+.2f) gap %.4f\n",
-                         i, patches.items[i].body, patches.items[i].other, (int)patches.items[i].ball,
-                         patches.items[i].ends, patches.items[i].normal.x, patches.items[i].normal.y,
-                         patches.items[i].gap[0]);
-    }
     solveContacts(patches);
-    if (getenv("GTC_STAGE"))
-        std::fprintf(stderr, "   solved: b0 v.y %+.3f cy %+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
     advanceBodies(kTick);
-    if (getenv("GTC_STAGE"))
-        std::fprintf(stderr, "   advanced: b0 v.y %+.3f cy %+.4f\n", bodies_[0].velocity.y, bodies_[0].centre.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];

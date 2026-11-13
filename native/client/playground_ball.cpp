@@ -78,9 +78,6 @@ void PlaygroundRoom::tickBall() {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving()) return;
-    if (getenv("GTC_TICK"))
-        std::fprintf(stderr, "  tickBall enter frozen %d neighbours %d b0 v.y %+.3f cy %+.4f\n",
-                     (int)ball.frozen, (int)ballNeighboursMoving(), bodies_[0].velocity.y, bodies_[0].centre.y);
     ball.frozen = false;
 
     // What the ball arrived with is recorded once for the whole tick, before
@@ -266,11 +263,6 @@ void PlaygroundRoom::tickBall() {
             // position and nothing else -- the same answer a corner of a shape gets.
             // Nothing is added to its speed, so nothing is conjured; it is a place
             // corrected, once, and then the ordinary contact rules apply to it again.
-            if (getenv("GTC_WALK"))
-                std::fprintf(stderr, "  walk body %zu resting %d along %.4f depth %.4f n(%+.2f,%+.2f) ball(%+.3f,%+.3f) v(%+.3f,%+.3f) at(%+.3f,%+.3f) prevCy %+.4f cy %+.4f\n",
-                             index, (int)hit.resting, hit.along, hit.depth, hit.normal.x, hit.normal.y,
-                             ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
-                             hit.contact.x, hit.contact.y, bodies_[index].previousCentre.y, bodies_[index].centre.y);
             if (hit.resting && !restingAnswered[index]) {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),

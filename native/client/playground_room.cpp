@@ -616,12 +616,8 @@ void PlaygroundRoom::tick() {
     // the first meeting of anything with anything, and that meeting is answered on
     // both sides at once.
     tickBodies();
-    if (getenv("GTC_STAGE"))
-        std::fprintf(stderr, "  after tickBodies b0 cy %+.4f v.y %+.3f\n", bodies_[0].centre.y, bodies_[0].velocity.y);
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
-    if (getenv("GTC_STAGE"))
-        std::fprintf(stderr, "  after tickBall   b0 cy %+.4f v.y %+.3f\n", bodies_[0].centre.y, bodies_[0].velocity.y);
     haveTrace_ = length(traceTo_ - traceFrom_) > kQuantum;
     if (length(point_ - from) > kQuantum) {
         ghosts_[ghostNext_] = point_;
