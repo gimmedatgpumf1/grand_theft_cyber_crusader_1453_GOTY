@@ -23,7 +23,7 @@ using ball_shape::kBallStaticFriction;
 // How many passes the tick's contacts get to agree with each other in. Two faces
 // are settled in a handful; a corner of three is a little slower, and past this
 // what is left is smaller than the arithmetic can tell from nothing.
-constexpr int kBallFrictionPasses = 12;
+constexpr int kBallFrictionPasses = 40;
 
 }  // namespace
 
