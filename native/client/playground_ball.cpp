@@ -63,10 +63,6 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
-    // The blows of one tick, from the tick's own beginning. `ball.arrival` is where
-    // the tick found the ball, before anything in the room moved; this is the same
-    // instant, for the same reason.
-    ballBlows_ = {};
     ballTouchCount_ = 0;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;

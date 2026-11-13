@@ -722,6 +722,10 @@ void PlaygroundRoom::advance(double seconds) {
         // tick. A bounce is the answer to arriving at something; a push it gets
         // part-way through the tick is not an arrival, and must not be bounced back.
         ball_.arrival = ball_.velocity;
+        // The ball's account for the tick, opened at the same instant and for the
+        // same reason: the blows written into it below have to be every blow of this
+        // tick, including the ones the shapes deal it before its own tick begins.
+        ballBlows_ = {};
         // A point parked on a body is only held up by that body. Take it away --
         // drag it, or let it slide -- and the support is gone, so the point goes
         // back to being a falling body.
