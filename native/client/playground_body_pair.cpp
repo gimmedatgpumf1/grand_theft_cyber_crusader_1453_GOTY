@@ -165,8 +165,14 @@ double erosionDepth(const Vec3* corners, std::size_t count, Vec3 point, double m
 bool firstSinusoidCrossing(double k1, double k2, double k3, double span, double& found) {
     const double amplitude = std::hypot(k1, k2);
     if (!(amplitude > 0.0)) return false;
+    // A body resting on a face is *exactly* on it, which puts this ratio at one to
+    // within rounding -- and a tangency is a crossing. Asked strictly, "the line is a
+    // radius away" is false by a part in ten billion for a shape that is standing on
+    // that line, and the turn into it would not be seen at all. So the ratio is only
+    // refused when it is outside the sine's range by more than the arithmetic can
+    // explain; a root found from a rounded tangency is verified afterwards anyway.
     const double ratio = k3 / amplitude;
-    if (!(std::abs(ratio) <= 1.0)) return false;
+    if (!(std::abs(ratio) <= 1.0 + 1e-9)) return false;
     // k1 cos u + k2 sin u = amplitude * sin(u + phase)
     const double phase = std::atan2(k1, k2);
     const double base = std::asin(std::max(-1.0, std::min(1.0, ratio)));
@@ -230,7 +236,6 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     const double nudge = furthest > 0.0 ? playground_tick::kQuantum / furthest : playground_tick::kQuantum;
     double first = span + 1.0;  // no meeting at all
     const auto take = [&](double u) {
-        if (getenv("GTC_HS")) std::fprintf(stderr, "HS take u%+.8f a%+.8f\n", u, way * u);
         if (u > 0.0 && u < first) first = u;
     };
     // The very first micrometre of the turn. A body that is already against something
@@ -293,7 +298,6 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     const double spread = std::acos(std::max(-1.0, std::min(1.0, reach / radius)));
                     for (const double which : {1.0, -1.0}) {
                         double u = way * (normalPhase + which * spread - phase);
-                        if (getenv("GTC_HS")) std::fprintf(stderr, "HS face cand other%zu e%zu which%+.0f raw%+.8f\n", other, e, which, u);
                         // Into the u's this turn covers, however many turns round it is.
                         while (u > span) u -= 2.0 * kPi;
                         while (u <= -span) u += 2.0 * kPi;
