@@ -203,7 +203,15 @@ void PlaygroundRoom::settleBallFriction() {
             worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
             const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
-            const double effective = 1.0 / ball.mass + lever * lever / inertia + partner[i];
+            // And the ball's own share of it, with the same projection its translation
+            // gets everywhere else in the tick: a grip along a face the ball is
+            // squeezed against can only move it the way the surfaces under it allow.
+            // Solved free, the grip believes a ball pinched between the floor and a
+            // weight can be rubbed along a diagonal that the floor will not let it
+            // take, and the part it cannot take is answered by taking more of it --
+            // a tangential impulse larger than the slip it was solving for.
+            const double along = dot(tangents[i], ballFree(tangents[i]));
+            const double effective = along / ball.mass + lever * lever / inertia + partner[i];
             const double load = ballTouches_[i].pressed;
             // Static friction takes the slip away and the ball rolls from there; if
             // the whole of what it would take is more than the face can hold, it
@@ -216,7 +224,7 @@ void PlaygroundRoom::settleBallFriction() {
             const double impulse = next - lambda[i];
             if (impulse == 0.0) continue;
             lambda[i] = next;
-            ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
+            ball.velocity = ball.velocity + ballFree(tangents[i]) * (impulse / ball.mass);
             ball.spin += lever * impulse / inertia;
             taken[i] += impulse;
             // And the other side of it. Friction is a pair like every other force
