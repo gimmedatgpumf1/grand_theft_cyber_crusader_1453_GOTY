@@ -288,7 +288,12 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // carries the outline into the ball; a shape sliding past does not close at
         // all and is not an arrival however near it is.
         const double reach = std::max(0.0, -dot(pointSpeed(body, at) - ballPointSpeed(at), way)) * kTick;
-        if (gap > reach) continue;
+        // A shape already resting on the ball is not arriving anywhere, and asking it
+        // to close a distance would throw its contact away every tick it stood still:
+        // it would be held up for one tick, dropped for the next, and would walk its
+        // way along the ball in a tremor. What is arriving is the shape with nothing
+        // under it, and that is the only one the reach is for.
+        if (gap > reach && !body.onBall && gap > kContactBand) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
