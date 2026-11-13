@@ -135,14 +135,6 @@ void PlaygroundRoom::settleBallSurfaces() {
     }
 }
 
-namespace {
-// How far a ball's middle is from a body's outline at the end of its travel. The
-// plain question the walk asks when the ball is already touching: is it still out?
-double ballShapeEndGap(Vec3 at, const Vec3* corners, std::size_t count) {
-    return ball_shape::outlineGap(at, corners, corners, count, 1.0).gap;
-}
-}  // namespace
-
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
     // The list of faces is not emptied here. The tick opens it before the bodies are
@@ -435,22 +427,20 @@ void PlaygroundRoom::tickBall() {
             // not its stored velocity: a corner's velocity is cut to nothing by the
             // floor while the step still carries the body down into the ball.
             if (hit.depth <= kSkin && hit.along <= kTouch) {
-                // Asked of where the ball would be when the tick ends, not of which way
-                // it is going. "Not closing" was read off the surface's own speed, and a
-                // plank turning away from a ball it is touching is not closing -- so the
-                // ball was let keep its travel, and the travel took it through the face
-                // the plank had not finished leaving. It ended a centimetre and a half
-                // inside a face that was still there, wedged between the plank and the
-                // floor, with nowhere to be put: the one state this room may not reach.
-                // The honest question is the plain one -- does what is left of the tick
-                // put the ball inside? A ball rolling along a face it is touching ends
-                // the tick at one radius from it, and is left alone; a ball whose travel
-                // would take it in is stopped at the surface, whichever way the surface
-                // is going.
-                const Vec3 endAt = ball.position + ball.velocity * (kTick * remaining);
-                const double endGap =
-                    ballShapeEndGap(endAt, body.position.data(), body.count);
-                if (endGap >= ball.radius - playground_tick::kQuantum) continue;
+                // A meeting found at the very first instant of the tick is not a meeting:
+                // it is the contact the ball already has, and a standing contact belongs
+                // to the solver that has already answered it. Stopping the walk for it
+                // stopped the ball at a shape it was merely lying against and never got
+                // as far as the shape it was actually falling onto -- a ball wedged
+                // between a cube and a slope was answered for the cube, tick after tick,
+                // and kept the whole of its fall, which is the buzz the King saw. A
+                // meeting found *part* of the way through the tick is a different thing
+                // and is always stopped for: the ball really does arrive there, whether
+                // the face it arrives at is coming or going. That is what used to be
+                // missed -- the test was on which way the two were moving, so a plank
+                // turning up out of a ball it was touching was called "not closing" and
+                // the ball's travel carried it a centimetre and a half through the face.
+                continue;
             }
             if (hit.along < first) {
                 first = hit.along;
