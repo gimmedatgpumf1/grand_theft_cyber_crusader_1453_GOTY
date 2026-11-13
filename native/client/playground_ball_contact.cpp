@@ -322,7 +322,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // settleBallFriction(). What is recorded is what each contact is: the face, how
     // it is moving there, and how hard it is pressed.
     if (pressed > 0.0 && ballTouchCount_ < kMaxBallTouches)
-        ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed};
+        ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed,
+                                                    bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex)};
     // Rolling resistance is not done here, and it is not a force taken off the
     // ball's speed. It is a couple, it is applied to the ball's turn, and it is
     // applied once for the whole tick in settleBallFriction(), against the load the

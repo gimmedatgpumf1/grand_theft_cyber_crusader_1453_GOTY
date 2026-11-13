@@ -499,12 +499,24 @@ private:
     // worked out against the others instead of one after another.
     struct BallTouch {
         Vec3 normal{}, surfaceVelocity{};
+        // What this face is carrying, in newton seconds. It is not a property of the
+        // face on its own: it is what the face has to hold up, which is a question
+        // about the whole stack -- see settleBallFriction().
         double pressed = 0.0;
+        // Which body is on the other side, or kBodyCount for the floor. A face over
+        // the ball is carrying the weight of what stands on it, and that is read from
+        // the body: a floor patch beneath a ball carries the ball, but a cube resting
+        // on top of one carries the cube.
+        std::size_t body = kBodyCount;
     };
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
     void settleBallFriction();
+    // How much weight stands on a body, in newtons: its own, plus whatever the
+    // solver found resting on it this tick. A face of the ball that has a body over
+    // it is carrying this, and friction is mu times it.
+    double loadOver(std::size_t body) const;
     // Whether the ball can be put down here: the mouse may carry it anywhere in
     // the room, but not inside a solid. A ball placed inside one would have to be
     // driven back out, and nothing in this room is driven out of anything -- it

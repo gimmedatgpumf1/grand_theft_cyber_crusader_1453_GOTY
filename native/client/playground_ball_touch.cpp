@@ -40,6 +40,20 @@ constexpr int kBallFrictionPasses = 12;
 //
 // Each impulse is a Coulomb one: mu_s can take the slip away outright and hold, and
 // anything it cannot take is mu_k * N against the slide, over the tick, never more.
+// How much weight stands on a body, in newtons: its own, plus whatever the solver
+// found resting on it this tick. A face of the ball with a body over it is carrying
+// this, and friction is mu times it. A shape is one thing in a stack as well, so a
+// cube with a triangle on it presses the ball under them both with both weights.
+double PlaygroundRoom::loadOver(std::size_t body) const {
+    if (body >= kBodyCount) return 0.0;
+    double mass = bodies_[body].mass;
+    for (std::size_t i = 0; i < kBodyCount; ++i) {
+        if (i == body || bodies_[i].supportBody != body) continue;
+        mass += bodies_[i].mass;
+    }
+    return mass * ball_shape::kGravity;
+}
+
 void PlaygroundRoom::settleBallFriction() {
     if (ballTouchCount_ == 0) return;
     Ball& ball = ball_;
@@ -59,8 +73,51 @@ void PlaygroundRoom::settleBallFriction() {
         const Vec3 turned{-spin * arms[i].y, spin * arms[i].x, 0};
         return dot(velocity + turned - ballTouches_[i].surfaceVelocity, tangents[i]);
     };
-    // The load the ground is carrying, in newtons, which is what both friction and
-    // rolling resistance are measured against.
+    // What each face is carrying.
+    //
+    // Friction is mu times the normal force, and the normal force is whatever that
+    // face is holding up -- not "the ball's own weight, if the face happens to be
+    // underneath". That reading is right for a ball on the floor and wrong for
+    // every other arrangement, and it was worst in the pinch: a ball with a weight
+    // on top of it and the floor under it, where turning is impossible because the
+    // two faces grip it between them. The face above was given no load, because the
+    // ball's weight does not press into it, so it was given no grip either -- and
+    // the ball went on spinning under a weight it could not possibly spin under.
+    //
+    // So the ball is treated as what it is: one object in a stack. What bears down
+    // on it is its own weight plus every face that is over it, each carrying what
+    // stands on it. What holds that up is the faces underneath, and they share it in
+    // proportion to how directly they are underneath. Nothing here is a rule about
+    // balls: it is the statics of one plate on some supports, which is also exactly
+    // what the shapes' own solver does for a stack of bodies.
+    {
+        const double weight = ball.mass * ball_shape::kGravity * ball_shape::kTick;  // N.s
+        double carried = weight;
+        double under = 0.0;
+        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+            const Vec3 normal = ballTouches_[i].normal;
+            const double down = std::max(0.0, -normal.y);
+            const double up = std::max(0.0, normal.y);
+            if (down > 0.0) {
+                // Over the ball: it carries what stands on it. The blow of this tick,
+                // if there was one, is in that same number and is the larger of the
+                // two whenever anything has just landed.
+                const double above = loadOver(ballTouches_[i].body) * down * ball_shape::kTick;
+                ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, above);
+                carried += ballTouches_[i].pressed;
+            }
+            under += up * up;
+        }
+        if (under > 0.0) {
+            for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+                const double up = std::max(0.0, ballTouches_[i].normal.y);
+                if (up <= 0.0) continue;
+                ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, carried * up / under);
+            }
+        }
+    }
+    // The load the ball's faces are carrying altogether, in newtons, which is what
+    // both friction and rolling resistance are measured against.
     double press = 0.0;
     for (std::size_t i = 0; i < ballTouchCount_; ++i) press += ballTouches_[i].pressed;
     const double normalForce = press / ball_shape::kTick;
