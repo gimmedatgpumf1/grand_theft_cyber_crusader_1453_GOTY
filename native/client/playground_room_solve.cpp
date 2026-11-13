@@ -183,6 +183,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // them they add up to the ball's speed not changing, which is what a ball
         // pressed into the ground does -- and not one newton of it came from nowhere.
         const bool ballFixed = patch.ball && ball_.frozen;
+        const Vec3 gtcBallBefore = patch.ball ? ball_.velocity : Vec3{};
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
@@ -554,6 +555,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 other->supportLow = std::min(other->supportLow, patch.point[k].x);
                 other->supportHigh = std::max(other->supportHigh, patch.point[k].x);
             }
+        }
+        if (patch.ball && getenv("GTC_ST") != nullptr) {
+            const Vec3 d = ball_.velocity - gtcBallBefore;
+            if (length(d) > 5.0)
+                std::fprintf(stderr, "SOLVE b%zu other%zu ends%zu n(%+.3f,%+.3f) dv(%+.2f,%+.2f) v(%+.2f,%+.2f)\n",
+                             patch.body, patch.other, patch.ends, patch.normal.x, patch.normal.y, d.x, d.y,
+                             ball_.velocity.x, ball_.velocity.y);
         }
     };
 
