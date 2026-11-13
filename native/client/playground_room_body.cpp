@@ -172,6 +172,8 @@ double PlaygroundRoom::advanceBodies(double seconds) {
     const auto move = [&](double time) {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             Body& body = bodies_[index];
+            if (getenv("GTC_M2") && index == 0)
+                std::fprintf(stderr, "    try body0 count %zu frozen %d held %d\n", body.count, int(body.frozen), int(bodyHeld(index)));
             if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
             double furthest = 0.0;
             for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
