@@ -1,7 +1,5 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_shapes.h"
 
 namespace gtc::native {
@@ -190,9 +188,6 @@ void PlaygroundRoom::tickBall() {
         if (!sweptBallAgainstMoving(body.previous.data(), body.position.data(), body.count, ball.position,
                                     ball.velocity, limit, kTick, stop, false))
             continue;
-        if (getenv("GTC_S"))
-            std::fprintf(stderr, "  prevent body %zu startGap %+.7f along %+.4f ballv(%+.3f,%+.3f)\n", index, startGap, stop.along,
-                         ball.velocity.x, ball.velocity.y);
         if (!(stop.along < 1.0)) continue;
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * stop.along;
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * stop.along;
@@ -368,9 +363,6 @@ void PlaygroundRoom::tickBall() {
         if (what >= 0 && !bodyStopped[std::size_t(what)] && (first > 0.0 || depth > 0.0)) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
-            if (getenv("GTC_S"))
-                std::fprintf(stderr, "  rewind body %d when %.6f first %.6f depth %.6f normal(%+.3f,%+.3f) v(%+.3f,%+.3f)\n",
-                             what, when, first, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y);
             met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
             met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
             placeCorners(met);

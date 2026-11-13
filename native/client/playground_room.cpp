@@ -1,7 +1,5 @@
 #include "client/playground_room.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 #include "client/playground_ball_shape.h"
@@ -161,7 +159,6 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
     pointFrozen_ = false;
 }
 
-
 // One impulse, given to one body at one place. This is the only door into a
 // body's motion anywhere in the room, because it is the only thing a force can do
 // to a rigid body: change the speed of its centre of mass by J/m and its turn by
@@ -202,8 +199,6 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
             body.applied[body.appliedCount++] = Body::Applied{at, impulse, kind};
         }
     }
-    if (getenv("GTC_PB") && &body - bodies_.data() == 0)
-        std::fprintf(stderr, "  pushBody0 (%+.3f,%+.3f) kind %d vNow %+.3f\n", impulse.x, impulse.y, int(kind), body.velocity.y);
     recordImpulse(at, impulse, kind, std::size_t(&body - bodies_.data()));
 }
 

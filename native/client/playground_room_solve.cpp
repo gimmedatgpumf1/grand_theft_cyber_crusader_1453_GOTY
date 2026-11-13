@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -114,9 +112,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
-        if (getenv("GTC_B") && patch.ball)
-            std::fprintf(stderr, "    pass ball grip %d u0 %+.4f carried0 %+.4f bodyV %+.3f\n", int(withGrip),
-                         patch.gap[0], patch.normalImpulse[0], body->velocity.y);
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
         // A body asleep is a surface, for the same reason the ball is: it has no speed
         // for a contact to change and nothing in the room can move it, so it may not
@@ -335,9 +330,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             double delta[kMaxPatchEnds] = {};
             if (dofs == 1) {
                 if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
-                if (getenv("GTC_B") && patch.ball)
-                    std::fprintf(stderr, "      delta u %+.4f g %.4f -> %+.4f (away %+.4f bias %+.4f)\n", u[0], g[0][0],
-                                 delta[0], away(patch.point[0], patch.normal), patch.gap[0] * (1.0 / kTick));
             } else if (dofs == 2) {
                 const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
                 if (std::abs(det) > 1e-18) {

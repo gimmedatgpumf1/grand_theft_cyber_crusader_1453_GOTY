@@ -22,6 +22,10 @@ static void run(const char* name, double dx, double dy, double drop) {
         Vec3 jBall{}, jCube{};
         for (std::size_t i = 0; i < r.forceCount_; ++i) {
             const auto& f = r.forces_[i];
+            // A couple is a moment and not a force: its `force` is only how it is
+            // drawn. Summing it as an impulse would book rolling resistance as a
+            // shove the ball never felt.
+            if (f.couple) continue;
             const Vec3 impulse = f.force * playground_tick::kTick;
             if (f.owner == 2) jBall = jBall + impulse;
             if (f.owner == 0) jCube = jCube + impulse;
