@@ -467,6 +467,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
         }
         }
+        // This body is against the ball, and it is worth remembering: a contact that
+        // is still there next tick has not arrived at it.
+        if (patch.ball && patch.normalImpulse[0] > 0.0) body->onBall = true;
         // What is under each end decides what each body is standing on.
         //
         // A patch is one meeting, held by whichever of the two is the lower-numbered

@@ -66,6 +66,10 @@ void PlaygroundRoom::applyBodyForces() {
         body.previous = body.position;
         body.touchingPlane = false;
         body.onBody = false;
+        // What was against the ball last tick is an arrival this tick only if it was
+        // not.
+        body.wasOnBall = body.onBall;
+        body.onBall = false;
         body.supportLow = 1e30;
         body.supportHigh = -1e30;
         body.supportFrozen = false;
@@ -266,8 +270,11 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             const Vec3 arrivedArm = at - body.centre;
             const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arrivedArm.y,
                                body.arrivalVelocity.y + body.arrivalSpin * arrivedArm.x, 0.0};
+            // Only on arrival. A shape that was already against the ball last tick is
+            // resting on it: the contact has to hold it up, and it can hold it up
+            // without giving anything back. See Body::onBall.
             const double closing = dot(arrived - ballPointSpeed(at), way);
-            if (closing < 0.0) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
+            if (closing < 0.0 && !body.wasOnBall) patch.rebound[0] = -ball_shape::kBallRestitution * closing;
         }
         patches.add(patch);
     }

@@ -243,6 +243,18 @@ private:
         // replay of its last waking tick -- counting both would draw its weight twice.
         bool woken = false;
         int contacts = 0;
+        // Whether the ball is one of the things holding this body up this tick, and
+        // whether it was last tick. A bounce is an *event*: it is the answer to
+        // arriving at a surface, and the coefficient of restitution is what turns the
+        // arrival round. A contact that goes on being a contact is not arriving any
+        // more -- it is resting -- and asking it to give the arrival back again every
+        // tick is a pump. It is easy to miss, because each tick's increment is small:
+        // a weight settling onto the ball gains the tick's gravity, the ball gives
+        // three quarters of it straight back, the body falls onto the ball again with
+        // that much more, and the pair climb for ever. Whatever comes out of the
+        // bounce then has to obey the grip, which turns it into a spin, which is the
+        // squeeze the King saw.
+        bool onBall = false, wasOnBall = false;
         // How many contact patches this body has been answered in since the room was
         // reset. It is a counter and not a flag so that a tick can tell, by comparing
         // with what it started from, whether the body met anything at all while it
