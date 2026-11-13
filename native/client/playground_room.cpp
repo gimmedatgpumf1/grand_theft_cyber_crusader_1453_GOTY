@@ -224,6 +224,19 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     recordImpulse(at, impulse, kind, kBallOwner);
 }
 
+// An impulse on a ball that is resting on something: the translation it is free to
+// take, and the turn of the whole impulse. See the note beside the declaration.
+void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind) {
+    if (!(length(impulse) > 0.0)) return;
+    const Vec3 arm = at - ball_.position;
+    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+    ball_.velocity = ball_.velocity + ballFree(impulse) * (1.0 / ball_.mass);
+    ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
+    ballBlows_ = ballBlows_ + ballFree(impulse);
+    ball_.frozen = false;
+    recordImpulse(at, impulse, kind, kBallOwner);
+}
+
 // The ledger, written where the impulse is applied. A contact solved in many passes
 // is one force at one place, so an impulse already at that place and of that kind
 // is added to rather than grown as a second arrow.

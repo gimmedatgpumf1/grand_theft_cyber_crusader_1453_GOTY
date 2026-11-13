@@ -501,6 +501,24 @@ private:
         return 1.0 / ball_.mass + lever * lever / moment;
     }
     void pushBall(Vec3 at, Vec3 impulse, ForceKind kind);
+    // And the same, for a ball that is resting on something.
+    //
+    // A support fixes the ball's *centre* and nothing else: the floor's answer is a
+    // normal through the middle, so it takes the translation that would press the
+    // ball into it and adds no turn at all. Which means the two halves of an impulse
+    // have to be treated differently, and it matters more than it sounds:
+    //
+    //   v += the push with the support normals taken out of it, over m
+    //   w += the whole push's moment about the middle, over I
+    //
+    // The turn is from the *whole* impulse and not the projected one. Projecting it
+    // first -- which is what applying the floor's answer at the contact point amounts
+    // to -- gives a normal impulse through the ball's middle a lever it does not
+    // have, because the projected vector is no longer along the normal. A cube
+    // leaning on the shoulder of a ball on the floor then turned the ball as it
+    // pressed it, and the turn moved the very contact the solver was measuring: it
+    // read "still closing", pushed again, turned it further, and did that thirty-two
+    // times. Two hundred and eighty radians a second, from a cube set down gently.
     void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on);
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
@@ -590,6 +608,7 @@ private:
     void gatherBallSupports();
     // A push with every support's normal taken out of it: what the ball is free to
     // do with it. The identity when the ball is on nothing.
+    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind);
     Vec3 ballFree(Vec3 push) const {
         Vec3 out = push;
         for (std::size_t i = 0; i < ballSupportCount_; ++i) {

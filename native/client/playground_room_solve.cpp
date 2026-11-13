@@ -236,10 +236,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // surface still closing. Thirty-two sweeps of that is a ball
                     // spun to minus two hundred and eighty radians a second by a cube
                     // leaning on it.
-                    const Vec3 given = ballFree(toward);
-                    value += dot(direction, given) / ball_.mass +
+                    value += dot(direction, ballFree(toward)) / ball_.mass +
                              lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, given) / ballMoment;
+                                 lever(pushAt - ball_.position, toward) / ballMoment;
                 }
             }
             return value;
@@ -251,7 +250,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, ballFree(impulse * -1.0), kind);
+                if (!ballFixed) pushBallSupported(at, impulse * -1.0, kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
