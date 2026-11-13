@@ -232,12 +232,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // it -- "more than a microradian", "more than a millionth" -- answers a
             // different question, the one about how level a face happens to be in
             // floating point, and says a brick wall is a low ceiling.
-            const bool pressing =
-                -normal.y > std::abs(normal.x) && ball.position.y <= ball.radius + kTouch;
-            const bool ballGives = !ballHeld && !pressing;
-            const double ballShare = ballGives ? 1.0 : 0.0;
-            const double impulse = (rebound - closing) / (ballShare / ball.mass + bodyShare);
-            ball.velocity = ball.velocity + normal * (impulse * ballShare / ball.mass);
+            // The ball's say in the blow, as an inverse mass: none along the way the
+            // surface under it will not let it go, and the whole of it along the way
+            // that surface is not in the way. That is what turns "a shape landing on
+            // the top of it" into the floor's answer while "a shape striking its
+            // side" still shoves the ball across the room.
+            const double ballShare = ballCompliance(normal, ballHeld);
+            const double impulse = (rebound - closing) / (ballShare + bodyShare);
+            ball.velocity = ball.velocity + normal * (impulse * ballShare);
+            // Struck is not asleep. A ball given any of this blow has something to
+            // do with it, and a frozen ball is not stepped at all.
+            if (impulse != 0.0) ball.frozen = false;
             // What this surface can rub against the ball is what it can press the
             // ball with, and the ball is only pressed by the part of the blow it
             // actually took. A ball lying on the floor with a shape landing flat on
@@ -375,18 +380,26 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
 void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
     Ball& ball = ball_;
     const double closing = dot(velocity_ - ball.velocity, normal);
-    const double rebound = 0.0;
+    // The ball is the elastic one, so a blow against it answers with the ball's
+    // restitution -- the same number every other thing that meets it is answered
+    // with. This used to be zero, which made the dot a special case that the ball
+    // was not bouncy towards: a dot dropped on a ball sank into it and stopped, and
+    // a ball with a dot on it never threw it back, whatever the material said.
+    const double rebound = closing < 0.0 ? -kBallRestitution * closing : 0.0;
     if (closing < 0.0) {
-        // A ball that a surface is already holding cannot give way: the dot is
-        // stopped by the ball, not by half of it. Dividing the blow with a ball
-        // that has nowhere to go leaves the dot falling into it a little more
-        // every tick, which is what turns a dot resting on a ball into a dot
-        // slowly winding it up.
-        const bool ballGives = !ball.frozen && !(ball.touching && ball.standing && length(ball.velocity) < kRestSpeed);
-        const double ballShare = ballGives ? 1.0 : 0.0;
-        const double impulse = (rebound - closing) / (1.0 / kMass + ballShare / ball.mass);
+        // The ball's say in the blow, along the direction the blow pushes it. The
+        // dot pushes the ball along -normal (the normal runs from the ball to the
+        // dot), and what the ball can do with that is whatever is not blocked by
+        // the surface it is standing on. Straight down onto a ball on the floor is
+        // the floor's to answer and the dot bounces off the ball; across it is the
+        // ball's, and the ball goes.
+        const double ballShare = ballCompliance(normal * -1.0, dragTarget_ == DragTarget::Ball);
+        const double impulse = (rebound - closing) / (1.0 / kMass + ballShare);
         velocity_ = velocity_ + normal * (impulse / kMass);
-        ball.velocity = ball.velocity - normal * (impulse * ballShare / ball.mass);
+        ball.velocity = ball.velocity - normal * (impulse * ballShare);
+        // A ball that has been struck is a ball that is doing something, and a ball
+        // that is doing something is not asleep. It used to be woken here and then
+        // given no speed at all, which is a ball that wakes up and stands still.
         ball.frozen = false;
         pointFrozen_ = false;
         resting_ = false;
@@ -396,8 +409,15 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
     const double distance = length(gap);
     const double overlap = kPointRadius + ball.radius - distance;
     if (overlap > 0.0 && distance > 1e-12) {
-        point_ = point_ + gap * (overlap * 0.5 / distance);
-        ball.position = ball.position - gap * (overlap * 0.5 / distance);
+        // The dot is the thing that is where it should not be, so the dot is the
+        // one that moves -- unless the ball can take its share, which is the same
+        // question as above. Pushing the ball half the overlap downwards put it
+        // through the floor it was resting on.
+        const Vec3 way = gap * (1.0 / distance);            // ball -> dot
+        const double ballCan = ballCompliance(way, dragTarget_ == DragTarget::Ball) * ball.mass;
+        const double ballPart = std::clamp(0.5 * ballCan, 0.0, 1.0);
+        point_ = point_ + way * (overlap * (1.0 - ballPart));
+        ball.position = ball.position - way * (overlap * ballPart);
     }
 }
 

@@ -521,6 +521,26 @@ private:
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);
     void pointAgainstBall(Vec3 normal);
+    // How much say the ball has in a blow that pushes it along `push`, as an inverse
+    // mass. It is not simply 1/m: a ball resting on something cannot be driven into
+    // it, because the surface underneath answers that part of the blow -- the floor
+    // does not give. What is left of the blow is the part along that surface, and
+    // that part does move the ball.
+    //
+    // It used to be all or nothing: a ball resting on anything took *no* share of
+    // any blow, in any direction. A shape landing flat on the top of a ball is
+    // caught by the floor that way, and that is right; a shape or a dot striking
+    // the side of that same ball was given nothing as well, which is why the ball
+    // sat there like a painted circle while things bounced off it. This is the
+    // projection: zero along the way it cannot go, everything along the way it can.
+    double ballCompliance(Vec3 push, bool held) const {
+        if (held) return 0.0;
+        // Only a surface that is actually under it holds it. A ball in mid-air has
+        // no support at all, and its last one is not a fact about this tick.
+        if (!ball_.touching || !ball_.standing) return 1.0 / ball_.mass;
+        const double into = std::max(0.0, -dot(push, ball_.supportNormal));
+        return (1.0 - into * into) / ball_.mass;
+    }
     // Whether a body has arrived at the resting point this tick. A point that is
     // asleep is not stepped, and a step that is not taken runs no hitscan -- so a
     // shape falling on a dot that is resting on the floor would pass straight
