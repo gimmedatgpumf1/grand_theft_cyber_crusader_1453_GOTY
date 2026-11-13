@@ -360,6 +360,10 @@ void PlaygroundRoom::tickBall() {
         // under a weight that was not doing anything. Prevention is about what would
         // be *inside* the ball; a meeting at the very start of the tick, at no depth,
         // is a contact that already exists.
+        if (getenv("GTC_R") && what >= 0)
+            std::fprintf(stderr, "   hit body %d first %.7f depth %.7f when %.7f normal(%+.2f,%+.2f) shapeV(%+.3f,%+.3f)\n", what,
+                         first, depth, (1.0 - remaining) + first * remaining, normal.x, normal.y, bodies_[what].velocity.x,
+                         bodies_[what].velocity.y);
         if (what >= 0 && !bodyStopped[std::size_t(what)] && (first > 0.0 || depth > 0.0)) {
             Body& met = bodies_[std::size_t(what)];
             const double when = (1.0 - remaining) + first * remaining;
