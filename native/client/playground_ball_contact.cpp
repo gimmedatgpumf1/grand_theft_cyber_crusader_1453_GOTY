@@ -334,9 +334,31 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // settleBallFriction(): a face over the ball carries what stands on it, and a
     // face under it carries the rest. Dropping the ones whose own answer was nothing
     // is what left the ball with no grip underneath a weight that was resting on it.
-    if (ballTouchCount_ < kMaxBallTouches)
-        ballTouches_[ballTouchCount_++] = BallTouch{normal, surfaceVelocity, pressed,
-                                                    bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex)};
+    // One face, one contact. The same face can be met by more than one road in a
+    // tick -- the walk, and the standing touch that has to exist even when the ball
+    // did not travel -- and it is still one face. Answered twice it is not twice the
+    // surface: it is one surface whose load is shared between two copies of itself,
+    // so each copy presses with half the force that is really there, and the ball's
+    // grip on it is half what it should be. A pinched ball had the floor counted
+    // twice under it, and the floor was then no stronger than the weight above.
+    if (ballTouchCount_ < kMaxBallTouches) {
+        const std::size_t mate = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
+        std::size_t slot = ballTouchCount_;
+        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+            if (ballTouches_[i].body != mate) continue;
+            if (dot(ballTouches_[i].normal, normal) < 0.999) continue;
+            slot = i;
+            break;
+        }
+        if (slot == ballTouchCount_) {
+            ballTouches_[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
+            ++ballTouchCount_;
+        } else {
+            ballTouches_[slot].pressed = std::max(ballTouches_[slot].pressed, pressed);
+            if (length(ballTouches_[slot].surfaceVelocity) < length(surfaceVelocity))
+                ballTouches_[slot].surfaceVelocity = surfaceVelocity;
+        }
+    }
     // Rolling resistance is not done here, and it is not a force taken off the
     // ball's speed. It is a couple, it is applied to the ball's turn, and it is
     // applied once for the whole tick in settleBallFriction(), against the load the
