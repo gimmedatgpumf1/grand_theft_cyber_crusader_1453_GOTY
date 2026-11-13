@@ -290,11 +290,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // The distance is the closing speed at the closest point, which is what
         // carries the outline into the ball; a shape sliding past does not close at
         // all and is not an arrival however near it is.
-        {
-            const Vec3 closed = pointSpeed(body, at) - ballPointSpeed(at);
-            const double reach = std::max(0.0, -dot(closed, way)) * kTick;
-            if (gap > reach) continue;
-        }
+        const double reach = std::max(0.0, -dot(pointSpeed(body, at) - ballPointSpeed(at), way)) * kTick;
+        if (gap > reach) continue;
         Manifold patch;
         patch.body = index;
         patch.ball = true;
@@ -328,9 +325,13 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                 // distance still to go, over the distance the tick would cover,
                 // says how much of the tick belongs to the fall and how much to the
                 // rebound. See advanceBodies().
-                const double travel = -closing * kTick;
+                // How much of this tick is the fall. Measured with the speed the
+                // shape has *now*, which is the same number the reach above was
+                // measured with: the weight of this tick is already in it, and a
+                // shape whose gap is inside the reach does arrive, so the fraction
+                // is a real fraction of this tick and never runs past its end.
                 const double togo = std::max(0.0, patch.gap[0]);
-                const double when = travel > 0.0 ? std::clamp(togo / travel, 0.0, 1.0) : 1.0;
+                const double when = reach > 0.0 ? std::clamp(togo / reach, 0.0, 1.0) : 1.0;
                 if (when < body.hitAt) {
                     body.hitAt = when;
                     body.hitArrival = body.velocity;
