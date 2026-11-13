@@ -40,7 +40,7 @@ struct ViewState;
 class PlaygroundRoom {
 public:
     // The bodies in the room, in the order they are simulated.
-    static constexpr std::size_t kCube = 0, kTriangle = 1, kBodyCount = 2;
+    static constexpr std::size_t kCube = 0, kTriangle = 1, kSeesaw = 2, kBodyCount = 3;
     // The most corners a shape in the room has. A body's corners are the shape, and
     // the load it stands on is worked out one per corner, so this is also the number
     // of contacts a resting body can carry.
@@ -255,6 +255,23 @@ private:
         // bounce then has to obey the grip, which turns it into a spin, which is the
         // squeeze the King saw.
         bool onBall = false, wasOnBall = false;
+        // Whether this body is pinned at a point and can only turn about it. A
+        // seesaw is a plank on an axle: the axle holds its middle in one place, so
+        // the plank cannot be carried anywhere, and the one thing it can do is turn.
+        // That is not a rule bolted onto the motion -- it is the constraint the axle
+        // is, and it enters the physics in the one place every constraint does, as
+        // how much the body gives when it is pushed: nothing along any direction,
+        // and its usual share of a turn about the pin.
+        //
+        // Nothing else needs to know. Its weight acts at its middle, which is the pin,
+        // so its weight gives no torque and it hangs in neutral balance wherever it is
+        // left -- which is exactly what a real seesaw on its centre does, and why they
+        // need a push. A load on one end is what turns it, and the axle answers the
+        // difference, which is a force at a place that never moves and therefore does
+        // no work.
+        bool pivoted = false;
+        // Where the axle is. It never moves, and a pinned body's centre is always here.
+        Vec3 pivotPoint{};
         // When, within the tick, this body's velocity was turned around by a blow
         // off the ball: the fraction of the tick that had passed when the two met.
         //
@@ -331,13 +348,18 @@ private:
         const Vec3 arm = at - body.centre;
         return {body.velocity.x - body.spin * arm.y, body.velocity.y + body.spin * arm.x, body.velocity.z};
     }
+    // How much of a push a body takes as a step of its centre of mass: the reciprocal
+    // of its mass, or nothing at all if it is pinned. Every compliance in the room is
+    // read from this and not from 1/m, which is why a contact against the seesaw is
+    // answered by the axle and not by a plank that cannot go anywhere.
+    static double inverseMass(const Body& body) { return body.pivoted ? 0.0 : 1.0 / body.mass; }
     // How much a body gives when it is pushed at `at` along `direction`: the
     // reciprocal of its mass plus the lever's share about its centre. This is the
     // one number a contact is solved with.
     static double giveAt(const Body& body, Vec3 at, Vec3 direction) {
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;
-        return 1.0 / body.mass + lever * lever / body.moment;
+        return inverseMass(body) + lever * lever / body.moment;
     }
     // The same number for a body that is standing on the floor and is being pushed
     // *down* into it. The floor is under the shape and the floor does not give, so
@@ -352,8 +374,8 @@ private:
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;
         const double step = (onFloor && direction.y > 0.0)
-                                ? (1.0 - direction.y * direction.y) / body.mass
-                                : 1.0 / body.mass;
+                                ? (1.0 - direction.y * direction.y) * inverseMass(body)
+                                : inverseMass(body);
         return step + lever * lever / body.moment;
     }
 

@@ -151,9 +151,18 @@ struct Shape {
     double angle = 0;
     // This body's own pair of coefficients.
     double staticFriction = 0, kineticFriction = 0;
+    // Whether this body is pinned at its middle and can only turn. A seesaw is.
+    bool pivoted = false;
 };
 
 inline constexpr double kThird = 1.0 / 3.0;
+// The seesaw's plank: half its length and half its thickness, where its axle stands,
+// and how high the axle is. Its middle is the axle, so the pin is its centre of mass
+// and its own weight gives it no turn at all.
+inline constexpr double kSeesawHalf = 1.25;
+inline constexpr double kSeesawHalfThick = 0.12;
+inline constexpr double kSeesawX = -4.60;
+inline constexpr double kSeesawPivotY = 0.85;
 inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
     // The square, turned so a corner leads: it lands on a corner and has to be
     // held up by the other three.
@@ -174,6 +183,25 @@ inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
      0.0,
      0.70,
      0.55},
+    // The seesaw: a plank on an axle. Its corners are the plank about its own middle,
+    // and the pin is at that middle, so it balances wherever it is left and only a
+    // load on one end can turn it.
+    //
+    // Two and a half metres of plank, a quarter of a metre thick, four corners, so it
+    // weighs what the square weighs and carries a moment worked out from its own
+    // outline like everything else. It stands on an axle a little above the floor, on
+    // the far side of the room from the shapes, where a ball rolled at it can be sent
+    // up one end and come back down the other.
+    {4,
+     {{{-kSeesawHalf, -kSeesawHalfThick, 0},
+       {kSeesawHalf, -kSeesawHalfThick, 0},
+       {kSeesawHalf, kSeesawHalfThick, 0},
+       {-kSeesawHalf, kSeesawHalfThick, 0}}},
+     {kSeesawX, kSeesawPivotY, 0},
+     0.0,
+     0.70,
+     0.55,
+     true},
 }};
 
 // The moment of inertia of a uniform plate about its centre of mass, from its own

@@ -104,6 +104,10 @@ void PlaygroundRoom::separateBodies() {
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         Body& body = bodies_[one];
         if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
+        // A pinned body is not separated from anything by moving it: it is where its
+        // axle says it is, and a shape that has come to be inside a seesaw's plank is
+        // answered by the contact, not by shifting the plank out of the way.
+        if (body.pivoted) continue;
         // The floor.
         double deepest = 0.0;
         for (std::size_t i = 0; i < body.count; ++i) deepest = std::max(deepest, -body.position[i].y);
@@ -118,7 +122,7 @@ void PlaygroundRoom::separateBodies() {
             // How much of the move this shape has to make: by inverse mass, so the
             // pair share it the way two bodies share any push between them. A shape
             // asleep or in the mouse's hand is not going anywhere, and takes none.
-            const bool solidMoves = !solid.frozen && !bodyHeld(two);
+            const bool solidMoves = !solid.frozen && !bodyHeld(two) && !solid.pivoted;
             const double mine = 1.0 / body.mass;
             const double theirs = solidMoves ? 1.0 / solid.mass : 0.0;
             const double share = mine / (mine + theirs);
@@ -217,7 +221,10 @@ void PlaygroundRoom::separateBodies() {
 bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
     if (index >= kBodyCount || !(through > 0.0)) return false;
     Body& body = bodies_[index];
-    if (body.count == 0 || bodyHeld(index)) {
+    if (body.count == 0 || bodyHeld(index) || body.pivoted) {
+        // A pinned body cannot give way -- it has nowhere to go -- so a ball that has
+        // come to be inside one is answered by the ball moving, which is the honest
+        // last resort and the only one left.
         return false;
     }
     const Vec3 was = body.centre;

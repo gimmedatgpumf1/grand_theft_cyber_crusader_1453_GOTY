@@ -94,6 +94,12 @@ void PlaygroundRoom::applyBodyWeight(std::size_t index) {
         // a force at a place, and this is that force at that place.
         const Vec3 jog = weight * kTick;
         const Vec3 arm = body.position[i] - body.centre;
+        // A pinned body's weight still acts, corner by corner, exactly like this -- but
+        // it cannot carry the body anywhere, because the axle will not have it, and the
+        // corners' moments about the middle cancel to nothing when the middle is the
+        // centre of mass. So the weight of a seesaw does nothing at all, which is the
+        // honest answer: a plank balanced on its own middle stays where it is put.
+        if (body.pivoted) continue;
         body.velocity = body.velocity + jog * (1.0 / body.mass);
         body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
     }
@@ -194,6 +200,15 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const Vec3 step = body.hitArrival * fall + body.velocity * rise;
                 body.centre = resolvedMove(body.centre, body.centre + step);
                 body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                placeCorners(body);
+                continue;
+            }
+            if (body.pivoted) {
+                // It turns where it is. There is no place to resolve, because its place
+                // never changes: the pin is the one point of it that is not the
+                // simulation's to move.
+                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                body.centre = body.pivotPoint;
                 placeCorners(body);
                 continue;
             }
@@ -411,8 +426,13 @@ void PlaygroundRoom::settleBodies() {
             body.spin = 0.0;
             continue;
         }
-        const bool carriedByPlane = body.touchingPlane && body.centre.x >= body.supportLow - kContactBand &&
-                                    body.centre.x <= body.supportHigh + kContactBand;
+        // A pinned body is held up by its pin, which is a thing that cannot fail: it is
+        // always carried, so it can come to rest like anything else and wake when it is
+        // pushed. Without this it would be a body that never sleeps, and a seesaw left
+        // alone would be re-solved sixty times a second for ever.
+        const bool carriedByPlane = body.pivoted ||
+                                    (body.touchingPlane && body.centre.x >= body.supportLow - kContactBand &&
+                                     body.centre.x <= body.supportHigh + kContactBand);
         // Being held up by another body counts only if that body is *carrying* it.
         // A shape asleep is treated as a surface, and a surface never feels anything:
         // a cube propped against a sleeping triangle is stopped by a wall of infinite

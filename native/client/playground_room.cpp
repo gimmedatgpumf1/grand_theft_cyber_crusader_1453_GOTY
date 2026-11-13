@@ -132,6 +132,8 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         body.spin = 0.0;
         body.staticFriction = shape.staticFriction;
         body.kineticFriction = shape.kineticFriction;
+        body.pivoted = shape.pivoted;
+        body.pivotPoint = shape.middle;
         body.frozen = false;
         body.contacts = 0;
         placeCorners(body);
@@ -168,7 +170,12 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
 void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - body.centre;
-    body.velocity = body.velocity + impulse * (1.0 / body.mass);
+    // A pinned body is not carried anywhere: the axle is what takes the push, and the
+    // only thing left for the body to do with it is turn. The axle's own answer is not
+    // written as a force on the body because it acts at a point that never moves, so
+    // it does no work and changes nothing the body can report -- it is the room that
+    // holds the pin, exactly as the floor holds a shape standing on it.
+    body.velocity = body.pivoted ? Vec3{} : body.velocity + impulse * (1.0 / body.mass);
     body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
     // settling again from where the blow found it: it is not at rest any more, it
