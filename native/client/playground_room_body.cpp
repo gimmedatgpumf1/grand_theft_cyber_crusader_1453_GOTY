@@ -207,6 +207,10 @@ double PlaygroundRoom::advanceBodies(double seconds) {
 // A ball touches at one point and nowhere else, so its patch has one end.
 void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
     patches.clear();
+    if (getenv("GTC_G")) {
+        static int traceTick = 0;
+        std::fprintf(stderr, "=== tick %d\n", traceTick++);
+    }
     // The floor, met by the lowest corners of each body.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
