@@ -259,11 +259,13 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     // drawn over the plank it goes through and not under it.
     if (PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
         const auto& plank = kShapes[PlaygroundRoom::kSeesaw];
+        // A small square of the axle's own metal, in the middle of the plank and in
+        // front of it: the one thing on screen that says the plank is held there.
         points.clear();
         faces.clear();
-        disc(points, faces, kPivotPinRadius);
-        for (Vec3& point : points) point.z = 0.006;
-        raster.setObject(kPivotPinId, {plank.middle.x, plank.middle.y}, 0);
+        quad(points, faces, plank.middle.x - kPivotPinRadius, plank.middle.y - kPivotPinRadius,
+             plank.middle.x + kPivotPinRadius, plank.middle.y + kPivotPinRadius, 0.006);
+        raster.setObject(kPivotPinId, {0, 0}, 0);
         raster.mesh(points, faces, flat("#e8e2c9"));
     }
 
