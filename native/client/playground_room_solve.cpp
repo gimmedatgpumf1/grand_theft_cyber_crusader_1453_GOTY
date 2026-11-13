@@ -245,7 +245,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // rounding error: it is an impulse the pair never balances.
                     value += dot(direction, ballFree(toward)) / ball_.mass +
                              lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, toward) / ballMoment;
+                                 lever(pushAt - ball_.position, ballFree(toward)) / ballMoment;
                 }
             }
             return value;
@@ -259,8 +259,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
+            const Vec3 bv = body->velocity;
+            const Vec3 lov = ball_.velocity;
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
+            if (getenv("GTC_ST") != nullptr && patch.ball && length(ball_.velocity - lov) > 0.2)
+                std::fprintf(stderr,
+                             "END b%zu j(%+.3f,%+.3f) bodyDV(%+.3f,%+.3f) ballDV(%+.3f,%+.3f) frozen%d piv%d\n",
+                             patch.body, impulse.x, impulse.y, body->velocity.x - bv.x, body->velocity.y - bv.y,
+                             ball_.velocity.x - lov.x, ball_.velocity.y - lov.y, int(body->frozen), int(body->pivoted));
         };
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
@@ -601,6 +608,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     };
     for (int round = 0; round < kGripRoundsMax; ++round) {
         sweep(false);
+        if (getenv("GTC_ST") != nullptr && length(ball_.velocity) > 1.0)
+            std::fprintf(stderr, "ROUND %d ball v(%+.3f,%+.3f) loadWorst %.3e\n", round, ball_.velocity.x,
+                         ball_.velocity.y, worst);
         const double loadWorst = worst;
         sweep(true);
         const double gripWorst = worst;
