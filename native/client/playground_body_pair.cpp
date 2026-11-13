@@ -252,6 +252,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         return pivotFloorDepthAt(body, angle) <= playground_tick::kQuantum &&
                pivotObjectDepthAt(body, angle) <= allowance + playground_tick::kQuantum;
     };
+    if (getenv("GTC_HS")) std::fprintf(stderr, "HS start a%+.9f nudge%+.3e floor0%+.3e floor1%+.3e obj0%+.3e obj1%+.3e allow%+.3e span%+.4f way%+.0f\n", body.angle, nudge, pivotFloorDepthAt(body, body.angle), pivotFloorDepthAt(body, body.angle + way * nudge), pivotObjectDepthAt(body, body.angle), pivotObjectDepthAt(body, body.angle + way * nudge), allowance, span, way);
     if (!freeAt(body.angle + way * nudge)) return 0.0;
     const auto cornerAt = [&](Vec3 local, double angle) {
         return Vec3{pin.x + local.x * std::cos(angle) - local.y * std::sin(angle),
