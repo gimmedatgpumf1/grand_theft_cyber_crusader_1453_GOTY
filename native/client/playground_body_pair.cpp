@@ -422,19 +422,7 @@ void PlaygroundRoom::separateBodies() {
         // every tick pushing the cube sideways out of the way, which is the drift the
         // King saw. The plank stops where it met the cube and the axle carries the
         // rest, exactly as it would in the yard.
-        if (body.pivoted && getenv("GTC_FL2")) {
-            std::fprintf(stderr, "PBQ in a%+.5f deep%+.6f ball(%+.4f,%+.4f) r%.2f cube(%+.4f,%+.4f) a%+.3f tri(%+.4f,%+.4f) a%+.3f\n",
-                         body.angle, pivotDepthAt(body, body.angle), ball_.position.x, ball_.position.y, ball_.radius,
-                         bodies_[0].centre.x, bodies_[0].centre.y, bodies_[0].angle,
-                         bodies_[1].centre.x, bodies_[1].centre.y, bodies_[1].angle);
-        }
         if (body.pivoted) {
-            if (0) {
-                std::fprintf(stderr, "PBQ in a%+.5f deep%+.6f ball(%+.4f,%+.4f) r%.2f cube(%+.4f,%+.4f) a%+.3f tri(%+.4f,%+.4f) a%+.3f\n",
-                             body.angle, pivotDepthAt(body, body.angle), ball_.position.x, ball_.position.y, ball_.radius,
-                             bodies_[0].centre.x, bodies_[0].centre.y, bodies_[0].angle,
-                             bodies_[1].centre.x, bodies_[1].centre.y, bodies_[1].angle);
-            }
             // The floor is never negotiable. Whatever else is in the way, a plank may
             // not be through the ground, so if there is no angle that clears
             // everything, the one that clears the floor is taken: the floor is the
@@ -451,58 +439,37 @@ void PlaygroundRoom::separateBodies() {
             const auto clear = [&](double angle) {
                 return pivotDepthAt(body, angle) <= playground_tick::kQuantum;
             };
-            const auto deepest = [&](double angle) { return pivotDepthAt(body, angle); };
-            if (deepest(body.angle) > playground_tick::kQuantum) {
-                // The least turn, either way, that takes it clear. The bound is grown
-                // until something clears and the answer is then bisected, so the turn
-                // given back is the smallest that does the job and not a chosen number.
-                double found = -1.0;
-                for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5, 3.0, 6.29}) {
-                    if (clear(body.angle + reach) || clear(body.angle - reach)) {
-                        found = reach;
-                        break;
-                    }
-                }
-                if (found > 0.0) {
-                    const double side = clear(body.angle + found) ? 1.0 : -1.0;
-                    double low = 0.0, high = found;
-                    for (int step = 0; step < 60; ++step) {
-                        const double mid = 0.5 * (low + high);
-                        if (clear(body.angle + side * mid))
-                            high = mid;
-                        else
-                            low = mid;
-                    }
-                    body.angle += side * high;
-                    placeCorners(body);
-                } else {
-                    // Nothing inside the whole circle is clear -- it is walled in on
-                    // every side. The floor still comes first.
-                    double foundFloor = -1.0;
-                    for (double reach : {1e-3, 1e-2, 1e-1, 0.25, 0.5, 1.0, 1.5, 3.0, 6.29}) {
-                        if (throughFloorOnly(body.angle + reach) <= playground_tick::kQuantum ||
-                            throughFloorOnly(body.angle - reach) <= playground_tick::kQuantum) {
-                            foundFloor = reach;
+            if (pivotDepthAt(body, body.angle) > playground_tick::kQuantum) {
+                // How far a turn of this body carries its furthest corner, which is
+                // how the answer is measured: a step that moves the tip four
+                // millimetres cannot pass over anything in a room whose thinnest thing
+                // is a quarter of a metre.
+                double furthest = 0.0;
+                for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+                const double grain = furthest > 0.0 ? 0.004 / furthest : 0.01;
+                // A pinned body gives way by turning and by nothing else, and it is
+                // the axle that decides how much of a turn it is allowed: a plank that
+                // swung a whole radian out of an overlap would be a plank that
+                // teleported, which is not an answer this room gives. What it will not
+                // give way about, the shape standing on it will.
+                const double reachable = 0.05;
+                const double start = body.angle;
+                // Nearest first, both ways round, and only a turn that actually clears
+                // is taken. Nothing is turned to an angle chosen in advance.
+                for (int pass = 0; pass < 2 && body.angle == start; ++pass) {
+                    for (double turned = grain; turned <= reachable + 1e-12; turned += grain) {
+                        for (const double side : {1.0, -1.0}) {
+                            const double where = start + side * turned;
+                            const bool ok = pass == 0 ? clear(where) : throughFloorOnly(where) <= playground_tick::kQuantum;
+                            if (!ok) continue;
+                            body.angle = where;
+                            placeCorners(body);
                             break;
                         }
-                    }
-                    if (foundFloor > 0.0) {
-                        const double side =
-                            throughFloorOnly(body.angle + foundFloor) <= playground_tick::kQuantum ? 1.0 : -1.0;
-                        double low = 0.0, high = foundFloor;
-                        for (int step = 0; step < 60; ++step) {
-                            const double mid = 0.5 * (low + high);
-                            if (throughFloorOnly(body.angle + side * mid) <= playground_tick::kQuantum)
-                                high = mid;
-                            else
-                                low = mid;
-                        }
-                        body.angle += side * high;
-                        placeCorners(body);
+                        if (body.angle != start) break;
                     }
                 }
             }
-            if (getenv("GTC_FL")) std::fprintf(stderr, "PB out a%+.5f\n", body.angle);
             continue;
         }
         // Another shape first; the floor has the last word below.
