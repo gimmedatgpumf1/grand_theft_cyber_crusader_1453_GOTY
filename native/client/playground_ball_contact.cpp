@@ -2,6 +2,9 @@
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -28,6 +31,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
     // two met, because that is where it acts.
+    if (getenv("GTC_BC"))
+        std::fprintf(stderr, "   ballContact body %d n(%+.3f,%+.3f) at (%+.3f,%+.3f) depth %+.5f exchange %d | v(%+.3f,%+.3f) sp%+.2f\n",
+                     bodyIndex, normal.x, normal.y, contactPoint.x, contactPoint.y, depth, int(exchange),
+                     ball.velocity.x, ball.velocity.y, ball.spin);
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
     // The body's side is written by giveBodyTurn, which is the call that hands it
