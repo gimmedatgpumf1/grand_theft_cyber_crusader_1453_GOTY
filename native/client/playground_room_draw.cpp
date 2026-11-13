@@ -209,12 +209,8 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         quad(points, faces, px - kPivotPostHalf, 0.0, px + kPivotPostHalf, py, -0.004);
         raster.setObject(kPivotPostId, {0, 0}, 0);
         raster.mesh(points, faces, flat("#4d6e6a"));
-        points.clear();
-        faces.clear();
-        // The pin is a unit disc placed at the axle, the same way the ghosts are.
-        disc(points, faces, kPivotPinRadius);
-        raster.setObject(kPivotPinId, {px, py}, 0);
-        raster.mesh(points, faces, flat("#e8e2c9"));
+        // The pin itself is drawn after the bodies (see below): it sits in the middle
+        // of the plank, and a pin drawn under the plank is a pin nobody sees.
     }
 
     // One marker per past tick: the 20 Hz cadence made visible.
@@ -257,6 +253,18 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
             raster.setObject(base + kBodyCornerOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#ff8a4c"));
         }
+    }
+
+    // The pin in the middle of the plank, last of the solid things so that it is
+    // drawn over the plank it goes through and not under it.
+    if (PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
+        const auto& plank = kShapes[PlaygroundRoom::kSeesaw];
+        points.clear();
+        faces.clear();
+        disc(points, faces, kPivotPinRadius);
+        for (Vec3& point : points) point.z = 0.006;
+        raster.setObject(kPivotPinId, {plank.middle.x, plank.middle.y}, 0);
+        raster.mesh(points, faces, flat("#e8e2c9"));
     }
 
     // The ball: a disc of its own radius, and a cross of two seams so the turning
