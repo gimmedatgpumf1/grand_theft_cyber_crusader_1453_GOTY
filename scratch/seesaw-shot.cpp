@@ -98,11 +98,11 @@ int main() {
     c.previous = c.position;
     c.previousCentre = c.centre;
     c.previousAngle = c.angle;
-    for (int i = 0; i < 60; ++i) room.advance(1.0 / 20.0);
-    report(room, 60);
+    for (int i = 0; i < 9; ++i) room.advance(1.0 / 20.0);
+    report(room, 9);
     shoot(room, cam, "scratch/seesaw-loaded.png");
     for (int i = 0; i < 600; ++i) room.advance(1.0 / 20.0);
-    report(room, 660);
+    report(room, 609);
     shoot(room, cam, "scratch/seesaw-rested.png");
     return 0;
 }
