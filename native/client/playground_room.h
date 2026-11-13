@@ -539,6 +539,16 @@ private:
         // face on its own: it is what the face has to hold up, which is a question
         // about the whole stack -- see settleBallFriction().
         double pressed = 0.0;
+        // The normal impulse the solver actually applied at this face this tick, in
+        // newton seconds. That is the normal *force* the face is carrying, which is
+        // what Coulomb's limit is mu times -- and it is not the same number as the
+        // weight standing on the ball. In a squeeze the two diverge badly: a ball
+        // wedged under the sloping face of a shape has its faces pressed many times
+        // harder than anything weighs, because the surfaces are pushing against each
+        // other and not only against gravity. Taking the limit from the weight alone
+        // gave a squeezed ball a fraction of the grip really there, and it squeezed
+        // itself out of a wedge it should never have left.
+        double normalImpulse = 0.0;
         // Which body is on the other side, or kBodyCount for the floor. A face over
         // the ball is carrying the weight of what stands on it, and that is read from
         // the body: a floor patch beneath a ball carries the ball, but a cube resting
@@ -643,7 +653,7 @@ private:
     // something has to report the face it is against -- and a shape resting on the
     // ball is answered as a *patch*, not through ballContact(), which is why a weight
     // sitting on the crown had no grip at all. See noteBallTouch().
-    void noteBallTouch(std::size_t body, Vec3 normal, Vec3 at);
+    void noteBallTouch(std::size_t body, Vec3 normal, Vec3 at, double normalImpulse = 0.0);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
     void hitBallWithPoint(Vec3 normal);

@@ -636,7 +636,7 @@ void PlaygroundRoom::tickBodies() {
         if (getenv("GTC_RG"))
             std::fprintf(stderr, "  RG b%zu gap%+.5f n(%+.3f,%+.3f) at(%+.3f,%+.3f)\n", patch.body, patch.gap[0],
                          patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y);
-        noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
+        noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0], patch.normalImpulse[0]);
     }
     solveContacts(patches);
     advanceBodies(kTick);

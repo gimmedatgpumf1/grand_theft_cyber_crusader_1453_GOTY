@@ -119,6 +119,16 @@ void PlaygroundRoom::settleBallFriction() {
             }
         }
     }
+    // The limit is mu times the normal force, and the normal force is what the
+    // contact is actually carrying. The statics above is one reading of that, and it
+    // is the right one for a ball holding a weight up with nothing squeezing it --
+    // but it is only an estimate, and in a squeeze it is a bad one: two surfaces
+    // pushing a ball between them press it far harder than the weight standing on it,
+    // which is the whole reason a wedge holds. The solver already knows that force;
+    // it is the normal impulse it applied at the face. Whichever is larger is the
+    // load, because a face cannot carry less than it is pressed with.
+    for (std::size_t i = 0; i < ballTouchCount_; ++i)
+        ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, ballTouches_[i].normalImpulse);
     // The load the ball's faces are carrying altogether, in newtons, which is what
     // both friction and rolling resistance are measured against.
     double press = 0.0;
