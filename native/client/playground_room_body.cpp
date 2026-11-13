@@ -214,17 +214,21 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             // of it. Adding it a second time over the rebound is the same weight
             // twice, and a body's account would be short by exactly that much -- so
             // the move is the two speeds and nothing else.
-            if (body.hitAt < 1.0) {
-                const double fall = body.hitAt * time;
-                const double rise = time - fall;
-                const Vec3 step = body.hitArrival * fall + body.velocity * rise;
-                body.centre = resolvedMove(body.centre, body.centre + step);
-                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
-                placeCorners(body);
-                continue;
-            }
             if (body.pivoted) {
-                // It turns where it is. There is no place to resolve, because its place
+                // This comes before the bounce split below, and it has to. A body hit
+                // by the ball part-way through a tick is stepped as two moves, and that
+                // branch carried the turn with a plain multiplication -- sweeping
+                // nothing. It is the one road a pinned body's turn could still take
+                // without being asked what it turned through, and it was the last way
+                // the plank got below the floor: a quarter-turn in one tick, straight
+                // through the ground, with the sweep sitting right after it and never
+                // reached. A pinned body has no fall to split -- its middle never
+                // moves -- so there is nothing in the bounce split for it anyway: its
+                // whole tick is its turn.
+                //
+                // It turns where it is, and there is no place to resolve, because its
+                // place never changes: the pin is the one point of it that is not the
+                // simulation's to move. There is no place to resolve, because its place
                 // never changes: the pin is the one point of it that is not the
                 // simulation's to move.
                 //
@@ -245,6 +249,15 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 }
                 body.angle += allowed;
                 body.centre = body.pivotPoint;
+                placeCorners(body);
+                continue;
+            }
+            if (body.hitAt < 1.0) {
+                const double fall = body.hitAt * time;
+                const double rise = time - fall;
+                const Vec3 step = body.hitArrival * fall + body.velocity * rise;
+                body.centre = resolvedMove(body.centre, body.centre + step);
+                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
                 placeCorners(body);
                 continue;
             }
