@@ -175,7 +175,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
 void PlaygroundRoom::separateBodies() {
     for (std::size_t one = 0; one < kBodyCount; ++one) {
         Body& body = bodies_[one];
-        if (body.count == 0 || body.frozen || bodyHeld(one)) continue;
+        if (body.count == 0 || body.frozen || bodyHeld(one) || body.pivoted) continue;
         // A pinned body is not separated from anything by moving it: it is where its
         // axle says it is, and a shape that has come to be inside a seesaw's plank is
         // answered by the contact, not by shifting the plank out of the way.
