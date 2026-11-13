@@ -6,9 +6,6 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
-
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -59,7 +56,6 @@ double PlaygroundRoom::loadOver(std::size_t body) const {
 
 void PlaygroundRoom::settleBallFriction() {
     if (ballTouchCount_ == 0) return;
-    if (getenv("GTC_NOFR")) { ballTouchCount_ = 0; return; }
     Ball& ball = ball_;
     const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
     std::array<Vec3, kMaxBallTouches> tangents{}, arms{};
@@ -275,14 +271,6 @@ void PlaygroundRoom::settleBallFriction() {
     // Without this a ball rolling along the floor was drawn with a normal and
     // nothing else, and the thing that was actually slowing it down -- the friction
     // holding the bottom of it still against the ground -- was nowhere on screen.
-    if (getenv("GTC_FR")) {
-        const double kb = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * 0.4 * ball.mass * ball.radius * ball.radius * ball.spin * ball.spin;
-        std::fprintf(stderr, "  FR n=%zu v(%+.3f) sp%+.3f k%.5f->%.5f |", ballTouchCount_, ball.velocity.x, ball.spin, kb, kb);
-        for (std::size_t i = 0; i < ballTouchCount_; ++i)
-            std::fprintf(stderr, " [b%zu n(%+.2f,%+.2f) p%.3f j%+.3f]", ballTouches_[i].body, ballTouches_[i].normal.x,
-                         ballTouches_[i].normal.y, ballTouches_[i].pressed, taken[i]);
-        std::fprintf(stderr, "\n");
-    }
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         if (taken[i] == 0.0) continue;
         addForce(ball.position + arms[i], tangents[i] * (taken[i] / ball_shape::kTick), ForceKind::Friction,

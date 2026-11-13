@@ -262,10 +262,7 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // its job, and it costs nothing -- the shape keeps every part of its motion
     // that the ball did not refuse.
     const double closing = dot(body.velocity, normal);
-    if (closing > 0.0) {
-        body.velocity = body.velocity - normal * closing;
-        if (body.met > 0) body.velocity = body.velocity;
-    }
+    if (closing > 0.0) body.velocity = body.velocity - normal * closing;
     ++bodyStepClamped_;
     return true;
 }

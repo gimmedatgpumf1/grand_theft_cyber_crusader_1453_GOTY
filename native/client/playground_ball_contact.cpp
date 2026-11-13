@@ -2,9 +2,6 @@
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
 
-#include <cstdio>
-#include <cstdlib>
-
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -257,10 +254,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(normal, ballHeld);
             const double impulse = (rebound - closing) / (ballShare + bodyShare);
-            if (getenv("GTC_BC"))
-                std::fprintf(stderr, "  BC b%d n(%+.3f,%+.3f) cp(%+.3f,%+.3f) clos%+.4f reb%+.4f bs%.4f gs%.4f imp%+.4f | cube v(%+.4f) sp%+.3f\n",
-                             bodyIndex, normal.x, normal.y, contactPoint.x, contactPoint.y, closing, rebound, ballShare,
-                             bodyShare, impulse, body->velocity.y, body->spin);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
