@@ -332,8 +332,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                 // speed at the surface, which is what the surfaces answer.
                 const double togo = std::max(0.0, patch.gap[0]);
                 const double when = reach > 0.0 ? std::clamp(togo / reach, 0.0, 1.0) : 1.0;
-                const double impact = closing - ball_shape::kGravity * kTick * when;
-                patch.rebound[0] = -ball_shape::kBallRestitution * impact;
+                patch.rebound[0] = -ball_shape::kBallRestitution * closing;
                 // And when it gets there. The patch is gathered within the reach of
                 // the tick, so a fast shape is answered a band's width before it has
                 // arrived -- a cube falling at 2.85 m/s met the ball 65 mm above its
