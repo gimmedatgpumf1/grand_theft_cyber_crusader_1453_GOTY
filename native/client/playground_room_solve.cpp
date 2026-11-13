@@ -353,6 +353,21 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 order[dofs] = k;
                 const double bias =
                     lying ? faceClose : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
+                // And a ball carries no clearance at all, for a second reason on top of
+                // that one. The bias is what a *face* may spend of the distance it has
+                // left to a *plane*, and it is answered by letting the closing speed be
+                // paid out over the tick. A ball is met at one point and it is round:
+                // the shape does not arrive at a plane, it arrives at a curve, and the
+                // distance between them is not a gap either of them may simply close.
+                // Left in, the bias is a target speed -- "be separating at gap/tick" --
+                // and the ball's only way to answer a normal push while it is held by
+                // the floor is *sideways*, so a cube arriving 7 cm above a ball was
+                // answered by shoving the ball along the floor until the two of them
+                // were separating at a metre and a half a second. Fourteen metres a
+                // second of ball, from a cube that had not touched it yet. The walk
+                // carries both of them to the instant they meet; the solve's business
+                // is the closing speed at that instant and nothing else.
+                //
                 // A face that bounces is a face that is *arriving*, and an arrival is
                 // a moment, not a whole tick. The clearance bias lets a face spend the
                 // tick closing the gap it has -- right for a shape settling onto a
@@ -363,7 +378,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // a quarter of what it should have. A bounce is answered at the
                 // instant the two meet, and it is the walk that carries the shape to
                 // that instant -- so there is no gap left to spend here.
-                u[dofs] = away(patch.point[k], patch.normal) + (patch.rebound[k] != 0.0 ? 0.0 : bias) -
+                const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
+                u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) -
                           patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
