@@ -271,11 +271,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
-            if (getenv("GTC_PB") && patch.ball && body->pivoted && length(impulse) > 0.05)
-                std::fprintf(stderr,
-                             "PE free%.3f j(%+.3f,%+.3f) at(%+.3f,%+.3f) ballDV(%+.3f,%+.3f) plankSpin%+.3f\n",
-                             length(ballFree(impulse)), impulse.x, impulse.y, patch.point[k].x, patch.point[k].y,
-                             ball_.velocity.x, ball_.velocity.y, body->spin);
+            if (getenv("GTC_PB") && patch.ball && body->pivoted && length(impulse) > 0.05) {
+                std::fprintf(stderr, "PE n(%+.3f,%+.3f) j(%+.3f,%+.3f) free%+.3f supports%d:",
+                             patch.normal.x, patch.normal.y, impulse.x, impulse.y, length(ballFree(impulse)),
+                             int(ballSupportCount_));
+                for (std::size_t z = 0; z < ballSupportCount_; ++z)
+                    std::fprintf(stderr, " b%zu(%+.2f,%+.2f)", ballSupports_[z].body, ballSupports_[z].normal.x,
+                                 ballSupports_[z].normal.y);
+                std::fprintf(stderr, "\n");
+            }
         };
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
