@@ -204,7 +204,7 @@ void PlaygroundRoom::tickBall() {
         // turn that never happened, and the rise the King saw.
         const double startGap =
             ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0).gap;
-        if (startGap < ball.radius - kTouch) continue;
+        if (startGap <= ball.radius + kTouch) continue;
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
         // rather than sampled: the speed of the ball and the speed of the turn make
