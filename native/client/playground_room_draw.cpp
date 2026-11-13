@@ -206,13 +206,14 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         const double px = plank.middle.x, py = plank.middle.y;
         points.clear();
         faces.clear();
-        quad(points, faces, -kPivotPostHalf, 0.0, kPivotPostHalf, py, -0.004);
+        quad(points, faces, px - kPivotPostHalf, 0.0, px + kPivotPostHalf, py, -0.004);
         raster.setObject(kPivotPostId, {0, 0}, 0);
         raster.mesh(points, faces, flat("#4d6e6a"));
         points.clear();
         faces.clear();
+        // The pin is a unit disc placed at the axle, the same way the ghosts are.
         disc(points, faces, kPivotPinRadius);
-        raster.setObject(kPivotPinId, {0, 0}, 0);
+        raster.setObject(kPivotPinId, {px, py}, 0);
         raster.mesh(points, faces, flat("#e8e2c9"));
     }
 
