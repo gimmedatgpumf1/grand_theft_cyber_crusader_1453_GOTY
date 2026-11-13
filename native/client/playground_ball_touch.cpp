@@ -221,6 +221,9 @@ void PlaygroundRoom::settleBallFriction() {
         // grip counted twice: once where it acts and once in the remainder.
         ballBlows_ = ballBlows_ + tangents[i] * taken[i];
     }
+    if (getenv("GTC_F"))
+        std::fprintf(stderr, "    -> v(%+.3f,%+.3f) spin %+.3f taken %+.3f %+.3f\n", ball.velocity.x, ball.velocity.y, ball.spin,
+                     taken[0], taken[1]);
     ballTouchCount_ = 0;
 }
 
