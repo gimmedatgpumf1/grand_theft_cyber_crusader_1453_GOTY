@@ -62,7 +62,7 @@ double bodyInsidePlank(const PlaygroundRoom& r, std::size_t i) {
 int main() {
     double worstBall = 0.0, worstCube = 0.0, worstTri = 0.0;
     double worstInCube = 0.0, worstInTri = 0.0;
-    int worstBallCase = -1, worstCubeCase = -1, worstCubeTick = -1;
+    int worstBallCase = -1, worstCubeCase = -1, worstCubeTick = -1, skipped = 0;
     for (int trial = 0; trial < 240; ++trial) {
         PlaygroundRoom r;
         r.reset();
@@ -79,15 +79,41 @@ int main() {
         const double away = 1.2 + 0.4 * double(trial % 5);
         const double height = 0.2 + 0.9 * double((trial / 5) % 5) / 4.0;
         const double side = (trial % 2 == 0) ? 1.0 : -1.0;
-        r.ball_.position = {s.centre.x + side * away, height, 0};
+        const double speed = 3.0 + 1.5 * double(trial % 12);
+        // A throw has to start in the open. A spawn point inside a shape is not a
+        // throw being measured, it is the setup being measured: the room would find
+        // the ball through a face at tick zero and put it out on the nearest surface,
+        // which is a half-metre jump nobody asked for and no physics. So the ball is
+        // carried further out along its own line until the line is clear.
+        auto clearAt = [&](Vec3 at) {
+            if (at.y < r.ball_.radius) return false;
+            for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+                const auto& b = r.bodies_[i];
+                if (b.count == 0) continue;
+                const double gap =
+                    ball_shape::outlineGap(at, b.position.data(), b.position.data(), b.count, 1.0).gap;
+                if (gap < r.ball_.radius + 1e-3) return false;
+            }
+            return true;
+        };
+        double shot = away;
+        Vec3 from{};
+        while (shot < 8.0) {
+            const Vec3 dir = Vec3{s.centre.x - (s.centre.x + side * shot), s.centre.y - height, 0};
+            from = {s.centre.x + side * shot, height, 0};
+            if (clearAt(from)) break;
+            shot += 0.05;
+        }
+        if (shot >= 8.0) continue;
+        r.ball_.position = from;
         const Vec3 aim = {s.centre.x - r.ball_.position.x, s.centre.y - r.ball_.position.y, 0};
         const double aimLen = length(aim);
-        const double speed = 3.0 + 1.5 * double(trial % 12);
         r.ball_.velocity = aim * (speed / aimLen);
         r.ball_.spin = 0.0;
         r.ball_.frozen = false;
         r.ball_.previous = r.ball_.position;
         // A cube and a triangle thrown at it too, in half the trials.
+        bool throwFailed = false;
         auto throwBody = [&](std::size_t i, double dx, double dy, double sp) {
             auto& b = r.bodies_[i];
             b.frozen = false;
@@ -96,6 +122,25 @@ int main() {
             b.velocity = Vec3{-sp, 0, 0};
             b.spin = 0.8;
             PlaygroundRoom::placeCorners(b);
+            // Nor may a thrown shape be put down inside another one. The same rule as
+            // the ball's: a throw that begins overlapping is measuring the setup.
+            bool clear = true;
+            for (std::size_t j = 0; j < PlaygroundRoom::kBodyCount && clear; ++j) {
+                if (j == i) continue;
+                const auto& other = r.bodies_[j];
+                if (other.count == 0) continue;
+                if (ball_shape::outlineGap(b.position[0], other.position.data(), other.position.data(), other.count, 1.0).gap < 1e-3)
+                    clear = false;
+                if (ball_shape::outlineGap(other.position[0], b.position.data(), b.position.data(), b.count, 1.0).gap < 1e-3)
+                    clear = false;
+            }
+            if (clear && ball_shape::outlineGap(r.ball_.position, b.position.data(), b.position.data(), b.count, 1.0).gap <
+                             r.ball_.radius + 1e-3)
+                clear = false;
+            if (!clear) {
+                throwFailed = true;
+                return;
+            }
             b.previous = b.position;
             b.previousCentre = b.centre;
             b.previousAngle = b.angle;
@@ -106,6 +151,10 @@ int main() {
             throwBody(0, side * 2.2, 0.5, 2.0 + double(trial % 7));
         if (trial % 3 == 0 && std::abs(-side * 2.4 - side * away) > 0.45)
             throwBody(1, -side * 2.4, 0.9, 1.5 + double(trial % 5));
+        if (throwFailed) {
+            ++skipped;
+            continue;
+        }
         if (std::getenv("CLIPTRI") && trial == std::atoi(std::getenv("CLIPTRI")))
             std::printf("   spawn: ball (%+.4f,%+.4f) v(%+.2f,%+.2f) | cube (%+.4f,%+.4f) | plank c(%+.3f,%+.3f) a%+.3f\n",
                         r.ball_.position.x, r.ball_.position.y, r.ball_.velocity.x, r.ball_.velocity.y,
@@ -152,6 +201,7 @@ int main() {
     std::printf("240 throws at the plank:\n");
     std::printf("  deepest the ball got inside the plank/a shape: %.6f m (trial %d)\n", worstBall, worstBallCase);
     std::printf("  cube %.6f m (trial %d tick %d) | triangle %.6f m\n", worstCube, worstCubeCase, worstCubeTick, worstTri);
+    std::printf("  (trials whose throw could not start clear: %d)\n", skipped);
     std::printf("  ball inside the cube %.6f | ball inside the triangle %.6f\n", worstInCube, worstInTri);
     return 0;
 }
