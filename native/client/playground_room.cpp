@@ -869,6 +869,7 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
         const Vec3 normal = ball_.supportNormal;
         const double into = dot(weight, normal);
         const double carried = std::max(0.0, -into);
+        if (getenv("GTC_T")) std::fprintf(stderr, "    [static] ball contact %+.3f N at (%+.3f,%+.3f) sup(%+.2f,%+.2f)\n", carried, at.x, at.y, normal.x, normal.y);
         addForce(at, normal * carried, ForceKind::Contact, nullptr, kBallOwner);
         const Vec3 along = weight - normal * into;
         if (length(along) > 0.0) addForce(at, along * -1.0, ForceKind::Friction, nullptr, kBallOwner);
