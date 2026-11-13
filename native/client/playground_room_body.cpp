@@ -17,6 +17,9 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -627,6 +630,9 @@ void PlaygroundRoom::tickBodies() {
     for (std::size_t i = 0; i < patches.count; ++i) {
         const Manifold& patch = patches.items[i];
         if (!patch.ball) continue;
+        if (getenv("GTC_RG"))
+            std::fprintf(stderr, "  RG b%zu gap%+.5f n(%+.3f,%+.3f) at(%+.3f,%+.3f)\n", patch.body, patch.gap[0],
+                         patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y);
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
