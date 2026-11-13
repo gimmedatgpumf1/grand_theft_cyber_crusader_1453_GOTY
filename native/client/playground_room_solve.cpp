@@ -134,6 +134,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
+        if (patch.ball) {
+            const double closing =
+                count > 0 ? dot(pointSpeed(*body, patch.point[0]) - ballPointSpeed(patch.point[0]), patch.normal) : 0.0;
+            if (getenv("GTC_WAKE"))
+                std::fprintf(stderr, "  patch ball body %zu frozen %d ends %zu closing %+.3f normal(%+.2f,%+.2f) gap %.4f rebound %.3f\n",
+                             patch.body, (int)ball_.frozen, count, closing, patch.normal.x, patch.normal.y,
+                             count > 0 ? patch.gap[0] : 0.0, count > 0 ? patch.rebound[0] : 0.0);
+        }
         if (patch.ball && ball_.frozen) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
