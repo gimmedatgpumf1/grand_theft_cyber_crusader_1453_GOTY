@@ -501,24 +501,6 @@ private:
         return 1.0 / ball_.mass + lever * lever / moment;
     }
     void pushBall(Vec3 at, Vec3 impulse, ForceKind kind);
-    // And the same, for a ball that is resting on something.
-    //
-    // A support fixes the ball's *centre* and nothing else: the floor's answer is a
-    // normal through the middle, so it takes the translation that would press the
-    // ball into it and adds no turn at all. Which means the two halves of an impulse
-    // have to be treated differently, and it matters more than it sounds:
-    //
-    //   v += the push with the support normals taken out of it, over m
-    //   w += the whole push's moment about the middle, over I
-    //
-    // The turn is from the *whole* impulse and not the projected one. Projecting it
-    // first -- which is what applying the floor's answer at the contact point amounts
-    // to -- gives a normal impulse through the ball's middle a lever it does not
-    // have, because the projected vector is no longer along the normal. A cube
-    // leaning on the shoulder of a ball on the floor then turned the ball as it
-    // pressed it, and the turn moved the very contact the solver was measuring: it
-    // read "still closing", pushed again, turned it further, and did that thirty-two
-    // times. Two hundred and eighty radians a second, from a cube set down gently.
     void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on);
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
@@ -551,81 +533,6 @@ private:
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
     void settleBallFriction();
-    // What is holding the ball up.
-    //
-    // The ball is one rigid body, and it is solved against a shape before its own
-    // tick runs -- so for the length of that solve, what its supports will and will
-    // not let it do has to be part of the answer. It used to be part of the answer
-    // twice over and wrong both times.
-    //
-    // The first way: a single fraction, `ballFreedom`, used as a factor on the
-    // impulse *after* the solve. The fraction itself is right -- it is the share of
-    // a push that is along the surface under the ball rather than into it -- but
-    // scaling the applied impulse by it is not. The impulse is one vector, and the
-    // floor blocks one component of it, so scaling the whole vector hands the ball
-    // the right answer along the normal it was solved on and throws away the
-    // component along the floor, which is the only part that would have moved it.
-    // Measured with a cube set down on the ball's shoulder: the shape took +0.73 N s
-    // of sideways momentum in one tick and the ball answered with -0.04, and the
-    // missing 0.69 was made again every tick until the cube was squeezed off at a
-    // metre a second with the meter reading above the drop. Momentum out of nothing.
-    //
-    // The second way: the floor as a constraint solved beside the patches. That is
-    // where a support belongs in general, but not here, because a patch's own answer
-    // is already worked out against what the ball is free to do. Told the ball is
-    // free, the patch answers a shape resting on a ball resting on the floor with a
-    // push big enough to move a free ball -- and the floor, in its own pass, undoes
-    // that push and holds the ball still. Neither constraint is violated, both
-    // accumulate, and the pair trades the same impulse for thirty-two sweeps: a ball
-    // squeezed at -0.42 m/s and 0.00 m/s alternately, with the shape riding it out
-    // upward at the end of it.
-    //
-    // What is exact for one support and honest for several is the projection. A ball
-    // on a surface moves along it and cannot move into it: the motion it has left is
-    // the push with the surface's normal taken out of it. So the supports are
-    // gathered as normals, and two things follow from them, both from the same
-    // projection and therefore both halves of one answer:
-    //
-    //   * the impulse the ball is given is the push, projected (ballFree);
-    //   * the compliance a patch sees along its normal is the projection's share of
-    //     that direction (ballTake), which is the textbook Schur complement of the
-    //     support out of the pair.
-    //
-    // With a single support, ballTake is exactly 1 - (m.n)^2 and the pair nets to
-    // the floor's share and no more. Nothing is scaled on its way out and nothing is
-    // invented on its way back.
-    //
-    // The supports are only the surfaces the ball is already *on*: an arrival is the
-    // walk's business, where the bounce is.
-    struct BallSupport {
-        Vec3 normal{};                 // out of the surface, into the ball
-        std::size_t body = kBodyCount; // kBodyCount for the floor, kDotOwner for the dot
-    };
-    static constexpr std::size_t kMaxBallSupports = 4;
-    std::array<BallSupport, kMaxBallSupports> ballSupports_{};
-    std::size_t ballSupportCount_ = 0;
-    // Every surface under the ball at the moment the tick's solve begins.
-    void gatherBallSupports();
-    // A push with every support's normal taken out of it: what the ball is free to
-    // do with it. The identity when the ball is on nothing.
-    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind);
-    Vec3 ballFree(Vec3 push) const {
-        Vec3 out = push;
-        for (std::size_t i = 0; i < ballSupportCount_; ++i) {
-            const Vec3& normal = ballSupports_[i].normal;
-            out = out - normal * dot(out, normal);
-        }
-        return out;
-    }
-    // How much of a push along `way` the ball is free to take, as a share of the
-    // compliance: the projection's own share of that direction. Zero when the ball
-    // cannot move that way at all, one when it is free.
-    double ballTake(Vec3 way) const {
-        const double size = length(way);
-        if (!(size > 0.0)) return 1.0;
-        const Vec3 unit = way * (1.0 / size);
-        return std::max(0.0, dot(unit, ballFree(unit)));
-    }
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
     // it is carrying this, and friction is mu times it.

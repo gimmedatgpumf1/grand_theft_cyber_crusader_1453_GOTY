@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -60,39 +58,6 @@ constexpr int kGripRoundsMax = 48;
 // an hour. Asking for more than this buys nothing but arithmetic.
 constexpr double kAgree = 1e-9;  // N s
 }  // namespace
-
-// Every surface the ball is already resting on, gathered before the tick is solved.
-//
-// Only a surface it is *on*, and not one it is falling towards: an arrival is the
-// walk's business, where the bounce is, and calling one a support here would take the
-// bounce off the ball. A ball within a micrometre of a surface is on it -- that is
-// the room's whole idea of touching -- so this asks the same question the contacts
-// ask everywhere else.
-//
-// `bodyBallGap` reports `way` as the direction that leaves the ball for the shape, so
-// the normal this keeps is the other one: the way the ball may not be driven.
-void PlaygroundRoom::gatherBallSupports() {
-    ballSupportCount_ = 0;
-    const auto hold = [&](Vec3 normal, std::size_t body) {
-        const double size = length(normal);
-        if (!(size > 0.0)) return;
-        if (ballSupportCount_ >= kMaxBallSupports) return;
-        ballSupports_[ballSupportCount_++] = BallSupport{normal * (1.0 / size), body};
-    };
-    // The floor, which is under everything and answers to nothing.
-    if (ball_.position.y <= ball_.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        Vec3 way{}, at{};
-        if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
-        hold(way * -1.0, index);
-    }
-    // The dot is a surface as well: a ball set down on it is held by it.
-    const Vec3 fromDot = ball_.position - point_;
-    if (length(fromDot) > 0.0 && length(fromDot) <= ball_.radius + kPointRadius + playground_tick::kQuantum)
-        hold(fromDot, kDotOwner);
-}
 
 // The answer to a whole configuration of patches at once.
 //
@@ -205,12 +170,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
-        // What the ball is free to do with a push, and what that leaves for the
-        // patch to solve against. Both come from one projection of the ball's
-        // supports -- see the note on BallSupport -- so the impulse the ball is
-        // given and the compliance the patch was solved against are the same fact
-        // read twice, which is what makes the pair net to the floor's share and no
-        // more. A ball on nothing has no projection and takes the whole of it.
+        // What of a push the ball can actually take: all of it along the surface
+        // under it, none of it into that surface. A ball resting on the floor is held
+        // up by the floor, so a push straight down on it is answered by the floor and
+        // not by the ball -- but a push *along* the floor moves it, whole. The two are
+        // not one number.
+        //
+        // It used to be one number, and it was the wrong one: the whole push was
+        // scaled by how much of it was not straight down, so a load leaning into the
+        // ball at forty degrees gave the ball a fifth of the sideways kick it was
+        // owed and threw the rest away. The shape kept the other four fifths -- a
+        // momentum out of nothing that grew every tick the load leaned, which is
+        // exactly a shape squeezed off a ball at a metre a second with the meter
+        // reading more than the drop. What the floor blocks is one component: take
+        // that out and give the ball the rest of the push, all of it.
+        const auto free = [&](Vec3 impulse) {
+            if (!patch.ball || ballFixed || !ball_.touching || !ball_.standing) return impulse;
+            return impulse - ball_.supportNormal * dot(impulse, ball_.supportNormal);
+        };
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             double value = dot(toward, direction) / body->mass +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
@@ -221,36 +198,18 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {
-                if (!ballFixed) {
-                    // The compliance the patch is solved against has to be the
-                    // compliance of the impulse it is actually going to give. The
-                    // ball is given the *projected* push (see BallSupport), so both
-                    // terms here are read off that same projected vector: the mass
-                    // term along the direction the answer is measured in, and the
-                    // lever about the ball's middle of the impulse as applied. Written
-                    // with the unprojected direction -- which is what this was -- the
-                    // two disagree, and disagreeing by a lever on a solid sphere is
-                    // not a rounding error: the solver believed a normal push at the
-                    // ball's crown turned it not at all, gave the ball a sideways
-                    // impulse that turned it hard, and then read the turn as the
-                    // surface still closing. Thirty-two sweeps of that is a ball
-                    // spun to minus two hundred and eighty radians a second by a cube
-                    // leaning on it.
-                    value += dot(direction, ballFree(toward)) / ball_.mass +
-                             lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, toward) / ballMoment;
-                }
+                if (!ballFixed)
+                    value += ballFreedom(patch.normal * -1.0) * (dot(toward, direction) / ball_.mass) +
+                             lever(at - ball_.position, toward) *
+                                 lever(pushAt - ball_.position, direction) / ballMoment;
             }
             return value;
         };
         const auto pushOther = [&](Vec3 at, Vec3 impulse, ForceKind kind) {
-            if (getenv("GTC_PO"))
-                std::fprintf(stderr, "      pushOther body %zu other %zu ball %d kind %d imp(%+.4f,%+.4f) ends %zu\n",
-                             patch.body, patch.other, int(patch.ball), int(kind), impulse.x, impulse.y, count);
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBallSupported(at, impulse * -1.0, kind);
+                if (!ballFixed) pushBall(at, impulse * ballFreedom(patch.normal * -1.0), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
@@ -353,21 +312,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 order[dofs] = k;
                 const double bias =
                     lying ? faceClose : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
-                // And a ball carries no clearance at all, for a second reason on top of
-                // that one. The bias is what a *face* may spend of the distance it has
-                // left to a *plane*, and it is answered by letting the closing speed be
-                // paid out over the tick. A ball is met at one point and it is round:
-                // the shape does not arrive at a plane, it arrives at a curve, and the
-                // distance between them is not a gap either of them may simply close.
-                // Left in, the bias is a target speed -- "be separating at gap/tick" --
-                // and the ball's only way to answer a normal push while it is held by
-                // the floor is *sideways*, so a cube arriving 7 cm above a ball was
-                // answered by shoving the ball along the floor until the two of them
-                // were separating at a metre and a half a second. Fourteen metres a
-                // second of ball, from a cube that had not touched it yet. The walk
-                // carries both of them to the instant they meet; the solve's business
-                // is the closing speed at that instant and nothing else.
-                //
                 // A face that bounces is a face that is *arriving*, and an arrival is
                 // a moment, not a whole tick. The clearance bias lets a face spend the
                 // tick closing the gap it has -- right for a shape settling onto a
@@ -378,8 +322,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // a quarter of what it should have. A bounce is answered at the
                 // instant the two meet, and it is the walk that carries the shape to
                 // that instant -- so there is no gap left to spend here.
-                const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
-                u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) -
+                u[dofs] = away(patch.point[k], patch.normal) + (patch.rebound[k] != 0.0 ? 0.0 : bias) -
                           patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
@@ -426,16 +369,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (lifting) continue;
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
-                if (getenv("GTC_NRM") && patch.ball)
-                    std::fprintf(stderr, "     ball patch pass u %+.4f g %+.5f delta %+.5f carried %+.5f li %d gap %+.6f | ballv(%+.3f,%+.3f) spin %+.3f shapev(%+.3f,%+.3f)\n",
-                                 u[i], g[i][i], delta[i], carried[k], int(lying), patch.gap[k], ball_.velocity.x, ball_.velocity.y,
-                                 ball_.spin, body->velocity.x, body->velocity.y);
                 if (delta[i] == 0.0) continue;
-                const double beforeAway = getenv("GTC_NRM") && patch.ball ? away(patch.point[k], patch.normal) : 0.0;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
-                if (getenv("GTC_NRM") && patch.ball)
-                    std::fprintf(stderr, "        applied %+.4f: away %+.4f -> %+.4f (shape |v| %+.3f, frozen %d)\n", delta[i],
-                                 beforeAway, away(patch.point[k], patch.normal), length(body->velocity), int(body->frozen));
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
