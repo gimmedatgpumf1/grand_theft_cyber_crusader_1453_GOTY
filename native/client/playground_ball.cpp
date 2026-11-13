@@ -186,7 +186,12 @@ void PlaygroundRoom::tickBall() {
         const double endGap =
             ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
         if (getenv("GTC_K"))
-            std::fprintf(stderr, "   prevent body %zu endGap-r %+.7f\n", index, endGap - ball.radius);
+        {
+            const auto g2 = ball_shape::outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0);
+            std::fprintf(stderr, "   prevent body %zu endGap-r %+.7f | prevGap-r %+.7f | c0(%+.3f,%+.3f) c2(%+.3f,%+.3f) ball(%+.3f,%+.3f)\n",
+                         index, endGap - ball.radius, g2.gap - ball.radius, body.position[0].x, body.position[0].y,
+                         body.position[2].x, body.position[2].y, ball.position.x, ball.position.y);
+        }
         if (endGap >= ball.radius - kTouch) continue;
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
