@@ -6,8 +6,10 @@
 
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
+#include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -174,32 +176,58 @@ void PlaygroundRoom::settleBallFriction() {
         }
     }
     const double energyBefore = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
-    // Until the faces agree. Each pass is one pass over them, and the slip a face
-    // sees is measured against what the passes before it have already done -- that
-    // is what makes them agree instead of undoing each other.
+    // Until the faces agree, and no further than the tick's own budget.
+    //
+    // Each pass measures the slip a face sees against what the passes before it
+    // have already done, which is what makes them agree instead of undoing each
+    // other. But a pass is not a tick: Coulomb's limit is what a face can give over
+    // the whole tick, so what has already been given is carried in `lambda` and the
+    // next pass may only add the difference. Adding a fresh limit every pass is not
+    // a stronger grip, it is twelve grips in one tick -- and stopping after the
+    // first pass that did not exceed its limit, as this used to, left the second
+    // face of a pinch answered against a ball the first face had already moved and
+    // never asked again: the ball came out of the solve still spinning under a load
+    // that could not let it.
+    std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
-        bool clashing = false;
+        double worst = 0.0;
         for (std::size_t i = 0; i < ballTouchCount_; ++i) {
             const double slip = slipAt(i, ball.velocity, ball.spin);
+            worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
             const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
             const double effective = 1.0 / ball.mass + lever * lever / inertia;
-            const double wanted = -slip / effective;
-            const double pressed = ballTouches_[i].pressed;
+            const double load = ballTouches_[i].pressed;
             // Static friction takes the slip away and the ball rolls from there; if
-            // it cannot, the face slides and kinetic friction acts against the slide.
-            const bool holds = std::abs(wanted) <= kBallStaticFriction * pressed;
-            if (!holds) clashing = true;
-            const double limit = (holds ? kBallStaticFriction : kBallKineticFriction) * pressed;
-            const double impulse = holds ? wanted : (wanted > 0.0 ? limit : -limit);
+            // the whole of what it would take is more than the face can hold, it
+            // slides, and what it holds with is the sliding coefficient and no more.
+            double next = lambda[i] - slip / effective;
+            if (std::abs(next) > kBallStaticFriction * load) {
+                const double limit = kBallKineticFriction * load;
+                next = std::clamp(next, -limit, limit);
+            }
+            const double impulse = next - lambda[i];
+            if (impulse == 0.0) continue;
+            lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
             ball.spin += lever * impulse / inertia;
             taken[i] += impulse;
-            if (getenv("GTC_P"))
-                std::fprintf(stderr, "      pass %d i%zu slip %+.4f wanted %+.4f holds %d -> v %+.4f spin %+.4f\n", pass, i, slip,
-                             wanted, int(holds), ball.velocity.x, ball.spin);
+            // And the other side of it. Friction is a pair like every other force
+            // in the room: the ball is not gripped by a surface, it is gripped by
+            // the thing it is against, and that thing is given the opposite impulse
+            // in the same place. A face over the ball is carrying a weight, and the
+            // ball's spin pulling on that face has to pull the weight with it --
+            // otherwise the spin is taken off the ball by nothing, and the room has
+            // lost the momentum it was holding.
+            if (ballTouches_[i].body < kBodyCount)
+                pushBody(bodies_[ballTouches_[i].body], ball.position + arms[i], tangents[i] * -impulse,
+                         ForceKind::Friction);
         }
-        if (!clashing) break;
+        // A slip smaller than the room can resolve is not a slide: a micrometre a
+        // tick is the last thing this world's arithmetic can tell from standing
+        // still, and asking friction to answer less than that is asking it to
+        // answer a number that is not there.
+        if (worst <= playground_tick::kQuantumSpeed) break;
     }
     // A surface that is not moving gives nothing: a ball can never come out of a
     // friction solve against still faces with more energy than it took in. A moving

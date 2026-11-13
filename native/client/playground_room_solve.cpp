@@ -376,7 +376,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         //
         // A face with one end is the same rule with one share, which is the ordinary
         // point contact.
-        if (withGrip) {
+        // The ball's own grip is not solved here. It is one rigid body against
+        // every surface it meets at once, and a grip at one of its faces changes
+        // what is left to slip at all the others, so it is solved as one system in
+        // settleBallFriction() -- which also pairs each impulse with the shape that
+        // gave it. Solved here as well, the same face was gripped twice, once with
+        // the shape taken and once without, and the ball's turn was taken off it by
+        // an impulse nothing on the other side ever felt.
+        if (withGrip && !patch.ball) {
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
             : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
