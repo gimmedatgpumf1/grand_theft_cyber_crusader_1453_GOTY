@@ -189,6 +189,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const Vec3 stopped = (ball.velocity - ballBefore) * ball.mass;
         ballBlows_ = ballBlows_ + stopped;
         if (length(stopped) > 1e-9)
+            if (getenv("GTC_T")) std::fprintf(stderr, "    [second] %+.3f N at (%+.3f,%+.3f) body %d\n", stopped.y*(1.0/kTick), contactPoint.x, contactPoint.y, bodyIndex);
             addForce(contactPoint, stopped * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
         recordBall();
         return;
@@ -349,6 +350,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // at one place, not none. The other half -- what the ground supplied -- is worked
     // out once at the end of the tick, from the ball's account, in tickBall().
     ballBlows_ = ballBlows_ + blown;
+    if (getenv("GTC_T")) std::fprintf(stderr, "    [contact] blown %+.3f N at (%+.3f,%+.3f) body %d\n", blown.y * (1.0/kTick), contactPoint.x, contactPoint.y, bodyIndex);
     if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
     recordBall();
 }
