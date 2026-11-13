@@ -533,6 +533,47 @@ private:
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
     void settleBallFriction();
+    // What is holding the ball up.
+    //
+    // The ball is one rigid body, and the shapes are solved against it before its
+    // own tick runs -- so for the length of that solve its supports have to be part
+    // of the solve, and not a number standing in for them.
+    //
+    // They used to be a number. `ballFreedom` said how much of a push the ball could
+    // take, as a single fraction: one along the surface under it, none into it. Used
+    // as a factor on the impulse, that fraction is wrong in a way that does not look
+    // like an error. The impulse is one vector, and the floor blocks one component of
+    // it -- so scaling the whole vector gives the ball the right answer along the
+    // normal it was solved on and throws away the component along the floor, which is
+    // the only part that would have moved it. The shape kept what was thrown away.
+    // Measured on a cube set down on the ball's shoulder: the shape took +0.73 N s of
+    // sideways momentum in one tick and the ball answered with -0.04, and the
+    // difference went on being made every tick until the cube was squeezed off at a
+    // metre a second with the meter reading more than the drop. Momentum out of
+    // nothing, which is what a conjured force is.
+    //
+    // A contact is a constraint in this room, everywhere else, and a support is a
+    // contact. So the ball's supports are gathered before the tick's solve and held
+    // through it in the same sweeps as the patches: a shape pressing the ball down
+    // presses it into the floor, the floor answers that press, and what is left of
+    // the push is along the floor -- and it moves the ball whole. The shape gives
+    // its newton of momentum and the ball gets all of it; the floor's refusal is a
+    // force on the ball like any other, written where it acts, and it is the ground
+    // that ends up holding the vertical part, which is the truth of it.
+    struct BallSupport {
+        Vec3 normal{}, at{};           // out of the surface, and where it presses
+        std::size_t body = kBodyCount; // kBodyCount for the floor, kDotOwner for the dot
+        double impulse = 0.0;          // how much it has carried so far this tick, N s
+    };
+    static constexpr std::size_t kMaxBallSupports = 4;
+    std::array<BallSupport, kMaxBallSupports> ballSupports_{};
+    std::size_t ballSupportCount_ = 0;
+    // Every surface under the ball at the moment the tick's solve begins. Only the
+    // ones it is already resting on: a ball on its way down has not landed yet, and
+    // its landing is the walk's business, with the bounce the walk carries.
+    void gatherBallSupports();
+    // And the pass that holds it out of them, run inside the solve's sweeps.
+    void solveBallSupports(double& worst);
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
     // it is carrying this, and friction is mu times it.
