@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -112,6 +114,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
+        if (getenv("GTC_B") && patch.ball)
+            std::fprintf(stderr, "    pass ball grip %d u0 %+.4f carried0 %+.4f bodyV %+.3f\n", int(withGrip),
+                         patch.gap[0], patch.normalImpulse[0], body->velocity.y);
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
         // A body asleep is a surface, for the same reason the ball is: it has no speed
         // for a contact to change and nothing in the room can move it, so it may not
