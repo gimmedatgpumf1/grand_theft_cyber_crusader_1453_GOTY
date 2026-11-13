@@ -1,5 +1,8 @@
 #include "client/playground_room.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -853,6 +856,10 @@ void PlaygroundRoom::advance(double seconds) {
         // back.
         writeImpulses();
         recordStaticForces(stepped, pointStepped, ballStepped);
+        if (std::getenv("GTC_TICK"))
+            std::printf("   end tick: ball (%+.5f,%+.5f) v(%+.4f,%+.4f) w%+.4f frz%d held%d | pointFrozen %d | drag %d\n",
+                        ball_.position.x, ball_.position.y, ball_.velocity.x, ball_.velocity.y, ball_.spin,
+                        int(ball_.frozen), int(ball_.touching), int(pointFrozen_), int(dragTarget_));
         ++ticks;
     }
 }

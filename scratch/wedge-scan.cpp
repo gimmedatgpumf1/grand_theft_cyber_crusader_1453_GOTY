@@ -54,6 +54,25 @@ int main() {
                 r.ball_.velocity = {};
                 r.ball_.spin = 0.0;
                 r.ball_.frozen = false;
+                // Nothing is let go inside a shape: a case whose ball begins inside the
+                // triangle is measuring the putting-out, not the room. Raised along the
+                // line until the line is clear, and skipped if it never is.
+                {
+                    Vec3 at = r.ball_.position;
+                    const auto clear = [&](Vec3 p) {
+                        for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+                            const auto& b = r.bodies_[i];
+                            if (!b.count) continue;
+                            if (ball_shape::outlineGap(p, b.position.data(), b.position.data(), b.count, 1.0).gap <
+                                r.ball_.radius + 1e-3)
+                                return false;
+                        }
+                        return true;
+                    };
+                    while (at.y < 6.0 && !clear(at)) at.y += 0.02;
+                    if (!clear(at)) continue;
+                    r.ball_.position = at;
+                }
                 r.ball_.previous = r.ball_.position;
                 for (int k = 0; k < 600; ++k) r.advance(kDt);
                 const Vec3 was = r.ball_.position;

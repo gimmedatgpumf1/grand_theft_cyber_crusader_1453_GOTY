@@ -54,7 +54,26 @@ int main() {
     c.previousCentre = c.centre;
     c.previousAngle = c.angle;
     // And the ball let go above the V its side makes with the triangle's slope.
-    r.ball_.position = {c.centre.x + 0.55, c.centre.y + 0.55, 0};
+    // In the open: the spot the picture has is inside the triangle's own body, and a
+    // ball starting inside a shape is not a case, it is a broken setup -- the room
+    // finds it through a face on tick zero and puts it out, and everything measured
+    // after that is the putting-out. Raised along the line until it is clear.
+    {
+        Vec3 at{c.centre.x + 0.55, c.centre.y + 0.55, 0};
+        auto clear = [&](Vec3 p) {
+            for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+                const auto& b = r.bodies_[i];
+                if (!b.count) continue;
+                if (ball_shape::outlineGap(p, b.position.data(), b.position.data(), b.count, 1.0).gap <
+                    r.ball_.radius + 1e-3)
+                    return false;
+            }
+            return true;
+        };
+        while (at.y < 6.0 && !clear(at)) at.y += 0.02;
+        r.ball_.position = at;
+        std::printf("ball let go at (%+.4f,%+.4f)\n", at.x, at.y);
+    }
     r.ball_.velocity = {};
     r.ball_.spin = 0.0;
     r.ball_.frozen = false;

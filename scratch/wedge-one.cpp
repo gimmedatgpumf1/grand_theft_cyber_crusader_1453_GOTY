@@ -38,6 +38,21 @@ int main(int argc, char** argv) {
     r.ball_.velocity = {};
     r.ball_.spin = 0.0;
     r.ball_.frozen = false;
+    {
+        Vec3 at = r.ball_.position;
+        const auto clear = [&](Vec3 q) {
+            for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+                const auto& b = r.bodies_[i];
+                if (!b.count) continue;
+                if (ball_shape::outlineGap(q, b.position.data(), b.position.data(), b.count, 1.0).gap <
+                    r.ball_.radius + 1e-3)
+                    return false;
+            }
+            return true;
+        };
+        while (at.y < 6.0 && !clear(at)) at.y += 0.02;
+        r.ball_.position = at;
+    }
     r.ball_.previous = r.ball_.position;
     const int showFrom = argc > 4 ? std::atoi(argv[4]) : 560;
     for (int k = 0; k < 800; ++k) {
