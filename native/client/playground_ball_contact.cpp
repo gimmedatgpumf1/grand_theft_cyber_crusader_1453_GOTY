@@ -179,6 +179,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         if (normal.y > 1e-9)
             ball.standing = ball.standing &&
                             kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        // That stop is a contact like any other, and a contact the ball feels is a
+        // force on it -- so it is written, and it goes in the tick's account. A
+        // second meeting with the same shape in one tick used to be answered in
+        // silence: the ball was stopped by a surface that appeared nowhere on screen
+        // and in no sum, and the ground's share (worked out as the remainder) carried
+        // a blow the shape had really given. It is not a bounce -- the blow has
+        // already been struck -- but it is not nothing either.
+        const Vec3 stopped = (ball.velocity - ballBefore) * ball.mass;
+        ballBlows_ = ballBlows_ + stopped;
+        if (length(stopped) > 1e-9)
+            addForce(contactPoint, stopped * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
         recordBall();
         return;
     }
