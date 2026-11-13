@@ -270,6 +270,28 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
         if (gap > band) continue;
+        // Does it get there? A contact is a meeting, and a shape that is still on its
+        // way to the ball has not met it: it is falling, and falling is the walk's
+        // business. The band is the reach of one tick, so a shape inside it may or may
+        // not arrive before the tick is over -- and answering it either way is how the
+        // bounce got its free height. A cube 90 mm above the ball's crown, closing at
+        // 1.46 m/s, covers 73 mm in a tick and arrives at neither: answered, it was
+        // turned around in mid-air and placed nine centimetres higher than it ever
+        // fell to, which is a bounce off a surface it never touched. Small drops came
+        // back at a hundred and fifty per cent of their own height that way.
+        //
+        // So the reach is the distance the tick can actually cover, and a shape beyond
+        // it is not answered at all -- it falls, and next tick it arrives. A shape
+        // within it is answered at the instant it arrives, which is what hitAt is for.
+        //
+        // The distance is the closing speed at the closest point, which is what
+        // carries the outline into the ball; a shape sliding past does not close at
+        // all and is not an arrival however near it is.
+        {
+            const Vec3 closed = pointSpeed(body, at) - ballPointSpeed(at);
+            const double reach = std::max(0.0, -dot(closed, way)) * kTick;
+            if (gap > reach) continue;
+        }
         Manifold patch;
         patch.body = index;
         patch.ball = true;
