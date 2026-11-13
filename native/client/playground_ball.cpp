@@ -61,6 +61,11 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
     return gap.gap - ball_.radius;
 }
 
+static bool gtcStageOn() { static const bool on = getenv("GTC_ST") != nullptr; return on; }
+#define GTC_STAGE(tag)                                                                                              \
+    if (gtcStageOn())                                                                                               \
+    std::fprintf(stderr, "ST %-16s v(%+.4f,%+.4f) w%+.4f p(%+.3f,%+.3f)\n", tag, ball.velocity.x, ball.velocity.y,   \
+                 ball.spin, ball.position.x, ball.position.y)
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
     // The list of faces is not emptied here. The tick opens it before the bodies are
@@ -124,6 +129,7 @@ void PlaygroundRoom::tickBall() {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
+    GTC_STAGE("gravity");
 
     // What the ball is standing on is not relearned halfway through the tick. It
     // is a fact about the tick -- the state it began in -- and both halves of the
@@ -227,6 +233,7 @@ void PlaygroundRoom::tickBall() {
         bodyStopped[index] = true;
         ++bodyStepClamped_;
     }
+    GTC_STAGE("prevention");
     const auto anybodyMoving = [this]() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].frozen) continue;
@@ -421,7 +428,9 @@ void PlaygroundRoom::tickBall() {
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
+            GTC_STAGE("before-exchange");
             ballContact(normal, what, held, contactPoint, depth, exchange);
+            GTC_STAGE("after-exchange");
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
         // A ball that started the tick already through something has been put back
@@ -534,7 +543,9 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
+    GTC_STAGE("before-friction");
     settleBallFriction();
+    GTC_STAGE("after-friction");
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
