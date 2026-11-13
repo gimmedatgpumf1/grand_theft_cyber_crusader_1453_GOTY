@@ -219,9 +219,26 @@ void PlaygroundRoom::settleBallFriction() {
             // ball's spin pulling on that face has to pull the weight with it --
             // otherwise the spin is taken off the ball by nothing, and the room has
             // lost the momentum it was holding.
-            if (ballTouches_[i].body < kBodyCount)
-                pushBody(bodies_[ballTouches_[i].body], ball.position + arms[i], tangents[i] * -impulse,
-                         ForceKind::Friction);
+            //
+            // What it is against is asked what it can take before it is given
+            // anything. A shape that is asleep, or that the mouse is holding, is a
+            // surface and not a body: it does not move, it does not take a share,
+            // and the impulse it answers goes into what is holding *it* -- the same
+            // rule the rest of the room follows for a frozen body. And a shape that
+            // does take it is moving differently from that moment on, so the slip the
+            // next pass measures has to be against the face as it now is, or the two
+            // would be solved against a state the room has already left.
+            const std::size_t other = ballTouches_[i].body;
+            if (other < kBodyCount) {
+                Body& mate = bodies_[other];
+                const Vec3 at = ball.position + arms[i];
+                if (!mate.frozen && !bodyHeld(other)) {
+                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Friction);
+                    ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
+                } else {
+                    ballTouches_[i].surfaceVelocity = Vec3{};
+                }
+            }
         }
         // A slip smaller than the room can resolve is not a slide: a micrometre a
         // tick is the last thing this world's arithmetic can tell from standing
