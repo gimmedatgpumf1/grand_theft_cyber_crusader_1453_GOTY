@@ -286,7 +286,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         // that angle is the slope there, which is exact.
         {
             double u = 0.0;
-            if (firstSinusoidCrossing(local.y, way * local.x, -pin.y, body.angle, way, span, u)) {
+            if (firstSinusoidCrossing(local.y, local.x, -pin.y, body.angle, way, span, u)) {
                 const double angle = way * u;
                 const double falling = local.x * std::cos(angle) - local.y * std::sin(angle);
                 if (way * falling < 0.0) take(u);
