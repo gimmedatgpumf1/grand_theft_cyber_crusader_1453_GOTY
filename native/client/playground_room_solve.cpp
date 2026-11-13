@@ -172,14 +172,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
-        // How much of a push the ball can actually take: none along the way the
-        // surface under it will not let it go, all of it along the way it can. A ball
-        // resting on the floor answers a load *through* the floor, and solving a
-        // shape's descent against a ball that is free to sink hands seven eighths of
-        // the answer to something that cannot move that way -- the floor then cancels
-        // it, and the shape keeps the descent that should have been answered, tick
-        // after tick, until it is standing on the ball holding a fall it is not doing.
-        const double ballTakes = patch.ball ? ballFreedom(patch.normal * -1.0) : 1.0;
+        // What of a push the ball can actually take: all of it along the surface
+        // under it, none of it into that surface. A ball resting on the floor is held
+        // up by the floor, so a push straight down on it is answered by the floor and
+        // not by the ball -- but a push *along* the floor moves it, whole. The two are
+        // not one number.
+        //
+        // It used to be one number, and it was the wrong one: the whole push was
+        // scaled by how much of it was not straight down, so a load leaning into the
+        // ball at forty degrees gave the ball a fifth of the sideways kick it was
+        // owed and threw the rest away. The shape kept the other four fifths -- a
+        // momentum out of nothing that grew every tick the load leaned, which is
+        // exactly a shape squeezed off a ball at a metre a second with the meter
+        // reading more than the drop. What the floor blocks is one component: take
+        // that out and give the ball the rest of the push, all of it.
+        const auto free = [&](Vec3 impulse) {
+            if (!patch.ball || ballFixed || !ball_.touching || !ball_.standing) return impulse;
+            return impulse - ball_.supportNormal * dot(impulse, ball_.supportNormal);
+        };
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             double value = dot(toward, direction) / body->mass +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
@@ -191,9 +201,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                                  other->moment;
             } else if (patch.ball) {
                 if (!ballFixed)
-                    value += ballTakes * (dot(toward, direction) / ball_.mass +
-                                          lever(at - ball_.position, toward) *
-                                              lever(pushAt - ball_.position, direction) / ballMoment);
+                    value += dot(toward, free(direction)) / ball_.mass +
+                             lever(at - ball_.position, toward) *
+                                 lever(pushAt - ball_.position, direction) / ballMoment;
             }
             return value;
         };
@@ -201,7 +211,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
             } else if (patch.ball) {
-                if (!ballFixed) pushBall(at, impulse * ballTakes, kind);
+                if (!ballFixed) pushBall(at, free(impulse), kind);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
