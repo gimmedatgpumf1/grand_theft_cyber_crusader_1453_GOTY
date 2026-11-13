@@ -473,6 +473,19 @@ void PlaygroundRoom::tickBall() {
         }
     }
 
+    // The floor, met without being travelled into.
+    //
+    // A ball resting on the floor is in contact with it every tick, and this walk
+    // only finds the floor when the ball's travel would take it below: a ball that
+    // is being held up does not move at all, so the floor never appeared. It was
+    // still there. The consequence was not that the ball fell through: it was that
+    // the grip of the floor was missing from the one solve that has to know about
+    // it -- a ball pinched between the floor and a weight standing on it was
+    // answered against the weight alone, and the weight span it out sideways just
+    // as a grip should. The face is what it is whether or not anything moved.
+    if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
+        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0});
+
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
     settleBallFriction();
