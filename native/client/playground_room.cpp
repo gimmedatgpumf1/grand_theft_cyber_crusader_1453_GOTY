@@ -210,6 +210,7 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
     ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
+    ballBlows_ = ballBlows_ + impulse;
     ball_.frozen = false;
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.

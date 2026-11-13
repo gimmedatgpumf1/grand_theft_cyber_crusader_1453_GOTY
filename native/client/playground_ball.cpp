@@ -63,6 +63,10 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
+    // The blows of one tick, from the tick's own beginning. `ball.arrival` is where
+    // the tick found the ball, before anything in the room moved; this is the same
+    // instant, for the same reason.
+    ballBlows_ = {};
     ballTouchCount_ = 0;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
@@ -470,6 +474,30 @@ void PlaygroundRoom::tickBall() {
     // that is the floor of what this simulation can represent, not a speed chosen
     // out of the air. Below it the ball is at rest.
     if (length(ball.velocity) < kRestSpeed) ball.velocity = {};
+
+    // What the ball's supporters had to supply, and it is the only force in the room
+    // whose source is a surface with no shape: the floor under the ball.
+    //
+    // The ball's whole momentum change over the tick is known exactly -- it is where
+    // the ball ends up going, less where it started. The blows it was given are known
+    // too, because every one of them was written down when it landed. What is left
+    // over is what nothing solid gave it, and there is exactly one such thing under a
+    // ball: the ground. Writing it is what makes the picture add up. Without it a blow
+    // that the floor answered was drawn as a lone arrow on the shape -- a cube thrown
+    // off a ball by a force that no ball and no floor ever felt -- and that is what a
+    // conjured force looks like, even when the arithmetic underneath is right.
+    //
+    // It is also the honest place for the two things the ball does with momentum that
+    // no contact of its own accounts for: the weight it gains every tick, and the
+    // speed the floor clips off its underside. Both are the ground's doing, and both
+    // arrive here as the difference between the account and the truth.
+    if (ball.touching && ball.standing) {
+        const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
+        const Vec3 support = total - ballBlows_;
+        if (length(support) > 1e-9)
+            addForce(ball.position + ball.supportNormal * (-ball.radius), support * (1.0 / kTick),
+                     ForceKind::Contact, nullptr, kBallOwner);
+    }
 
     // At rest means at rest: no speed left, and every surface it is sitting on
     // able to hold it. A slope cannot hold a ball, so a ball on one is never

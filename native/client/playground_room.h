@@ -610,6 +610,12 @@ private:
     std::size_t ghostCount_ = 0, ghostNext_ = 0;
     std::array<Body, kBodyCount> bodies_{};
     Ball ball_{};
+    // Every blow the ball has been given this tick, summed, in newton seconds.
+    // The ball's account is closed against this: what actually happened to its
+    // momentum, minus the blows written where they landed, is what its support
+    // supplied -- and that is the one force in the room with no solid to hang it on,
+    // so it is the one that has to be worked out rather than assumed.
+    Vec3 ballBlows_{};
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
     std::size_t pointBatch_ = 0, traceBatch_ = 0;
