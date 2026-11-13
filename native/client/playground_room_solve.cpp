@@ -217,12 +217,21 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             return impulse - ball_.supportNormal * dot(impulse, ball_.supportNormal);
         };
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
-            double value = dot(toward, direction) / body->mass +
+            // The share this body gives is the share it actually gives, read from the
+            // one place the room keeps it: a pinned body's centre cannot be moved, so
+            // the part of a push that would carry it is not a response at all. Solving
+            // it as 1/m made the solver believe the plank gave way where pushBody
+            // knows it does not, so the contact never closed as the solver expected,
+            // and every pass laid on another impulse to close it -- a ball pinched
+            // between a plank's end and a shape on the floor was pumped out at sixty
+            // metres a second. The lever term is the same either way: a pinned body
+            // still turns.
+            double value = dot(toward, direction) * inverseMass(*body) +
                            lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
                                body->moment;
             if (other != nullptr) {
                 if (!otherFixed)
-                    value += dot(toward, direction) / other->mass +
+                    value += dot(toward, direction) * inverseMass(*other) +
                              lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
                                  other->moment;
             } else if (patch.ball) {

@@ -161,7 +161,10 @@ void PlaygroundRoom::applyAirDrag() {
             addForce(at, air, ForceKind::Drag, nullptr, index);
             const Vec3 puff = air * kTick;
             const Vec3 arm = at - body.centre;
-            body.velocity = body.velocity + puff * (1.0 / body.mass);
+            // A pinned body is carried by its axle and by nothing else: the air is
+            // still a force on it, corner by corner, but the part of that force which
+            // would take the middle somewhere is the axle's to refuse.
+            body.velocity = body.velocity + puff * inverseMass(body);
             body.spin += (arm.x * puff.y - arm.y * puff.x) / body.moment;
         }
     }
