@@ -185,6 +185,8 @@ void PlaygroundRoom::tickBall() {
         // the King's squeeze came from.
         const double endGap =
             ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
+        if (getenv("GTC_K"))
+            std::fprintf(stderr, "   prevent body %zu endGap-r %+.7f\n", index, endGap - ball.radius);
         if (endGap >= ball.radius - kTouch) continue;
         const double limit = ball.radius;
         // It may come as near as that and no nearer, and where that is is solved
