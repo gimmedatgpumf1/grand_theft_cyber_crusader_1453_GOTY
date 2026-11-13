@@ -150,7 +150,6 @@ void PlaygroundRoom::tickBall() {
     // erased, and the ball went on being greased under a weight it was pressing on.
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
-    if (std::getenv("GTC_TICK")) std::printf("  tickBall in: v(%+.4f,%+.4f) w%+.4f at (%+.5f,%+.5f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
@@ -484,7 +483,6 @@ void PlaygroundRoom::tickBall() {
                 contactPoint = hit.contact;
             }
         }
-        if (std::getenv("GTC_WALK")) std::printf("     s%d rem %.4f first %.5f what %d deep %.5f v(%+.4f,%+.4f) pos(%+.4f,%+.4f) restart %d\n", step, remaining, first, what, depth, ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y, int(restart));
         if (restart) continue;
         if (first > 1.0) {
             if (blocked) break;  // it may not be spent: that travel goes through a face
