@@ -244,15 +244,26 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             } else if (patch.ball) {
                 if (!ballFixed) {
                     // The compliance has to be the compliance of the impulse that is
-                    // going to be applied. The ball is given the projected push and
-                    // the whole push's moment (see pushBallSupported), so the mass
-                    // term is read along the projection and the lever term off the
-                    // push itself. Written any other way the solver believes the ball
-                    // answers more or less than it does, and the difference is not a
-                    // rounding error: it is an impulse the pair never balances.
+                    // going to be applied, at the place it is going to be applied.
+                    //
+                    // A ball is touched where it is touched: on its own surface, on the
+                    // radius that faces the face -- which is what pushBallSupported
+                    // does. The levers are read from there and not from the shape's
+                    // corner. Read from the corner they were watched from the wrong
+                    // place, and for a normal push they were not nought: the solver
+                    // believed the ball answered a normal blow by *spinning*, and it
+                    // does not, because the line of a normal on a sphere runs through
+                    // the middle of it. So the ball appeared to move, the closing it
+                    // was supposed to have answered never went away, and the sweep laid
+                    // on another impulse, and another: the sum ran to three times the
+                    // momentum the ball was carrying, and the shape on the other side
+                    // was handed all of it. Read at the place the push really lands,
+                    // the normal lever is exactly nought and the tangential one is
+                    // exactly the radius, and the answer is the sphere's own.
+                    const Vec3 onBall = ball_.position + patch.normal * ball_.radius;
                     value += dot(direction, ballFree(toward, patch.body)) / ball_.mass +
-                             lever(at - ball_.position, direction) *
-                                 lever(pushAt - ball_.position, ballFree(toward, patch.body)) / ballMoment;
+                             lever(onBall - ball_.position, direction) *
+                                 lever(onBall - ball_.position, ballFree(toward, patch.body)) / ballMoment;
                 }
             }
             return value;
