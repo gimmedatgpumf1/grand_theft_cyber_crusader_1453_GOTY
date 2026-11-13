@@ -408,6 +408,8 @@ private:
     // A free body's turn against the floor. How deep it would be at an angle, the
     // rest of a turn taken about the corner it is standing on, and the whole turn
     // walked in steps so that no arc passes through the floor unseen.
+    Vec3 sweptBodyMove(std::size_t index, Vec3 from, Vec3 to);
+    double depthOfCornersExceptBall(std::size_t index) const;
     double turnDepthAt(std::size_t index, double angle) const;
     double depthOfCorners(std::size_t index, const std::array<Vec3, kMaxCorners>& corners) const;
     bool turnAboutFloor(std::size_t index, double rest);

@@ -258,7 +258,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double fall = body.hitAt * time;
                 const double rise = time - fall;
                 const Vec3 step = body.hitArrival * fall + body.velocity * rise;
-                body.centre = resolvedMove(body.centre, body.centre + step);
+                body.centre = sweptBodyMove(index, body.centre, body.centre + step);
                 // The turn is travel and is walked as such -- see turnBody(). A free
                 // body sliding on the floor turns on the corner that is already down,
                 // so a corner never goes through the floor between two ticks and the
@@ -266,7 +266,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 turnBody(index, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
                 continue;
             }
-            body.centre = resolvedMove(body.centre, body.centre + body.velocity * time);
+            body.centre = sweptBodyMove(index, body.centre, body.centre + body.velocity * time);
             turnBody(index, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
         }
     };
