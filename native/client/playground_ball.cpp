@@ -100,11 +100,14 @@ void PlaygroundRoom::tickBall() {
     ball.force = {};
     addForce(ball.position, weight, ForceKind::Gravity, &ball.force, kBallOwner);
     if (held) {
-        // The surface under it carries it: the same weight back, at the point the
-        // ball is standing on -- along the way out of that surface, which is where
-        // the ball is actually pressed and the one place the force can act.
-        addForce(ball.position + ball.supportNormal * (-ball.radius), weight * -1.0, ForceKind::Contact,
-                 &ball.force, kBallOwner);
+        // The surface under it carries it, and that force is not written here: it is
+        // written at the end of the tick, by the account below, together with
+        // everything else the ground had to supply. Writing it here as well was a
+        // floor drawn carrying the ball's weight twice -- and, worse, on the tick the
+        // ball fell asleep it was written and then the speed the weight had just been
+        // given was thrown away, so the account had a weight in it with nothing
+        // answering it. The account closes, and it closes where the answer is.
+        ball.force = ball.force - weight;
     } else {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
@@ -489,7 +492,7 @@ void PlaygroundRoom::tickBall() {
     // arrive here as the difference between the account and the truth.
     if (ball.touching && ball.standing) {
         const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
-        const Vec3 support = total - ballBlows_;
+        const Vec3 support = total - ballBlows_ - weight * kTick;
         if (length(support) > 1e-9)
             addForce(ball.position + ball.supportNormal * (-ball.radius), support * (1.0 / kTick),
                      ForceKind::Contact, nullptr, kBallOwner);
