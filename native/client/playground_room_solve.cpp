@@ -410,6 +410,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (lifting) continue;
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
+                if (getenv("GTC_NRM") && patch.ball)
+                    std::fprintf(stderr, "     ball patch pass u %+.4f g %+.5f delta %+.5f carried %+.5f li %d gap %+.6f | ballv(%+.3f,%+.3f) spin %+.3f shapev(%+.3f,%+.3f)\n",
+                                 u[i], g[i][i], delta[i], carried[k], int(lying), patch.gap[k], ball_.velocity.x, ball_.velocity.y,
+                                 ball_.spin, body->velocity.x, body->velocity.y);
                 if (delta[i] == 0.0) continue;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
                 worst = std::max(worst, std::abs(delta[i]));
