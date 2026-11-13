@@ -261,11 +261,13 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 // body sliding on the floor turns on the corner that is already down,
                 // so a corner never goes through the floor between two ticks and the
                 // place the ball finds it stopped at is a place it could have been.
-                turnBody(index, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
+                body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+                placeCorners(body);
                 continue;
             }
             body.centre = sweptBodyMove(index, body.centre, body.centre + body.velocity * time);
-            turnBody(index, std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time);
+            body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
+            placeCorners(body);
         }
     };
     std::array<Vec3, kBodyCount> centres{};
