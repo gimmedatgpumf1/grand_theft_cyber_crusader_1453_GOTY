@@ -181,15 +181,17 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             // two moves and not one: the fall up to the meeting, then the rebound
             // for what is left of the tick. One move at the rebound speed for the
             // whole tick is a body lifted off the surface it bounced on by a whole
-            // tick of its own rebound, every bounce -- the trampoline. The rebound
-            // half is a parabola like any other, so its own weight is in it: the
-            // speed handed back is the speed at the instant of the blow.
+            // tick of its own rebound, every bounce -- the trampoline.
+            //
+            // The weight of the tick is already in the speed: it was given to the
+            // body at the top of the tick, before any contact, and it is the whole
+            // of it. Adding it a second time over the rebound is the same weight
+            // twice, and a body's account would be short by exactly that much -- so
+            // the move is the two speeds and nothing else.
             if (body.hitAt < 1.0) {
                 const double fall = body.hitAt * time;
                 const double rise = time - fall;
-                Vec3 step = body.hitArrival * fall;
-                step = step + body.velocity * rise + Vec3{0.0, -0.5 * ball_shape::kGravity * rise * rise, 0.0};
-                body.velocity = body.velocity + Vec3{0.0, -ball_shape::kGravity * rise, 0.0};
+                const Vec3 step = body.hitArrival * fall + body.velocity * rise;
                 body.centre = resolvedMove(body.centre, body.centre + step);
                 body.angle = std::abs(body.spin) * furthest * time < kQuantum ? body.angle : body.angle + body.spin * time;
                 placeCorners(body);
