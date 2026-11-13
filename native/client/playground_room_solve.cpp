@@ -322,6 +322,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             double delta[kMaxPatchEnds] = {};
             if (dofs == 1) {
                 if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
+                if (getenv("GTC_B") && patch.ball)
+                    std::fprintf(stderr, "      delta u %+.4f g %.4f -> %+.4f (away %+.4f bias %+.4f)\n", u[0], g[0][0],
+                                 delta[0], away(patch.point[0], patch.normal), patch.gap[0] * (1.0 / kTick));
             } else if (dofs == 2) {
                 const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
                 if (std::abs(det) > 1e-18) {
