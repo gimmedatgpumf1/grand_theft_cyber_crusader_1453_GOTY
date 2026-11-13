@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
     }
     r.ball_.previous = r.ball_.position;
     const int showFrom = argc > 4 ? std::atoi(argv[4]) : 560;
-    for (int k = 0; k < 800; ++k) {
+    for (int k = 0; k < 4000; ++k) {
         r.advance(kDt);
         if (k < showFrom) continue;
         const auto& b = r.ball_;

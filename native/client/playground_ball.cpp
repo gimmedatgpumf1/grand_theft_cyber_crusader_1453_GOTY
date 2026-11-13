@@ -90,7 +90,12 @@ void PlaygroundRoom::settleBallSurfaces() {
                 const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
                 const Vec3 gap = ball.position - (a + side * t);
                 const double distance = length(gap);
-                if (distance > ball.radius + 1e-9 || distance <= 0.0) continue;
+                // Within the room's own resolution of the surface, not within a nanometre
+                // of it. The sweep lands the ball on the face and the bisection leaves it
+                // a few micrometres either side; read at a nanometre, a ball lying in a
+                // pinch was not touching anything at all -- so no grip, no friction, and
+                // no rest, and a millimetre a second of spin and slide that never died.
+                if (distance > ball.radius + kTouch || distance <= 0.0) continue;
                 const Vec3 normal = gap / distance;
                 ball.touching = true;
                 // A body above the ball is a weight on it, not something it stands
@@ -110,7 +115,7 @@ void PlaygroundRoom::settleBallSurfaces() {
             // it is sitting on the ball. Only the first can hold the ball up.
             const Vec3 gap = ball.position - point_;
             const double distance = length(gap);
-            if (distance > 0.0 && distance <= ball.radius + kPointRadius + 1e-9) {
+            if (distance > 0.0 && distance <= ball.radius + kPointRadius + kTouch) {
                 const Vec3 normal = gap / distance;
                 ball.touching = true;
                 if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
