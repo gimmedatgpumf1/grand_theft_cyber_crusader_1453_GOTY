@@ -128,7 +128,18 @@ double PlaygroundRoom::pivotDepthAt(const Body& body, double angle) const {
 // placed inside anything, not even for the length of one tick.
 double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     if (turn == 0.0) return 1.0;
-    if (pivotDepthAt(body, body.angle) > playground_tick::kQuantum) return 0.0;
+    // How deep it already is, which is a state it may keep but may not make worse.
+    //
+    // Asked of zero instead -- "a plank that is inside anything may not turn at all"
+    // -- a shape resting on the plank's tip held the whole plank still: the overlap
+    // was two millimetres, the turn was refused, and the contact went on giving the
+    // axle a torque for a plank that could not use it. The spin then climbed tick
+    // after tick with the plank never moving, which is a spin made of nothing -- the
+    // King's pumping, standing still. A plank that is a hair inside something can
+    // still turn every way that does not take it further in, and turning away is
+    // exactly what gets it out.
+    const double already = std::max(0.0, pivotDepthAt(body, body.angle) - playground_tick::kQuantum);
+    const auto clear = [&](double angle) { return pivotDepthAt(body, angle) <= already + playground_tick::kQuantum; };
     // A step small enough that the furthest corner moves no more than a few
     // millimetres: the thinnest thing in this room is the plank itself, a quarter of
     // a metre, so a step of four millimetres cannot pass over anything.
@@ -136,19 +147,19 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
     const double step = furthest > 0.0 ? std::min(0.25, 0.004 / furthest) : 0.25;
     const int steps = std::min(4096, std::max(1, int(std::abs(turn) / step) + 1));
-    double clear = 0.0;
+    double reached = 0.0;
     for (int i = 1; i <= steps; ++i) {
         const double fraction = double(i) / double(steps);
-        if (pivotDepthAt(body, body.angle + turn * fraction) <= playground_tick::kQuantum) {
-            clear = fraction;
+        if (clear(body.angle + turn * fraction)) {
+            reached = fraction;
             continue;
         }
         // Between the last clear step and this one. Bisected, so the stop is the
         // instant of the meeting and not a step size.
-        double low = clear, high = fraction;
+        double low = reached, high = fraction;
         for (int bisect = 0; bisect < 60; ++bisect) {
             const double mid = 0.5 * (low + high);
-            if (pivotDepthAt(body, body.angle + turn * mid) <= playground_tick::kQuantum)
+            if (clear(body.angle + turn * mid))
                 low = mid;
             else
                 high = mid;
