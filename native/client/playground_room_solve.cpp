@@ -134,8 +134,17 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
-        const bool pressesIntoGround =
-            patch.ball && ball_.touching && ball_.standing && dot(patch.normal, ball_.supportNormal) < 0.0;
+        // `patch.normal` runs out of the ball and into the shape, so the ball is
+        // pushed the *other* way. It is being pressed into what holds it when that
+        // way is into the support -- which for a shape resting on the ball's crown is
+        // straight down onto the floor. Read the other way round it said a cube
+        // sitting on a ball was pushing it upwards, so the ball was never once seen
+        // to be pressed into the ground it was standing on, and a shape landing on a
+        // ball on the floor was answered by moving a ball that the floor then had to
+        // stop: the share the ball was given went nowhere, and the shape kept a blow
+        // the ball never lost.
+        const bool pressesIntoGround = patch.ball && ball_.touching && ball_.standing &&
+                                       dot(patch.normal, ball_.supportNormal) > 0.0;
         if (patch.ball && ball_.frozen && !pressesIntoGround) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
