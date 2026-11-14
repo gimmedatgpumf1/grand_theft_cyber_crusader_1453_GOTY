@@ -391,7 +391,24 @@ void PlaygroundRoom::tickBall() {
             // A body that is already stopped against the ball this tick is not
             // moving any more: its step was spent at the meeting (above). What is
             // left of the tick is swept against where it came to rest.
-            const Vec3* was = bodyStopped[index] ? body.position.data() : body.previous.data();
+            // The body's pose at the instant the walk has reached, not the pose the
+            // tick began in. A sweep replays the body from `was` to where the tick
+            // ends, over the time that is left -- and `previous` is the pose of a
+            // *whole* tick ago. Measured from there, a body that has already spent
+            // three quarters of its tick looks as if it is moving a quarter as fast,
+            // so the face the ball has just been set down on appears a quarter of the
+            // way back where it came from. The ball was left four centimetres above a
+            // plank it was touching, fell that far, landed, was left four centimetres
+            // up again: a bounce with no bounces in it, and the plank loaded on the
+            // ticks the ball happened to catch it and coasting the ones between. The
+            // interpolation is corner by corner and linear, so the pose at a fraction
+            // of the tick is the same interpolation read from there: shifting the
+            // start of the sweep is exactly right, and not an approximation of it.
+            Vec3 start[kMaxOutlineCorners];
+            for (std::size_t i = 0; i < body.count; ++i)
+                start[i] = bodyStopped[index] ? body.position[i]
+                                              : body.previous[i] + (body.position[i] - body.previous[i]) * (1.0 - remaining);
+            const Vec3* was = start;
             // The body is stepped before the ball, and stepping it moves the piece of
             // outline the ball would have met. So the meeting is solved between two
             // *moving* things: the ball's travel and the body's, corner by corner,
