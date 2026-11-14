@@ -136,9 +136,6 @@ void PlaygroundRoom::tickBall() {
         if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
     const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed &&
                       (onTheFloor || !supportCanMove());
-    if (getenv("KV")) std::printf("    [held] touching %d standing %d v %.3e rest %.3e onFloor %d canMove %d held %d touches %zu\n",
-                                  ball.touching ? 1 : 0, ball.standing ? 1 : 0, length(ball.velocity), kRestSpeed,
-                                  onTheFloor ? 1 : 0, supportCanMove() ? 1 : 0, held ? 1 : 0, ballTouchCount_);
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -848,10 +845,6 @@ void PlaygroundRoom::tickBall() {
     // while its speed at the end of every tick was 0.93 um a tick's worth, and the
     // difference -- eleven microns of travel that no speed of the ball accounts for --
     // is a ball that is standing still and still moving.
-    if (std::getenv("KV"))
-        std::printf("    [walk] start (%+.6e,%+.6e) end (%+.6e,%+.6e) bent %d dt %.3e\n", walkStart.x, walkStart.y,
-                    ball.velocity.x, ball.velocity.y, ball.bent ? 1 : 0,
-                    length(ball.position - beganAt));
     if (!ball.bent && length(ball.velocity) < length(walkStart)) {
         const Vec3 slower = (ball.velocity - walkStart) * (0.5 * kTick);
         // Only ever backwards along the way it was already going, and never upwards:

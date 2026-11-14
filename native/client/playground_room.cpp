@@ -733,6 +733,7 @@ void PlaygroundRoom::advance(double seconds) {
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         separateBall();
+
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
