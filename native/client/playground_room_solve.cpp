@@ -219,23 +219,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // that out and give the ball the rest of the push, all of it.
         const auto free = [&](Vec3 impulse) {
             if (!patch.ball || ballFixed || !ball_.touching || !ball_.standing) return impulse;
-            // The body this patch is being solved against is not one of the surfaces
-            // the ball is held by, and this is the whole of the seesaw's stutter.
-            //
-            // Counted as a support -- which it is, the ball is lying on the plank --
-            // its own normal is a direction the ball is declared unable to move along.
-            // But that normal is the very axis this contact acts on, so the ball's own
-            // mass dropped out of the sum below, the impulse came out sized for a wall,
-            // and the ball was kicked clear of the plank by every contact it made. It
-            // then fell for a tick, landed, was kicked clear again: the plank was given
-            // its load on every other tick and coasted the ticks between. Measured,
-            // tick by tick: angular acceleration -0.466, +0.016, +0.273, +0.006 ... a
-            // square wave at ten hertz, which is what "stop-move-stop-move" is.
-            //
-            // ballFree() has taken an exception for exactly this since the ball was
-            // wedged and pumped, and pushBallSupported() passes it. This projection is
-            // the same question asked in the same tick, so it is asked the same way.
-            return ballFree(impulse, patch.body);
+            return impulse - ball_.supportNormal * dot(impulse, ball_.supportNormal);
         };
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             // The share this body gives is the share it actually gives, read from the
