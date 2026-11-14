@@ -13,17 +13,15 @@ int main() {
         PlaygroundRoom r; r.reset();
         r.ball_.position = {2.2, 1.6, 0}; r.ball_.previous = r.ball_.position;
         r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
+        // The apex of the first bounce, read off the whole flight: the ball cannot
+        // come back higher than it fell, and how high it does come back is the
+        // bounciness the room says it has, seen on the screen's own axis.
         double firstLow = 1e30, firstApex = -1e30;
-        bool landed = false;
         for (int k = 0; k < 120; ++k) {
             r.advance(kDt);
             const double h = r.ball_.position.y - r.ball_.radius;
-            if (!landed) {
-                firstLow = std::min(firstLow, h);
-                if (h <= 1e-9) landed = true;
-            } else {
-                firstApex = std::max(firstApex, h);
-            }
+            if (k < 10) firstLow = std::min(firstLow, h);
+            if (k > 10 && k < 40) firstApex = std::max(firstApex, h);
         }
         std::printf("1. dropped 1.48 m: lowest %+.4f m, first bounce came back to %+.4f m (%.1f%% of the drop)\n",
                     firstLow, firstApex, 100.0 * firstApex / 1.48);

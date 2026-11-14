@@ -7,7 +7,7 @@
 int main() {
     constexpr double kDt = 1.0 / 20.0;
     PlaygroundRoom r; r.reset();
-    r.ball_.position = {-4.6, 1.6, 0}; r.ball_.previous = r.ball_.position;
+    r.ball_.position = {2.2, 1.6, 0}; r.ball_.previous = r.ball_.position;
     r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
     for (int k = 0; k < 40; ++k) {
         r.advance(kDt);
