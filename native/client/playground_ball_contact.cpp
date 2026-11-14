@@ -283,7 +283,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                 for (std::size_t i = 1; i < body->count; ++i) lowest = std::min(lowest, body->position[i].y);
                 onFloor = lowest <= playground_tick::kSurfaceY + playground_tick::kQuantum;
             }
-            const double bodyShare = giveAtHeld(*body, contactPoint, answer, onFloor);
+            // The share the shape gives, measured from what it will actually take:
+            // the same rule pushBody() applies when the blow is handed over. A shape
+            // standing on the floor does not take the part of a blow that runs down
+            // into it -- the floor does -- so it gives way by the rest, and the
+            // compliance has to be the rest, or the answer is worked out against a
+            // shape that yields where it does not and the blow comes up short.
+            const Vec3 takes = bodyFree(*body, answer * -1.0) * -1.0;
+            const Vec3 arm = contactPoint - body->centre;
+            const auto turned = [&](Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
+            const double bodyShare = dot(takes, answer) * inverseMass(*body) +
+                                     turned(takes) * turned(answer) / body->moment;
             // What the ball can take of this blow is only what it is free to do with
             // it. A ball already held by a surface, or one on the floor that the
             // blow would drive downwards, has nowhere to go: the body takes the

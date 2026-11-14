@@ -248,7 +248,15 @@ void PlaygroundRoom::settleBallFriction() {
         // slip than the face had, and the alternation that follows is momentum out of
         // nothing: a ball wedged under a seesaw's end left with two hundred radians a
         // second of turn it was never given.
-        partner[i] = dot(tangents[i], tangents[i]) * inverseMass(mate) + lever * lever / mate.moment;
+        // A face standing on the floor does not give way downwards, and the floor
+        // answers that part instead of the face: the response the ball's grip is
+        // measured against is the response the face will actually give -- the same
+        // one pushBody() will hand it. Measured as though the whole mass were free,
+        // the grip takes less slip than there was, the slip is left in the ball, and
+        // a ball pinched between two faces keeps a speed it can never spend.
+        const Vec3 takes = bodyFree(mate, tangents[i]);
+        partner[i] = dot(takes, tangents[i]) * inverseMass(mate) +
+                     (arm.x * takes.y - arm.y * takes.x) * lever / mate.moment;
     }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
@@ -305,7 +313,11 @@ void PlaygroundRoom::settleBallFriction() {
                 Body& mate = bodies_[other];
                 const Vec3 at = ball.position + arms[i];
                 if (!mate.frozen && !bodyHeld(other)) {
-                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Pair);
+                    // The ball's own grip, given to the face it is on, and through
+                    // the door the floor reads: this push is solved after the
+                    // shapes' tick, so the floor under the face is not in this
+                    // solve and the face's refused share is answered here.
+                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Ball);
                     ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
                 } else {
                     ballTouches_[i].surfaceVelocity = Vec3{};

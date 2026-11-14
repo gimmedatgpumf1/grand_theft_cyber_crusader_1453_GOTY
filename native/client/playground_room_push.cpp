@@ -21,6 +21,18 @@
 
 namespace gtc::native {
 
+// What of a push on a body actually becomes a step of that body. See the header.
+//
+// A pinned body is held by its axle, which is a thing that never moves and never
+// fails: it answers the carrying part of any push, and the turn is the body's own.
+// That is a different question from the floor's, and it is already answered by
+// inverseMass() and by pushBody()'s own pin.
+Vec3 PlaygroundRoom::bodyFree(const Body& body, Vec3 push) {
+    if (body.pivoted) return push;
+    if (!body.touchingPlane || push.y >= 0.0) return push;
+    return Vec3{push.x, 0.0, push.z};
+}
+
 // One impulse, given to one body at one place. This is the only door into a
 // body's motion anywhere in the room, because it is the only thing a force can do
 // to a rigid body: change the speed of its centre of mass by J/m and its turn by

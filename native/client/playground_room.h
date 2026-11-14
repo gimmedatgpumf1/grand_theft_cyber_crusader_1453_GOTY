@@ -362,15 +362,6 @@ private:
         const double lever = arm.x * direction.y - arm.y * direction.x;
         return inverseMass(body) + lever * lever / body.moment;
     }
-    // The same number for a body that is standing on the floor and is being pushed
-    // *down* into it. The floor is under the shape and the floor does not give, so
-    // the part of the shape's response that would be a step downwards is not a
-    // response at all -- the floor answers it. What is left of the shape's compliance
-    // is the part of the push that runs *along* the floor, and the turn about its
-    // centre, which the floor cannot take. Solving it as though the whole mass were
-    // free hands the shape momentum the floor then quietly swallows: a ball dropped
-    // on a cube resting on the floor lost a quarter of every bounce to a cube that
-    // never moved at all.
     // What of a push on a body actually becomes a step of that body. A shape that is
     // standing on the floor cannot be driven into it: the floor is under it and the
     // floor does not give, so the part of the push that runs downwards is the floor's
@@ -380,19 +371,7 @@ private:
     // the same model. Two models is a contact that never closes: the solver lays on
     // impulse after impulse for a speed the shape never takes, and the shape next to
     // it is handed all of it. That is the shape-against-shape pump.
-    static Vec3 bodyFree(const Body& body, Vec3 push) {
-        if (body.pivoted) return Vec3{};
-        if (!body.touchingPlane || push.y >= 0.0) return push;
-        return Vec3{push.x, 0.0, push.z};
-    }
-    static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
-        const Vec3 arm = at - body.centre;
-        const double lever = arm.x * direction.y - arm.y * direction.x;
-        const double step = (onFloor && direction.y > 0.0)
-                                ? (1.0 - direction.y * direction.y) * inverseMass(body)
-                                : inverseMass(body);
-        return step + lever * lever / body.moment;
-    }
+    static Vec3 bodyFree(const Body& body, Vec3 push);
 
     void tick();
     // One tick of every body at once. The forces are applied first, then the tick
