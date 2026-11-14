@@ -124,8 +124,18 @@ void PlaygroundRoom::tickBall() {
             if (ballTouches_[i].body < kBodyCount && !bodies_[ballTouches_[i].body].frozen) return true;
         return false;
     };
-    const bool held =
-        ball.touching && ball.standing && length(ball.velocity) < kRestSpeed && !supportCanMove();
+    // And the one surface that can always hold it is the ground. A ball resting on
+    // the floor with a shape leaning against its side is held -- by the floor. Asking
+    // "can anything it touches move" and answering no only when nothing can is to say
+    // that a ball with a triangle at its shoulder is unsupported, and an unsupported
+    // ball takes the whole of a tick's weight: 0.49 m/s downwards, twenty times a
+    // second, every one of them answered by the floor after a walk of twelve
+    // micrometres of sideways travel that no speed of the ball ever accounted for.
+    bool onTheFloor = false;
+    for (std::size_t i = 0; i < ballTouchCount_; ++i)
+        if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
+    const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed &&
+                      (onTheFloor || !supportCanMove());
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -835,6 +845,10 @@ void PlaygroundRoom::tickBall() {
     // while its speed at the end of every tick was 0.93 um a tick's worth, and the
     // difference -- eleven microns of travel that no speed of the ball accounts for --
     // is a ball that is standing still and still moving.
+    if (std::getenv("KV"))
+        std::printf("    [walk] start (%+.6e,%+.6e) end (%+.6e,%+.6e) bent %d dt %.3e\n", walkStart.x, walkStart.y,
+                    ball.velocity.x, ball.velocity.y, ball.bent ? 1 : 0,
+                    length(ball.position - beganAt));
     if (!ball.bent && length(ball.velocity) < length(walkStart)) {
         const Vec3 slower = (ball.velocity - walkStart) * (0.5 * kTick);
         // Only ever backwards along the way it was already going, and never upwards:
