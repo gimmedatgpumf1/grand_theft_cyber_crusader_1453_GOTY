@@ -331,18 +331,28 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // top of it takes none of that blow -- the floor under it does -- and a
             // friction solve given the whole of it span the ball sideways and down
             // at metres a second off a body that never touched it that way.
-            // What the shape is given is what it can take. The downward part of the
-            // blow is the floor's to answer, so the shape is not handed it: it would
-            // only be cancelled again by the floor on the next tick, and cancelled
-            // momentum is momentum the room has lost track of. The ball's share was
-            // solved against that same refusal, so the pair still adds up.
-            std::fprintf(stderr, "    before push: body v (%+.3f,%+.3f) w %+.3f\n", body->velocity.x, body->velocity.y,
-                         body->spin);
+            // The shape is handed the whole of it, and the floor is left to answer
+            // its own half.
+            //
+            // It used to be handed only the part that was not pointing down: the rest
+            // was said to be "the floor's to answer", and it was taken off the ball
+            // and given to nobody. That is momentum leaving the room. Measured on the
+            // King's own drop -- the ball let go above the triangle's hypotenuse --
+            // the ball gave up 3.39 m/s along the face's normal, the triangle received
+            // (-1.487, +0.000) newton seconds, and the other 1.487 vanished: the ball
+            // came off the slope at a fifth of the blow it had landed with, and the
+            // slope had not moved to account for it. The floor can answer a downward
+            // blow, and it does -- it is a contact like any other, it is in the ledger,
+            // and it is solved on the next tick. What it cannot do is answer for a
+            // force that was never applied.
+            //
+            // Handing the whole blow over also makes the pair add up in the arithmetic
+            // that solved it: the impulse was worked out against the shape's own
+            // compliance, and a shape given less than that keeps a speed that
+            // disagrees with the relative velocity the solve was aiming for -- which
+            // is restitution quietly not delivered.
             Vec3 handed = answer * -impulse;
-            if (onFloor) handed.y = std::max(handed.y, 0.0);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
-            std::fprintf(stderr, "    after  push: body v (%+.3f,%+.3f) w %+.3f  handed (%+.3f,%+.3f)\n",
-                         body->velocity.x, body->velocity.y, body->spin, handed.x, handed.y);
             blown = handed * -1.0;
             pressed = impulse * ballShare;
         } else {
