@@ -228,6 +228,7 @@ void PlaygroundRoom::tickBall() {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving()) return;
+    std::fprintf(stderr, "TICKBALL enter v %+.4f y %.5f\n", ball.velocity.y, ball.position.y);
     ball.frozen = false;
 
     // What the ball arrived with is recorded once for the whole tick, before
@@ -283,6 +284,7 @@ void PlaygroundRoom::tickBall() {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
+    std::fprintf(stderr, "TICKBALL after forces v %+.4f held %d\n", ball.velocity.y, int(held));
 
     // What the ball is standing on is not relearned halfway through the tick. It
     // is a fact about the tick -- the state it began in -- and both halves of the
