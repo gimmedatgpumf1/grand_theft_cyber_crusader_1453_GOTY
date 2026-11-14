@@ -822,8 +822,11 @@ void PlaygroundRoom::tickBodies() {
         if (!patch.ball) continue;
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
+    if (gtcAudit) std::fprintf(stderr, "T beforeSolve ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     solveContacts(patches);
+    if (gtcAudit) std::fprintf(stderr, "T afterSolve  ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     advanceBodies(kTick);
+    if (gtcAudit) std::fprintf(stderr, "T afterAdvance ball v(%+.5f,%+.5f) pos(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y, ball_.position.x, ball_.position.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -837,7 +840,9 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
+    if (gtcAudit) std::fprintf(stderr, "T afterSeparateBodies ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     settleBodies();
+    if (gtcAudit) std::fprintf(stderr, "T afterSettleBodies ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
     // of the tick -- see there. Twice is harmless (the list is emptied each time) and
