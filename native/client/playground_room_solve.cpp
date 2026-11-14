@@ -698,6 +698,20 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         if (loadWorst < kAgree && gripWorst < kAgree) break;
     }
     sweep(false);
+    {
+        static int dbgTick = 0;
+        ++dbgTick;
+        for (std::size_t m = 0; m < patches.count; ++m) {
+            const Manifold& q = patches.items[m];
+            if (q.kind != ForceKind::Pair || q.body != 0) continue;
+            std::fprintf(stderr, "  PAIR tick %d body %zu other %zu ends %zu n(%+.2f,%+.2f) | ",
+                         dbgTick, q.body, q.other, q.ends, q.normal.x, q.normal.y);
+            for (std::size_t k = 0; k < q.ends; ++k)
+                std::fprintf(stderr, "e%zu gap %+9.6f Jn %+7.4f Jt %+7.4f | ", k, q.gap[k], q.normalImpulse[k],
+                             q.tangentImpulse[k]);
+            std::fprintf(stderr, "cube w %+7.3f plank w %+7.3f\n", bodies_[0].spin, bodies_[2].spin);
+        }
+    }
     return closingAtAll;
 }
 
