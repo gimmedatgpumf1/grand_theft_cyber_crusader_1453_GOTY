@@ -801,6 +801,7 @@ void PlaygroundRoom::tickBodies() {
     // still must feel none of it.
     applyAirDrag();
     applyBodyForces();
+    if (std::getenv("KT")) std::printf("    [w] afterForces tri v (%+.3e,%+.3e) w %+.3e | ball v (%+.3e,%+.3e) frz %d\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, ball_.velocity.x, ball_.velocity.y, ball_.frozen ? 1 : 0);
     // How far anything can get before this tick is over. Every end within that is a
     // contact *this tick*: it could arrive before the tick ends, so it is answered
     // now, against the distance it has left.
@@ -841,7 +842,9 @@ void PlaygroundRoom::tickBodies() {
         if (!patch.ball) continue;
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
+    if (std::getenv("KT")) std::printf("    [w] preSolve tri v (%+.3e,%+.3e) w %+.3e\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
     solveContacts(patches);
+    if (std::getenv("KT")) std::printf("    [w] postSolve tri v (%+.3e,%+.3e) w %+.3e | ball v (%+.3e,%+.3e)\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, ball_.velocity.x, ball_.velocity.y);
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
