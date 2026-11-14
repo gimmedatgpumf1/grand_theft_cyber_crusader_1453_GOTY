@@ -291,6 +291,29 @@ void PlaygroundRoom::tickBall() {
     // Set while the meeting is being recorded and cleared once the contact has had
     // its say: what the ball leaves with is the answer, not what it arrived with.
     bool bendRecording = false;
+    // What gravity still has to do to the ball in the time that is left of the tick.
+    //
+    // The tick's weight is put on the ball once, at the top, for a whole tick -- which
+    // is right only while the ball is falling freely for that whole tick. The moment
+    // a contact answers it, the ball's speed is the speed it has *then*, at the
+    // instant of the meeting, and a ball that leaves a surface at four centimetres a
+    // second with no weight acting on it for the rest of the tick flies that whole
+    // piece of time -- it ends the tick two millimetres above the floor still going
+    // up, and the next tick it is an arrival again. Measured: a ball rolled into the
+    // foot of the triangle and left alone sat two millimetres off the floor, bouncing
+    // twenty times a second, and because it was never *on* anything no friction and
+    // no rolling resistance could touch it -- it kept a centimetre a second of drift
+    // and crept into the wedge until it was thrown out of it. That micro-bounce is a
+    // piece of time with no weight in it, and it is what the King saw shaking.
+    //
+    // So the weight is put back on for whatever is left of the tick after a contact,
+    // which is the same force over the same time it would have had if it had never
+    // been interrupted. A ball that leaves a face at a few centimetres a second is
+    // pulled back down within the same tick, lands, and is answered as resting --
+    // which is what a ball that cannot get off the ground is.
+    const auto weightForTheRest = [&ball](double left) {
+        ball.velocity.y -= playground_tick::kGravity * kTick * left;
+    };
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = ball.position + ball.velocity * (kTick * remaining);
         const Vec3 travel = next - ball.position;
@@ -411,6 +434,7 @@ void PlaygroundRoom::tickBall() {
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
                 ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
+                weightForTheRest(remaining);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -462,6 +486,7 @@ void PlaygroundRoom::tickBall() {
                     // second -- speed with nowhere to go.
                     ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
+                    weightForTheRest(remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
                     // is worked out again against it instead of being handed back.
                     //
@@ -598,6 +623,7 @@ void PlaygroundRoom::tickBall() {
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
             ballContact(normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
+            weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
             // One blow per body per tick. A body met again in what is left of the
@@ -605,6 +631,7 @@ void PlaygroundRoom::tickBall() {
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
             ballContact(normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
+            weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
         // A ball that started the tick already through something has been put back
