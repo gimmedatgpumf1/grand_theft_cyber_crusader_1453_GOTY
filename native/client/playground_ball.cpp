@@ -181,6 +181,24 @@ void PlaygroundRoom::settleBallSurfaces() {
             if (spare <= std::max(0.0, -ball.velocity.y) * kTick) {
                 ball.touching = true;
                 ball.standing = ball.standing && holds(Vec3{0, 1, 0});
+            }
+            // The floor takes a speed away only from a ball that is *on* it.
+            //
+            // A ball still on its way down is not against the floor: it will be
+            // against it at the instant the walk finds, and the walk answers that
+            // instant with the same bounciness the planks and the shapes get. Taking
+            // the speed off here, a tick early, left the ball arriving at the ground
+            // at nothing at all -- the bounce had nothing to give back, and every
+            // drop the King made ended with a ball lying on the floor instead of
+            // coming up off it. Measured: dropped 1.48 m it came back 0.00 m.
+            //
+            // Nothing is lost by waiting for the contact. The walk solves the first
+            // instant the ball's own travel meets the floor -- not a sample of it --
+            // so it cannot be passed over however fast the ball is going; and this
+            // constraint runs again after every contact and after the grip, which is
+            // when a ball really is lying on the floor and really must not keep a
+            // speed into it.
+            if (spare <= playground_tick::kQuantum) {
                 const double allowed = -std::max(0.0, spare) / kTick;
                 if (ball.velocity.y < allowed) ball.velocity.y = allowed;
             }
