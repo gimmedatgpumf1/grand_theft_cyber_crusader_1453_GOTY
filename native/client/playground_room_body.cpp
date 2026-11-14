@@ -609,6 +609,16 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
         body.restTicks = 0;
         body.restLow = body.restHigh = body.centre;
         body.restAngleLow = body.restAngleHigh = body.angle;
+        // And it is given its weight for this tick, because it has been woken after
+        // the tick's gravity pass and will not be replayed either: without this, the
+        // one tick a shape is woken on is the one tick it is solved for contacts with
+        // no weight of its own. What that looks like is a shape drawn with a contact
+        // arrow and nothing pressing back -- 235 N of net force on something that is
+        // very nearly standing still, which is a force with no partner if ever there
+        // was one. Its corners are pulled here exactly as they would have been there,
+        // and its contacts are solved afterwards in this same tick, so nothing is
+        // counted twice.
+        applyBodyWeight(index);
     }
 }
 

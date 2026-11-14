@@ -910,6 +910,31 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
         const Vec3 along = weight - normal * into;
         if (length(along) > 0.0) addForce(at, along * -1.0, ForceKind::Friction, nullptr, kBallOwner);
     }
+    // A pinned body's axle.
+    //
+    // A plank on an axle is pulled down by its weight and does not move, which can
+    // only be true because the axle is pushing back -- and until that push is
+    // written down, the picture shows a shape being dragged downwards with nothing
+    // on the other end of it: four weights, no answer. It is not invented. A pin
+    // holds the middle where it is, so the force the axle gives is exactly the one
+    // that leaves nothing over: whatever the body felt this tick -- its own weight,
+    // the shapes resting on it, the ball landing on it, the air -- the axle carries
+    // the rest, at the pin, and it is drawn there.
+    //
+    // A moment is a different matter and is not made up here. A pin takes no moment
+    // about itself, so it gives none: what turns a plank is its bearing's friction,
+    // which is its own couple and is written where it acts.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        const Body& body = bodies_[index];
+        if (!body.pivoted || body.count == 0) continue;
+        Vec3 left{};
+        for (std::size_t i = 0; i < forceCount_; ++i) {
+            const ForceSample& sample = forces_[i];
+            if (sample.owner != index || sample.couple) continue;
+            left = left + sample.force;
+        }
+        if (length(left) > 1e-9) addForce(body.pivotPoint, left * -1.0, ForceKind::Contact, nullptr, index);
+    }
     // The dot, asleep on something, is the same pair of forces at one point -- and
     // the point it is pressed at is the one its own support says.
     if (pointFrozen_ && !pointStepped) {
