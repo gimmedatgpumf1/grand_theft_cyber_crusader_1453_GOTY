@@ -1,5 +1,7 @@
 #include "client/playground_room.h"
 
+#include <cstdio>
+
 
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -169,6 +171,9 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
 // they are where the shape says they are, and they move because the body does.
 void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
+    if (std::size_t(&body - bodies_.data()) == 0)
+        std::fprintf(stderr, "  PUSH J (%+.3f,%+.3f) kind %d at (%.3f,%.3f) v (%.4f,%.4f) -> ", impulse.x, impulse.y,
+                     int(kind), at.x, at.y, body.velocity.x, body.velocity.y);
     const Vec3 arm = at - body.centre;
     // A pinned body is not carried anywhere: the axle is what takes the push, and the
     // only thing left for the body to do with it is turn. The axle's own answer is not
@@ -176,6 +181,8 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // it does no work and changes nothing the body can report -- it is the room that
     // holds the pin, exactly as the floor holds a shape standing on it.
     body.velocity = body.pivoted ? Vec3{} : body.velocity + impulse * (1.0 / body.mass);
+    if (std::size_t(&body - bodies_.data()) == 0)
+        std::fprintf(stderr, "(%.4f,%.4f)\n", body.velocity.x, body.velocity.y);
     body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
     // settling again from where the blow found it: it is not at rest any more, it
