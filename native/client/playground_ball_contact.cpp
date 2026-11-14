@@ -3,48 +3,6 @@
 #include "client/playground_room_tick.h"
 
 namespace gtc::native {
-// The ball's faces and the shapes' supports, asked one after the other until they
-// agree.
-//
-// This is one constraint system and the tick is what splits it: the shapes are solved
-// against the floor and against each other, then the ball is solved against the
-// shapes. Each half is solved to agreement on its own, and the seam between them is
-// where a corner leaks. A ball pinched between a cube's side and the slope, both of
-// them standing on the floor: the grip along the cube's face has a downward part in
-// it (the face is vertical, so its tangent is), that part is into the slope, the
-// slope answers it and gives the ball a push along the slope, which is into the cube,
-// and round again. Left as one pass each, the loop stops wherever it happens to be --
-// and the shapes are left carrying the last push of it, a speed their own floors will
-// cancel on the next tick before they move a millimetre. Nothing on screen moves and
-// the ball never comes to rest.
-//
-// Asking the shapes' supports again is what closes it: a shape held by friction on the
-// floor does not slide from a push it can hold, so the face the ball is measured
-// against becomes the face it really is -- still. The ball's faces then have the last
-// word, and in a wedge the two of them together leave it exactly at rest, which is
-// what a body wedged between two still surfaces is.
-void PlaygroundRoom::settleBallAgainstSupports() {
-    using playground_detail::kRestSpeed;
-    Ball& ball = ball_;
-    constexpr int kRounds = 32;
-    for (int round = 0; round < kRounds; ++round) {
-        const Vec3 wasSpeed = ball.velocity;
-        const double wasSpin = ball.spin;
-        // The shapes first and the ball last. The ball's answer is the one that has to
-        // be measured against the face as it really is, and a face's real speed is the
-        // one its own supports leave it with -- so the supports are asked first and the
-        // ball is answered against them, not the other way round.
-        answerSupportedShapes();
-        settleBallSurfaces();
-        // Done when the ball's answer has stopped moving: the shapes' supports have
-        // just been given their last word, and if the ball is where it was before
-        // them there is nothing left for another round to say.
-        if (round > 0 && length(ball.velocity - wasSpeed) <= kRestSpeed &&
-            std::abs(ball.spin - wasSpin) * ball.radius <= kRestSpeed)
-            break;
-    }
-}
-
 using namespace ball_shape;
 using namespace playground_detail;
 

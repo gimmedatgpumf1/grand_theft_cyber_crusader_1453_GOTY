@@ -786,9 +786,6 @@ private:
     std::array<Vec3, kBodyCount> ballTickSpeed_{};
     std::array<double, kBodyCount> ballTickSpin_{};
     void settleBallFriction();
-    // The ball's faces and the shapes' supports, asked one after the other until
-    // they agree. See the note beside it in playground_ball.cpp.
-    void settleBallAgainstSupports();
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
     // it is carrying this, and friction is mu times it.
