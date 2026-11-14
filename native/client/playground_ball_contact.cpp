@@ -33,8 +33,12 @@ void PlaygroundRoom::settleBallAgainstSupports() {
         const Vec3 wasSpeed = ball.velocity;
         if (std::getenv("KV")) std::printf("  [loop] round %d v(%+.7f,%+.7f) w%+.5f\n", round, ball.velocity.x, ball.velocity.y, ball.spin);
         const double wasSpin = ball.spin;
-        settleBallSurfaces();
+        // The shapes first and the ball last. The ball's answer is the one that has to
+        // be measured against the face as it really is, and a face's real speed is the
+        // one its own supports leave it with -- so the supports are asked first and the
+        // ball is answered against them, not the other way round.
         answerSupportedShapes();
+        settleBallSurfaces();
         // Done when the ball's answer has stopped moving: the shapes' supports have
         // just been given their last word, and if the ball is where it was before
         // them there is nothing left for another round to say.
@@ -42,7 +46,6 @@ void PlaygroundRoom::settleBallAgainstSupports() {
             std::abs(ball.spin - wasSpin) * ball.radius <= kRestSpeed)
             break;
     }
-    settleBallSurfaces();
 }
 
 using namespace ball_shape;
