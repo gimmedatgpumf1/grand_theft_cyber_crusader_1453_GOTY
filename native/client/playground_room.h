@@ -421,7 +421,7 @@ private:
     // and the face goes on. A shape pinched between the face and the floor cannot be
     // carried anywhere -- pushing it along the face drives it into the ground -- and
     // that one the plank stops on.
-    bool shapeGivesWay(const Body& body, std::size_t other, Vec3 way, double amount) const;
+    bool shapeGivesWay(const Body& body, std::size_t other, double amount) const;
     // The first angle a pinned body's turn meets something, as a fraction of the turn
     // it was given. One means nothing was in the way. This is the hitscan the plank
     // needed and did not have: a turn is a piece of travel like any other, and the
