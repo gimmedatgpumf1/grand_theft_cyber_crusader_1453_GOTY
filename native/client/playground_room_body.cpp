@@ -896,8 +896,16 @@ void PlaygroundRoom::answerBodiesAgain() {
         if (all.items[i].ball) continue;
         patches.add(all.items[i]);
     }
+    if (std::getenv("GTC_AGAIN"))
+        std::printf("AGAIN before cube(%+.4f,%+.4f) w%+.4f tri(%+.4f,%+.4f) w%+.4f patches%zu\n",
+                    bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
+                    bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, patches.count);
     if (patches.count == 0) return;
     solveContacts(patches);
+    if (std::getenv("GTC_AGAIN"))
+        std::printf("AGAIN after  cube(%+.4f,%+.4f) w%+.4f tri(%+.4f,%+.4f) w%+.4f\n",
+                    bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
+                    bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
 }
 
 // Was the frozen body under `index` ever given this body's load?
