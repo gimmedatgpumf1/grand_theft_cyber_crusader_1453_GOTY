@@ -45,8 +45,8 @@ void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kep
     const Vec3 taken = (wasSpeed - body.velocity) * body.mass;
     if (length(taken) > 1.0)
         std::fprintf(stderr,
-                     "  ABSORB body %zu kept %.4f  lost (%+.3f,%+.3f) N-s  = (%+.1f,%+.1f) N | centre (%.4f,%.4f) v (%.4f,%.4f) -> (%.4f,%.4f) | ball (%.4f,%.4f) v (%.3f,%.3f) r %.3f sep %.6f\n",
-                     index, kept, taken.x, taken.y, taken.x * 20.0, taken.y * 20.0, body.centre.x, body.centre.y, wasSpeed.x,
+                     "  ABSORB ra %p body %zu kept %.4f  lost (%+.3f,%+.3f) N-s  = (%+.1f,%+.1f) N | centre (%.4f,%.4f) v (%.4f,%.4f) -> (%.4f,%.4f) | ball (%.4f,%.4f) v (%.3f,%.3f) r %.3f sep %.6f\n",
+                     __builtin_return_address(0), index, kept, taken.x, taken.y, taken.x * 20.0, taken.y * 20.0, body.centre.x, body.centre.y, wasSpeed.x,
                      wasSpeed.y, body.velocity.x, body.velocity.y, ball_.position.x, ball_.position.y, ball_.velocity.x,
                      ball_.velocity.y, ball_.radius,
                      ball_shape::outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0).gap - ball_.radius);
