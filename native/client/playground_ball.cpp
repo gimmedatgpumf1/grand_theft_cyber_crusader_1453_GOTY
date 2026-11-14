@@ -686,6 +686,13 @@ void PlaygroundRoom::tickBall() {
     // to say costs one extra compare.
     answerSupportedShapes();
     settleBallSurfaces();
+    // And the shapes have the last word on themselves: the blow the ball has just
+    // given them is answered by what is under them, exactly as it would be if it had
+    // come from another shape. Without this the tick would end with a shape holding a
+    // speed into its own floor -- a speed that is not a motion, because the floor
+    // takes it back on the next tick, but an arrow and a number that are only there
+    // because the ball spoke last.
+    answerSupportedShapes();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
