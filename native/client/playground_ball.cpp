@@ -822,6 +822,13 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
+    if (gtcAudit) {
+        std::fprintf(stderr, "B beforeFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            std::fprintf(stderr, "     touch %zu body %zu n(%+.3f,%+.3f) sv(%+.4f,%+.4f) pressed %.6f\n", i,
+                         ballTouches_[i].body, ballTouches_[i].normal.x, ballTouches_[i].normal.y,
+                         ballTouches_[i].surfaceVelocity.x, ballTouches_[i].surfaceVelocity.y, ballTouches_[i].pressed);
+    }
     settleBallFriction();
     if (gtcAudit) std::fprintf(stderr, "B afterFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
     // And the contact constraint once more, because the grip is the last thing that
@@ -829,6 +836,7 @@ void PlaygroundRoom::tickBall() {
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
     // speed last, the surfaces have the last word after it.
     settleBallSurfaces();
+    if (gtcAudit) std::fprintf(stderr, "B afterSettle2 pos(%+.5f,%+.5f) v(%+.5f,%+.5f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen

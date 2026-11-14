@@ -5,6 +5,7 @@
 #undef private
 #include <cmath>
 #include <cstdio>
+namespace gtc::native { extern int gtcAudit; }
 namespace {
 constexpr double kDt = 1.0 / 20.0;
 void placeTriangle(PlaygroundRoom& r, Vec3 foot) {
@@ -34,7 +35,11 @@ int main(int argc, char** argv) {
     r.ball_.previous = r.ball_.position;
     r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
     for (int k = 0; k < ticks; ++k) {
+        auto& gtcAudit = gtc::native::gtcAudit;
+        gtcAudit = (k >= 3 && k <= 5) ? 1 : 0;
+        if (gtcAudit) std::fprintf(stderr, "===== tick %d\n", k);
         r.advance(kDt);
+        gtcAudit = 0;
         Vec3 way{}, at{};
         const double g0 = r.bodyBallGap(0, way, at);
         const double g1 = r.bodyBallGap(1, way, at);

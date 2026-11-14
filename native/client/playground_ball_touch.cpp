@@ -16,6 +16,7 @@
 #include <cmath>
 
 namespace gtc::native {
+extern int gtcAudit;
 namespace {
 
 // The ball's two coefficients are the room's: they are in playground_ball_shape.h
@@ -296,6 +297,7 @@ void PlaygroundRoom::settleBallFriction() {
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     static int guardCount = 0;
     if (still && energyAfter > energyBefore) ++guardCount;
+    if (gtcAudit) std::fprintf(stderr, "B  friction: still%d energyBefore %.6f energyAfter %.6f guard%d v(%+.5f,%+.5f) w%+.3f (before (%+.5f,%+.5f) w%+.3f)\n", int(still), energyBefore, energyAfter, int(still && energyAfter > energyBefore), ball.velocity.x, ball.velocity.y, ball.spin, velocityBefore.x, velocityBefore.y, spinBefore);
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;
