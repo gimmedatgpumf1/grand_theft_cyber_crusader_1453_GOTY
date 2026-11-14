@@ -13,6 +13,7 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <vector>
 
@@ -822,7 +823,9 @@ void PlaygroundRoom::separateBall() {
         // So `way`, which runs out of the ball and into the body, is the direction
         // the body leaves along, and pushBodyOutOfBall does the moving -- including
         // refusing when the body has nowhere to go, because it is on the floor.
-        if (pushBodyOutOfBall(index, way * -1.0, -gap)) continue;
+        const bool gave = pushBodyOutOfBall(index, way * -1.0, -gap);
+        std::fprintf(stderr, "SEP body %zu gap %+.5f way (%+.3f,%+.3f) gave %d\n", index, gap, way.x, way.y, int(gave));
+        if (gave) continue;
         // Nowhere to go: the ball gives the rest of it, and only what is left.
         if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;
         const Vec3 wanted = ball_.position - way * (-gap);
