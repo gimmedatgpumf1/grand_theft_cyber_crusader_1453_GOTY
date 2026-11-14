@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace gtc::native {
 
@@ -61,7 +62,8 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     Vec3 given = impulse;
     Vec3 floorAnswer{};
     Vec3 floorAt{};
-    if (!body.pivoted && body.touchingPlane && given.y < 0.0) {
+    static const bool noFloorAnswer = std::getenv("GTC_NOFLOOR") != nullptr;
+    if (!noFloorAnswer && !body.pivoted && body.touchingPlane && given.y < 0.0) {
         floorAnswer = Vec3{0.0, -given.y, 0.0};
         given.y = 0.0;
         // The place on its base under the push: the corner it stands on that is
