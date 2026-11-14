@@ -131,39 +131,11 @@ void PlaygroundRoom::tickBall() {
     // ball takes the whole of a tick's weight: 0.49 m/s downwards, twenty times a
     // second, every one of them answered by the floor after a walk of twelve
     // micrometres of sideways travel that no speed of the ball ever accounted for.
-    //
-    // And the floor is asked where the floor is, not where a contact list says.
-    //
-    // This used to be read out of ballTouches_ -- any face whose owner was not a
-    // shape -- and that list has not been filled in yet when this line runs: it is
-    // emptied at the top of the shapes' half of the tick, filled with the shapes'
-    // own patches, and the ground is not one of those. So a ball lying on the ground
-    // with a shape leaning on it counted as a ball with nothing under it, took the
-    // whole of a tick's weight, and had it taken back by the ground at the end of a
-    // walk of twelve micrometres that nothing in the room ever accounted for -- every
-    // tick, for as long as a shape was beside it. The ground is under the ball when
-    // the ball is on the ground; that is the same test the tick already opens with.
-    const bool onTheFloor = startedOnFloor;
-    // Held is about the surface, not about how fast the ball happens to be going.
-    //
-    // It used to be gated on the ball moving slower than the room can resolve, and
-    // that gate is a trap the tick closes on itself: the weight is put into the ball
-    // because it is not held, the contact leaves a residual of that weight in it, the
-    // residual is a hair above the resolution, and the hair is what keeps it from
-    // being held on the next tick. Measured in the King's corner: a ball on the floor
-    // with the triangle's slope leaning on it settled at 2.3e-5 m/s of travel into the
-    // corner and 2.3e-5 m/s for the next four hundred ticks, decaying by 2.6e-8 m/s a
-    // tick -- a walk of 5.4 mm across the scene, and it is a fixed point, not a decay,
-    // because the number it has to fall below is the number the same loop is holding
-    // it at.
-    //
-    // What makes a surface a support is whether the ball is travelling into it or away
-    // from it. A ball that is not leaving the floor has its weight carried by the
-    // floor, at every speed; a ball on its way up is not carried by anything, and it
-    // falls -- which is what the outgoing half of a bounce is, and it is the one thing
-    // this rule has to keep. A ball pressed sideways along the floor is not leaving it.
-    const bool leaving = ball.touching && dot(ball.velocity, ball.supportNormal) > 0.0;
-    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || !supportCanMove());
+    bool onTheFloor = false;
+    for (std::size_t i = 0; i < ballTouchCount_; ++i)
+        if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
+    const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed &&
+                      (onTheFloor || !supportCanMove());
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -181,15 +153,7 @@ void PlaygroundRoom::tickBall() {
         // given was thrown away, so the account had a weight in it with nothing
         // answering it. The account closes, and it closes where the answer is.
         ball.force = ball.force - weight;
-    }
-    // The air, on everything that moves through it -- held up or not.
-    //
-    // This was in the `else` of the branch above, so a ball the ground was carrying
-    // felt no air at all, and the check that fires a ball along the floor at 8 m/s and
-    // reads the force on it read nought newtons against a formula that asks for 0.83.
-    // Being held up is a fact about the vertical and about nothing else: a ball rolling
-    // across the room is still pushing air out of its way.
-    {
+    } else {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
             const double area = kPi * ball.radius * ball.radius;
@@ -895,34 +859,6 @@ void PlaygroundRoom::tickBall() {
     // to a hundredth of a micron, and that is what its grip was made of.
     if (ball.position.x == beganAt.x && ball.position.y == beganAt.y && ball.position.z == beganAt.z)
         ball.velocity = {};
-    // A ball the ground is carrying is never in flight, and the distance it covers in
-    // a tick is the speed it ends the tick with -- not the speed it was pushed to
-    // part-way through it.
-    //
-    // This is the same rule the shapes follow: a body that is in contact travels as
-    // the solver left it, and a body in free flight follows a parabola. The ball was
-    // the one thing exempt, and it is the difference that would not die. A ball lying
-    // on the floor with the triangle's slope leaning on it is pushed a third of a
-    // millimetre a second along the floor by that slope during the shapes' half of
-    // the tick, the grip takes all of it back at the end of the ball's half, and the
-    // walk in between was already made -- so the ball crossed 12 um of floor, was
-    // stopped by a friction that no displacement showed, and did it again next tick.
-    // Measured over 400 ticks of the King's corner: 5.4 mm of travel across the scene
-    // by a ball whose speed at the end of every tick was three hundredths of a
-    // micrometre a tick. A ball in contact does not fly, so its travel is its answer.
-    //
-    // And it may only ever shorten the walk, never lengthen it and never turn it
-    // round. A ball that met something had its place decided by the meeting -- the
-    // wall stopped it, and a ball bouncing off a wall ends the tick with a speed
-    // pointing the other way, so "where it would have got to at its final speed" is
-    // behind where it really is. Taking that as the answer put the ball back through
-    // the wall it had just bounced off: the check that fires one at a side read a
-    // restitution of 0.0000 against the floor's 0.8120.
-    if (held) {
-        const Vec3 shorter = beganAt + ball.velocity * kTick;
-        const Vec3 correction = shorter - ball.position;
-        if (dot(correction, walkStart) <= 0.0) ball.position = shorter;
-    }
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
