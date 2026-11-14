@@ -531,6 +531,17 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                              int(met), int(meeting.ends), meeting.depth[0], meeting.depth[1], meeting.at[0].x,
                              meeting.at[0].y, meeting.normal.x, meeting.normal.y, body.velocity.x, body.velocity.y,
                              solid.velocity.x, solid.velocity.y, band);
+                if (meeting.depth[0] < -0.1 && pairPrints < 100000) {
+                    std::fprintf(stderr, "    TRI");
+                    for (std::size_t q = 0; q < body.count; ++q)
+                        std::fprintf(stderr, " (%.4f,%.4f)", body.position[q].x, body.position[q].y);
+                    std::fprintf(stderr, "\n    PLK");
+                    for (std::size_t q = 0; q < solid.count; ++q)
+                        std::fprintf(stderr, " (%.4f,%.4f)", solid.position[q].x, solid.position[q].y);
+                    std::fprintf(stderr, "  local0 (%.4f,%.4f) c (%.4f,%.4f) ang %.4f piv (%.4f,%.4f)\n",
+                                 solid.local[0].x, solid.local[0].y, solid.centre.x, solid.centre.y, solid.angle,
+                                 solid.pivotPoint.x, solid.pivotPoint.y);
+                }
             }
             if (!met)
                 continue;
