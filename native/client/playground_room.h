@@ -372,6 +372,17 @@ private:
     // impulse after impulse for a speed the shape never takes, and the shape next to
     // it is handed all of it. That is the shape-against-shape pump.
     static Vec3 bodyFree(const Body& body, Vec3 push);
+    // The same number for a body that is standing on the floor and is being pushed
+    // into it: what it gives is the part of a push that runs along the floor, plus
+    // the turn about its centre, which the floor cannot take.
+    static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
+        const Vec3 arm = at - body.centre;
+        const double lever = arm.x * direction.y - arm.y * direction.x;
+        const double step = (onFloor && direction.y > 0.0)
+                                ? (1.0 - direction.y * direction.y) * inverseMass(body)
+                                : inverseMass(body);
+        return step + lever * lever / body.moment;
+    }
 
     void tick();
     // One tick of every body at once. The forces are applied first, then the tick
