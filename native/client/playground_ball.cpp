@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
