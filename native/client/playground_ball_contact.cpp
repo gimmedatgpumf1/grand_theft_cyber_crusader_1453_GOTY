@@ -277,8 +277,12 @@ void PlaygroundRoom::settleBallSurfaces() {
 // question about the whole stack and settleBallFriction() works it out from what is
 // standing on the ball.
 void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
-    if (body >= kBodyCount || ballTouchCount_ >= kMaxBallTouches) return;
-    const Vec3 surfaceVelocity = pointSpeed(bodies_[body], at);
+    if (ballTouchCount_ >= kMaxBallTouches) return;
+    // kBodyCount is the floor, which is a face of the ball in exactly the same sense
+    // every shape is: it holds the ball up, and what it holds up is what the grip and
+    // the rolling couple are measured against. It has no body to ask for a speed, and
+    // it needs none -- it never moves.
+    const Vec3 surfaceVelocity = body < kBodyCount ? pointSpeed(bodies_[body], at) : Vec3{};
     // One face, one contact: the same meeting can be reported by the walk and by the
     // patch, and it is one surface. Two copies of it would each carry half the real
     // load, and the grip would be half what it should be.

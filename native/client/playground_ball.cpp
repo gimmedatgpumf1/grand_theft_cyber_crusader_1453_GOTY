@@ -814,6 +814,25 @@ void PlaygroundRoom::tickBall() {
     // m/s, the ball's turn decays to exactly 0.0000 rad/s, and the room is unchanged
     // after 1400 ticks (70 s). Nothing was added to damp it -- the same air, the same
     // friction, the same Crr; they were simply given the speed to act on.
+    // The floor is a face of the ball like any other, and it has to be in the solve.
+    //
+    // A ball rolling along the ground touches it at every instant, and the ground is
+    // what it rolls on. It was never recorded: noteBallTouch() takes a body, the floor
+    // is not one, and so the one face every ball in this room stands on was missing
+    // from the grip -- the ball had no friction with the floor at all, and the rolling
+    // couple (M = Crr * N * r, the only thing that ends a roll) had no normal load to
+    // be measured against, so it was never applied either. The result is what physics
+    // says it is: a ball rolling on a surface it cannot rub against rolls for ever.
+    // Measured in the King's corner, a ball 2.3 mm a minute across the floor 120 s
+    // after everything in the room had stopped, with nothing on the screen moving.
+    //
+    // The load is not written here either -- settleBallFriction() works out what the
+    // floor carries from what stands on the ball -- and the speed is nothing, because
+    // the ground does not move. It is recorded when the tick ends, so it is the face
+    // the tick ended against: a ball that has just bounced off the floor is above it
+    // and has no such face.
+    if (ball.position.y <= ball.radius + kTouch)
+        noteBallTouch(kBodyCount, Vec3{0.0, 1.0, 0.0}, ball.position - Vec3{0.0, ball.radius, 0.0});
     settleBallFriction();
     // And the shapes have the last word on themselves, again: the grip is a pair, and
     // the half of it that landed on a shape has just given that shape a speed its own
