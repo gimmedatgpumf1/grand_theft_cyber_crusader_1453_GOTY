@@ -526,8 +526,11 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             static int pairPrints = 0;
             if (one == 1 && two == 2 && pairPrints < 100000) {
                 ++pairPrints;
-                std::fprintf(stderr, "  PAIR (1,2) met %d ends %d overlap %.3e band %.4f bodiesFrozen %d%d\n",
-                             int(met), int(meeting.ends), meeting.overlap, band, int(body.frozen), int(solid.frozen));
+                std::fprintf(stderr,
+                             "  PAIR (1,2) met %d ends %d dep (%.3e,%.3e) at (%.3f,%.3f) n (%.3f,%.3f) | v1 (%.3f,%.3f) v2 (%.3f,%.3f) band %.4f\n",
+                             int(met), int(meeting.ends), meeting.depth[0], meeting.depth[1], meeting.at[0].x,
+                             meeting.at[0].y, meeting.normal.x, meeting.normal.y, body.velocity.x, body.velocity.y,
+                             solid.velocity.x, solid.velocity.y, band);
             }
             if (!met)
                 continue;
