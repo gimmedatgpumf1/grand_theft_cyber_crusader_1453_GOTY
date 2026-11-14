@@ -11,6 +11,7 @@
 #include "client/playground_ball_shape.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 
 namespace gtc::native {
@@ -42,6 +43,9 @@ void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kep
     body.velocity = wasSpeed * kept;
     body.spin = wasSpin * kept;
     const Vec3 taken = (wasSpeed - body.velocity) * body.mass;
+    if (length(taken) > 1.0)
+        std::fprintf(stderr, "  ABSORB body %zu kept %.4f  lost (%+.3f,%+.3f) N-s  = (%+.1f,%+.1f) N over a tick\n",
+                     index, kept, taken.x, taken.y, taken.x * 20.0, taken.y * 20.0);
     if (length(taken) > 1e-12) recordImpulse(body.centre, taken, ForceKind::Contact, index);
     const double takenMoment = body.moment * (wasSpin - body.spin) / kTick;
     if (std::abs(takenMoment) > 1e-9)

@@ -81,7 +81,74 @@ int main(int argc, char** argv) {
         c.previousCentre = c.centre;
         c.previousAngle = c.angle;
     }
+    if (mode == 2) {
+        // The plank held by the mouse near the angle in the King's picture, with the
+        // cube standing on it.
+        auto& s = r.bodies_[PlaygroundRoom::kSeesaw];
+        auto& c = r.bodies_[0];
+        r.dragTarget_ = PlaygroundRoom::DragTarget::Body;
+        r.dragBody_ = PlaygroundRoom::kSeesaw;
+        s.frozen = false;
+        s.angle = -0.60;
+        PlaygroundRoom::placeCorners(s);
+        s.previous = s.position;
+        s.previousCentre = s.centre;
+        s.previousAngle = s.angle;
+        s.spin = 0.0;
+        c.frozen = false;
+        c.angle = s.angle;
+        c.velocity = {};
+        c.spin = 0.0;
+        const double c1 = std::cos(s.angle), s1 = std::sin(s.angle);
+        c.centre = {s.centre.x + c1 * 0.55 - s1 * 0.47, s.centre.y + s1 * 0.55 + c1 * 0.47, 0.0};
+        PlaygroundRoom::placeCorners(c);
+        c.previous = c.position;
+        c.previousCentre = c.centre;
+        c.previousAngle = c.angle;
+    }
+    if (mode == 3 || mode == 4) {
+        // The plank's end lying on the triangle -- what the King's picture shows. The
+        // triangle is put where the plank's swinging end reaches it, and the cube rides
+        // the other side. Nothing is held: the room is left to itself and settles.
+        auto& s = r.bodies_[PlaygroundRoom::kSeesaw];
+        auto& c = r.bodies_[0];
+        auto& t = r.bodies_[1];
+        s.frozen = false;
+        s.angle = -0.55;
+        s.spin = 0.0;
+        PlaygroundRoom::placeCorners(s);
+        s.previous = s.position;
+        s.previousCentre = s.centre;
+        s.previousAngle = s.angle;
+        // The triangle, standing on its own base, moved left until the plank's end is
+        // resting on its top corner.
+        t.frozen = false;
+        t.centre = {mode == 3 ? -3.30 : -3.55, t.centre.y, 0.0};
+        t.angle = 0.0;
+        t.velocity = {};
+        t.spin = 0.0;
+        PlaygroundRoom::placeCorners(t);
+        t.previous = t.position;
+        t.previousCentre = t.centre;
+        t.previousAngle = t.angle;
+        if (mode == 4) {
+            c.frozen = false;
+            c.angle = s.angle;
+            c.velocity = {};
+            c.spin = 0.0;
+            const double c1 = std::cos(s.angle), s1 = std::sin(s.angle);
+            c.centre = {s.centre.x + c1 * 0.55 - s1 * 0.47, s.centre.y + s1 * 0.55 + c1 * 0.47, 0.0};
+            PlaygroundRoom::placeCorners(c);
+            c.previous = c.position;
+            c.previousCentre = c.centre;
+            c.previousAngle = c.angle;
+        } else {
+            c.frozen = true;
+            c.centre = {5.0, 3.0, 0.0};
+            PlaygroundRoom::placeCorners(c);
+        }
+    }
     for (int k = 0; k < 240; ++k) r.advance(dt);
-    dump(r, "after settling");
+    dump(r, mode == 2 ? "plank held, cube on it" : "after settling");
     return 0;
 }
