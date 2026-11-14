@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -25,6 +26,9 @@ void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::s
         RecordedImpulse& entry = impulses_[i];
         if (entry.kind != kind || entry.on != on) continue;
         if (length(entry.at - at) > 1e-6) continue;
+        if (kind == ForceKind::Friction)
+            std::fprintf(stderr, "MERGE friction at (%.4f,%.4f): (%.2f,%.2f) + (%.2f,%.2f)\n", at.x, at.y,
+                         entry.impulse.x, entry.impulse.y, impulse.x, impulse.y);
         entry.impulse = entry.impulse + impulse;
         return;
     }
