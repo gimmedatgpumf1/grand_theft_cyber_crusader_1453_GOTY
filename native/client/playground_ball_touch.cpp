@@ -25,6 +25,11 @@ using ball_shape::kBallStaticFriction;
 // are settled in a handful; a corner of three is a little slower, and past this
 // what is left is smaller than the arithmetic can tell from nothing.
 constexpr int kBallFrictionPasses = 40;
+// How many times the rolling couple and the grip may be asked to agree. It is a
+// guard and not a rule: the loop stops the first time neither of them moves the ball,
+// which is a round or two once the two laws have settled. Eight is there so that a
+// state that never settles cannot hold the tick.
+constexpr int kRollGripRounds = 8;
 
 }  // namespace
 
@@ -189,25 +194,69 @@ void PlaygroundRoom::settleBallFriction() {
     // travel to Crr * N * dt as this room used to -- was not rolling resistance at
     // all: it was a brake, it never touched the spin, and it was invisible in the
     // ledger because it happened to a velocity instead of to the ball.
-    if (normalForce > 0.0 && ball.spin != 0.0) {
-        const double couple = ball_shape::kBallRollingResistance * normalForce * ball.radius;  // N.m
-        const double take = couple * ball_shape::kTick / inertia;                              // rad/s, this tick
+    // The couple and the grip happen at the same time, so they are solved together.
+    //
+    // They are two laws about the same contact -- the ground holds the bottom of the
+    // ball still (grip), and the ground's own squash sits a little ahead of the bottom
+    // (the Crr couple) -- and each of them changes what the other one has to answer.
+    // Applied once each, in either order, the tick finishes on whichever ran first:
+    // the couple takes the roll of the ball as it *arrived*, and the grip then makes a
+    // fresh roll out of the slide that is left. Measured in the King's corner, on a
+    // ball 0.02 um from the triangle's face with nothing in the room moving:
+    //
+    //   the shapes' half hands the ball   v -4.58e-04, spin +8.95e-03   (a slide)
+    //   the couple runs                    v -4.58e-04, spin  0.00e+00
+    //   the grip runs                      v -3.83e-05, spin +3.19e-04   (a roll, v = -wr)
+    //
+    // The grip is right: friction cannot stop a roll, it can only stop a slide, and
+    // what was left of the slide IS the roll of a ball that is being pushed. What
+    // never happened is the second round: the couple that can take 0.36 rad/s in a
+    // tick -- three hundred times the roll that was left -- was spent before there
+    // was any roll for it to take. So the ball rolled 1.9 um a tick, 2.3 mm a minute,
+    // across a floor with nothing on the screen touching it.
+    //
+    // Both laws are dissipative and neither can hand back what the other took, so
+    // solving them in rounds converges, and it converges to the state the room would
+    // be in if a tick were what it is: a hundredth of a second of both happening.
+    //
+    // Rolling resistance is a *bounded* couple, in exactly the sense friction is a
+    // bounded force, and that is the whole difference between a roll that ends and a
+    // roll that crawls for ever. The ground can hold the ball's turn against anything
+    // up to M = Crr * N * r. If the couple a tick of turn costs -- I * w / dt -- is
+    // inside that, the ground holds the ball still: the turn is not reduced, it is
+    // *ended*, and friction is then left with nothing to answer but a slide. If it is
+    // outside, the couple is spent at its limit and the ball decelerates at Crr * g,
+    // which is the same number for a roll at walking pace and for a roll across the
+    // room.
+    //
+    // Without the bound, a couple that is a *resistance* was being modelled as a
+    // *removal*: the spin was taken off and then, because friction can only ever see
+    // the slide left behind, the ball was given a fresh roll out of it every round --
+    // each round handing back a 1/1.4 share of what the last one took, converging on
+    // nothing only after eight rounds and never reaching it. Measured: 1.9 um a tick
+    // before, 1.38 um after eight rounds of that, with the answer still on its way.
+    Vec3 drawWay = ball.velocity;
+    if (!(length(drawWay) > 1e-9)) drawWay = Vec3{-ball.spin, 0.0, 0.0};
+    const double coupleLimit = ball_shape::kBallRollingResistance * normalForce * ball.radius;  // N.m
+    // What a tick of the turn the ball arrived with costs, in N.m of couple.
+    bool spinHeld = normalForce > 0.0 && std::abs(ball.spin) * inertia / ball_shape::kTick <= coupleLimit;
+    double heldMoment = 0.0;  // N.m.s of turn the ground has held against, this tick
+    double resisted = 0.0;    // rad/s of turn the ground's couple took over the whole tick
+    const auto resistRoll = [&]() {
+        if (!(normalForce > 0.0) || ball.spin == 0.0) return;
+        if (spinHeld) {
+            // The ground has the couple to end this turn, so it does: held, not
+            // shaved. It costs the same couple either way, and taking it whole is what
+            // makes the tick end rolled-out instead of mid-roll.
+            resisted += ball.spin;
+            ball.spin = 0.0;
+            return;
+        }
+        const double take = coupleLimit * ball_shape::kTick / inertia;  // rad/s, this tick
         const double turn = std::copysign(std::min(std::abs(ball.spin), take), ball.spin);
         ball.spin -= turn;
-        // Drawn as the force that couple is worth at the rolling radius, against the
-        // way the ball is going, at the place it meets the ground. A couple has no
-        // place of its own to be drawn at; this is the honest way to put one on a
-        // picture, and the ledger knows it is a couple.
-        const Vec3 at = ball.position + Vec3{0.0, -ball.radius, 0.0};
-        // The way it is going: its own travel, or -- for a ball spinning on the
-        // spot, where the travel is nothing -- the way that turn would carry it.
-        Vec3 way = ball.velocity;
-        if (!(length(way) > 1e-9)) way = Vec3{-ball.spin, 0.0, 0.0};
-        if (length(way) > 1e-9) {
-            const Vec3 against = way * (-1.0 / length(way));
-            addCouple(at, couple, against * (couple / ball.radius), ForceKind::Rolling, kBallOwner);
-        }
-    }
+        resisted += turn;
+    };
     const double energyBefore = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     // Until the faces agree, and no further than the tick's own budget.
     //
@@ -257,6 +306,12 @@ void PlaygroundRoom::settleBallFriction() {
                      (arm.x * takes.y - arm.y * takes.x) * lever / mate.moment;
     }
     std::array<double, kMaxBallTouches> lambda{};
+    // Rounds, and only as many as it takes: a round is over when neither law has
+    // anything left to say about the state the other one left.
+    for (int round = 0; round < kRollGripRounds; ++round) {
+    const Vec3 roundVelocity = ball.velocity;
+    const double roundSpin = ball.spin;
+    resistRoll();
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
         for (std::size_t i = 0; i < ballTouchCount_; ++i) {
@@ -264,7 +319,12 @@ void PlaygroundRoom::settleBallFriction() {
             worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
             const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
-            const double effective = 1.0 / ball.mass + lever * lever / inertia + partner[i];
+            // A ball whose turn the ground is holding answers a friction impulse with
+            // its *travel* alone: the friction still tries to spin it, and the ground
+            // takes that attempt as the couple it is holding with. Read as a free
+            // sphere the solver believes the ball yields to a turn it cannot yield to,
+            // takes less slide than there is, and leaves the rest in the ball.
+            const double effective = 1.0 / ball.mass + (spinHeld ? 0.0 : lever * lever / inertia) + partner[i];
             const double load = ballTouches_[i].pressed;
             // Static friction takes the slip away and the ball rolls from there; if
             // the whole of what it would take is more than the face can hold, it
@@ -288,7 +348,20 @@ void PlaygroundRoom::settleBallFriction() {
             if (impulse * slip > 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
-            ball.spin += lever * impulse / inertia;
+            if (spinHeld) {
+                heldMoment += lever * impulse;
+                // The couple has a limit like everything else. Too much asked of it
+                // and it lets go, and every newton metre second the ball has been
+                // holding back is the ball's turn after all -- given to it, not
+                // thrown away.
+                if (std::abs(heldMoment) > coupleLimit * ball_shape::kTick) {
+                    ball.spin += heldMoment / inertia;
+                    heldMoment = 0.0;
+                    spinHeld = false;
+                }
+            } else {
+                ball.spin += lever * impulse / inertia;
+            }
             taken[i] += impulse;
             // And the other side of it. Friction is a pair like every other force
             // in the room: the ball is not gripped by a surface, it is gripped by
@@ -328,6 +401,13 @@ void PlaygroundRoom::settleBallFriction() {
         // answer a number that is not there.
         if (worst <= playground_tick::kQuantumSpeed) break;
     }
+    // Neither law moved the ball this round: the two of them agree, and a further
+    // round would be asked the same question and give the same answer. The test is
+    // the room's own resolution -- a slide below a micrometre a tick and a rim that
+    // moves less than that are not motion -- and not a round count.
+    const double moved = length(ball.velocity - roundVelocity) + std::abs(ball.spin - roundSpin) * ball.radius;
+    if (moved <= playground_tick::kQuantum) break;
+    }
     // A surface that is not moving gives nothing: a ball can never come out of a
     // friction solve against still faces with more energy than it took in. A moving
     // surface is another matter -- it is doing work, which is what being hit by a
@@ -341,6 +421,21 @@ void PlaygroundRoom::settleBallFriction() {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;
         taken.fill(0.0);
+        resisted = 0.0;
+        heldMoment = 0.0;
+    }
+    // The couple, drawn once for the whole tick and in total: it was applied in rounds
+    // but it is one force, and a picture that showed it eight times would be showing a
+    // room that pushed eight times as hard as it did. Drawn as the force that couple is
+    // worth at the rolling radius, against the way the ball is going, at the place it
+    // meets the ground; a couple has no place of its own to be drawn at, and the ledger
+    // knows it is a couple.
+    const double coupleMoment = inertia * resisted + heldMoment;  // N.m.s of angular impulse
+    if (coupleMoment != 0.0 && length(drawWay) > 1e-9) {
+        const double coupleTotal = std::abs(coupleMoment) / ball_shape::kTick;  // N.m
+        const Vec3 against = drawWay * (-1.0 / length(drawWay));
+        addCouple(ball.position + Vec3{0.0, -ball.radius, 0.0}, coupleTotal,
+                  against * (coupleTotal / ball.radius), ForceKind::Rolling, kBallOwner);
     }
     // Grip, written down: a force along the face at the place the ball meets it.
     // Without this a ball rolling along the floor was drawn with a normal and
