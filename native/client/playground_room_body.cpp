@@ -521,8 +521,15 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             if (two < one && !bodies_[two].frozen) continue;
             const Body& solid = bodies_[two];
             pair_shape::PairManifold meeting;
-            if (!pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
-                                     band, meeting))
+            const bool met = pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
+                                     band, meeting);
+            static int pairPrints = 0;
+            if (one == 1 && two == 2 && pairPrints < 40) {
+                ++pairPrints;
+                std::fprintf(stderr, "  PAIR (1,2) met %d ends %d overlap %.3e band %.4f bodiesFrozen %d%d\n",
+                             int(met), int(meeting.ends), meeting.overlap, band, int(body.frozen), int(solid.frozen));
+            }
+            if (!met)
                 continue;
             Manifold patch;
             patch.body = one;
