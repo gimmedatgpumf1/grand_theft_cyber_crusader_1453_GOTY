@@ -55,16 +55,27 @@ inline constexpr double kContactTolerance = 1e-9;  // metres
 // contacts at once; this is a guard against a numerical corner case, not a tuning.
 inline constexpr int kContactPasses = 32;
 // How far apart the two ends of one face may stand above a surface and still be the
-// same contact rather than a shape coming down on a corner. A millimetre on a shape
-// seven hundred of them across is a seventh of a degree: the noise a resting pair
-// sits in, and not a shape landing. Anything more is a corner.
+// same contact rather than a shape coming down on a corner -- "lying" rather than
+// "landing", to the solver below.
 //
-// It is also the thickness within which a corner counts as being *at* a surface for
-// the purpose of gathering a patch, which is why it is here and not in the solver:
-// a face lying on the floor has one end a ten-thousandth of a millimetre above it,
-// and that end belongs to the contact -- the face is one contact, and answering it
-// at one corner makes it rock from corner to corner for ever.
-inline constexpr double kFaceFlat = 1e-3;  // metres
+// A face that is lying is answered as one, and that is a deliberate refusal of a
+// degree of freedom: one clearance for a whole face cannot ask it to turn, while two
+// ends closing two different distances can only be obeyed by turning, and a body
+// turning under a resting contact has a speed along the surface that the grip then
+// has to answer. So the question is not whether to have this band but how wide it may
+// be, and a band is a claim that the shape is flat to within it.
+//
+// It used to be a millimetre. A millimetre on a shape seven hundred of them across is
+// a seventh of a degree, and a claim of flatness that wide is a lie the room kept:
+// measured, a square that landed on a corner and toppled onto its face came to rest
+// 0.232 mm up at one corner -- 0.02 degrees off level, held still by 19.59 N of floor
+// reaction at a point in the air -- and every face on it was then that far off true,
+// which is why the air drag on a shape moving straight up came back 1e-7 short of the
+// formula and a ball off its side came back at 0.75 of its bounciness against the
+// floor's 0.81. With the band at ten micrometres the shape falls that last fifth of a
+// millimetre instead of being held above it, and it is flat to 1.4e-5 of a radian when
+// it stops -- which is flat, at the resolution the room works in.
+inline constexpr double kFaceFlat = 1e-5;  // metres
 
 // What a force does to a speed over one tick, and the only place in the room that
 // does it: a = F/m, and the speed gains a*dt.
