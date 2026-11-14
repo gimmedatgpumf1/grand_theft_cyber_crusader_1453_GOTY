@@ -548,7 +548,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
+                const double before0 = away(patch.point[0], patch.normal);
                 pushEnd(k, patch.normal * delta[i], patch.kind);
+                if (loudPair && other != nullptr) {
+                    const double after0 = away(patch.point[0], patch.normal);
+                    std::printf("M k%zu delta%+.4f model%+.4f actual%+.4f\n", k, delta[i], -g[0][i] * delta[i],
+                                after0 - before0);
+                }
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
