@@ -188,7 +188,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // the floor answers, and every one of those steps is in the ledger. Between
         // them they add up to the ball's speed not changing, which is what a ball
         // pressed into the ground does -- and not one newton of it came from nowhere.
-        const bool ballFixed = patch.ball && (ball_.frozen || (ball_.touching && ball_.standing));
+        const bool ballFixed = patch.ball && ball_.frozen;
         const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };

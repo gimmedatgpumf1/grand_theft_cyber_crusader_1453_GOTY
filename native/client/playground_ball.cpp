@@ -136,6 +136,9 @@ void PlaygroundRoom::tickBall() {
         if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
     const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed &&
                       (onTheFloor || !supportCanMove());
+    if (getenv("KV")) std::printf("    [held] touching %d standing %d v %.3e rest %.3e onFloor %d canMove %d held %d touches %zu\n",
+                                  ball.touching ? 1 : 0, ball.standing ? 1 : 0, length(ball.velocity), kRestSpeed,
+                                  onTheFloor ? 1 : 0, supportCanMove() ? 1 : 0, held ? 1 : 0, ballTouchCount_);
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
