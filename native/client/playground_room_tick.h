@@ -33,9 +33,15 @@ inline constexpr double kSurfaceY = 0.0;  // the plane, y = 0
 // moved. Every argument this room has ever had with itself has come from the last
 // few significant figures of a double, and they are all below this line.
 inline constexpr double kQuantum = 1e-6;  // metres
+// How near a surface counts as resting on it. Two surfaces are touching when they are
+// nearer than the room can resolve -- a micrometre -- and the band a contact is
+// gathered with is the same number, because it is the same question: a face a
+// hundredth of a millimetre off the floor is not touching the floor, and answering it
+// as a contact is answering something that is not there.
 // And the slowest motion that exists: the speed that covers a quantum in a tick.
 // Anything slower does not move this tick, so its speed is nothing.
 inline constexpr double kQuantumSpeed = kQuantum / kTick;  // m/s
+inline constexpr double kContactBand = kQuantum;  // metres
 inline constexpr int kMaxDistancePasses = 256;
 inline constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is

@@ -800,6 +800,18 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
 }
 
 void PlaygroundRoom::separateBall() {
+    // The floor first, before anything is measured against anything.
+    //
+    // A ball that is under the ground is not a state this room ever resolves, and the
+    // line at the end of this function already says so -- but saying it there is
+    // saying it after the separation has run, and the separation is what needs it.
+    // Measured on a cube tumbling into a ball lying on the floor: the ball was pushed
+    // 21 mm under the floor during the tick, the shape was then moved 17.9 mm out of
+    // it, and the floor put the ball back up afterwards -- on top of the corner that
+    // had just been moved *around* it, leaving the pair 6.8 mm inside each other with
+    // nothing left in the tick to notice. Put where it is now, the separation is
+    // measured against the ball's real place and the overlap never survives the tick.
+    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
@@ -827,11 +839,48 @@ void PlaygroundRoom::separateBall() {
         // Nowhere to go: the ball gives the rest of it, and only what is left.
         if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;
         const Vec3 wanted = ball_.position - way * (-gap);
-        if (wanted.y < ball_.radius - kSkin) continue;
-        // Counted, because this is the room moving the ball by hand: the shape had
-        // nowhere to go and the ball was the only thing left that could.
-        ++ballFoundThrough_;
-        ball_.position = wanted;
+        if (wanted.y >= ball_.radius - kSkin) {
+            // Counted, because this is the room moving the ball by hand: the shape
+            // had nowhere to go and the ball was the only thing left that could.
+            ++ballFoundThrough_;
+            ball_.position = wanted;
+            continue;
+        }
+        // The way out goes down, and there is no down. A ball found inside a shape
+        // whose nearest way out runs under the floor is a ball pinched between that
+        // shape and the ground, and what is left of the way out is the way along it:
+        // the ball rolls out from under the shape, which is what a real ball does and
+        // what ballContact()'s own recovery already does. Without it the ball simply
+        // stayed where it was -- measured on a cube tumbling into a ball lying on the
+        // floor: the pair ended the tick 6.8 mm inside each other and neither of them
+        // was ever put right, because the shape had nowhere to go either.
+        //
+        // It is a hand's width at most and it is the last resort the room has: the
+        // prevention comes first, in the sweep that refuses the turn that made the
+        // overlap. What this may never do is leave the ball inside.
+        const double side = way.x > 0.0 ? -1.0 : 1.0;
+        // Is the ball clear of this shape at that place? The ball's own outline, read
+        // at a place it is not standing yet: the same measurement bodyBallGap() makes,
+        // asked about a candidate way out rather than about where the ball is.
+        const auto clearAt = [&](double x) {
+            const Vec3 here{ball_.position.x + x, ball_.position.y, ball_.position.z};
+            const OutlineGap out = ball_shape::outlineGap(here, body.position.data(), body.position.data(), body.count, 1.0);
+            return out.gap >= ball_.radius - kSkin;
+        };
+        double low = 0.0, high = 0.0;
+        for (double reach = 0.0005; reach <= 0.4; reach *= 1.5) {
+            if (clearAt(side * reach)) { high = side * reach; break; }
+            low = side * reach;
+        }
+        if (high != 0.0) {
+            for (int step = 0; step < 24; ++step) {
+                const double middle = 0.5 * (low + high);
+                if (clearAt(middle)) high = middle; else low = middle;
+            }
+            ball_.position.x += high;
+            // Counted, because this is the room moving the ball by hand.
+            ++ballFoundThrough_;
+        }
     }
     // And the floor, for the ball as well, after everything else -- the same rule in
     // the same place as the shapes above. The ball's own contact is what rests it on
