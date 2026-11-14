@@ -29,28 +29,38 @@ int main() {
         for (int k = 0; k < 60; ++k) {
             const Vec3 before = c.velocity;
             r.advance(kDt);
-            if (c.velocity.x < 0.02) continue;   // only while it is really sliding
-            double friction = 0.0, load = 0.0;
+            double friction = 0.0, load = 0.0, slip = 0.0;
             int ends = 0;
             for (std::size_t f = 0; f < r.forceCount_; ++f) {
                 const auto& s = r.forces_[f];
                 if (s.owner != std::size_t(trial % 2) || s.couple) continue;
-                if (s.kind == PlaygroundRoom::ForceKind::Friction && s.at.y < 1e-3) {
+                // Only the floor's own friction: horizontal, acting at the floor. A
+                // slope's friction acts at the floor line too when the shapes meet
+                // there, and it is not the floor's.
+                if (s.kind == PlaygroundRoom::ForceKind::Friction && s.at.y < 1e-3 &&
+                    std::abs(s.force.y) < 1e-6) {
                     friction += s.force.x;
+                    // The slip *at the place the friction acts*, which is what a
+                    // traction opposes: a body turning as it slides has one end going
+                    // each way, and the floor holds each end against its own slip.
+                    const double arm = s.at.y - c.centre.y;
+                    slip += c.velocity.x - c.spin * arm;
                     ++ends;
                 }
                 if (s.kind == PlaygroundRoom::ForceKind::Contact && s.at.y < 1e-3) load += s.force.y;
             }
             if (ends == 0 || load <= 0.0) continue;
+            if (std::abs(slip) < 0.02) continue;   // only while it is really slipping
             ++counted;
-            // Sliding +x: the friction has to be against it, and no more than mu*N.
-            if (friction > 0.0) {
+            // The friction has to be against the slip, and no more than mu*N.
+            if (friction * slip > 0.0 && std::abs(friction) > 0.01) {
                 ++wrong;
                 worstWrong = std::max(worstWrong, friction);
             }
         }
     }
     std::printf("a shape sliding along the floor, %d ticks with a real grip:\n", counted);
-    std::printf("  friction pushing it the way it was already going: %d ticks, worst %+.3f N\n", wrong, worstWrong);
+    std::printf("  friction pushing the surface the way it was already slipping: %d ticks, worst %+.3f N\n", wrong,
+                worstWrong);
     return 0;
 }
