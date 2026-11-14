@@ -733,6 +733,10 @@ void PlaygroundRoom::advance(double seconds) {
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         separateBall();
+        // And now the tick is over, having asked everything it is going to ask: this
+        // is where a shape is measured for stillness, so that nothing later in the
+        // same tick can hand it a push. See the note at the call this replaces.
+        settleBodies();
 
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.

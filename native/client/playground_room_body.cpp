@@ -654,7 +654,18 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
-    settleBodies();
+    // When a shape is called still is not asked here. The tick still has its ball
+    // half to run, and a body declared asleep now would be asleep for the rest of a
+    // tick that goes on to solve it: `answerSupportedShapes()` answers the shape's
+    // own patches again after the ball has touched them, and it was handing a body
+    // that had just been put to sleep the leftovers of a contact it was no longer
+    // part of -- impulses of 1e-32 N.s, which are nothing at all, but which woke it
+    // and started its second of stillness over, every second, for ever. Measured:
+    // a cube whose place and angle did not change in the twelfth decimal for three
+    // hundred ticks never once stayed asleep, and the room went on drawing it as a
+    // body in motion. Whether a body has been still is a question about the tick
+    // that has *finished*, so it is asked at the end of the tick, in advance(), by
+    // settleBodies(), after both halves and after separateBall() have had their say.
     // A place and a turn are resolved by `resolvedMove` and by the turn rule above: a
     // step shorter than the room can resolve does not happen, and the body arrives
     // where it started. What that leaves behind is a speed with nowhere to go -- and
