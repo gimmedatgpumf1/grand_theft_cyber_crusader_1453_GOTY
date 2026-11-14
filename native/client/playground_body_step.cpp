@@ -176,6 +176,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
 
     Vec3 stopping{0, 1, 0};
     double fastest = 0.0;
+    bool printed = false;
     const auto soonestMeeting = [&](double t) {
         poseAt(t);
         survey();
@@ -189,6 +190,12 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 // Already at the depth the step may not pass, and still going in: the
                 // step may not begin.
                 if (!(closing > 0.0)) continue;
+                if (self == 1 && std::abs(t) < 0.01 && !printed)
+                    std::fprintf(stderr,
+                                 "  STEPREF self %zu t %.6f row %zu/%zu startGap %.3e limit %.3e gap %.3e n (%.2f,%.2f) closing %.4f\n",
+                                 self, t, i, approaches.size(), startGap, limit, row.gap, row.normal.x, row.normal.y,
+                                 closing);
+                printed = true;
                 stopping = row.normal;
                 return 0.0;
             }
