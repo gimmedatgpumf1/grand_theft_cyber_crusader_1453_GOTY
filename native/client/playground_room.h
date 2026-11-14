@@ -371,6 +371,20 @@ private:
     // free hands the shape momentum the floor then quietly swallows: a ball dropped
     // on a cube resting on the floor lost a quarter of every bounce to a cube that
     // never moved at all.
+    // What of a push on a body actually becomes a step of that body. A shape that is
+    // standing on the floor cannot be driven into it: the floor is under it and the
+    // floor does not give, so the part of the push that runs downwards is the floor's
+    // to answer and is taken at the place it is given. This is the one rule for it --
+    // pushBody() applies it and every compliance in the room is measured from it, so
+    // that the solver's model of what a shape will do and what the shape then does are
+    // the same model. Two models is a contact that never closes: the solver lays on
+    // impulse after impulse for a speed the shape never takes, and the shape next to
+    // it is handed all of it. That is the shape-against-shape pump.
+    static Vec3 bodyFree(const Body& body, Vec3 push) {
+        if (body.pivoted) return Vec3{};
+        if (!body.touchingPlane || push.y >= 0.0) return push;
+        return Vec3{push.x, 0.0, push.z};
+    }
     static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;
@@ -768,6 +782,16 @@ private:
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
+    // Where every shape was when the ball's half of the tick began: its speed and its
+    // turn, as the tick's own solve of the shapes left them. A face the ball's grip is
+    // measured against is the face the ball met, and that is where it was standing when
+    // the ball arrived at it -- not where the ball's own blow had pushed it a moment
+    // later. Read live, the grip sees its own push coming back at it: the ball presses
+    // a face, the face moves, the grip reads the movement as the face running away and
+    // drags the ball after it, and a ball wedged in a corner keeps a speed that carries
+    // it nowhere for as long as it is left there.
+    std::array<Vec3, kBodyCount> ballTickSpeed_{};
+    std::array<double, kBodyCount> ballTickSpin_{};
     void settleBallFriction();
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
