@@ -539,6 +539,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     // contact, and a contact has a direction. Which way the body was going into the
     // thing that stopped it is the whole of what is left to answer.
     Vec3 stopping{0, 1, 0};
+    const bool dbgStep = self == 0;
     double fastest = 0.0;
     const auto soonestMeeting = [&](double t) {
         poseAt(t);
@@ -547,6 +548,11 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         for (const Approach& row : approaches) {
             const double need = row.gap - limit;
             if (!(need > 0.0)) {
+                if (self == 0 && dbgStep)
+                    std::fprintf(stderr, "      REFUSED at t=%.3f row gap %+9.6f limit %+9.6f need %+.3e closing %+7.3f "
+                                         "normal (%+.2f,%+.2f)\n",
+                                 t, row.gap, limit, need, -dot(row.closingSpeed, row.normal), row.normal.x,
+                                 row.normal.y);
                 stopping = row.normal;
                 return 0.0;
             }
