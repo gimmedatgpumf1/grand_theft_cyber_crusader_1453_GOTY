@@ -430,6 +430,7 @@ void PlaygroundRoom::tickBall() {
         const Vec3 travel = next - ball.position;
         double first = 2.0;
         double depth = 0.0;
+        std::fprintf(stderr, "  ITER pos %.5f v %+.4f remaining %.4f\n", ball.position.y, ball.velocity.y, remaining);
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, otherwise a body
