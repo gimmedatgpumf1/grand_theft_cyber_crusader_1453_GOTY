@@ -28,7 +28,7 @@ namespace gtc::native {
 void PlaygroundRoom::settleBallAgainstSupports() {
     using playground_detail::kRestSpeed;
     Ball& ball = ball_;
-    constexpr int kRounds = 4;
+    constexpr int kRounds = 32;
     for (int round = 0; round < kRounds; ++round) {
         const Vec3 wasSpeed = ball.velocity;
         if (std::getenv("KV")) std::printf("  [loop] round %d v(%+.7f,%+.7f) w%+.5f\n", round, ball.velocity.x, ball.velocity.y, ball.spin);
