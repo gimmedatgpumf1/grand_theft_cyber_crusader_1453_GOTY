@@ -665,7 +665,21 @@ void PlaygroundRoom::tickBall() {
         const double reached = (1.0 - remaining) + first * remaining;
         const bool exchange = what < 0 || !answered[std::size_t(what)];
         if (what >= 0 && std::size_t(what) < kBodyCount) answered[std::size_t(what)] = true;
-        if (what == -2) {
+        // "Nothing was met" and "the floor was met" are two different answers, and
+        // they used to be the same number. `what` starts at -1 for the first and the
+        // floor is -2, so a walk that found no meeting -- which is what a *blocked*
+        // walk is, and it is a state this room reaches most ticks a ball is against a
+        // moving shape -- arrived here carrying -1 and a normal that had never been
+        // written, the default {0, 1, 0}. It was answered as the floor: a bounce off
+        // an upward surface that was not there, at three quarters of whatever speed
+        // the ball had. The ball was thrown off the plank by nothing at all, every
+        // other tick, and the plank was loaded on the ticks it fell back onto and
+        // coasted the ones it did not -- the stop-move-stop-move, made of a contact
+        // with a surface that does not exist.
+        if (what == -1) {
+            // Nothing to answer: the travel was refused by a surface that has already
+            // said its piece this tick, or there was no travel to refuse.
+        } else if (what == -2) {
             floorAnswered = true;
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
