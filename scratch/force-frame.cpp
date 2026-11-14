@@ -209,12 +209,27 @@ int main(int argc, char** argv) {
     const int until = argc > 2 ? std::atoi(argv[2]) : (worstTrial >= 0 ? worstTick : 40);
     PlaygroundRoom room;
     room.reset();
-    for (int k = 0; k < 10; ++k) room.advance(kDt);
-    seat(room, trial);
-    for (int k = 0; k < until; ++k) room.advance(kDt);
+    // The room as it is left to stand: every shape where its own physics put it, at
+    // rest, with the arrows that hold it there.
+    for (int k = 0; k < 120; ++k) room.advance(kDt);
+    room.toggleForceArrows();
+    room.toggleForceNewtons();
     RoomFreecam cam;
-    cam.reset({-3.0, 1.45, 3.05}, 0.02, -0.14);
-    shoot(room, cam, "scratch/force/frame.png");
+    cam.reset({-3.85, 1.85, 4.5}, 0.0, -0.16);
+    shoot(room, cam, "scratch/force/rest.png");
+    cam.reset({-2.55, 1.55, 3.10}, 0.0, -0.10);
+    shoot(room, cam, "scratch/force/rest-close.png");
+    // And the arrangement the sweep threw together, drawn.
+    PlaygroundRoom live;
+    live.reset();
+    for (int k = 0; k < 10; ++k) live.advance(kDt);
+    seat(live, trial);
+    for (int k = 0; k < until; ++k) live.advance(kDt);
+    live.toggleForceArrows();
+    live.toggleForceNewtons();
+    cam.reset({-3.3, 1.70, 4.3}, 0.0, -0.14);
+    shoot(live, cam, "scratch/force/frame.png");
+    std::printf("pictures: scratch/force/rest.png and scratch/force/frame.png\n");
     std::printf("\nthe %s, as the room draws it:\n", "state");
     for (std::size_t i = 0; i < room.forceCount_; ++i) {
         const auto& s = room.forces_[i];
