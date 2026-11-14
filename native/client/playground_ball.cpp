@@ -902,7 +902,7 @@ void PlaygroundRoom::tickBall() {
     // loop stops as soon as the ball's speed stops moving -- a tick that has nothing
     // to say costs one extra compare.
     answerSupportedShapes();
-    settleBallSurfaces();
+    for (int q = 0; q < 4; ++q) settleBallSurfaces();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
