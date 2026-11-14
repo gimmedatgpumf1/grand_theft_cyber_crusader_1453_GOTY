@@ -471,7 +471,7 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // arrival at the ball: the ball was handed 0.155 m/s sideways and 3.2 rad/s of
         // spin every tick, the ball's grip took nine tenths of it back, and the tenth
         // that was left is the ball that would not stop creeping.
-        if (gap <= playground_tick::kQuantum) {
+        {
             const Vec3 arm = at - body.centre;
             const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
                                body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
