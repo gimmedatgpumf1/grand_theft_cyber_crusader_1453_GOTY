@@ -228,8 +228,13 @@ void PlaygroundRoom::tickBall() {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving()) return;
-    std::fprintf(stderr, "TICKBALL enter v %+.4f y %.5f\n", ball.velocity.y, ball.position.y);
     ball.frozen = false;
+    // Was the ball already lying on the floor when this tick began? A ball that was
+    // is in contact, and a contact is not an arrival: it may not bounce off the
+    // ground every tick, or gravity's own half a metre a second would be handed back
+    // three quarters of the way, sixty times a second, for ever. A ball that was not
+    // is falling, and where it lands it bounces.
+    const bool startedOnFloor = ball.position.y <= ball.radius + kTouch;
 
     // What the ball arrived with is recorded once for the whole tick, before
     // anything in the room moved -- see advance(). A push the dot gives it later
@@ -284,7 +289,6 @@ void PlaygroundRoom::tickBall() {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
-    std::fprintf(stderr, "TICKBALL after forces v %+.4f held %d\n", ball.velocity.y, int(held));
 
     // What the ball is standing on is not relearned halfway through the tick. It
     // is a fact about the tick -- the state it began in -- and both halves of the
@@ -430,7 +434,6 @@ void PlaygroundRoom::tickBall() {
         const Vec3 travel = next - ball.position;
         double first = 2.0;
         double depth = 0.0;
-        std::fprintf(stderr, "  ITER pos %.5f v %+.4f remaining %.4f\n", ball.position.y, ball.velocity.y, remaining);
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, otherwise a body
@@ -454,6 +457,15 @@ void PlaygroundRoom::tickBall() {
             first = travel.y < 0.0
                         ? std::max(0.0, std::clamp((ball.radius - ball.position.y) / travel.y, 0.0, 1.0))
                         : 0.0;
+            // The floor is a surface like any other, and it is met at the instant it
+            // is met -- not cancelled at the end of the step. It used to be neither:
+            // `what` was left at -1 for it, which is the walk's own word for "nothing
+            // was met", so the floor's only answer was the velocity taken off at the
+            // bottom of the loop. That made the ground perfectly inelastic while the
+            // planks and the shapes bounced: a ball dropped 1.48 m came back up 0.00
+            // m. The walk now carries the floor's identity with its meeting, and the
+            // contact below answers it with the restitution everything else gets.
+            what = -2;
         }
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             Body& body = bodies_[index];
@@ -617,7 +629,6 @@ void PlaygroundRoom::tickBall() {
         }
         if (restart) continue;
         if (first > 1.0) {
-            std::fprintf(stderr, "WALK no meeting: v %+.4f next %.4f\n", ball.velocity.y, next.y);
             if (blocked) break;  // it may not be spent: that travel goes through a face
             ball.position = playground_tick::resolvedMove(ball.position, next);
             break;
@@ -635,7 +646,6 @@ void PlaygroundRoom::tickBall() {
             ball.bendPoint = ball.position;
             ball.bendIn = walkStart;
         }
-        std::fprintf(stderr, "  AFTERMOVE v %+.4f pos %.5f first %.4f what %d\n", ball.velocity.y, ball.position.y, first, what);
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
         // put down, or the first meeting in a tick would be counted as the second.
@@ -720,13 +730,11 @@ void PlaygroundRoom::tickBall() {
             // Nothing to answer: the travel was refused by a surface that has already
             // said its piece this tick, or there was no travel to refuse.
         } else if (what == -2) {
-            std::fprintf(stderr, "WALK floor: v %+.4f first %.4f travelled %.6f\n", ball.velocity.y, first,
-                         length(travel));
             floorAnswered = true;
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
-            ballContact(normal, -1, held, ball.position - normal * ball.radius, 0.0, true, false, reached);
+            ballContact(normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
             // One blow per body per tick. A body met again in what is left of the
@@ -785,7 +793,8 @@ void PlaygroundRoom::tickBall() {
     // answered against the weight alone, and the weight span it out sideways just
     // as a grip should. The face is what it is whether or not anything moved.
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
-        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, false, 1.0 - remaining);
+        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
+                    1.0 - remaining);
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
