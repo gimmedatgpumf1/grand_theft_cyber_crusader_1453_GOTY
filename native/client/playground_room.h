@@ -929,7 +929,7 @@ private:
     // force, with room to spare. It is a bound, never a cut: a tick that silently
     // dropped impulses would draw a body with arrows that do not add up to what it
     // actually felt.
-    static constexpr std::size_t kMaxRecordedImpulses = 4 * kBodyCount * std::size_t(ForceKind::KindCount) + 8;
+    static constexpr std::size_t kMaxRecordedImpulses = 1024;
     std::array<RecordedImpulse, kMaxRecordedImpulses> impulses_{};
     std::size_t impulseCount_ = 0;
     void clearImpulses() { impulseCount_ = 0; }
