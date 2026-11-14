@@ -540,8 +540,11 @@ private:
     // be picked up and carried through a plank, which is exactly what it did. The
     // hand's sweep is therefore asked differently: it stops when anything would be
     // *inside* the body, not when it is merely touching it.
+    // `blockedBy` comes back as the outward normal of whatever stopped the step, which
+    // is what the caller needs to answer the motion the step was refused -- a refused
+    // step is a contact, and a contact has a direction.
     double bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre, double toAngle,
-                           bool mayBeginInContact) const;
+                           bool mayBeginInContact, Vec3* blockedBy = nullptr) const;
 
 public:
     // Read by the checks and the probes: how much of this room is prevention and how

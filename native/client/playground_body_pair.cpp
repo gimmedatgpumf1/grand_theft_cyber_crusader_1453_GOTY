@@ -428,7 +428,8 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
 // with the speed it arrived with, which is a shape standing on nothing. The same rule
 // the ball's prevention uses, for the same reason.
 double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre,
-                                       double toAngle, bool mayBeginInContact) const {
+                                       double toAngle, bool mayBeginInContact, Vec3* blockedBy) const {
+    if (blockedBy != nullptr) *blockedBy = Vec3{0, 1, 0};
     const std::size_t self = index < kBodyCount ? index : 0;
     const Body& body = bodies_[self];
     if (body.count == 0) return 1.0;
@@ -517,16 +518,29 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     // meeting itself -- no step size, nothing to tune, and no speed or spin, however
     // large, that can carry the outline through a plank between two looks. A part that
     // is not closing at all is not going to close anything, however long the step is.
+    // The face it was stopped by, kept for the caller: a step that was refused is a
+    // contact, and a contact has a direction. Which way the body was going into the
+    // thing that stopped it is the whole of what is left to answer.
+    Vec3 stopping{0, 1, 0};
+    double fastest = 0.0;
     const auto soonestMeeting = [&](double t) {
         poseAt(t);
         survey();
         double soonest = 1e30;
         for (const Approach& row : approaches) {
             const double need = row.gap - limit;
-            if (!(need > 0.0)) return 0.0;
+            if (!(need > 0.0)) {
+                stopping = row.normal;
+                return 0.0;
+            }
             const double closing = -dot(row.closingSpeed, row.normal);
             if (!(closing > 0.0)) continue;
-            soonest = std::min(soonest, need / closing);
+            const double answer = need / closing;
+            if (answer < soonest) {
+                soonest = answer;
+                stopping = row.normal;
+                fastest = closing;
+            }
         }
         return soonest;
     };
@@ -534,11 +548,16 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     double t = 0.0;
     for (int pass = 0; pass < 96; ++pass) {
         const double soonest = soonestMeeting(t);
-        if (!(soonest > playground_tick::kQuantum)) return t;  // there, or nearly enough
+        if (!(soonest > playground_tick::kQuantum)) {
+            if (blockedBy != nullptr) *blockedBy = stopping;
+            return t;
+        }
         const double next = t + soonest;
         if (!(next < 1.0)) return 1.0;
         t = next;
     }
+    (void)fastest;
+    if (blockedBy != nullptr) *blockedBy = stopping;
     return t;
 }
 
