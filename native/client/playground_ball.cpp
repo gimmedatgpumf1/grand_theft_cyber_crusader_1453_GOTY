@@ -131,9 +131,19 @@ void PlaygroundRoom::tickBall() {
     // ball takes the whole of a tick's weight: 0.49 m/s downwards, twenty times a
     // second, every one of them answered by the floor after a walk of twelve
     // micrometres of sideways travel that no speed of the ball ever accounted for.
-    bool onTheFloor = false;
-    for (std::size_t i = 0; i < ballTouchCount_; ++i)
-        if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
+    //
+    // And the floor is asked where the floor is, not where a contact list says.
+    //
+    // This used to be read out of ballTouches_ -- any face whose owner was not a
+    // shape -- and that list has not been filled in yet when this line runs: it is
+    // emptied at the top of the shapes' half of the tick, filled with the shapes'
+    // own patches, and the ground is not one of those. So a ball lying on the ground
+    // with a shape leaning on it counted as a ball with nothing under it, took the
+    // whole of a tick's weight, and had it taken back by the ground at the end of a
+    // walk of twelve micrometres that nothing in the room ever accounted for -- every
+    // tick, for as long as a shape was beside it. The ground is under the ball when
+    // the ball is on the ground; that is the same test the tick already opens with.
+    const bool onTheFloor = startedOnFloor;
     // Held is about the surface, not about how fast the ball happens to be going.
     //
     // It used to be gated on the ball moving slower than the room can resolve, and
@@ -877,6 +887,22 @@ void PlaygroundRoom::tickBall() {
     // to a hundredth of a micron, and that is what its grip was made of.
     if (ball.position.x == beganAt.x && ball.position.y == beganAt.y && ball.position.z == beganAt.z)
         ball.velocity = {};
+    // A ball the ground is carrying is never in flight, and the distance it covers in
+    // a tick is the speed it ends the tick with -- not the speed it was pushed to
+    // part-way through it.
+    //
+    // This is the same rule the shapes follow: a body that is in contact travels as
+    // the solver left it, and a body in free flight follows a parabola. The ball was
+    // the one thing exempt, and it is the difference that would not die. A ball lying
+    // on the floor with the triangle's slope leaning on it is pushed a third of a
+    // millimetre a second along the floor by that slope during the shapes' half of
+    // the tick, the grip takes all of it back at the end of the ball's half, and the
+    // walk in between was already made -- so the ball crossed 12 um of floor, was
+    // stopped by a friction that no displacement showed, and did it again next tick.
+    // Measured over 400 ticks of the King's corner: 5.4 mm of travel across the scene
+    // by a ball whose speed at the end of every tick was three hundredths of a
+    // micrometre a tick. A ball in contact does not fly, so its travel is its answer.
+    if (held) ball.position = beganAt + ball.velocity * kTick;
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
