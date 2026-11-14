@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -448,6 +450,10 @@ void PlaygroundRoom::tickBall() {
                 // there for ever and the shapes on the other side of the ball would
                 // never be asked -- so one refusal per shape per tick, and the walk goes
                 // on to them.
+                if (std::getenv("KV"))
+                    std::printf("  [walkrefuse] idx%zu refused%d resting%d depth%+.12f along%+.9f endgap%+.12f travel(%+.9e,%+.9e) pos(%.9f,%.9f)\n",
+                                index, int(refused[index]), int(hit.resting), hit.depth, hit.along,
+                                endOut.gap - ball.radius, travel.x, travel.y, ball.position.x, ball.position.y);
                 if (!refused[index]) {
                     refused[index] = true;
                     ball.touching = true;
