@@ -93,6 +93,11 @@ void PlaygroundRoom::settleBallFriction() {
         }
         ballTouches_[i].surfaceVelocity = pointSpeed(mate, ball.position + ballTouches_[i].normal * -ball.radius);
     }
+    if (gtcAudit) {
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            std::fprintf(stderr, "B  refreshed touch %zu sv(%+.4f,%+.4f)\n", i, ballTouches_[i].surfaceVelocity.x,
+                         ballTouches_[i].surfaceVelocity.y);
+    }
     std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
