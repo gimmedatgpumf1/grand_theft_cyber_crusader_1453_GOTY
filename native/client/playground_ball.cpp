@@ -27,6 +27,13 @@ using namespace playground_detail;
 // is playground_ball_touch.cpp. There is no speed at which one rule turns into
 // another.
 
+namespace {
+// How many times a tick's standing contacts are solved over before their answers are
+// taken to agree. A face or two settles in a couple of passes; a corner of three is
+// slower, and past this what is left is smaller than the room's own resolution.
+constexpr int kBallSurfacePasses = 8;
+}  // namespace
+
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
 // dot and every body count: if any of them is moving, the ball is looked at.
 bool PlaygroundRoom::ballNeighboursMoving() const {
@@ -81,99 +88,125 @@ void PlaygroundRoom::settleBallSurfaces() {
         const auto holds = [](Vec3 normal) {
             return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
         };
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            Body& body = bodies_[index];
-            for (std::size_t edge = 0; edge < body.count; ++edge) {
-                const std::size_t top = (edge + 1) % body.count;
-                const Vec3 a = body.position[edge];
-                const Vec3 b = body.position[top];
-                const Vec3 side = b - a;
-                const double sideLength = side.x * side.x + side.y * side.y;
-                const double t = sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
-                const Vec3 gap = ball.position - (a + side * t);
-                const double distance = length(gap);
-                // Within the room's own resolution of the surface, not within a nanometre
-                // of it. The sweep lands the ball on the face and the bisection leaves it
-                // a few micrometres either side; read at a nanometre, a ball lying in a
-                // pinch was not touching anything at all -- so no grip, no friction, and
-                // no rest, and a millimetre a second of spin and slide that never died.
-                if (distance <= 0.0) continue;
-                const Vec3 normal = gap / distance;
-                const Vec3 surface = pointSpeed(body, a + side * t);
-                const double closing = dot(ball.velocity - surface, normal);
-                // A face the ball will reach before this tick is over is a face it is
-                // in contact with for the whole tick, and it is answered now.
-                //
-                // Answering only the faces it was *already* touching, to the room's
-                // micrometre, is what made a ball on a moving shape chatter: the
-                // shape moved out from under it, the ball was a millimetre clear, and
-                // a contact the ball was about to have went unanswered -- it fell, met
-                // the face, was answered, left it again, fell again, at ten hertz. The
-                // distance a tick can close is `closing * kTick`, and inside that the
-                // contact is already the truth about this tick.
-                // `spare` is the gap left between the ball and this face *now*, at the
-                // end of the tick, and only a ball that is against the face -- within
-                // the room's own micrometre of it -- is answered by it.
-                //
-                // It used to be answered for a face the ball would reach before the
-                // *next* tick was over: `spare > -closing * kTick` let the constraint
-                // reach a whole tick ahead, and the speed it took there had no blow in
-                // it. A ball dropped onto the triangle arrived at 5.29 m/s, was stopped
-                // by this rule 28 mm short of the face with the little normal speed it
-                // had left set to exactly nothing, and then slid down the hypotenuse
-                // with its tangent untouched and its spin growing: the arrival was
-                // spent here, so the walk never saw a meeting to bounce.
-                //
-                // An arrival is the walk's business, and the walk answers it with the
-                // restitution every other surface gets, in a pair of impulses, one on
-                // the ball and one on the shape. What is left for this constraint is
-                // the residual speed a ball *lying against* a face can be left with by
-                // the blow or by the grip -- which is the case it was written for.
-                const double spare = distance - ball.radius;
-                if (gtcAudit)
-                    std::fprintf(stderr, "S b%zu e%zu dist%.5f spare%+.6f closing%+.5f n(%+.3f,%+.3f)\n", index, edge,
-                                 distance, spare, closing, normal.x, normal.y);
-                if (spare > playground_tick::kQuantum) continue;
-                ball.touching = true;
-                // A body above the ball is a weight on it, not something it stands
-                // on: only a surface underneath can hold it up.
-                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
-                // The surface is where the ball is, so nothing can be driven into
-                // it. Anything left over from an earlier contact in the same tick --
-                // a body pressing the ball down onto the floor -- is answered here,
-                // which is what lets a ball carry a weight instead of humming.
-                //
-                // How fast it may close is what the gap allows in what is left of the
-                // tick: a ball a millimetre above a face may not cross more than a
-                // millimetre of it, and a ball touching it may not close at all. That
-                // is the whole of the constraint -- no correction of place, and no
-                // speed taken that the surface did not take.
-                const double allowed = -std::max(0.0, spare) / kTick;
-                if (closing < allowed) {
-                    // The speed the ball gives up here is a blow, and a blow has two
-                    // ends. It used to be taken off the ball and written nowhere else:
-                    // the ball was held up by a surface that was never given the load
-                    // that held it, so a weight resting on a plank pushed on nothing,
-                    // the plank was loaded only on the ticks the walk happened to catch
-                    // a meeting, and it accelerated in a square wave -- stop, move,
-                    // stop, move, at ten hertz, which is what the King can see.
+        // A corner has more than one face, and the faces have to agree.
+        //
+        // Answering each face once, in turn, is not solving a corner: the ball's speed
+        // is cut along the first face, which leaves it sliding along that face, which
+        // is *into* the second; the second then cuts it along itself, which puts it
+        // back into the first. What is left after one pass over the faces is a speed
+        // with nowhere to go -- the ball skating along the seam -- and nothing answers
+        // it, because every face has already had its say. Measured in the King's corner
+        // (a ball wedged between a cube's side and the triangle's slope, both standing
+        // on the floor): after one pass the ball was left sliding down the slope at
+        // 0.24 m/s, which is 0.17 m/s into the cube, and the corner never settled --
+        // three bodies holding speed they could not spend, twenty times a second, with
+        // nothing on the screen moving, and the next tick's solver throwing that speed
+        // away unrecorded.
+        //
+        // So the faces are asked again, and again, until one whole pass finds nothing
+        // left to answer. Each pass applies a real, paired impulse -- the ball's share
+        // and the shape's, exactly as one pass always did -- so this is the same
+        // contact solved to agreement, not a stronger one. What each face is owed is
+        // added up over the passes and drawn as one arrow where it acts, because it is
+        // one contact.
+        struct FaceBlow {
+            Vec3 at{};
+            Vec3 impulse{};
+            bool used = false;
+        };
+        std::array<FaceBlow, kBodyCount * kMaxOutlineCorners> blows{};
+        for (int pass = 0; pass < kBallSurfacePasses; ++pass) {
+            bool answered = false;
+            for (std::size_t index = 0; index < kBodyCount; ++index) {
+                Body& body = bodies_[index];
+                for (std::size_t edge = 0; edge < body.count; ++edge) {
+                    const std::size_t top = (edge + 1) % body.count;
+                    const Vec3 a = body.position[edge];
+                    const Vec3 b = body.position[top];
+                    const Vec3 side = b - a;
+                    const double sideLength = side.x * side.x + side.y * side.y;
+                    const double t =
+                        sideLength > 0.0 ? std::clamp(dot(ball.position - a, side) / sideLength, 0.0, 1.0) : 0.0;
+                    const Vec3 gap = ball.position - (a + side * t);
+                    const double distance = length(gap);
+                    // Within the room's own resolution of the surface, not within a
+                    // nanometre of it. The sweep lands the ball on the face and the
+                    // bisection leaves it a few micrometres either side; read at a
+                    // nanometre, a ball lying in a pinch was not touching anything at
+                    // all -- so no grip, no friction, and no rest, and a millimetre a
+                    // second of spin and slide that never died.
+                    if (distance <= 0.0) continue;
+                    const Vec3 normal = gap / distance;
+                    const Vec3 surface = pointSpeed(body, a + side * t);
+                    const double closing = dot(ball.velocity - surface, normal);
+                    // `spare` is the gap left between the ball and this face *now*, and
+                    // only a ball that is against the face -- within the room's own
+                    // micrometre of it -- is answered by it.
                     //
-                    // So the surface takes it, at the place they met, as the solid it
-                    // is: the same pair as everywhere else in the room, applied to the
-                    // ball and to the shape, in the ledger and in the motion.
-                    const Vec3 at = a + side * t;
-                    // The ball's own share, along the normal it is pushed out on:
-                    // `closing - allowed` is negative here, and the ball's speed rises
-                    // by the opposite of it. The shape takes exactly this much the other
-                    // way -- a push and its partner, and no momentum from nowhere.
-                    const Vec3 blow = normal * (-ball.mass * (closing - allowed));
-                    ball.velocity = ball.velocity - normal * (closing - allowed);
-                    if (gtcAudit) std::fprintf(stderr, "S   answered: allowed%+.5f -> v(%+.5f,%+.5f)\n", allowed, ball.velocity.x, ball.velocity.y);
-                    pushBody(body, at, blow * -1.0, ForceKind::Contact);
-                    addForce(ball.position - normal * ball.radius, blow, ForceKind::Contact, nullptr, kBallOwner);
+                    // It used to be answered for a face the ball would reach before the
+                    // *next* tick was over: `spare > -closing * kTick` let the constraint
+                    // reach a whole tick ahead, and the speed it took there had no blow in
+                    // it. A ball dropped onto the triangle arrived at 5.29 m/s, was stopped
+                    // by this rule 28 mm short of the face with the little normal speed it
+                    // had left set to exactly nothing, and then slid down the hypotenuse
+                    // with its tangent untouched and its spin growing: the arrival was
+                    // spent here, so the walk never saw a meeting to bounce.
+                    //
+                    // An arrival is the walk's business, and the walk answers it with the
+                    // restitution every other surface gets, in a pair of impulses, one on
+                    // the ball and one on the shape. What is left for this constraint is
+                    // the residual speed a ball *lying against* a face can be left with by
+                    // the blow or by the grip -- which is the case it was written for.
+                    const double spare = distance - ball.radius;
+                    if (spare > playground_tick::kQuantum) continue;
+                    ball.touching = true;
+                    // A body above the ball is a weight on it, not something it stands
+                    // on: only a surface underneath can hold it up.
+                    if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
+                    // The surface is where the ball is, so nothing can be driven into
+                    // it. Anything left over from an earlier contact in the same tick --
+                    // a body pressing the ball down onto the floor -- is answered here,
+                    // which is what lets a ball carry a weight instead of humming.
+                    //
+                    // How fast it may close is what the gap allows: a ball a millimetre
+                    // above a face may not cross more than a millimetre of it, and a ball
+                    // touching it may not close at all. That is the whole of the
+                    // constraint -- no correction of place, and no speed taken that the
+                    // surface did not take.
+                    const double allowed = -std::max(0.0, spare) / kTick;
+                    if (closing < allowed) {
+                        // The speed the ball gives up here is a blow, and a blow has two
+                        // ends. It used to be taken off the ball and written nowhere else:
+                        // the ball was held up by a surface that was never given the load
+                        // that held it, so a weight resting on a plank pushed on nothing,
+                        // the plank was loaded only on the ticks the walk happened to catch
+                        // a meeting, and it accelerated in a square wave -- stop, move,
+                        // stop, move, at ten hertz, which is what the King can see.
+                        //
+                        // So the surface takes it, at the place they met, as the solid it
+                        // is: the same pair as everywhere else in the room, applied to the
+                        // ball and to the shape, in the ledger and in the motion.
+                        const Vec3 at = a + side * t;
+                        // The ball's own share, along the normal it is pushed out on:
+                        // `closing - allowed` is negative here, and the ball's speed rises
+                        // by the opposite of it. The shape takes exactly this much the other
+                        // way -- a push and its partner, and no momentum from nowhere.
+                        const Vec3 blow = normal * (-ball.mass * (closing - allowed));
+                        ball.velocity = ball.velocity - normal * (closing - allowed);
+                        pushBody(body, at, blow * -1.0, ForceKind::Contact);
+                        FaceBlow& slot = blows[index * kMaxOutlineCorners + edge];
+                        slot.at = ball.position - normal * ball.radius;
+                        slot.impulse = slot.impulse + blow;
+                        slot.used = true;
+                        answered = true;
+                    }
                 }
             }
+            if (!answered) break;
         }
+        for (const FaceBlow& slot : blows)
+            if (slot.used && length(slot.impulse) > 1e-12)
+                addForce(slot.at, slot.impulse, ForceKind::Contact, nullptr, kBallOwner);
         {
             // The dot is a surface when the ball is sitting on it, and a load when
             // it is sitting on the ball. Only the first can hold the ball up.
