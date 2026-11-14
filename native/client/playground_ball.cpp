@@ -658,6 +658,7 @@ void PlaygroundRoom::tickBall() {
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
         ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
+    if (std::getenv("KV")) std::printf("  [bs] afterfloor v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f) startFloor%d touching%d\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y, int(startedOnFloor), int(ball.touching));
 
     // The grip is not solved here. It is the last thing the tick does, and the note
     // beside it says why: solved here, its answer is overwritten by the passes below
