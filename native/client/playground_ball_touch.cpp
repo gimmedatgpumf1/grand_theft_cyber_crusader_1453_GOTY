@@ -67,6 +67,32 @@ void PlaygroundRoom::settleBallFriction() {
     // below are one solve and the totals are what the ball felt, so this is what
     // the ledger gets -- the same rule as every other contact in the room: the
     // arrows are the impulses that were applied, and nothing else.
+    // The face as it is now, not as it was when the contact was first noticed.
+    //
+    // noteBallTouch() is called from tickBodies(), and it is called *before* the
+    // shapes' own contacts are solved: at that instant a cube standing on the floor
+    // still has the whole of this tick's fall in its speed -- half a metre a second
+    // -- which the solver is about to take away. Recording that as "the face is
+    // moving" told the ball's grip that a face which never moves was sliding past it
+    // at half a metre a second, and friction duly dragged the ball along with it.
+    // Measured in the King's corner (a ball wedged between a cube's side and the
+    // triangle's slope): the grip was given (-0.043,-0.542) m/s for the cube's face,
+    // and the same point's real speed was (-0.037,-0.016). The ball was shaken by a
+    // surface that was standing still, and the corner it was jammed in never settled.
+    //
+    // By the time the grip is solved the bodies have been answered and stepped, so
+    // their speed is the one they are really carrying and their spin is the one they
+    // are really turning with. That is the face the ball is against.
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        const std::size_t other = ballTouches_[i].body;
+        if (other >= kBodyCount) continue;  // the floor is the one surface that never moves
+        const Body& mate = bodies_[other];
+        if (mate.frozen || bodyHeld(other)) {
+            ballTouches_[i].surfaceVelocity = Vec3{};
+            continue;
+        }
+        ballTouches_[i].surfaceVelocity = pointSpeed(mate, ball.position + ballTouches_[i].normal * -ball.radius);
+    }
     std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
