@@ -199,34 +199,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
     // that the numbers are not describing the room any more; they are describing
     // the last few bits of a double, and a body that spends a second of them is a
     // body that is standing still and does not know it.
-    // A place and a turn are resolved by `resolvedMove` and by the turn rule above: a
-    // step shorter than the room can resolve does not happen, and the body arrives
-    // where it started. What that leaves behind is a speed with nowhere to go -- and
-    // a speed that carries the body nowhere is not a speed. The room already says so
-    // in so many words (playground_room_tick.h, `resolved`), and applies it to the
-    // ball's and the dot's own motion; a *body* was the one thing it was never applied
-    // to, and the shape of the bug is a body that stands perfectly still, whose place
-    // never changes to eleven decimal places, holding a speed of eighteen microns a
-    // second for ever. Nothing ever asked it about that speed, because a contact only
-    // asks what is actually touching it and this speed never touches anything -- it
-    // only feeds the grip of whatever is leaning on it. Measured in the King's corner
-    // (a ball wedged under the triangle's apex): the triangle's place and angle were
-    // identical to twelve decimals for a thousand ticks while it carried
-    // (-5.9e-6, -1.35e-5) m/s and turned at 7.3e-6 rad/s, and that speed is what
-    // dragged the ball a hand's width along the floor.
-    //
-    // So: a body that the step did not move has no speed, and one the turn did not
-    // turn has no spin. The two are resolved apart, because a body can creep without
-    // turning and turn without creeping, and only the part that went nowhere is
-    // nothing. Nothing is added and nothing is taken away from a body that moved: a
-    // body travelling more than a micron in the tick keeps every bit of its speed,
-    // and a body turning more than a micron at its furthest corner keeps its whole
-    // spin. This is the room's resolution and not a brake: it is the same micrometre
-    // that decides where a shape may be put and when two surfaces are touching.
-    const auto resolveStillness = [](Body& body, const Vec3& from, double angleFrom) {
-        if (body.centre.x == from.x && body.centre.y == from.y && body.centre.z == from.z) body.velocity = {};
-        if (body.angle == angleFrom) body.spin = 0.0;
-    };
     const auto move = [&](double time) {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             Body& body = bodies_[index];
@@ -270,7 +242,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 // first instant it meets the floor, a shape or the ball -- see
                 // pivotTurnAllowed() -- and what is left of the spin is the contact's
                 // to answer, exactly as a shape's speed is when it lands.
-                const double turnBefore = body.angle;
                 const double turn = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
                 double allowed = turn;
                 if (turn != 0.0) {
@@ -294,10 +265,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 body.angle += allowed;
                 body.centre = body.pivotPoint;
                 placeCorners(body);
-                // A turn that carried the plank less than the room can resolve did not
-                // turn it, and a plank that has not turned does not have a spin: see
-                // resolveStillness() below for why the speed goes with the travel.
-                resolveStillness(body, body.centre, turnBefore);
+
                 continue;
             }
             // And the step is swept before it is taken. A shape's speed says where it
@@ -341,20 +309,15 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double rise = time - fall;
                 const Vec3 step = body.hitArrival * fall + body.velocity * rise;
                 const double turnHere = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
-                const Vec3 from = body.centre;
-                const double turnWas = body.angle;
                 const Vec3 wanted = body.centre + step;
                 const double along = sweptStep(wanted, body.angle + turnHere);
                 body.centre = along >= 1.0 ? resolvedMove(body.centre, wanted)
                                            : resolvedMove(body.centre, body.centre + step * along);
                 body.angle += turnHere * along;
                 placeCorners(body);
-                resolveStillness(body, from, turnWas);
                 continue;
             }
             {
-                const Vec3 from = body.centre;
-                const double turnWas = body.angle;
                 const double turnHere = std::abs(body.spin) * furthest * time < kQuantum ? 0.0 : body.spin * time;
                 const Vec3 wanted = body.centre + body.velocity * time;
                 const double along = sweptStep(wanted, body.angle + turnHere);
@@ -362,7 +325,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                                            : resolvedMove(body.centre, body.centre + (wanted - body.centre) * along);
                 body.angle += turnHere * along;
                 placeCorners(body);
-                resolveStillness(body, from, turnWas);
             }
         }
     };
@@ -804,9 +766,15 @@ void PlaygroundRoom::tickBodies() {
     // that was given contacts is left out of it, because its travel is the solver's
     // answer and not a parabola's.
     std::array<Vec3, kBodyCount> arrival{};
+    // Where every body was when the tick opened, so that the tick's end can tell a body
+    // that moved from a body that only said it did. See the resolve below.
+    std::array<Vec3, kBodyCount> opened{};
+    std::array<double, kBodyCount> openedAngle{};
     std::array<int, kBodyCount> metBefore{};
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
+        opened[index] = bodies_[index].centre;
+        openedAngle[index] = bodies_[index].angle;
         bodies_[index].arrivalVelocity = bodies_[index].velocity;
         bodies_[index].arrivalSpin = bodies_[index].spin;
         bodies_[index].hitAt = 1.0;
@@ -875,6 +843,38 @@ void PlaygroundRoom::tickBodies() {
     // nothing left for it to do.
     separateBodies();
     settleBodies();
+    // A place and a turn are resolved by `resolvedMove` and by the turn rule above: a
+    // step shorter than the room can resolve does not happen, and the body arrives
+    // where it started. What that leaves behind is a speed with nowhere to go -- and
+    // a speed that carries the body nowhere is not a speed. The room already says so
+    // in so many words (playground_room_tick.h, `resolved`), and applies it to the
+    // ball's and the dot's own motion; a *body* was the one thing it was never applied
+    // to, and the shape of the bug is a body that stands perfectly still, whose place
+    // never changes to eleven decimal places, holding a speed of eighteen microns a
+    // second for ever. Nothing ever asked it about that speed, because a contact only
+    // asks what is actually touching it and this speed never touches anything -- it
+    // only feeds the grip of whatever is leaning on it. Measured in the King's corner
+    // (a ball wedged under the triangle's apex): the triangle's place and angle were
+    // identical to twelve decimals for a thousand ticks while it carried
+    // (-5.9e-6, -1.35e-5) m/s and turned at 7.3e-6 rad/s, and that speed is what
+    // dragged the ball a hand's width along the floor.
+    //
+    // So: a body that the step did not move has no speed, and one the turn did not
+    // turn has no spin. The two are resolved apart, because a body can creep without
+    // turning and turn without creeping, and only the part that went nowhere is
+    // nothing. Nothing is added and nothing is taken away from a body that moved: a
+    // body travelling more than a micron in the tick keeps every bit of its speed,
+    // and a body turning more than a micron at its furthest corner keeps its whole
+    // spin. This is the room's resolution and not a brake: it is the same micrometre
+    // that decides where a shape may be put and when two surfaces are touching.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        if (body.centre.x == opened[index].x && body.centre.y == opened[index].y &&
+            body.centre.z == opened[index].z)
+            body.velocity = {};
+        if (body.angle == openedAngle[index]) body.spin = 0.0;
+    }
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
     // of the tick -- see there. Twice is harmless (the list is emptied each time) and
