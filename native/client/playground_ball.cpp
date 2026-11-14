@@ -130,6 +130,9 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // the residual speed a ball *lying against* a face can be left with by
                 // the blow or by the grip -- which is the case it was written for.
                 const double spare = distance - ball.radius;
+                if (gtcAudit)
+                    std::fprintf(stderr, "S b%zu e%zu dist%.5f spare%+.6f closing%+.5f n(%+.3f,%+.3f)\n", index, edge,
+                                 distance, spare, closing, normal.x, normal.y);
                 if (spare > playground_tick::kQuantum) continue;
                 ball.touching = true;
                 // A body above the ball is a weight on it, not something it stands
@@ -165,6 +168,7 @@ void PlaygroundRoom::settleBallSurfaces() {
                     // way -- a push and its partner, and no momentum from nowhere.
                     const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                     ball.velocity = ball.velocity - normal * (closing - allowed);
+                    if (gtcAudit) std::fprintf(stderr, "S   answered: allowed%+.5f -> v(%+.5f,%+.5f)\n", allowed, ball.velocity.x, ball.velocity.y);
                     pushBody(body, at, blow * -1.0, ForceKind::Contact);
                     addForce(ball.position - normal * ball.radius, blow, ForceKind::Contact, nullptr, kBallOwner);
                 }
