@@ -774,8 +774,12 @@ private:
     // the whole of what a bounce is: a surface that is merely holding the ball up
     // has nothing to give back, however fast its own motion makes the two of them
     // look as if they are closing.
+    // `reached` is where in the tick the two met, as a fraction of it. A bounce is
+    // the answer to the speed the ball had *there*, and a tick of gravity is half a
+    // metre a second in this room: measured at the start of the tick the blow is too
+    // small and measured at the end of it too large, so the moment itself is passed.
     void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
-                     double depth = 0.0, bool exchange = true, bool resting = false);
+                     double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0);
     // A face of the ball, said once: what it is against, and which way out of the
     // ball. The ball's grip is solved for all of its faces at once in
     // settleBallFriction(), so every road by which the ball comes to be against

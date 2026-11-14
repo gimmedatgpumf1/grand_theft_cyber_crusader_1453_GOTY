@@ -56,7 +56,7 @@ void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
 }
 
 void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
-                                bool exchange, bool resting) {
+                                bool exchange, bool resting, double reached) {
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
@@ -249,6 +249,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // The ball's speed at the meeting is its speed now, and the surface's is read
     // from the very contact point it is being asked about.
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
+    // What the ball was doing at the instant it met the surface. Its speed is carried
+    // through the tick from `arrival` to what it is now, so the fraction of the way
+    // through the tick is the fraction of the way from one to the other: at the very
+    // moment of a contact, that is the speed the blow is answered to.
+    const Vec3 atMeeting = ball.arrival + (ball.velocity - ball.arrival) * std::clamp(reached, 0.0, 1.0);
+    const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface. A ball that was already lying
     // on this one when the tick began did not arrive at it: the two are in contact,
     // the contact is being kept, and what it may not do is close. It gets no blow
@@ -259,7 +265,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // ball left the plank, fell for a tick, landed, and was launched again -- the
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
-    const double rebound = (closing < 0.0 && !resting) ? -kBallRestitution * closing : 0.0;
+    const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {

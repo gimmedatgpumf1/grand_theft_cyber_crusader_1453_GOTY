@@ -467,7 +467,7 @@ void PlaygroundRoom::tickBall() {
                 ball.touching = true;
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
-                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting);
+                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -518,7 +518,7 @@ void PlaygroundRoom::tickBall() {
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
                     ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
-                                answered[index], hit.resting);
+                                answered[index], hit.resting, 1.0 - remaining);
                 }
                 blocked = true;
                 first = 0.0;
@@ -617,6 +617,8 @@ void PlaygroundRoom::tickBall() {
             }
             bodyStopped[std::size_t(what)] = true;
         }
+        // Where in the tick the two met: what the blow is answered to.
+        const double reached = (1.0 - remaining) + first * remaining;
         const bool exchange = what < 0 || !answered[std::size_t(what)];
         if (what >= 0 && std::size_t(what) < kBodyCount) answered[std::size_t(what)] = true;
         if (what == -2) {
@@ -624,14 +626,14 @@ void PlaygroundRoom::tickBall() {
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
-            ballContact(normal, -1, held, ball.position - normal * ball.radius);
+            ballContact(normal, -1, held, ball.position - normal * ball.radius, 0.0, true, false, reached);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
             // One blow per body per tick. A body met again in what is left of the
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
-            ballContact(normal, what, held, contactPoint, depth, exchange, meetingResting);
+            ballContact(normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
         // A ball that started the tick already through something has been put back
@@ -683,7 +685,7 @@ void PlaygroundRoom::tickBall() {
     // answered against the weight alone, and the weight span it out sideways just
     // as a grip should. The face is what it is whether or not anything moved.
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
-        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0});
+        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, false, 1.0 - remaining);
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
