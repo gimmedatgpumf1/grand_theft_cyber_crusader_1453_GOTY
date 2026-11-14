@@ -234,12 +234,21 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // zero -- the floor cuts it when the corner lands -- while the corner is still
     // travelling down into the ball, and the ball has to answer the travel.
 
-    const double arrivedSpeed = dot(ball.arrival - surfaceVelocity, normal);
+    // How fast the two are closing *where and when they meet* -- both measured at
+    // one instant, the instant of the contact itself.
+    //
+    // It used to be measured with the ball's speed from the start of the tick and
+    // the surface's speed from the end of it, and those are not the same moment. In
+    // one tick of this room gravity alone is half a metre a second, and a plank at a
+    // radian a second moves its face by a third of one, so the two numbers were taken
+    // half a metre a second apart and the difference was handed back as a bounce. A
+    // ball resting on a moving seesaw was answered as if it had arrived at a metre a
+    // second when it had arrived at nothing at all: a fresh bounce every tick, from a
+    // contact that was never an impact.
+    //
+    // The ball's speed at the meeting is its speed now, and the surface's is read
+    // from the very contact point it is being asked about.
     const double closing = dot(ball.velocity - surfaceVelocity, normal);
-    // A bounce is the answer to arriving at a surface, measured against what the
-    // ball arrived with rather than the speed gravity lent it on the way: a ball on
-    // the floor gets that every tick, and bouncing it would be bouncing it off
-    // nothing.
     // A bounce is the answer to arriving at a surface. A ball that was already lying
     // on this one when the tick began did not arrive at it: the two are in contact,
     // the contact is being kept, and what it may not do is close. It gets no blow
@@ -250,7 +259,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // ball left the plank, fell for a tick, landed, and was launched again -- the
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
-    const double rebound = (arrivedSpeed < 0.0 && !resting) ? -kBallRestitution * arrivedSpeed : 0.0;
+    const double rebound = (closing < 0.0 && !resting) ? -kBallRestitution * closing : 0.0;
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
