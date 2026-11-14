@@ -405,14 +405,23 @@ private:
     // it does not when the question is what the room does about a turn already taken,
     // because the ball's own tick is what answers that -- see separateBodies().
     //
-    // `withFree` asks the same question of a shape that is free to be pushed. A shape
-    // lying on the plank is carried by it: the face comes to the shape, the shape's own
-    // patch takes the answer, and the face goes on turning. Turning the plank back out
-    // of it instead is a plank that stops dead under its own load -- the stop-move-stop
-    // the King saw, arriving from the shapes rather than from the ball. Only something
-    // that cannot be pushed -- a shape asleep, or one in the mouse's hand -- is a wall a
-    // plank may not turn into.
-    double pivotObjectDepthAt(const Body& body, double angle, bool withBall = true, bool withFree = true) const;
+    // `wallsOnly` narrows that to the shapes a plank may not turn into at all -- see
+    // shapeGivesWay(): everything the plank can carry out of the way is left out.
+    double pivotObjectDepthAt(const Body& body, double angle, bool withBall = true, bool wallsOnly = false) const;
+    // Whether a shape lying where the plank is turning can be carried out of the way
+    // instead of stopping it. True when the shape is free to be pushed and pushing it
+    // clear of the plank leaves it standing in the room.
+    //
+    // This is the difference between a rider and an obstacle, and it is the difference
+    // the room was missing: every shape was a wall, so a plank with anything on it could
+    // not turn. The load went down with the face, the face was refused by the shape
+    // lying on it, the whole turn was handed back and the spin with it -- and the shape,
+    // whose speed had already been solved against a face that was going to turn, was
+    // left to fall through it. A shape the face can lift is a load: the patch carries it
+    // and the face goes on. A shape pinched between the face and the floor cannot be
+    // carried anywhere -- pushing it along the face drives it into the ground -- and
+    // that one the plank stops on.
+    bool shapeGivesWay(const Body& body, std::size_t other, Vec3 way, double amount) const;
     // The first angle a pinned body's turn meets something, as a fraction of the turn
     // it was given. One means nothing was in the way. This is the hitscan the plank
     // needed and did not have: a turn is a piece of travel like any other, and the
