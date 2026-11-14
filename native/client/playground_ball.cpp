@@ -80,7 +80,7 @@ void PlaygroundRoom::settleBallSurfaces() {
             return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
         };
         for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
+            Body& body = bodies_[index];
             for (std::size_t edge = 0; edge < body.count; ++edge) {
                 const std::size_t top = (edge + 1) % body.count;
                 const Vec3 a = body.position[edge];
@@ -126,7 +126,24 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // is the whole of the constraint -- no correction of place, and no
                 // speed taken that the surface did not take.
                 const double allowed = -std::max(0.0, spare) / kTick;
-                if (closing < allowed) ball.velocity = ball.velocity - normal * (closing - allowed);
+                if (closing < allowed) {
+                    // The speed the ball gives up here is a blow, and a blow has two
+                    // ends. It used to be taken off the ball and written nowhere else:
+                    // the ball was held up by a surface that was never given the load
+                    // that held it, so a weight resting on a plank pushed on nothing,
+                    // the plank was loaded only on the ticks the walk happened to catch
+                    // a meeting, and it accelerated in a square wave -- stop, move,
+                    // stop, move, at ten hertz, which is what the King can see.
+                    //
+                    // So the surface takes it, at the place they met, as the solid it
+                    // is: the same pair as everywhere else in the room, applied to the
+                    // ball and to the shape, in the ledger and in the motion.
+                    const Vec3 at = a + side * t;
+                    const Vec3 blow = normal * (ball.mass * (closing - allowed));
+                    ball.velocity = ball.velocity - normal * (closing - allowed);
+                    pushBody(body, at, blow * -1.0, ForceKind::Contact);
+                    addForce(ball.position - normal * ball.radius, blow, ForceKind::Contact, nullptr, kBallOwner);
+                }
             }
         }
         {
