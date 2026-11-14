@@ -139,7 +139,11 @@ void PlaygroundRoom::settleBallSurfaces() {
                     // is: the same pair as everywhere else in the room, applied to the
                     // ball and to the shape, in the ledger and in the motion.
                     const Vec3 at = a + side * t;
-                    const Vec3 blow = normal * (ball.mass * (closing - allowed));
+                    // The ball's own share, along the normal it is pushed out on:
+                    // `closing - allowed` is negative here, and the ball's speed rises
+                    // by the opposite of it. The shape takes exactly this much the other
+                    // way -- a push and its partner, and no momentum from nowhere.
+                    const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                     ball.velocity = ball.velocity - normal * (closing - allowed);
                     pushBody(body, at, blow * -1.0, ForceKind::Contact);
                     addForce(ball.position - normal * ball.radius, blow, ForceKind::Contact, nullptr, kBallOwner);
@@ -563,6 +567,19 @@ void PlaygroundRoom::tickBall() {
                     // second -- speed with nowhere to go.
                     ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
+                    // The answer has changed the ball's speed, so the rest of the tick
+                    // is worked out again against it instead of being handed back.
+                    //
+                    // Handing it back is what this did, and it cost the ball *every
+                    // other tick*: a ball lying on a plank and pressing into it had its
+                    // whole travel refused, spent the tick where it was, and moved
+                    // again on the next one when gravity had turned it sideways along
+                    // the face. The ball stopped and went, stopped and went, twenty
+                    // times a second, and the plank was loaded on the ticks it went.
+                    // The refusal is one contact, not a lost tick: the speed into the
+                    // face is gone, and what is left of the travel is the ball's.
+                    restart = true;
+                    continue;
                 }
                 blocked = true;
                 first = 0.0;
