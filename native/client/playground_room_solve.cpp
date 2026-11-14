@@ -296,9 +296,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             ++body->met;
             if (other != nullptr) ++other->met;
         }
-        if (getenv("GTC_TRACE") && (patch.body == 2))
-            std::fprintf(stderr, "    PATCH body %zu ball %d n(%+.3f,%+.3f) ends %zu gap %.3e %.3e\n", patch.body, patch.ball ? 1 : 0,
-                         patch.normal.x, patch.normal.y, patch.ends, patch.gap[0], patch.gap[1]);
         // What the ends were closing at before this answer, for the walk.
         for (std::size_t k = 0; k < count; ++k) {
             const double closing = away(patch.point[k], patch.normal);

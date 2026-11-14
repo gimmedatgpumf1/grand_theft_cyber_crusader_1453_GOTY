@@ -800,12 +800,8 @@ void PlaygroundRoom::advance(double seconds) {
                     body.spin = 0.0;
                 }
             }
-            const double sw0 = bodies_[2].spin;
             tickBodies();
-            if (getenv("GTC_TRACE")) std::fprintf(stderr, "  H bodies spin %+.4f -> %+.4f\n", sw0, bodies_[2].spin);
-            const double sw1 = bodies_[2].spin;
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
-            if (getenv("GTC_TRACE")) std::fprintf(stderr, "  H ball   spin %+.4f -> %+.4f\n", sw1, bodies_[2].spin);
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
         // Whatever a turn carried through the ball is put back out, once, after both

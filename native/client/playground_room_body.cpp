@@ -260,8 +260,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     // which is exactly a solved turn that disagrees with the truth. The
                     // room's own sweep check counted three such disagreements in 684
                     // turns before this, worst 0.0551 rad; it counts none now.
-                    if (getenv("GTC_TRACE") && index == 2)
-                        std::fprintf(stderr, "    CUT fraction %.4f at 263\n", fraction);
                     absorbRefusedStep(body, index, fraction);
                 }
                 body.angle += allowed;
@@ -302,8 +300,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
                 if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
-                if (getenv("GTC_TRACE") && index == 2)
-                    std::fprintf(stderr, "    CUT along %.4f at line 303 spin %+.4f\n", along, body.spin);
                 absorbRefusedStep(body, index, along);
                 return along;
             };

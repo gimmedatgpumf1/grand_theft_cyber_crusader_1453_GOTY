@@ -400,7 +400,11 @@ private:
     void pivotCornersAt(const Body& body, double angle, std::array<Vec3, kMaxCorners>& corners) const;
     double pivotDepthAt(const Body& body, double angle) const;
     double pivotFloorDepthAt(const Body& body, double angle) const;
-    double pivotObjectDepthAt(const Body& body, double angle) const;
+    // `withBall` asks whether the ball counts as something the plank may not have
+    // turned into. It does when the question is whether the turn is allowed at all;
+    // it does not when the question is what the room does about a turn already taken,
+    // because the ball's own tick is what answers that -- see separateBodies().
+    double pivotObjectDepthAt(const Body& body, double angle, bool withBall = true) const;
     // The first angle a pinned body's turn meets something, as a fraction of the turn
     // it was given. One means nothing was in the way. This is the hitscan the plank
     // needed and did not have: a turn is a piece of travel like any other, and the

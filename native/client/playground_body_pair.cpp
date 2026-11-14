@@ -109,7 +109,7 @@ double PlaygroundRoom::pivotFloorDepthAt(const Body& body, double angle) const {
     return deepest;
 }
 
-double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle) const {
+double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle, bool withBall) const {
     std::array<Vec3, kMaxCorners> corners{};
     pivotCornersAt(body, angle, corners);
     double deepest = 0.0;
@@ -122,6 +122,7 @@ double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle) const 
             deepest = std::max(deepest, amount);
         }
     }
+    if (!withBall) return deepest;
     const double gap = outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
     deepest = std::max(deepest, ball_.radius - gap);
     return deepest;
@@ -656,10 +657,25 @@ void PlaygroundRoom::separateBodies() {
                     deepest = std::max(deepest, playground_tick::kSurfaceY - corners[i].y);
                 return deepest;
             };
+            // A ball is not something a plank is turned back out of, and this is
+            // where the loaded seesaw used to stop dead. The plank's corners are
+            // measured here against where the ball was *last* tick -- the ball's own
+            // half of the tick has not run yet -- so a plank that had simply turned
+            // onto the ball was found "inside" it, turned back to the angle it came
+            // from, and its spin taken with it: 0.96 rad/s of turn, gone in one tick,
+            // with the ball still where it was. That is not separation, it is the
+            // plank braking on nothing. The ball's own walk is what answers a face
+            // that has come to it -- it sweeps the turning face through the tick and
+            // carries the ball with it -- and separateBall() is the room's last word
+            // if anything is still inside anything after both halves have moved.
             const auto clear = [&](double angle) {
-                return pivotDepthAt(body, angle) <= playground_tick::kQuantum;
+                return std::max(pivotFloorDepthAt(body, angle), pivotObjectDepthAt(body, angle, false)) <=
+                       playground_tick::kQuantum;
             };
-            if (pivotDepthAt(body, body.angle) > playground_tick::kQuantum) {
+            const auto deepestNow = [&]() {
+                return std::max(pivotFloorDepthAt(body, body.angle), pivotObjectDepthAt(body, body.angle, false));
+            };
+            if (deepestNow() > playground_tick::kQuantum) {
                 // How far a turn of this body carries its furthest corner, which is
                 // how the answer is measured: a step that moves the tip four
                 // millimetres cannot pass over anything in a room whose thinnest thing
