@@ -77,10 +77,6 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
         }
     }
     body.velocity = body.pivoted ? Vec3{} : body.velocity + given * (1.0 / body.mass);
-    if (std::getenv("GTC_FAST") && length(body.velocity) > 3.0)
-        std::printf("FAST pushBody kind%d on%zu at(%+.4f,%+.4f) J(%+.4f,%+.4f) -> v(%+.4f,%+.4f) w%+.4f\n",
-                    int(kind), std::size_t(&body - bodies_.data()), at.x, at.y, impulse.x, impulse.y,
-                    body.velocity.x, body.velocity.y, body.spin);
     body.spin += (arm.x * given.y - arm.y * given.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
     // settling again from where the blow found it: it is not at rest any more, it
@@ -125,8 +121,6 @@ void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
     const Vec3 arm = at - ball_.position;
     const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
     ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
-    if (std::getenv("GTC_FAST") && length(ball_.velocity) > 3.0)
-        std::printf("FAST pushBall kind%d at(%+.4f,%+.4f) J(%+.4f,%+.4f) -> v(%+.4f,%+.4f)\n", int(kind), at.x, at.y, impulse.x, impulse.y, ball_.velocity.x, ball_.velocity.y);
     ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ballBlows_ = ballBlows_ + impulse;
     ball_.frozen = false;

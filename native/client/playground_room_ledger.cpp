@@ -3,8 +3,6 @@
 // at the end of the tick. It is a file of its own because it is one subject --
 // what the room did to what, and where -- and because the room itself is close to
 // the size a reader can hold in their head at once.
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room.h"
 
 
@@ -23,9 +21,6 @@ using namespace playground_tick;
 // is one force at one place, so an impulse already at that place and of that kind
 // is added to rather than grown as a second arrow.
 void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on) {
-    static const bool loud = std::getenv("GTC_LOUD") != nullptr;
-    if (loud && length(impulse) > 1.0)
-        std::printf("J on%zu kind%d at(%+.4f,%+.4f) J(%+.4f,%+.4f) |J|%+.4f\n", on, int(kind), at.x, at.y, impulse.x, impulse.y, length(impulse));
     for (std::size_t i = 0; i < impulseCount_; ++i) {
         RecordedImpulse& entry = impulses_[i];
         if (entry.kind != kind || entry.on != on) continue;

@@ -16,7 +16,6 @@
 #include <cmath>
 
 namespace gtc::native {
-extern int gtcAudit;
 namespace {
 
 // The ball's two coefficients are the room's: they are in playground_ball_shape.h
@@ -92,11 +91,6 @@ void PlaygroundRoom::settleBallFriction() {
             continue;
         }
         ballTouches_[i].surfaceVelocity = pointSpeed(mate, ball.position + ballTouches_[i].normal * -ball.radius);
-    }
-    if (gtcAudit) {
-        for (std::size_t i = 0; i < ballTouchCount_; ++i)
-            std::fprintf(stderr, "B  refreshed touch %zu sv(%+.4f,%+.4f)\n", i, ballTouches_[i].surfaceVelocity.x,
-                         ballTouches_[i].surfaceVelocity.y);
     }
     std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
@@ -288,9 +282,6 @@ void PlaygroundRoom::settleBallFriction() {
             // pass takes more again in the other direction. The two of them hand the
             // ball energy, tick after tick, which is exactly what an overshooting
             // friction solve does and exactly what must never happen here.
-            if (gtcAudit && pass < 40)
-                std::fprintf(stderr, "B   pass %d face %zu slip%+.5f next%+.5f lambda%+.5f imp%+.5f load%.5f\n", pass, i,
-                             slip, next, lambda[i], impulse, load);
             if (impulse * slip > 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
@@ -343,7 +334,6 @@ void PlaygroundRoom::settleBallFriction() {
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     static int guardCount = 0;
     if (still && energyAfter > energyBefore) ++guardCount;
-    if (gtcAudit) std::fprintf(stderr, "B  friction: still%d energyBefore %.6f energyAfter %.6f guard%d v(%+.5f,%+.5f) w%+.3f (before (%+.5f,%+.5f) w%+.3f)\n", int(still), energyBefore, energyAfter, int(still && energyAfter > energyBefore), ball.velocity.x, ball.velocity.y, ball.spin, velocityBefore.x, velocityBefore.y, spinBefore);
     if (still && energyAfter > energyBefore) {
         ball.velocity = velocityBefore;
         ball.spin = spinBefore;

@@ -26,7 +26,6 @@
 #include <cstdlib>
 
 namespace gtc::native {
-extern int gtcAudit;
 using namespace playground_detail;
 using namespace playground_tick;
 
@@ -754,7 +753,6 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
 void PlaygroundRoom::tickBodies() {
-    if (gtcAudit) std::fprintf(stderr, "T start ball v(%+.5f,%+.5f) pos(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y, ball_.position.x, ball_.position.y);
     // What every body arrived with, and how many contacts it had already been given.
     //
     // A body that spends a whole tick in free flight has followed a parabola, and a
@@ -822,18 +820,8 @@ void PlaygroundRoom::tickBodies() {
         if (!patch.ball) continue;
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
-    if (gtcAudit) std::fprintf(stderr, "T beforeSolve ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     solveContacts(patches);
-    if (gtcAudit)
-        std::fprintf(stderr, "T afterSolve  ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) w%+.4f tri v(%+.5f,%+.5f) w%+.4f\n",
-                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
-                     bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
     advanceBodies(kTick);
-    if (gtcAudit)
-        std::fprintf(stderr, "T afterAdvance ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) c(%+.5f,%+.5f) tri v(%+.5f,%+.5f) c(%+.5f,%+.5f)\n",
-                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y,
-                     bodies_[0].centre.x, bodies_[0].centre.y, bodies_[1].velocity.x, bodies_[1].velocity.y,
-                     bodies_[1].centre.x, bodies_[1].centre.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -847,12 +835,7 @@ void PlaygroundRoom::tickBodies() {
     // with the contacts answered against their own distances there is normally
     // nothing left for it to do.
     separateBodies();
-    if (gtcAudit) std::fprintf(stderr, "T afterSeparateBodies ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     settleBodies();
-    if (gtcAudit)
-        std::fprintf(stderr, "T afterSettleBodies ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) restT%d tri v(%+.5f,%+.5f) restT%d\n",
-                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y,
-                     bodies_[0].restTicks, bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].restTicks);
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
     // of the tick -- see there. Twice is harmless (the list is emptied each time) and
@@ -896,16 +879,8 @@ void PlaygroundRoom::answerBodiesAgain() {
         if (all.items[i].ball) continue;
         patches.add(all.items[i]);
     }
-    if (std::getenv("GTC_AGAIN"))
-        std::printf("AGAIN before cube(%+.4f,%+.4f) w%+.4f tri(%+.4f,%+.4f) w%+.4f patches%zu\n",
-                    bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
-                    bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, patches.count);
     if (patches.count == 0) return;
     solveContacts(patches);
-    if (std::getenv("GTC_AGAIN"))
-        std::printf("AGAIN after  cube(%+.4f,%+.4f) w%+.4f tri(%+.4f,%+.4f) w%+.4f\n",
-                    bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
-                    bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
 }
 
 // Was the frozen body under `index` ever given this body's load?

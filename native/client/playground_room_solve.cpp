@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -531,30 +529,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
-            static const bool loudPair = std::getenv("GTC_PAIR") != nullptr;
-            if (loudPair && dofs > 0 && (std::abs(delta[0]) > 0.5))
-                std::printf("Q kind%d b%zu o%zu/%d ball%d n(%+.3f,%+.3f) p(%+.5f,%+.5f) gap%+.6f u%+.5f g%+.5f carried%+.5f delta%+.5f\n",
-                            int(patch.kind), std::size_t(&*body - &bodies_[0]), patch.other, int(other != nullptr),
-                            int(patch.ball), patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y,
-                            patch.gap[0], u[0], g[0][0], carried[0], delta[0]);
-            if (loudPair && other != nullptr)
-                std::printf("P %zu-%zu n(%+.3f,%+.3f) p(%+.4f,%+.4f) gap%+.6f u[%+.5f,%+.5f] g[%.4g,%.4g;%.4g,%.4g] carried[%+.5f,%+.5f] delta[%+.5f,%+.5f]\n",
-                            std::size_t(&*body - &bodies_[0]), patch.other, patch.normal.x, patch.normal.y,
-                            patch.point[0].x, patch.point[0].y, patch.gap[0],
-                            dofs > 0 ? u[0] : 0.0, dofs > 1 ? u[1] : 0.0,
-                            dofs > 0 ? g[0][0] : 0.0, dofs > 1 ? g[1][0] : 0.0,
-                            dofs > 1 ? g[0][1] : 0.0, dofs > 1 ? g[1][1] : 0.0,
-                            carried[0], carried[1], dofs > 0 ? delta[0] : 0.0, dofs > 1 ? delta[1] : 0.0);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
-                const double before0 = away(patch.point[0], patch.normal);
                 pushEnd(k, patch.normal * delta[i], patch.kind);
-                if (loudPair && other != nullptr) {
-                    const double after0 = away(patch.point[0], patch.normal);
-                    std::printf("M k%zu delta%+.4f model%+.4f actual%+.4f\n", k, delta[i], -g[0][i] * delta[i],
-                                after0 - before0);
-                }
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
