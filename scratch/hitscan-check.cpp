@@ -93,6 +93,22 @@ double ballDepthAt(const PlaygroundRoom& r, double angle) {
     return deepest;
 }
 
+// Which shapes the turn is allowed to carry instead of being stopped by. The room's
+// rule, written out again here from positions alone: a shape free to be pushed that has
+// somewhere to go -- up, when the plank is under it, or down when the plank is over it
+// and it is standing high enough to make room -- is a load on the face and not an
+// obstacle. Everything else -- asleep, or with the floor behind it -- is a wall and the
+// turn stops on it.
+bool givesWay(const PlaygroundRoom& r, std::size_t i) {
+    const auto& solid = r.bodies_[i];
+    if (solid.count == 0 || solid.frozen) return false;
+    if (!(r.bodies_[S].pivotPoint.y > solid.centre.y)) return true;  // pushed up: room to go
+    const double overlap = shapeDepthAt(r, r.bodies_[S].angle, i);
+    double lowest = 1e30;
+    for (std::size_t k = 0; k < solid.count; ++k) lowest = std::min(lowest, solid.position[k].y);
+    return lowest - overlap >= -1e-6;
+}
+
 // The truth: the first fraction of `turn` at which any meeting is deeper than it was
 // when the turn began, found by slicing the turn far finer than anything in the room
 // and closing in on the first slice that is deeper.
@@ -104,10 +120,14 @@ double truth(const PlaygroundRoom& r, double turn) {
     for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
         if (i != std::size_t(S)) startShape[i] = shapeDepthAt(r, a0, i);
     const double startBall = ballDepthAt(r, a0);
+    bool loads[PlaygroundRoom::kBodyCount] = {};
+    for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
+        loads[i] = i != std::size_t(S) && givesWay(r, i);
     const auto free = [&](double angle) {
         if (floorDepthAt(r, angle) > startFloor + 1e-12) return false;
         for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
-            if (i != std::size_t(S) && shapeDepthAt(r, angle, i) > startShape[i] + 1e-12) return false;
+            if (i != std::size_t(S) && !loads[i] && shapeDepthAt(r, angle, i) > startShape[i] + 1e-12)
+                return false;
         return !(ballDepthAt(r, angle) > startBall + 1e-12);
     };
     double clear = 0.0;
