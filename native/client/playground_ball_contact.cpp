@@ -336,9 +336,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // only be cancelled again by the floor on the next tick, and cancelled
             // momentum is momentum the room has lost track of. The ball's share was
             // solved against that same refusal, so the pair still adds up.
+            std::fprintf(stderr, "    before push: body v (%+.3f,%+.3f) w %+.3f\n", body->velocity.x, body->velocity.y,
+                         body->spin);
             Vec3 handed = answer * -impulse;
             if (onFloor) handed.y = std::max(handed.y, 0.0);
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
+            std::fprintf(stderr, "    after  push: body v (%+.3f,%+.3f) w %+.3f  handed (%+.3f,%+.3f)\n",
+                         body->velocity.x, body->velocity.y, body->spin, handed.x, handed.y);
             blown = handed * -1.0;
             pressed = impulse * ballShare;
         } else {
