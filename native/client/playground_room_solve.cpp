@@ -531,6 +531,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 lifting = true;
             }
             if (lifting) continue;
+            static const bool loudPair = std::getenv("GTC_PAIR") != nullptr;
+            if (loudPair && other != nullptr)
+                std::printf("P %zu-%zu n(%+.3f,%+.3f) p(%+.4f,%+.4f) gap%+.6f u[%+.5f,%+.5f] g[%.4g,%.4g;%.4g,%.4g] carried[%+.5f,%+.5f] delta[%+.5f,%+.5f]\n",
+                            std::size_t(&*body - &bodies_[0]), patch.other, patch.normal.x, patch.normal.y,
+                            patch.point[0].x, patch.point[0].y, patch.gap[0],
+                            dofs > 0 ? u[0] : 0.0, dofs > 1 ? u[1] : 0.0,
+                            dofs > 0 ? g[0][0] : 0.0, dofs > 1 ? g[1][0] : 0.0,
+                            dofs > 1 ? g[0][1] : 0.0, dofs > 1 ? g[1][1] : 0.0,
+                            carried[0], carried[1], dofs > 0 ? delta[0] : 0.0, dofs > 1 ? delta[1] : 0.0);
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
