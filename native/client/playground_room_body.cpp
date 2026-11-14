@@ -444,10 +444,16 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // surface speed -- five hundredths of a millimetre per second, every tick -- and
         // the friction solve turned it into a roll the ball could never lose.
         //
-        // What is left is an arrival, and an arrival is the walk's business: the shape
-        // is swept to the instant it meets the ball and answered there, with the
-        // ball's own bounciness. This half of the tick answers contacts that exist.
-        if (gap > playground_tick::kQuantum) continue;
+        // What is left is an arrival, and an arrival is answered as one: a shape that
+        // really will touch the ball before this tick is over is answered here, at the
+        // instant it arrives -- see hitAt -- instead of being carried into the surface
+        // and having its whole step refused. A shape that is merely *near* the ball is
+        // not: it is not touching it, and a contact it does not have is a contact that
+        // answers a surface speed it never had.
+        if (gap > playground_tick::kQuantum) {
+            const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
+            if (!(closing > 0.0) || !(gap <= closing * kTick)) continue;
+        }
         // Does it get there? A contact is a meeting, and a shape that is still on its
         // way to the ball has not met it: it is falling, and falling is the walk's
         // business. The band is the reach of one tick, so a shape inside it may or may
