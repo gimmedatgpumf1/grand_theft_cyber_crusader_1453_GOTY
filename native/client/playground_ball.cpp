@@ -119,10 +119,22 @@ void PlaygroundRoom::tickBall() {
     // felt nothing, and a balanced see-saw with a ball sitting on one end of it sat
     // there for ever. The same is true of a ball resting on a shape that is itself
     // free to slide, and of one resting on a shape the mouse is carrying.
-    const auto supportCanMove = [this]() {
+    // ...and "nothing it touches can move" is only an answer if it touches something.
+    //
+    // Asked as it was written -- `!supportCanMove()` -- an empty list of faces said
+    // yes: a ball with nothing recorded against it was a ball held up by nothing that
+    // could move, and so was held. Measured on a ball fired at a cube: mid-flight, with
+    // the room's own contact list empty, it counted as held, its share of the blow it
+    // was about to strike came out as 0.0000, and the cube took the whole of the
+    // impulse -- 41.8 newton seconds out of a ball carrying 3.7, and a cube that left
+    // at 9.65 m/s from a hit at 6. That is the side restitution of 0.0000 the King's
+    // check has been failing on, and it was never about restitution at all: the ball
+    // was stone for that one tick.
+    const auto restingOnStillSurface = [this]() {
+        if (ballTouchCount_ == 0) return false;  // against nothing: not held by anything
         for (std::size_t i = 0; i < ballTouchCount_; ++i)
-            if (ballTouches_[i].body < kBodyCount && !bodies_[ballTouches_[i].body].frozen) return true;
-        return false;
+            if (ballTouches_[i].body < kBodyCount && !bodies_[ballTouches_[i].body].frozen) return false;
+        return true;
     };
     // And the one surface that can always hold it is the ground. A ball resting on
     // the floor with a shape leaning against its side is held -- by the floor. Asking
@@ -163,7 +175,7 @@ void PlaygroundRoom::tickBall() {
     // falls -- which is what the outgoing half of a bounce is, and it is the one thing
     // this rule has to keep. A ball pressed sideways along the floor is not leaving it.
     const bool leaving = ball.touching && dot(ball.velocity, ball.supportNormal) > 0.0;
-    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || !supportCanMove());
+    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || restingOnStillSurface());
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of

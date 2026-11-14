@@ -478,6 +478,36 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // closing at all is not on its way anywhere: it is resting, or sliding along
         // the ball, and that is a contact whether or not it covers any ground.
         if (reach > 0.0 && gap > reach) continue;
+        // Whose contact is it? A meeting belongs to the one that arrived at it, and the
+        // room has two solvers for it, which are not interchangeable.
+        //
+        // The ball's own walk answers *the ball* arriving at a shape: it carries the
+        // ball to the instant of the meeting, it knows the ball is round and it bounces
+        // it, which is the ball's restitution and its spin. This solver answers *a
+        // shape* arriving at the ball: it is a contact against a surface, and it has no
+        // restitution in it at all.
+        //
+        // So a ball flying at a shape has to be the walk's, and it was not: the ball was
+        // gathered here, answered as a resting contact, and stopped dead. Measured, a
+        // ball fired at 6 m/s at the flat middle of a cube's face came off at 0.00 m/s
+        // of separation -- no bounce at all -- and the two of them left the meeting
+        // travelling together at 0.57 m/s. The check that fires it every which way read
+        // side restitution 0.0000 against the floor's 0.8120. What it was measuring was
+        // this: the ball never got to bounce, because the shape's half had already
+        // answered the blow as a push.
+        //
+        // What stays here is the shape's own arrival -- a weight coming down on the
+        // crown -- and the resting pair, which is the case this patch was made for: a
+        // shape standing on a ball, held up by it. A ball rolling along under a shape
+        // is not closing on it either: a surface point of a rolling ball moves *along*
+        // the shape it carries, not into it.
+        {
+            const double bodyClosing = -dot(pointSpeed(body, at), way);  // the shape, into the ball
+            const double ballClosing = dot(ballPointSpeed(at), way);     // the ball, into the shape
+            // A shape that is not moving towards the ball, and a ball that is, is the
+            // ball's meeting: leave it to the walk.
+            if (!(bodyClosing > 0.0) && ballClosing > 0.0) continue;
+        }
         Manifold patch;
         patch.body = index;
         patch.ball = true;
