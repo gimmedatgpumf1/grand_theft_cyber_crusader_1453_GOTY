@@ -248,6 +248,24 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     const double fraction = pivotTurnAllowed(body, turn);
                     allowed = turn * fraction;
                     if (!(fraction > 0.0)) body.angle = body.angle;
+                    // What the sweep refused, the axle takes -- and it has to, or the
+                    // plank goes on saying one thing with its spin and doing another
+                    // with its angle. That is a seesaw that will not swing: pressed
+                    // against the floor it kept two radians a second it was not
+                    // spending, and the moment the load came off it the whole of that
+                    // was suddenly real. Meantime the contact solving against it was
+                    // told the plank was turning at two radians a second when it had
+                    // not moved, which is momentum out of nothing.
+                    //
+                    // A turn is a piece of travel like any other, and refused travel is
+                    // absorbed here exactly as it is for a free body: the spin is what
+                    // is left after the refusal, and the couple that took the rest is
+                    // written down at the pin, where the bearing gave it.
+                    const double kept = body.spin * fraction;
+                    const double taken = body.moment * (body.spin - kept) / time;
+                    body.spin = kept;
+                    if (std::abs(taken) > 1e-9)
+                        addCouple(body.pivotPoint, taken, Vec3{0, 0, 0}, ForceKind::Contact, index);
                 }
                 body.angle += allowed;
                 body.centre = body.pivotPoint;

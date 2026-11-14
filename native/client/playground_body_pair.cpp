@@ -274,19 +274,31 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
     // begin. It is only the beginning: turning *out* is free, which is what lets a shape
     // that is a hair inside something leave it instead of being frozen there with the
     // contact still feeding the axle a torque -- the pump the King saw.
+    //
+    // "Inside" is the room's own word for it, and it means deeper than a micrometre.
+    // This used to be asked at a picometre, which caught every body that was merely
+    // *touching*: a ball resting on the plank is at exactly one radius from it, and the
+    // arithmetic that keeps it there lands a nanometre either side -- so a turn that
+    // pushed the surface a nanometre into the ball it was carrying was called a turn
+    // into something, and the plank was refused. The plank then said one thing with its
+    // spin and did another with its angle, which is a seesaw that will not swing under a
+    // load: sluggish, and nothing like a plank on an axle. A body that is only touching
+    // is not inside anything, and a plank may turn under what is resting on it -- the
+    // contact is what carries the load, and it is answered after the turn, not instead
+    // of it.
     {
         const double mine = floorDepth(body.angle);
         const double past = floorDepth(body.angle + way * nudge);
-        if (past > mine + 1e-12) return 0.0;
+        if (mine > playground_tick::kQuantum && past > mine + 1e-12) return 0.0;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
             const double a0 = objectDepth(body.angle, other);
             const double a1 = objectDepth(body.angle + way * nudge, other);
-            if (a1 > a0 + 1e-12) return 0.0;
+            if (a0 > playground_tick::kQuantum && a1 > a0 + 1e-12) return 0.0;
         }
         const double b0 = ballDepth(body.angle);
         const double b1 = ballDepth(body.angle + way * nudge);
-        if (b1 > b0 + 1e-12) return 0.0;
+        if (b0 > playground_tick::kQuantum && b1 > b0 + 1e-12) return 0.0;
     }
     const auto take = [&](double u, double past, const auto& depth) {
         if (!(u > -nudge && u <= span)) return;
