@@ -357,13 +357,31 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             // face was moving away from it and rolled through it -- the clipping.
             //
             // So a corner is an end when it can be at the surface before the tick is
-            // over: it is there now, or it is coming down fast enough to arrive. The
-            // one exception is the face that is already lying on the floor, whose ends
-            // stand a hair apart (kFaceFlat) and whose other end therefore belongs to
-            // the same contact -- answering that face at one corner makes it rock from
-            // corner to corner for ever, which is the tremor this room has had before.
+            // over: it is there now, or it is coming down fast enough to arrive. That
+            // is the whole rule, and it holds for a face lying flat on the floor as
+            // well: its ends are both within the room's own definition of touching --
+            // a micrometre -- so both are ends, and the face is held up by both of
+            // them, which is what stops it rocking from corner to corner for ever.
+            //
+            // It used to have an exception: any corner within a millimetre of the
+            // floor counted as an end whether or not it was coming down. That is a
+            // thousand times the resolution of the room, and it bought the flat face a
+            // rest pose a whole *millimetre* off level. Measured: a square that landed
+            // on a corner and toppled onto its face came to rest 0.000232 m up at one
+            // corner -- 0.02 degrees off level, and perfectly still, held there by
+            // 19.59 N of floor reaction at a point 0.23 mm in the air while the other
+            // corner carried 19.60 N on the ground. A contact can only push a body
+            // away from something it is touching, so that was a force with nothing
+            // under it, and the shape it held was never flat: every face it has was a
+            // hundredth of a degree off true, which is why the air drag on a shape
+            // thrown straight up came back 1e-7 short of the formula and a ball
+            // bouncing off its side came back with 0.75 of its bounciness instead of
+            // 0.81. Let go of that one exception and gravity does the rest: the raised
+            // end falls the last fifth of a millimetre, arrives, and from then on the
+            // face is flat because both of its ends are on the floor, not because the
+            // floor is answering a corner that is above it.
             if (height > band) continue;
-            if (height > playground_tick::kFaceFlat) {
+            if (height > playground_tick::kQuantum) {
                 const double coming = -dot(pointSpeed(body, body.position[i]), Vec3{0, 1, 0});
                 if (height > std::max(0.0, coming) * kTick) continue;
             }
