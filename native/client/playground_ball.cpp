@@ -175,6 +175,8 @@ void PlaygroundRoom::settleBallSurfaces() {
                     // constraint -- no correction of place, and no speed taken that the
                     // surface did not take.
                     const double allowed = -std::max(0.0, spare) / kTick;
+                    if (std::getenv("KV") && distance < ball.radius + 1e-3)
+                        std::printf("  [edge] pass%d b%zu e%zu spare%+.9f closing%+.7f allowed%+.7f\n", pass, index, edge, spare, closing, allowed);
                     if (closing < allowed) {
                         // The speed the ball gives up here is a blow, and a blow has two
                         // ends. It used to be taken off the ball and written nowhere else:
