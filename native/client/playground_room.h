@@ -404,7 +404,15 @@ private:
     // turned into. It does when the question is whether the turn is allowed at all;
     // it does not when the question is what the room does about a turn already taken,
     // because the ball's own tick is what answers that -- see separateBodies().
-    double pivotObjectDepthAt(const Body& body, double angle, bool withBall = true) const;
+    //
+    // `withFree` asks the same question of a shape that is free to be pushed. A shape
+    // lying on the plank is carried by it: the face comes to the shape, the shape's own
+    // patch takes the answer, and the face goes on turning. Turning the plank back out
+    // of it instead is a plank that stops dead under its own load -- the stop-move-stop
+    // the King saw, arriving from the shapes rather than from the ball. Only something
+    // that cannot be pushed -- a shape asleep, or one in the mouse's hand -- is a wall a
+    // plank may not turn into.
+    double pivotObjectDepthAt(const Body& body, double angle, bool withBall = true, bool withFree = true) const;
     // The first angle a pinned body's turn meets something, as a fraction of the turn
     // it was given. One means nothing was in the way. This is the hitscan the plank
     // needed and did not have: a turn is a piece of travel like any other, and the

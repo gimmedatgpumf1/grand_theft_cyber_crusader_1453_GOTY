@@ -109,13 +109,17 @@ double PlaygroundRoom::pivotFloorDepthAt(const Body& body, double angle) const {
     return deepest;
 }
 
-double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle, bool withBall) const {
+double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle, bool withBall, bool withFree) const {
     std::array<Vec3, kMaxCorners> corners{};
     pivotCornersAt(body, angle, corners);
     double deepest = 0.0;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
         const Body& solid = bodies_[other];
         if (&solid == &body || solid.count == 0) continue;
+        // A shape the room can push is not a shape the plank has to give way to. It is
+        // carried: the patch between them answers the face, and the face keeps turning.
+        // See the note beside this in playground_room.h.
+        if (!withFree && !solid.frozen && !bodyHeld(other)) continue;
         Vec3 way{0, 1, 0};
         double amount = 0.0;
         if (outlineOverlap(corners.data(), body.count, solid.position.data(), solid.count, way, amount)) {
@@ -267,6 +271,16 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         const double gap = outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0).gap;
         return std::max(0.0, ball_.radius - gap);
     };
+        // Which shapes a pinned body may not turn into at all. A shape that is free to
+        // be pushed is not one of them: the face coming to it is a contact, the contact
+        // is what moves it, and turning the plank back out of it instead is a plank that
+        // stops dead the moment anything is laid on it -- a seesaw that will not tip
+        // under a rider, then tips, then stops again, which is what the King saw. Only a
+        // shape the room cannot push -- asleep, or in the mouse's hand -- is a wall here.
+        // The floor is the other, and it is answered above and below as what it is.
+        const auto isWall = [&](std::size_t other) {
+            return bodies_[other].frozen || bodyHeld(other);
+        };
     double first = span + 1.0;  // no meeting at all
     const auto deeper = [&](double at, double past, const auto& depth) {
         return depth(past) > depth(at) + 1e-12;
@@ -281,6 +295,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         if (past > mine + 1e-12) return 0.0;
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
+            if (!isWall(other)) continue;
             const double a0 = objectDepth(body.angle, other);
             const double a1 = objectDepth(body.angle + way * nudge, other);
             if (a1 > a0 + 1e-12) return 0.0;
@@ -323,6 +338,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         }
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == std::size_t(&body - &bodies_[0]) || bodies_[other].count == 0) continue;
+            if (!isWall(other)) continue;
             const Body& solid = bodies_[other];
             // This body's corners against that shape's faces. The corner's arc meets a
             // face's line where the line is a radius away from the pin at the right
@@ -689,11 +705,12 @@ void PlaygroundRoom::separateBodies() {
             // carries the ball with it -- and separateBall() is the room's last word
             // if anything is still inside anything after both halves have moved.
             const auto clear = [&](double angle) {
-                return std::max(pivotFloorDepthAt(body, angle), pivotObjectDepthAt(body, angle, false)) <=
+                return std::max(pivotFloorDepthAt(body, angle), pivotObjectDepthAt(body, angle, false, false)) <=
                        playground_tick::kQuantum;
             };
             const auto deepestNow = [&]() {
-                return std::max(pivotFloorDepthAt(body, body.angle), pivotObjectDepthAt(body, body.angle, false));
+                return std::max(pivotFloorDepthAt(body, body.angle),
+                                pivotObjectDepthAt(body, body.angle, false, false));
             };
             if (deepestNow() > playground_tick::kQuantum) {
                 // How far a turn of this body carries its furthest corner, which is
