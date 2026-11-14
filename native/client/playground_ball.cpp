@@ -174,7 +174,21 @@ void PlaygroundRoom::tickBall() {
     // follows -- a surface that can carry the weight leaves nothing for gravity to
     // do -- and it is what makes "rest" actually rest instead of a floor and a
     // weight trading the same impulse back and forth every tick.
-    const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed;
+    // A surface that can move does not carry the ball's weight: it is answered with
+    // it, and it moves because of it. "Held" is only true of something that is
+    // really underneath and really fixed -- the floor, or a shape the room is not
+    // stepping -- and a ball at rest on a seesaw was held by it as if the plank were
+    // the ground: the weight was taken off the ball and given to nobody, the plank
+    // felt nothing, and a balanced see-saw with a ball sitting on one end of it sat
+    // there for ever. The same is true of a ball resting on a shape that is itself
+    // free to slide, and of one resting on a shape the mouse is carrying.
+    const auto supportCanMove = [this]() {
+        for (std::size_t i = 0; i < ballTouchCount_; ++i)
+            if (ballTouches_[i].body < kBodyCount && !bodies_[ballTouches_[i].body].frozen) return true;
+        return false;
+    };
+    const bool held =
+        ball.touching && ball.standing && length(ball.velocity) < kRestSpeed && !supportCanMove();
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
