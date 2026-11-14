@@ -706,6 +706,7 @@ void PlaygroundRoom::tickBall() {
                 meetingResting = hit.resting;
             }
         }
+        if (std::getenv("KV")) std::printf("  [walk] step%d rem%+.6f first%+.6f what%d blocked%d depth%+.9f v(%+.6f,%+.6f) pos(%.9f,%.9f)\n", step, remaining, first, what, int(blocked), depth, ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y);
         if (restart) continue;
         if (first > 1.0) {
             if (blocked) break;  // it may not be spent: that travel goes through a face
