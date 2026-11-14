@@ -427,7 +427,24 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{0, 1, 0}, at{};
         const double gap = bodyBallGap(index, way, at);
-        if (gap > band) continue;
+        // Touching, not "within the reach of a tick".
+        //
+        // This used to be `gap > band`, and the band is as big as the furthest
+        // anything can be carried in a tick -- which for a spinning shape is its
+        // *turn*, and a triangle leaning on a ball with a slanted face turns. Measured
+        // in the King's corner: the pair was answered as a contact at a gap of 36 um,
+        // thirty-six times the room's own definition of touching, because the
+        // triangle's turn swept forty microns of its outline in one tick. A shape is
+        // not in contact with anything it is not touching, and a perfectly still pair
+        // was being handed a contact it did not have: the triangle's spinning surface
+        // was read as a surface sweeping into the ball, the ball was answered with that
+        // surface speed -- five hundredths of a millimetre per second, every tick -- and
+        // the friction solve turned it into a roll the ball could never lose.
+        //
+        // What is left is an arrival, and an arrival is the walk's business: the shape
+        // is swept to the instant it meets the ball and answered there, with the
+        // ball's own bounciness. This half of the tick answers contacts that exist.
+        if (gap > playground_tick::kQuantum) continue;
         // Does it get there? A contact is a meeting, and a shape that is still on its
         // way to the ball has not met it: it is falling, and falling is the walk's
         // business. The band is the reach of one tick, so a shape inside it may or may
