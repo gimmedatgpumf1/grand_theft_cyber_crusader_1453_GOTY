@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -54,6 +55,8 @@ void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kep
     // contact can only push a body away from what it pressed on, and the ledger now
     // says so.
     const Vec3 taken = (wasSpeed - body.velocity) * body.mass;
+    if (index == 0 && std::abs(wasSpeed.y + 3.3642) < 0.01)
+        std::fprintf(stderr, "  ABSORB kept %.5f v (%.4f,%.4f)\n", kept, wasSpeed.x, wasSpeed.y);
     const Vec3 push = taken * -1.0;
     // And where it was given: at the part of the body that ran into the thing, which
     // is the part furthest along the way the momentum went -- not at the middle of the
