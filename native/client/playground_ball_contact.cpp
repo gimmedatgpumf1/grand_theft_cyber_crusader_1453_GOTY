@@ -266,6 +266,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
+    std::fprintf(stderr, "BC b%d closing %+.3f approach %+.3f rebound %+.3f resting %d depth %.5f n(%+.3f,%+.3f)\n",
+                 bodyIndex, closing, approach, rebound, int(resting), depth, normal.x, normal.y);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
@@ -344,6 +346,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // compliance, and a shape given less than that keeps a speed that
             // disagrees with the relative velocity the solve was aiming for -- which
             // is restitution quietly not delivered.
+            std::fprintf(stderr, "   impulse %.4f ballShare %.4f bodyShare %.4f\n", impulse, ballShare, bodyShare);
             Vec3 handed = answer * -impulse;
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
             blown = handed * -1.0;
@@ -462,6 +465,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // by the floor, and the blow it took and the blow it handed back are two forces
     // at one place, not none. The other half -- what the ground supplied -- is worked
     // out once at the end of the tick, from the ball's account, in tickBall().
+    std::fprintf(stderr, "   ball out v (%+.3f,%+.3f) w %+.3f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     ballBlows_ = ballBlows_ + blown;
     if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
     recordBall();
