@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
@@ -301,6 +303,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
     // two met, because that is where it acts.
+    if (std::getenv("KV")) std::printf("  [bc] body%d n(%+.4f,%+.4f) exch%d rest%d depth%+.9f reached%+.4f v_in(%+.5f,%+.5f) at(%.9f,%.9f)\n", bodyIndex, normal.x, normal.y, int(exchange), int(resting), depth, reached, ball.velocity.x, ball.velocity.y, contactPoint.x, contactPoint.y);
     const Vec3 ballBefore = ball.velocity;
     const double spinBefore = ball.spin;
     // The body's side is written by giveBodyTurn, which is the call that hands it
