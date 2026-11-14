@@ -26,9 +26,6 @@ using namespace playground_detail;
 // is playground_ball_touch.cpp. There is no speed at which one rule turns into
 // another.
 
-namespace {
-}  // namespace
-
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
 // dot and every body count: if any of them is moving, the ball is looked at.
 bool PlaygroundRoom::ballNeighboursMoving() const {
