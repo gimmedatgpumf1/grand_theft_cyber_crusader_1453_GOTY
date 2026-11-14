@@ -434,7 +434,6 @@ void PlaygroundRoom::tickBall() {
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
                 ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
-                weightForTheRest(remaining);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -486,7 +485,6 @@ void PlaygroundRoom::tickBall() {
                     // second -- speed with nowhere to go.
                     ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
-                    weightForTheRest(remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
                     // is worked out again against it instead of being handed back.
                     //
