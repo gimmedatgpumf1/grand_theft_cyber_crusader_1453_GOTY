@@ -17,7 +17,8 @@
 #include <vector>
 namespace { constexpr double kDt = 1.0 / 20.0; }
 int main() {
-    int frictionSeen = 0, offFace = 0, oppositePairs = 0, oppositeWhileTurning = 0;
+    int frictionSeen = 0, offFace = 0, oppositePairs = 0, oppositeWhileTurning = 0, floating = 0;
+    double worstFloat = 0.0;
     double worstOffFace = 0.0;
     for (int trial = 0; trial < 60; ++trial) {
         PlaygroundRoom r;
@@ -58,7 +59,26 @@ int main() {
                     if (std::abs(g.gap) > 3e-3) continue;
                     normals.push_back(g.normal);
                 }
-                if (normals.empty()) continue;
+                if (normals.empty()) {
+                    // How far is it from every surface? A contact arrow belongs on the
+                    // surface it acts on; one drawn in mid-air acts nowhere.
+                    double nearest = 1e30;
+                    if (s.at.y > 0.0) nearest = s.at.y;
+                    for (std::size_t other = 0; other < PlaygroundRoom::kBodyCount; ++other) {
+                        if (other == which || r.bodies_[other].count == 0) continue;
+                        const auto g = ball_shape::outlineGap(s.at, r.bodies_[other].position.data(),
+                                                              r.bodies_[other].position.data(),
+                                                              r.bodies_[other].count, 1.0);
+                        nearest = std::min(nearest, std::abs(g.gap));
+                    }
+                    if (nearest > worstFloat) {
+                        worstFloat = nearest;
+                        std::printf("FLOATING friction (%+.2f,%+.2f) at (%+.4f,%+.4f): %.4f m from any surface\n",
+                                    s.force.x, s.force.y, s.at.x, s.at.y, nearest);
+                    }
+                    ++floating;
+                    continue;
+                }
                 double across = 1e30;
                 Vec3 normal = normals[0];
                 for (const Vec3& n : normals)
@@ -102,5 +122,7 @@ int main() {
     std::printf("  not lying along the face they act on: %d (worst %.2e of their length)\n", offFace, worstOffFace);
     std::printf("  two ends of one floor contact held opposite ways: %d, of which the body was turning: %d\n",
                 oppositePairs, oppositeWhileTurning);
+    std::printf("  drawn in mid-air, away from every surface: %d of them (worst %.4f m off)\n", floating,
+                worstFloat);
     return 0;
 }

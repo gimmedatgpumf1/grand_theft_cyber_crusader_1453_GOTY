@@ -400,7 +400,15 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                     }
                     lowest[k] = height;
                     patch.corner[k] = i;
-                    patch.point[k] = body.position[i];
+                    // Where the corner meets the floor, not where it is now.
+                    //
+                    // The band gathers a contact that has not happened yet -- a corner
+                    // a hand's width up is on its way down, and the load it will land
+                    // with is answered now. Its lever arm is the line that load will
+                    // act along, and that line meets the floor, not the air the corner
+                    // is in. Drawn at the corner, the arrow hung in the air above the
+                    // ground it was pressing on, and read as a force on nothing.
+                    patch.point[k] = Vec3{body.position[i].x, playground_tick::kSurfaceY, 0.0};
                     patch.gap[k] = height;
                     break;
                 }
@@ -531,7 +539,15 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             patch.normal = meeting.normal;
             for (std::size_t k = 0; k < meeting.ends && k < kMaxPatchEnds; ++k) {
                 patch.corner[k] = kMaxCorners;  // a place on a face, not a corner
-                patch.point[k] = meeting.at[k];
+                // On the face the load passes through, not on the face that is about
+                // to arrive at it. The same rule as the floor above: a meeting within
+                // the band has not happened yet, and the line its load acts along is
+                // the one where the two outlines touch -- the incident point brought
+                // back onto the reference face by its own separation. Left where the
+                // incident point is, contact arrows were drawn up to a hundred and
+                // fourteen millimetres off the surface they acted on, floating inside
+                // the shape: friction pointing at nothing, which is what the King saw.
+                patch.point[k] = meeting.at[k] - meeting.normal * (-meeting.depth[k]);
                 // Signed, like every other gap: inside is negative, and what is left
                 // of it after the tick is the position pass's business.
                 patch.gap[k] = -meeting.depth[k];
