@@ -641,6 +641,7 @@ void PlaygroundRoom::tickBall() {
     // floor that answers it. Touching when the tick ends counts as touching,
     // exactly as it does for the dot: the walk only reports arrivals, and a ball
     // already lying on something never arrives at it again.
+    if (std::getenv("KV")) std::printf("  [walkend] pos(%.12f,%.12f) v(%+.6f,%+.6f) prev(%.12f,%.12f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, ball.previous.x, ball.previous.y);
     // Every surface the ball is against, asked to hold it out of itself. This is the
     // contact constraint, and it is enforced here and again after the grip: see
     // settleBallSurfaces().
