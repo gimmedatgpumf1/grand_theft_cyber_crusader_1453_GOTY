@@ -406,15 +406,23 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 highest = std::max(highest, patch.gap[k]);
             }
             const bool lying = highest - lowest <= kFaceFlat;
-            // Lying, the clearance the face may still close is the deepest end's, and
-            // a face that is already touching may close nothing: a corner inside the
-            // surface is a state the walk put it in, and the walk takes it out.
-            const double faceClose = lying && lowest > 0.0 ? lowest * (1.0 / kTick) : 0.0;
+            // Touching is closer than a micrometre, which is the room's own definition
+            // and the one the rest of it works to (see kQuantum): a face with a
+            // nanostmetre of daylight under it is standing on the surface, not on its
+            // way to it, and a clearance it is *allowed* to spend is a clearance it
+            // goes on hovering over. Measured: a square lying flat on the floor, which
+            // is as resting as a body gets, sat nineteen nanometres up and was let
+            // close three hundred and eighty nanometres a second of that gap every tick
+            // -- a speed the walk then refused, since it is a thousandth of a
+            // micrometre -- so the floor's answer was short of the weight by 3.1e-5 N,
+            // every tick, for ever, and the ledger could not balance it.
+            const double faceClose = lying && lowest > kQuantum ? lowest * (1.0 / kTick) : 0.0;
             for (std::size_t k = 0; k < count; ++k) {
                 if (!live[k]) continue;
                 order[dofs] = k;
                 const double bias =
-                    lying ? faceClose : (patch.gap[k] > 0.0 ? patch.gap[k] * (1.0 / kTick) : 0.0);
+                    lying ? faceClose
+                          : (patch.gap[k] > kQuantum ? patch.gap[k] * (1.0 / kTick) : 0.0);
                 // A face that bounces is a face that is *arriving*, and an arrival is
                 // a moment, not a whole tick. The clearance bias lets a face spend the
                 // tick closing the gap it has -- right for a shape settling onto a
