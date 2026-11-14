@@ -571,6 +571,9 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     double t = 0.0;
     for (int pass = 0; pass < 96; ++pass) {
         const double soonest = soonestMeeting(t);
+        if (dbgStep && pass < 4)
+            std::fprintf(stderr, "      step pass %d t %.9f soonest %.9g limit %+.6f startGap %+.6f\n", pass, t,
+                         soonest, limit, startGap);
         if (!(soonest > playground_tick::kQuantum)) {
             if (blockedBy != nullptr) *blockedBy = stopping;
             return t;
