@@ -875,6 +875,7 @@ void PlaygroundRoom::tickBall() {
                          ballTouches_[i].surfaceVelocity.x, ballTouches_[i].surfaceVelocity.y, now.x, now.y, ballTouches_[i].pressed);
         }
     }
+    answerBodiesAgain();
     settleBallFriction();
     if (gtcAudit) std::fprintf(stderr, "B afterFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
     // And the contact constraint once more, because the grip is the last thing that

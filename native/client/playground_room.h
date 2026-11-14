@@ -534,6 +534,11 @@ private:
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
+    // The shapes answered a second time inside the ball's half of the tick: see the
+    // file. This is the room's own solve, over the shapes only, and it is what makes
+    // a face's speed the speed it really has before the ball's grip is measured
+    // against it.
+    void answerBodiesAgain();
     // A shape found overlapping another shape, or the floor, is moved out of it by
     // its position alone -- no speed is given it and none is taken away. This is the
     // one thing a velocity solver cannot do: a constraint on speed says "do not come
