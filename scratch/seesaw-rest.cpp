@@ -44,9 +44,9 @@ int main() {
                 load = std::max(load, length(s.applied[i].impulse) / 0.05);
         const double gap =
             ball_shape::outlineGap(r.ball_.position, s.position.data(), s.position.data(), s.count, 1.0).gap - r.ball_.radius;
-        std::printf("%3d  %+.5f  %+.6f  %+.3f      %zu        %.2f N    %.4f  %+.3f  %+.5f  frozen %d ballFrozen %d\n",
+        std::printf("%3d  %+.5f  %+.6f  %+.3f      %zu        %.2f N    %.4f  %+.3f  %+.5f  spin %+.4f ballv(%+.3f,%+.3f) bs %+.3f clamped %zu\n",
                     k, s.angle, step, accel, s.appliedCount, load, r.ball_.position.y, r.ball_.velocity.y, gap,
-                    s.frozen ? 1 : 0, r.ball_.frozen ? 1 : 0);
+                    s.spin, r.ball_.velocity.x, r.ball_.velocity.y, r.ball_.spin, r.bodyStepClamped_);
     }
     return 0;
 }

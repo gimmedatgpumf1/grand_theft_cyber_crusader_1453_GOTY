@@ -284,9 +284,23 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
             const double a1 = objectDepth(body.angle + way * nudge, other);
             if (a1 > a0 + 1e-12) return 0.0;
         }
-        const double b0 = ballDepth(body.angle);
-        const double b1 = ballDepth(body.angle + way * nudge);
-        if (b1 > b0 + 1e-12) return 0.0;
+        // The ball does not veto a *pinned* body's turn, and that is the whole of
+        // why a loaded seesaw used to stop dead at the bottom of its swing. The
+        // check here is geometric: "would turning further put this corner inside
+        // that thing". For a shape with a free step that is the right question,
+        // because the step is the shape's own travel and refusing it is prevention.
+        // A pinned body's turn is not its own travel to refuse: the ball's own walk
+        // sweeps the face through the tick and carries the ball with it -- the same
+        // reason the ball's walk skips a pinned body when it is deciding whose step
+        // to shorten. Asked here as well, the plank was stopped whenever the ball sat
+        // where the face was about to be, its whole turn was handed back, and it
+        // resumed the next tick once the contact had moved the ball a hair: the
+        // seesaw moved, stopped, moved, stopped, and the ball rode it in surges.
+        if (!body.pivoted) {
+            const double b0 = ballDepth(body.angle);
+            const double b1 = ballDepth(body.angle + way * nudge);
+            if (b1 > b0 + 1e-12) return 0.0;
+        }
     }
     const auto take = [&](double u, double past, const auto& depth) {
         if (!(u > -nudge && u <= span)) return;
@@ -371,6 +385,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     (radius * radius + reach * reach - ball_.radius * ball_.radius) / (2.0 * radius * reach);
                 const double spread = std::acos(std::max(-1.0, std::min(1.0, cosAt)));
                 const double middle = std::atan2(away.y, away.x);
+                if (body.pivoted) continue;
                 for (const double which : {1.0, -1.0}) {
                     double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
@@ -391,6 +406,7 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k1 = dot(away, outward);
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
+                if (body.pivoted) continue;
                 if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball_.radius, body.angle, way, span, u))
                     continue;
                 take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
