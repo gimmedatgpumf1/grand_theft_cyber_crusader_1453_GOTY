@@ -134,8 +134,26 @@ void PlaygroundRoom::tickBall() {
     bool onTheFloor = false;
     for (std::size_t i = 0; i < ballTouchCount_; ++i)
         if (ballTouches_[i].body >= kBodyCount) onTheFloor = true;
-    const bool held = ball.touching && ball.standing && length(ball.velocity) < kRestSpeed &&
-                      (onTheFloor || !supportCanMove());
+    // Held is about the surface, not about how fast the ball happens to be going.
+    //
+    // It used to be gated on the ball moving slower than the room can resolve, and
+    // that gate is a trap the tick closes on itself: the weight is put into the ball
+    // because it is not held, the contact leaves a residual of that weight in it, the
+    // residual is a hair above the resolution, and the hair is what keeps it from
+    // being held on the next tick. Measured in the King's corner: a ball on the floor
+    // with the triangle's slope leaning on it settled at 2.3e-5 m/s of travel into the
+    // corner and 2.3e-5 m/s for the next four hundred ticks, decaying by 2.6e-8 m/s a
+    // tick -- a walk of 5.4 mm across the scene, and it is a fixed point, not a decay,
+    // because the number it has to fall below is the number the same loop is holding
+    // it at.
+    //
+    // What makes a surface a support is whether the ball is travelling into it or away
+    // from it. A ball that is not leaving the floor has its weight carried by the
+    // floor, at every speed; a ball on its way up is not carried by anything, and it
+    // falls -- which is what the outgoing half of a bounce is, and it is the one thing
+    // this rule has to keep. A ball pressed sideways along the floor is not leaving it.
+    const bool leaving = ball.touching && dot(ball.velocity, ball.supportNormal) > 0.0;
+    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || !supportCanMove());
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
