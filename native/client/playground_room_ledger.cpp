@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -26,10 +25,25 @@ void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::s
         RecordedImpulse& entry = impulses_[i];
         if (entry.kind != kind || entry.on != on) continue;
         if (length(entry.at - at) > 1e-6) continue;
-        if (kind == ForceKind::Friction)
-            std::fprintf(stderr, "MERGE friction at (%.4f,%.4f): (%.2f,%.2f) + (%.2f,%.2f)\n", at.x, at.y,
-                         entry.impulse.x, entry.impulse.y, impulse.x, impulse.y);
-        entry.impulse = entry.impulse + impulse;
+        // Two forces at one place are one arrow only when they are the *same* force.
+        //
+        // A contact solved in many passes is one contact: every pass adds along the
+        // same line, and the arrows add up to it. Two different contacts that happen
+        // to meet at the same point are not one force, and adding them is how a
+        // friction arrow came to point at neither surface it was acting on. A cube
+        // wedged into the corner where the floor and a slope meet has the floor
+        // holding it one way and the slope another, at the same point; summed, the
+        // pair read as one arrow pushing into the slope at forty-five degrees, which
+        // is exactly the "friction pointing away from the triangle" the King found.
+        // Measured in that scene: the floor's (0.00,0.00)+(-1.63,0.00) and the slope's,
+        // added into a single (-33.08,+13.46) that is neither of them.
+        //
+        // So a merge is a merge only along one line. Anything else is a second force
+        // at the same place, and it gets its own arrow.
+        const Vec3 sum = entry.impulse + impulse;
+        const double turned = length(Vec3{entry.impulse.x * impulse.y - entry.impulse.y * impulse.x, 0.0, 0.0});
+        if (turned > 1e-4 * std::max(length(sum), 1e-12)) continue;
+        entry.impulse = sum;
         return;
     }
     if (impulseCount_ >= impulses_.size()) return;
