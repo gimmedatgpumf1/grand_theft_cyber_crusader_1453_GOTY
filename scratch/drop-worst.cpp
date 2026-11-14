@@ -51,8 +51,10 @@ int main() {
         const int now = r.bodyStepClamped_ - before;
         clamps += now;
         const double th = throughBody(r, 0, r.ball_.position, r.ball_.radius);
-        std::printf("t%02d thru %+.5f | ball (%+.4f,%+.4f) v(%+.3f,%+.3f) w%+.2f frz%d touch%d | cube mid (%+.4f,%+.4f) ang %+.3f v(%+.3f,%+.3f) spin %+.3f frz%d | clamps %d\n",
-                    tick, th, r.ball_.position.x, r.ball_.position.y, r.ball_.velocity.x, r.ball_.velocity.y, r.ball_.spin,
+        Vec3 way{}, at{};
+        const double roomGap = r.bodyBallGap(0, way, at);
+        std::fprintf(stderr, "t%02d thru %+.5f roomgap %+.5f | ball (%+.4f,%+.4f) v(%+.3f,%+.3f) w%+.2f frz%d touch%d | cube mid (%+.4f,%+.4f) ang %+.3f v(%+.3f,%+.3f) spin %+.3f frz%d | clamps %d\n",
+                    tick, th, roomGap, r.ball_.position.x, r.ball_.position.y, r.ball_.velocity.x, r.ball_.velocity.y, r.ball_.spin,
                     int(r.ball_.frozen), int(r.ball_.touching), r.bodies_[0].centre.x, r.bodies_[0].centre.y, r.bodies_[0].angle,
                     r.bodies_[0].velocity.x, r.bodies_[0].velocity.y, r.bodies_[0].spin, int(r.bodies_[0].frozen), now);
     }
