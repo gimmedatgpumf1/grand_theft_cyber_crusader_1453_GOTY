@@ -205,6 +205,23 @@ inline bool collide(const Vec3* a, std::size_t na, const Vec3* b, std::size_t nb
         }
         const Vec3 from = at - faceFrom;
         const double separation = faceNormal.x * from.x + faceNormal.y * from.y;
+        // An end of the incident face that is further from the surface than a tick's
+        // travel is not an end of anything: it is the far end of an edge that happens
+        // to be clipped in, and its distance is not a distance the face is closing.
+        //
+        // Clipping the incident edge to the *span* of the face it lies on says which
+        // part of that edge is over the face; it does not say which part of it is
+        // *near* it. An edge running away from the surface at a steep angle has one
+        // end on it and the other a metre and a half up in the air, and both of them
+        // fall inside the span. Taken as an end of the patch, the far one is a metre
+        // and a half of clearance for a face that has half a millimetre, and the solver
+        // spends it: the near end is then allowed to close a metre and a half a second
+        // and nothing pushes the shape off the surface at all. That is what a triangle
+        // resting against the seesaw's face did -- its patch carried a phantom end
+        // 1.469 m up its own edge, gravity was never answered, and the sweep ate the
+        // whole fall every tick and drew it as a force. A contact end within a tick's
+        // reach is a contact; one beyond it is a corner of the same polygon in the air.
+        if (separation > band) continue;
         out.at[out.ends] = at;
         out.depth[out.ends] = -separation;  // positive is overlap, as it always was
         out.overlap = std::max(out.overlap, -separation);
