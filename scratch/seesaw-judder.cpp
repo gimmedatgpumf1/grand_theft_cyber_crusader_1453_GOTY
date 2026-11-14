@@ -39,8 +39,22 @@ int main() {
         for (std::size_t i = 0; i < s.appliedCount; ++i)
             if (s.applied[i].kind == PlaygroundRoom::ForceKind::Ball)
                 load = std::max(load, length(s.applied[i].impulse) / 0.05);
-        std::printf("%3d  %+.5f  %+.6f  %+.3f      %zu applied, ball load %.2f N   ball y %.4f\n", k, s.angle, step,
-                    accel, s.appliedCount, load, r.ball_.position.y);
+        const double gap =
+            ball_shape::outlineGap(r.ball_.position, s.position.data(), s.position.data(), s.count, 1.0).gap - r.ball_.radius;
+        const double startGap =
+            ball_shape::outlineGap(r.ball_.previous, s.previous.data(), s.previous.data(), s.count, 1.0).gap - r.ball_.radius;
+        for (std::size_t i = 0; i < s.appliedCount; ++i) {
+            const auto& a = s.applied[i];
+            std::printf("      APPLY k%d at (%+.4f,%+.4f) j(%+.4f,%+.4f) |j| %.2f N\n", int(a.kind), a.at.x, a.at.y,
+                        a.impulse.x, a.impulse.y, length(a.impulse) / 0.05);
+        }
+        std::printf("      plank");
+        for (std::size_t i = 0; i < s.count; ++i) std::printf(" (%+.3f,%+.3f)", s.position[i].x, s.position[i].y);
+        std::printf("  ball (%+.3f,%+.3f)\n", r.ball_.position.x, r.ball_.position.y);
+        std::printf("%3d  %+.5f  %+.6f  %+.3f      %zu applied, ball load %.2f N   ball y %.4f vy %+.3f gap %+.5f "
+                    "start %+.5f spin %+.4f\n",
+                    k, s.angle, step, accel, s.appliedCount, load, r.ball_.position.y, r.ball_.velocity.y, gap, startGap,
+                    s.spin);
     }
     return 0;
 }

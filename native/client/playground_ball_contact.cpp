@@ -240,25 +240,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // ball arrived with rather than the speed gravity lent it on the way: a ball on
     // the floor gets that every tick, and bouncing it would be bouncing it off
     // nothing.
-    // Whether the ball was already against this shape when the tick began. A ball
-    // that was is resting on it, or sliding along it, and a resting contact is not an
-    // arrival: it gives nothing back. This is the same question the shapes ask of
-    // each other (see `wasAgainst` in tickBall and `body.wasOnBall`), and it has to be
-    // asked of the ball as well, because the ball's own arrival is measured against
-    // the *moving* face. A ball rolling down a turning plank is closing on that face
-    // every tick by the plank's own motion, so every tick was answered as an arrival
-    // and given restitution: the ball was bounced clear of the plank, fell for a tick,
-    // landed, was bounced clear again. The plank was loaded on every other tick and
-    // coasted the ticks between -- angular acceleration a square wave at ten hertz,
-    // which is the stop-move-stop-move the King can see and no amount of smooth
-    // interpolation can hide.
-    bool wasAgainst = false;
-    if (body != nullptr && body->count > 0) {
-        const double startGap =
-            ball_shape::outlineGap(ball.previous, body->previous.data(), body->previous.data(), body->count, 1.0).gap;
-        wasAgainst = startGap <= ball.radius + kTouch;
-    }
-    const double rebound = (arrivedSpeed < 0.0 && !wasAgainst) ? -kBallRestitution * arrivedSpeed : 0.0;
+    const double rebound = arrivedSpeed < 0.0 ? -kBallRestitution * arrivedSpeed : 0.0;
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
@@ -420,8 +402,18 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // itself through a face that has already finished moving -- which is exactly
     // what a ball landing on a shape that gives a little under it does. A bounce has
     // turned the ball around before this runs, so nothing that was leaving is caught.
+    // Measured against the surface's own motion, not against the room. A face that
+    // is travelling -- a turning plank, a shape a weight is pushing over -- is where
+    // the ball may not go *relative to it*, and asking the question of the ball's
+    // speed alone answered something else: it took the surface's motion for speed
+    // the ball had and could not spend, and paid it back as a blow. On a seesaw at a
+    // radian a second that was a third of a metre a second of speed conjured out of
+    // nothing, every contact, along the normal -- which both threw the ball clear of
+    // the very face it had just been answered on and left the plank unloaded for the
+    // ticks the ball spent falling back. The ball was in the air half the time and
+    // the plank was kicked the other half: stop, move, stop, move.
     {
-        const double into = dot(ball.velocity, normal);
+        const double into = dot(ball.velocity - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
     // What this shape gave the ball, drawn where the two met.
