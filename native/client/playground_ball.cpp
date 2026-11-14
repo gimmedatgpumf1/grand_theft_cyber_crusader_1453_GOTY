@@ -835,8 +835,12 @@ void PlaygroundRoom::tickBall() {
     // while its speed at the end of every tick was 0.93 um a tick's worth, and the
     // difference -- eleven microns of travel that no speed of the ball accounts for --
     // is a ball that is standing still and still moving.
-    if (std::getenv("NOTRAP") == nullptr && !ball.bent)
-        ball.position = ball.position + (ball.velocity - walkStart) * (0.5 * kTick);
+    if (!ball.bent && length(ball.velocity) < length(walkStart)) {
+        const Vec3 slower = (ball.velocity - walkStart) * (0.5 * kTick);
+        // Only ever backwards along the way it was already going, and never upwards:
+        // a correction that lifted the ball would be a height it never fell from.
+        if (slower.y <= 0.0 && dot(slower, walkStart) <= 0.0) ball.position = ball.position + slower;
+    }
     // A ball that ends the tick where it began it went nowhere, so the speed that
     // would have carried it is not a speed: it is a number below the room's own
     // resolution that nothing in the room can ever spend, and every surface it leans
