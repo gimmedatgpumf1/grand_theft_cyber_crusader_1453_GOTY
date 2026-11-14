@@ -102,11 +102,12 @@ double ballDepthAt(const PlaygroundRoom& r, double angle) {
 bool givesWay(const PlaygroundRoom& r, std::size_t i) {
     const auto& solid = r.bodies_[i];
     if (solid.count == 0 || solid.frozen) return false;
-    if (!(r.bodies_[S].pivotPoint.y > solid.centre.y)) return true;  // pushed up: room to go
+    const double away = solid.centre.y >= r.bodies_[S].pivotPoint.y ? 1.0 : -1.0;
     const double overlap = shapeDepthAt(r, r.bodies_[S].angle, i);
+    const double push = overlap > 0.0 ? overlap : 4e-6;
     double lowest = 1e30;
     for (std::size_t k = 0; k < solid.count; ++k) lowest = std::min(lowest, solid.position[k].y);
-    return lowest - overlap >= -1e-6;
+    return lowest + away * push >= -1e-6;
 }
 
 // The truth: the first fraction of `turn` at which any meeting is deeper than it was
