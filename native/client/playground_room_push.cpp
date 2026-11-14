@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 
 namespace gtc::native {
 
@@ -59,13 +58,11 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // place on the shape's own base that is underneath it, and written down there as
     // the contact it is. The shape keeps the rest, and the arrows add up to what the
     // shape actually feels.
-    Vec3 given = impulse;
+    const Vec3 given = bodyFree(body, impulse);
     Vec3 floorAnswer{};
     Vec3 floorAt{};
-    static const bool noFloorAnswer = std::getenv("GTC_NOFLOOR") != nullptr;
-    if (!noFloorAnswer && !body.pivoted && body.touchingPlane && given.y < 0.0) {
-        floorAnswer = Vec3{0.0, -given.y, 0.0};
-        given.y = 0.0;
+    if (given.y != impulse.y) {
+        floorAnswer = Vec3{0.0, impulse.y - given.y, 0.0};
         // The place on its base under the push: the corner it stands on that is
         // nearest beneath it, because that is where the load actually lands.
         floorAt = Vec3{at.x, playground_tick::kSurfaceY, 0.0};
