@@ -610,20 +610,16 @@ void PlaygroundRoom::settleBodies() {
         // cycle that walked the triangle 49 um a tick in and out and kept the ball
         // awake to be crept along. Nothing was moving. A shape standing on something
         // that is standing still is standing still.
-        // ...and the ball does not have to be asleep for that to be true: it has to be
-        // *held*. Waiting for the ball to sleep first is a deadlock, and it was one:
-        // the ball could only come to rest once the triangle stopped answering it, and
-        // the triangle could only stop answering it once it was carried, and the only
-        // support it had was the ball. Measured, both sat inside the rest box for four
-        // minutes -- the triangle within ten microns, the ball within forty -- and
-        // neither could ever be called still, because `carried` was the one question
-        // that never came back true. What holds the ball is the floor, and a ball the
-        // floor is holding is a surface a shape can stand on. The gap is read first and
-        // the way it gives is what says whether the ball is under the body: the test
-        // used to be written against an empty vector, so it could never be true.
+        // The gap is read first, and the way it gives is what says whether the ball is
+        // under the body.
+        //
+        // It used to be written the other way round -- `ballWay.y > 0.5` tested before
+        // bodyBallGap() had filled ballWay in -- so the test was made against a vector
+        // that was still zero, and this whole branch could never be true, whatever the
+        // geometry. A ball asleep under a leaning shape was therefore never a support.
         Vec3 ballWay{}, ballAt{};
         const double ballGap = bodyBallGap(index, ballWay, ballAt);
-        const bool carriedByBall = body.onBall && ball_.touching && ball_.standing && ballWay.y > 0.5 &&
+        const bool carriedByBall = body.onBall && ball_.frozen && ballWay.y > 0.5 &&
                                    ballGap <= kContactBand &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
