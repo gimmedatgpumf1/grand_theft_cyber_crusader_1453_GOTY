@@ -824,9 +824,16 @@ void PlaygroundRoom::tickBodies() {
     }
     if (gtcAudit) std::fprintf(stderr, "T beforeSolve ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     solveContacts(patches);
-    if (gtcAudit) std::fprintf(stderr, "T afterSolve  ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
+    if (gtcAudit)
+        std::fprintf(stderr, "T afterSolve  ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) w%+.4f tri v(%+.5f,%+.5f) w%+.4f\n",
+                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin,
+                     bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
     advanceBodies(kTick);
-    if (gtcAudit) std::fprintf(stderr, "T afterAdvance ball v(%+.5f,%+.5f) pos(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y, ball_.position.x, ball_.position.y);
+    if (gtcAudit)
+        std::fprintf(stderr, "T afterAdvance ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) c(%+.5f,%+.5f) tri v(%+.5f,%+.5f) c(%+.5f,%+.5f)\n",
+                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y,
+                     bodies_[0].centre.x, bodies_[0].centre.y, bodies_[1].velocity.x, bodies_[1].velocity.y,
+                     bodies_[1].centre.x, bodies_[1].centre.y);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
@@ -842,7 +849,10 @@ void PlaygroundRoom::tickBodies() {
     separateBodies();
     if (gtcAudit) std::fprintf(stderr, "T afterSeparateBodies ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
     settleBodies();
-    if (gtcAudit) std::fprintf(stderr, "T afterSettleBodies ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
+    if (gtcAudit)
+        std::fprintf(stderr, "T afterSettleBodies ball v(%+.5f,%+.5f) cube v(%+.5f,%+.5f) restT%d tri v(%+.5f,%+.5f) restT%d\n",
+                     ball_.velocity.x, ball_.velocity.y, bodies_[0].velocity.x, bodies_[0].velocity.y,
+                     bodies_[0].restTicks, bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].restTicks);
     // What this half of the tick applied, turned into arrows. The ball's own
     // contacts are answered after this, and they are flushed by advance() at the end
     // of the tick -- see there. Twice is harmless (the list is emptied each time) and
