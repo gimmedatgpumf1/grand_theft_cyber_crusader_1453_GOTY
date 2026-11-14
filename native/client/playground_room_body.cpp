@@ -193,6 +193,7 @@ void PlaygroundRoom::applyAirDrag() {
 // place a body's place or turn is ever changed by the simulation.
 double PlaygroundRoom::advanceBodies(double seconds) {
     if (!(seconds > 0.0)) return 0.0;
+    static const char* dbgTag = "  ";
     // The step itself, under the room's resolution: a shape whose centre would
     // move less than a micrometre this tick does not move, and a shape whose turn
     // would carry its furthest corner less than a micrometre does not turn. Below
@@ -298,9 +299,15 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const auto sweptStep = [&](Vec3 middle, double angle) {
                 if (body.count == 0) return 1.0;
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
-                if (!(along < 1.0)) return 1.0;
+                if (index == 0)
+                    std::fprintf(stderr, "%s  BODY0 step along %.6f spin %+7.3f -> ", dbgTag, along, body.spin);
+                if (!(along < 1.0)) {
+                    if (index == 0) std::fprintf(stderr, "kept %+7.3f\n", body.spin);
+                    return 1.0;
+                }
                 ++bodyStepClamped_;
                 absorbRefusedStep(body, index, along);
+                if (index == 0) std::fprintf(stderr, "absorbed %+7.3f\n", body.spin);
                 return along;
             };
             if (body.hitAt < 1.0) {
