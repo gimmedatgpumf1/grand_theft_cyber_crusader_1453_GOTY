@@ -797,7 +797,12 @@ void PlaygroundRoom::tickBodies() {
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
+    std::fprintf(stderr, "  AFTERSOLVE cube v(%+7.4f,%+7.4f) w %+7.4f | plank w %+7.4f\n", bodies_[0].velocity.x,
+                 bodies_[0].velocity.y, bodies_[0].spin, bodies_[2].spin);
     advanceBodies(kTick);
+    std::fprintf(stderr, "  AFTERADV   cube v(%+7.4f,%+7.4f) w %+7.4f | plank w %+7.4f a %+7.4f\n",
+                 bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[2].spin,
+                 bodies_[2].angle);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
