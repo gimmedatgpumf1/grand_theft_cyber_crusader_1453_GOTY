@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 namespace { constexpr double kDt = 1.0 / 20.0; }
 int main() {
     int frictionSeen = 0, offFace = 0, oppositePairs = 0, oppositeWhileTurning = 0;
@@ -44,22 +45,27 @@ int main() {
                 if (s.owner != which || s.kind != PlaygroundRoom::ForceKind::Friction || s.couple) continue;
                 if (length(s.force) < 1e-6) continue;
                 ++frictionSeen;
-                // The surface: the floor, or another body's outline.
-                Vec3 normal{0.0, 1.0, 0.0};
-                bool found = s.at.y <= 2e-3;
-                if (!found) {
-                    for (std::size_t other = 0; other < PlaygroundRoom::kBodyCount && !found; ++other) {
-                        if (other == which || r.bodies_[other].count == 0) continue;
-                        const auto g = ball_shape::outlineGap(s.at, r.bodies_[other].position.data(),
-                                                             r.bodies_[other].position.data(),
-                                                             r.bodies_[other].count, 1.0);
-                        if (std::abs(g.gap) > 3e-3) continue;
-                        normal = g.normal;
-                        found = true;
-                    }
+                // Every surface within a millimetre of the place it acts. The arrow is
+                // right if it lies along *one* of them: a point where two surfaces
+                // meet has two frictions, and each belongs to its own face.
+                std::vector<Vec3> normals;
+                if (s.at.y <= 3e-3) normals.push_back(Vec3{0.0, 1.0, 0.0});
+                for (std::size_t other = 0; other < PlaygroundRoom::kBodyCount; ++other) {
+                    if (other == which || r.bodies_[other].count == 0) continue;
+                    const auto g = ball_shape::outlineGap(s.at, r.bodies_[other].position.data(),
+                                                          r.bodies_[other].position.data(),
+                                                          r.bodies_[other].count, 1.0);
+                    if (std::abs(g.gap) > 3e-3) continue;
+                    normals.push_back(g.normal);
                 }
-                if (!found) continue;
-                const double across = std::abs(s.force.x * normal.x + s.force.y * normal.y) / length(s.force);
+                if (normals.empty()) continue;
+                double across = 1e30;
+                Vec3 normal = normals[0];
+                for (const Vec3& n : normals)
+                    if (std::abs(s.force.x * n.x + s.force.y * n.y) / length(s.force) < across) {
+                        across = std::abs(s.force.x * n.x + s.force.y * n.y) / length(s.force);
+                        normal = n;
+                    }
                 if (across > 1e-3) {
                     ++offFace;
                     if (across > worstOffFace) {

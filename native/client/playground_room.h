@@ -108,7 +108,7 @@ public:
     // corners, the dot, the ball, and the contacts and pairs between them. The
     // number is a bound on the array, not a cut: nothing is ever dropped quietly,
     // because a ledger that loses entries is worse than no ledger at all.
-    static constexpr std::size_t kMaxForceSamples = 128;
+    static constexpr std::size_t kMaxForceSamples = 256;
     static constexpr std::size_t kArrowsPerKind = 20;
     struct ForceSample {
         Vec3 at{};     // where it acts, in metres
@@ -929,7 +929,11 @@ private:
     // force, with room to spare. It is a bound, never a cut: a tick that silently
     // dropped impulses would draw a body with arrows that do not add up to what it
     // actually felt.
-    static constexpr std::size_t kMaxRecordedImpulses = 4 * kBodyCount * std::size_t(ForceKind::KindCount) + 8;
+    // One entry per contact per kind. Two contacts are never added together, so
+    // a point where the floor and a face both act is two entries, not one: the
+    // bound is twice the old one, which is what that costs.
+    static constexpr std::size_t kMaxRecordedImpulses =
+        8 * kBodyCount * std::size_t(ForceKind::KindCount) + 16;
     std::array<RecordedImpulse, kMaxRecordedImpulses> impulses_{};
     std::size_t impulseCount_ = 0;
     void clearImpulses() { impulseCount_ = 0; }
