@@ -81,7 +81,6 @@ void PlaygroundRoom::tickBall() {
     // nothing -- see the end of this function, and the same rule for a shape's step in
     // advanceBodies(). It is the room's own micrometre, not a new tolerance.
     const Vec3 beganAt = ball.position;
-    if (std::getenv("KP")) std::printf("    [bt] enter v (%+.3e,%+.3e) spin %+.2e\n", ball.velocity.x, ball.velocity.y, ball.spin);
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
@@ -943,7 +942,6 @@ void PlaygroundRoom::tickBall() {
         const Vec3 correction = shorter - ball.position;
         if (dot(correction, walkStart) <= 0.0) ball.position = shorter;
     }
-    if (std::getenv("KP")) std::printf("    [bt] leave v (%+.3e,%+.3e) spin %+.2e bent %d\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.bent ? 1 : 0);
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;

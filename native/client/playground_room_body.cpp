@@ -299,9 +299,6 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const auto sweptStep = [&](Vec3 middle, double angle) {
                 if (body.count == 0) return 1.0;
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
-                if (std::getenv("KS") && index == 1)
-                    std::printf("        [step] along %.6f v (%+.3e,%+.3e) w %+.2e from (%.6f,%.6f)\n", along,
-                                body.velocity.x, body.velocity.y, body.spin, body.centre.x, body.centre.y);
                 if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
                 absorbRefusedStep(body, index, along);
@@ -498,14 +495,11 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // spin every tick, the ball's grip took nine tenths of it back, and the tenth
         // that was left is the ball that would not stop creeping.
         {
-            if (std::getenv("KP"))
-                std::printf("      [bp] body %zu gap %+.2e quiet? ", index, gap);
             const Vec3 arm = at - body.centre;
             const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
                                body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
             // Both sides as the tick found them: this runs before the solve, so the
             // ball's own speed and turn are still the ones it arrived with.
-            if (std::getenv("KP")) std::printf("%d\n", dot(arrived - ballPointSpeed(at), way) >= 0.0 ? 1 : 0);
             if (dot(arrived - ballPointSpeed(at), way) >= 0.0) patch.quiet = true;
         }
         patches.add(patch);
@@ -616,9 +610,21 @@ void PlaygroundRoom::settleBodies() {
         // cycle that walked the triangle 49 um a tick in and out and kept the ball
         // awake to be crept along. Nothing was moving. A shape standing on something
         // that is standing still is standing still.
+        // ...and the ball does not have to be asleep for that to be true: it has to be
+        // *held*. Waiting for the ball to sleep first is a deadlock, and it was one:
+        // the ball could only come to rest once the triangle stopped answering it, and
+        // the triangle could only stop answering it once it was carried, and the only
+        // support it had was the ball. Measured, both sat inside the rest box for four
+        // minutes -- the triangle within ten microns, the ball within forty -- and
+        // neither could ever be called still, because `carried` was the one question
+        // that never came back true. What holds the ball is the floor, and a ball the
+        // floor is holding is a surface a shape can stand on. The gap is read first and
+        // the way it gives is what says whether the ball is under the body: the test
+        // used to be written against an empty vector, so it could never be true.
         Vec3 ballWay{}, ballAt{};
-        const bool carriedByBall = body.onBall && ball_.frozen && ballWay.y > 0.5 &&
-                                   bodyBallGap(index, ballWay, ballAt) <= kContactBand &&
+        const double ballGap = bodyBallGap(index, ballWay, ballAt);
+        const bool carriedByBall = body.onBall && ball_.touching && ball_.standing && ballWay.y > 0.5 &&
+                                   ballGap <= kContactBand &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
         const bool carried = carriedByPlane || carriedByBody || carriedByBall;
@@ -807,7 +813,6 @@ void PlaygroundRoom::tickBodies() {
     // still must feel none of it.
     applyAirDrag();
     applyBodyForces();
-    if (std::getenv("KT")) std::printf("    [w] afterForces tri v (%+.3e,%+.3e) w %+.3e | ball v (%+.3e,%+.3e) frz %d\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, ball_.velocity.x, ball_.velocity.y, ball_.frozen ? 1 : 0);
     // How far anything can get before this tick is over. Every end within that is a
     // contact *this tick*: it could arrive before the tick ends, so it is answered
     // now, against the distance it has left.
@@ -848,9 +853,7 @@ void PlaygroundRoom::tickBodies() {
         if (!patch.ball) continue;
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
-    if (std::getenv("KT")) std::printf("    [w] preSolve tri v (%+.3e,%+.3e) w %+.3e\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin);
     solveContacts(patches);
-    if (std::getenv("KT")) std::printf("    [w] postSolve tri v (%+.3e,%+.3e) w %+.3e | ball v (%+.3e,%+.3e)\n", bodies_[1].velocity.x, bodies_[1].velocity.y, bodies_[1].spin, ball_.velocity.x, ball_.velocity.y);
     advanceBodies(kTick);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {

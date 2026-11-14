@@ -556,10 +556,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 carried[k] += delta[i];
                 patch.normalImpulse[k] = carried[k];
             }
-            if (std::getenv("KQ") && patch.body == 1)
-                std::printf("        [p] ends %zu ball %d n (%+.3f,%+.3f) gap %+.3e J0 %.4f J1 %.4f carry0 %.4f carry1 %.4f\n",
-                            count, patch.ball ? 1 : 0, patch.normal.x, patch.normal.y, patch.gap[0], delta[0],
-                            count > 1 ? delta[1] : 0.0, carried[0], count > 1 ? carried[1] : 0.0);
             break;
         }
         // The grip, over the face, against the load the face as a whole carries.
@@ -732,7 +728,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // grip holding it agree with each other, which is where the sweep is done.
         if (loadWorst < kAgree && gripWorst < kAgree) break;
     }
-    if (std::getenv("ENDGRIP") == nullptr) sweep(false);
+    sweep(false);
     return closingAtAll;
 }
 
