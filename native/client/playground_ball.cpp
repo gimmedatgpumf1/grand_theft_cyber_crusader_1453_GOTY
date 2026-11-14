@@ -1,9 +1,6 @@
-#include <cstdio>
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
-
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -65,7 +62,6 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
-    if (std::getenv("KV")) std::printf("  [tick] enter v(%+.5f,%+.5f)\n", ball.velocity.x, ball.velocity.y);
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
     // ball -- and this half of the tick only adds the faces the ball's own walk meets.
@@ -489,7 +485,6 @@ void PlaygroundRoom::tickBall() {
                 meetingResting = hit.resting;
             }
         }
-        if (std::getenv("KV")) std::printf("  [walk] step%d rem%+.6f first%+.6f what%d blocked%d depth%+.9f v(%+.6f,%+.6f) pos(%.9f,%.9f)\n", step, remaining, first, what, int(blocked), depth, ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y);
         if (restart) continue;
         if (first > 1.0) {
             if (blocked) break;  // it may not be spent: that travel goes through a face
@@ -641,7 +636,6 @@ void PlaygroundRoom::tickBall() {
     // floor that answers it. Touching when the tick ends counts as touching,
     // exactly as it does for the dot: the walk only reports arrivals, and a ball
     // already lying on something never arrives at it again.
-    if (std::getenv("KV")) std::printf("  [walkend] pos(%.12f,%.12f) v(%+.6f,%+.6f) prev(%.12f,%.12f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, ball.previous.x, ball.previous.y);
     // Every surface the ball is against, asked to hold it out of itself. This is the
     // contact constraint, and it is enforced here and again after the grip: see
     // settleBallSurfaces().
@@ -662,9 +656,7 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
-    if (std::getenv("KV")) std::printf("  [tick] beforeGrip v(%+.5f,%+.5f) w%+.4f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
     settleBallFriction();
-    if (std::getenv("KV")) std::printf("  [tick] afterGrip  v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the

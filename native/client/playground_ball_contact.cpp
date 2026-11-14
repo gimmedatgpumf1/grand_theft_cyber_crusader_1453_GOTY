@@ -1,5 +1,3 @@
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
@@ -31,7 +29,6 @@ void PlaygroundRoom::settleBallAgainstSupports() {
     constexpr int kRounds = 32;
     for (int round = 0; round < kRounds; ++round) {
         const Vec3 wasSpeed = ball.velocity;
-        if (std::getenv("KV")) std::printf("  [loop] round %d v(%+.7f,%+.7f) w%+.5f\n", round, ball.velocity.x, ball.velocity.y, ball.spin);
         const double wasSpin = ball.spin;
         // The shapes first and the ball last. The ball's answer is the one that has to
         // be measured against the face as it really is, and a face's real speed is the
@@ -71,7 +68,6 @@ constexpr int kBallSurfacePasses = 64;
 // stopped, moved nowhere, and shook for as long as the room was left alone.
 void PlaygroundRoom::settleBallSurfaces() {
     Ball& ball = ball_;
-    if (std::getenv("KV")) std::printf("  [surf] enter v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     {
         ball.touching = false;
         ball.standing = true;
@@ -190,8 +186,6 @@ void PlaygroundRoom::settleBallSurfaces() {
                     // constraint -- no correction of place, and no speed taken that the
                     // surface did not take.
                     const double allowed = -std::max(0.0, spare) / kTick;
-                    if (std::getenv("KV") && distance < ball.radius + 1e-3)
-                        std::printf("  [edge] pass%d b%zu e%zu spare%+.9f clos%+.7f allow%+.7f sv(%+.6f,%+.6f) n(%+.4f,%+.4f) bv(%+.6f,%+.6f)\n", pass, index, edge, spare, closing, allowed, surface.x, surface.y, normal.x, normal.y, ball.velocity.x, ball.velocity.y);
                     if (closing < allowed) {
                         // The speed the ball gives up here is a blow, and a blow has two
                         // ends. It used to be taken off the ball and written nowhere else:
@@ -209,7 +203,6 @@ void PlaygroundRoom::settleBallSurfaces() {
                         // `closing - allowed` is negative here, and the ball's speed rises
                         // by the opposite of it. The shape takes exactly this much the other
                         // way -- a push and its partner, and no momentum from nowhere.
-                        if (std::getenv("KV")) std::printf("  [surf] b%zu e%zu closing%+.5f allowed%+.5f sv(%+.5f,%+.5f)\n", index, edge, closing, allowed, surface.x, surface.y);
                         const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                         ball.velocity = ball.velocity - normal * (closing - allowed);
                         pushBody(body, at, blow * -1.0, ForceKind::Contact);
@@ -231,11 +224,9 @@ void PlaygroundRoom::settleBallSurfaces() {
             // the room drew it and never spent it. Asking again until the answer stops
             // moving is the same rule the shapes' own load and grip are swept by, and
             // it is the only count that is not arbitrary: the loop ends on the answer.
-            if (std::getenv("KV")) std::printf("  [surf] pass %d answered%d delta %.9f\n", pass, int(answered), length(ball.velocity - wasSpeed));
             if (!answered) break;
             if (length(ball.velocity - wasSpeed) <= playground_tick::kQuantumSpeed) break;
         }
-        if (std::getenv("KV")) std::printf("  [surf] leave v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
         for (const FaceBlow& slot : blows)
             if (slot.used && length(slot.impulse) > 1e-12)
                 addForce(slot.at, slot.impulse, ForceKind::Contact, nullptr, kBallOwner);
@@ -347,7 +338,6 @@ void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
 void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached) {
     Ball& ball = ball_;
-    if (std::getenv("KV")) std::printf("  [bc] body %d n(%+.3f,%+.3f) exch%d rest%d v_in(%+.5f,%+.5f) w%+.4f\n", bodyIndex, normal.x, normal.y, int(exchange), int(resting), ball.velocity.x, ball.velocity.y, ball.spin);
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
@@ -636,7 +626,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // is restitution quietly not delivered.
             Vec3 handed = answer * -impulse;
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
-            if (std::getenv("KV")) std::printf("  [bc]   ->ball v(%+.5f,%+.5f) w%+.4f body v(%+.5f,%+.5f) w%+.4f handed(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y, ball.spin, body->velocity.x, body->velocity.y, body->spin, handed.x, handed.y);
             blown = handed * -1.0;
             pressed = impulse * ballShare;
         } else {
