@@ -371,20 +371,6 @@ private:
     // free hands the shape momentum the floor then quietly swallows: a ball dropped
     // on a cube resting on the floor lost a quarter of every bounce to a cube that
     // never moved at all.
-    // What of a push on a body actually becomes a step of that body. A shape that is
-    // standing on the floor cannot be driven into it: the floor is under it and the
-    // floor does not give, so the part of the push that runs downwards is the floor's
-    // to answer and is taken at the place it is given. This is the one rule for it --
-    // pushBody() applies it and every compliance in the room is measured from it, so
-    // that the solver's model of what a shape will do and what the shape then does are
-    // the same model. Two models is a contact that never closes: the solver lays on
-    // impulse after impulse for a speed the shape never takes, and the shape next to
-    // it is handed all of it. That is the shape-against-shape pump.
-    static Vec3 bodyFree(const Body& body, Vec3 push) {
-        if (body.pivoted) return Vec3{};
-        if (!body.touchingPlane || push.y >= 0.0) return push;
-        return Vec3{push.x, 0.0, push.z};
-    }
     static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;

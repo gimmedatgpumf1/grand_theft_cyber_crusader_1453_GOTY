@@ -13,7 +13,6 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cmath>
 #include <vector>
 
