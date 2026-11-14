@@ -1,5 +1,3 @@
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -169,7 +167,6 @@ void PlaygroundRoom::tickBall() {
     // for the same blow. That is what launched a triangle off a ball it had just
     // landed on -- two impulses in one tick, and the body left the contact faster
     // than it arrived.
-    if (std::getenv("KV")) std::printf("  [bs] gravity v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     std::array<bool, kBodyCount> answered{};
     // The floor and the dot are surfaces too, and they get one answer each in a
     // tick for the same reason. A ball lying on the floor meets it at zero distance
@@ -504,7 +501,6 @@ void PlaygroundRoom::tickBall() {
                 continue;
             }
             if (hit.along < first) {
-                if (std::getenv("KV")) std::printf("  [meet] idx%zu along%+.6f depth%+.9f resting%d normal(%+.4f,%+.4f) contact(%.9f,%.9f) v(%+.5f,%+.5f)\n", index, hit.along, hit.depth, int(hit.resting), hit.normal.x, hit.normal.y, hit.contact.x, hit.contact.y, ball.velocity.x, ball.velocity.y);
                 first = hit.along;
                 normal = hit.normal;
                 depth = hit.depth;
@@ -683,7 +679,6 @@ void PlaygroundRoom::tickBall() {
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
         ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
-    if (std::getenv("KV")) std::printf("  [bs] afterfloor v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f) startFloor%d touching%d\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y, int(startedOnFloor), int(ball.touching));
 
     // The grip is not solved here. It is the last thing the tick does, and the note
     // beside it says why: solved here, its answer is overwritten by the passes below
@@ -720,7 +715,6 @@ void PlaygroundRoom::tickBall() {
     // contact applies the same impulse twice -- measured as 8.8 J out of nothing when
     // the dot was dropped on the ball's shoulder. The solve is one pass of the loop
     // the shapes' own solver does, not a repetition of it.
-    if (std::getenv("KV")) std::printf("  [bs] afterwalk v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     answerSupportedShapes();
     settleBallSurfaces();
     // And the shapes have the last word on themselves: the blow the ball has just
@@ -729,7 +723,6 @@ void PlaygroundRoom::tickBall() {
     // speed into its own floor -- a speed that is not a motion, because the floor
     // takes it back on the next tick, but an arrow and a number that are only there
     // because the ball spoke last.
-    if (std::getenv("KV")) std::printf("  [bs] wrap1 v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     answerSupportedShapes();
     // And the grip has the last word on the ball.
     //
@@ -773,10 +766,8 @@ void PlaygroundRoom::tickBall() {
     // floor answers. Left unanswered until the next tick, that speed is a face moving
     // for exactly one tick -- long enough for the ball's grip to be measured against
     // it and dragged along by a surface that never moves.
-    if (std::getenv("KV")) std::printf("  [bs] grip v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     answerSupportedShapes();
 
-    if (std::getenv("KV")) std::printf("  [bs] wrap2 v(%+.6f,%+.6f) w%+.5f pos(%.9f,%.9f)\n", ball.velocity.x, ball.velocity.y, ball.spin, ball.position.x, ball.position.y);
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
     // out of the air. Below it the ball is at rest.
