@@ -30,7 +30,7 @@ int main() {
         r.advance(1.0 / 20.0);
         const double e = energy(r);
         if (e > peak) { peak = e; peakTick = t; }
-        if (t >= 5 && t <= 15)
+        if (t >= 9 && t <= 11)
             std::printf("t%2d E%+.4f rise%+.4f | dot(%.4f,%.4f) v(%+.3f,%+.3f) | ball(%.4f,%.4f) v(%+.3f,%+.3f) frz%d | cube v(%+.3f,%+.3f) frz%d | tri v(%+.3f,%+.3f) frz%d\n",
                         t, e, e - start, r.point_.x, r.point_.y, r.velocity_.x, r.velocity_.y,
                         r.ball_.position.x, r.ball_.position.y, r.ball_.velocity.x, r.ball_.velocity.y, int(r.ball_.frozen),
