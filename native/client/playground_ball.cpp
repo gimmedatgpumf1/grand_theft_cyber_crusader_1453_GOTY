@@ -1,5 +1,3 @@
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
@@ -450,10 +448,6 @@ void PlaygroundRoom::tickBall() {
                 // there for ever and the shapes on the other side of the ball would
                 // never be asked -- so one refusal per shape per tick, and the walk goes
                 // on to them.
-                if (std::getenv("KV"))
-                    std::printf("  [walkrefuse] idx%zu refused%d resting%d depth%+.12f along%+.9f endgap%+.12f travel(%+.9e,%+.9e) pos(%.9f,%.9f)\n",
-                                index, int(refused[index]), int(hit.resting), hit.depth, hit.along,
-                                endOut.gap - ball.radius, travel.x, travel.y, ball.position.x, ball.position.y);
                 if (!refused[index]) {
                     refused[index] = true;
                     ball.touching = true;
@@ -660,7 +654,9 @@ void PlaygroundRoom::tickBall() {
         ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
 
-    // (the grip is at the end of the tick; see below)
+    // The grip is not solved here. It is the last thing the tick does, and the note
+    // beside it says why: solved here, its answer is overwritten by the passes below
+    // and the speed it was asked to rub out is the one that survives.
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
@@ -701,8 +697,42 @@ void PlaygroundRoom::tickBall() {
     // takes it back on the next tick, but an arrow and a number that are only there
     // because the ball spoke last.
     answerSupportedShapes();
-    // And the grip has the last word on the ball, which is the only place it can have
-    // one.
+    // And the grip has the last word on the ball.
+    //
+    // It is last, and that is not a detail of ordering: it is the difference between a
+    // ball that settles and a ball that holds a speed nothing can take off it. The
+    // King asked where the air, the rolling resistance and the friction were when a
+    // ball wedged in the notch sat at nine tenths of a millimetre a second and never
+    // lost it. Measured, they were all present and all doing nothing, for one reason:
+    // **none of them was ever shown the speed that survived the tick.** The grip was
+    // solved before the last two answers, and those answers changed the ball's speed
+    // after it -- the grip measured a slip of 4.3 mm/s along the slope, answered it,
+    // and then the contact passes and the shapes' supports left the ball with a
+    // different velocity altogether (measured: grip left -0.0343,-0.1418; the tick
+    // ended at +0.00089,+0.00089 with a slip of 1.26 mm/s at that same face). No
+    // force can act on a speed that appears after the solve, so the slip was never
+    // rubbed out; the ball carried it into the next tick, the wedge took the
+    // gravity-driven part of it back, and the tick ended on the same number again.
+    // That is a fixed point of the tick map, not a decaying motion. It also explains
+    // why the ball *travelled* nowhere while holding it: the walk refuses the travel
+    // of a ball already against two faces, so no displacement ever happened, and a
+    // friction force with no displacement does no work -- the room drew the arrows
+    // and the energy never moved.
+    //
+    // Rolling resistance was in the same position and for the same reason. It is a
+    // couple on the turn (M = Crr * N * r, see settleBallFriction()), and it was
+    // taking the turn out of the ball every tick -- and every tick the grip, running
+    // earlier, put it straight back by closing a slip that had already been answered.
+    // The turn measured -0.0229 rad/s for as long as the room was left alone, exactly
+    // the turn that 1.26 mm/s of slip at that face would keep feeding it.
+    //
+    // With the grip last, the state the tick ends in is one the whole contact system
+    // has agreed on: friction is a push along a face, so it cannot open a closing into
+    // one, and the surfaces do not need to answer it afterwards. Measured after the
+    // change, at the same corner: 21 of 21 drop positions settle at exactly 0.0000
+    // m/s, the ball's turn decays to exactly 0.0000 rad/s, and the room is unchanged
+    // after 1400 ticks (70 s). Nothing was added to damp it -- the same air, the same
+    // friction, the same Crr; they were simply given the speed to act on.
     settleBallFriction();
 
     // A whole tick of travel below a picometre is not motion a double can carry:

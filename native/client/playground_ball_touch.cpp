@@ -7,8 +7,6 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
@@ -191,9 +189,6 @@ void PlaygroundRoom::settleBallFriction() {
     // travel to Crr * N * dt as this room used to -- was not rolling resistance at
     // all: it was a brake, it never touched the spin, and it was invisible in the
     // ledger because it happened to a velocity instead of to the ball.
-    if (std::getenv("KV") && normalForce >= 0.0)
-        std::printf("  [grip] touches%zu press%+.9f N=%+.9f v(%+.6f,%+.6f) w%+.6f\n", ballTouchCount_, press, normalForce,
-                    ball.velocity.x, ball.velocity.y, ball.spin);
     if (normalForce > 0.0 && ball.spin != 0.0) {
         const double couple = ball_shape::kBallRollingResistance * normalForce * ball.radius;  // N.m
         const double take = couple * ball_shape::kTick / inertia;                              // rad/s, this tick
