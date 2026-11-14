@@ -71,7 +71,7 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // shape keeps the rest, and the arrows are the rest -- the same rule the ball
     // follows in pushBallSupported(), and for the same reason: an arrow for a blow
     // that was refused would be an arrow with no momentum behind it.
-    const Vec3 given = impulse;
+    const Vec3 given = kind == ForceKind::Ball ? bodyFree(body, impulse) : impulse;
     body.velocity = body.pivoted ? Vec3{} : body.velocity + given * (1.0 / body.mass);
     body.spin += (arm.x * given.y - arm.y * given.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
