@@ -59,12 +59,15 @@ void PlaygroundRoom::beginDrag() {
     std::size_t picked = kBodyCount;
     double pickedDistance = 1e30;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        // Not a pinned body. Its place is the room's, not the hand's: a seesaw carried
-        // off its axle is not a seesaw any more, it is a plank lying where the cursor
-        // left it, and the tick that finds it away from its pin puts it back -- which
-        // is the teleport. The pin is the one point of this room nothing may move, so
-        // nothing may take hold of it.
-        if (bodies_[index].pivoted) continue;
+        // A pinned body is taken as readily as any other, but it is taken *by its
+        // turn* and not by its place: its place is the room's, not the hand's, and a
+        // seesaw carried off its axle is not a seesaw any more -- it is a plank lying
+        // where the cursor left it, and the tick that finds it away from its pin puts
+        // it back, which is the teleport. The pin is the one point of this room
+        // nothing may move. What a hand can still do with an axle held by the room is
+        // turn the thing on it, which is what a hand does on a seesaw: it leans on an
+        // end and the plank tips. So a click on it takes it, and updateDrag() asks the
+        // axle, not the floor, where the far end may go.
         const double outline = outlineDistance(bodies_[index]);
         if (outline < pickedDistance) { pickedDistance = outline; picked = index; }
     }
@@ -77,7 +80,16 @@ void PlaygroundRoom::beginDrag() {
         dragTarget_ = DragTarget::Body;
         dragBody_ = picked;
         planeGrab_ = hit;
-        grabOffset_ = Vec3{body.centre.x - hit.x, body.centre.y - hit.y, 0};
+        if (body.pivoted) {
+            // What the hand has hold of, written in the body's own frame so that it
+            // stays the same piece of plank however far it is turned: the arm from
+            // the axle to the grab, turned back by the body's own angle.
+            const Vec3 arm = hit - body.pivotPoint;
+            const double c = std::cos(-body.angle), s = std::sin(-body.angle);
+            grabOffset_ = Vec3{arm.x * c - arm.y * s, arm.x * s + arm.y * c, 0};
+        } else {
+            grabOffset_ = Vec3{body.centre.x - hit.x, body.centre.y - hit.y, 0};
+        }
         body.frozen = false;
         body.velocity = {};
         body.spin = 0.0;
@@ -137,6 +149,29 @@ void PlaygroundRoom::updateDrag() {
         // what it was, because the mouse is not twisting it. The corners follow
         // from the two, as they always do.
         Body& body = bodies_[dragBody_ < kBodyCount ? dragBody_ : 0];
+        if (body.pivoted) {
+            // Held on its axle, the body is not carried anywhere: the hand's pull
+            // arrives at the axle as a moment and the axle is what the room refuses to
+            // move. So the hand asks for a *turn* -- the turn that brings the piece of
+            // the body it took hold of round to where the mouse is -- and the body
+            // takes as much of it as the sweep allows, exactly as a carried body takes
+            // as much of its step as the sweep allows. A click on the axle itself has
+            // no arm to pull on and turns nothing.
+            const Vec3 arm = hit - body.pivotPoint;
+            if (length(Vec3{arm.x, arm.y, 0}) < kQuantum) return;
+            const double wanted = std::atan2(arm.y, arm.x) - std::atan2(grabOffset_.y, grabOffset_.x);
+            const double turned = bodyStepAllowed(dragBody_ < kBodyCount ? dragBody_ : 0, body.pivotPoint,
+                                                  body.angle, body.pivotPoint, wanted, false);
+            body.angle += (wanted - body.angle) * turned;
+            placeCorners(body);
+            if (!(turned > 0.0)) return;
+            body.previousCentre = body.centre;
+            body.previousAngle = body.angle;
+            body.previous = body.shown = body.position;
+            body.velocity = {};
+            body.spin = 0.0;
+            return;
+        }
         const Vec3 centre{std::clamp(hit.x + grabOffset_.x, -5.0, 5.0),
                           std::max(kSurfaceY, hit.y + grabOffset_.y), 0};
         // A body, like the ball, cannot be put down inside a solid: a shape let go
