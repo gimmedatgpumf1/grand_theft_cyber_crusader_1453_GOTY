@@ -481,6 +481,7 @@ void PlaygroundRoom::tickBall() {
                 continue;
             }
             if (hit.along < first) {
+                if (std::getenv("KV")) std::printf("  [meet] idx%zu along%+.6f depth%+.9f resting%d normal(%+.4f,%+.4f) contact(%.9f,%.9f) v(%+.5f,%+.5f)\n", index, hit.along, hit.depth, int(hit.resting), hit.normal.x, hit.normal.y, hit.contact.x, hit.contact.y, ball.velocity.x, ball.velocity.y);
                 first = hit.along;
                 normal = hit.normal;
                 depth = hit.depth;
