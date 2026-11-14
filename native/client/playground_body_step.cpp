@@ -111,10 +111,32 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             }
         }
         {
+            // The ball, and the one row in this survey whose normal was the wrong way
+            // round.
+            //
+            // Every other row here is a point on *this* body against something else's
+            // outline, and outlineGap() answers with the normal pointing out of that
+            // outline towards the point -- so the closing speed is taken with a minus
+            // and comes out positive when the body is going in. This row is the other
+            // way about: the point is the ball's middle and the outline is *this*
+            // body's, so the normal it hands back points out of the body and into the
+            // ball, which is the direction the body is travelling when it is going in.
+            // Read with the same minus as the rows above, it made every step into the
+            // ball close at a *negative* rate: the row was marked as crossing and then
+            // skipped for not closing, the sweep returned the whole step, and the shape
+            // walked straight through the ball's surface. Measured in the King's
+            // corner: the triangle's lower face went from 1.3 um clear to 7.7 mm into
+            // the ball in a single tick, every tick, and was shoved back out afterwards
+            // by the ball's own sweep -- a whole step refused after it had been taken,
+            // which is the walk that never settles.
+            //
+            // Turned the right way round the row means what it says: the normal is out
+            // of the ball and into the body, the same as every other surface's, and the
+            // closing speed is the body's at that point less the ball's.
             const ball_shape::OutlineGap gap = ball_shape::outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0);
             Approach row;
             row.gap = gap.gap - ball_.radius;
-            row.normal = gap.normal;
+            row.normal = gap.normal * -1.0;
             row.closingSpeed = pointSpeed(body, ball_.position) - ball_.velocity;
             approaches.push_back(row);
         }
