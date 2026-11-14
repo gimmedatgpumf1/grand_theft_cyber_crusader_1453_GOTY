@@ -26,6 +26,7 @@
 #include <cstdlib>
 
 namespace gtc::native {
+extern int gtcAudit;
 using namespace playground_detail;
 using namespace playground_tick;
 
@@ -753,6 +754,7 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
 void PlaygroundRoom::tickBodies() {
+    if (gtcAudit) std::fprintf(stderr, "T start ball v(%+.5f,%+.5f) pos(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y, ball_.position.x, ball_.position.y);
     // What every body arrived with, and how many contacts it had already been given.
     //
     // A body that spends a whole tick in free flight has followed a parabola, and a

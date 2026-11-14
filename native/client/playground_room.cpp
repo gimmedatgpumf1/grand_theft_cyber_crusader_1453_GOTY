@@ -9,6 +9,7 @@
 #include "client/ui_layer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <vector>
 
@@ -810,11 +811,14 @@ void PlaygroundRoom::advance(double seconds) {
         // halves of the tick have moved. It is here rather than inside either of them
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
+        if (gtcAudit) std::fprintf(stderr, "A beforeSeparate ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
         separateBall();
+        if (gtcAudit) std::fprintf(stderr, "A afterSeparate  ball v(%+.5f,%+.5f)\n", ball_.velocity.x, ball_.velocity.y);
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
         freezeCheck();
+        if (gtcAudit) std::fprintf(stderr, "A afterFreeze    ball v(%+.5f,%+.5f) frz%d\n", ball_.velocity.x, ball_.velocity.y, int(ball_.frozen));
         // What is still acting, now that the tick has finished with everything. It
         // is written here, at the end, because that is when it is known which things
         // were stepped and which were not: a body that was woken by this tick's
