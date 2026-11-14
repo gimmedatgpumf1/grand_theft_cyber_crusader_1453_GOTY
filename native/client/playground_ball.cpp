@@ -109,8 +109,26 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // the face, was answered, left it again, fell again, at ten hertz. The
                 // distance a tick can close is `closing * kTick`, and inside that the
                 // contact is already the truth about this tick.
+                // `spare` is the gap left between the ball and this face *now*, at the
+                // end of the tick, and only a ball that is against the face -- within
+                // the room's own micrometre of it -- is answered by it.
+                //
+                // It used to be answered for a face the ball would reach before the
+                // *next* tick was over: `spare > -closing * kTick` let the constraint
+                // reach a whole tick ahead, and the speed it took there had no blow in
+                // it. A ball dropped onto the triangle arrived at 5.29 m/s, was stopped
+                // by this rule 28 mm short of the face with the little normal speed it
+                // had left set to exactly nothing, and then slid down the hypotenuse
+                // with its tangent untouched and its spin growing: the arrival was
+                // spent here, so the walk never saw a meeting to bounce.
+                //
+                // An arrival is the walk's business, and the walk answers it with the
+                // restitution every other surface gets, in a pair of impulses, one on
+                // the ball and one on the shape. What is left for this constraint is
+                // the residual speed a ball *lying against* a face can be left with by
+                // the blow or by the grip -- which is the case it was written for.
                 const double spare = distance - ball.radius;
-                if (spare > std::max(0.0, -closing) * kTick) continue;
+                if (spare > playground_tick::kQuantum) continue;
                 ball.touching = true;
                 // A body above the ball is a weight on it, not something it stands
                 // on: only a surface underneath can hold it up.
@@ -498,11 +516,10 @@ void PlaygroundRoom::tickBall() {
             // going nor how fast the body is turning can hide the arrival between two
             // samples. That is the hitscan: solved outright, not stepped towards.
             OutlineHit hit;
-            const bool swept = sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position,
-                                                      ball.velocity, ball.radius, kTick * remaining, hit);
-            std::fprintf(stderr, "  WALK body %zu pos (%.3f,%.3f) v (%.2f,%.2f) swept %d along %.4f\n", index,
-                         ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(swept), hit.along);
-            if (!swept) continue;
+            if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
+                                        ball.radius, kTick * remaining, hit)) {
+                continue;
+            }
 
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop
