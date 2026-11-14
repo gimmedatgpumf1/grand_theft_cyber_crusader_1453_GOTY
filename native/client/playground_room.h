@@ -782,6 +782,16 @@ private:
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
+    // Where every shape was when the ball's half of the tick began: its speed and its
+    // turn, as the tick's own solve of the shapes left them. A face the ball's grip is
+    // measured against is the face the ball met, and that is where it was standing when
+    // the ball arrived at it -- not where the ball's own blow had pushed it a moment
+    // later. Read live, the grip sees its own push coming back at it: the ball presses
+    // a face, the face moves, the grip reads the movement as the face running away and
+    // drags the ball after it, and a ball wedged in a corner keeps a speed that carries
+    // it nowhere for as long as it is left there.
+    std::array<Vec3, kBodyCount> ballTickSpeed_{};
+    std::array<double, kBodyCount> ballTickSpin_{};
     void settleBallFriction();
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over

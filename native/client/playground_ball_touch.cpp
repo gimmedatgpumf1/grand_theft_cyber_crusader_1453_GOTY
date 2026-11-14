@@ -90,7 +90,12 @@ void PlaygroundRoom::settleBallFriction() {
             ballTouches_[i].surfaceVelocity = Vec3{};
             continue;
         }
-        ballTouches_[i].surfaceVelocity = pointSpeed(mate, ball.position + ballTouches_[i].normal * -ball.radius);
+        // From the face where the ball met it: see ballTickSpeed_.
+        const Vec3 at = ball.position + ballTouches_[i].normal * -ball.radius;
+        const Vec3 arm = at - mate.centre;
+        ballTouches_[i].surfaceVelocity =
+            ballTickSpeed_[other] +
+            Vec3{-ballTickSpin_[other] * arm.y, ballTickSpin_[other] * arm.x, 0.0};
     }
     std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {

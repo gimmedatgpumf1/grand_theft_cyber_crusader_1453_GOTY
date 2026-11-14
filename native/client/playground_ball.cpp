@@ -270,6 +270,10 @@ void PlaygroundRoom::tickBall() {
     // Emptying it here threw away the shape the ball was carrying, which is the one
     // face it most needs a grip on: a cube resting on the crown was registered, then
     // erased, and the ball went on being greased under a weight it was pressing on.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        ballTickSpeed_[index] = bodies_[index].velocity;
+        ballTickSpin_[index] = bodies_[index].spin;
+    }
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
     // A tick starts straight: whatever the last one bent at is spent.
