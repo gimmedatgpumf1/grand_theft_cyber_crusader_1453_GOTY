@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
@@ -58,6 +60,7 @@ void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
 void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached) {
     Ball& ball = ball_;
+    if (std::getenv("KV")) std::printf("  [bc] body %d n(%+.3f,%+.3f) exch%d rest%d v_in(%+.5f,%+.5f) w%+.4f\n", bodyIndex, normal.x, normal.y, int(exchange), int(resting), ball.velocity.x, ball.velocity.y, ball.spin);
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
@@ -346,6 +349,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // is restitution quietly not delivered.
             Vec3 handed = answer * -impulse;
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
+            if (std::getenv("KV")) std::printf("  [bc]   ->ball v(%+.5f,%+.5f) w%+.4f body v(%+.5f,%+.5f) w%+.4f handed(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y, ball.spin, body->velocity.x, body->velocity.y, body->spin, handed.x, handed.y);
             blown = handed * -1.0;
             pressed = impulse * ballShare;
         } else {

@@ -81,6 +81,7 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
 // stopped, moved nowhere, and shook for as long as the room was left alone.
 void PlaygroundRoom::settleBallSurfaces() {
     Ball& ball = ball_;
+    if (std::getenv("KV")) std::printf("  [surf] enter v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     {
         ball.touching = false;
         ball.standing = true;
@@ -190,6 +191,7 @@ void PlaygroundRoom::settleBallSurfaces() {
                         // `closing - allowed` is negative here, and the ball's speed rises
                         // by the opposite of it. The shape takes exactly this much the other
                         // way -- a push and its partner, and no momentum from nowhere.
+                        if (std::getenv("KV")) std::printf("  [surf] b%zu e%zu closing%+.5f allowed%+.5f sv(%+.5f,%+.5f)\n", index, edge, closing, allowed, surface.x, surface.y);
                         const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                         ball.velocity = ball.velocity - normal * (closing - allowed);
                         pushBody(body, at, blow * -1.0, ForceKind::Contact);
@@ -203,6 +205,7 @@ void PlaygroundRoom::settleBallSurfaces() {
             }
             if (!answered) break;
         }
+        if (std::getenv("KV")) std::printf("  [surf] leave v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
         for (const FaceBlow& slot : blows)
             if (slot.used && length(slot.impulse) > 1e-12)
                 addForce(slot.at, slot.impulse, ForceKind::Contact, nullptr, kBallOwner);
@@ -264,6 +267,7 @@ void PlaygroundRoom::settleBallSurfaces() {
 
 void PlaygroundRoom::tickBall() {
     Ball& ball = ball_;
+    if (std::getenv("KV")) std::printf("  [tick] enter v(%+.5f,%+.5f)\n", ball.velocity.x, ball.velocity.y);
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
     // ball -- and this half of the tick only adds the faces the ball's own walk meets.
@@ -858,7 +862,9 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
+    if (std::getenv("KV")) std::printf("  [tick] beforeGrip v(%+.5f,%+.5f) w%+.4f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
     settleBallFriction();
+    if (std::getenv("KV")) std::printf("  [tick] afterGrip  v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
