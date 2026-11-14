@@ -767,7 +767,26 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
     // with. This used to be zero, which made the dot a special case that the ball
     // was not bouncy towards: a dot dropped on a ball sank into it and stopped, and
     // a ball with a dot on it never threw it back, whatever the material said.
-    const double rebound = closing < 0.0 ? -kBallRestitution * closing : 0.0;
+    // An arrival is the answer to coming at the ball, and coming at it is what the
+    // point was doing when the tick opened -- not what the tick's own weight has
+    // made of it since.
+    //
+    // A point lying on a ball is one tick from being shaken: the weight of a whole
+    // tick is given to it at the top, so a point that had twenty centimetres a
+    // second left in it *upwards* is falling by the time it has crossed the same
+    // six millimetres, meets the ball, and is bounced by its own weight. The bounce
+    // gives back three quarters of it, the tick's travel carries it back to exactly
+    // where it started, and the whole thing is a fixed point of the tick map: the
+    // point sits on the ball shaking twenty times a second, with its place
+    // unchanged to nine decimals. Measured: a dot dropped on a ball bounced on it
+    // for eighty seconds instead of settling, and it came to rest on a limit at
+    // 0.316000120 m that never moved again because it never stopped moving.
+    //
+    // So a point that was not closing on the ball when the tick began is not
+    // arriving at it. What it gets is a contact, which stops it -- the same answer
+    // the room gives anything that is already against what it has reached.
+    const double arriving = dot(pointArrival_ - ball.velocity, normal);
+    const double rebound = (closing < 0.0 && arriving < 0.0) ? -kBallRestitution * closing : 0.0;
     if (closing < 0.0) {
         // The ball's say in the blow, along the direction the blow pushes it. The
         // dot pushes the ball along -normal (the normal runs from the ball to the

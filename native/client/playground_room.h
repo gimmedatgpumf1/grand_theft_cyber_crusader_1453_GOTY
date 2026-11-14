@@ -972,6 +972,13 @@ private:
     // answers only the force into itself; the rest still acts on the point,
     // which is why a point on a slope slides down it.
     Vec3 supportNormal_{0, 1, 0};
+    // What the point was doing as this tick began, before the tick's weight was
+    // put on it. Arriving is a fact about the tick's opening, not about what the
+    // arithmetic has made of the point by the time it meets something: the weight
+    // of a whole tick is given out at the top of it, so a point that was on its way
+    // *up* is already falling halfway through, and answering that as an arrival is
+    // answering a blow the tick gave itself. See pointAgainstBall().
+    Vec3 pointArrival_{};
     // True when nothing is left to move the point: it is held, not merely slow.
     bool heldStill_ = false;
     bool sceneReady_ = false, resting_ = false, haveTrace_ = false;

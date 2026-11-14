@@ -255,6 +255,7 @@ void PlaygroundRoom::tick() {
     // newtons down like any other force, and then whatever is holding it up. There
     // is no separate rule for gravity here: what the surface cannot answer is left
     // in the sum and the integrator below turns the whole of it into speed.
+    pointArrival_ = velocity_;
     const Vec3 weight{0.0, -kMass * kGravity, 0.0};
     pointForce_ = {};
     addForce(point_, weight, ForceKind::Gravity, &pointForce_, kDotOwner);
