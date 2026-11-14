@@ -142,51 +142,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
-        if (patch.quiet) {
-            // A quiet patch is a pair that was already resting against each other
-            // when the tick opened -- which is the most resting a contact can be,
-            // and the strongest evidence there is that the shape above is being
-            // held up there. Its place still belongs to that shape's supports.
-            //
-            // It was not counted, and that is a shape that never sleeps. A triangle
-            // leaning its slope on a ball at rest touches the floor on one corner
-            // and the ball on the other; the corner's support point is the only one
-            // the solver laid an impulse on, so the shape's supports were read as
-            // that single point, its weight as running outside them, and it was
-            // called a body that is not carried -- which resets its second of
-            // stillness, every tick, for ever. Measured in the King's corner: 1800
-            // ticks of a triangle walking (+1.2e-06,-1.3e-06) m a tick, and the
-            // resting ball it leans on answering with 1.2e-05 m a tick. Three
-            // millimetres of scene that never settles.
-            //
-            // The contact is there whether or not this tick's load is nought, so
-            // the place it acts at is one of the shape's supports either way.
-            if (patch.ball && patch.normal.y > 0.5) {
-                for (std::size_t k = 0; k < patch.ends; ++k) {
-                    Body& standing = bodies_[patch.body];
-                    standing.supportLow = std::min(standing.supportLow, patch.point[k].x);
-                    standing.supportHigh = std::max(standing.supportHigh, patch.point[k].x);
-                }
-            }
-            // And it is quiet only while the pair is *still* not closing.
-            //
-            // The flag was read from the speeds the tick opened with, before the
-            // weight was applied and before the floor under the shape was answered,
-            // and it was never looked at again. Those answers can leave the shape
-            // closing on the ball, and a patch skipped because it *was* not closing
-            // then leaves that closing with nothing to answer it: the shape walks
-            // into the ball, the ball's own half refuses the step and puts it back,
-            // and the pair trades a hand's width of place every tick. Measured in
-            // the King's corner: the triangle stands at (1.143796,0.803898) and then
-            // at (1.136053,0.798330) on the next tick -- 7.7 mm in and 7.7 mm out,
-            // for as long as the room is left alone, while the net travel is 1.4 um
-            // and nothing on the ledger says why. The shape's speed into the ball at
-            // the moment this patch is reached is 0.135 m/s and it is closing; a
-            // contact that is closing is an arrival, and an arrival is answered.
-            if (dot(pointSpeed(bodies_[patch.body], patch.point[0]) - ballPointSpeed(patch.point[0]), patch.normal) >=
-                0.0)
-                return;
-        }
+        if (patch.quiet) return;
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;

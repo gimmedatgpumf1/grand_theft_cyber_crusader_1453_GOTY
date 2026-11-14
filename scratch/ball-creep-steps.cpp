@@ -23,6 +23,8 @@ int main() {
     for (int k = 0; k <= 2400; ++k) {
         const Vec3 before = r.ball_.position;
         const Vec3 triBefore = r.bodies_[1].centre;
+        const std::size_t clampedBefore = r.bodyStepClamped_;
+        const std::size_t foundBefore = r.ballFoundThrough_;
         r.advance(dt);
         if (k >= 2360 && k <= 2400) {
             std::printf("t%-4d ball moved (%+.4e,%+.4e) = %.3e m | v*dt (%+.3e) | tri moved (%+.4e,%+.4e) = %.3e m\n", k,
@@ -31,6 +33,8 @@ int main() {
                         r.ball_.velocity.x * dt, r.bodies_[1].centre.x - triBefore.x,
                         r.bodies_[1].centre.y - triBefore.y,
                         std::hypot(r.bodies_[1].centre.x - triBefore.x, r.bodies_[1].centre.y - triBefore.y));
+            std::printf("     clamps %zu foundThrough %zu\n", std::size_t(r.bodyStepClamped_ - clampedBefore),
+                        std::size_t(r.ballFoundThrough_ - foundBefore));
             std::printf("     ball (%.6f,%.6f) r %.3f floorY %.6f | supN (%+.3f,%+.3f) | touches %zu", r.ball_.position.x,
                         r.ball_.position.y, r.ball_.radius, r.ball_.radius + 1e-6, r.ball_.supportNormal.x,
                         r.ball_.supportNormal.y, r.ballTouchCount_);
