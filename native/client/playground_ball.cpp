@@ -365,6 +365,10 @@ void PlaygroundRoom::tickBall() {
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
         int what = -1;  // -2 the floor, otherwise a body
+        // Whether the meeting that wins this iteration was already a contact when
+        // the tick began. It travels with the meeting, not with the last body that
+        // happened to be looked at.
+        bool meetingResting = false;
         // A surface the ball is already on has its answer given below, and that
         // answer changes the ball's speed -- but where the ball would have gone this
         // tick was worked out before the answer was. Spending it anyway sent the
@@ -446,7 +450,7 @@ void PlaygroundRoom::tickBall() {
                 ball.touching = true;
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
-                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer);
+                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -497,7 +501,7 @@ void PlaygroundRoom::tickBall() {
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
                     ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
-                                answered[index]);
+                                answered[index], hit.resting);
                 }
                 blocked = true;
                 first = 0.0;
@@ -509,6 +513,7 @@ void PlaygroundRoom::tickBall() {
                 depth = hit.depth;
                 what = int(index);
                 contactPoint = hit.contact;
+                meetingResting = hit.resting;
             }
         }
         if (restart) continue;
@@ -609,7 +614,7 @@ void PlaygroundRoom::tickBall() {
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
-            ballContact(normal, what, held, contactPoint, depth, exchange);
+            ballContact(normal, what, held, contactPoint, depth, exchange, meetingResting);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
         // A ball that started the tick already through something has been put back

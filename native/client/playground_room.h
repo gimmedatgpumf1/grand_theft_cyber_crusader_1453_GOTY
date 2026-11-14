@@ -769,8 +769,13 @@ private:
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
+    // `resting` says the ball was already lying on this surface when the tick began.
+    // That is a contact being kept, not something arrived at, and the difference is
+    // the whole of what a bounce is: a surface that is merely holding the ball up
+    // has nothing to give back, however fast its own motion makes the two of them
+    // look as if they are closing.
     void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
-                     double depth = 0.0, bool exchange = true);
+                     double depth = 0.0, bool exchange = true, bool resting = false);
     // A face of the ball, said once: what it is against, and which way out of the
     // ball. The ball's grip is solved for all of its faces at once in
     // settleBallFriction(), so every road by which the ball comes to be against
