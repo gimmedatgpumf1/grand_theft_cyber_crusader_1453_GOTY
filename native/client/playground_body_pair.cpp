@@ -529,36 +529,46 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                              ? startGap
                              : -playground_tick::kQuantum;
 
-    // The soonest any part of the body could be `limit` deep into anything: how much
-    // distance is left, over how fast that distance is closing. Written as a time, not
-    // as a fraction of the step and not as a distance to walk, so the answer is the
-    // meeting itself -- no step size, nothing to tune, and no speed or spin, however
-    // large, that can carry the outline through a plank between two looks. A part that
-    // is not closing at all is not going to close anything, however long the step is.
-    // The face it was stopped by, kept for the caller: a step that was refused is a
-    // contact, and a contact has a direction. Which way the body was going into the
-    // thing that stopped it is the whole of what is left to answer.
+    // The soonest any part of the body could come within `limit` of anything, as the
+    // piece of *this step* at which that happens: how much distance is left, over how
+    // fast it is closing, over how long the step lasts.
+    //
+    // The last division is the one that matters and it used to be missing. What is left
+    // of a gap over the speed closing it is a *time* -- metres over metres per second --
+    // and a step is one tick long, so that time over the tick is the fraction of the step
+    // at which the two meet. Left as a time and then used as a fraction, the meeting was
+    // put far too early: a square riding the plank, with more than a whole tick's
+    // clearance in hand at its near corner, was told it would arrive in a fiftieth of
+    // its step, was stopped there, and had the rest of its speed and turn taken off it
+    // by absorbRefusedStep() -- every tick. A shape could not turn with the face it was
+    // standing on, so it tipped up onto a corner and slid off the way a box on a plank
+    // never does, and a shape walking along a face walked at a fifth of its speed.
+    //
+    // A part that is not closing at all is not going to close anything, however long
+    // the step is. The face it was stopped by is kept for the caller: a step that was
+    // refused is a contact, and a contact has a direction.
     Vec3 stopping{0, 1, 0};
-    const bool dbgStep = self == 0;
     double fastest = 0.0;
-    const auto soonestMeeting = [&](double t) {
+    const auto soonestMeeting = [&](double t, double& closest) {
         poseAt(t);
         survey();
         double soonest = 1e30;
+        closest = 1e30;
         for (const Approach& row : approaches) {
             const double need = row.gap - limit;
+            const double closing = -dot(row.closingSpeed, row.normal);
             if (!(need > 0.0)) {
-                if (self == 0 && dbgStep)
-                    std::fprintf(stderr, "      REFUSED at t=%.3f row gap %+9.6f limit %+9.6f need %+.3e closing %+7.3f "
-                                         "normal (%+.2f,%+.2f)\n",
-                                 t, row.gap, limit, need, -dot(row.closingSpeed, row.normal), row.normal.x,
-                                 row.normal.y);
+                // Already at the depth the step may not pass. That is only a meeting if
+                // the body is still going in: a part that is past the line and leaving
+                // it has been let go, and stopping the step there would hold a body
+                // against geometry it is already clear of.
+                if (!(closing > 0.0)) continue;
                 stopping = row.normal;
                 return 0.0;
             }
-            const double closing = -dot(row.closingSpeed, row.normal);
             if (!(closing > 0.0)) continue;
-            const double answer = need / closing;
+            closest = std::min(closest, need);
+            const double answer = need / (closing * playground_tick::kTick);
             if (answer < soonest) {
                 soonest = answer;
                 stopping = row.normal;
@@ -570,11 +580,12 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
 
     double t = 0.0;
     for (int pass = 0; pass < 96; ++pass) {
-        const double soonest = soonestMeeting(t);
-        if (dbgStep && pass < 4)
-            std::fprintf(stderr, "      step pass %d t %.9f soonest %.9g limit %+.6f startGap %+.6f\n", pass, t,
-                         soonest, limit, startGap);
-        if (!(soonest > playground_tick::kQuantum)) {
+        double closest = 1e30;
+        const double soonest = soonestMeeting(t, closest);
+        // The step stops where it is when what is left to close is nothing the room can
+        // see -- a micrometre is its resolution, so a part already touching is a part
+        // this step cannot carry anywhere.
+        if (!(soonest > 0.0) || !(closest > playground_tick::kQuantum)) {
             if (blockedBy != nullptr) *blockedBy = stopping;
             return t;
         }
