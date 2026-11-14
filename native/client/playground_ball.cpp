@@ -635,6 +635,7 @@ void PlaygroundRoom::tickBall() {
             ball.bendPoint = ball.position;
             ball.bendIn = walkStart;
         }
+        std::fprintf(stderr, "  AFTERMOVE v %+.4f pos %.5f first %.4f what %d\n", ball.velocity.y, ball.position.y, first, what);
         remaining *= 1.0 - first;
         // Has this body already had its answer this tick? Asked before the mark is
         // put down, or the first meeting in a tick would be counted as the second.
