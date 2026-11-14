@@ -214,6 +214,7 @@ void PlaygroundRoom::settleBallSurfaces() {
             // the room drew it and never spent it. Asking again until the answer stops
             // moving is the same rule the shapes' own load and grip are swept by, and
             // it is the only count that is not arbitrary: the loop ends on the answer.
+            if (std::getenv("KV")) std::printf("  [surf] pass %d answered%d delta %.9f\n", pass, int(answered), length(ball.velocity - wasSpeed));
             if (!answered) break;
             if (length(ball.velocity - wasSpeed) <= playground_tick::kQuantumSpeed) break;
         }
