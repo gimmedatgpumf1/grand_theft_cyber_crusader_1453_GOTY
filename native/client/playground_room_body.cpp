@@ -610,17 +610,9 @@ void PlaygroundRoom::settleBodies() {
         // cycle that walked the triangle 49 um a tick in and out and kept the ball
         // awake to be crept along. Nothing was moving. A shape standing on something
         // that is standing still is standing still.
-        // The gap is read first, and the way it gives is what says whether the ball is
-        // under the body.
-        //
-        // It used to be written the other way round -- `ballWay.y > 0.5` tested before
-        // bodyBallGap() had filled ballWay in -- so the test was made against a vector
-        // that was still zero, and this whole branch could never be true, whatever the
-        // geometry. A ball asleep under a leaning shape was therefore never a support.
         Vec3 ballWay{}, ballAt{};
-        const double ballGap = bodyBallGap(index, ballWay, ballAt);
         const bool carriedByBall = body.onBall && ball_.frozen && ballWay.y > 0.5 &&
-                                   ballGap <= kContactBand &&
+                                   bodyBallGap(index, ballWay, ballAt) <= kContactBand &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
         const bool carried = carriedByPlane || carriedByBody || carriedByBall;
