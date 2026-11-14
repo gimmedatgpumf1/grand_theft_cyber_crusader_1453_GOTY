@@ -193,7 +193,6 @@ void PlaygroundRoom::applyAirDrag() {
 // place a body's place or turn is ever changed by the simulation.
 double PlaygroundRoom::advanceBodies(double seconds) {
     if (!(seconds > 0.0)) return 0.0;
-    static const char* dbgTag = "  ";
     // The step itself, under the room's resolution: a shape whose centre would
     // move less than a micrometre this tick does not move, and a shape whose turn
     // would carry its furthest corner less than a micrometre does not turn. Below
@@ -299,15 +298,9 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const auto sweptStep = [&](Vec3 middle, double angle) {
                 if (body.count == 0) return 1.0;
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
-                if (index == 0)
-                    std::fprintf(stderr, "%s  BODY0 step along %.6f spin %+7.3f -> ", dbgTag, along, body.spin);
-                if (!(along < 1.0)) {
-                    if (index == 0) std::fprintf(stderr, "kept %+7.3f\n", body.spin);
-                    return 1.0;
-                }
+                if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
                 absorbRefusedStep(body, index, along);
-                if (index == 0) std::fprintf(stderr, "absorbed %+7.3f\n", body.spin);
                 return along;
             };
             if (body.hitAt < 1.0) {
@@ -797,12 +790,7 @@ void PlaygroundRoom::tickBodies() {
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
-    std::fprintf(stderr, "  AFTERSOLVE cube v(%+7.4f,%+7.4f) w %+7.4f | plank w %+7.4f\n", bodies_[0].velocity.x,
-                 bodies_[0].velocity.y, bodies_[0].spin, bodies_[2].spin);
     advanceBodies(kTick);
-    std::fprintf(stderr, "  AFTERADV   cube v(%+7.4f,%+7.4f) w %+7.4f | plank w %+7.4f a %+7.4f\n",
-                 bodies_[0].velocity.x, bodies_[0].velocity.y, bodies_[0].spin, bodies_[2].spin,
-                 bodies_[2].angle);
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];

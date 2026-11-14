@@ -207,7 +207,6 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     for (int pass = 0; pass < 96; ++pass) {
         const double soonest = soonestMeeting(t);
         if (!(soonest > 0.0)) {
-            if (self == 0) std::fprintf(stderr, "      STEPSTOP t %.6f startGap %+.6f limit %+.6f\n", t, startGap, limit);
             if (blockedBy != nullptr) *blockedBy = stopping;
             return t;
         }
@@ -216,7 +215,6 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         t = next;
     }
     (void)fastest;
-    if (self == 0) std::fprintf(stderr, "      STEPCAP t %.6f startGap %+.6f limit %+.6f\n", t, startGap, limit);
     if (blockedBy != nullptr) *blockedBy = stopping;
     return t;
 }
