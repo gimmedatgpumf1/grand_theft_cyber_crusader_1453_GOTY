@@ -13,12 +13,10 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cmath>
 #include <vector>
 
 namespace gtc::native {
-extern int gtcAudit;
 using namespace ball_shape;
 using namespace playground_detail;
 
@@ -780,7 +778,6 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // that the ball did not refuse.
     const double closing = dot(body.velocity, normal);
     if (closing > 0.0) {
-        if (gtcAudit) std::fprintf(stderr, "AUD outOfBall b%zu closing %+.6f\n", index, closing);
         body.velocity = body.velocity - normal * closing;
         // And it is a contact, so it is written down as one, at the place the ball
         // and the shape meet: what stopped the shape was the ball, and the arrows

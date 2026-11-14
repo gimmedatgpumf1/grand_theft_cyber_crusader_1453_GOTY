@@ -19,7 +19,6 @@
 #include <cmath>
 #include <cstdio>
 
-namespace gtc::native { extern int gtcAudit; }
 namespace {
 constexpr double kDt = 1.0 / 20.0;
 struct Worst {
@@ -50,23 +49,6 @@ void check(PlaygroundRoom& r, Worst& worst, int trial, int tick) {
         const Vec3 expected = (body.velocity - start) * body.mass;
         const Vec3 got = drawn * kDt;
         const double miss = length(got - expected);
-        if (miss > 1e-4) {
-            std::fprintf(stderr, "AUDIT trial %d tick %d body %zu expected (%+.5f,%+.5f) got (%+.5f,%+.5f) samples %zu\n",
-                         trial, tick, index, expected.x, expected.y, got.x, got.y, r.forceCount_);
-            for (std::size_t i = 0; i < r.forceCount_; ++i) {
-                const auto& smp = r.forces_[i];
-                if (smp.owner != index) continue;
-                std::fprintf(stderr, "   kind %d couple %d F(%+.5f,%+.5f) at (%+.4f,%+.4f) J(%+.5f,%+.5f)\n",
-                             int(smp.kind), int(smp.couple), smp.force.x, smp.force.y, smp.at.x, smp.at.y,
-                             smp.force.x * kDt, smp.force.y * kDt);
-            }
-            std::fprintf(stderr, "   applied count %zu met %d contacts %d onBall %d wasOnBall %d\n",
-                         body.appliedCount, body.met, body.contacts, int(body.onBall), int(body.wasOnBall));
-            for (std::size_t i = 0; i < body.appliedCount; ++i)
-                std::fprintf(stderr, "   app kind %d J(%+.5f,%+.5f) at (%+.4f,%+.4f)\n", int(body.applied[i].kind),
-                             body.applied[i].impulse.x, body.applied[i].impulse.y, body.applied[i].at.x,
-                             body.applied[i].at.y);
-        }
         if (miss > worst.miss) worst = Worst{miss, trial, tick, index, expected, got};
     }
 }
@@ -116,13 +98,8 @@ int main() {
         r.ball_.spin = 0.0;
         r.ball_.frozen = false;
         r.ball_.previous = r.ball_.position;
-        using gtc::native::gtcAudit;
         for (int k = 0; k < 200; ++k) {
-            gtcAudit = (trial == 33 && k >= 60 && k <= 67) ? 1 : 0;
-            if (gtcAudit) std::fprintf(stderr, "AUD ---- tick %d begin\n", k);
             r.advance(kDt);
-            if (gtcAudit) std::fprintf(stderr, "AUD ---- tick %d end\n", k);
-            gtcAudit = 0;
             check(r, worst, trial, k);
         }
     }

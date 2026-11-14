@@ -26,7 +26,6 @@
 #include <cstdlib>
 
 namespace gtc::native {
-extern int gtcAudit;
 using namespace playground_detail;
 using namespace playground_tick;
 
@@ -629,9 +628,23 @@ void PlaygroundRoom::settleBodies() {
             // Asleep where the physics left it. Nothing is moved to make it look
             // tidier: a body that is standing still is standing where it stands.
             body.frozen = true;
-            if (gtcAudit) std::fprintf(stderr, "AUD sleep b%zu erasing (%+.6f,%+.6f) w%+.6f\n", index, body.velocity.x, body.velocity.y, body.spin);
-            body.velocity = {};
-            body.spin = 0.0;
+            // What it was still carrying, written down as the room's answer to it.
+            //
+            // A body falling asleep used to have its speed simply set to nothing, and
+            // a body whose speed is set to nothing has had a force on it that was never
+            // drawn: the arrows it was given over that tick came to less than the
+            // momentum it actually lost, and the account was short by exactly the
+            // piece that was wiped. Measured: a cube settling onto a spinning seesaw
+            // had (-0.000163,-0.000189) m/s taken off it in the one tick it was put to
+            // sleep -- 6.6e-4 N.s of momentum the room took and wrote nowhere -- and
+            // the ledger could not be balanced for that tick at all.
+            //
+            // absorbRefusedStep() is the same answer the room already gives a body
+            // whose step is refused, and it is the same thing happening: the body was
+            // going to go somewhere and something it is standing on did not let it.
+            // At the resolution the room works in that is a contact like any other,
+            // written at the part of the body that was pressing.
+            absorbRefusedStep(body, index, 0.0);
             body.shown = body.position;
         } else if (body.restTicks >= kRestTicks && !anywhere) {
             body.restTicks = 0;
@@ -756,7 +769,6 @@ void PlaygroundRoom::tickBodies() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
         bodies_[index].arrivalVelocity = bodies_[index].velocity;
-        if (gtcAudit) std::fprintf(stderr, "AUD arrival b%zu (%+.6f,%+.6f) frz %d\n", index, bodies_[index].velocity.x, bodies_[index].velocity.y, int(bodies_[index].frozen));
         bodies_[index].arrivalSpin = bodies_[index].spin;
         bodies_[index].hitAt = 1.0;
         bodies_[index].hitArrival = bodies_[index].velocity;

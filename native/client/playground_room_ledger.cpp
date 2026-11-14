@@ -11,7 +11,6 @@
 #include "client/playground_ball_shape.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cmath>
 
 namespace gtc::native {
@@ -56,11 +55,9 @@ void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kep
     // not a number, both leave the body exactly as it is.
     if (!(kept < 1.0)) return;
     kept = std::max(0.0, kept);
-    extern int gtcAudit;
     const Vec3 wasSpeed = body.velocity;
     const double wasSpin = body.spin;
     body.velocity = wasSpeed * kept;
-    if (gtcAudit) std::fprintf(stderr, "AUD absorb b%td kept %.6f (%+.6f,%+.6f)->(%+.6f,%+.6f)\n", &body - bodies_.data(), kept, wasSpeed.x, wasSpeed.y, body.velocity.x, body.velocity.y);
     body.spin = wasSpin * kept;
     // What the body lost, and what the room therefore gave it.
     //
