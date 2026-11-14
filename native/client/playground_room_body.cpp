@@ -472,11 +472,14 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         // spin every tick, the ball's grip took nine tenths of it back, and the tenth
         // that was left is the ball that would not stop creeping.
         {
+            if (std::getenv("KP"))
+                std::printf("      [bp] body %zu gap %+.2e quiet? ", index, gap);
             const Vec3 arm = at - body.centre;
             const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
                                body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
             // Both sides as the tick found them: this runs before the solve, so the
             // ball's own speed and turn are still the ones it arrived with.
+            if (std::getenv("KP")) std::printf("%d\n", dot(arrived - ballPointSpeed(at), way) >= 0.0 ? 1 : 0);
             if (dot(arrived - ballPointSpeed(at), way) >= 0.0) patch.quiet = true;
         }
         patches.add(patch);
