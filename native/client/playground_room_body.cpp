@@ -18,10 +18,15 @@
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
+
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_shapes.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -262,6 +267,9 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double along =
                     body.count > 0 ? bodyStepAllowed(index, body.centre, body.angle, middle, angle, true) : 1.0;
                 if (along < 1.0) ++bodyStepClamped_;
+                if (std::getenv("GTC_PUMP") && along < 1.0 && length(body.velocity) > 0.05)
+                    std::printf("  pump? body %zu along %.4f v(%+.3f,%+.3f) w%+.3f rate %+.3f\n", index, along,
+                                body.velocity.x, body.velocity.y, body.spin, body.spin);
                 return along;
             };
             if (body.hitAt < 1.0) {
