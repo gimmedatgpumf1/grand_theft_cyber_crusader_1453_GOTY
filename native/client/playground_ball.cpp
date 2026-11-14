@@ -279,6 +279,13 @@ void PlaygroundRoom::tickBall() {
         const double endGap =
             ball_shape::outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0).gap;
         if (endGap >= ball.radius - kTouch) continue;
+        // A pinned body has no step to refuse: its step is a turn, and the turn of a
+        // plank is answered by the ball's own walk below, which sweeps the face
+        // through the tick and carries the ball with it. Carrying the plank back
+        // instead is not prevention, because there is nowhere to carry it back to --
+        // its place is its axle -- so all it did was erase a turn the plank had taken
+        // and leave the spin behind, which is a seesaw that stops and starts.
+        if (body.pivoted) continue;
         // Was it already there? A shape whose step *began* against the ball is in
         // contact, and contact is the contact's business: the patch answers it, and
         // answering it is what stops it. Prevention is for the arrival -- the shape
@@ -314,6 +321,7 @@ void PlaygroundRoom::tickBall() {
         // above the floor. See keepAboveFloor().
         const double along =
             keepAboveFloor(index, body.previousCentre, body.previousAngle, body.centre, body.angle, stop.along);
+        absorbRefusedStep(body, index, along);
         body.centre = body.previousCentre + (body.centre - body.previousCentre) * along;
         body.angle = body.previousAngle + (body.angle - body.previousAngle) * along;
         placeCorners(body);
@@ -532,15 +540,45 @@ void PlaygroundRoom::tickBall() {
         // one it finds inside itself, which is the same prevention asked afterwards
         // -- is carried back to the instant of the meeting, as before.
         const double spent = length(walkStart) * kTick * (first * remaining);
-        if (what >= 0 && !bodyStopped[std::size_t(what)] &&
+        // Was the ball already against this shape when the tick began? Then this is a
+        // contact, not an arrival, and a contact is the patch's to answer. Carrying
+        // the shape back here was the plank's whole trouble: a ball rolling along a
+        // seesaw spends eight millimetres a tick, so `spent` was always past the
+        // room's resolution, the meeting was always found -- at the face the ball was
+        // already lying on, a tenth of a picometre deep -- and the plank was put back
+        // to an instant early in the tick every single tick. Its turn went, its spin
+        // stayed, and it spent the next tick turning from a speed it had not spent.
+        // On screen that is a seesaw that stops and starts: three quarters of its
+        // turning ticks were losing part of their turn, and twenty of them in a row
+        // lost all of it while the turn it was keeping grew to two thirds of a radian
+        // a second.
+        bool wasAgainst = false;
+        if (what >= 0) {
+            const Body& met = bodies_[std::size_t(what)];
+            const double startGap =
+                ball_shape::outlineGap(ball.previous, met.previous.data(), met.previous.data(), met.count, 1.0).gap;
+            wasAgainst = startGap <= ball.radius + kTouch;
+        }
+        if (what >= 0 && !wasAgainst && !bodyStopped[std::size_t(what)] &&
             (depth > 0.0 || spent >= playground_tick::kQuantum)) {
             Body& met = bodies_[std::size_t(what)];
-            const double when =
-                keepAboveFloor(std::size_t(what), met.previousCentre, met.previousAngle, met.centre, met.angle,
-                               (1.0 - remaining) + first * remaining);
-            met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
-            met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
-            placeCorners(met);
+            // A pinned body is not carried back to the instant it was met. It has no
+            // place to be carried to -- its place is its axle -- so all that ever
+            // came of it was a turn erased and the spin that made it left behind. The
+            // ball is not put inside the plank by leaving it alone: the ball's walk is
+            // the prevention, and it has already found the meeting and stopped the
+            // ball there. Measured over a 200-tick swing with a ball let go on the
+            // plank, the ball's deepest incursion into the plank was zero and nothing
+            // was ever lifted out of it -- see scratch/seesaw-carry.cpp.
+            if (!met.pivoted) {
+                const double when =
+                    keepAboveFloor(std::size_t(what), met.previousCentre, met.previousAngle, met.centre, met.angle,
+                                   (1.0 - remaining) + first * remaining);
+                absorbRefusedStep(met, std::size_t(what), when);
+                met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
+                met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
+                placeCorners(met);
+            }
             bodyStopped[std::size_t(what)] = true;
         }
         const bool exchange = what < 0 || !answered[std::size_t(what)];

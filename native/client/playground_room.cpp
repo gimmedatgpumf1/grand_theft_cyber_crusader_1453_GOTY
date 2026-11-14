@@ -269,6 +269,23 @@ void PlaygroundRoom::recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::s
     impulses_[impulseCount_++] = RecordedImpulse{at, impulse, kind, on};
 }
 
+void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kept) {
+    // Written as a "not" so that a step of no length at all, and a fraction that is
+    // not a number, both leave the body exactly as it is.
+    if (!(kept < 1.0)) return;
+    kept = std::max(0.0, kept);
+    const Vec3 wasSpeed = body.velocity;
+    const double wasSpin = body.spin;
+    body.velocity = wasSpeed * kept;
+    body.spin = wasSpin * kept;
+    const Vec3 taken = (wasSpeed - body.velocity) * body.mass;
+    if (length(taken) > 1e-12) recordImpulse(body.centre, taken, ForceKind::Contact, index);
+    const double takenMoment = body.moment * (wasSpin - body.spin) / kTick;
+    if (std::abs(takenMoment) > 1e-9)
+        addCouple(body.pivoted ? body.pivotPoint : body.centre, takenMoment, Vec3{0, 0, 0}, ForceKind::Contact,
+                  index);
+}
+
 // An impulse over a tick is a force, and this is where the tick's contacts become
 // the arrows on screen: F = J/dt at the place J was given.
 void PlaygroundRoom::writeImpulses() {

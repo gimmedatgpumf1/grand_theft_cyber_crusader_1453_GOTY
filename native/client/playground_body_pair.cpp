@@ -673,6 +673,17 @@ void PlaygroundRoom::separateBodies() {
                         if (body.angle != start) break;
                     }
                 }
+                // Being turned back out of something is a step the room did not
+                // allow, and the part of the turn that was not taken is a part of the
+                // turn the plank does not have. Left in its spin it is the same pump
+                // as a refused step left in a velocity: the plank would say one thing
+                // and do another, and the tick after would begin from the speed of a
+                // turn that never happened.
+                if (body.angle != start) {
+                    const double wanted = body.spin * kTick;
+                    if (wanted != 0.0)
+                        absorbRefusedStep(body, one, std::clamp((body.angle - start) / wanted, 0.0, 1.0));
+                }
             }
             continue;
         }
@@ -866,7 +877,13 @@ void PlaygroundRoom::separateBall() {
         Vec3 way{};
         Vec3 at{};
         const double gap = bodyBallGap(index, way, at);
-        if (!(gap < 0.0)) continue;
+        // A gap a fraction of a picometre negative is touching, not inside: the room's
+        // resolution is a micrometre, and the arithmetic that rests a ball on a face
+        // lands it that far either side of exactly one radius, every tick. Read as an
+        // overlap it entered this separation on a perfectly ordinary contact, and
+        // because a pinned body cannot be pushed out of anything the ball was moved by
+        // hand instead -- counted as a repair, and worth exactly nothing but the count.
+        if (!(gap < -playground_tick::kQuantum)) continue;
         // The shape gives way, and it gives way *first*, because it is the shape that
         // is where it should not be. Splitting the overlap by mass share -- which is
         // what this used to do -- handed three quarters of it to the ball, because

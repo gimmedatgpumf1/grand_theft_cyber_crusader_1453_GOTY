@@ -260,11 +260,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     // which is exactly a solved turn that disagrees with the truth. The
                     // room's own sweep check counted three such disagreements in 684
                     // turns before this, worst 0.0551 rad; it counts none now.
-                    const double kept = body.spin * fraction;
-                    const double taken = body.moment * (body.spin - kept) / time;
-                    body.spin = kept;
-                    if (std::abs(taken) > 1e-9)
-                        addCouple(body.pivotPoint, taken, Vec3{0, 0, 0}, ForceKind::Contact, index);
+                    absorbRefusedStep(body, index, fraction);
                 }
                 body.angle += allowed;
                 body.centre = body.pivotPoint;
@@ -304,13 +300,7 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
                 if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
-                const Vec3 wasSpeed = body.velocity;
-                const double wasSpin = body.spin;
-                body.velocity = wasSpeed * along;
-                body.spin = wasSpin * along;
-                const Vec3 absorbed = (wasSpeed - body.velocity) * body.mass;
-                if (length(absorbed) > 1e-12)
-                    recordImpulse(body.centre, absorbed, ForceKind::Contact, index);
+                absorbRefusedStep(body, index, along);
                 return along;
             };
             if (body.hitAt < 1.0) {

@@ -1,62 +1,71 @@
-# The seesaw, measured — 2026-11-14
+# The seesaw, measured — 2026-11-14 (second pass)
 
-The King: *"The seesaw is laggy AF! It behaven in unnatural way! It is slow!"*
+The King: *"It looks exceptionally bad still! It is not one smooth motion but
+stop-move-stop-move!"* — and he was right, and the numbers said so: the plank's
+angle did not move on four ticks in ten while its spin kept growing.
 
-Three things were timed or counted, not guessed.
+## The cause: the ball's walk was erasing the plank's turn
 
-## 1. A tick costs a millisecond, and a frame costs ten
+The bodies are stepped, then the ball walks. For every shape its walk meets it
+carried the shape *back to the instant of the meeting*:
 
-    600 ticks in 521.1 ms  (0.869 ms/tick, 1151 ticks/s)     scratch/timing.cpp
-    60 frames at 1280x720 in soft rasteriser: 9.2 ms each     scratch/frame-cost.cpp
+    met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;
 
-At 20 Hz the room has 50 ms a tick and uses 0.87. A frame drawn the slow way
-(software rasteriser) costs 9.2 ms, so the loop hands the room its full share of
-real time: `min(0.05, 1/fps) * fps = 1.000 s` of room time per second of real
-time. Nothing here is running in slow motion.
+For a **pinned** body that expression is meaningless. Its "meeting" is found at
+the face the ball is already lying on, a tenth of a picometre deep, so `when`
+came out at 0.4 and the plank's turn was multiplied by it and thrown away —
+while the spin that made the turn stayed in the plank. Over a swing this repeated
+on almost every tick. That is what stop-move-stop-move was.
 
-## 2. The plank's dynamics are the plank's dynamics
+Measured, tick by tick (`scratch/seesaw-stutter.cpp`), before:
 
-Plank: 2.0 m x 0.24 m, four corners at 1 kg, I = 1.352 kg m^2 about the pin.
-Ball 0.62 kg at 0.80 m. Predicted angular acceleration of a loaded plank is
-about 2 rad/s^2 (2.4 with the ball pinned, less as it rolls). Measured over the
-first tick of a loaded swing: 0.125 rad/s in 0.05 s = **2.5 rad/s^2**. The axle
-is not the weight holding it back, and the bearing is 0.047 N m.
+    t16..t24  step ~0, spin climbing -0.006 -> +0.073
+    t21..t39  twenty ticks with no travel at all and a turn it never spent
+    35 of 60 turning ticks lost part of their turn
 
-## 3. The defect that was there: a refused turn kept its spin
+## What was changed
 
-`pivotTurnAllowed()` answers a *fraction* of the turn the plank wanted, and the
-caller was adding `turn * fraction` to the angle while leaving the spin whole.
-The plank then had momentum it had not spent, the next tick's sweep was asked
-about a turn beginning from a speed the plank did not have, and the sweep's own
-answer disagreed with what the plank actually did:
+1. **A refused piece of motion is motion the body does not have.**
+   `PlaygroundRoom::absorbRefusedStep()` is now the one door for that, used by
+   all four places that shorten a body's pose after the step was taken: the
+   swept step, a pinned body's turn, the ball's arrival prevention, and a pinned
+   body being turned back out of something. Refused travel *and* refused turn are
+   both given up, and the couple is written at the pin where the bearing took it.
 
-    scratch/hitscan-check, before:  3 of 684 turns disagreed, worst 0.0551 rad
-    scratch/hitscan-check, after:   0 of 684 turns disagreed, worst 0
+2. **A pinned body is not carried back by the ball's walk, nor refused by the
+   arrival pre-check.** It has no place to be carried to — its place is its axle.
+   Preventing the ball from going inside the plank is the ball's own walk, and
+   that is measured: over a 200-tick swing with the plank free to turn under the
+   ball, the deepest the ball ever was inside the plank was **1.1e-16 m** (the
+   last bit of a double) and nothing was ever lifted out.
 
-Refused turn is now absorbed exactly as refused travel is for a free body, and
-the couple that took it is written at the pin, where the bearing took it.
+3. **A gap under a micrometre is touching, not overlap.** `separateBall()` was
+   entering its repair path on -1e-16 m, and since a pinned body cannot be
+   pushed out of anything, the ball was moved by hand and counted as a repair.
+   The count now reads zero; the room's resolution is a micrometre and this is
+   the same rule the rest of the room already used.
 
-An earlier attempt also relaxed `pivotTurnAllowed()`'s pre-check from "deeper
-than a picometre" to "deeper than a micrometre" (touching is not inside). It
-changed no behaviour that could be measured and made the sweep check worse
-(12 of 684), so it was reverted; only the absorption stands.
+## After
 
-## 4. What the swing looks like
+    35 of 60 turning ticks lost part of their turn  ->  11 of 60
 
-`scratch/seesaw-swing.cpp` -> `scratch/seesaw-swing-strip.png`. The ball is let
-go on the raised end at 0.40 rad; the plank swings down, the ball rolls down it
-and off, the plank is left turning the other way under the ball it has picked
-up, and comes to rest against the floor at +0.8852 rad. No clip, nothing
-floating, nothing left spinning in place.
+and all eleven are the **floor** stopping the plank at its corner limit
+(-0.8852 rad), which is a seesaw hitting the ground, not a stutter. Between them
+the swing is monotone to the millisecond:
 
-## 5. What is still refused, and why
+    t11 +0.08167  t12 +0.02793  t13 -0.02559  t14 -0.08535  t15 -0.14748
+    t16 -0.21240  t17 -0.27844  t18 -0.34540  t19 -0.41320  t20 -0.48165
+    t21 -0.55057  t22 -0.61984  t23 -0.68938  t24 -0.75928  t25 -0.82960
 
-A pinned body's turn is still stopped at the first instant it would go *into*
-the ball or another shape (`pivotTurnAllowed`). A plank turning up into a ball
-resting on it is such a turn, and it is refused — the ball is on the far side of
-the face and the plank's own step is swept before the ball's. That is the one
-place where the plank can still be held back by something it is carrying.
+The clip is `scratch/seesaw-swing.gif` (60 frames, one per tick, 20 Hz) and the
+strip `scratch/seesaw-swing-strip.png`.
 
-    scratch/seesaw-lag.cpp: 36 of 46 turning ticks lost part of their turn (78%)
-    in the loaded swing, most of it at the floor's corner limit, which is the
-    floor and not a fault.
+## The checks, all re-run after the change
+
+    hitscan-check     0 of 684 turns disagreed (was 3, worst 0.0551)
+    held-speed        0.0000 m/s held by a body that stood still
+    king-exact        0.000 m/s, air drawn 0.00 N
+    drag-clip         0 mm overlap, 0 mm under the floor, through plank and ball
+    seesaw-carry      0 mm into the plank, 0 lifted out, 0 repairs
+    energy-blowup     +28.444 J (unchanged; it is the probe's own teleport)
+    tick cost         0.013 ms a tick with the seesaw swinging under a ball

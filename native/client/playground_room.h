@@ -546,6 +546,21 @@ private:
     double bodyStepAllowed(std::size_t index, Vec3 fromCentre, double fromAngle, Vec3 toCentre, double toAngle,
                            bool mayBeginInContact, Vec3* blockedBy = nullptr) const;
 
+    // A piece of a body's step that was refused is a piece of motion the body does
+    // not have. `kept` is the fraction of the step it was allowed -- one for the
+    // whole of it -- and what is left of the speed and the spin is what it keeps.
+    // Whatever took the rest took it at a contact, so it is written down as one, at
+    // the body, which is what makes the arrows account for it.
+    //
+    // There are four places in the room that shorten a body's step after it was
+    // taken: the swept step itself, the ball's arrival prevention, the ball's walk
+    // carrying a shape back to the instant it met it, and a pinned body being turned
+    // back out of something. Every one of them must give the motion back, or the body
+    // keeps the speed it did not spend -- and then the next tick begins from a speed
+    // the body does not have, which is a plank that stops and starts and a plank that
+    // gathers a turn it never took.
+    void absorbRefusedStep(Body& body, std::size_t index, double kept);
+
 public:
     // Read by the checks and the probes: how much of this room is prevention and how
     // much is repair.
