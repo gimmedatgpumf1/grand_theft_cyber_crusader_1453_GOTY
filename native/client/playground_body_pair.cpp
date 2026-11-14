@@ -777,7 +777,23 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // its job, and it costs nothing -- the shape keeps every part of its motion
     // that the ball did not refuse.
     const double closing = dot(body.velocity, normal);
-    if (closing > 0.0) body.velocity = body.velocity - normal * closing;
+    if (closing > 0.0) {
+        body.velocity = body.velocity - normal * closing;
+        // And it is a contact, so it is written down as one, at the place the ball
+        // and the shape meet: what stopped the shape was the ball, and the arrows
+        // have to say so or the account does not close. It did not before -- the
+        // speed was taken here and nothing was drawn for it, and a shape lifted out
+        // of a ball by its place kept the blow that put it there as a momentum the
+        // room had quietly lost: measured over the seesaw sweep, one tick's arrows
+        // came to 3.97 N.s for a body whose speed had changed by 12.48. A force that
+        // is not drawn is a force the room is not keeping.
+        //
+        // The normal runs from the shape to the ball, so the shape leaves the way the
+        // ball would have and the ball answers along the other way: the impulse on
+        // the shape is against the closing, and it acts where the two are closest.
+        recordImpulse(ball_.position - normal * ball_.radius, normal * (-closing * body.mass), ForceKind::Ball,
+                      index);
+    }
     ++bodyStepClamped_;
     return true;
 }
