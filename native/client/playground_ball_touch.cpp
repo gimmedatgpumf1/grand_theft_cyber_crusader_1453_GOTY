@@ -66,6 +66,32 @@ void PlaygroundRoom::settleBallFriction() {
     // below are one solve and the totals are what the ball felt, so this is what
     // the ledger gets -- the same rule as every other contact in the room: the
     // arrows are the impulses that were applied, and nothing else.
+    // The face as it is now, not as it was when the contact was first noticed.
+    //
+    // noteBallTouch() is called from tickBodies(), and it is called *before* the
+    // shapes' own contacts are solved: at that instant a cube standing on the floor
+    // still has the whole of this tick's fall in its speed -- half a metre a second
+    // -- which the solver is about to take away. Recording that as "the face is
+    // moving" told the ball's grip that a face which never moves was sliding past it
+    // at half a metre a second, and friction duly dragged the ball along with it.
+    // Measured in the King's corner (a ball wedged between a cube's side and the
+    // triangle's slope): the grip was given (-0.043,-0.542) m/s for the cube's face,
+    // and the same point's real speed was (-0.037,-0.016). The ball was shaken by a
+    // surface that was standing still, and the corner it was jammed in never settled.
+    //
+    // By the time the grip is solved the bodies have been answered and stepped, so
+    // their speed is the one they are really carrying and their spin is the one they
+    // are really turning with. That is the face the ball is against.
+    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        const std::size_t other = ballTouches_[i].body;
+        if (other >= kBodyCount) continue;  // the floor is the one surface that never moves
+        const Body& mate = bodies_[other];
+        if (mate.frozen || bodyHeld(other)) {
+            ballTouches_[i].surfaceVelocity = Vec3{};
+            continue;
+        }
+        ballTouches_[i].surfaceVelocity = pointSpeed(mate, ball.position + ballTouches_[i].normal * -ball.radius);
+    }
     std::array<double, kMaxBallTouches> taken{};
     for (std::size_t i = 0; i < ballTouchCount_; ++i) {
         tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
@@ -217,7 +243,15 @@ void PlaygroundRoom::settleBallFriction() {
         // slip than the face had, and the alternation that follows is momentum out of
         // nothing: a ball wedged under a seesaw's end left with two hundred radians a
         // second of turn it was never given.
-        partner[i] = dot(tangents[i], tangents[i]) * inverseMass(mate) + lever * lever / mate.moment;
+        // A face standing on the floor does not give way downwards, and the floor
+        // answers that part instead of the face: the response the ball's grip is
+        // measured against is the response the face will actually give -- the same
+        // one pushBody() will hand it. Measured as though the whole mass were free,
+        // the grip takes less slip than there was, the slip is left in the ball, and
+        // a ball pinched between two faces keeps a speed it can never spend.
+        const Vec3 takes = bodyFree(mate, tangents[i]);
+        partner[i] = dot(takes, tangents[i]) * inverseMass(mate) +
+                     (arm.x * takes.y - arm.y * takes.x) * lever / mate.moment;
     }
     std::array<double, kMaxBallTouches> lambda{};
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
@@ -274,7 +308,11 @@ void PlaygroundRoom::settleBallFriction() {
                 Body& mate = bodies_[other];
                 const Vec3 at = ball.position + arms[i];
                 if (!mate.frozen && !bodyHeld(other)) {
-                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Pair);
+                    // The ball's own grip, given to the face it is on, and through
+                    // the door the floor reads: this push is solved after the
+                    // shapes' tick, so the floor under the face is not in this
+                    // solve and the face's refused share is answered here.
+                    pushBody(mate, at, tangents[i] * -impulse, ForceKind::Ball);
                     ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
                 } else {
                     ballTouches_[i].surfaceVelocity = Vec3{};

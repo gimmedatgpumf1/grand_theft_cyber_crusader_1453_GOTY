@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -231,14 +229,28 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             // between a plank's end and a shape on the floor was pumped out at sixty
             // metres a second. The lever term is the same either way: a pinned body
             // still turns.
-            double value = dot(toward, direction) * inverseMass(*body) +
-                           lever(at - body->centre, toward) * lever(pushAt - body->centre, direction) /
+            // Measured from what each body actually takes, which is what pushBody()
+            // will give it and not the whole of the push. A shape standing on the
+            // floor does not take the part of a push that runs down into it -- the
+            // floor answers that -- so it gives way by the rest, and the compliance
+            // has to be the rest. Solved as 1/m the solver believed a supported shape
+            // yielded where it does not, laid on another impulse to close a gap that
+            // had not moved, and handed the shape on the other side the momentum it
+            // had invented: a cube standing beside a triangle went from a nudge of a
+            // tenth of a metre a second to a thousand metres a second in one tick.
+            const Vec3 takes = toward;
+            double value = dot(takes, direction) * inverseMass(*body) +
+                           lever(at - body->centre, takes) * lever(pushAt - body->centre, direction) /
                                body->moment;
             if (other != nullptr) {
-                if (!otherFixed)
-                    value += dot(toward, direction) * inverseMass(*other) +
-                             lever(at - other->centre, toward) * lever(pushAt - other->centre, direction) /
-                                 other->moment;
+                if (!otherFixed) {
+                    // The partner takes the push the other way round, so it is the
+                    // other way round that its own floor reads it.
+                    const Vec3 partner = toward;
+                    value += dot(partner, direction) * inverseMass(*other) +
+                             lever(at - other->centre, partner) *
+                                 lever(pushAt - other->centre, direction) / other->moment;
+                }
             } else if (patch.ball) {
                 if (!ballFixed) {
                     // The compliance has to be the compliance of the impulse that is
