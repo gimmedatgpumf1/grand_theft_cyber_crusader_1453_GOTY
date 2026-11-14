@@ -266,11 +266,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
-    std::fprintf(stderr,
-                 "  BC body %d closing %+.3f approach %+.3f rebound %+.3f resting %d exchange %d v(%+.2f,%+.2f)"
-                 " n(%+.2f,%+.2f) depth %.5f\n",
-                 bodyIndex, closing, approach, rebound, int(resting), int(exchange), ball.velocity.x, ball.velocity.y,
-                 normal.x, normal.y, depth);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
@@ -319,8 +314,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(normal, ballHeld);
             const double impulse = (rebound - closing) / (ballShare + bodyShare);
-            std::fprintf(stderr, "    body branch: ballShare %.4f bodyShare %.4f impulse %.4f -> dv %+.4f\n", ballShare,
-                         bodyShare, impulse, impulse * ballShare);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
@@ -469,7 +462,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // by the floor, and the blow it took and the blow it handed back are two forces
     // at one place, not none. The other half -- what the ground supplied -- is worked
     // out once at the end of the tick, from the ball's account, in tickBall().
-    std::fprintf(stderr, "    out v (%+.3f,%+.3f) w %+.3f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     ballBlows_ = ballBlows_ + blown;
     if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
     recordBall();

@@ -3,7 +3,6 @@
 #include "client/playground_shapes.h"
 
 #include <cstdlib>
-#include <cstdio>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -127,9 +126,6 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // is the whole of the constraint -- no correction of place, and no
                 // speed taken that the surface did not take.
                 const double allowed = -std::max(0.0, spare) / kTick;
-                if (spare < -1e-9 || closing < -1.0)
-                    std::fprintf(stderr, "  SETTLE body %zu spare %+.6f closing %+.3f allowed %+.3f\n", index,
-                                 spare, closing, allowed);
                 if (closing < allowed) {
                     // The speed the ball gives up here is a blow, and a blow has two
                     // ends. It used to be taken off the ball and written nowhere else:
