@@ -901,6 +901,7 @@ void PlaygroundRoom::tickBall() {
     // then the ball's faces again. Two or three rounds is all a corner needs, and the
     // loop stops as soon as the ball's speed stops moving -- a tick that has nothing
     // to say costs one extra compare.
+    answerSupportedShapes();
     settleBallSurfaces();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
