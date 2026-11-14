@@ -42,7 +42,21 @@ int main(int argc, char** argv) {
     r.toggleForceArrows();
     r.toggleForceNewtons();
     const int ticks = argc > 1 ? std::atoi(argv[1]) : 200;
-    for (int i = 0; i < ticks; ++i) r.advance(1.0 / 20.0);
+    for (int i = 0; i < 40; ++i) r.advance(1.0 / 20.0);
+    {
+        auto& s = r.bodies_[PlaygroundRoom::kSeesaw];
+        auto& c = r.bodies_[PlaygroundRoom::kCube];
+        c.frozen = false;
+        c.centre = {s.centre.x + 0.82, 1.62, 0};
+        c.angle = 0.0;
+        c.velocity = {};
+        c.spin = 0.0;
+        PlaygroundRoom::placeCorners(c);
+        c.previous = c.position;
+        c.previousCentre = c.centre;
+        c.previousAngle = c.angle;
+    }
+    for (int i = 0; i < ticks - 40; ++i) r.advance(1.0 / 20.0);
     std::printf("after %d ticks. ball (%+.4f,%+.4f) frz%d | dot (%+.3f,%+.3f) frz%d\n", ticks,
                 r.ball_.position.x, r.ball_.position.y, int(r.ball_.frozen), r.point_.x, r.point_.y,
                 int(r.pointFrozen_));

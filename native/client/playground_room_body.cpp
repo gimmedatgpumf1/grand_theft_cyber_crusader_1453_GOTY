@@ -263,37 +263,40 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             // asks it -- see bodyStepAllowed(). A body that begins against something
             // is not limited by this at all: it is in contact, and the contact solve is
             // what answers a contact.
+            // The step, swept. A shape's speed says where it would like to be; whether
+            // it may be there is a question about the space between, and it is answered
+            // by the one function in the room that asks it -- see bodyStepAllowed().
+            //
+            // What a refused step must not do is leave the speed behind. It used to:
+            // the step was shortened and the velocity was not touched, so the body kept
+            // the whole of the momentum it had been refused and gravity went on adding
+            // to it every tick. A shape held still by a corner therefore gathered speed
+            // it never travelled, and the room drew it as a shape moving -- nineteen
+            // newtons of air against a face that had not moved, a triangle with three
+            // metres a second in it that had not been anywhere for a second, and then
+            // the whole of it spent at once the moment the shape came free. That is the
+            // pump, and this is where it was.
+            //
+            // A step is a tick of travel, and what the sweep refuses is a piece of that
+            // travel: the shape did not go there, so it does not have the speed that
+            // would have taken it. The refused piece is absorbed by whatever was in the
+            // way -- a contact, perfectly inelastic, the same answer every other contact
+            // in this room gives -- and it is written down as one, at the body, so the
+            // picture accounts for it. Nothing is added to what is left: a shape sliding
+            // along a face has nothing refused, so nothing is taken, and it keeps every
+            // part of its motion the face did not stand in the way of.
             const auto sweptStep = [&](Vec3 middle, double angle) {
                 if (body.count == 0) return 1.0;
-                Vec3 stoppedBy{0, 1, 0};
-                const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true, &stoppedBy);
+                const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
                 if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
-                // A refused step is a contact, and it has to be answered as one.
-                //
-                // What this used to do was shorten the step and leave the speed alone --
-                // the body kept the whole of its momentum and spent none of it. Gravity
-                // went on adding to it every tick, so a shape held against something kept
-                // gaining speed it never used, and then used all of it at once the moment
-                // it came free. That is a pump, and it is where the King's flying triangle
-                // came from: a body with three metres a second in it that had not moved
-                // for a second, drawn with nineteen newtons of air against a face that
-                // was standing still. The air was right -- the speed was real; it simply
-                // had no journey behind it.
-                //
-                // So the momentum that would have carried the body through the thing in
-                // the way is given to that thing, at the place it was stopped, through
-                // the same door every other blow in this room goes through. The body
-                // loses exactly what it could not spend and nothing else: a shape
-                // sliding along a face keeps every part of its motion that the face did
-                // not refuse, and a shape pressed into a corner is stopped, not frozen.
-                // Taken at the centre of mass, so it is a pure stop and not a lever:
-                // what the sweep refused is the body's travel, and whether the piece
-                // that touched should also be turned is the contact's question, which
-                // the solver answers in the next tick from where the two now are.
-                const double into = -dot(body.velocity, stoppedBy);
-                if (into > 0.0)
-                    pushBody(body, body.centre, stoppedBy * (into * body.mass), ForceKind::Contact);
+                const Vec3 wasSpeed = body.velocity;
+                const double wasSpin = body.spin;
+                body.velocity = wasSpeed * along;
+                body.spin = wasSpin * along;
+                const Vec3 absorbed = (wasSpeed - body.velocity) * body.mass;
+                if (length(absorbed) > 1e-12)
+                    recordImpulse(body.centre, absorbed, ForceKind::Contact, index);
                 return along;
             };
             if (body.hitAt < 1.0) {

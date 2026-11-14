@@ -138,6 +138,77 @@ int main() {
     for (std::size_t i = 0; i < room.forceCount_; ++i)
         if (room.forces_[i].kind == PlaygroundRoom::ForceKind::Drag) worstDrag = std::max(worstDrag, length(room.forces_[i].force));
     std::printf("  largest arrow now on screen: %.2f N of it is air\n", worstDrag);
+    // And the same again with the plank swung down hard onto the tipped triangle -- the
+    // shape the King's picture is actually in: the plank across a fallen triangle, both
+    // of them with speed in them.
+    {
+        PlaygroundRoom swing;
+        swing.reset();
+        for (int i = 0; i < 30; ++i) swing.advance(kDt);
+        auto& tri = swing.bodies_[PlaygroundRoom::kTriangle];
+        tri.centre = {-2.900, 2.6, 0};
+        tri.angle = -0.90;
+        PlaygroundRoom::placeCorners(tri);
+        double low = 1e9;
+        for (std::size_t i = 0; i < tri.count; ++i) low = std::min(low, tri.position[i].y);
+        if (low < 0.0) tri.centre.y -= low;
+        PlaygroundRoom::placeCorners(tri);
+        tri.previous = tri.position;
+        tri.previousCentre = tri.centre;
+        tri.previousAngle = tri.angle;
+        tri.velocity = {};
+        tri.spin = 0.0;
+        tri.frozen = false;
+        // The push on the end of the plank is part of the setup, so the energy to
+        // measure against is the energy *after* it: what this asks is whether the room
+        // makes any more than a hand put in.
+        swing.bodies_[PlaygroundRoom::kSeesaw].spin = -7.0;
+        const double base = energyOf(swing);
+        double top = base;
+        int topTick = -1;
+        double worstDrag2 = 0.0;
+        double worstSpeed2 = 0.0;
+        for (int k = 0; k < 400; ++k) {
+            // A hand on the far end of the plank, once: a real spin, the way a push on
+            // the end of a seesaw gives one.
+
+            swing.advance(kDt);
+            const double now = energyOf(swing);
+            if (now > top) {
+                top = now;
+                topTick = k;
+            }
+            for (std::size_t i = 0; i < swing.forceCount_; ++i)
+                if (swing.forces_[i].kind == PlaygroundRoom::ForceKind::Drag)
+                    worstDrag2 = std::max(worstDrag2, length(swing.forces_[i].force));
+            for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
+                if (swing.bodies_[i].count) worstSpeed2 = std::max(worstSpeed2, length(swing.bodies_[i].velocity));
+        }
+        std::printf("plank swung down at 7 rad/s onto a tipped triangle: energy %+.2f J over the start (peak t%d)\n",
+                    top - base, topTick);
+        // And nothing may be inside anything when it comes to rest.
+        double deepest = 0.0;
+        for (std::size_t a = 0; a < PlaygroundRoom::kBodyCount; ++a) {
+            for (std::size_t b = 0; b < PlaygroundRoom::kBodyCount; ++b) {
+                if (a == b || !swing.bodies_[a].count || !swing.bodies_[b].count) continue;
+                for (std::size_t c = 0; c < swing.bodies_[a].count; ++c)
+                    deepest = std::max(deepest, -ball_shape::outlineGap(swing.bodies_[a].position[c],
+                                                                       swing.bodies_[b].position.data(),
+                                                                       swing.bodies_[b].position.data(),
+                                                                       swing.bodies_[b].count, 1.0).gap);
+            }
+        }
+        double underFloor = 0.0;
+        for (std::size_t a = 0; a < PlaygroundRoom::kBodyCount; ++a)
+            for (std::size_t c = 0; c < swing.bodies_[a].count; ++c)
+                underFloor = std::max(underFloor, -swing.bodies_[a].position[c].y);
+        std::printf("  worst air arrow %.2f N | fastest anything went %.2f m/s | plank a%+.4f | tri a%+.4f\n",
+                    worstDrag2, worstSpeed2, swing.bodies_[2].angle, swing.bodies_[1].angle);
+        std::printf("  deepest one shape inside another %.6f m | deepest below the floor %.6f m\n", deepest,
+                    underFloor);
+        cameraFrom = nullptr;
+        labelsFrom = nullptr;
+    }
     RoomFreecam cam;
     cam.reset({-1.60, 1.75, 3.30}, -0.72, -0.26);
     shoot(room, cam, "scratch/king-scene.png");
