@@ -116,10 +116,25 @@ void PlaygroundRoom::settleBodies() {
         const bool anywhere = body.restHigh.x - body.restLow.x < kRestBox &&
                              body.restHigh.y - body.restLow.y < kRestBox &&
                              body.restAngleHigh - body.restAngleLow < kRestTurn;
+        // And if it has stepped outside that box, it has moved, and a body that has
+        // moved has not been still: the second it is being asked about starts again
+        // from here. The box used to be left standing on the fall it was opened
+        // from, so a body that came down and then stood perfectly still for ever was
+        // measured against the width of its landing -- five centimetres across, never
+        // once back inside -- and the count reached twenty, found itself outside a box
+        // it had left a season ago, and started over. Measured: a cube whose place and
+        // angle did not change in the twelfth decimal for three hundred ticks, whose
+        // speed was exactly nothing, never once was called a body at rest, and every
+        // arrow the room drew for it was drawn about a shape it believed to be moving.
+        if (!anywhere) {
+            body.restTicks = 1;  // this tick is the first of the new second
+            body.restLow = body.restHigh = body.centre;
+            body.restAngleLow = body.restAngleHigh = body.angle;
+            continue;
+        }
         // Asleep, or not yet: a body that has been inside one small box for a
-        // second is standing still on what is holding it up, and a body that has
-        // been anywhere is not, and starts its second again.
-        if (body.restTicks >= kRestTicks && anywhere) {
+        // second is standing still on what is holding it up.
+        if (body.restTicks >= kRestTicks) {
             // Asleep where the physics left it. Nothing is moved to make it look
             // tidier: a body that is standing still is standing where it stands.
             body.frozen = true;
@@ -141,8 +156,6 @@ void PlaygroundRoom::settleBodies() {
             // written at the part of the body that was pressing.
             absorbRefusedStep(body, index, 0.0);
             body.shown = body.position;
-        } else if (body.restTicks >= kRestTicks && !anywhere) {
-            body.restTicks = 0;
         }
     }
 }
