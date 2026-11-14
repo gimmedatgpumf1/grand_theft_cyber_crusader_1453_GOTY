@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 namespace gtc::native {
+extern int gtcAudit;
 using namespace ball_shape;
 using namespace playground_detail;
 // playground_tick is named where it is used: ball_shape has its own kTick and
@@ -253,6 +254,7 @@ void PlaygroundRoom::tickBall() {
     // three quarters of the way, sixty times a second, for ever. A ball that was not
     // is falling, and where it lands it bounces.
     const bool startedOnFloor = ball.position.y <= ball.radius + kTouch;
+    if (gtcAudit) std::fprintf(stderr, "B start pos(%+.5f,%+.5f) v(%+.5f,%+.5f) frz%d touch%d\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(ball.frozen), int(ball.touching));
 
     // What the ball arrived with is recorded once for the whole tick, before
     // anything in the room moved -- see advance(). A push the dot gives it later
@@ -307,6 +309,7 @@ void PlaygroundRoom::tickBall() {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
+    if (gtcAudit) std::fprintf(stderr, "B afterGravity v(%+.5f,%+.5f) held%d\n", ball.velocity.x, ball.velocity.y, int(held));
 
     // What the ball is standing on is not relearned halfway through the tick. It
     // is a fact about the tick -- the state it began in -- and both halves of the
@@ -780,6 +783,7 @@ void PlaygroundRoom::tickBall() {
         // divide the tick by zero. Every surface that could be is put back out above,
         // so what is left here is a guard and not an escape: the ball is not left
         // inside anything, it is only not advanced further this tick.
+        if (gtcAudit) std::fprintf(stderr, "B   walk step what %d first %.4f depth %.5f normal(%+.3f,%+.3f) -> v(%+.5f,%+.5f) pos(%+.5f,%+.5f)\n", what, first, depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y);
         if (depth > kSkin && first <= kTouch) break;
         // Not "the ball stopped, so stop looking": a ball standing still still has
         // something on its way to it -- a body is stepped before the ball, and its
@@ -800,6 +804,7 @@ void PlaygroundRoom::tickBall() {
     // contact constraint, and it is enforced here and again after the grip: see
     // settleBallSurfaces().
     settleBallSurfaces();
+    if (gtcAudit) std::fprintf(stderr, "B afterWalk pos(%+.5f,%+.5f) v(%+.5f,%+.5f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
     // The floor, met without being travelled into.
     //
     // A ball resting on the floor is in contact with it every tick, and this walk
@@ -817,6 +822,7 @@ void PlaygroundRoom::tickBall() {
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
     settleBallFriction();
+    if (gtcAudit) std::fprintf(stderr, "B afterFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
@@ -826,6 +832,7 @@ void PlaygroundRoom::tickBall() {
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
     // out of the air. Below it the ball is at rest.
+    if (gtcAudit) std::fprintf(stderr, "B end pos(%+.5f,%+.5f) v(%+.5f,%+.5f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
     if (length(ball.velocity) < kRestSpeed) ball.velocity = {};
 
     // What the ball's supporters had to supply, and it is the only force in the room

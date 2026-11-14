@@ -13,10 +13,12 @@
 #include "client/playground_shapes.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <vector>
 
 namespace gtc::native {
+extern int gtcAudit;
 using namespace ball_shape;
 using namespace playground_detail;
 
@@ -822,6 +824,7 @@ void PlaygroundRoom::separateBall() {
         // So `way`, which runs out of the ball and into the body, is the direction
         // the body leaves along, and pushBodyOutOfBall does the moving -- including
         // refusing when the body has nowhere to go, because it is on the floor.
+        if (gtcAudit) std::fprintf(stderr, "SEP b%zu gap(%+.6f) way(%+.3f,%+.3f)\n", index, gap, way.x, way.y);
         if (pushBodyOutOfBall(index, way * -1.0, -gap)) continue;
         // Nowhere to go: the ball gives the rest of it, and only what is left.
         if (ball_.frozen || dragTarget_ == DragTarget::Ball) continue;

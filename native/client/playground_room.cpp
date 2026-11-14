@@ -162,6 +162,8 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
     pointFrozen_ = false;
 }
 
+int gtcAudit = 0;
+
 // One impulse, given to one body at one place. This is the only door into a
 // body's motion anywhere in the room, because it is the only thing a force can do
 // to a rigid body: change the speed of its centre of mass by J/m and its turn by
