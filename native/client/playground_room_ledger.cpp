@@ -11,7 +11,6 @@
 #include "client/playground_ball_shape.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cmath>
 
 namespace gtc::native {
@@ -42,19 +41,44 @@ void PlaygroundRoom::absorbRefusedStep(Body& body, std::size_t index, double kep
     const double wasSpin = body.spin;
     body.velocity = wasSpeed * kept;
     body.spin = wasSpin * kept;
+    // What the body lost, and what the room therefore gave it.
+    //
+    // A body that does not go somewhere does not have the momentum that would have
+    // taken it, and the piece it does not have is a piece the thing in its way took.
+    // That is a contact like any other -- the room's answer to an arrival, inelastic,
+    // the same answer every other contact here gives -- and what is written down is
+    // the impulse the *body* was given, which is the loss reversed. Written the other
+    // way round, every refused step was drawn as a blow in the direction the body was
+    // already going: a triangle held up by nothing showed its own weight again as a
+    // contact pointing at the floor, which is the arrow the King asked about. A
+    // contact can only push a body away from what it pressed on, and the ledger now
+    // says so.
     const Vec3 taken = (wasSpeed - body.velocity) * body.mass;
-    if (length(taken) > 1.0)
-        std::fprintf(stderr,
-                     "  ABSORB ra %p body %zu kept %.4f  lost (%+.3f,%+.3f) N-s  = (%+.1f,%+.1f) N | centre (%.4f,%.4f) v (%.4f,%.4f) -> (%.4f,%.4f) | ball (%.4f,%.4f) v (%.3f,%.3f) r %.3f sep %.6f\n",
-                     __builtin_return_address(0), index, kept, taken.x, taken.y, taken.x * 20.0, taken.y * 20.0, body.centre.x, body.centre.y, wasSpeed.x,
-                     wasSpeed.y, body.velocity.x, body.velocity.y, ball_.position.x, ball_.position.y, ball_.velocity.x,
-                     ball_.velocity.y, ball_.radius,
-                     ball_shape::outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0).gap - ball_.radius);
-    if (length(taken) > 1e-12) recordImpulse(body.centre, taken, ForceKind::Contact, index);
-    const double takenMoment = body.moment * (wasSpin - body.spin) / kTick;
-    if (std::abs(takenMoment) > 1e-9)
-        addCouple(body.pivoted ? body.pivotPoint : body.centre, takenMoment, Vec3{0, 0, 0}, ForceKind::Contact,
-                  index);
+    const Vec3 push = taken * -1.0;
+    // And where it was given: at the part of the body that ran into the thing, which
+    // is the part furthest along the way the momentum went -- not at the middle of the
+    // body, where nothing was ever touched. A body held up at its lower corner is
+    // held up at that corner; an arrow at its centre is a force on a point that met
+    // nothing. A pinned body is the exception the pin makes: its middle is where it is
+    // held, and there is no other place anything can meet it.
+    Vec3 at = body.centre;
+    if (body.pivoted) {
+        at = body.pivotPoint;
+    } else {
+        double deepest = -1e30;
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const double along = dot(body.position[i], taken);
+            if (along > deepest) {
+                deepest = along;
+                at = body.position[i];
+            }
+        }
+    }
+    if (length(taken) > 1e-12) recordImpulse(at, push, ForceKind::Contact, index);
+    // The turn that was refused is a couple at the same place, and it is written the
+    // same way round: the moment the body was *given* is the moment it lost, reversed.
+    const double takenMoment = body.moment * (body.spin - wasSpin) / kTick;
+    if (std::abs(takenMoment) > 1e-9) addCouple(at, takenMoment, Vec3{0, 0, 0}, ForceKind::Contact, index);
 }
 
 // An impulse over a tick is a force, and this is where the tick's contacts become

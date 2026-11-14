@@ -521,29 +521,8 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
             if (two < one && !bodies_[two].frozen) continue;
             const Body& solid = bodies_[two];
             pair_shape::PairManifold meeting;
-            const bool met = pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count,
-                                     band, meeting);
-            static int pairPrints = 0;
-            if (one == 1 && two == 2 && pairPrints < 100000) {
-                ++pairPrints;
-                std::fprintf(stderr,
-                             "  PAIR (1,2) met %d ends %d dep (%.3e,%.3e) at (%.3f,%.3f) n (%.3f,%.3f) | v1 (%.3f,%.3f) v2 (%.3f,%.3f) band %.4f\n",
-                             int(met), int(meeting.ends), meeting.depth[0], meeting.depth[1], meeting.at[0].x,
-                             meeting.at[0].y, meeting.normal.x, meeting.normal.y, body.velocity.x, body.velocity.y,
-                             solid.velocity.x, solid.velocity.y, band);
-                if (meeting.depth[0] < -0.1 && pairPrints < 100000) {
-                    std::fprintf(stderr, "    TRI");
-                    for (std::size_t q = 0; q < body.count; ++q)
-                        std::fprintf(stderr, " (%.4f,%.4f)", body.position[q].x, body.position[q].y);
-                    std::fprintf(stderr, "\n    PLK");
-                    for (std::size_t q = 0; q < solid.count; ++q)
-                        std::fprintf(stderr, " (%.4f,%.4f)", solid.position[q].x, solid.position[q].y);
-                    std::fprintf(stderr, "  local0 (%.4f,%.4f) c (%.4f,%.4f) ang %.4f piv (%.4f,%.4f)\n",
-                                 solid.local[0].x, solid.local[0].y, solid.centre.x, solid.centre.y, solid.angle,
-                                 solid.pivotPoint.x, solid.pivotPoint.y);
-                }
-            }
-            if (!met)
+            if (!pair_shape::collide(body.position.data(), body.count, solid.position.data(), solid.count, band,
+                                     meeting))
                 continue;
             Manifold patch;
             patch.body = one;
