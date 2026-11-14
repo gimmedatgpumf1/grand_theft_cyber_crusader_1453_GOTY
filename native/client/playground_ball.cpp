@@ -253,6 +253,7 @@ void PlaygroundRoom::tickBall() {
     // three quarters of the way, sixty times a second, for ever. A ball that was not
     // is falling, and where it lands it bounces.
     const bool startedOnFloor = ball.position.y <= ball.radius + kTouch;
+    std::fprintf(stderr, "ST start pos(%+.4f,%+.4f) v(%+.3f,%+.3f)\n", ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
 
     // What the ball arrived with is recorded once for the whole tick, before
     // anything in the room moved -- see advance(). A push the dot gives it later
@@ -308,6 +309,7 @@ void PlaygroundRoom::tickBall() {
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
 
+    std::fprintf(stderr, "ST afterGravity v(%+.3f,%+.3f)\n", ball.velocity.x, ball.velocity.y);
     // What the ball is standing on is not relearned halfway through the tick. It
     // is a fact about the tick -- the state it began in -- and both halves of the
     // tick need it: the shapes are solved first, where a shape landing on a ball the
@@ -800,6 +802,7 @@ void PlaygroundRoom::tickBall() {
     // contact constraint, and it is enforced here and again after the grip: see
     // settleBallSurfaces().
     settleBallSurfaces();
+    std::fprintf(stderr, "ST afterWalk+settle1 v(%+.3f,%+.3f) pos(%+.4f,%+.4f)\n", ball.velocity.x, ball.velocity.y, ball.position.x, ball.position.y);
     // The floor, met without being travelled into.
     //
     // A ball resting on the floor is in contact with it every tick, and this walk
@@ -816,7 +819,9 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
+    std::fprintf(stderr, "ST beforeFriction v(%+.3f,%+.3f) w%+.3f touches %d\n", ball.velocity.x, ball.velocity.y, ball.spin, int(ballTouchCount_));
     settleBallFriction();
+    std::fprintf(stderr, "ST afterFriction v(%+.3f,%+.3f) w%+.3f\n", ball.velocity.x, ball.velocity.y, ball.spin);
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
