@@ -362,19 +362,15 @@ private:
         const double lever = arm.x * direction.y - arm.y * direction.x;
         return inverseMass(body) + lever * lever / body.moment;
     }
-    // What of a push on a body actually becomes a step of that body. A shape that is
-    // standing on the floor cannot be driven into it: the floor is under it and the
-    // floor does not give, so the part of the push that runs downwards is the floor's
-    // to answer and is taken at the place it is given. This is the one rule for it --
-    // pushBody() applies it and every compliance in the room is measured from it, so
-    // that the solver's model of what a shape will do and what the shape then does are
-    // the same model. Two models is a contact that never closes: the solver lays on
-    // impulse after impulse for a speed the shape never takes, and the shape next to
-    // it is handed all of it. That is the shape-against-shape pump.
-    static Vec3 bodyFree(const Body& body, Vec3 push);
     // The same number for a body that is standing on the floor and is being pushed
-    // into it: what it gives is the part of a push that runs along the floor, plus
-    // the turn about its centre, which the floor cannot take.
+    // *down* into it. The floor is under the shape and the floor does not give, so
+    // the part of the shape's response that would be a step downwards is not a
+    // response at all -- the floor answers it. What is left of the shape's compliance
+    // is the part of the push that runs *along* the floor, and the turn about its
+    // centre, which the floor cannot take. Solving it as though the whole mass were
+    // free hands the shape momentum the floor then quietly swallows: a ball dropped
+    // on a cube resting on the floor lost a quarter of every bounce to a cube that
+    // never moved at all.
     static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
         const Vec3 arm = at - body.centre;
         const double lever = arm.x * direction.y - arm.y * direction.x;
@@ -772,16 +768,6 @@ private:
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
-    // Where every shape was when the ball's half of the tick began: its speed and its
-    // turn, as the tick's own solve of the shapes left them. A face the ball's grip is
-    // measured against is the face the ball met, and that is where it was standing when
-    // the ball arrived at it -- not where the ball's own blow had pushed it a moment
-    // later. Read live, the grip sees its own push coming back at it: the ball presses
-    // a face, the face moves, the grip reads the movement as the face running away and
-    // drags the ball after it, and a ball wedged in a corner keeps a speed that carries
-    // it nowhere for as long as it is left there.
-    std::array<Vec3, kBodyCount> ballTickSpeed_{};
-    std::array<double, kBodyCount> ballTickSpin_{};
     void settleBallFriction();
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
