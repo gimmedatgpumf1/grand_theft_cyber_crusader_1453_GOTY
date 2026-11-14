@@ -498,10 +498,11 @@ void PlaygroundRoom::tickBall() {
             // going nor how fast the body is turning can hide the arrival between two
             // samples. That is the hitscan: solved outright, not stepped towards.
             OutlineHit hit;
-            if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
-                                        ball.radius, kTick * remaining, hit)) {
-                continue;
-            }
+            const bool swept = sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position,
+                                                      ball.velocity, ball.radius, kTick * remaining, hit);
+            std::fprintf(stderr, "  WALK body %zu pos (%.3f,%.3f) v (%.2f,%.2f) swept %d along %.4f\n", index,
+                         ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(swept), hit.along);
+            if (!swept) continue;
 
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop
