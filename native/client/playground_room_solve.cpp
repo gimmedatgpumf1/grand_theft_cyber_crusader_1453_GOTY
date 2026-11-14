@@ -55,6 +55,8 @@ constexpr int kGripRoundsMax = 48;
 // weight of a speck, and far below anything the eye can find in a shape's travel over
 // an hour. Asking for more than this buys nothing but arithmetic.
 constexpr double kAgree = 1e-9;  // N s
+int g_dbgTick = 0;
+int g_dbgPass = 0;
 }  // namespace
 
 // Every surface the ball is already resting on, gathered before the tick is solved.
@@ -112,6 +114,8 @@ void PlaygroundRoom::gatherBallSupports() {
 // driven into the floor -- hold and slip may be a hair from where they settle, but
 // nothing goes into anything.
 bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
+    ++g_dbgTick;
+    g_dbgPass = 0;
     bool closingAtAll = false;
     // The largest change the last sweep made, in newton seconds. A sweep is over when
     // it has nothing left to say -- see kImpulseTolerance for why the question is
@@ -375,6 +379,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 highest = std::max(highest, patch.gap[k]);
             }
             const bool lying = highest - lowest <= kFaceFlat;
+            const bool dbg = patch.kind == ForceKind::Pair && patch.body == 0 && g_dbgTick >= 41 &&
+                             g_dbgTick <= 43 && g_dbgPass < 3 && !withGrip;
+            if (dbg)
+                std::fprintf(stderr, "    pass %d attempt %d lying %d lowest %+9.6f highest %+9.6f\n", g_dbgPass,
+                             attempt, int(lying), lowest, highest);
             // Lying, the clearance the face may still close is the deepest end's, and
             // a face that is already touching may close nothing: a corner inside the
             // surface is a state the walk put it in, and the walk takes it out.
@@ -405,6 +414,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // answered here is the closing speed at that instant.
                 const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
+                if (dbg) {
+                    const Vec3 otherSpeed = other != nullptr ? pointSpeed(*other, patch.point[k]) : Vec3{};
+                    std::fprintf(stderr,
+                                 "      end %zu gap %+9.6f away %+8.4f otherV(%+6.3f,%+6.3f) bodyV(%+6.3f,%+6.3f) "
+                                 "bias %+8.4f u %+8.4f Jn %+7.4f\n",
+                                 k, patch.gap[k], away(patch.point[k], patch.normal), otherSpeed.x, otherSpeed.y,
+                                 body->velocity.x, body->velocity.y, bias, u[dofs], patch.normalImpulse[k]);
+                }
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
                 // answer is a push at one place and its reaction at another, and that
@@ -685,6 +702,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         for (int pass = 0; pass < kSolvePasses; ++pass) {
             worst = 0.0;
             for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m], withGrip);
+            ++g_dbgPass;
             if (worst < kImpulseTolerance && pass > 0) break;
         }
     };
@@ -699,13 +717,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     }
     sweep(false);
     {
-        static int dbgTick = 0;
-        ++dbgTick;
         for (std::size_t m = 0; m < patches.count; ++m) {
             const Manifold& q = patches.items[m];
             if (q.kind != ForceKind::Pair || q.body != 0) continue;
             std::fprintf(stderr, "  PAIR tick %d body %zu other %zu ends %zu n(%+.2f,%+.2f) | ",
-                         dbgTick, q.body, q.other, q.ends, q.normal.x, q.normal.y);
+                         g_dbgTick, q.body, q.other, q.ends, q.normal.x, q.normal.y);
             for (std::size_t k = 0; k < q.ends; ++k)
                 std::fprintf(stderr, "e%zu gap %+9.6f Jn %+7.4f Jt %+7.4f | ", k, q.gap[k], q.normalImpulse[k],
                              q.tangentImpulse[k]);
