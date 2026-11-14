@@ -240,7 +240,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             // had not moved, and handed the shape on the other side the momentum it
             // had invented: a cube standing beside a triangle went from a nudge of a
             // tenth of a metre a second to a thousand metres a second in one tick.
-            const Vec3 takes = bodyFree(*body, toward);
+            const Vec3 takes = toward;
             double value = dot(takes, direction) * inverseMass(*body) +
                            lever(at - body->centre, takes) * lever(pushAt - body->centre, direction) /
                                body->moment;
@@ -248,7 +248,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 if (!otherFixed) {
                     // The partner takes the push the other way round, so it is the
                     // other way round that its own floor reads it.
-                    const Vec3 partner = bodyFree(*other, toward * -1.0) * -1.0;
+                    const Vec3 partner = toward;
                     value += dot(partner, direction) * inverseMass(*other) +
                              lever(at - other->centre, partner) *
                                  lever(pushAt - other->centre, direction) / other->moment;

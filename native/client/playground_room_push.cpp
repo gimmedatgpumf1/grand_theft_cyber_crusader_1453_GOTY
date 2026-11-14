@@ -58,7 +58,7 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // place on the shape's own base that is underneath it, and written down there as
     // the contact it is. The shape keeps the rest, and the arrows add up to what the
     // shape actually feels.
-    const Vec3 given = bodyFree(body, impulse);
+    const Vec3 given = kind == ForceKind::Ball ? bodyFree(body, impulse) : impulse;
     Vec3 floorAnswer{};
     Vec3 floorAt{};
     if (given.y != impulse.y) {
