@@ -280,6 +280,9 @@ void PlaygroundRoom::settleBallFriction() {
             // pass takes more again in the other direction. The two of them hand the
             // ball energy, tick after tick, which is exactly what an overshooting
             // friction solve does and exactly what must never happen here.
+            if (gtcAudit && pass < 3)
+                std::fprintf(stderr, "B   pass %d face %zu slip%+.5f next%+.5f lambda%+.5f imp%+.5f load%.5f\n", pass, i,
+                             slip, next, lambda[i], impulse, load);
             if (impulse * slip > 0.0) continue;
             lambda[i] = next;
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
