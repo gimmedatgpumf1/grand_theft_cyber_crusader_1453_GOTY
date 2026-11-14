@@ -119,7 +119,9 @@ int main() {
         using gtc::native::gtcAudit;
         for (int k = 0; k < 200; ++k) {
             gtcAudit = (trial == 33 && k >= 60 && k <= 67) ? 1 : 0;
+            if (gtcAudit) std::fprintf(stderr, "AUD ---- tick %d begin\n", k);
             r.advance(kDt);
+            if (gtcAudit) std::fprintf(stderr, "AUD ---- tick %d end\n", k);
             gtcAudit = 0;
             check(r, worst, trial, k);
         }

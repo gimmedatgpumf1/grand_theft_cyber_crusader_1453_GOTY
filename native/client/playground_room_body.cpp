@@ -26,6 +26,7 @@
 #include <cstdlib>
 
 namespace gtc::native {
+extern int gtcAudit;
 using namespace playground_detail;
 using namespace playground_tick;
 
@@ -628,6 +629,7 @@ void PlaygroundRoom::settleBodies() {
             // Asleep where the physics left it. Nothing is moved to make it look
             // tidier: a body that is standing still is standing where it stands.
             body.frozen = true;
+            if (gtcAudit) std::fprintf(stderr, "AUD sleep b%zu erasing (%+.6f,%+.6f) w%+.6f\n", index, body.velocity.x, body.velocity.y, body.spin);
             body.velocity = {};
             body.spin = 0.0;
             body.shown = body.position;
@@ -737,7 +739,6 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // is no state in which a shape is held still while its speed keeps growing. That
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
-extern int gtcAudit;
 void PlaygroundRoom::tickBodies() {
     // What every body arrived with, and how many contacts it had already been given.
     //
