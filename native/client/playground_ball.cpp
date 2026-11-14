@@ -74,6 +74,11 @@ void PlaygroundRoom::tickBall() {
     }
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
+    // Where the ball began this tick. A ball whose travel the room resolves away ends
+    // the tick exactly where it began it, and the speed that would have carried it is
+    // nothing -- see the end of this function, and the same rule for a shape's step in
+    // advanceBodies(). It is the room's own micrometre, not a new tolerance.
+    const Vec3 beganAt = ball.position;
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
     if (dragTarget_ == DragTarget::Ball) {
@@ -817,6 +822,16 @@ void PlaygroundRoom::tickBall() {
         ball.previous = ball.position;
         ball.shown = ball.position;
     }
+    // A ball that ends the tick where it began it went nowhere, so the speed that
+    // would have carried it is not a speed: it is a number below the room's own
+    // resolution that nothing in the room can ever spend, and every surface it leans
+    // on reads it as if the ball were moving. Measured: a ball wedged under the
+    // triangle's apex held (-1.2e-5, -8.9e-6) m/s tick after tick with its place fixed
+    // to a hundredth of a micron, and that is what its grip was made of.
+    if (ball.position.x == beganAt.x && ball.position.y == beganAt.y && ball.position.z == beganAt.z)
+        ball.velocity = {};
+    // And a turn that carries the rim less than a micrometre is not a turn.
+    ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
 }
 
