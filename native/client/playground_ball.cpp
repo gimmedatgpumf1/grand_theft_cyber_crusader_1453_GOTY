@@ -30,7 +30,7 @@ namespace {
 // How many times a tick's standing contacts are solved over before their answers are
 // taken to agree. A face or two settles in a couple of passes; a corner of three is
 // slower, and past this what is left is smaller than the room's own resolution.
-constexpr int kBallSurfacePasses = 64;
+constexpr int kBallSurfacePasses = 8;
 }  // namespace
 
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
