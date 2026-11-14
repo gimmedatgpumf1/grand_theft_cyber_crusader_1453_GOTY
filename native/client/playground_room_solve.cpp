@@ -142,7 +142,24 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
-        if (patch.quiet) return;
+        // A quiet patch is a pair that was already resting when the tick opened, and
+        // resting is not the same thing as needing no answer.
+        //
+        // It used to be skipped outright: "the tick opened with them not closing, so
+        // there is no blow to strike." That is true of an arrival and it is false of a
+        // resting contact, because the tick has already put a whole weight into both
+        // of them before this solve runs -- half a metre a second of it, twenty times a
+        // second. Skipped, that weight was answered by nothing: the shape walked a whole
+        // tick of it, the ball it leans on walked the part along the floor the floor
+        // could not refuse, and the two of them traded that walk back and forth for
+        // ever. Measured in the King's corner: the ball 8.9 um and the triangle 1.4 um
+        // every tick, 2.9 mm of scene after three seconds, with nothing on screen
+        // moving to explain a millimetre of it.
+        //
+        // The contact is real and the load is real, and the solver is where a load is
+        // answered. What tells an arrival from a resting contact is not whether this
+        // pass runs; it is what the two of them are closing at, which is what the
+        // patches' own bias and compliance are made of.
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
