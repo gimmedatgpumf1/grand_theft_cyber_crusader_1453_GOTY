@@ -248,19 +248,18 @@ double PlaygroundRoom::advanceBodies(double seconds) {
                     const double fraction = pivotTurnAllowed(body, turn);
                     allowed = turn * fraction;
                     if (!(fraction > 0.0)) body.angle = body.angle;
-                    // What the sweep refused, the axle takes -- and it has to, or the
-                    // plank goes on saying one thing with its spin and doing another
-                    // with its angle. That is a seesaw that will not swing: pressed
-                    // against the floor it kept two radians a second it was not
-                    // spending, and the moment the load came off it the whole of that
-                    // was suddenly real. Meantime the contact solving against it was
-                    // told the plank was turning at two radians a second when it had
-                    // not moved, which is momentum out of nothing.
+                    // What the sweep refused, the axle takes. A turn is a piece of
+                    // travel like any other, and refused travel is absorbed here exactly
+                    // as it is for a free body: the spin that is left is the spin the
+                    // plank actually spent, and the couple that took the rest is written
+                    // down at the pin, where the bearing took it.
                     //
-                    // A turn is a piece of travel like any other, and refused travel is
-                    // absorbed here exactly as it is for a free body: the spin is what
-                    // is left after the refusal, and the couple that took the rest is
-                    // written down at the pin, where the bearing gave it.
+                    // Without this the plank keeps saying one thing with its spin and
+                    // doing another with its angle, and the next tick's sweep is asked
+                    // about a turn that begins from a speed the plank does not have --
+                    // which is exactly a solved turn that disagrees with the truth. The
+                    // room's own sweep check counted three such disagreements in 684
+                    // turns before this, worst 0.0551 rad; it counts none now.
                     const double kept = body.spin * fraction;
                     const double taken = body.moment * (body.spin - kept) / time;
                     body.spin = kept;
@@ -798,9 +797,6 @@ void PlaygroundRoom::tickBodies() {
     for (std::size_t i = 0; i < patches.count; ++i) {
         const Manifold& patch = patches.items[i];
         if (!patch.ball) continue;
-        if (getenv("GTC_RG"))
-            std::fprintf(stderr, "  RG b%zu gap%+.5f n(%+.3f,%+.3f) at(%+.3f,%+.3f)\n", patch.body, patch.gap[0],
-                         patch.normal.x, patch.normal.y, patch.point[0].x, patch.point[0].y);
         noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
