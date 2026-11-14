@@ -347,8 +347,21 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // the pair of them kept each other awake for as long as the room was left alone.
         // Measured in the King's corner: a ball settling at 5e-5 m/s of roll woke the
         // triangle 1800 times out of 1800.
+        //
+        // And a blow is *closing*. It used to be either direction -- `abs()` of the
+        // closing speed -- and that is a shape woken by a ball that is moving away
+        // from it, which is not a blow and not a contact either. It is the loop the
+        // King's corner could not get out of: the triangle freezes at the end of the
+        // shapes' half, the ball's own half sees it moving at five hundredths of a
+        // millimetre a second relative to it -- in the direction that is *separating*
+        // -- wakes it for the blow, and the pair are solved against each other again
+        // on the next tick, which pushes the ball, which moves it, which wakes the
+        // triangle. Measured: the triangle went to sleep and was woken again 1800
+        // times in 1800 ticks and never spent a second asleep, so its weight was
+        // answered against the ball's mass once per tick and the ball crept for ever.
+        // A contact that is not approaching cannot push anything.
         const Vec3 closingVelocity = ballPointSpeed(contactPoint) - pointSpeed(*body, contactPoint);
-        if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
+        if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
         // The ball's contact is answered by the body's own mass and its lever about
