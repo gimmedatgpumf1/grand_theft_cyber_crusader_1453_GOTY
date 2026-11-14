@@ -73,6 +73,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     // go (`gap`, negative when already through), which way out (`normal`), and the two
     // speeds that decide how fast that distance is being eaten.
     struct Approach {
+        int owner = -1;
         double gap = 0.0;
         Vec3 normal{0, 1, 0};
         Vec3 closingSpeed{0, 0, 0};
@@ -83,6 +84,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         approaches.clear();
         for (std::size_t i = 0; i < body.count; ++i) {
             Approach row;
+            row.owner = -1;
             row.gap = here[i].y - playground_tick::kSurfaceY;
             row.normal = Vec3{0, 1, 0};
             row.closingSpeed = pointSpeed(body, here[i]);
@@ -95,6 +97,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 const OutlineGap gap =
                     ball_shape::outlineGap(here[i], solid.position.data(), solid.position.data(), solid.count, 1.0);
                 Approach row;
+                row.owner = int(other);
                 row.gap = gap.gap;
                 row.normal = gap.normal;
                 row.closingSpeed = pointSpeed(body, here[i]) - pointSpeed(solid, here[i]);
@@ -104,6 +107,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 const OutlineGap gap =
                     ball_shape::outlineGap(solid.position[i], here.data(), here.data(), body.count, 1.0);
                 Approach row;
+                row.owner = int(other);
                 row.gap = gap.gap;
                 row.normal = gap.normal;
                 row.closingSpeed = pointSpeed(body, solid.position[i]) - pointSpeed(solid, solid.position[i]);
@@ -113,6 +117,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         {
             const ball_shape::OutlineGap gap = ball_shape::outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0);
             Approach row;
+            row.owner = -2;
             row.gap = gap.gap - ball_.radius;
             row.normal = gap.normal;
             row.closingSpeed = pointSpeed(body, ball_.position) - ball_.velocity;
@@ -192,9 +197,14 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 if (!(closing > 0.0)) continue;
                 if (self == 1 && std::abs(t) < 0.01 && !printed)
                     std::fprintf(stderr,
-                                 "  STEPREF self %zu t %.6f row %zu/%zu startGap %.3e limit %.3e gap %.3e n (%.2f,%.2f) closing %.4f\n",
-                                 self, t, i, approaches.size(), startGap, limit, row.gap, row.normal.x, row.normal.y,
-                                 closing);
+                                 "  STEPREF self %zu t %.6f owner %d rows %zu startGap %.3e limit %.3e gap %.3e n (%.2f,%.2f) closing %.4f | other frozen %d pivoted %d count %zu pos0 (%.3f,%.3f)\n",
+                                 self, t, row.owner, approaches.size(), startGap, limit, row.gap, row.normal.x,
+                                 row.normal.y, closing,
+                                 row.owner >= 0 ? int(bodies_[std::size_t(row.owner)].frozen) : -1,
+                                 row.owner >= 0 ? int(bodies_[std::size_t(row.owner)].pivoted) : -1,
+                                 row.owner >= 0 ? bodies_[std::size_t(row.owner)].count : 0,
+                                 row.owner >= 0 ? bodies_[std::size_t(row.owner)].position[0].x : 0.0,
+                                 row.owner >= 0 ? bodies_[std::size_t(row.owner)].position[0].y : 0.0);
                 printed = true;
                 stopping = row.normal;
                 return 0.0;
