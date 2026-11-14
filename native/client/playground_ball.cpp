@@ -95,8 +95,22 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // a few micrometres either side; read at a nanometre, a ball lying in a
                 // pinch was not touching anything at all -- so no grip, no friction, and
                 // no rest, and a millimetre a second of spin and slide that never died.
-                if (distance > ball.radius + kTouch || distance <= 0.0) continue;
+                if (distance <= 0.0) continue;
                 const Vec3 normal = gap / distance;
+                const Vec3 surface = pointSpeed(body, a + side * t);
+                const double closing = dot(ball.velocity - surface, normal);
+                // A face the ball will reach before this tick is over is a face it is
+                // in contact with for the whole tick, and it is answered now.
+                //
+                // Answering only the faces it was *already* touching, to the room's
+                // micrometre, is what made a ball on a moving shape chatter: the
+                // shape moved out from under it, the ball was a millimetre clear, and
+                // a contact the ball was about to have went unanswered -- it fell, met
+                // the face, was answered, left it again, fell again, at ten hertz. The
+                // distance a tick can close is `closing * kTick`, and inside that the
+                // contact is already the truth about this tick.
+                const double spare = distance - ball.radius;
+                if (spare > std::max(0.0, -closing) * kTick) continue;
                 ball.touching = true;
                 // A body above the ball is a weight on it, not something it stands
                 // on: only a surface underneath can hold it up.
@@ -105,9 +119,14 @@ void PlaygroundRoom::settleBallSurfaces() {
                 // it. Anything left over from an earlier contact in the same tick --
                 // a body pressing the ball down onto the floor -- is answered here,
                 // which is what lets a ball carry a weight instead of humming.
-                const Vec3 closing = ball.velocity - pointSpeed(body, a + side * t);
-                const double into = dot(closing, normal);
-                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+                //
+                // How fast it may close is what the gap allows in what is left of the
+                // tick: a ball a millimetre above a face may not cross more than a
+                // millimetre of it, and a ball touching it may not close at all. That
+                // is the whole of the constraint -- no correction of place, and no
+                // speed taken that the surface did not take.
+                const double allowed = -std::max(0.0, spare) / kTick;
+                if (closing < allowed) ball.velocity = ball.velocity - normal * (closing - allowed);
             }
         }
         {
@@ -115,12 +134,16 @@ void PlaygroundRoom::settleBallSurfaces() {
             // it is sitting on the ball. Only the first can hold the ball up.
             const Vec3 gap = ball.position - point_;
             const double distance = length(gap);
-            if (distance > 0.0 && distance <= ball.radius + kPointRadius + kTouch) {
+            if (distance > 0.0) {
                 const Vec3 normal = gap / distance;
-                ball.touching = true;
-                if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
-                const double into = dot(ball.velocity - velocity_, normal);
-                if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+                const double closing = dot(ball.velocity - velocity_, normal);
+                const double spare = distance - (ball.radius + kPointRadius);
+                if (spare <= std::max(0.0, -closing) * kTick) {
+                    ball.touching = true;
+                    if (normal.y > 1e-9) ball.standing = ball.standing && holds(normal);
+                    const double allowed = -std::max(0.0, spare) / kTick;
+                    if (closing < allowed) ball.velocity = ball.velocity - normal * (closing - allowed);
+                }
             }
         }
         // The floor has the last word: nothing in this room can be below it, so a
@@ -132,10 +155,14 @@ void PlaygroundRoom::settleBallSurfaces() {
         // exactness here said a ball rolling along the ground at a ten-millionth of
         // a millimetre above it was a ball in mid-air: nothing held it, so nothing
         // was written holding it, and every blow it took had no partner on screen.
-        if (ball.position.y <= ball.radius + kTouch) {
-            ball.touching = true;
-            ball.standing = ball.standing && holds(Vec3{0, 1, 0});
-            if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
+        {
+            const double spare = ball.position.y - ball.radius;
+            if (spare <= std::max(0.0, -ball.velocity.y) * kTick) {
+                ball.touching = true;
+                ball.standing = ball.standing && holds(Vec3{0, 1, 0});
+                const double allowed = -std::max(0.0, spare) / kTick;
+                if (ball.velocity.y < allowed) ball.velocity.y = allowed;
+            }
         }
     }
 }
