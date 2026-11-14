@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         const double g0 = r.bodyBallGap(0, way, at);
         const double g1 = r.bodyBallGap(1, way, at);
         const double g2 = r.bodyBallGap(2, way, at);
-        std::printf("t%02d pos(%+.5f,%+.5f) v(%+.4f,%+.4f) w%+.2f frz%d touch%d touches%zu stand%d | gaps cube%+.4f tri%+.4f plank%+.4f | floor%+.5f\n",
+        std::printf("t%02d pos(%+.7f,%+.7f) v(%+.4f,%+.4f) w%+.2f frz%d touch%d touches%zu stand%d | gaps cube%+.4f tri%+.4f plank%+.4f | floor%+.5f\n",
                     k, r.ball_.position.x, r.ball_.position.y, r.ball_.velocity.x, r.ball_.velocity.y, r.ball_.spin,
                     int(r.ball_.frozen), int(r.ball_.touching), r.ballTouchCount_, int(r.ball_.standing),
                     g0, g1, g2, r.ball_.position.y - r.ball_.radius);

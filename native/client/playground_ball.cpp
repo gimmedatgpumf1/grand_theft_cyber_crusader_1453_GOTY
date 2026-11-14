@@ -868,7 +868,7 @@ void PlaygroundRoom::tickBall() {
                 const Body& mate = bodies_[ballTouches_[i].body];
                 const Vec3 at = ball.position + ballTouches_[i].normal * -ball.radius;
                 now = pointSpeed(mate, at);
-                std::fprintf(stderr, "     body velocity(%+.4f,%+.4f) spin %+.4f\n", mate.velocity.x, mate.velocity.y, mate.spin);
+                std::fprintf(stderr, "     body velocity(%+.4f,%+.4f) spin %+.4f touchingPlane %d onBody %d supportFrozen %d met %d contacts %d\n", mate.velocity.x, mate.velocity.y, mate.spin, int(mate.touchingPlane), int(mate.onBody), int(mate.supportFrozen), mate.met, mate.contacts);
             }
             std::fprintf(stderr, "     touch %zu body %zu n(%+.3f,%+.3f) sv(%+.4f,%+.4f) now(%+.4f,%+.4f) pressed %.6f\n", i,
                          ballTouches_[i].body, ballTouches_[i].normal.x, ballTouches_[i].normal.y,
