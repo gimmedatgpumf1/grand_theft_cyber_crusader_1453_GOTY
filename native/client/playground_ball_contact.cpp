@@ -59,6 +59,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                 bool exchange, bool resting, double reached) {
     Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
+    if (bodyIndex == 0)
+        std::fprintf(stderr, "  ENTER depth %.5f v (%.4f,%.4f)\n", depth, body->velocity.x, body->velocity.y);
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
@@ -451,6 +453,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     ballBlows_ = ballBlows_ + blown;
     if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
     recordBall();
+    if (bodyIndex == 0)
+        std::fprintf(stderr, "  EXIT  v (%.4f,%.4f)  handed? blown (%+.3f,%+.3f)\n", body->velocity.x,
+                     body->velocity.y, blown.x, blown.y);
 }
 
 // The ball runs into the dot. Both have mass, so they exchange momentum along the
