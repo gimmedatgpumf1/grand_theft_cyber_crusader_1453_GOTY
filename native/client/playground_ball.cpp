@@ -660,9 +660,7 @@ void PlaygroundRoom::tickBall() {
         ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
 
-    // Every face the tick met, solved against the others: what is left of the ball's
-    // speed and its turn is what their grips all allow at once.
-    settleBallFriction();
+    // (the grip is at the end of the tick; see below)
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
@@ -703,6 +701,9 @@ void PlaygroundRoom::tickBall() {
     // takes it back on the next tick, but an arrow and a number that are only there
     // because the ball spoke last.
     answerSupportedShapes();
+    // And the grip has the last word on the ball, which is the only place it can have
+    // one.
+    settleBallFriction();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
