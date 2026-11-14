@@ -2,6 +2,8 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
+#include <cstdlib>
+
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -822,6 +824,19 @@ void PlaygroundRoom::tickBall() {
         ball.previous = ball.position;
         ball.shown = ball.position;
     }
+    // And the walk is finished the way a shape's is: with the trapezoid.
+    //
+    // The ball is carried through its tick at the speed it *arrived* with, and the
+    // answers it gets -- the floor, a face, the grip -- take that speed away somewhere
+    // along the way. A move that is one speed for the whole tick and a different speed
+    // at the end of it is not the motion that happened: half of the change belongs in
+    // the travel, which is exactly the rule the shapes follow (see advanceBodies).
+    // Measured in the King's corner: the ball's place moved 12.2 um every second tick
+    // while its speed at the end of every tick was 0.93 um a tick's worth, and the
+    // difference -- eleven microns of travel that no speed of the ball accounts for --
+    // is a ball that is standing still and still moving.
+    if (std::getenv("NOTRAP") == nullptr && !ball.bent)
+        ball.position = ball.position + (ball.velocity - walkStart) * (0.5 * kTick);
     // A ball that ends the tick where it began it went nowhere, so the speed that
     // would have carried it is not a speed: it is a number below the room's own
     // resolution that nothing in the room can ever spend, and every surface it leans
