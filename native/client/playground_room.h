@@ -108,7 +108,7 @@ public:
     // corners, the dot, the ball, and the contacts and pairs between them. The
     // number is a bound on the array, not a cut: nothing is ever dropped quietly,
     // because a ledger that loses entries is worse than no ledger at all.
-    static constexpr std::size_t kMaxForceSamples = 256;
+    static constexpr std::size_t kMaxForceSamples = 1024;
     static constexpr std::size_t kArrowsPerKind = 20;
     struct ForceSample {
         Vec3 at{};     // where it acts, in metres
