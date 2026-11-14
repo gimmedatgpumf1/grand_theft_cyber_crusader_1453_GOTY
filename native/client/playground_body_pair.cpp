@@ -806,6 +806,7 @@ void PlaygroundRoom::separateBall() {
         Vec3 way{};
         Vec3 at{};
         const double gap = bodyBallGap(index, way, at);
+        std::fprintf(stderr, "SEPGAP body %zu gap %+.6f\n", index, gap);
         // A gap a fraction of a picometre negative is touching, not inside: the room's
         // resolution is a micrometre, and the arithmetic that rests a ball on a face
         // lands it that far either side of exactly one radius, every tick. Read as an
