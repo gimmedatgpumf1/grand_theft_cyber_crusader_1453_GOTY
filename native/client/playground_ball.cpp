@@ -734,6 +734,12 @@ void PlaygroundRoom::tickBall() {
     // after 1400 ticks (70 s). Nothing was added to damp it -- the same air, the same
     // friction, the same Crr; they were simply given the speed to act on.
     settleBallFriction();
+    // And the shapes have the last word on themselves, again: the grip is a pair, and
+    // the half of it that landed on a shape has just given that shape a speed its own
+    // floor answers. Left unanswered until the next tick, that speed is a face moving
+    // for exactly one tick -- long enough for the ball's grip to be measured against
+    // it and dragged along by a surface that never moves.
+    answerSupportedShapes();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen
