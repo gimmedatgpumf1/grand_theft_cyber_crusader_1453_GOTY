@@ -337,7 +337,17 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     if (body != nullptr && body->frozen) {
         // A body asleep is a body the ball can wake, and only a real blow does it:
         // what the two are closing at, along the normal they met on.
-        const Vec3 closingVelocity = ball.velocity - pointSpeed(*body, contactPoint);
+        //
+        // What a body feels is the ball's *surface* at the place the two meet, and the
+        // surface is the centre's speed plus the turn's: a rolling ball whose middle is
+        // going somewhere has a contact patch that is standing still. Read as the
+        // middle's speed, a ball rolling gently against a sleeping shape closed on it at
+        // twice the speed its rim actually has, and woke it -- the shape then spent the
+        // next tick being pushed, the ball was rolled a little further by the shape, and
+        // the pair of them kept each other awake for as long as the room was left alone.
+        // Measured in the King's corner: a ball settling at 5e-5 m/s of roll woke the
+        // triangle 1800 times out of 1800.
+        const Vec3 closingVelocity = ballPointSpeed(contactPoint) - pointSpeed(*body, contactPoint);
         if (std::abs(dot(closingVelocity, normal)) > kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
