@@ -407,9 +407,26 @@ void PlaygroundRoom::tick() {
             // Same rule as a body: what drives into the ball is answered by both
             // sides, and what runs along it is left alone.
             pointAgainstBall(normal);
-            resting_ = true;
+            // A bounce is not a rest.
+            //
+            // Being held up is a fact about where the point is, not about what it
+            // last touched. The ball is the one surface here that answers with a
+            // bounce, and a point that comes off it doing two and a half metres a
+            // second is not standing on it -- but it went on being written down as
+            // resting, and the next tick's weight was answered by a ball it had
+            // already left. Weight that is answered is weight that does not act:
+            // the point sailed up at a constant speed, gaining a joule of height
+            // every bounce out of nothing, and a dot dropped on a ball bounced on
+            // it for ever -- measured: it settled at a limit of twenty centimetres
+            // of height and stayed there for eighty seconds, and every bounce gave
+            // it back more than it arrived with.
+            //
+            // What the point leaves with is the answer. If that answer is away from
+            // the surface, the surface is behind it, and it is falling.
+            const bool held = dot(velocity_, normal) <= 0.0;
+            resting_ = held;
             restingBody_ = -1;
-            restingOnBall_ = true;
+            restingOnBall_ = held;
             supportNormal_ = normal;
             slideSpan_ += kTick * remaining;
             if (!(length(velocity_) > 1e-12)) break;
@@ -483,7 +500,8 @@ void PlaygroundRoom::tick() {
                 const double distance = length(gap);
                 const double reach = kPointRadius + ball_.radius;
                 const double room = distance - reach;
-                if (room < kQuantum && distance > 0.0 && gap.y > 0.0) {
+                if (room < kQuantum && distance > 0.0 && gap.y > 0.0 &&
+                    dot(velocity_, gap / distance) <= 0.0) {
                     resting_ = true;
                     restingBody_ = -1;
                     restingOnBall_ = true;
