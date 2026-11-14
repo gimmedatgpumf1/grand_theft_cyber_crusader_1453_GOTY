@@ -800,16 +800,8 @@ void PlaygroundRoom::advance(double seconds) {
                     body.spin = 0.0;
                 }
             }
-            const Vec3 ballBeforeBodies = ball_.velocity;
             tickBodies();
-            if (getenv("GTC_TRACE"))
-                std::fprintf(stderr, "HALF bodies: ball v(%+.3f,%+.3f) -> (%+.3f,%+.3f)\n", ballBeforeBodies.x,
-                             ballBeforeBodies.y, ball_.velocity.x, ball_.velocity.y);
-            const Vec3 ballBeforeBall = ball_.velocity;
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
-            if (getenv("GTC_TRACE"))
-                std::fprintf(stderr, "HALF ball:   ball v(%+.3f,%+.3f) -> (%+.3f,%+.3f)\n", ballBeforeBall.x,
-                             ballBeforeBall.y, ball_.velocity.x, ball_.velocity.y);
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
         // Whatever a turn carried through the ball is put back out, once, after both

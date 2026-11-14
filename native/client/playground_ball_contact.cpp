@@ -441,9 +441,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         const double into = dot(ball.velocity - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
-    if (getenv("GTC_TRACE") && bodyIndex == 2)
-        std::fprintf(stderr, "   C app %+.3f clos %+.3f reb %+.3f rest %d exch %d -> v(%+.3f,%+.3f)\n", approach,
-                     closing, rebound, resting ? 1 : 0, exchange ? 1 : 0, ball.velocity.x, ball.velocity.y);
     // What this shape gave the ball, drawn where the two met.
     //
     // It is written even when the ball's speed does not change by it, because what
