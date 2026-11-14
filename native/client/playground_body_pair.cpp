@@ -602,6 +602,9 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         // see -- a micrometre is its resolution, so a part already touching is a part
         // this step cannot carry anywhere.
         if (!(soonest > 0.0) || !(closest > playground_tick::kQuantum)) {
+            if (self == 0)
+                std::fprintf(stderr, "      STEPSTOP t %.6f soonest %.3g closest %.3g startGap %+.6f limit %+.6f\n", t,
+                             soonest, closest, startGap, limit);
             if (blockedBy != nullptr) *blockedBy = stopping;
             return t;
         }
@@ -610,6 +613,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         t = next;
     }
     (void)fastest;
+    if (self == 0) std::fprintf(stderr, "      STEPCAP t %.6f startGap %+.6f limit %+.6f\n", t, startGap, limit);
     if (blockedBy != nullptr) *blockedBy = stopping;
     return t;
 }
