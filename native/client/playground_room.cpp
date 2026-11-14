@@ -178,8 +178,10 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // written as a force on the body because it acts at a point that never moves, so
     // it does no work and changes nothing the body can report -- it is the room that
     // holds the pin, exactly as the floor holds a shape standing on it.
-    body.velocity = body.pivoted ? Vec3{} : body.velocity + impulse * (1.0 / body.mass);
-    body.spin += (arm.x * impulse.y - arm.y * impulse.x) / body.moment;
+    Vec3 given = impulse;
+    if (!body.pivoted && body.touchingPlane && given.y < 0.0) given.y = 0.0;
+    body.velocity = body.pivoted ? Vec3{} : body.velocity + given * (1.0 / body.mass);
+    body.spin += (arm.x * given.y - arm.y * given.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
     // settling again from where the blow found it: it is not at rest any more, it
     // is doing something, and it has to be measured doing it before it is called
