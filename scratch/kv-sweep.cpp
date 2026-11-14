@@ -30,11 +30,17 @@ int main() {
             r.ball_.position = {bx, by, 0};
             r.ball_.previous = r.ball_.position;
             r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
-            double peak = 0.0;
+            double peak = 0.0, travel = 0.0;
+            Vec3 was = r.ball_.position;
             for (int k = 0; k < 400; ++k) {
                 r.advance(kDt);
-                if (k > 200) peak = std::max(peak, length(r.ball_.velocity));
+                if (k > 200) {
+                    peak = std::max(peak, length(r.ball_.velocity));
+                    travel += length(r.ball_.position - was);
+                }
+                was = r.ball_.position;
             }
+            std::printf("     travel over the last 200 ticks: %.9f m\n", travel);
             Vec3 way{}, at{};
             const double g0 = r.bodyBallGap(0, way, at);
             const double g1 = r.bodyBallGap(1, way, at);

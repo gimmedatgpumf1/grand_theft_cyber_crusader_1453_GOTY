@@ -30,7 +30,7 @@ namespace {
 // How many times a tick's standing contacts are solved over before their answers are
 // taken to agree. A face or two settles in a couple of passes; a corner of three is
 // slower, and past this what is left is smaller than the room's own resolution.
-constexpr int kBallSurfacePasses = 8;
+constexpr int kBallSurfacePasses = 64;
 }  // namespace
 
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
@@ -117,6 +117,7 @@ void PlaygroundRoom::settleBallSurfaces() {
         std::array<FaceBlow, kBodyCount * kMaxOutlineCorners> blows{};
         for (int pass = 0; pass < kBallSurfacePasses; ++pass) {
             bool answered = false;
+            const Vec3 wasSpeed = ball.velocity;
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 Body& body = bodies_[index];
                 for (std::size_t edge = 0; edge < body.count; ++edge) {
@@ -203,7 +204,18 @@ void PlaygroundRoom::settleBallSurfaces() {
                     }
                 }
             }
+            // Done when a whole pass has nothing to say, and also when what it did say
+            // is smaller than the room can resolve. A corner does not give its answer
+            // up in one pass: the cut along one face is a slide along the other, and
+            // the cut along the other is a slide along the first, so what is left
+            // shrinks by a fixed fraction of itself each time -- at the King's corner,
+            // which is two faces a quarter of a turn apart, by half. Eight passes left
+            // a fifth of a millimetre a second in a ball that was standing still, and
+            // the room drew it and never spent it. Asking again until the answer stops
+            // moving is the same rule the shapes' own load and grip are swept by, and
+            // it is the only count that is not arbitrary: the loop ends on the answer.
             if (!answered) break;
+            if (length(ball.velocity - wasSpeed) <= playground_tick::kQuantumSpeed) break;
         }
         if (std::getenv("KV")) std::printf("  [surf] leave v(%+.5f,%+.5f) w%+.4f\n", ball.velocity.x, ball.velocity.y, ball.spin);
         for (const FaceBlow& slot : blows)
