@@ -854,7 +854,6 @@ void PlaygroundRoom::tickBall() {
 
     // Every face the tick met, solved against the others: what is left of the ball's
     // speed and its turn is what their grips all allow at once.
-    answerBodiesAgain();
     settleBallFriction();
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see

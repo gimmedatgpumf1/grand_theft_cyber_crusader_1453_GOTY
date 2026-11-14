@@ -845,44 +845,6 @@ void PlaygroundRoom::tickBodies() {
     writeImpulses();
 }
 
-// The shapes, answered again, after the ball has given them this tick's blows.
-//
-// The tick is solved in two halves: the shapes first, against the floor and against
-// each other, and the ball second, against everything. That order is what makes the
-// tick affordable, and it has one consequence that has to be paid for: a blow the
-// ball gives a shape lands *after* the solve that the shape's own supports answered.
-// The shape is left carrying a speed -- part of it downwards, into the floor it
-// stands on -- that its supports are about to take away, and the ball's grip, solved
-// a moment later, reads that speed as a face running away from it. The grip then
-// holds against motion that is not happening: the ball keeps a little speed it can
-// never spend, the face keeps a little speed its floor cancels on the next tick, and
-// a ball wedged in a corner never comes to rest -- with every part of it, measured,
-// adding up to nothing.
-//
-// So the shapes are asked once more, here, against the floor and against each other,
-// and not against the ball: the ball's own contacts are already answered, and asking
-// them twice would answer the same meeting twice. What is left afterwards is the
-// speed the shapes really have, which is what the grip is measured against.
-void PlaygroundRoom::answerBodiesAgain() {
-    double reach = 0.0;
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        double furthest = 0.0;
-        for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
-        reach = std::max(reach, (length(body.velocity) + std::abs(body.spin) * furthest) * kTick);
-    }
-    ManifoldSet all;
-    gatherContacts(all, reach);
-    ManifoldSet patches;
-    for (std::size_t i = 0; i < all.count; ++i) {
-        if (all.items[i].ball) continue;
-        patches.add(all.items[i]);
-    }
-    if (patches.count == 0) return;
-    solveContacts(patches);
-}
-
 // Was the frozen body under `index` ever given this body's load?
 //
 // The forces a sleeping body replays are the ones the solver last left it with, so if
