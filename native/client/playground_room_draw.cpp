@@ -69,7 +69,14 @@ const char* kindColour(std::size_t kind) {
         // Friction, in its own colour: the force along the surface, so a shape being
         // held on a slope and a shape sliding down one both show what is doing it.
         case PlaygroundRoom::ForceKind::Friction: return "#ffe066";
-        case PlaygroundRoom::ForceKind::Pair: return "#ffb454";
+        // A contact between two shapes is a normal force, and it is drawn in the
+        // colour of one. It had a colour of its own, and the King asked where the
+        // normal forces had gone: they were there, in a different orange, at the one
+        // place he was looking for them. A normal force is a normal force whatever it
+        // is pressed against, and the colour says what kind of force it is and nothing
+        // else. That the room's contacts come in pairs is not a colour: it is the two
+        // arrows, equal and opposite, one on each shape, which is what is on screen.
+        case PlaygroundRoom::ForceKind::Pair: return "#7ce38b";
         case PlaygroundRoom::ForceKind::Ball: return "#e07bd8";
         case PlaygroundRoom::ForceKind::Drag: return "#b9ccc4";
         // Rolling resistance, apart from friction and in its own colour, because

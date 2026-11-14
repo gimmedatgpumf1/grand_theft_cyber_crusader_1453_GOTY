@@ -21,8 +21,10 @@ int main(int argc, char** argv) {
     r.reset();
     for (int k = 0; k < 5; ++k) r.advance(kDt);
     auto& c = r.bodies_[0];
-    c.centre = {-1.30, 1.30, 0};
-    c.angle = 0.7854;
+    // Flush on the triangle's hypotenuse: the face's outward normal is (0.707,0.707),
+    // so the cube's own lower face has to face the other way.
+    c.centre = {-1.550 + 0.7071 * 0.352, 1.050 + 0.7071 * 0.352, 0};
+    c.angle = -2.3561945;
     PlaygroundRoom::placeCorners(c);
     c.previous = c.position; c.previousCentre = c.centre; c.previousAngle = c.angle;
     c.velocity = {}; c.spin = 0.0; c.frozen = false;
