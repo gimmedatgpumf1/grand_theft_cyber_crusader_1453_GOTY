@@ -25,16 +25,7 @@ int main() {
         PlaygroundRoom moving; moving.reset(); for (int i=0;i<300;++i) moving.advance(1.0/20.0);
         moving.bodies_[0].frozen = false; moving.bodies_[0].velocity = {0, speed, 0};
         moving.clearForces();
-        std::printf("  body0 before drag v(%+.15f,%+.15f) spin %+.3e\n", moving.bodies_[0].velocity.x, moving.bodies_[0].velocity.y, moving.bodies_[0].spin);
-        for (std::size_t i = 0; i < moving.bodies_[0].count; ++i) {
-            const Vec3 f = moving.bodies_[0].position[i], t = moving.bodies_[0].position[(i+1)%moving.bodies_[0].count];
-            const Vec3 along = t - f; const double span = std::sqrt(dot(along,along));
-            const Vec3 out{along.y/span, -along.x/span, 0.0};
-            const Vec3 at = f + along*0.5;
-            const Vec3 pv = pointSpeed(moving.bodies_[0], at);
-            std::printf("   face %zu out(%+.3f,%+.3f) pointv(%+.15f,%+.15f) vn %+.15f\n", i, out.x, out.y, pv.x, pv.y, dot(pv,out));
-        }
-        moving.applyAirDrag();
+        moving.clearForces(); moving.applyAirDrag();
         double shape = 0; for (std::size_t i = 0; i < moving.forceCount(); ++i)
             if (moving.forces_[i].kind == PlaygroundRoom::ForceKind::Drag) shape = std::max(shape, std::sqrt(dot(moving.forces_[i].force, moving.forces_[i].force)));
         PlaygroundRoom bally; bally.reset(); for (int i=0;i<300;++i) bally.advance(1.0/20.0);
