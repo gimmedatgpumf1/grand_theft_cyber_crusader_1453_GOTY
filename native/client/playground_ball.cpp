@@ -614,6 +614,7 @@ void PlaygroundRoom::tickBall() {
         }
         if (restart) continue;
         if (first > 1.0) {
+            std::fprintf(stderr, "WALK no meeting: v %+.4f next %.4f\n", ball.velocity.y, next.y);
             if (blocked) break;  // it may not be spent: that travel goes through a face
             ball.position = playground_tick::resolvedMove(ball.position, next);
             break;
@@ -715,6 +716,8 @@ void PlaygroundRoom::tickBall() {
             // Nothing to answer: the travel was refused by a surface that has already
             // said its piece this tick, or there was no travel to refuse.
         } else if (what == -2) {
+            std::fprintf(stderr, "WALK floor: v %+.4f first %.4f travelled %.6f\n", ball.velocity.y, first,
+                         length(travel));
             floorAnswered = true;
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
