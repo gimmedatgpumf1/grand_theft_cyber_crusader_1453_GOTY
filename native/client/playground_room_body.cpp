@@ -18,6 +18,10 @@
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include "client/playground_shapes.h"
 
 #include <algorithm>
@@ -477,7 +481,10 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
                                body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
             // Both sides as the tick found them: this runs before the solve, so the
             // ball's own speed and turn are still the ones it arrived with.
-            if (dot(arrived - ballPointSpeed(at), way) >= 0.0) patch.quiet = true;
+            // A real arrival is a closing speed that could cover a micrometre in a
+            // tick. Anything slower is the pair resting against each other, and a
+            // contact that is not arriving gets no blow from this half.
+            if (dot(arrived - ballPointSpeed(at), way) > -playground_tick::kQuantumSpeed) patch.quiet = true;
         }
         patches.add(patch);
     }
@@ -724,6 +731,8 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
 void PlaygroundRoom::tickBodies() {
+    const Vec3 dbgBall0 = ball_.velocity;
+    const double dbgSpin0 = ball_.spin;
     // What every body arrived with, and how many contacts it had already been given.
     //
     // A body that spends a whole tick in free flight has followed a parabola, and a
@@ -852,6 +861,12 @@ void PlaygroundRoom::tickBodies() {
     // blow the ball gave or took was drawn a frame late, so each contact had one end
     // on screen and the other still to come.
     writeImpulses();
+    if (std::getenv("KV"))
+        std::printf("    [tickBodies] ball (%+.6e,%+.6e) w%+.6e -> (%+.6e,%+.6e) w%+.6e quiet %zu/%zu\n", dbgBall0.x,
+                    dbgBall0.y, dbgSpin0, ball_.velocity.x, ball_.velocity.y, ball_.spin,
+                    (std::size_t)std::count_if(tickPatches_.items.begin(), tickPatches_.items.begin() + tickPatches_.count,
+                                     [](const Manifold& m) { return m.quiet; }),
+                    tickPatches_.count);
 }
 
 // The shapes' own supports, answered again after the ball has touched them.
