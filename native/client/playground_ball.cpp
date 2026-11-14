@@ -197,7 +197,7 @@ void PlaygroundRoom::settleBallSurfaces() {
                         if (std::getenv("KV")) std::printf("  [surf] b%zu e%zu closing%+.5f allowed%+.5f sv(%+.5f,%+.5f)\n", index, edge, closing, allowed, surface.x, surface.y);
                         const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                         ball.velocity = ball.velocity - normal * (closing - allowed);
-                        pushBody(body, at, blow * -1.0, ForceKind::Ball);
+                        pushBody(body, at, blow * -1.0, ForceKind::Contact);
                         FaceBlow& slot = blows[index * kMaxOutlineCorners + edge];
                         slot.at = ball.position - normal * ball.radius;
                         slot.impulse = slot.impulse + blow;
