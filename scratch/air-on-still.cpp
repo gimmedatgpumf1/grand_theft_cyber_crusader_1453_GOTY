@@ -17,6 +17,13 @@
 namespace {
 constexpr double kDt = 1.0 / 20.0;
 
+// The King's picture is a *settled* room showing a big grey arrow. That is the case
+// that matters, so it gets its own count: every tick where nothing in the room has a
+// speed worth the name, what is the largest air arrow on screen?
+struct Settled {
+    double worst = 0.0;
+};
+
 struct Finding {
     double worstArrow = 0.0;
     double bodySpeed = 0.0;
@@ -25,7 +32,7 @@ struct Finding {
     std::size_t body = 0;
 };
 
-Finding sweep() {
+Finding sweep(Settled* settled) {
     Finding found;
     for (int trial = 0; trial < 72; ++trial) {
         PlaygroundRoom r;
@@ -72,6 +79,24 @@ Finding sweep() {
             std::array<Vec3, PlaygroundRoom::kBodyCount> was{};
             for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) was[i] = r.bodies_[i].centre;
             r.advance(kDt);
+            if (settled != nullptr) {
+                // "Nothing is moving" means nothing is moving: a shape turning on the
+                // spot is a shape the air is being driven round by, and leaving spin out
+                // of this test called a spinning room a still one.
+                bool still = length(r.ball_.velocity) < 1e-3 && std::abs(r.ball_.spin) < 1e-3;
+                for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+                    if (!r.bodies_[i].count) continue;
+                    if (length(r.bodies_[i].velocity) > 1e-3) still = false;
+                    if (std::abs(r.bodies_[i].spin) > 1e-3) still = false;
+                }
+                if (still) {
+                    for (std::size_t i = 0; i < r.forceCount_; ++i) {
+                        const auto& f = r.forces_[i];
+                        if (f.kind != PlaygroundRoom::ForceKind::Drag) continue;
+                        settled->worst = std::max(settled->worst, length(f.force));
+                    }
+                }
+            }
             for (std::size_t i = 0; i < r.forceCount_; ++i) {
                 const auto& f = r.forces_[i];
                 if (f.kind != PlaygroundRoom::ForceKind::Drag) continue;
@@ -99,7 +124,9 @@ Finding sweep() {
 }  // namespace
 
 int main() {
-    const Finding f = sweep();
+    Settled settled;
+    const Finding f = sweep(&settled);
+    std::printf("largest air arrow on a room where nothing is moving at all: %.2f N\n", settled.worst);
     std::printf("largest air arrow drawn on a shape that did not move: %.2f N\n", f.worstArrow);
     std::printf("  trial %d tick %d, body %zu, which was holding %.2f m/s (and moved %.6f m)\n", f.trial, f.tick,
                 f.body, f.bodySpeed, f.bodyMoved);

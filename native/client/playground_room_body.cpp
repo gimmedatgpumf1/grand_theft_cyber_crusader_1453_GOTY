@@ -18,9 +18,6 @@
 #include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
-
-#include <cstdio>
-#include <cstdlib>
 #include "client/playground_shapes.h"
 
 #include <algorithm>

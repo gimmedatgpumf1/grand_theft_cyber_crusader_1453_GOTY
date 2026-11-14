@@ -119,9 +119,20 @@ int main(int argc, char** argv) {
         s.previousAngle = s.angle;
         s.spin = 0.0;
         s.frozen = false;
+        // Was the setup itself legal? A plank put down inside the triangle is not a
+        // state the room can reach, and what follows it is the recovery, not physics.
+        double worstOverlap = 0.0;
+        for (std::size_t a = 0; a < PlaygroundRoom::kBodyCount; ++a) {
+            for (std::size_t b = 0; b < PlaygroundRoom::kBodyCount; ++b) {
+                if (a == b || !r.bodies_[a].count || !r.bodies_[b].count) continue;
+                for (std::size_t c = 0; c < r.bodies_[a].count; ++c)
+                    worstOverlap = std::max(worstOverlap, -ball_shape::outlineGap(r.bodies_[a].position[c],
+                        r.bodies_[b].position.data(), r.bodies_[b].position.data(), r.bodies_[b].count, 1.0).gap);
+            }
+        }
         const Watch w = follow(r, 600, show);
-        std::printf("3.%d plank tilted %+.2f across it     | worst single-tick gain %+.4f J (t%d) | peak above start %+.4f J\n",
-                    variant, s.angle, w.worstJump, w.worstTick, w.peak - w.start);
+        std::printf("3.%d plank tilted %+.2f across it     | setup overlap %.6f m | worst single-tick gain %+.4f J (t%d) | peak above start %+.4f J\n",
+                    variant, s.angle, worstOverlap, w.worstJump, w.worstTick, w.peak - w.start);
     }
     return 0;
 }
