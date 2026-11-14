@@ -672,11 +672,22 @@ void PlaygroundRoom::tickBall() {
     // standing still and everything in the room moving under it by a hundredth of a
     // metre a second, twenty times a second.
     //
-    // So the two are asked together and until they agree: the ball's faces, then the
-    // shapes' own supports (which is what settles where a shape really ends the tick),
-    // then the ball's faces again. Two or three rounds is all a corner needs, and the
-    // loop stops as soon as the ball's speed stops moving -- a tick that has nothing
-    // to say costs one extra compare.
+    // The order is the answer, and it is three questions, not a loop:
+    //
+    //   1. the shapes' own supports, so that every face really is where it ends the
+    //      tick -- a shape standing on the floor is a still face, and still is what
+    //      the ball is measured against;
+    //   2. the ball's faces, solved against those still faces (settleBallSurfaces()
+    //      reads them once, when it begins, so a pass cannot see its own push);
+    //   3. the shapes' supports again, because the ball has just leaned on them and
+    //      what it leaned with is the floor's to answer, exactly as another shape's
+    //      weight would be.
+    //
+    // Repeating the whole thing until it agreed was tried and is wrong: each round
+    // hands the shapes another blow, and a round that is asked twice for the same
+    // contact applies the same impulse twice -- measured as 8.8 J out of nothing when
+    // the dot was dropped on the ball's shoulder. The solve is one pass of the loop
+    // the shapes' own solver does, not a repetition of it.
     answerSupportedShapes();
     settleBallSurfaces();
     // And the shapes have the last word on themselves: the blow the ball has just
