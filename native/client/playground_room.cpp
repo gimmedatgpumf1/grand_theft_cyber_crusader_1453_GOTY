@@ -9,6 +9,7 @@
 #include "client/ui_layer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <vector>
 
@@ -167,8 +168,10 @@ void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
 // to a rigid body: change the speed of its centre of mass by J/m and its turn by
 // the moment of J about the centre, r x J / I. The corners are not touched here --
 // they are where the shape says they are, and they move because the body does.
+int gtcAudit = 0;
 void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
+    if (gtcAudit) std::fprintf(stderr, "AUD pushBody b%td J(%+.6f,%+.6f) kind %d\n", &body - bodies_.data(), impulse.x, impulse.y, int(kind));
     const Vec3 arm = at - body.centre;
     // A pinned body is not carried anywhere: the axle is what takes the push, and the
     // only thing left for the body to do with it is turn. The axle's own answer is not

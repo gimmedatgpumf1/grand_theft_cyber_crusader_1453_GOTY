@@ -737,6 +737,7 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // is no state in which a shape is held still while its speed keeps growing. That
 // state is what a walk that refuses steps produces, and it is a body with a weight
 // that never lands and a drag arrow from a speed it does not have.
+extern int gtcAudit;
 void PlaygroundRoom::tickBodies() {
     // What every body arrived with, and how many contacts it had already been given.
     //
@@ -754,6 +755,7 @@ void PlaygroundRoom::tickBodies() {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         arrival[index] = bodies_[index].velocity;
         bodies_[index].arrivalVelocity = bodies_[index].velocity;
+        if (gtcAudit) std::fprintf(stderr, "AUD arrival b%zu (%+.6f,%+.6f) frz %d\n", index, bodies_[index].velocity.x, bodies_[index].velocity.y, int(bodies_[index].frozen));
         bodies_[index].arrivalSpin = bodies_[index].spin;
         bodies_[index].hitAt = 1.0;
         bodies_[index].hitArrival = bodies_[index].velocity;

@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdio>
 
+namespace gtc::native { extern int gtcAudit; }
 namespace {
 constexpr double kDt = 1.0 / 20.0;
 struct Worst {
@@ -115,8 +116,11 @@ int main() {
         r.ball_.spin = 0.0;
         r.ball_.frozen = false;
         r.ball_.previous = r.ball_.position;
+        using gtc::native::gtcAudit;
         for (int k = 0; k < 200; ++k) {
+            gtcAudit = (trial == 33 && k >= 60 && k <= 67) ? 1 : 0;
             r.advance(kDt);
+            gtcAudit = 0;
             check(r, worst, trial, k);
         }
     }
