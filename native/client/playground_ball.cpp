@@ -869,7 +869,23 @@ void PlaygroundRoom::tickBall() {
     // moved the ball and it can push it into a surface it is lying against -- see
     // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
     // speed last, the surfaces have the last word after it.
-    settleBallSurfaces();
+    //
+    // The surfaces, though, are only half of that question in a corner. The ball is
+    // pressed by two faces at once and both of those faces are standing on something;
+    // a grip along one of them pushes the ball into the other, the other answers and
+    // leaves a little along the first, and each answer also pushes the shape it came
+    // from. A shape pushed off its own floor is a face whose speed is not the speed it
+    // really has, and a ball measured against a face that is running away keeps a
+    // speed it can never spend -- the churn the King saw in the picture, with the ball
+    // standing still and everything in the room moving under it by a hundredth of a
+    // metre a second, twenty times a second.
+    //
+    // So the two are asked together and until they agree: the ball's faces, then the
+    // shapes' own supports (which is what settles where a shape really ends the tick),
+    // then the ball's faces again. Two or three rounds is all a corner needs, and the
+    // loop stops as soon as the ball's speed stops moving -- a tick that has nothing
+    // to say costs one extra compare.
+    settleBallAgainstSupports();
 
     // A whole tick of travel below a picometre is not motion a double can carry:
     // that is the floor of what this simulation can represent, not a speed chosen

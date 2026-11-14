@@ -809,7 +809,7 @@ void PlaygroundRoom::tickBodies() {
     // the tick and not at the end of the ball's half, or the shape being carried would
     // be registered and then erased. See noteBallTouch() and settleBallFriction().
     ballTouchCount_ = 0;
-    ManifoldSet patches;
+    ManifoldSet& patches = tickPatches_;
     gatherContacts(patches, band);
     // Every patch that is a meeting with the ball is a face the ball is against, and
     // the grip is solved over all of them at once later in the tick. See
@@ -843,6 +843,38 @@ void PlaygroundRoom::tickBodies() {
     // blow the ball gave or took was drawn a frame late, so each contact had one end
     // on screen and the other still to come.
     writeImpulses();
+}
+
+// The shapes' own supports, answered again after the ball has touched them.
+//
+// A tick is solved in two halves and that is what makes it affordable, but a blow
+// the ball gives a shape lands after the solve that the shape's own supports were
+// asked in. The shape is left carrying the speed of that blow -- and its floor, which
+// holds it by friction, has not been asked what it thinks of it. The speed is
+// cancelled on the next tick, before the shape moves a millimetre, so nothing on
+// screen moves and nothing is lost: what is lost is the *answer*. The ball's contacts
+// are measured against a face that is sliding away from them at a speed the face
+// never really has, and the ball keeps a little speed it can never spend -- a ball
+// wedged between a cube's side and a slope sat at a twentieth of a metre a second for
+// as long as it was left there, with everything in the room standing perfectly still.
+//
+// So the shapes are asked once more, over the patches this tick already gathered. A
+// warm start is the whole point of doing it this way: the floor's load and the grip
+// holding the shape are already in the patches, so the second answer is the same
+// contact carried further and not a new one. It is only the shapes that are asked --
+// the ball's own faces are settled by the ball, in settleBallSurfaces(), and answering
+// them here as well would answer one meeting twice.
+void PlaygroundRoom::answerSupportedShapes() {
+    ManifoldSet again;
+    for (std::size_t i = 0; i < tickPatches_.count; ++i) {
+        if (tickPatches_.items[i].ball) continue;
+        again.add(tickPatches_.items[i]);
+    }
+    if (again.count == 0) return;
+    // Every impulse this applies is written into the ledger where it acts, by
+    // pushBody(), exactly as the first solve's were -- so the tick's arrows include
+    // both answers and the tick's account still closes.
+    solveContacts(again);
 }
 
 // Was the frozen body under `index` ever given this body's load?

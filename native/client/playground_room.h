@@ -362,15 +362,8 @@ private:
         const double lever = arm.x * direction.y - arm.y * direction.x;
         return inverseMass(body) + lever * lever / body.moment;
     }
-    // What of a push on a body actually becomes a step of that body. A shape that is
-    // standing on the floor cannot be driven into it: the floor is under it and the
-    // floor does not give, so the part of the push that runs downwards is the floor's
-    // to answer and is taken at the place it is given. This is the one rule for it --
-    // pushBody() applies it and every compliance in the room is measured from it, so
-    // that the solver's model of what a shape will do and what the shape then does are
-    // the same model. Two models is a contact that never closes: the solver lays on
-    // impulse after impulse for a speed the shape never takes, and the shape next to
-    // it is handed all of it. That is the shape-against-shape pump.
+    // What of a push on a body actually becomes a step of that body: the floor under
+    // a standing shape answers the part that runs into it. See playground_room_push.cpp.
     static Vec3 bodyFree(const Body& body, Vec3 push);
     // The same number for a body that is standing on the floor and is being pushed
     // into it: what it gives is the part of a push that runs along the floor, plus
@@ -521,6 +514,16 @@ private:
     // patches are swept until they agree with each other.
     void gatherContacts(ManifoldSet& patches, double band) const;
     bool solveContacts(ManifoldSet& patches);
+    // This tick's meetings, kept after the shapes have been solved so that their
+    // supports can be asked again once the ball has had its say: see
+    // answerSupportedShapes(). A patch solved a second time keeps what it has
+    // already carried, so the second answer is the same contact carried further and
+    // not a new load.
+    ManifoldSet tickPatches_{};
+    // The shapes' own supports, answered again: everything the ball pushed has its
+    // weight on something, and that something has the last word on where the shape
+    // ends the tick.
+    void answerSupportedShapes();
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();
@@ -783,6 +786,9 @@ private:
     std::array<Vec3, kBodyCount> ballTickSpeed_{};
     std::array<double, kBodyCount> ballTickSpin_{};
     void settleBallFriction();
+    // The ball's faces and the shapes' supports, asked one after the other until
+    // they agree. See the note beside it in playground_ball.cpp.
+    void settleBallAgainstSupports();
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
     // it is carrying this, and friction is mu times it.
