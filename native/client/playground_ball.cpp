@@ -825,9 +825,18 @@ void PlaygroundRoom::tickBall() {
     if (gtcAudit) {
         std::fprintf(stderr, "B beforeFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
         for (std::size_t i = 0; i < ballTouchCount_; ++i)
-            std::fprintf(stderr, "     touch %zu body %zu n(%+.3f,%+.3f) sv(%+.4f,%+.4f) pressed %.6f\n", i,
+        {
+            Vec3 now{};
+            if (ballTouches_[i].body < kBodyCount) {
+                const Body& mate = bodies_[ballTouches_[i].body];
+                const Vec3 at = ball.position + ballTouches_[i].normal * -ball.radius;
+                now = pointSpeed(mate, at);
+                std::fprintf(stderr, "     body velocity(%+.4f,%+.4f) spin %+.4f\n", mate.velocity.x, mate.velocity.y, mate.spin);
+            }
+            std::fprintf(stderr, "     touch %zu body %zu n(%+.3f,%+.3f) sv(%+.4f,%+.4f) now(%+.4f,%+.4f) pressed %.6f\n", i,
                          ballTouches_[i].body, ballTouches_[i].normal.x, ballTouches_[i].normal.y,
-                         ballTouches_[i].surfaceVelocity.x, ballTouches_[i].surfaceVelocity.y, ballTouches_[i].pressed);
+                         ballTouches_[i].surfaceVelocity.x, ballTouches_[i].surfaceVelocity.y, now.x, now.y, ballTouches_[i].pressed);
+        }
     }
     settleBallFriction();
     if (gtcAudit) std::fprintf(stderr, "B afterFriction v(%+.5f,%+.5f) w%+.3f touches%zu\n", ball.velocity.x, ball.velocity.y, ball.spin, ballTouchCount_);
