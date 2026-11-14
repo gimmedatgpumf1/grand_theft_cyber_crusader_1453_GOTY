@@ -299,6 +299,9 @@ double PlaygroundRoom::advanceBodies(double seconds) {
             const auto sweptStep = [&](Vec3 middle, double angle) {
                 if (body.count == 0) return 1.0;
                 const double along = bodyStepAllowed(index, body.centre, body.angle, middle, angle, true);
+                if (std::getenv("KS") && index == 1)
+                    std::printf("        [step] along %.6f v (%+.3e,%+.3e) w %+.2e from (%.6f,%.6f)\n", along,
+                                body.velocity.x, body.velocity.y, body.spin, body.centre.x, body.centre.y);
                 if (!(along < 1.0)) return 1.0;
                 ++bodyStepClamped_;
                 absorbRefusedStep(body, index, along);
