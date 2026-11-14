@@ -181,7 +181,15 @@ void PlaygroundRoom::tickBall() {
         // given was thrown away, so the account had a weight in it with nothing
         // answering it. The account closes, and it closes where the answer is.
         ball.force = ball.force - weight;
-    } else {
+    }
+    // The air, on everything that moves through it -- held up or not.
+    //
+    // This was in the `else` of the branch above, so a ball the ground was carrying
+    // felt no air at all, and the check that fires a ball along the floor at 8 m/s and
+    // reads the force on it read nought newtons against a formula that asks for 0.83.
+    // Being held up is a fact about the vertical and about nothing else: a ball rolling
+    // across the room is still pushing air out of its way.
+    {
         const double speed = length(ball.velocity);
         if (speed > 0.0) {
             const double area = kPi * ball.radius * ball.radius;
@@ -902,7 +910,19 @@ void PlaygroundRoom::tickBall() {
     // Measured over 400 ticks of the King's corner: 5.4 mm of travel across the scene
     // by a ball whose speed at the end of every tick was three hundredths of a
     // micrometre a tick. A ball in contact does not fly, so its travel is its answer.
-    if (held) ball.position = beganAt + ball.velocity * kTick;
+    //
+    // And it may only ever shorten the walk, never lengthen it and never turn it
+    // round. A ball that met something had its place decided by the meeting -- the
+    // wall stopped it, and a ball bouncing off a wall ends the tick with a speed
+    // pointing the other way, so "where it would have got to at its final speed" is
+    // behind where it really is. Taking that as the answer put the ball back through
+    // the wall it had just bounced off: the check that fires one at a side read a
+    // restitution of 0.0000 against the floor's 0.8120.
+    if (held) {
+        const Vec3 shorter = beganAt + ball.velocity * kTick;
+        const Vec3 correction = shorter - ball.position;
+        if (dot(correction, walkStart) <= 0.0) ball.position = shorter;
+    }
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
