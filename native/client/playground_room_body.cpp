@@ -594,7 +594,28 @@ void PlaygroundRoom::settleBodies() {
         const bool carriedByBody = body.onBody && body.supportFrozen && carriedBySolvedSupport(index) &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
-        const bool carried = carriedByPlane || carriedByBody;
+        // And a shape resting on a ball that has come to rest is standing on a
+        // surface like any other. The ball is asleep, so it is not going to roll out
+        // from under anything: it is a floor with a curve, and the load on it runs
+        // down through it into the ground.
+        //
+        // It had no way of knowing that, and the cost was the last of the King's
+        // corner. A triangle lying on its slope against a sleeping ball is held by the
+        // floor at one corner and by the ball at the other; only the corner was ever
+        // recorded as a support, so its weight was read as running outside what holds
+        // it, it was called a body that is not carried, and it never spent the second
+        // of stillness that puts a shape to sleep. So it was solved against the ball
+        // for ever -- a contact, a push, the pair parting by 65 um, a tick of free
+        // fall, the walk stopping it at the surface again, contact -- a two-tick limit
+        // cycle that walked the triangle 49 um a tick in and out and kept the ball
+        // awake to be crept along. Nothing was moving. A shape standing on something
+        // that is standing still is standing still.
+        Vec3 ballWay{}, ballAt{};
+        const bool carriedByBall = body.onBall && ball_.frozen && ballWay.y > 0.5 &&
+                                   bodyBallGap(index, ballWay, ballAt) <= kContactBand &&
+                                   body.centre.x >= body.supportLow - kContactBand &&
+                                   body.centre.x <= body.supportHigh + kContactBand;
+        const bool carried = carriedByPlane || carriedByBody || carriedByBall;
         // Nothing is at rest that is not being held up: a shape in the air is
         // falling, whatever its arithmetic says.
         if (!carried) {
