@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace playground_detail;
@@ -141,6 +142,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     // changes where it presses -- and the sweep ends on the load, so no tick
     // finishes with a corner being driven into the floor.
     const auto patchPass = [&](Manifold& patch, bool withGrip) {
+        if (patch.quiet) return;
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
         Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
@@ -709,7 +711,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // grip holding it agree with each other, which is where the sweep is done.
         if (loadWorst < kAgree && gripWorst < kAgree) break;
     }
-    sweep(false);
+    if (std::getenv("ENDGRIP") == nullptr) sweep(false);
     return closingAtAll;
 }
 

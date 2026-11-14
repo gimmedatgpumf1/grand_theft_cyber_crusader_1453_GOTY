@@ -463,51 +463,21 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
         patch.gap[0] = gap;
         patch.normal = way;  // out of the ball, into the body
         patch.kind = ForceKind::Ball;
-        // The ball's bounciness, read here, once, off the speed the shape arrived at
-        // it with. Everything else in the room is answered inelastically; the ball is
-        // the one thing that gives a blow back, and a shape landing on it is answered
-        // by the same number the ball answers the floor with. Without this a cube
-        // dropped on the ball stopped dead on it, because the patch it was solved
-        // against had no way to leave it faster than it arrived.
-        {
-            // What it arrived with and not what it has gained since: the tick's own
-            // weight is not an arrival.
-            const Vec3 arrivedArm = at - body.centre;
-            const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arrivedArm.y,
-                               body.arrivalVelocity.y + body.arrivalSpin * arrivedArm.x, 0.0};
-            // Only on arrival. A shape that was already against the ball last tick is
-            // resting on it: the contact has to hold it up, and it can hold it up
-            // without giving anything back. See Body::onBall.
-            const double closing = dot(arrived - ballPointSpeed(at), way);
-            if (closing < 0.0 && !body.wasOnBall) {
-                // The speed it will still have when it gets there, and not the speed
-                // it had when the tick began. The weight of the tick lands on it over
-                // the whole tick; the meeting is partway through; so the blow is struck
-                // at the speed the fall has reached by then and no other. Bouncing the
-                // tick's opening speed gave back less than the bounciness asks -- a
-                // quarter of a metre drop came back at half its own height -- and
-                // bouncing the tick's closing speed would give back more. It is the
-                // speed at the surface, which is what the surfaces answer.
-                const double togo = std::max(0.0, patch.gap[0]);
-                const double when = reach > 0.0 ? std::clamp(togo / reach, 0.0, 1.0) : 1.0;
-                patch.rebound[0] = -ball_shape::kBallRestitution * closing;
-                // And when it gets there. The patch is gathered within the reach of
-                // the tick, so a fast shape is answered a band's width before it has
-                // arrived -- a cube falling at 2.85 m/s met the ball 65 mm above its
-                // surface, in mid-air. The blow belongs at the surface, so the
-                // distance still to go, over the distance the tick would cover,
-                // says how much of the tick belongs to the fall and how much to the
-                // rebound. See advanceBodies().
-                // How much of this tick is the fall. Measured with the speed the
-                // shape has *now*, which is the same number the reach above was
-                // measured with: the weight of this tick is already in it, and a
-                // shape whose gap is inside the reach does arrive, so the fraction
-                // is a real fraction of this tick and never runs past its end.
-                if (when < body.hitAt) {
-                    body.hitAt = when;
-                    body.hitArrival = body.velocity;
-                }
-            }
+        // Was this pair already resting against each other when the tick opened?
+        // If so it is not an arrival, and this half of the tick has no blow to answer:
+        // the ball's own half solves it, with the floor under the ball in the same
+        // system. Measured in the King's corner -- a ball under the triangle's slope --
+        // the shapes' half answered the *triangle's own weight* as though it were an
+        // arrival at the ball: the ball was handed 0.155 m/s sideways and 3.2 rad/s of
+        // spin every tick, the ball's grip took nine tenths of it back, and the tenth
+        // that was left is the ball that would not stop creeping.
+        if (gap <= playground_tick::kQuantum) {
+            const Vec3 arm = at - body.centre;
+            const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
+                               body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
+            // Both sides as the tick found them: this runs before the solve, so the
+            // ball's own speed and turn are still the ones it arrived with.
+            if (dot(arrived - ballPointSpeed(at), way) >= 0.0) patch.quiet = true;
         }
         patches.add(patch);
     }

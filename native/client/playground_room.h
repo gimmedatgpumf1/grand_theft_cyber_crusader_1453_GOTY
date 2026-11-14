@@ -465,6 +465,7 @@ private:
         // or a contact solved twice would bounce twice.
         double rebound[kMaxPatchEnds]{};
         ForceKind kind = ForceKind::Contact;
+        bool quiet = false;  // already resting, not an arrival: see gatherContacts()
     };
     static constexpr std::size_t kMaxTickManifolds = 12;
     struct ManifoldSet {
