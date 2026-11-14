@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "client/playground_ball_shape.h"
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
@@ -266,6 +267,8 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
+    std::fprintf(stderr, "BC b%d closing %+.3f approach %+.3f rebound %+.3f resting %d depth %.5f n(%+.3f,%+.3f) vb(%+.3f,%+.3f)\n",
+                 bodyIndex, closing, approach, rebound, int(resting), depth, normal.x, normal.y, ball.velocity.x, ball.velocity.y);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {

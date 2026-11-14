@@ -15,7 +15,7 @@ int main() {
             PlaygroundRoom r;
             r.reset();
             for (int k = 0; k < 20; ++k) r.advance(kDt);
-            const Vec3 onFace{-2.60 + 2.10 * along, 0.00 + 2.10 * along, 0};
+            const Vec3 onFace{-2.60 + 2.10 * along, 2.10 - 2.10 * along, 0};
             r.ball_.position = onFace + n * (r.ball_.radius + up);
             r.ball_.previous = r.ball_.position;
             r.ball_.velocity = {};

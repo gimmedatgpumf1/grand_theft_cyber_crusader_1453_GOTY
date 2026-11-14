@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     PlaygroundRoom r;
     r.reset();
     for (int k = 0; k < 20; ++k) r.advance(kDt);
-    const Vec3 onFace{-2.60 + 2.10 * along, 0.00 + 2.10 * along, 0};
+    const Vec3 onFace{-2.60 + 2.10 * along, 2.10 - 2.10 * along, 0};
     const Vec3 normal{0.7071067811865476, 0.7071067811865476, 0.0};
     r.ball_.position = onFace + normal * (r.ball_.radius + up);
     r.ball_.previous = r.ball_.position;
