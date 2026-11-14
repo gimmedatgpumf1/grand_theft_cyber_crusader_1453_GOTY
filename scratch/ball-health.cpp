@@ -11,17 +11,22 @@ int main() {
     // 1. Dropped on the floor: it bounces, and never higher than it fell.
     {
         PlaygroundRoom r; r.reset();
-        r.ball_.position = {-4.6, 1.6, 0}; r.ball_.previous = r.ball_.position;
+        r.ball_.position = {2.2, 1.6, 0}; r.ball_.previous = r.ball_.position;
         r.ball_.velocity = {}; r.ball_.spin = 0.0; r.ball_.frozen = false;
-        double top = -1e30, firstLow = 1e30, afterTop = -1e30;
+        double firstLow = 1e30, firstApex = -1e30;
+        bool landed = false;
         for (int k = 0; k < 120; ++k) {
             r.advance(kDt);
-            top = std::max(top, r.ball_.position.y - r.ball_.radius);
-            if (k < 20) firstLow = std::min(firstLow, r.ball_.position.y - r.ball_.radius);
-            if (k > 25) afterTop = std::max(afterTop, r.ball_.position.y - r.ball_.radius);
+            const double h = r.ball_.position.y - r.ball_.radius;
+            if (!landed) {
+                firstLow = std::min(firstLow, h);
+                if (h <= 1e-9) landed = true;
+            } else {
+                firstApex = std::max(firstApex, h);
+            }
         }
-        std::printf("1. dropped 1.48 m: lowest %+.4f, came back to %+.4f m (%.1f%% of the drop)\n", firstLow,
-                    afterTop, 100.0 * afterTop / 1.48);
+        std::printf("1. dropped 1.48 m: lowest %+.4f m, first bounce came back to %+.4f m (%.1f%% of the drop)\n",
+                    firstLow, firstApex, 100.0 * firstApex / 1.48);
     }
     // 2. Rolled at the triangle's slope: it is turned, not eaten.
     {

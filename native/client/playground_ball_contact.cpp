@@ -266,9 +266,6 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
-    if (bodyIndex < 0)
-        std::fprintf(stderr, "FLOOR closing %+.4f approach %+.4f resting %d rebound %+.4f reach %.3f v %+.4f\n",
-                     closing, approach, int(resting), rebound, reached, ball.velocity.y);
     double pressed = 0.0;
     if (closing < 0.0) {
         if (canMove) {
