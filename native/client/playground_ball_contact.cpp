@@ -182,7 +182,15 @@ void PlaygroundRoom::settleBallSurfaces(Ball& ball) {
                         // way -- a push and its partner, and no momentum from nowhere.
                         const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                         ball.velocity = ball.velocity - normal * (closing - allowed);
-                        pushBody(body, at, blow * -1.0, ForceKind::Contact);
+                        // A shape asleep, or held by the hand, is a surface and not a
+                        // thing that may be shoved: handing it this blow moved it *and*
+                        // woke it out of nothing but the ball's own weight, because the
+                        // ball's flight through the tick is a fall and a fall always
+                        // arrives at the face the ball is lying on -- the ball with an
+                        // infinite force to shove a triangle with. The ball is still
+                        // stopped here; what holds the shape is what always held it.
+                        if (!bodyHeld(index) && !body.frozen)
+                            pushBody(body, at, blow * -1.0, ForceKind::Contact);
                         FaceBlow& slot = blows[index * kMaxOutlineCorners + edge];
                         slot.at = ball.position - normal * ball.radius;
                         slot.impulse = slot.impulse + blow;
@@ -379,19 +387,12 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // answered against the ball's mass once per tick and the ball crept for ever.
         // A contact that is not approaching cannot push anything.
         //
-        // And the last thing a blow is, is the *ball's whole speed*. A ball on a taut rope
-        // is carrying a tick of fall that the rope is about to take back -- that is what
-        // the rope is for, and it is why ballOffTheRope() exists. Read whole, that fall
-        // woke the shape the ball was merely lying against, every tick, and each waking
-        // handed the shape a share of an impulse that was never a blow: the shape hopped,
-        // the hop was worth a hundredth of a joule that came out of nothing, and the room
-        // put it straight back when the shape came to rest again. The slope under a
-        // resting ball is not woken by the ball's weight. See ballOffTheRope().
-        // The rope's part comes off the ball's *middle*, not off the patch: a spinning
-        // ball's patch is moving along the face and cannot close on it, but take the
-        // rope's share off the patch as a whole and the turn leaks into the normal --
-        // a ball resting on the slope, spinning on the spot against it with no load at
-        // all, read as closing at 0.16 m/s and woke the shape it was merely touching.
+        // A blow is not the ball's *whole* speed: a ball on a taut rope carries a tick of
+        // fall the rope is about to take back, and read whole it woke the shape it was
+        // merely lying on, every tick, with a share of an impulse that was never a blow.
+        // The rope's part comes off the ball's *middle*, not off the patch -- a patch
+        // spinning along the face cannot close on it, and taking it off the patch leaks
+        // the turn into the normal. See ballOffTheRope().
         const Vec3 arm = contactPoint - ball.position;
         const Vec3 turned{-ball.spin * arm.y, ball.spin * arm.x, 0.0};
         const Vec3 closingVelocity =
