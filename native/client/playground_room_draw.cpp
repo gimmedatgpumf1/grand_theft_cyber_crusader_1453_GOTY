@@ -209,11 +209,11 @@ void PlaygroundRoom::interpolate() {
     //
     // The cure is to keep the drawn ball on the path its own tick took. That path is
     // already known exactly -- it is the two straight pieces the interpolation is
-    // built from -- so the drawn place is the *latest* point of it that is outside
-    // everything, found by halving the fraction until the last clear place is
-    // pinned down to a part in 2^40 of a tick. Nothing here is a step size or a
-    // tolerance: it is a root of "where does the path stop being outside", and it is
-    // found exactly the way the room finds where a walk stops being clear.
+    // built from -- so the drawn place is the *latest* point of it that is not deeper
+    // inside anything than the place the room itself left, found by halving the
+    // fraction until that point is pinned down to a part in 2^40 of a tick. Nothing
+    // here is a step size or a tolerance: it is a root, found the way the room finds
+    // where a walk stops being clear.
     //
     // Why not push the ball sideways off a surface instead, which is what this used
     // to do? Because a push moves the drawn ball off its own path, and two surfaces
