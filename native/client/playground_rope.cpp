@@ -165,6 +165,9 @@ Vec3 PlaygroundRoom::ballOffTheRope(const Ball& ball, Vec3 speed) const {
 }
 
 void PlaygroundRoom::holdOnRope(Ball& ball) {
+    // Where the room left the ball, before the rope touches it: the one place the rope
+    // may never move it back to being inside something.
+    const Vec3 theRoomsPlace = ball.position;
     Rope& rope = rope_;
     if (!rope.attached || &ball != &balls_[rope.ball]) return;
     const std::size_t owner = ownerOf(ball);
@@ -405,6 +408,29 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const Vec3 inward = outward * -1.0;
         addForce(at, inward * rope.tension, ForceKind::Rope, nullptr, owner);
         addForce(anchor, inward * (rope.tension * -1.0), ForceKind::Rope, nullptr, kAnchorOwner);
+    }
+    // A place the rope may not put the ball: inside a shape, or through the floor. A
+    // ball wedged between the rope and a face is held by the face -- the rope has
+    // nothing to pull with -- and putting it on its own circle anyway drove it into the
+    // shape, which the room then lifted it out of for nothing. Measured in the pressed
+    // scene: nine tenths of a millimetre inside the slope, stood up on the face, twelve
+    // millijoules a bounce, and a swing that never decayed because the height it lost
+    // falling was handed back to it.
+    const auto clear = [&](Vec3 place) {
+        if (place.y < playground_tick::kSurfaceY + ball.radius - ball_shape::kTouch) return false;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            const double gap =
+                ball_shape::outlineGap(place, body.position.data(), body.position.data(), body.count, 1.0).gap;
+            if (gap < ball.radius - ball_shape::kTouch) return false;
+        }
+        return true;
+    };
+    if (!clear(at)) {
+        at = theRoomsPlace;
+        rope.taut = false;
+        rope.tension = 0.0;
     }
     ball.position = at;
     ball.velocity = speedNow;
