@@ -18,6 +18,7 @@
 
 #define private public
 #include "client/playground_pair.h"
+#include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
 #undef private
 #include "client/renderer.h"
@@ -470,6 +471,121 @@ void bounceIsTheSameEveryWay() {
           "a hit below the middle turns the cube, at the same bounciness", detail);
 }
 
+// A ball is not a point with a radius. It rolls, and rolling is a different set of
+// laws from sliding: the place a rolling ball touches the ground is *not moving*, so
+// the grip along the ground does no work on it and cannot slow it down at all. What
+// slows a roll is the ground's own squash -- the pressure under the ball is heavier
+// in front of it than behind -- which is a couple of size Crr * N * r and nothing
+// else. It is a couple, so it takes the same rate out of a fast roll as a slow one:
+// distance goes as the square of the speed, a metre a second dies in about two
+// metres, and three metres a second covers over five in the first two seconds.
+//
+// That is what a basketball does, and it is measured in metres here because a
+// coefficient is not something a player can see. It is checked because it was wrong:
+// the couple was charged afresh on every round of the grip solve, so a tick spent
+// eight ticks' worth of rolling resistance and a ball at three metres a second died
+// in a metre and a half, at nearly two metres a second squared -- eight times
+// Crr * g / 1.4. It read on screen as a ball rolling on sand.
+void aRollIsARoll() {
+    say("\na roll is a roll\n");
+    // The ball rolled along the floor with its bottom standing still against it: the
+    // speed and the turn agree, which is what a roll *is*. What is measured is how far
+    // it gets, and whether it stays a roll all the way there.
+    const auto rolled = [](double speed, int ticks, double& distance, double& slip, bool& asleep) {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 400);
+        room.ball_.frozen = false;
+        room.ball_.velocity = Vec3{-speed, 0, 0};
+        room.ball_.spin = speed / room.ball_.radius;
+        const double from = room.ball_.position.x;
+        slip = 0.0;
+        for (int tick = 0; tick < ticks; ++tick) {
+            room.advance(1.0 / 20.0);
+            slip = std::max(slip, std::abs(room.ball_.velocity.x + room.ball_.spin * room.ball_.radius));
+        }
+        distance = std::abs(room.ball_.position.x - from);
+        asleep = room.ball_.frozen;
+    };
+    double slowDistance = 0.0, slowSlip = 0.0, fastDistance = 0.0, fastSlip = 0.0;
+    bool slowAsleep = false, fastAsleep = false;
+    rolled(1.0, 600, slowDistance, slowSlip, slowAsleep);
+    rolled(3.0, 40, fastDistance, fastSlip, fastAsleep);
+    char detail[220];
+    std::snprintf(detail, sizeof detail, "a roll at 1.0 m/s died after %.3f m%s, and at 3.0 m/s covered %.3f m in two seconds",
+                  slowDistance, slowAsleep ? "" : " (never stopped)", fastDistance);
+    check(slowDistance > 1.6 && slowDistance < 2.4 && slowAsleep && fastDistance > 4.5,
+          "a roll dies at the rate rolling resistance says, not eight times it", detail);
+    std::snprintf(detail, sizeof detail, "the bottom of the ball never moved against the floor, worst slip %.2e m/s, %.2e m/s",
+                  slowSlip, fastSlip);
+    check(slowSlip < 1e-3 && fastSlip < 1e-3, "and it rolled all the way, it never skidded", detail);
+}
+
+// What a surface under the ball decides: whether the ball stays where it was put.
+//
+// A surface holds a ball when the couple the ground can supply is enough to stop it
+// rolling, which is the same Crr as above: a ball on a slope of angle a needs
+// N * r * tan(a) of couple, so it stays when tan(a) <= Crr and rolls away when it
+// does not. That is a little over two degrees, and it is the ball's own coefficient
+// deciding it -- friction along the surface is a far weaker condition (mu_s 0.70,
+// thirty-five degrees) and never the one that answers. Asked with the cone alone, a
+// ball put down on a ten degree ramp sat on it for ever, which no basketball does.
+//
+// The first case is also the wriggle. A sleeping plate tilted by a twentieth of a
+// degree had no contact written for it at all -- the solver only writes contacts for
+// bodies it is stepping -- so the ball lying on it counted as held up by nothing,
+// took the whole of a tick's weight twenty times a second, and spent the along-the-
+// face part of that fall as travel: a micrometre and a half a tick, for ever, on a
+// plate that was not moving. It is measured here over ten seconds, by position.
+void whatHoldsABall() {
+    say("\nwhat a surface can hold\n");
+    // A plate where the triangle was, at a chosen angle, with the ball set down on it.
+    const auto onARamp = [](double angle, int ticks, double& moved, bool& asleep) {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        auto& plate = room.bodies_[1];
+        plate.local[0] = Vec3{-1.5, -0.05, 0};
+        plate.local[1] = Vec3{1.5, -0.05, 0};
+        plate.local[2] = Vec3{1.5, 0.05, 0};
+        plate.local[3] = Vec3{-1.5, 0.05, 0};
+        plate.count = 4;
+        plate.centre = Vec3{-2.5, 1.0, 0};
+        plate.angle = angle;
+        plate.velocity = Vec3{};
+        plate.spin = 0.0;
+        plate.frozen = true;
+        room.placeCorners(plate);
+        plate.previous = plate.position;
+        const Vec3 normal{-std::sin(angle), std::cos(angle), 0};
+        room.ball_.position = Vec3{plate.centre.x, plate.centre.y, 0} + normal * (0.05 + room.ball_.radius);
+        room.ball_.velocity = Vec3{};
+        room.ball_.spin = 0.0;
+        room.ball_.frozen = false;
+        const Vec3 start = room.ball_.position;
+        double furthest = 0.0;
+        for (int tick = 0; tick < ticks; ++tick) {
+            room.advance(1.0 / 20.0);
+            furthest = std::max(furthest, std::sqrt(dot(room.ball_.position - start, room.ball_.position - start)));
+        }
+        moved = furthest;
+        asleep = room.ball_.frozen;
+    };
+    const double critical = std::atan(ball_shape::kBallRollingResistance);  // radians
+    double stayed = 0.0, rolled = 0.0;
+    bool stayedAsleep = false, rolledAsleep = false;
+    onARamp(critical * 0.025, 400, stayed, stayedAsleep);   // a twentieth of the limit
+    onARamp(critical * 2.0, 400, rolled, rolledAsleep);     // twice it
+    char detail[240];
+    std::snprintf(detail, sizeof detail,
+                  "on a plate tilted %.3f degrees the ball moved %.3e m in ten seconds (%.3f degrees it went %.3f m)",
+                  critical * 0.025 * 180.0 / 3.141592653589793, stayed, critical * 2.0 * 180.0 / 3.141592653589793,
+                  rolled);
+    check(stayed == 0.0 && stayedAsleep && rolled > 0.1,
+          "the ball stays where it is put below its own rolling limit, and rolls away above it", detail);
+    (void)rolledAsleep;
+}
+
 // The ball is the one thing in the room small enough to be swallowed, and the one
 // thing whose collision has to be a hitscan rather than a search: at 40 m/s it
 // crosses two metres in a tick. Every one of these shots is solved outright, so no
@@ -544,6 +660,53 @@ void nothingIsEverInsideAnything() {
     }
     std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
     check(dropped < 1e-6, "nor is one that arrives at the ball", detail);
+
+    // And the case the two sweeps above cannot answer between them: more than one
+    // surface against the ball at once. A ball in a wedge is held by two faces whose
+    // answers change each other, and a room that answers them one at a time drives it
+    // into whichever it looked at second. So the ball is put into the wedge between a
+    // cube's left face and the triangle's slope, and into the pinch between a cube and
+    // the floor, and what is measured is the *depth* it ever reaches inside either --
+    // tick by tick, not only where it ends up -- and whether the room ever had to move
+    // the ball by hand to get it out. A ball that is pushed out is a ball that was
+    // inside first.
+    double wedge = 0.0;
+    std::size_t byHand = 0;
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        room.clearRepairCounts();
+        room.bodies_[0].centre = Vec3{-0.35, 0.3501, 0};
+        room.bodies_[0].angle = 0.0;
+        room.bodies_[0].frozen = false;
+        room.bodies_[0].velocity = Vec3{};
+        room.bodies_[0].spin = 0.0;
+        room.placeCorners(room.bodies_[0]);
+        room.bodies_[0].previous = room.bodies_[0].position;
+        room.bodies_[1].frozen = true;
+        room.ball_.position = Vec3{-0.62, 1.2, 0};
+        room.ball_.velocity = Vec3{0, -3.0, 0};
+        room.ball_.frozen = false;
+        for (int tick = 0; tick < 200; ++tick) {
+            room.advance(1.0 / 20.0);
+            for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
+                Vec3 way{}, at{};
+                wedge = std::max(wedge, -room.bodyBallGap(index, way, at));
+            }
+        }
+        byHand = room.ballFoundThroughCount();
+        // Both faces still against it, and it is not inside either.
+        Vec3 way{}, at{};
+        const double toCube = room.bodyBallGap(0, way, at);
+        const double toSlope = room.bodyBallGap(1, way, at);
+        std::snprintf(detail, sizeof detail,
+                      "in the wedge between a cube's face and the triangle's slope: %.6f m inside at worst, "
+                      "%.6f m and %.6f m from the two faces (the ball's radius is %.3f), %zu repairs",
+                      wedge, toCube, toSlope, room.ball_.radius, byHand);
+        check(wedge < 1e-6 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
+              "a ball wedged against several faces at once is answered by all of them", detail);
+    }
 }
 
 void interactionDoesNotStick() {
@@ -705,6 +868,8 @@ int main() {
     frictionIsAForce();
     airDependsOnSpeed();
     bounceIsTheSameEveryWay();
+    aRollIsARoll();
+    whatHoldsABall();
     nothingIsEverInsideAnything();
     interactionDoesNotStick();
     costOfATick();
