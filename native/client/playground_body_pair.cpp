@@ -729,11 +729,55 @@ void PlaygroundRoom::separateBodies() {
 // it exactly where a contact belongs and answers it as one.
 bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
     if (index >= kBodyCount || !(through > 0.0)) return false;
+    // A shape the mouse is carrying gives nothing: the hand is the one thing in the
+    // room that is not part of its own physics, and moving a shape against the hand is
+    // the room pretending it owns it.
     Body& body = bodies_[index];
-    if (body.count == 0 || bodyHeld(index) || body.pivoted) {
-        // A pinned body cannot give way -- it has nowhere to go -- so a ball that has
-        // come to be inside one is answered by the ball moving, which is the honest
-        // last resort and the only one left.
+    if (body.count == 0 || bodyHeld(index)) return false;
+    if (body.pivoted) {
+        // A plank on its axle has nowhere to go, but it has somewhere to *turn*, and
+        // turning is how a thing on a pin gives ground: the ball presses on the face,
+        // the face comes back, the bearing takes the couple. Refusing it outright is
+        // what left the ball with the whole of a seesaw's sweep to answer, and a ball
+        // with the floor behind it has nowhere to put it -- so the room slid the ball
+        // out from under the plank by up to half a metre in a single tick, which is
+        // the ejection that must never happen.
+        //
+        // The turn it gives back is the turn this tick gave it: no more. What it does
+        // not spend, it does not have, and that is written down where the bearing can
+        // account for it -- absorbRefusedStep, the same answer a refused step gets.
+        const double turned = body.spin * playground_tick::kTick;
+        if (std::abs(turned) > 0.0) {
+            const double way = turned > 0.0 ? -1.0 : 1.0;  // back along the way it came
+            const auto gapAt = [&](double angle) {
+                body.angle = angle;
+                placeCorners(body);
+                Vec3 out{}, at{};
+                return bodyBallGap(index, out, at);
+            };
+            const double here = gapAt(body.angle);
+            double best = 0.0, bestGap = here;
+            for (int step = 1; step <= 24; ++step) {
+                const double reach = std::abs(turned) * double(step) / 24.0;
+                const double gap = gapAt(body.angle + way * reach);
+                if (!(gap > bestGap)) continue;
+                bestGap = gap;
+                best = reach;
+                if (gap >= playground_tick::kQuantum) break;  // out of it: no further
+            }
+            if (best > 0.0) {
+                const double kept = std::abs(turned) > 0.0 ? std::clamp(1.0 - best / std::abs(turned), 0.0, 1.0) : 0.0;
+                body.angle = body.angle + way * best;
+                placeCorners(body);
+                body.centre = body.pivotPoint;
+                // What it did not turn is a step it was refused, and the room's own
+                // answer for a refused step is this: the momentum goes, and what took
+                // it is written down. For a pinned body it is written at the pin.
+                absorbRefusedStep(body, index, kept);
+                return true;
+            }
+            gapAt(body.angle);  // put it back exactly where it was
+        }
         return false;
     }
     const Vec3 was = body.centre;
