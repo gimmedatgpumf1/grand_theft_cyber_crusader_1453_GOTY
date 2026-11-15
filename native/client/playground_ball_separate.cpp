@@ -21,7 +21,6 @@ namespace gtc::native {
 using namespace playground_tick;
 using namespace ball_shape;
 
-
 Vec3 PlaygroundRoom::ballClearStep(double& left) const {
     // How deep the ball is inside anything at `at`, and which way is out of the worst
     // of them. The floor counts: the ground is a solid like any other, and the room's
