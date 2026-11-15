@@ -387,6 +387,10 @@ private:
     // The air, as its own force: every moving piece of every body, and how hard it
     // is. See the file: it is applied before the weight and independently of it.
     void applyAirDrag();
+    // The same air, on the ball, answered by solving its law over the tick rather
+    // than by adding the force times the tick. Returns the ball's speed after it.
+    // See playground_ball_air.cpp.
+    Vec3 ballAirDrag(Vec3 velocity);
     // Carries every body that is being simulated by `seconds` of its own speed and
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.

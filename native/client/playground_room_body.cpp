@@ -138,6 +138,17 @@ void PlaygroundRoom::applyAirDrag() {
         // does too -- otherwise a shape being carried across the room is drawn with
         // a drag that is nowhere in the motion that actually happened.
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        // The whole shape's force first, and then the impulse that force delivers over
+        // a tick -- which is not the force times the tick, for the same reason it is not
+        // for the ball: a force that can turn a body round inside one tick is not a
+        // force, and the air is always against the motion. The law is
+        // dv/dt = -(c/m) v^2, whose exact answer over a tick is a speed reduced by the
+        // factor 1/(1 + x) with x = |F| dt / (m |v|) -- a part in twenty at eight metres
+        // a second, and the whole of the body's momentum at a hundred kilometres a
+        // second, and never more than that. So every face's impulse takes that one
+        // factor, and the arrows stay the forces the faces really feel.
+        Vec3 total{};
+        double fastest = length(body.velocity);
         for (std::size_t i = 0; i < body.count; ++i) {
             const Vec3 from = body.position[i];
             const Vec3 to = body.position[(i + 1) % body.count];
@@ -148,13 +159,31 @@ void PlaygroundRoom::applyAirDrag() {
             const Vec3 out{along.y / span, -along.x / span, 0.0};
             const Vec3 at = from + along * 0.5;
             const double vn = dot(pointSpeed(body, at), out);
+            fastest = std::max(fastest, length(pointSpeed(body, at)));
             // Only a face the air is being driven into is pressed; the one behind is
             // in the shape's shadow and the air there is not pushing it anywhere.
+            if (!(vn < 0.0)) continue;
+            total = total + out * (0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * span * kRoomDepth * vn * vn);
+        }
+        // The tick's share of it. A body that is not moving is not being pressed by
+        // anything, so there is nothing to share out.
+        double share = 1.0;
+        if (length(total) > 0.0 && fastest > 0.0)
+            share = 1.0 / (1.0 + length(total) * kTick / (body.mass * fastest));
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 from = body.position[i];
+            const Vec3 to = body.position[(i + 1) % body.count];
+            const Vec3 along = to - from;
+            const double span = length(along);
+            if (!(span > 0.0)) continue;
+            const Vec3 out{along.y / span, -along.x / span, 0.0};
+            const Vec3 at = from + along * 0.5;
+            const double vn = dot(pointSpeed(body, at), out);
             if (!(vn < 0.0)) continue;
             const double press = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * span * kRoomDepth * vn * vn;
             const Vec3 air = out * press;
             addForce(at, air, ForceKind::Drag, nullptr, index);
-            const Vec3 puff = air * kTick;
+            const Vec3 puff = air * (kTick * share);
             const Vec3 arm = at - body.centre;
             // A pinned body is carried by its axle and by nothing else: the air is
             // still a force on it, corner by corner, but the part of that force which

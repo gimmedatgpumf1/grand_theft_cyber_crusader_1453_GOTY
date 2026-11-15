@@ -217,21 +217,9 @@ void PlaygroundRoom::tickBall() {
         // answering it. The account closes, and it closes where the answer is.
         ball.force = ball.force - weight;
     }
-    // The air, on everything that moves through it -- held up or not.
-    //
-    // This was in the `else` of the branch above, so a ball the ground was carrying
-    // felt no air at all, and the check that fires a ball along the floor at 8 m/s and
-    // reads the force on it read nought newtons against a formula that asks for 0.83.
-    // Being held up is a fact about the vertical and about nothing else: a ball rolling
-    // across the room is still pushing air out of its way.
-    {
-        const double speed = length(ball.velocity);
-        if (speed > 0.0) {
-            const double area = kPi * ball.radius * ball.radius;
-            const double drag = 0.5 * kAirDensity * kBallDragCoefficient * area * speed * speed;  // N
-            addForce(ball.position, ball.velocity * (-drag / speed), ForceKind::Drag, &ball.force, kBallOwner);
-        }
-    }
+    // The air, on everything that moves through it -- held up or not. See
+    // ballAirDrag() for the law and for why it is solved rather than stepped into.
+    ball.velocity = ballAirDrag(ball.velocity);
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
