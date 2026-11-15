@@ -727,6 +727,54 @@ void nothingIsEverInsideAnything() {
               "a ball wedged against several faces at once is answered by all of them", detail);
     }
 
+    // The same corner, left alone for two thousand ticks. The question here is not
+    // whether the ball can be put into a shape -- it never is -- but whether being
+    // squeezed by two faces at once, with the floor a third, leaves it creeping: a
+    // hundredth of a micrometre a tick is invisible for a second and six centimetres
+    // of ball inside a shape after ten. So the depth is measured at the end of every
+    // tick, not once, and so is how far the ball has moved from where it settled.
+    double squeezed = 0.0;
+    double crept = 0.0;
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 300);
+        auto& cube = room.bodies_[0];
+        cube.centre = Vec3{-0.35, 0.3501, 0};
+        cube.angle = 0.0;
+        cube.velocity = Vec3{};
+        cube.spin = 0.0;
+        cube.frozen = true;
+        room.placeCorners(cube);
+        cube.previous = cube.position;
+        room.bodies_[1].frozen = true;
+        room.ball_.position = Vec3{-0.62, 1.20, 0};
+        room.ball_.velocity = Vec3{0, -3.0, 0};
+        room.ball_.frozen = false;
+        Vec3 settledAt{};
+        for (int tick = 0; tick < 2000; ++tick) {
+            room.advance(1.0 / 20.0);
+            for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
+                Vec3 way{}, at{};
+                squeezed = std::max(squeezed, -room.bodyBallGap(index, way, at));
+            }
+            squeezed = std::max(squeezed, room.ball_.radius - room.ball_.position.y);
+            if (tick == 200) settledAt = room.ball_.position;
+            if (tick >= 200) crept = std::max(crept, length(room.ball_.position - settledAt));
+        }
+    }
+    // The bound is the coordinate resolution, not a tolerance: a distance computed from
+    // coordinates of about a metre cannot be finer than 2^-53 m = 1.1e-16 m, so "not
+    // inside at all" and "inside by less than the last bit of the number that says where
+    // anything is" are the same statement. A micrometre is 1e-6 m; this is nine orders
+    // of magnitude below it.
+    std::snprintf(detail, sizeof detail,
+                  "the corner in the picture, 2 000 ticks: worst %.3e m inside (log2 %.1f), the ball drifted "
+                  "%.3e m after it settled",
+                  squeezed, squeezed > 0.0 ? std::log2(squeezed) : -1000.0, crept);
+    check(squeezed < 1.1e-16 && crept <= 1e-12,
+          "a ball in the corner of a slope, a cube and the floor is not squeezed into either of them", detail);
+
     // And the whole room thrown at once, which is where a room that answers its
     // surfaces one at a time comes apart: every corner moving, the seesaw swinging, the
     // ball fired at whatever speed a hand can give it. What is measured is the worst
