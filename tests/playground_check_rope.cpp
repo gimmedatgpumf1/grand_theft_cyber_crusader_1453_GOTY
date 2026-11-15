@@ -257,8 +257,12 @@ int playgroundRopeChecks() {
                              gtc::native::ball_shape::kBallDragCoefficient * gtc::native::ball_shape::kPi;
             const double r1 = room.ball(PlaygroundRoom::kThrowBall).radius;
             const double r2 = room.ropeBall().radius;
-            air = std::abs((k * r1 * r1 * ballWas.x * ballWas.x + k * r2 * r2 * bobWas.x * bobWas.x) *
-                           (1.0 / 20.0));
+            // Both balls, at the speeds the air actually saw: the one that hit was doing
+            // five metres a second when the tick opened, and the one that was hit was
+            // doing nearly that by the time its own tick ran.
+            const double v1 = gtc::native::length(ballWas);
+            const double v2 = gtc::native::length(room.ropeBall().velocity);
+            air = (k * r1 * r1 * v1 * v1 + k * r2 * r2 * v2 * v2) * (1.0 / 20.0);
         }
         std::snprintf(detail, sizeof detail,
                       "and with the rope off it, nothing else takes any: the blow moved %.3f kg m/s across the "
