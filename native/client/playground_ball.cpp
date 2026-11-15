@@ -73,9 +73,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     const Vec3 beganAt = ball.position;
     // A tick starts straight: whatever the last one bent at is spent.
     ball.bent = false;
-    // And it starts from where the ball is now, which is where everything that has
-    // already happened this tick has left it -- see Ball::began.
-    ball.began = ball.velocity;
     if (dragTarget_ == DragTarget::Ball) {
         ball.velocity = {};
         ball.spin = 0.0;

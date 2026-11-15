@@ -201,14 +201,19 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // read the way every other contact in this room reads it, from what the ball arrived
     // with to what it has now, at the fraction of the tick.
     Vec3 at = ball.previous + travel * crossed;
-    // The speed the ball's own tick started from, and the speed it has now, read at the
-    // fraction of the tick the crossing is at. `began` and not `arrival`: the arrival is
-    // what the ball had before *the room* moved, and a ball struck by the other ball
-    // before its own turn is moving at the blow's speed by the time its turn comes. Read
-    // from the arrival, a ball hit dead centre on the end of the rope was answered with
-    // the nothing it had before the blow: the swing was reset to a standstill every
-    // tick it was hit, and the ball that hit it took the whole of the momentum back.
-    Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
+    // The speed the ball has to spend on the circle: everything its own tick has already
+    // settled in it -- the air, and any blow it took from the other ball or a shape --
+    // with this tick's weight taken back off. Not the arrival, which is what the ball had
+    // before *the room* moved: a ball struck by the other ball before its own turn is
+    // moving at the blow's speed by the time its turn comes, and reading the arrival
+    // reset the swing to a standstill on every tick it was hit, so the ball that hit it
+    // took the whole of the momentum away with it.
+    //
+    // And the weight is taken off because the arc below is what applies it: theta'' =
+    // -(g/L) sin theta is the motion a taut rope gives, weight and all. Left in, a tick
+    // of weight would be in the speed *and* in the arc, which is two ticks of gravity in
+    // one -- the swing would run fast and gain height every tick.
+    Vec3 speedNow = ball.velocity + Vec3{0.0, gravity * dt, 0.0};
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
     // away from the anchor.
@@ -227,22 +232,23 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // The part of the speed that is running away from the anchor belongs to the rope,
     // and it is an impulse, so it is written on both ends of the rope: at the ball where
     // it pulls, and at the anchor where it is pulled.
+    Vec3 along = speedNow;
     const double leaving = dot(speedNow, outward);
     if (leaving > 0.0) {
         const Vec3 loss = outward * -leaving;
-        speedNow = speedNow + loss;
+        along = along + loss;
         addForce(at, loss * (ball.mass / dt), ForceKind::Rope, nullptr, owner);
         addForce(anchor, loss * (-ball.mass / dt), ForceKind::Rope, nullptr, kAnchorOwner);
     }
     // On the circle exactly, by the distance it was out by and no more.
     at = anchor + outward * ropeLength;
-    stateOf(at, speedNow, theta, omega, radius, outward);
+    stateOf(at, along, theta, omega, radius, outward);
 
     double left = 1.0 - crossed;
     bool taut = true;
     bool bent = false;
     double bendAt = crossed;
-    Vec3 bendPoint = at, bendIn = speedNow, bendOut{};
+    Vec3 bendPoint = at, bendIn = along, bendOut{};
     for (int phase = 0; phase < kMaxPhases && left > 1e-12; ++phase) {
         if (taut) {
             // The tick's motion on the circle. The rope holds until the tension it has
@@ -270,13 +276,19 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
             const Vec3 nextSpeed = tangent * (ropeLength * omega1);
             at = next;
             speedNow = nextSpeed;
-            left = 0.0;
-            if (endTension <= 0.0) {
-                // The rope let go at `taken`, and what is left of the tick is a fall.
+            // The rope let go at `taken`, and what is left of the tick is a fall -- not a
+            // tick thrown away. It is the same weight, applied to the ball for the time
+            // that is left, which is what a ball with no rope on it does: it is the
+            // arc that ends, not the tick.
+            const double rest = left - taken;
+            if (endTension <= 0.0 && rest > 0.0) {
+                const double fall = dt * rest;
+                at = at + nextSpeed * fall + Vec3{0.0, -0.5 * gravity * fall * fall, 0.0};
+                speedNow = nextSpeed + Vec3{0.0, -gravity * fall, 0.0};
                 bendOut = speedNow;
                 bent = true;
-                left = 0.0;
             }
+            left = 0.0;
             break;
         }
     }
