@@ -543,6 +543,18 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
+    // What the blow is struck against: the speed the ball had at the meeting, not the
+    // speed it would have had if the tick had run to its end unanswered. The ball's
+    // whole velocity at this point carries the whole tick's weight, while the meeting
+    // may have been a tenth of the way in -- and the impulse that stops "the ball's
+    // speed" was therefore stopping a fall that the surface was never in the way of.
+    // Measured on a ball hanging on its rope a millimetre off the triangle's slope: it
+    // met the face at 0.039 m/s and was answered as though it had arrived at 0.347, and
+    // the rope -- which puts the ball back on its circle every tick -- turned the
+    // difference into a swing that grew by a quarter of a metre a second a tick. A
+    // contact answers the speed it was met at; what the rest of the tick would have
+    // brought is the next tick's business.
+    const double strike = std::min(approach, 0.0);
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
     // impulse its arrival was worth -- the momentum it took to stop it. See the note
@@ -605,7 +617,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
             // the top of it" into the floor's answer while "a shape striking its
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(ball, normal, ballHeld);
-            const double impulse = (rebound - closing) / (ballShare + bodyShare);
+            const double impulse = (rebound - strike) / (ballShare + bodyShare);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
@@ -649,7 +661,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
             noteMeeting();
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
-            const double impulse = (rebound - closing) * ball.mass;
+            const double impulse = (rebound - strike) * ball.mass;
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             blown = normal * impulse;
             pressed = impulse;
