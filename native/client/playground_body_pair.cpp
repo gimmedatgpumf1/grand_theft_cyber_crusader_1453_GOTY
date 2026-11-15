@@ -55,8 +55,14 @@ bool PlaygroundRoom::bodyPlacementClear(std::size_t index, const std::array<Vec3
     if (body.count == 0) return true;
     // Not inside either ball. A body put down on a ball is a body the tick would have
     // to push out of it, and nothing in this room is ever pushed out of anything.
+    // Not inside either ball -- but *against* one is a place a hand may put a shape,
+    // and it is the place a hand shoving a shape at the hanging ball ends up in. Asked
+    // for a clear gap of a radius, the last step was always refused and the shape
+    // stopped a centimetre short of the ball it was being pressed on: the ball never
+    // felt the shape, never took a blow, and did not move. A ball with a face laid
+    // flush on it is the ball the contact solver is for.
     for (const Ball& ball : balls_) {
-        if (outlineGap(ball.position, wanted.data(), wanted.data(), body.count, 1.0).gap < ball.radius + kSkin)
+        if (outlineGap(ball.position, wanted.data(), wanted.data(), body.count, 1.0).gap < ball.radius - kSkin)
             return false;
     }
     for (std::size_t i = 0; i < body.count; ++i)
