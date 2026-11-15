@@ -201,19 +201,29 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // read the way every other contact in this room reads it, from what the ball arrived
     // with to what it has now, at the fraction of the tick.
     Vec3 at = ball.previous + travel * crossed;
-    // The speed the ball has to spend on the circle: everything its own tick has already
-    // settled in it -- the air, and any blow it took from the other ball or a shape --
-    // with this tick's weight taken back off. Not the arrival, which is what the ball had
-    // before *the room* moved: a ball struck by the other ball before its own turn is
-    // moving at the blow's speed by the time its turn comes, and reading the arrival
-    // reset the swing to a standstill on every tick it was hit, so the ball that hit it
-    // took the whole of the momentum away with it.
+    // The speed the ball has at the crossing, read the way every other contact in this
+    // room reads a speed mid-tick: from what the ball's own tick started with to what it
+    // ended with, at the fraction of the tick the crossing is at.
     //
-    // And the weight is taken off because the arc below is what applies it: theta'' =
-    // -(g/L) sin theta is the motion a taut rope gives, weight and all. Left in, a tick
-    // of weight would be in the speed *and* in the arc, which is two ticks of gravity in
-    // one -- the swing would run fast and gain height every tick.
-    Vec3 speedNow = ball.velocity + Vec3{0.0, gravity * dt, 0.0};
+    // Not the speed the tick *ended* with, which is the speed half a tick later -- and not
+    // the arrival either, which is what the ball had before the other ball was allowed to
+    // hit it. `began` is the one number that is both: the state this ball's own tick
+    // started from.
+    //
+    // That is also the whole of the weight's accounting, and it has to be. The ball's own
+    // tick applied this tick's weight once; the arc below applies it again, over what is
+    // left of the tick after the crossing. Read at the crossing, the interpolated speed
+    // already carries the weight of the part of the tick behind it, so the two together
+    // are one tick of weight and no more.
+    //
+    // Reading the *end* speed here instead put a whole tick of weight into the speed on
+    // top of the arc's own, and the swing ran fast. Reading it back off with the tick's
+    // weight subtracted -- which is what this line used to do -- ignored the fact that a
+    // surface may have answered that weight already: a ball resting on a slope with its
+    // rope taut was handed half a metre a second of upward speed every tick by nothing at
+    // all, and bounced off the slope for ever. That is where the infinite energy came
+    // from, and this is the line it came from.
+    Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
     // away from the anchor.

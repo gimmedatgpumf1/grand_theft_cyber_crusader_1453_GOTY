@@ -73,6 +73,12 @@ struct Ball {
     // arrived with -- not against the speed gravity lent it on the way, which a ball
     // already lying on the floor has too.
     Vec3 arrival{};
+    // And the speed it had when its *own* tick began, which is not the same number once
+    // something else has already dealt with it this tick. The arrival is read for the
+    // whole room before anything moves; a ball struck by the other ball during that
+    // other ball's walk is doing the blow's speed by the time its own turn comes, and
+    // that -- not the arrival -- is where its own tick starts from.
+    Vec3 began{};
     // Where the tick bent. A ball that meets something takes the answer there and
     // spends the rest of the tick going elsewhere, so its path through a tick is two
     // straight pieces and not one. Drawn as one piece it never goes near the surface: a

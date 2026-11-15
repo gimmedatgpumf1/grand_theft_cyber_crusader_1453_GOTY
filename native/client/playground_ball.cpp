@@ -54,6 +54,10 @@ double PlaygroundRoom::bodyBallGap(const Ball& ball, std::size_t index, Vec3& wa
 
 void PlaygroundRoom::tickBall(Ball& ball) {
     const std::size_t ballIndex = std::size_t(&ball - balls_.data());
+    // Where this ball's own tick starts from, recorded before anything in it can return
+    // early: what the room has already made of it this tick is the state a constraint
+    // applied after the tick has to read.
+    ball.began = ball.velocity;
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
     // ball -- and this half of the tick only adds the faces the ball's own walk meets.
