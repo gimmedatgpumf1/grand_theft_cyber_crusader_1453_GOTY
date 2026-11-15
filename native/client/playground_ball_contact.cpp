@@ -640,7 +640,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
             // the top of it" into the floor's answer while "a shape striking its
             // side" still shoves the ball across the room.
             const double ballShare = ballCompliance(ball, normal, ballHeld);
-            const double impulse = (rebound - closing) / (ballShare + bodyShare);
+            // A contact pushes and never pulls. Where the two are already *separating*
+            // the solve asks for a negative impulse -- the ball pulled back onto the
+            // face it is leaving -- and that is the wrecking ball on the string: a ball
+            // that bounced came back down onto the slope it had bounced off, was pulled
+            // the rest of the way in, and stopped dead, every bounce, in the tick after
+            // it. Measured: a ball leaving the slope at 0.9 m/s was at rest one tick
+            // later, with the contact that stopped it asking for -0.16 m/s of closing.
+            const double impulse = std::max(0.0, (rebound - closing) / (ballShare + bodyShare));
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
@@ -683,8 +690,9 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
             metArrival = -approach / (ballShare + bodyShare);
             noteMeeting();
         } else {
-            // Nowhere to go: the ball takes the whole answer itself.
-            const double impulse = (rebound - closing) * ball.mass;
+            // Nowhere to go: the ball takes the whole answer itself -- and, as above,
+            // only the pushing half of it.
+            const double impulse = std::max(0.0, (rebound - closing)) * ball.mass;
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             blown = normal * impulse;
             pressed = impulse;
