@@ -503,7 +503,12 @@ void PlaygroundRoom::tickBall() {
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
                     if (!pushBodyOutOfBall(index, on.normal, through)) {
-                        ++ballFoundThrough_;
+                        // The place is put right whatever its size -- the ball is not
+                        // left through a face by any amount -- but only a correction the
+                        // room's own resolution could see is counted as a miss. A
+                        // hundredth of a picometre is the arithmetic landing on the
+                        // surface, not the ball being inside it.
+                        if (through > playground_tick::kRepairDepth) ++ballFoundThrough_;
                         ball.position = ball.position + on.normal * through;
                     }
                 }
