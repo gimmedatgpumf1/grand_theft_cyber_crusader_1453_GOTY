@@ -74,8 +74,14 @@ void PlaygroundRoom::tickBalls() {
         Ball& ball = balls_[index];
         if (!ball.frozen || ballNeighboursMoving(ball)) tickBall(ball);
         else {
+            // Asleep: its tick is not run, so what it would have begun with is the
+            // speed it has, and nothing in the room is going to move it this tick --
+            // which is an answer, and the rope must not invent a different one.
             ball.previous = ball.position;
             ball.previousAngle = ball.angle;
+            ball.began = ball.velocity;
+            ball.alone = ball.velocity;
+            ball.answered = true;
         }
         if (rope_.attached && rope_.ball == index) holdOnRope(ball);
     }

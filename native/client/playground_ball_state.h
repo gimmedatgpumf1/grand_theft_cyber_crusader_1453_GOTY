@@ -79,6 +79,17 @@ struct Ball {
     // other ball's walk is doing the blow's speed by the time its own turn comes, and
     // that -- not the arrival -- is where its own tick starts from.
     Vec3 began{};
+    // The speed this tick's own account left the ball with: its weight and the air, and
+    // nothing else. Whatever the ball's speed has beyond this was given to it by
+    // something in the room -- a face, the floor, the other ball, a hand -- and that is
+    // the difference between a tick the ball spent falling and a tick something
+    // answered. The rope reads it, and nothing else does: a rope may not re-derive a
+    // tick that the room has already answered.
+    Vec3 alone{};
+    // Whether anything in the room did answer this tick. The rope is a constraint on
+    // the ball's motion and not an integrator of it: where the room has already said
+    // what the ball does, the rope keeps it on its circle and puts nothing back.
+    bool answered = false;
     // Where the tick bent. A ball that meets something takes the answer there and
     // spends the rest of the tick going elsewhere, so its path through a tick is two
     // straight pieces and not one. Drawn as one piece it never goes near the surface: a

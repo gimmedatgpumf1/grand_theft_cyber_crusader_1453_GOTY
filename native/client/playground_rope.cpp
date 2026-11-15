@@ -154,86 +154,16 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     const double ropeLength = rope.length;
     const double pull = gravity / ropeLength;  // g/L
 
-    // Where the ball's travel through the tick leaves the rope's sphere, going out.
-    const Vec3 travel = ball.position - ball.previous;
-    const Vec3 from = ball.previous - anchor;
-    double crossed = 2.0;
-    // A ball that begins the tick already on the sphere -- which is every tick a ball
-    // on a taut rope begins, because the rope left it there -- is held from the start
-    // whenever its travel runs away from the anchor, and tangential travel counts:
-    // that is the whole of a swing. Reading that off the quadratic alone is reading it
-    // off rounding: the ball sits at exactly one length, and (|from|^2 - L^2) is then
-    // a fraction of a picometre either side of zero, so on the ticks where the
-    // arithmetic rounded it *outwards* the equation had two roots behind the ball and
-    // no crossing ahead of it -- the rope read as slack, let go of a ball that was
-    // still on it, and never caught it again: measured, a swing released from 0.5 rad
-    // was 1.38 m outside its own rope within a tick. Touching is not inside, here as
-    // everywhere else in the room: a ball on the sphere is a ball the rope has hold of.
-    if (length(from) >= ropeLength - ball_shape::kTouch && dot(from, travel) >= 0.0) crossed = 0.0;
-    if (!(crossed <= 1.0)) {
-        const double a = dot(travel, travel);
-        if (a > 0.0) {
-            const double b = 2.0 * dot(from, travel);
-            const double c = dot(from, from) - ropeLength * ropeLength;
-            const double disc = b * b - 4.0 * a * c;
-            if (disc >= 0.0) {
-                const double root = std::sqrt(disc);
-                // The stable pair of roots: q / a for the near one and c / q for the far
-                // one, so neither is lost to cancellation.
-                const double q = -0.5 * (b + (b >= 0.0 ? root : -root));
-                for (const double s : {q / a, q != 0.0 ? c / q : 2.0}) {
-                    if (!(s >= 0.0 && s <= 1.0)) continue;
-                    if (!(dot(from + travel * s, travel) > 0.0)) continue;  // on its way in
-                    if (s < crossed) crossed = s;
-                }
-            }
-        }
-    }
-    if (crossed > 1.0) {
-        // Never left the sphere: the rope held nothing this tick, and a rope that holds
-        // nothing pulls with nothing.
-        rope.taut = false;
-        rope.tension = 0.0;
-        return;
-    }
+    // Where the tick leaves the ball, and what it is doing there. The rope has two
+    // ways to find out, and the difference between them is the whole of what a rope
+    // is allowed to do: it may constrain a motion the room has already decided, and it
+    // may be the motion itself when nothing else acted. It may not do both at once.
+    Vec3 at{};
+    Vec3 speedNow{};
+    bool bent = false;
+    double bendAt = 0.0;
+    Vec3 bendPoint{}, bendIn{}, bendOut{};
 
-    // The meeting, at the fraction of the tick it happens, and the ball's speed there --
-    // read the way every other contact in this room reads it, from what the ball arrived
-    // with to what it has now, at the fraction of the tick.
-    Vec3 at = ball.previous + travel * crossed;
-    // The speed the ball has at the crossing, read the way every other contact in this
-    // room reads a speed mid-tick: from what the ball's own tick started with to what it
-    // ended with, at the fraction of the tick the crossing is at.
-    //
-    // Not the speed the tick *ended* with, which is the speed half a tick later -- and not
-    // the arrival either, which is what the ball had before the other ball was allowed to
-    // hit it. `began` is the one number that is both: the state this ball's own tick
-    // started from.
-    //
-    // That is also the whole of the weight's accounting, and it has to be. The ball's own
-    // tick applied this tick's weight once; the arc below applies it again, over what is
-    // left of the tick after the crossing. Read at the crossing, the interpolated speed
-    // already carries the weight of the part of the tick behind it, so the two together
-    // are one tick of weight and no more.
-    //
-    // What this line used to do was read the *end* speed and add another whole tick of
-    // weight to it -- `ball.velocity + {0, -g dt, 0}`, under a comment that said it was
-    // taking the weight off. On a ball in free swing that merely ran the pendulum fast.
-    // On a ball that a surface was carrying it was the whole of the trouble: the surface
-    // had already answered that weight, so the ball was handed a downward half metre a
-    // second every tick that nothing had asked for, the rope's circle turned it into
-    // travel round the arc, the ball dropped back onto the slope, and the slope answered
-    // it again -- half a metre a second a tick, for ever, out of nothing. That is where
-    // the King's infinite bouncing came from, and this is the line it came from.
-    Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
-    // And the air, over the part of the tick that is left. The ball's own tick spent one
-    // tick of it, and the crossing carries the share of that which lies behind it -- the
-    // room's air is linear in the time it is given -- so this is the share in front: the
-    // whole tick, once, for a ball whose tick the rope takes over. Asked for here and not
-    // in the arc because a ball on a rope is in the same air as any other ball: without
-    // this line the rope's own arc has no air in it at all, and a swing in this room
-    // would never lose anything, which is the one thing air is for.
-    speedNow = ballAirDrag(ball, speedNow, dt * (1.0 - crossed));
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
     // away from the anchor.
@@ -246,77 +176,197 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const Vec3 tangent{std::cos(theta), std::sin(theta), 0};
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
-    double theta = 0.0, omega = 0.0, radius = 0.0;
-    Vec3 outward{};
-    stateOf(at, speedNow, theta, omega, radius, outward);
-    // The part of the speed that is running away from the anchor belongs to the rope,
-    // and it is an impulse, so it is written on both ends of the rope: at the ball where
-    // it pulls, and at the anchor where it is pulled.
-    Vec3 along = speedNow;
-    const double leaving = dot(speedNow, outward);
-    if (leaving > 0.0) {
-        const Vec3 loss = outward * -leaving;
-        along = along + loss;
-        addForce(at, loss * (ball.mass / dt), ForceKind::Rope, nullptr, owner);
-        addForce(anchor, loss * (-ball.mass / dt), ForceKind::Rope, nullptr, kAnchorOwner);
-    }
-    // On the circle exactly, by the distance it was out by and no more.
-    at = anchor + outward * ropeLength;
-    stateOf(at, along, theta, omega, radius, outward);
 
-    double left = 1.0 - crossed;
-    bool taut = true;
-    bool bent = false;
-    double bendAt = crossed;
-    Vec3 bendPoint = at, bendIn = along, bendOut{};
-    for (int phase = 0; phase < kMaxPhases && left > 1e-12; ++phase) {
-        if (taut) {
-            // The tick's motion on the circle. The rope holds until the tension it has
-            // to supply reaches nought; past that it is slack, and the ball flies.
-            double theta1 = theta, omega1 = omega;
-            arcStep(theta, omega, pull, dt * left, theta1, omega1);
-            const double endTension = tensionFor(ball.mass, ropeLength, omega1, theta1, gravity);
-            double taken = left;
-            if (endTension <= 0.0) {
-                // The instant, inside this piece, at which it stops pulling: bracketed
-                // and halved, so there is no step size and no sample to miss.
-                double clear = 0.0, slack = left;
-                for (int pass = 0; pass < kSlackBisections; ++pass) {
-                    const double middle = 0.5 * (clear + slack);
-                    double th = theta, om = omega;
-                    arcStep(theta, omega, pull, dt * middle, th, om);
-                    if (tensionFor(ball.mass, ropeLength, om, th, gravity) > 0.0) clear = middle;
-                    else slack = middle;
-                }
-                taken = clear;
-                arcStep(theta, omega, pull, dt * taken, theta1, omega1);
+    if (ball.answered) {
+        // The room answered this tick, and its answer is the ball's motion. All the
+        // rope is allowed to do to it is what a rope does: keep it no further than its
+        // length, and take the speed that is running away from the anchor -- which is
+        // the speed the rope would have to supply the force to hold, and which belongs
+        // to the anchor, in a pair, exactly as it does below.
+        //
+        // Re-deriving the motion here instead -- which is what this function used to
+        // do whenever the rope was taut at the start of the tick -- threw the room's
+        // answer away. A ball that hit a shape bounced, and the bounce was discarded;
+        // the shape kept the blow it was given, the ball kept the speed it arrived
+        // with, and the pair of them did it again on the next tick. That is a ball
+        // with an infinite force to shove a triangle across the room with, and it is
+        // also why the ball itself never bounced away: nothing it met ever cost it
+        // anything.
+        at = ball.position;
+        speedNow = ball.velocity;
+        const Vec3 arm = at - anchor;
+        const double reach = length(arm);
+        if (reach > 0.0 && reach >= ropeLength - ball_shape::kTouch) {
+            const Vec3 outward = arm / reach;
+            // On the circle exactly, by the distance it was out by and no more.
+            if (reach > ropeLength) at = anchor + outward * ropeLength;
+            const double leaving = dot(speedNow, outward);
+            if (leaving > 0.0) {
+                const Vec3 loss = outward * -leaving;
+                speedNow = speedNow + loss;
+                addForce(at, loss * (ball.mass / dt), ForceKind::Rope, nullptr, owner);
+                addForce(anchor, loss * (-ball.mass / dt), ForceKind::Rope, nullptr, kAnchorOwner);
             }
-            const Vec3 tangent{std::cos(theta1), std::sin(theta1), 0};
-            const Vec3 next = anchor + Vec3{std::sin(theta1), -std::cos(theta1), 0} * ropeLength;
-            const Vec3 nextSpeed = tangent * (ropeLength * omega1);
-            at = next;
-            speedNow = nextSpeed;
-            // The rope let go at `taken`, and what is left of the tick is a fall -- not a
-            // tick thrown away. It is the same weight, applied to the ball for the time
-            // that is left, which is what a ball with no rope on it does: it is the
-            // arc that ends, not the tick.
-            const double rest = left - taken;
-            if (endTension <= 0.0 && rest > 0.0) {
-                const double fall = dt * rest;
-                at = at + nextSpeed * fall + Vec3{0.0, -0.5 * gravity * fall * fall, 0.0};
-                speedNow = nextSpeed + Vec3{0.0, -gravity * fall, 0.0};
-                bendOut = speedNow;
-                bent = true;
-            }
-            left = 0.0;
-            break;
         }
-    }
+    } else {
+
+        // Where the ball's travel through the tick leaves the rope's sphere, going out.
+        const Vec3 travel = ball.position - ball.previous;
+        const Vec3 from = ball.previous - anchor;
+        double crossed = 2.0;
+        // A ball that begins the tick already on the sphere -- which is every tick a ball
+        // on a taut rope begins, because the rope left it there -- is held from the start
+        // whenever its travel runs away from the anchor, and tangential travel counts:
+        // that is the whole of a swing. Reading that off the quadratic alone is reading it
+        // off rounding: the ball sits at exactly one length, and (|from|^2 - L^2) is then
+        // a fraction of a picometre either side of zero, so on the ticks where the
+        // arithmetic rounded it *outwards* the equation had two roots behind the ball and
+        // no crossing ahead of it -- the rope read as slack, let go of a ball that was
+        // still on it, and never caught it again: measured, a swing released from 0.5 rad
+        // was 1.38 m outside its own rope within a tick. Touching is not inside, here as
+        // everywhere else in the room: a ball on the sphere is a ball the rope has hold of.
+        if (length(from) >= ropeLength - ball_shape::kTouch && dot(from, travel) >= 0.0) crossed = 0.0;
+        if (!(crossed <= 1.0)) {
+            const double a = dot(travel, travel);
+            if (a > 0.0) {
+                const double b = 2.0 * dot(from, travel);
+                const double c = dot(from, from) - ropeLength * ropeLength;
+                const double disc = b * b - 4.0 * a * c;
+                if (disc >= 0.0) {
+                    const double root = std::sqrt(disc);
+                    // The stable pair of roots: q / a for the near one and c / q for the far
+                    // one, so neither is lost to cancellation.
+                    const double q = -0.5 * (b + (b >= 0.0 ? root : -root));
+                    for (const double s : {q / a, q != 0.0 ? c / q : 2.0}) {
+                        if (!(s >= 0.0 && s <= 1.0)) continue;
+                        if (!(dot(from + travel * s, travel) > 0.0)) continue;  // on its way in
+                        if (s < crossed) crossed = s;
+                    }
+                }
+            }
+        }
+        if (crossed > 1.0) {
+            // Never left the sphere: the rope held nothing this tick, and a rope that holds
+            // nothing pulls with nothing.
+            rope.taut = false;
+            rope.tension = 0.0;
+            return;
+        }
+
+        // The meeting, at the fraction of the tick it happens, and the ball's speed there --
+        // read the way every other contact in this room reads it, from what the ball arrived
+        // with to what it has now, at the fraction of the tick.
+        at = ball.previous + travel * crossed;
+        // The speed the ball has at the crossing, read the way every other contact in this
+        // room reads a speed mid-tick: from what the ball's own tick started with to what it
+        // ended with, at the fraction of the tick the crossing is at.
+        //
+        // Not the speed the tick *ended* with, which is the speed half a tick later -- and not
+        // the arrival either, which is what the ball had before the other ball was allowed to
+        // hit it. `began` is the one number that is both: the state this ball's own tick
+        // started from.
+        //
+        // That is also the whole of the weight's accounting, and it has to be. The ball's own
+        // tick applied this tick's weight once; the arc below applies it again, over what is
+        // left of the tick after the crossing. Read at the crossing, the interpolated speed
+        // already carries the weight of the part of the tick behind it, so the two together
+        // are one tick of weight and no more.
+        //
+        // What this line used to do was read the *end* speed and add another whole tick of
+        // weight to it -- `ball.velocity + {0, -g dt, 0}`, under a comment that said it was
+        // taking the weight off. On a ball in free swing that merely ran the pendulum fast.
+        // On a ball that a surface was carrying it was the whole of the trouble: the surface
+        // had already answered that weight, so the ball was handed a downward half metre a
+        // second every tick that nothing had asked for, the rope's circle turned it into
+        // travel round the arc, the ball dropped back onto the slope, and the slope answered
+        // it again -- half a metre a second a tick, for ever, out of nothing. That is where
+        // the King's infinite bouncing came from, and this is the line it came from.
+        speedNow = ball.began + (ball.velocity - ball.began) * crossed;
+        // And the air, over the part of the tick that is left. The ball's own tick spent one
+        // tick of it, and the crossing carries the share of that which lies behind it -- the
+        // room's air is linear in the time it is given -- so this is the share in front: the
+        // whole tick, once, for a ball whose tick the rope takes over. Asked for here and not
+        // in the arc because a ball on a rope is in the same air as any other ball: without
+        // this line the rope's own arc has no air in it at all, and a swing in this room
+        // would never lose anything, which is the one thing air is for.
+        speedNow = ballAirDrag(ball, speedNow, dt * (1.0 - crossed));
+        double theta = 0.0, omega = 0.0, radius = 0.0;
+        Vec3 outward{};
+        stateOf(at, speedNow, theta, omega, radius, outward);
+        // The part of the speed that is running away from the anchor belongs to the rope,
+        // and it is an impulse, so it is written on both ends of the rope: at the ball where
+        // it pulls, and at the anchor where it is pulled.
+        Vec3 along = speedNow;
+        const double leaving = dot(speedNow, outward);
+        if (leaving > 0.0) {
+            const Vec3 loss = outward * -leaving;
+            along = along + loss;
+            addForce(at, loss * (ball.mass / dt), ForceKind::Rope, nullptr, owner);
+            addForce(anchor, loss * (-ball.mass / dt), ForceKind::Rope, nullptr, kAnchorOwner);
+        }
+        // On the circle exactly, by the distance it was out by and no more.
+        at = anchor + outward * ropeLength;
+        stateOf(at, along, theta, omega, radius, outward);
+
+        double left = 1.0 - crossed;
+        bool taut = true;
+        bent = false;
+        bendAt = crossed;
+        bendPoint = at;
+        bendIn = along;
+        bendOut = {};
+        for (int phase = 0; phase < kMaxPhases && left > 1e-12; ++phase) {
+            if (taut) {
+                // The tick's motion on the circle. The rope holds until the tension it has
+                // to supply reaches nought; past that it is slack, and the ball flies.
+                double theta1 = theta, omega1 = omega;
+                arcStep(theta, omega, pull, dt * left, theta1, omega1);
+                const double endTension = tensionFor(ball.mass, ropeLength, omega1, theta1, gravity);
+                double taken = left;
+                if (endTension <= 0.0) {
+                    // The instant, inside this piece, at which it stops pulling: bracketed
+                    // and halved, so there is no step size and no sample to miss.
+                    double clear = 0.0, slack = left;
+                    for (int pass = 0; pass < kSlackBisections; ++pass) {
+                        const double middle = 0.5 * (clear + slack);
+                        double th = theta, om = omega;
+                        arcStep(theta, omega, pull, dt * middle, th, om);
+                        if (tensionFor(ball.mass, ropeLength, om, th, gravity) > 0.0) clear = middle;
+                        else slack = middle;
+                    }
+                    taken = clear;
+                    arcStep(theta, omega, pull, dt * taken, theta1, omega1);
+                }
+                const Vec3 tangent{std::cos(theta1), std::sin(theta1), 0};
+                const Vec3 next = anchor + Vec3{std::sin(theta1), -std::cos(theta1), 0} * ropeLength;
+                const Vec3 nextSpeed = tangent * (ropeLength * omega1);
+                at = next;
+                speedNow = nextSpeed;
+                // The rope let go at `taken`, and what is left of the tick is a fall -- not a
+                // tick thrown away. It is the same weight, applied to the ball for the time
+                // that is left, which is what a ball with no rope on it does: it is the
+                // arc that ends, not the tick.
+                const double rest = left - taken;
+                if (endTension <= 0.0 && rest > 0.0) {
+                    const double fall = dt * rest;
+                    at = at + nextSpeed * fall + Vec3{0.0, -0.5 * gravity * fall * fall, 0.0};
+                    speedNow = nextSpeed + Vec3{0.0, -gravity * fall, 0.0};
+                    bendOut = speedNow;
+                    bent = true;
+                }
+                left = 0.0;
+                break;
+            }
+        }
+
+    }  // the ball's own motion, whatever it was: the rope only held it no further
 
     // What the rope is doing at the end of the tick, and the pull it is giving: the
     // centripetal force the circle costs, written at the ball where it pulls and at the
     // anchor where it is pulled, so the pair is on the ledger as a pair. A rope that
     // would have to push reads as slack and writes nothing.
+    double theta = 0.0, omega = 0.0, radius = 0.0;
+    Vec3 outward{};
     stateOf(at, speedNow, theta, omega, radius, outward);
     const double endTension = tensionFor(ball.mass, ropeLength, omega, theta, gravity);
     rope.taut = radius >= ropeLength - ball_shape::kTouch && endTension > 0.0;
