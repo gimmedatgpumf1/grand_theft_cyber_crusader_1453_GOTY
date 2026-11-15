@@ -190,8 +190,9 @@ void PlaygroundRoom::interpolate() {
     // projection of the drawn position only: it touches no velocity, no force and no
     // ledger line, and it cannot conjure anything, because it is not part of the tick.
     if (sceneReady_) {
-        for (int pass = 0; pass < 4; ++pass) {
-            std::size_t worst = kBodyCount;
+        const Vec3 legal = ball_.position;  // where the tick really left it
+        bool clear = false;
+        for (int pass = 0; pass < 16 && !clear; ++pass) {
             double inside = ball_.radius - ball_.shown.y;
             Vec3 way{0, 1, 0};
             for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -202,13 +203,20 @@ void PlaygroundRoom::interpolate() {
                 if (ball_.radius - gap.gap > inside) {
                     inside = ball_.radius - gap.gap;
                     way = gap.normal;
-                    worst = index;
                 }
             }
-            if (!(inside > 0.0)) break;
+            if (!(inside > 0.0)) {
+                clear = true;
+                break;
+            }
             ball_.shown = ball_.shown + way * inside;
-            (void)worst;
         }
+        // A ball drawn between two surfaces that close on it may be pushed out of one
+        // and into the other, round and round: there is no place in the middle of a
+        // pinch. Then the picture shows the ball where the tick left it, which is a
+        // place the room has already made legal, and the frame is one of the two ends
+        // of its own motion rather than a place it was never in.
+        if (!clear) ball_.shown = legal;
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
