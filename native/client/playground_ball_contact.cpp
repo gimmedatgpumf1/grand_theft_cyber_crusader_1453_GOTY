@@ -14,6 +14,28 @@ using namespace playground_detail;
 // will not close.
 constexpr int kBallSurfacePasses = 64;
 
+// Can this surface hold the ball still where it is?
+//
+// The question is not "can friction hold a point there". A ball is not a point: a
+// point on a slope is held by friction, and a ball on the same slope rolls away,
+// because the thing that has to be stopped is a *roll* and friction along the
+// surface cannot stop one -- the bottom of a rolling ball is not moving, so there is
+// no slip for it to answer. What stops a roll is the couple the ground's own squash
+// can supply, M = Crr * N * r, and a ball on a slope of angle a needs N * r * tan(a)
+// of it to stay put. So the surface holds the ball when
+//
+//     tan(a) <= Crr,        a little over two degrees,
+//
+// and the friction cone (mu_s = 0.70, thirty-five degrees) is a much weaker
+// condition that never decides anything on its own. Asked with the cone alone, a ball
+// put down on a ten degree ramp was declared able to stay on it and did -- and a
+// basketball does not: it rolls off, and the room has one coefficient that says so.
+bool holdsBall(Vec3 normal) {
+    const double level = std::max(0.0, normal.y);
+    const double along = std::sqrt(std::max(0.0, 1.0 - level * level));
+    return kBallStaticFriction * level >= along && kBallRollingResistance * level >= along;
+}
+
 // The surfaces the ball is against, holding it out of themselves.
 //
 // A contact says one thing: the two are not closing. Everything else in the tick --
@@ -54,9 +76,7 @@ void PlaygroundRoom::settleBallSurfaces() {
             return Vec3{faces[index].velocity.x - faces[index].spin * arm.y,
                         faces[index].velocity.y + faces[index].spin * arm.x, faces[index].velocity.z};
         };
-        const auto holds = [](Vec3 normal) {
-            return kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
-        };
+        const auto holds = [](Vec3 normal) { return holdsBall(normal); };
         // A corner has more than one face, and the faces have to agree.
         //
         // Answering each face once, in turn, is not solving a corner: the ball's speed
@@ -469,9 +489,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // where the two are, and the ball may not travel into it any further.
         const double into = dot(ball.velocity - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
-        if (normal.y > 1e-9)
-            ball.standing = ball.standing &&
-                            kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        if (normal.y > 1e-9) ball.standing = ball.standing && holdsBall(normal);
         // That stop is a contact like any other, and a contact the ball feels is a
         // force on it -- so it is written, and it goes in the tick's account. A
         // second meeting with the same shape in one tick used to be answered in
@@ -654,8 +672,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // carry the ball made a ball resting against the cube drop and bounce every
     // other tick.
     if (normal.y > 1e-9) {
-        ball.standing = ball.standing &&
-                        kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+        ball.standing = ball.standing && holdsBall(normal);
         // The surface that is under it, remembered: a ball left standing on
         // something is pressed at this point, so this is where its weight comes
         // back up and where the arrow for it belongs.
@@ -785,9 +802,7 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     // within this much is a wall, not a floor: it carries nothing, and asking it to
     // carry the ball made a ball resting against the cube drop and bounce every
     // other tick.
-    if (normal.y > 1e-9)
-        ball.standing = ball.standing &&
-                        kBallStaticFriction * normal.y >= std::sqrt(std::max(0.0, 1.0 - normal.y * normal.y));
+    if (normal.y > 1e-9) ball.standing = ball.standing && holdsBall(normal);
     // The dot and the ball are two bodies in one blow: each one's share is written
     // down at the place they met, so F shows the pair of arrows the exchange is.
     {
