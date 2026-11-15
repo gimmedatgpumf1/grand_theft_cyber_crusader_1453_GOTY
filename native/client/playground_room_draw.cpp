@@ -224,22 +224,7 @@ void PlaygroundRoom::interpolate() {
     // was thrown off its path by 5e-2 m on some frames, and then teleported. Walking
     // back along the path cannot do that: every place it can choose is a place the
     // tick really passed through.
-    // How deep a candidate drawn place is inside the drawn room, and what counts as
-    // inside.
-    //
-    // Touching is not inside, and the difference is not zero: a ball resting on a
-    // surface is at exactly one radius from it, and the arithmetic that gets it there
-    // is good to about a micrometre. That is the room's own band -- `kTouch`, the same
-    // micrometre the walk and the separation use to tell a meeting from a crossing --
-    // and the drawing asks its legality question in the same terms. Asking it in terms
-    // of "greater than zero" instead was wrong and it was visible: sliding down the
-    // triangle's slope, every place of every tick's path sits 1.11e-16 m from the
-    // face -- the round-off of an exact touch -- so every frame was judged to be
-    // inside, and the draw-walk went all the way back to where the tick *began*. The
-    // ball was drawn a whole tick, 50 ms, behind the position the room had for it, on
-    // every frame of a slide: exactly the lag the King saw. A place is inside when it
-    // is deeper than a touch, and not before.
-    constexpr double kTouchBand = ball_shape::kTouch;
+    // How deep a candidate drawn place is inside the drawn room.
     const auto depthInside = [&](const Vec3& where) {
         double inside = ball_.radius - where.y;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -251,20 +236,41 @@ void PlaygroundRoom::interpolate() {
         }
         return inside;
     };
+    // How deep the drawn ball is allowed to be: exactly as deep as the place the room
+    // itself left, in the same frame. That is the King's standard -- the picture may
+    // never show the ball deeper inside a shape than the room put it -- and it is what
+    // keeps a ball that is *touching* a surface on the screen. A ball lying on the
+    // triangle's slope is at exactly one radius from the face, and the arithmetic that
+    // puts it there reads 1.11e-16 m either side of zero from tick to tick: without
+    // this, every place of a sliding ball's path is judged "inside", the draw-walk goes
+    // back to where the tick began, and the ball is drawn a whole tick -- 50 ms --
+    // behind the room on every frame of a slide. That is the lag the King saw. Touching
+    // is not inside, and the place that says so is the room's own.
+    const double allowed = sceneReady_ ? std::max(0.0, depthInside(alongPath(1.0))) : 0.0;
     double drawnAt = ballAlpha;
-    if (sceneReady_ && depthInside(alongPath(drawnAt)) > kTouchBand) {
-        // The latest place on this tick's path that is outside the room it is drawn
-        // in, found by halving until it is pinned down to a part in 2^40 of a tick.
-        // Not a step size and not a tolerance: the root of "where does the path stop
-        // being outside", found the way the room finds where a walk stops being clear.
-        double clear = 0.0, inside = drawnAt;
-        for (int pass = 0; pass < 40; ++pass) {
-            const double middle = 0.5 * (clear + inside);
-            if (depthInside(alongPath(middle)) > kTouchBand) inside = middle;
-            else clear = middle;
+    if (sceneReady_ && depthInside(alongPath(drawnAt)) > allowed) {
+        if (depthInside(alongPath(0.0)) > allowed) {
+            // Not one place of this tick's path is as clear as the place the room ends
+            // on: something has been drawn over the ground the ball already covered.
+            // The room's own place is then the best there is, and it is legal by the
+            // room's own measure.
+            ball_.shown = alongPath(1.0);
+            drawnAt = 1.0;
+        } else {
+            // The latest place on this tick's path that is as clear as the room's own,
+            // found by halving until it is pinned down to a part in 2^40 of a tick. Not
+            // a step size and not a tolerance: the root of "where does this path stop
+            // being deeper inside than the room left the ball", found the way the room
+            // finds where a walk stops being clear.
+            double clear = 0.0, inside = drawnAt;
+            for (int pass = 0; pass < 40; ++pass) {
+                const double middle = 0.5 * (clear + inside);
+                if (depthInside(alongPath(middle)) > allowed) inside = middle;
+                else clear = middle;
+            }
+            drawnAt = clear;
+            ball_.shown = alongPath(drawnAt);
         }
-        drawnAt = clear;
-        ball_.shown = alongPath(drawnAt);
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
