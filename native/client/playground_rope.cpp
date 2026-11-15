@@ -216,13 +216,15 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // already carries the weight of the part of the tick behind it, so the two together
     // are one tick of weight and no more.
     //
-    // Reading the *end* speed here instead put a whole tick of weight into the speed on
-    // top of the arc's own, and the swing ran fast. Reading it back off with the tick's
-    // weight subtracted -- which is what this line used to do -- ignored the fact that a
-    // surface may have answered that weight already: a ball resting on a slope with its
-    // rope taut was handed half a metre a second of upward speed every tick by nothing at
-    // all, and bounced off the slope for ever. That is where the infinite energy came
-    // from, and this is the line it came from.
+    // What this line used to do was read the *end* speed and add another whole tick of
+    // weight to it -- `ball.velocity + {0, -g dt, 0}`, under a comment that said it was
+    // taking the weight off. On a ball in free swing that merely ran the pendulum fast.
+    // On a ball that a surface was carrying it was the whole of the trouble: the surface
+    // had already answered that weight, so the ball was handed a downward half metre a
+    // second every tick that nothing had asked for, the rope's circle turned it into
+    // travel round the arc, the ball dropped back onto the slope, and the slope answered
+    // it again -- half a metre a second a tick, for ever, out of nothing. That is where
+    // the King's infinite bouncing came from, and this is the line it came from.
     Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
     // And the air, over the part of the tick that is left. The ball's own tick spent one
     // tick of it, and the crossing carries the share of that which lies behind it -- the
