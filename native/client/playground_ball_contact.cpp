@@ -182,13 +182,11 @@ void PlaygroundRoom::settleBallSurfaces(Ball& ball) {
                         // way -- a push and its partner, and no momentum from nowhere.
                         const Vec3 blow = normal * (-ball.mass * (closing - allowed));
                         ball.velocity = ball.velocity - normal * (closing - allowed);
-                        // A shape asleep, or held by the hand, is a surface and not a
-                        // thing that may be shoved: handing it this blow moved it *and*
-                        // woke it out of nothing but the ball's own weight, because the
-                        // ball's flight through the tick is a fall and a fall always
-                        // arrives at the face the ball is lying on -- the ball with an
-                        // infinite force to shove a triangle with. The ball is still
-                        // stopped here; what holds the shape is what always held it.
+                        // A shape asleep, or in the hand, is a surface and not a thing
+                        // that may be shoved: this blow moved it and woke it out of
+                        // nothing but the ball's own weight -- the ball with an infinite
+                        // force to shove a triangle with. The ball is still stopped here;
+                        // what holds the shape is what always held it.
                         if (!bodyHeld(index) && !body.frozen)
                             pushBody(body, at, blow * -1.0, ForceKind::Contact);
                         FaceBlow& slot = blows[index * kMaxOutlineCorners + edge];
@@ -387,16 +385,10 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // answered against the ball's mass once per tick and the ball crept for ever.
         // A contact that is not approaching cannot push anything.
         //
-        // A blow is *travel*, and it is not the ball's whole speed either. A ball on a
-        // taut rope carries a tick of fall that the rope is about to take back, and read
-        // whole it woke the shape it was merely lying on, every tick, with a share of an
-        // impulse that was never a blow. A turn is not travel: a patch spinning along a
-        // face cannot close on it, it can only rub, and a rub nobody is pressing with is
-        // nothing at all -- a ball resting on the slope, turning on the spot against it
-        // with no load, was waking the triangle every tick for it. See ballOffTheRope().
-        // And a body is woken by what the ball *brought*: this tick's fall is gravity
-        // and nothing else, and a shape woken by it is a shape woken by a ball lying on
-        // it. Read at `arrival`, a ball at rest brings nothing.
+        // A blow is *travel*, and not the ball's whole speed: a ball on a taut rope
+        // carries a tick of fall the rope takes back. A turn is not travel either -- a
+        // patch spinning along a face only rubs. And a body is woken by what the ball
+        // *brought*: read at `arrival`, a ball at rest brings nothing. See ballOffTheRope().
         const Vec3 closingVelocity = ballOffTheRope(ball, ball.arrival) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
@@ -586,7 +578,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // ball left the plank, fell for a tick, landed, and was launched again -- the
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
-    const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
+    //
+    // And "arrived" is read at the *beginning* of the ball's own tick: a ball on a taut
+    // rope over the slope falls a tick's worth into it every tick -- that is what a tick
+    // is, the weight and then the walk -- and three quarters of the half metre a second
+    // gravity lent it came back as a launch, for ever. Read at the beginning, that ball
+    // brought nothing with it and did not arrive.
+    const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
+    const double rebound = (approach < 0.0 && !resting && arrived) ? -kBallRestitution * approach : 0.0;
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
     // impulse its arrival was worth -- the momentum it took to stop it. See the note
