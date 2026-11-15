@@ -242,6 +242,30 @@ void PlaygroundRoom::updateDrag() {
         // face of it is really travelling and everything that meets it has to know.
         handSpeed_ = (body.centre - carried) * (1.0 / kTick);
         placeCorners(body);
+        // A shape the hand carries is placed, so the shapes' own walk never sees it
+        // come: nothing is swept, nothing is solved, and a ball it is pressed on would
+        // never be touched at all. Measured: a triangle carried into the hanging ball
+        // at a metre a second stopped dead against it and the ball recorded 0.0000 m/s
+        // for forty ticks -- a ball that does not bounce away because the room never
+        // told it anything had arrived. So the hand's own step is answered here, with
+        // the same coefficient every other surface in the room answers with.
+        for (Ball& ball : balls_) {
+            Vec3 way{};
+            Vec3 at{};
+            const std::size_t shape = dragBody_ < kBodyCount ? dragBody_ : 0;
+            double deep = bodyBallGap(ball, shape, way, at);
+            if (!(deep < 0.0)) continue;
+            const Vec3 normal = way * -1.0;                    // out of the shape, into the ball
+            const double pressing = dot(handSpeed_, normal);    // the face's speed into the ball
+            if (!(pressing > 0.0)) continue;
+            // Out of the shape, and away at the room's own restitution -- the speed the
+            // ball would have been given by that face if it had stepped into it.
+            ball.position = ball.position - way * (deep - ball_shape::kSkin);
+            const double along = dot(ball.velocity, normal);
+            ball.velocity = ball.velocity + normal * (ball_shape::kBallRestitution * pressing - along);
+            ball.previous = ball.shown = ball.position;
+            ball.frozen = false;
+        }
         body.previousCentre = body.centre;
         body.previousAngle = body.angle;
         body.previous = body.shown = body.position;
