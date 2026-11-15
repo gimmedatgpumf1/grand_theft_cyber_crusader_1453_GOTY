@@ -80,6 +80,7 @@ void PlaygroundRoom::tickBalls() {
             ball.previous = ball.position;
             ball.previousAngle = ball.angle;
             ball.began = ball.velocity;
+            ball.alone = ball.velocity;
             ball.answered = true;
         }
         if (rope_.attached && rope_.ball == index) holdOnRope(ball);

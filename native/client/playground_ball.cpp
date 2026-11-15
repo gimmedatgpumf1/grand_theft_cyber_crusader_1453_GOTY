@@ -82,6 +82,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     ball.bent = false;
     if (ballHeld(ball)) {
         ball.velocity = {};
+        ball.alone = ball.velocity;
         ball.answered = true;  // the hand is the answer, and it is not the rope's to change
         ball.spin = 0.0;
         ball.frozen = false;
@@ -91,6 +92,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving(ball)) {
+        ball.alone = ball.velocity;
         ball.answered = true;  // asleep and still: nothing here for the rope to move
         return;
     }
@@ -195,6 +197,10 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
+    // What the tick's own account comes to: the air and the weight, and nothing else.
+    // Everything after this line that changes the ball's speed is something in the room
+    // answering it, and the rope has to be able to tell the two apart -- see `alone`.
+    ball.alone = ball.velocity;
 
 
     // What the ball is standing on is not relearned halfway through the tick. It
@@ -970,6 +976,14 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         const double left = 1.0 - ball.bendAt;
         if (left > 0.0) ball.bendOut = (ball.position - met) / (kTick * left);
     }
+    // Whether anything in the room answered this tick. A ball against something has been
+    // answered even if the answer was "no" -- a face holding it up is a face it is not
+    // falling through -- and a ball whose speed is no longer the speed its own weight and
+    // air would have left it with has been answered too. That second reading is what
+    // catches the answer a blow leaves behind after the ball is already clear of what
+    // struck it, and the solver's answers, which never pass through the walk at all.
+    ball.answered = ball.answered || ball.touching ||
+                    length(ball.velocity - ball.alone) > playground_tick::kQuantumSpeed;
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;

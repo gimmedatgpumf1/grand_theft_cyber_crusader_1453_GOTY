@@ -94,6 +94,22 @@ struct Ball {
     // its circle each tick, and the swing grew by a quarter of a metre a second a tick
     // out of nothing. A kept contact is not an arrival, and the rope is what says so.
     bool answered = false;
+    // The speed this tick's own account leaves the ball with: its weight and the air, and
+    // nothing else. Whatever the ball's speed has beyond this was given to it by something
+    // in the room -- a face, the floor, the other ball, a hand, a shape's own solver -- and
+    // that is the difference between a tick the ball spent falling and a tick something
+    // answered it. The rope reads it, and nothing else does.
+    //
+    // It is a separate question from `answered` on purpose: the walk below is not the only
+    // place a ball is answered. A shape leaning on the ball, a shape standing on it, the
+    // pair being solved against each other -- all of that happens in the shapes' half of
+    // the tick, before the ball's own, and none of it passes through the walk. Read as
+    // "the walk met something", the rope re-derived the tick and threw away the solver's
+    // answer, which is a ball that keeps its arc while the shape it is against is handed
+    // the blow: infinite force in one direction and none in the other. So the test is the
+    // one the room can always make about itself: is the ball's speed still the speed its
+    // own weight and the air would have left it with?
+    Vec3 alone{};
     // Where the tick bent. A ball that meets something takes the answer there and
     // spends the rest of the tick going elsewhere, so its path through a tick is two
     // straight pieces and not one. Drawn as one piece it never goes near the surface: a
