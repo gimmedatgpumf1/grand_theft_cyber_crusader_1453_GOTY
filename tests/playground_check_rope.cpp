@@ -85,6 +85,10 @@ int playgroundRopeChecks() {
         const Vec3 before = room.ropeBall().position;
         settle(room, 400);
         const double moved = gtc::native::length(room.ropeBall().position - before);
+        const double weight = room.ropeBall().mass * 9.8;
+        bool onTheSlope = false;
+        for (std::size_t i = 0; i < room.ropeBall().touchCount; ++i)
+            onTheSlope = onTheSlope || room.ropeBall().touches[i].body == 1;
         std::snprintf(detail, sizeof detail,
                       "400 ticks: the bob moved %.3e m (log2 %.1f), it is %.6f m below its anchor, the rope is "
                       "%.3f m and carrying %.3f N against a weight of %.3f N",
@@ -382,8 +386,8 @@ int playgroundRopeChecks() {
         // The triangle stood on its vertical edge with its slope rising to the right and
         // its face exactly under the hanging ball: the King's picture, to the millimetre.
         auto& triangle = room.bodies_[1];
-        triangle.angle = 1.5707963267948966;
-        triangle.centre = Vec3{3.62, 0.7, 0};
+        triangle.angle = -1.5707963267948966;
+        triangle.centre = Vec3{2.97, 1.45, 0};
         room.placeCorners(triangle);
         triangle.previous = triangle.position;
         triangle.previousCentre = triangle.centre;
@@ -404,15 +408,23 @@ int playgroundRopeChecks() {
             ++ticks;
         }
         const double moved = gtc::native::length(room.ropeBall().position - before);
+        const double weight = room.ropeBall().mass * 9.8;
+        bool onTheSlope = false;
+        for (std::size_t i = 0; i < room.ropeBall().touchCount; ++i)
+            onTheSlope = onTheSlope || room.ropeBall().touches[i].body == 1;
         const double rise = highest - energyBefore;
         std::snprintf(detail, sizeof detail,
                       "150 s of a ball on a rope resting on the triangle's slope: it moved %.3e m (log2 %.1f) and "
                       "the room's energy rose by %.3e J (log2 %.1f) above %.6f J; it is %.6f m from its anchor, "
-                      "the rope is %.3f m and carrying %.3f N",
+                      "the rope is %.3f m and carrying %.3f N of its %.3f N weight, with the slope under it (%s)",
                       moved, moved > 0.0 ? std::log2(moved) : -1000.0, rise,
                       rise > 0.0 ? std::log2(rise) : -1000.0, energyBefore, room.ropeBallDistance(),
-                      room.ropeLength(), room.ropeTension());
-        check(moved == 0.0 && rise <= 0.0 && room.ropeTaut(),
+                      room.ropeLength(), room.ropeTension(), weight, onTheSlope ? "yes" : "no");
+        // And the picture really is the one he sent: the slope under the ball must be
+        // carrying part of its weight, or this would be a ball hanging in free air and the
+        // check would be checking nothing. The rope's pull being less than the weight is
+        // the proof that the slope is under it.
+        check(moved == 0.0 && rise <= 0.0 && room.ropeTaut() && onTheSlope,
               "a ball resting on a slope on a taut rope rests, and conjures nothing", detail);
     }
 
