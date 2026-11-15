@@ -145,21 +145,23 @@ void buildTheCorner(PlaygroundRoom& room, int settleTicks) {
 // here is what the screen gets.
 double drawnDepth(PlaygroundRoom& room, std::size_t& which) {
     room.interpolate();
-    double depth = room.ball_.radius - room.ball_.shown.y;
+    // A gap is a distance, not a depth: the closest surface wins, so the answer is the
+    // smallest gap there is, and a depth is what is left of the ball's radius when that
+    // gap is smaller than it.
+    double closest = room.ball_.shown.y;  // the floor: the height of the ball's middle
     which = room.kBodyCount;
     for (std::size_t index = 0; index < room.kBodyCount; ++index) {
         const auto& body = room.bodies_[index];
         if (body.count == 0) continue;
         const double gap = gtc::native::ball_shape::outlineGap(room.ball_.shown, body.shown.data(),
                                                               body.shown.data(), body.count, 1.0)
-                               .gap -
-                           room.ball_.radius;
-        if (gap > depth) {
-            depth = gap;
+                               .gap;
+        if (gap < closest) {
+            closest = gap;
             which = index;
         }
     }
-    return depth;
+    return room.ball_.radius - closest;
 }}  // namespace
 
 // Returns how many of the checks failed.
