@@ -394,7 +394,10 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // face cannot close on it, it can only rub, and a rub nobody is pressing with is
         // nothing at all -- a ball resting on the slope, turning on the spot against it
         // with no load, was waking the triangle every tick for it. See ballOffTheRope().
-        const Vec3 closingVelocity = ballOffTheRope(ball, ball.velocity) - pointSpeed(*body, contactPoint);
+        // And a body is woken by what the ball *brought*: this tick's fall is gravity
+        // and nothing else, and a shape woken by it is a shape woken by a ball lying on
+        // it. Read at `arrival`, a ball at rest brings nothing.
+        const Vec3 closingVelocity = ballOffTheRope(ball, ball.arrival) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
