@@ -218,8 +218,26 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const double reach = length(arm);
         if (reach > 0.0 && reach >= ropeLength - ball_shape::kTouch) {
             const Vec3 outward = arm / reach;
-            // On the circle exactly, by the distance it was out by and no more.
-            if (reach > ropeLength) at = anchor + outward * ropeLength;
+            // On the circle exactly, by the distance it was out by and no more -- and
+            // paid for. The ball's own tick does not know the rope is there, so its
+            // travel is spent before the rope sees it and pulling it back is a lift.
+            // A ball resting on a slope slides down the face, the rope stops it at its
+            // length, and the whole tick's slide lands outside the circle: measured,
+            // the rope lifted the ball thirty-six millimetres in one tick -- ninety-six
+            // millijoules -- and took twelve back in the speed it removed, leaving a
+            // ball handed height for nothing, every tick, which is a swing that never
+            // dies. A constraint does no work, so the lift comes out of the ball's own
+            // speed; one that cannot pay for it is not lifted, it stops.
+            if (reach > ropeLength) {
+                const Vec3 onto = anchor + outward * ropeLength;
+                const double speed2 = dot(speedNow, speedNow);
+                const double rise = onto.y - at.y;
+                if (rise > 0.0 && speed2 > 0.0) {
+                    const double left = speed2 - 2.0 * gravity * rise;
+                    speedNow = left > 0.0 ? speedNow * std::sqrt(left / speed2) : Vec3{};
+                }
+                at = onto;
+            }
             const double leaving = dot(speedNow, outward);
             if (leaving > 0.0) {
                 const Vec3 loss = outward * -leaving;
