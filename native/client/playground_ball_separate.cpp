@@ -244,6 +244,17 @@ void PlaygroundRoom::separateBall() {
     // rather than inside by 1e-16 m. The King asked for not one micrometre, and the
     // honest answer is that the ball is not one part in nine billion of a micrometre
     // through anything -- it is outside.
+    // How small a depth this arithmetic can even express. A distance between outlines is
+    // built from coordinates of a metre or three, and a double holds sixteen significant
+    // figures, so the *computation* of a gap is uncertain at about eight units in the
+    // last place of the coordinates -- a few femtometres. A depth below that is not the
+    // ball being inside something: it is the number that says how far outside it is
+    // coming out of the subtraction with its last digits in a different order, and
+    // nudging the ball by it would be chasing the rounding error. So the cone below is
+    // only ever about depths this arithmetic can tell apart, and everything above it is
+    // corrected, at whatever size -- see the note above about a micrometre.
+    const double dust = 8.0 * std::numeric_limits<double>::epsilon() *
+                        (std::abs(ball_.position.x) + std::abs(ball_.position.y) + ball_.radius + 1.0);
     const Vec3 beforeTheLastWord = ball_.position;
     for (int pass = 0; pass < 64; ++pass) {
         // The floor is one of the constraints, not a line to be run afterwards: a ball
@@ -265,7 +276,7 @@ void PlaygroundRoom::separateBall() {
                 way = out * -1.0;
             }
         }
-        if (!(depth > 0.0)) break;
+        if (!(depth > dust)) break;
         ball_.position = ball_.position + way * depth;
     }
     // And if the shapes still have it -- a ball under a shape lying on the floor, where
