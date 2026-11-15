@@ -788,7 +788,11 @@ void PlaygroundRoom::answerSupportedShapes() {
     ManifoldSet again;
     std::size_t slot[kMaxTickManifolds] = {};
     for (std::size_t i = 0; i < tickPatches_.count; ++i) {
-        if (tickPatches_.items[i].ball) continue;
+        // Which patches are the shapes' own. A patch on a ball is the ball's, whatever
+        // its index: `ball` is an index now, and read as a yes it skipped the body's
+        // own patches (kNoBall is not nought) and kept the thrown ball's (index nought
+        // is nought) -- the wrong set, both ways round.
+        if (tickPatches_.items[i].ball < kBallCount) continue;
         slot[again.count] = i;
         again.add(tickPatches_.items[i]);
     }
