@@ -543,6 +543,24 @@ private:
     // shape cannot be the one to give way -- the mouse is holding it, or moving it
     // would put it through the floor -- and then it is the ball's turn.
     bool pushBodyOutOfBall(std::size_t index, Vec3 normal, double through);
+    // The step that takes the ball out of everything it is inside, all at once.
+    //
+    // One surface's way out is not the room's: a ball pinched between a swinging plank
+    // and the side of a triangle has a way out of the plank that runs straight into the
+    // triangle, and a room that moves it there has not repaired anything -- it has
+    // pushed the ball out of one shape and into the next, and the next tick finds it
+    // there. That is how a ball ends a tick half a millimetre inside a shape it was
+    // never near: the shape it was moved out of could not give way (a plank is pinned
+    // to its axle), so the ball was carried six tenths of a millimetre along the
+    // plank's own normal and straight through the triangle's face.
+    //
+    // So every surface the ball is inside is answered together, as one step: each pass
+    // measures how deep the ball still is at the place the passes have reached, and
+    // takes it out of the worst one, so the surfaces answer each other the way they do
+    // everywhere else in this room. What comes back is the smallest step found, and
+    // what is left of the deepest overlap at that place -- nought when the step really
+    // does take the ball clear of everything.
+    Vec3 ballClearStep(double& left) const;
     // Nothing ends a tick inside the ball: the sweep cannot see a shape turning into
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.
