@@ -409,22 +409,18 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // for -- so what is left for the ball is where the ball itself has come to be
     // inside the shape. The ball goes back out along the way it is nearest to
     // being outside, and the floor is the one thing it cannot go out through.
-    // A depth under a micrometre is touching, not buried. The sweep lands the ball
-    // on the surface and the bisection leaves it a nanometre either side of it, so
-    // "any depth at all" entered this recovery path on a contact that was perfectly
-    // ordinary -- and the path cancels the speed the ball arrived with, before the
-    // bounce has been worked out. That is a ball that stops dead on one bounce and
-    // bounces properly on the next, decided by which side of a nanometre it landed.
-    if (depth > playground_tick::kQuantum) {
+    // A depth of nothing is touching; a depth of anything is inside. There is no band
+    // around the outline where being through it counts as touching: the sweep lands
+    // the ball exactly on the surface, so the only way to a positive depth is a shape
+    // that has walked into the ball, and that is what this path is for. It is answered
+    // at the depth it reached, not only once the depth has grown past a micrometre.
+    if (depth > 0.0) {
         const OutlineGap now = outlineGap(ball.position, body ? body->previous.data() : nullptr,
                                           body ? body->position.data() : nullptr, body ? body->count : 0, 1.0);
         normal = now.normal;
         const double through = ball.radius - now.gap;
-        // A ball a micrometre in is touching, not inside: the room's resolution is a
-        // micrometre in a tick, so moving it back by less than one is moving it by
-        // nothing, and only a depth the simulation can tell from touching is a depth
-        // to be put right.
-        if (through > playground_tick::kQuantum) {
+        // Every depth of it, at whatever size: the ball goes back to the surface.
+        if (through > 0.0) {
             // The floor is under the ball, so a way out that goes downwards is no
             // way out: what is left over is the ball rolling along the floor, out
             // from under whatever is on it, rather than being left with a shape cut

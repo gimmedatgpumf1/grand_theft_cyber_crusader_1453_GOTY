@@ -57,7 +57,11 @@ Vec3 PlaygroundRoom::ballClearStep(double& left) const {
             best = pen;
             bestStep = step;
         }
-        if (!(pen > playground_tick::kQuantum)) break;
+        // Out is out: the projection runs until there is no depth left at all, not
+        // until what is left is small enough to call nothing. `left` is then the
+        // statement of whether the room managed it -- and it is zero, or the ball is
+        // still inside and a surface has to give way instead.
+        if (!(pen > 0.0)) break;
         step = step + way * pen;
     }
     left = std::max(0.0, best);
@@ -81,17 +85,22 @@ void PlaygroundRoom::separateBall() {
     std::vector<std::size_t> stuck;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        // Every shape is asked, including the ones that cannot move: a shape that is
+        // asleep or in the mouse's hand cannot give way, so the *ball* is the one that
+        // has to be put back out of it. Leaving those out of this loop meant a ball
+        // pressed against a shape the room is not stepping was measured, found to be
+        // inside, and left there -- and the report said so.
+        if (body.count == 0) continue;
         Vec3 way{};
         Vec3 at{};
         const double gap = bodyBallGap(index, way, at);
-        // A gap a fraction of a picometre negative is touching, not inside: the room's
-        // resolution is a micrometre, and the arithmetic that rests a ball on a face
-        // lands it that far either side of exactly one radius, every tick. Read as an
-        // overlap it entered this separation on a perfectly ordinary contact, and
-        // because a pinned body cannot be pushed out of anything the ball was moved by
-        // hand instead -- counted as a repair, and worth exactly nothing but the count.
-        if (!(gap < -playground_tick::kQuantum)) continue;
+        // Not "a fraction of a picometre negative is touching": a negative gap is the
+        // ball's surface through the shape's, and the ball's surface is never through
+        // a shape's at the end of a tick. The correction that this asks for on an
+        // ordinary contact is the last few bits of a double, which is why the repair
+        // count below only counts the ones bigger than a nanometre -- but the place is
+        // put right whatever its size, because "inside" is not a tolerance.
+        if (!(gap < 0.0)) continue;
         // The shape gives way, and it gives way *first*, because it is the shape that
         // is where it should not be. Splitting the overlap by mass share -- which is
         // what this used to do -- handed three quarters of it to the ball, because
@@ -126,7 +135,7 @@ void PlaygroundRoom::separateBall() {
         for (int round = 0; round < 5; ++round) {
             double left = 0.0;
             const Vec3 clear = ballClearStep(left);
-            if (!(left > playground_tick::kQuantum)) {
+            if (!(left > 0.0)) {
                 ball_.position = ball_.position + clear;
                 break;
             }
@@ -145,7 +154,7 @@ void PlaygroundRoom::separateBall() {
             // pinned body, a sleeping one and one in the mouse's hand cannot, and
             // neither can the floor.
             std::size_t worst = kBodyCount;
-            double deepest = playground_tick::kQuantum;
+            double deepest = 0.0;
             Vec3 worstWay{};
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 const Body& body = bodies_[index];
@@ -166,13 +175,16 @@ void PlaygroundRoom::separateBall() {
             // its axle or bolted down, and the only way out left is along whatever is
             // under it -- the ball rolls out from under the shape, which is what a real
             // ball does. It is only taken to a place that is clear of *everything*.
+            // A place the ball may be taken to: its surface on or outside every
+            // surface in the room, and its own surface above the floor. Not a skin's
+            // width outside -- exactly outside.
             const auto clearAt = [&](Vec3 at) {
-                if (at.y < ball_.radius - kSkin) return false;
+                if (at.y < ball_.radius) return false;
                 for (std::size_t index = 0; index < kBodyCount; ++index) {
                     const Body& body = bodies_[index];
                     if (body.count == 0) continue;
                     if (ball_shape::outlineGap(at, body.position.data(), body.position.data(), body.count, 1.0).gap <
-                        ball_.radius - kSkin)
+                        ball_.radius)
                         return false;
                 }
                 return true;
@@ -197,7 +209,10 @@ void PlaygroundRoom::separateBall() {
             ball_.position = Vec3{here.x + side * high, here.y, 0};
             break;
         }
-        if (length(ball_.position - beganAt) > playground_tick::kQuantum) ++ballFoundThrough_;
+        // The count is "the room had to move the ball by its place", and a
+        // correction of the last few bits of a double is the room holding the line,
+        // not a miss: only a real one is counted.
+        if (length(ball_.position - beganAt) > kRepairDepth) ++ballFoundThrough_;
     }
     // And the floor, for the ball as well, after everything else -- the same rule in
     // the same place as the shapes above. The ball's own contact is what rests it on
@@ -206,6 +221,37 @@ void PlaygroundRoom::separateBall() {
     // ground by a shape squeezed beside it is still a ball under the ground. Nothing
     // is below the floor at the end of a tick, which is this line.
     if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
+    // The tick ends with the ball outside every shape. Not within a micrometre of
+    // outside -- outside.
+    //
+    // This is the same answer as above, asked once more of the state the tick actually
+    // ended in: everything that could give way has, and what is left is either the last
+    // few significant figures of a double (a ball resting on a face sits a hundredth of
+    // a picometre either side of exactly one radius, tick after tick) or a shape that
+    // could not move being the one that is in the ball. Either way the ball is the one
+    // that moves, by exactly the depth it is in, along the way out -- and if that depth
+    // is more than the arithmetic's dust it is counted, because the room moving the
+    // ball by its place is a miss and saying so is the only way it ever gets fixed.
+    const Vec3 beforeTheLastWord = ball_.position;
+    for (int pass = 0; pass < 4; ++pass) {
+        std::size_t deepest = kBodyCount;
+        double depth = 0.0;
+        Vec3 way{};
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            if (bodies_[index].count == 0) continue;
+            Vec3 out{}, at{};
+            const double inside = -bodyBallGap(index, out, at);
+            if (inside > depth) {
+                depth = inside;
+                way = out;
+                deepest = index;
+            }
+        }
+        if (deepest == kBodyCount) break;
+        ball_.position = ball_.position + way * depth;
+        ball_.position.y = std::max(ball_.position.y, ball_.radius);
+    }
+    if (length(ball_.position - beforeTheLastWord) > kRepairDepth) ++ballFoundThrough_;
 }
 
 

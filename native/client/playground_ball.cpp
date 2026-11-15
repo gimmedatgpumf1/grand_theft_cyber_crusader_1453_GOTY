@@ -486,10 +486,14 @@ void PlaygroundRoom::tickBall() {
                 restingAnswered[index] = true;
                 const OutlineGap on = outlineGap(ball.position, body.position.data(), body.position.data(),
                                                  body.count, 1.0);
-                // A micrometre in is touching. Only a depth the room's own resolution
-                // can tell from touching is one to put back, and only then is it a
-                // miss worth counting.
-                if (ball.radius - on.gap > playground_tick::kQuantum) {
+                // Not a micrometre in, and not a picometre in: *in* is in. The
+                // ball's surface either ends the tick on the shape's surface or
+                // outside it, and there is no band around the outline where being
+                // through it counts as touching. A shape that has walked into the
+                // ball is put back to the surface it came through, at whatever depth
+                // it reached, and the count of misses is the count of ticks that
+                // needed it.
+                if (ball.radius - on.gap > 0.0) {
                     // The shape gives way first. It is the one that arrived, and the
                     // ball is the one thing in the room whose path may never jump: a
                     // ball that is teleported out of what it is in is exactly the
@@ -541,7 +545,10 @@ void PlaygroundRoom::tickBall() {
                 const Vec3 endAt = ball.position + ball.velocity * (kTick * remaining);
                 const OutlineGap endOut =
                     ball_shape::outlineGap(endAt, body.position.data(), body.position.data(), body.count, 1.0);
-                if (endOut.gap >= ball.radius - playground_tick::kQuantum) continue;
+                // Exactly, not to within a micrometre: a travel that ends the tick
+                // even a double's thickness inside the face is a travel into the face,
+                // and it is stopped where the face is.
+                if (endOut.gap >= ball.radius) continue;
                 // It is going in, and the contact it already has is the answer to it:
                 // the shape stops what is coming, once, and the ball keeps the rest of
                 // its motion. Refused every time round the walk, though, it would stop
