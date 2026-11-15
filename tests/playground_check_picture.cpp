@@ -74,6 +74,10 @@ int shotWidth = 900, shotHeight = 600;
 gtc::native::NativeFrame whole;    // everything, as the King sees it
 gtc::native::NativeFrame ballOnly;  // the same camera, the ball and nothing else
 bool wantOnlyTheBall = false;
+// Which ball is "the ball" for the frame being drawn. Both of them are balls, so the
+// picture questions are asked of either -- and the room draws neither of them over the
+// other, because neither of them can be where the other is.
+std::size_t pictureBall = PlaygroundRoom::kThrowBall;
 bool haveWhole = false, haveBall = false;
 
 gtc::native::Vec3 applyTo(const std::array<double, 16>& m, const gtc::native::Vec3& p, bool point) {
@@ -89,8 +93,8 @@ bool renderOnHost(const gtc::native::GpuScene& scene, gtc::native::NativeFrame& 
     for (std::size_t b = 0; b < scene.batches.size(); ++b) {
         const gtc::native::GpuBatch& batch = scene.batches[b];
         if (batch.isUi) continue;  // the labels are composited from the layer instead
-        if (wantOnlyTheBall && b != pictureRoom->ball(PlaygroundRoom::kThrowBall).faceBatch &&
-            b != pictureRoom->ball(PlaygroundRoom::kThrowBall).markBatch) continue;
+        if (wantOnlyTheBall && b != pictureRoom->ball(pictureBall).faceBatch &&
+            b != pictureRoom->ball(pictureBall).markBatch) continue;
         for (std::size_t i = 0; i + 2 < batch.indices.size(); i += 3) {
             std::array<gtc::native::RenderVertex, 3> corners;
             for (int k = 0; k < 3; ++k) {
@@ -380,11 +384,16 @@ int playgroundPictureChecks() {
         check(frames >= 20 && ballPixels > 500 && covered == 0, "nothing in the room is drawn over the ball", detail);
     }
 
-    // 3. The rope is behind the ball too. The rope, the bob and the anchor plate are
-    //    drawn at depths of their own, and the one place the question is worth asking
-    //    is where the ball is on top of them: hanging on the rope, a third of the way
-    //    down it, right at the top under the plate, and standing against the bob. In
-    //    every one of those the ball's pixels must be its own.
+    // 3. The rope is behind the ball too. The rope and the anchor plate are drawn at
+    //    depths of their own, and the place the question is worth asking is where a ball
+    //    is on top of them: on the rope a third of the way down it, halfway, and just
+    //    above the ball that hangs there. In every one of those the ball's pixels must be
+    //    its own.
+    //
+    //    Two balls are never asked to share a pixel. They cannot: two balls in this room
+    //    are two solids, and one of them inside the other is a state the room does not
+    //    have. So the places are the rope above the hanging ball, and the hanging ball
+    //    itself is asked the same question separately below.
     {
         PlaygroundRoom room;
         room.reset();
@@ -398,9 +407,9 @@ int playgroundPictureChecks() {
         view.width = shotWidth;
         view.height = shotHeight;
         view.gpu = true;
-        const gtc::native::Vec3 places[] = {{room.ropeAnchor().x, room.ropeAnchor().y - 0.30, 0},
-                                            {room.ropeAnchor().x, room.ropeAnchor().y - 0.10, 0},
-                                            {room.ropeAnchor().x, room.ropeAnchor().y - room.ropeLength() + 0.10, 0}};
+        const gtc::native::Vec3 places[] = {{room.ropeAnchor().x, room.ropeAnchor().y - 0.20, 0},
+                                            {room.ropeAnchor().x, room.ropeAnchor().y - 0.50, 0},
+                                            {room.ropeAnchor().x, room.ropeAnchor().y - 0.80, 0}};
         std::size_t ballPixels = 0, covered = 0;
         int worstPlace = -1;
         for (int place = 0; place < 3; ++place) {
@@ -436,10 +445,45 @@ int playgroundPictureChecks() {
         room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         gtc::native::setGpuRenderer(nullptr);
         std::snprintf(detail, sizeof detail,
-                      "the ball frozen on the rope, under the plate and against the bob at %dx%d: %zu pixels of it, "
-                      "%zu of them covered by the rope or the bob (first bad place %d)",
+                      "the ball frozen on the rope, under the plate and above the hanging ball at %dx%d: %zu "
+                      "pixels of it, %zu of them covered by the rope (first bad place %d)",
                       shotWidth, shotHeight, ballPixels, covered, worstPlace);
         check(ballPixels > 500 && covered == 0, "the rope is drawn behind the ball, never across it", detail);
+
+        // 4. And the same question, asked of the ball that is actually on the rope: the
+        //    rope is drawn to its middle and must be behind it, the plate above it, the
+        //    shapes around it. It is a ball, so it is asked what every ball is asked.
+        {
+            room.ball(PlaygroundRoom::kThrowBall).frozen = false;
+            ballPixels = covered = 0;
+            pictureBall = PlaygroundRoom::kRopeBall;
+            haveWhole = haveBall = false;
+            gtc::native::NativeFrame frameOne;
+            wantOnlyTheBall = false;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = true;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = false;
+            pictureBall = PlaygroundRoom::kThrowBall;
+            std::size_t coveredHere = 0;
+            for (std::size_t i = 0; i + 2 < ballOnly.rgb.size(); i += 3) {
+                const bool isBall = ballOnly.rgb[i] != ballOnly.rgb[0] || ballOnly.rgb[i + 1] != ballOnly.rgb[1] ||
+                                    ballOnly.rgb[i + 2] != ballOnly.rgb[2];
+                if (!isBall) continue;
+                ++ballPixels;
+                if (whole.rgb[i] != ballOnly.rgb[i] || whole.rgb[i + 1] != ballOnly.rgb[i + 1] ||
+                    whole.rgb[i + 2] != ballOnly.rgb[i + 2]) {
+                    ++covered;
+                    ++coveredHere;
+                }
+            }
+            gtc::native::setGpuRenderer(nullptr);
+            std::snprintf(detail, sizeof detail,
+                          "and the ball hanging on the rope at %dx%d: %zu pixels of it, %zu of them covered by the "
+                          "rope, the plate or a shape",
+                          shotWidth, shotHeight, ballPixels, covered);
+            check(ballPixels > 500 && covered == 0, "the ball on the rope is drawn whole too", detail);
+        }
     }
 
     return localFailures;

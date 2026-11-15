@@ -317,6 +317,8 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // "How deep may it be drawn?" is a separate question, and the answer is not the
     // touch band: it is exactly as deep as the place the room itself left the ball, in
     // that same frame, and no deeper.
+    // The place the frame is entitled to, before anything is asked about it.
+    ball.shown = ballPlaceAt(ball, fraction);
     const double allowed = sceneReady_ ? std::max(0.0, depthInside(ballPlaceAt(ball, 1.0))) : 0.0;
     double drawnAt = fraction;
     if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt)) > ball_shape::kTouch) {
