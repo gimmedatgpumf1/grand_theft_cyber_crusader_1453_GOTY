@@ -815,10 +815,16 @@ private:
     // air or a push along the floor; zero is a push straight down onto it.
     double ballFreedom(const Ball& ball, Vec3 push) const {
         // Only a surface that is actually under it holds it. A ball in mid-air has
-        // no support at all, and its last one is not a fact about this tick.
-        if (!ball.touching || !ball.standing) return 1.0;
-        const double into = std::max(0.0, -dot(push, ball.supportNormal));
-        return 1.0 - into * into;
+        // no support at all, and its last one is not a fact about this tick. A rope is
+        // the other kind of thing that holds a ball, and it holds it whatever the ball
+        // is standing on -- so the two are asked together, through the same projection
+        // the shapes' solve uses. See gatherBallSupports(): the rope is a support.
+        const bool supported = ball.touching && ball.standing;
+        if (!supported && ball.supportCount == 0) return 1.0;
+        const double size = length(push);
+        if (!(size > 0.0)) return 1.0;
+        const Vec3 unit = push * (1.0 / size);
+        return std::max(0.0, dot(unit, ballFree(ball, unit)));
     }
     // The ball's speed with the part the rope already owns taken out: on a taut rope the
     // ball cannot move away from the anchor, so that part of its motion is the rope's and

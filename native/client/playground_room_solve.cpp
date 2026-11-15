@@ -89,6 +89,32 @@ void PlaygroundRoom::gatherBallSupports(Ball& ball) {
     // answered by nobody and costs nothing, which is why it is the one that may be a
     // support.
     if (ball.position.y <= ball.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
+    // And the rope, which is the same kind of thing and for the same reason.
+    //
+    // A taut rope is a surface the ball cannot be moved into -- outward, away from the
+    // anchor -- and it is the one surface here that is rigid by construction: the tick
+    // puts the ball back on its circle every tick, so a push that would take it off the
+    // circle is answered by the anchor and by nothing else. Read without it, the room
+    // answered every one of those pushes as though the ball were free, and the ball on a
+    // rope became a ball made of stone in the one direction it is held: the shape it was
+    // leaning on was handed the whole of the impulse the ball's own weight asked for,
+    // the rope took the ball's half back off it, and the two of them made a shove out of
+    // nothing twenty times a second. That is the infinite force the King saw the ball use
+    // on the triangle, and it is the same defect as the ball resting on the slope being
+    // pushed off it: the constraint was missing from the projection, so the projection
+    // gave the ball's share away.
+    //
+    // The anchor is not a body: the rope is held by the room, and what the anchor takes is
+    // taken by nobody in the room -- which is what makes it a support and not a contact,
+    // the same as the floor. The pair is still on the ledger as a pair; see holdOnRope().
+    if (rope_.attached && rope_.ball < kBallCount && &ball == &balls_[rope_.ball] && rope_.taut) {
+        const Vec3 arm = ball.position - rope_.anchor;
+        const double reach = length(arm);
+        // The direction the ball may not go: outward. `hold` takes the normal of the
+        // surface it is held by, which for the floor points up out of the floor, so for
+        // the rope it points in along the rope.
+        if (reach > 0.0) hold(arm * (-1.0 / reach), kBodyCount);
+    }
 }
 
 // The answer to a whole configuration of patches at once.
