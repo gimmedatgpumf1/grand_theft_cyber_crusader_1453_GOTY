@@ -793,7 +793,9 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // again next tick. Nothing is conjured by leaving it: holdOnRope() takes it, and the
     // contact takes nothing it was not given.
     {
-        const double into = dot(ballSpeed - surfaceVelocity, normal);
+        Vec3 check = ball.velocity;
+        if (resting) check = ballOffTheRope(ball, check);
+        const double into = dot(check - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
     // What this shape gave the ball, drawn where the two met.
