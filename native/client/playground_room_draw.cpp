@@ -65,6 +65,24 @@ constexpr double kArrowHeadShare = 0.34, kArrowHeadHalfShare = 0.42;
 // acts, and it has to be visible there: an arrow buried inside the shape it is
 // pushing is an arrow nobody can read.
 constexpr double kArrowZ = 0.02;
+// One depth per kind of solid thing, in the order they are meant to appear, so that
+// nothing in the room can win a tie against the ball.
+//
+// The renderer keeps the *first* thing drawn at a depth, not the last (`depth >=` is
+// a discard), so two batches at the same depth are decided by the order the scene was
+// built in -- which is the order of the code, not of the picture. The corner dots were
+// at exactly the ball's depth and the edge strokes a hair in front of it, and both are
+// drawn before the ball: a ball resting in a corner therefore had a 90 mm dot and a
+// 16 mm stroke painted over its own disc, and the King's screenshot shows exactly that
+// -- the light edge of the triangle running across the ball as a chord, with a corner
+// dot sitting on it. Nothing was wrong with where the ball was; something was wrong
+// with what was painted on top of it.
+//
+// So every solid thing has a depth of its own, all of them behind the ball, and the
+// ball has its own in front of all of them. Arrows stay in front of the ball because
+// they are annotations about it and not solid things.
+constexpr double kFloorZ = -0.010, kFaceZ = -0.008, kEdgeZ = -0.006, kDotZ = -0.004;
+constexpr double kGhostZ = -0.003, kPinPostZ = -0.009, kPinZ = -0.002;
 constexpr int kForceLabelHeight = 20;
 
 // One arrow per drawn force: where it acts, where its tip is, and how hard it is.
@@ -256,7 +274,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
 
     points.clear();
     faces.clear();
-    quad(points, faces, -6, -0.06, 6, 0.0, -0.01);
+    quad(points, faces, -6, -0.06, 6, 0.0, kFloorZ);
     raster.setObject(kSurfaceId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#b9ccc4"));
 
@@ -270,7 +288,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         const double px = plank.middle.x, py = plank.middle.y;
         points.clear();
         faces.clear();
-        quad(points, faces, px - kPivotPostHalf, 0.0, px + kPivotPostHalf, py, -0.004);
+        quad(points, faces, px - kPivotPostHalf, 0.0, px + kPivotPostHalf, py, kPinPostZ);
         raster.setObject(kPivotPostId, {0, 0}, 0);
         raster.mesh(points, faces, flat("#4d6e6a"));
         // The pin itself is drawn after the bodies (see below): it sits in the middle
@@ -301,13 +319,13 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         const std::uint32_t base = kBodyFaceId + static_cast<std::uint32_t>(index) * kBodySpan;
-        face(points, faces, body.local.data(), body.count, -0.002);
+        face(points, faces, body.local.data(), body.count, kFaceZ);
         raster.setObject(base, {0, 0}, 0);
         raster.mesh(points, faces, flat("#2c5f74"));
 
         points.clear();
         faces.clear();
-        quad(points, faces, 0, -1, 1, 1, 0.005);
+        quad(points, faces, 0, -1, 1, 1, 0.0);
         for (std::size_t i = 0; i < body.count; ++i) {
             raster.setObject(base + kBodyEdgeOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#9fd8e8"));
@@ -328,7 +346,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         points.clear();
         faces.clear();
         quad(points, faces, plank.middle.x - kPivotPinRadius, plank.middle.y - kPivotPinRadius,
-             plank.middle.x + kPivotPinRadius, plank.middle.y + kPivotPinRadius, 0.006);
+             plank.middle.x + kPivotPinRadius, plank.middle.y + kPivotPinRadius, kPinZ);
         raster.setObject(kPivotPinId, {0, 0}, 0);
         raster.mesh(points, faces, flat("#e8e2c9"));
     }
@@ -410,7 +428,8 @@ void PlaygroundRoom::placeMarkers() {
         haveTrace_ ? segment(traceStart, traceTo_, kTraceHalfWidth) : translation({0, -1000, 0});
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         scene_.batches[ghostBatches_[i]].modelMatrix =
-            i < ghostCount_ ? translation(ghosts_[i]) : translation({0, -1000, 0});
+            i < ghostCount_ ? translation(Vec3{ghosts_[i].x, ghosts_[i].y, kGhostZ})
+                            : translation({0, -1000, 0});
     }
     {
         const double radius = ball_.radius;
@@ -466,8 +485,11 @@ void PlaygroundRoom::placeMarkers() {
                 inward = dot(middle - a, outward) > 0.0 ? outward : outward * -1.0;
             }
             const Vec3 shift = inward * kEdgeHalfWidth;
-            scene_.batches[body.edgeBatches[i]].modelMatrix = segment(a + shift, b + shift, kEdgeHalfWidth);
-            scene_.batches[body.cornerBatches[i]].modelMatrix = translation(body.shown[i]);
+            scene_.batches[body.edgeBatches[i]].modelMatrix =
+                segment(Vec3{a.x + shift.x, a.y + shift.y, kEdgeZ}, Vec3{b.x + shift.x, b.y + shift.y, kEdgeZ},
+                        kEdgeHalfWidth);
+            scene_.batches[body.cornerBatches[i]].modelMatrix =
+                translation(Vec3{body.shown[i].x, body.shown[i].y, kDotZ});
         }
     }
 }
