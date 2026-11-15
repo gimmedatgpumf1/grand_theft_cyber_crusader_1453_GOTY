@@ -318,7 +318,7 @@ void PlaygroundRoom::noteBallTouch(Ball& ball, std::size_t body, Vec3 normal, Ve
     ++ball.touchCount;
 }
 
-void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
+void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached) {
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
@@ -640,14 +640,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
             // that surface is not in the way. That is what turns "a shape landing on
             // the top of it" into the floor's answer while "a shape striking its
             // side" still shoves the ball across the room.
-            const double ballShare = ballCompliance(ball, normal, ballHeld);
-            // A contact pushes and never pulls. Where the two are already *separating*
-            // the solve asks for a negative impulse -- the ball pulled back onto the
-            // face it is leaving -- and that is the wrecking ball on the string: a ball
-            // that bounced came back down onto the slope it had bounced off, was pulled
-            // the rest of the way in, and stopped dead, every bounce, in the tick after
-            // it. Measured: a ball leaving the slope at 0.9 m/s was at rest one tick
-            // later, with the contact that stopped it asking for -0.16 m/s of closing.
+            // The ball's say in this blow is the way it is still free to move, not
+            // whether it is resting: a ball lying on something has no say along that
+            // surface's normal and all of it everywhere else. Asking `held` here gave a
+            // resting ball no say in any direction -- welded to whatever it touched.
+            const double ballShare = ballCompliance(ball, normal, false);
+            // A contact pushes and never pulls: where the two are already separating
+            // the solve asks for a negative impulse, which pulls the ball back onto the
+            // face it is leaving -- a bounce stopped dead in the tick after it.
             const double impulse = std::max(0.0, (rebound - closing) / (ballShare + bodyShare));
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to

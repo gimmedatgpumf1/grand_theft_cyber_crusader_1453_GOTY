@@ -67,7 +67,9 @@ public:
     void advance(double seconds);
     void setDragRay(Vec3 origin, Vec3 direction);
     void beginDrag();
-    void endDrag() { dragTarget_ = DragTarget::None; }
+    // Letting go hands the room what the hand was doing, not just the place the
+    // ball was left: a carried ball's speed is the speed it was being carried at.
+    void endDrag();
     bool render(NativeFrame& frame, const ViewState& view, const RoomFreecam& camera);
     // What is on screen this frame: the point interpolated between the two
     // ticks that bracket it, at the fraction of the tick the frame falls on.
@@ -785,7 +787,7 @@ private:
     // False when they never do.
     bool ballFirstTouch(const Ball& ball, const Ball& other, Vec3 from, Vec3 travel, double remaining,
                         double& along, Vec3& normal, Vec3& contact, bool& resting) const;
-    void ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
+    void ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint = {},
                      double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0);
     // A face of the ball, said once: what it is against, and which way out of the
     // ball. The ball's grip is solved for all of its faces at once in
@@ -949,6 +951,9 @@ private:
     // which one it took -- but the room has to know, because the other one is not
     // being carried.
     std::size_t dragBall_ = kThrowBall;
+    // How far the hand moved the ball in the tick it was carried: letting go turns
+    // that into the speed the ball leaves with. Nothing else reads it.
+    Vec3 carryStep_{};
     std::size_t dragBody_ = kBodyCount;
     Vec3 planeGrab_{}, grabOffset_{};
     // How much of the tick the point spent sliding on something. Friction acts

@@ -171,8 +171,11 @@ void PlaygroundRoom::updateDrag() {
             if (segmentHitsPolygon(ball.position, wanted, body.position.data(), body.count, along, normal))
                 return;
         }
+        carryStep_ = wanted - ball.position;
         ball.position = wanted;
         ball.previous = ball.shown = ball.position;
+        // Carried is not simulated: the hand's speed is the hand's, held outside the
+        // ball, and it is handed over on release by endDrag().
         ball.velocity = {};
         ball.spin = 0.0;
         return;
@@ -248,4 +251,27 @@ void PlaygroundRoom::updateDrag() {
     restingBody_ = -1;
     haveTrace_ = false;
 }
+// Letting go. A ball that was carried at a speed leaves at that speed; a ball that was
+// put down somewhere leaves from rest. Without this the hand could lift and place but
+// never throw, and a ball on a rope could not be swung at all -- it was carried to the
+// top of its arc and dropped, and a swing that begins from rest is not a swing. The rope
+// is asked no special question here: the speed it is given is the room's, and the rope's
+// own arc does whatever it does with it, exactly as it does for a ball dropped in.
+void PlaygroundRoom::endDrag() {
+    if (dragTarget_ == DragTarget::Ball && dragBall_ < kBallCount) {
+        Ball& ball = balls_[dragBall_];
+        Vec3 thrown = carryStep_ * (1.0 / kTick);
+        // A mouse can cross the room between two frames. The hand's speed is the
+        // hand's speed, but a frame that lost its place is not a swing: keeping the
+        // throw under what the rope can carry leaves a sweep the room can follow
+        // instead of a ball shot out of a cannon by a stutter.
+        const double speed = length(thrown);
+        constexpr double kThrowCeiling = 6.0;
+        if (speed > kThrowCeiling) thrown = thrown * (kThrowCeiling / speed);
+        ball.velocity = thrown;
+    }
+    carryStep_ = {};
+    dragTarget_ = DragTarget::None;
+}
+
 } // namespace gtc::native

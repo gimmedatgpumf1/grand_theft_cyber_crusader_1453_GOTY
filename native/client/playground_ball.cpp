@@ -510,7 +510,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
                 ball.touching = true;
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
-                ballContact(ball, hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
+                ballContact(ball, hit.normal, int(index),  hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -561,7 +561,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
                     if (!hit.resting) ball.answered = true;
-                    ballContact(ball, endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
+                    ballContact(ball, endOut.normal, int(index),  endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
                     // is worked out again against it instead of being handed back.
@@ -707,7 +707,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
             if (!startedOnFloor) ball.answered = true;
-            ballContact(ball, normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
+            ballContact(ball, normal, -1,  ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
@@ -716,7 +716,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
             if (!meetingResting) ball.answered = true;
-            ballContact(ball, normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
+            ballContact(ball, normal, what,  contactPoint, depth, exchange, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
@@ -769,7 +769,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // answered against the weight alone, and the weight span it out sideways just
     // as a grip should. The face is what it is whether or not anything moved.
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
-        ballContact(ball, Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
+        ballContact(ball, Vec3{0, 1, 0}, -1,  ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
 
     // The grip is not solved here. It is the last thing the tick does, and the note
