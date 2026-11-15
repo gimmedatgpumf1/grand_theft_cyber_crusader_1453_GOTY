@@ -324,18 +324,23 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
             const double a1 = objectDepth(body.angle + way * nudge, other);
             if (a1 > a0 + 1e-12) return 0.0;
         }
-        // The ball does not veto a *pinned* body's turn, and that is the whole of
-        // why a loaded seesaw used to stop dead at the bottom of its swing. The
-        // check here is geometric: "would turning further put this corner inside
-        // that thing". For a shape with a free step that is the right question,
-        // because the step is the shape's own travel and refusing it is prevention.
-        // A pinned body's turn is not its own travel to refuse: the ball's own walk
-        // sweeps the face through the tick and carries the ball with it -- the same
-        // reason the ball's walk skips a pinned body when it is deciding whose step
-        // to shorten. Asked here as well, the plank was stopped whenever the ball sat
-        // where the face was about to be, its whole turn was handed back, and it
-        // resumed the next tick once the contact had moved the ball a hair: the
-        // seesaw moved, stopped, moved, stopped, and the ball rode it in surges.
+        // The ball does not *veto* a pinned body's turn -- refusing the whole turn
+        // whenever the ball is where the face is about to be stopped a loaded seesaw
+        // dead at the bottom of its swing, and the ball rode it in surges. What a
+        // pinned body's turn is held to is the sweep below, which is the other thing
+        // a turn is: it stops at the first angle at which the ball is met, exactly as
+        // it stops at the floor, and what it did not turn is a step refused and
+        // written down at the pin.
+        //
+        // The sweep used to skip the ball entirely for a pinned body, on the argument
+        // that the ball's own walk replays the sweeping face and carries the ball out
+        // of its way. That is true of a face that moves a little in a tick and false
+        // of one that moves a lot: a plank turning half a radian in a tick sweeps an
+        // arc, and the ball's walk sees the straight chord between the two poses,
+        // which passes on the inside of that arc. Measured: the ball was found up to
+        // 0.9 m -- its own diameter eight times over -- inside the seesaw's face, and
+        // the room put it back out by hand. Five of those in one sweep of 165 random
+        // scenes, every one of them the plank.
         if (!body.pivoted) {
             const double b0 = ballDepth(body.angle);
             const double b1 = ballDepth(body.angle + way * nudge);
@@ -426,7 +431,6 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                     (radius * radius + reach * reach - ball_.radius * ball_.radius) / (2.0 * radius * reach);
                 const double spread = std::acos(std::max(-1.0, std::min(1.0, cosAt)));
                 const double middle = std::atan2(away.y, away.x);
-                if (body.pivoted) continue;
                 for (const double which : {1.0, -1.0}) {
                     double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
@@ -447,7 +451,6 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k1 = dot(away, outward);
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
-                if (body.pivoted) continue;
                 if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball_.radius, body.angle, way, span, u))
                     continue;
                 take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
