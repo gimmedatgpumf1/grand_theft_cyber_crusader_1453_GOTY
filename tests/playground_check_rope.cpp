@@ -587,5 +587,69 @@ int playgroundRopeChecks() {
         (void)0;
     }
 
+    // 11. The picture the King asked for. A ball on the rope swung into the triangle's
+    //     slope must come away from it, and the slope must be shoved. Measured before
+    //     this: a ball swung in at 2.1 m/s, closing on the face at 1.66 m/s, came away at
+    //     0.05 m/s and the triangle was handed almost nothing -- the blow read as the
+    //     part of the ball's speed that was *not* along the face, and a ball swung at a
+    //     slope arrives almost exactly along its own rope. It is the same mistake as the
+    //     resting ball's, the other way round: what is projected off the rope is the
+    //     speed of a contact being kept, and a blow is answered with everything it has.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 200);
+        parkTheOtherBall(room);
+        auto& triangle = room.bodies_[1];
+        triangle.angle = 1.5707963267948966;
+        triangle.centre = Vec3{3.6697, 0.7, 0};
+        room.placeCorners(triangle);
+        double onTheSlope = 3.6697;
+        Vec3 normal{}, at{};
+        {
+            const double gap = room.bodyBallGap(room.ropeBall(), 1, normal, at);
+            if (std::abs(normal.x) > 0.0) onTheSlope -= gap / normal.x;
+        }
+        triangle.centre = Vec3{onTheSlope, 0.7, 0};
+        room.placeCorners(triangle);
+        triangle.previous = triangle.position;
+        triangle.previousCentre = triangle.centre;
+        triangle.previousAngle = triangle.angle;
+        triangle.velocity = {};
+        triangle.spin = 0.0;
+        triangle.frozen = false;
+        // The ball on the rope, drawn back along its own arc and let go.
+        auto& ball = room.ball(PlaygroundRoom::kRopeBall);
+        ball.position = room.ropeAnchor() + Vec3{std::sin(-0.55), -std::cos(-0.55), 0.0} * room.ropeLength();
+        ball.previous = ball.shown = ball.position;
+        ball.velocity = {};
+        ball.spin = 0.0;
+        ball.touching = ball.standing = false;
+        const double start = room.totalEnergy();
+        double arriving = 0.0, leaving = 0.0, shoved = 0.0, turn = 0.0, rise = 0.0;
+        for (int tick = 0; tick < 200; ++tick) {
+            const double closing = gtc::native::dot(ball.velocity, normal);
+            room.advance(1.0 / 20.0);
+            rise = std::max(rise, room.totalEnergy() - start);
+            shoved = std::max(shoved, gtc::native::length(triangle.velocity));
+            turn = std::max(turn, std::abs(triangle.spin));
+            // The tick the ball comes off the face: it was closing, and it is not.
+            const double now = gtc::native::dot(ball.velocity, normal);
+            if (arriving == 0.0 && closing < -0.5 && now > 0.0) {
+                arriving = -closing;
+                leaving = now;
+            }
+        }
+        std::snprintf(detail, sizeof detail,
+                      "a ball on the rope swung at the triangle's slope: it closed on the face at %.3f m/s and came "
+                      "away at %.3f m/s (%.0f%% of it), the slope was given %.3f m/s and %.3f rad/s of turn, and the "
+                      "room's energy never rose above its %.6f J (by %.3e J, log2 %.1f)",
+                      arriving, leaving, arriving > 0.0 ? 100.0 * leaving / arriving : 0.0, shoved, turn, start, rise,
+                      rise > 0.0 ? std::log2(rise) : -1000.0);
+        // A bounce is most of the blow back, the shape is loaded, and nothing is made.
+        check(arriving > 1.0 && leaving > 0.4 * arriving && shoved > 0.05 && turn > 0.05 && rise <= 0.0,
+              "the ball bounces off the shape and the shape is shoved", detail);
+    }
+
     return localFailures;
 }
