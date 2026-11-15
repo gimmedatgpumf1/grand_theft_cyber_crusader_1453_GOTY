@@ -752,11 +752,40 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // The floor is under everything, so a shape cannot be the one to give way if
     // giving way would take it further through the floor. What is left is the ball
     // moving, which is the honest last resort.
+    bool throughTheFloor = false;
     for (std::size_t i = 0; i < body.count; ++i) {
-        if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) {
-            body.centre = was;
-            placeCorners(body);
-            return false;
+        if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) throughTheFloor = true;
+    }
+    // Along the floor, then, if not up off it.
+    //
+    // A shape standing on the ground has one way of giving ground and it is the way
+    // along the ground: its corner is on the floor, the way out of the ball runs partly
+    // downward through the floor, and refusing the whole move leaves a ball pinched
+    // between that shape and something that cannot move at all. Which is what was
+    // happening: a ball caught between a pinned plank and the bottom corner of a
+    // triangle stayed half a millimetre inside the triangle, tick after tick, because
+    // the triangle's only way out of it was through the floor.
+    //
+    // So the same move is made with its part through the floor taken out -- the shape
+    // slides, which is what a shape on a floor does when something presses on it -- and
+    // only if the ball is genuinely clearer for it. Nothing is lifted and no height is
+    // gained, so nothing is being conjured; the speed that made the move necessary was
+    // taken off by the contact below, in whichever direction it was taken.
+    Vec3 floorWay{};
+    if (throughTheFloor) {
+        body.centre = was;
+        placeCorners(body);
+        const double sideways = std::abs(normal.x);
+        if (!(sideways > 1e-3)) return false;
+        floorWay = Vec3{normal.x > 0.0 ? -1.0 : 1.0, 0.0, 0.0};
+        body.centre = body.centre + floorWay * (through / sideways);
+        placeCorners(body);
+        for (std::size_t i = 0; i < body.count; ++i) {
+            if (playground_tick::kSurfaceY - body.position[i].y > below + playground_tick::kQuantum) {
+                body.centre = was;
+                placeCorners(body);
+                return false;
+            }
         }
     }
     // And the motion that carried it in.
@@ -777,9 +806,10 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
     // made: what was going into the ball stops at the ball. That is a contact doing
     // its job, and it costs nothing -- the shape keeps every part of its motion
     // that the ball did not refuse.
-    const double closing = dot(body.velocity, normal);
+    const Vec3 way = throughTheFloor ? floorWay : normal;
+    const double closing = dot(body.velocity, way);
     if (closing > 0.0) {
-        body.velocity = body.velocity - normal * closing;
+        body.velocity = body.velocity - way * closing;
         // And it is a contact, so it is written down as one, at the place the ball
         // and the shape meet: what stopped the shape was the ball, and the arrows
         // have to say so or the account does not close. It did not before -- the
@@ -792,209 +822,10 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
         // The normal runs from the shape to the ball, so the shape leaves the way the
         // ball would have and the ball answers along the other way: the impulse on
         // the shape is against the closing, and it acts where the two are closest.
-        recordImpulse(ball_.position - normal * ball_.radius, normal * (-closing * body.mass), ForceKind::Ball,
-                      index);
+        recordImpulse(ball_.position - normal * ball_.radius, way * (-closing * body.mass), ForceKind::Ball, index);
     }
     ++bodyStepClamped_;
     return true;
-}
-
-Vec3 PlaygroundRoom::ballClearStep(double& left) const {
-    // How deep the ball is inside anything at `at`, and which way is out of the worst
-    // of them. The floor counts: the ground is a solid like any other, and the room's
-    // only answer for a ball under it is that it is not under it.
-    const auto deepest = [&](Vec3 at, Vec3& way) {
-        double pen = ball_.radius - at.y;
-        way = Vec3{0, 1, 0};
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            if (body.count == 0) continue;
-            const ball_shape::OutlineGap gap =
-                ball_shape::outlineGap(at, body.position.data(), body.position.data(), body.count, 1.0);
-            const double through = ball_.radius - gap.gap;
-            if (through > pen) {
-                pen = through;
-                way = gap.normal;
-            }
-        }
-        return pen;
-    };
-    // The passes are a projection, not a search: each one takes the ball out of the
-    // worst surface it is in at the place it has reached, and a corner of two or three
-    // is clear in a pass or two. A pinch -- two surfaces with nothing clear between
-    // them -- has no answer, and the passes then oscillate instead of converging; what
-    // is returned is the best place they reached, and `left` says that there is still
-    // an overlap there, which is the caller's cue to make a surface give way instead.
-    Vec3 step{};
-    Vec3 bestStep{};
-    double best = 1e30;
-    for (int pass = 0; pass < 8; ++pass) {
-        Vec3 way{};
-        const double pen = deepest(ball_.position + step, way);
-        if (pen < best) {
-            best = pen;
-            bestStep = step;
-        }
-        if (!(pen > playground_tick::kQuantum)) break;
-        step = step + way * pen;
-    }
-    left = std::max(0.0, best);
-    return bestStep;
-}
-
-void PlaygroundRoom::separateBall() {
-    // The floor first, before anything is measured against anything.
-    //
-    // A ball that is under the ground is not a state this room ever resolves, and the
-    // line at the end of this function already says so -- but saying it there is
-    // saying it after the separation has run, and the separation is what needs it.
-    // Measured on a cube tumbling into a ball lying on the floor: the ball was pushed
-    // 21 mm under the floor during the tick, the shape was then moved 17.9 mm out of
-    // it, and the floor put the ball back up afterwards -- on top of the corner that
-    // had just been moved *around* it, leaving the pair 6.8 mm inside each other with
-    // nothing left in the tick to notice. Put where it is now, the separation is
-    // measured against the ball's real place and the overlap never survives the tick.
-    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
-    // The shapes that could not give way, to be answered together below.
-    std::vector<std::size_t> stuck;
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        Vec3 way{};
-        Vec3 at{};
-        const double gap = bodyBallGap(index, way, at);
-        // A gap a fraction of a picometre negative is touching, not inside: the room's
-        // resolution is a micrometre, and the arithmetic that rests a ball on a face
-        // lands it that far either side of exactly one radius, every tick. Read as an
-        // overlap it entered this separation on a perfectly ordinary contact, and
-        // because a pinned body cannot be pushed out of anything the ball was moved by
-        // hand instead -- counted as a repair, and worth exactly nothing but the count.
-        if (!(gap < -playground_tick::kQuantum)) continue;
-        // The shape gives way, and it gives way *first*, because it is the shape that
-        // is where it should not be. Splitting the overlap by mass share -- which is
-        // what this used to do -- handed three quarters of it to the ball, because
-        // the ball is the lighter of the two, and 75 % of a two-centimetre overlap
-        // is a ball moved fifteen millimetres in a tick by nothing at all. That is
-        // the teleport; this room does not do teleports.
-        //
-        // So `way`, which runs out of the ball and into the body, is the direction
-        // the body leaves along, and pushBodyOutOfBall does the moving -- including
-        // refusing when the body has nowhere to go, because it is on the floor.
-        if (pushBodyOutOfBall(index, way * -1.0, -gap)) continue;
-        stuck.push_back(index);
-    }
-    // Nowhere to go, any of them: the ball gives the rest of it, and only what is left.
-    //
-    // Not one shape at a time, though. The way out of one is not the way out of the
-    // room, and moving the ball along a pinned plank's own normal is exactly how a ball
-    // was carried into the face of a triangle standing beside it -- out of one shape and
-    // straight into another, which is not a repair. So every surface the ball is inside
-    // is answered at once, by one step, and the step is the smallest one that is clear
-    // of all of them.
-    //
-    // And when no such step exists -- a ball pinched between a pinned plank and a
-    // triangle, or under a shape standing on the floor -- then something *has* to give,
-    // and the something is a shape that is free to move, at the place the step reached.
-    // The step is re-read after each of those, because pushing a shape out changes which
-    // surfaces the ball is inside.
-    if (!stuck.empty() && !ball_.frozen && dragTarget_ != DragTarget::Ball) {
-        for (int round = 0; round < 4; ++round) {
-            double left = 0.0;
-            const Vec3 clear = ballClearStep(left);
-            if (!(left > playground_tick::kQuantum)) {
-                if (length(clear) > playground_tick::kQuantum) {
-                    ball_.position = ball_.position + clear;
-                    ++ballFoundThrough_;
-                }
-                break;
-            }
-            // The step may have gone below the floor -- the floor is a surface like any
-            // other and its answer is upward, and a projection that is fighting a shape
-            // above it can overshoot through it. Nothing is below the floor, so that is
-            // not a place to search from.
-            Vec3 here = ball_.position + clear;
-            here.y = std::max(here.y, ball_.radius);
-            // The surface the ball is deepest inside at that place, if it is one that can
-            // give way at all: a pinned body, a sleeping one and one in the mouse's hand
-            // cannot, and neither can the floor.
-            const auto depthAt = [&](std::size_t index, ball_shape::OutlineGap& gap) {
-                gap = ball_shape::outlineGap(here, bodies_[index].position.data(), bodies_[index].position.data(),
-                                             bodies_[index].count, 1.0);
-                return ball_.radius - gap.gap;
-            };
-            std::size_t worst = kBodyCount;
-            double deepest = playground_tick::kQuantum;
-            for (std::size_t index = 0; index < kBodyCount; ++index) {
-                const Body& body = bodies_[index];
-                if (body.count == 0 || body.frozen || bodyHeld(index) || body.pivoted) continue;
-                ball_shape::OutlineGap gap;
-                const double depth = depthAt(index, gap);
-                if (depth > deepest) {
-                    deepest = depth;
-                    worst = index;
-                }
-            }
-            if (worst < kBodyCount) {
-                ball_shape::OutlineGap gap;
-                depthAt(worst, gap);
-                // The shape gives way along the other way: the normal runs from the
-                // shape towards the ball, so the shape travels against it.
-                if (pushBodyOutOfBall(worst, gap.normal, deepest)) ++ballFoundThrough_;
-                continue;
-            }
-            // Nothing in the room can give way. A ball in that corner is a ball under
-            // something that is pinned to its axle or bolted down, and the only way out
-            // left is along whatever is under it: the ball rolls out from under the
-            // shape, which is what a real ball does. The way out is looked for along the
-            // floor, and it is only taken to a place that is clear of *everything*.
-            const auto clearAt = [&](Vec3 at) {
-                if (at.y < ball_.radius - kSkin) return false;
-                for (std::size_t index = 0; index < kBodyCount; ++index) {
-                    const Body& body = bodies_[index];
-                    if (body.count == 0) continue;
-                    if (ball_shape::outlineGap(at, body.position.data(), body.position.data(), body.count, 1.0).gap <
-                        ball_.radius - kSkin)
-                        return false;
-                }
-                return true;
-            };
-            // Along the floor it is, and both ways are tried: the ball is under a shape
-            // that may have a longer side on one side than the other.
-            const double side = here.x >= ball_.position.x ? 1.0 : -1.0;
-            double low = 0.0, high = 0.0;
-            for (double reach = 0.0005; reach <= 0.4; reach *= 1.5) {
-                if (clearAt(Vec3{here.x + side * reach, here.y, 0})) {
-                    high = reach;
-                    break;
-                }
-                low = reach;
-            }
-            if (high == 0.0) {
-                // Nowhere at all: the ball goes to the place that leaves the least
-                // overlap, and the room says so in its count rather than pretending.
-                ball_.position = here;
-                ++ballFoundThrough_;
-                break;
-            }
-            for (int step = 0; step < 24; ++step) {
-                const double middle = 0.5 * (low + high);
-                if (clearAt(Vec3{here.x + side * middle, here.y, 0}))
-                    high = middle;
-                else
-                    low = middle;
-            }
-            ball_.position = Vec3{here.x + side * high, here.y, 0};
-            ++ballFoundThrough_;
-            break;
-        }
-    }
-    // And the floor, for the ball as well, after everything else -- the same rule in
-    // the same place as the shapes above. The ball's own contact is what rests it on
-    // the ground, and normally nothing gets it under: but a shape that has nowhere to
-    // go hands the ball the whole of a separation, and a ball pushed through the
-    // ground by a shape squeezed beside it is still a ball under the ground. Nothing
-    // is below the floor at the end of a tick, which is this line.
-    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
 }
 
 }  // namespace gtc::native
