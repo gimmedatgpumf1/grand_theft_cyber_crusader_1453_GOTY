@@ -496,8 +496,11 @@ void aRollIsARoll() {
         room.reset();
         settle(room, 400);
         room.ball_.frozen = false;
-        room.ball_.velocity = Vec3{-speed, 0, 0};
-        room.ball_.spin = speed / room.ball_.radius;
+        // Rolled away from everything else in the room, along the open floor: the
+        // ball starts beside the cube, and a roll into the cube is a collision, not a
+        // roll.
+        room.ball_.velocity = Vec3{speed, 0, 0};
+        room.ball_.spin = -speed / room.ball_.radius;
         const double from = room.ball_.position.x;
         slip = 0.0;
         for (int tick = 0; tick < ticks; ++tick) {
