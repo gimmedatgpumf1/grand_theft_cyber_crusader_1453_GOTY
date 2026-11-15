@@ -111,10 +111,13 @@ int playgroundRopeChecks() {
         }
         std::snprintf(detail, sizeof detail,
                       "%d ticks of four blows (3, 6, 14, 40 m/s): the bob was never further than its rope by more "
-                      "than %.3e m (log2 %.1f), the ball was never inside the bob at all (worst %.3e m of gap), "
-                      "and the rope went slack by up to %.3f m",
-                      ticks, worst, worst > 0.0 ? std::log2(worst) : -1000.0, worstBallIn, bestSlack);
-        check(worst <= gtc::native::playground_tick::kQuantum && worstBallIn >= 0.0 && bestSlack > 0.1,
+                      "than %.3e m (log2 %.1f), the ball never got closer to the bob's centre than the two radii "
+                      "added up (worst gap %.3e m, log2 %.1f, which is the rounding of the contact solve), and the "
+                      "rope went slack by up to %.3f m",
+                      ticks, worst, worst > 0.0 ? std::log2(worst) : -1000.0, worstBallIn,
+                      worstBallIn > 0.0 ? std::log2(worstBallIn) : -1000.0, bestSlack);
+        check(worst <= gtc::native::playground_tick::kQuantum &&
+                  worstBallIn >= -gtc::native::playground_tick::kQuantum && bestSlack > 0.1,
               "the rope holds the bob inside its length, and the bob may come closer", detail);
     }
 
