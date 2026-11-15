@@ -127,6 +127,11 @@ void buildTheCorner(PlaygroundRoom& room, int settleTicks) {
     cube.frozen = true;
     room.placeCorners(cube);
     cube.previous = cube.position;
+    // Put there by the test, not by the room: the interpolator reads the pose this
+    // tick began in as well, and a body moved by the test is a body the screen would
+    // otherwise draw travelling from where it used to be.
+    cube.previousCentre = cube.centre;
+    cube.previousAngle = cube.angle;
     room.bodies_[1].frozen = true;
     room.ball_.position = gtc::native::Vec3{-0.62, 1.20, 0};
     room.ball_.velocity = gtc::native::Vec3{0, -3.0, 0};
@@ -134,32 +139,28 @@ void buildTheCorner(PlaygroundRoom& room, int settleTicks) {
     room.ball_.frozen = false;
 }
 
-// How far the *drawn* ball is inside the *drawn* shapes at a fraction of a tick.
-double drawnDepth(PlaygroundRoom& room, double alpha, std::size_t& which) {
-    const gtc::native::Vec3 ball = room.ball_.previous + (room.ball_.position - room.ball_.previous) * alpha;
-    double depth = room.ball_.radius - ball.y;
+// How far the drawn ball is inside the drawn shapes, as the room is about to draw
+// them. This is the room's own interpolation -- the frozen bodies, the bent tick, the
+// projection that keeps the drawn place legal -- not a copy of it, so what is measured
+// here is what the screen gets.
+double drawnDepth(PlaygroundRoom& room, std::size_t& which) {
+    room.interpolate();
+    double depth = room.ball_.radius - room.ball_.shown.y;
     which = room.kBodyCount;
     for (std::size_t index = 0; index < room.kBodyCount; ++index) {
         const auto& body = room.bodies_[index];
         if (body.count == 0) continue;
-        const gtc::native::Vec3 centre = body.previousCentre + (body.centre - body.previousCentre) * alpha;
-        const double angle = body.previousAngle + (body.angle - body.previousAngle) * alpha;
-        const double c = std::cos(angle), s = std::sin(angle);
-        gtc::native::Vec3 corners[8];
-        for (int i = 0; i < body.count; ++i)
-            corners[i] = {centre.x + body.local[i].x * c - body.local[i].y * s,
-                          centre.y + body.local[i].x * s + body.local[i].y * c, 0};
-        const double gap =
-            gtc::native::ball_shape::outlineGap(ball, corners, corners, body.count, 1.0).gap - room.ball_.radius;
+        const double gap = gtc::native::ball_shape::outlineGap(room.ball_.shown, body.shown.data(),
+                                                              body.shown.data(), body.count, 1.0)
+                               .gap -
+                           room.ball_.radius;
         if (gap > depth) {
             depth = gap;
             which = index;
         }
     }
     return depth;
-}
-
-}  // namespace
+}}  // namespace
 
 // Returns how many of the checks failed.
 int playgroundPictureChecks() {
@@ -181,9 +182,11 @@ int playgroundPictureChecks() {
                 gtc::native::Vec3 way{}, at{};
                 solved = std::max(solved, -room.bodyBallGap(index, way, at));
             }
+            room.sceneReady_ = true;
             for (int eighth = 0; eighth <= 8; ++eighth) {
                 std::size_t which = 99;
-                const double depth = drawnDepth(room, eighth / 8.0, which);
+                room.accumulator_ = gtc::native::playground_tick::kTick * eighth / 8.0;
+                const double depth = drawnDepth(room, which);
                 if (depth > drawn) {
                     drawn = depth;
                     worstTick = tick;
