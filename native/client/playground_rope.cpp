@@ -197,7 +197,17 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
 
-    if (ball.answered) {
+    // Which of the two the rope is. The room's answer is the ball's motion, and the rope
+    // may only keep it no further than its length -- but a ball that has run *past* the
+    // length is a ball the rope has something to say about, and it has to be said at the
+    // instant the travel crossed the sphere. Clamping the end of the tick instead put
+    // the ball back on the circle by lifting it wherever it had got to: a ball that came
+    // off the slope, went slack, hopped and fell was caught thirty millimetres below its
+    // arc and dropped there, dead, and that is the wrecking ball on the string -- it
+    // arrived, stopped, and hung. Caught where it crosses, it keeps the speed it has
+    // along the arc, which is what a string catching a ball does.
+    const bool pastTheLength = length(ball.position - anchor) > ropeLength;
+    if (ball.answered && !pastTheLength) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
         // length, and take the speed that is running away from the anchor -- which is
@@ -218,26 +228,6 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const double reach = length(arm);
         if (reach > 0.0 && reach >= ropeLength - ball_shape::kTouch) {
             const Vec3 outward = arm / reach;
-            // On the circle exactly, by the distance it was out by and no more -- and
-            // paid for. The ball's own tick does not know the rope is there, so its
-            // travel is spent before the rope sees it and pulling it back is a lift.
-            // A ball resting on a slope slides down the face, the rope stops it at its
-            // length, and the whole tick's slide lands outside the circle: measured,
-            // the rope lifted the ball thirty-six millimetres in one tick -- ninety-six
-            // millijoules -- and took twelve back in the speed it removed, leaving a
-            // ball handed height for nothing, every tick, which is a swing that never
-            // dies. A constraint does no work, so the lift comes out of the ball's own
-            // speed; one that cannot pay for it is not lifted, it stops.
-            if (reach > ropeLength) {
-                const Vec3 onto = anchor + outward * ropeLength;
-                const double speed2 = dot(speedNow, speedNow);
-                const double rise = onto.y - at.y;
-                if (rise > 0.0 && speed2 > 0.0) {
-                    const double left = speed2 - 2.0 * gravity * rise;
-                    speedNow = left > 0.0 ? speedNow * std::sqrt(left / speed2) : Vec3{};
-                }
-                at = onto;
-            }
             const double leaving = dot(speedNow, outward);
             if (leaving > 0.0) {
                 const Vec3 loss = outward * -leaving;
