@@ -710,6 +710,54 @@ void nothingIsEverInsideAnything() {
         check(wedge < 1e-6 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
               "a ball wedged against several faces at once is answered by all of them", detail);
     }
+
+    // And the whole room thrown at once, which is where a room that answers its
+    // surfaces one at a time comes apart: every corner moving, the seesaw swinging, the
+    // ball fired at whatever speed a hand can give it. What is measured is the worst
+    // depth the ball ever reaches inside a shape *at the end of a tick* -- the state the
+    // room is left in and the next tick begins from -- and how many times the room had
+    // to put the ball somewhere by hand. A repair is not a prevention: it is the room
+    // admitting it lost the ball inside something first.
+    double violent = 0.0;
+    std::size_t byHandInFlight = 0;
+    int scenes = 0;
+    {
+        std::mt19937 rng(5);
+        std::uniform_real_distribution<double> pickX(-4.5, 4.5), pickY(0.3, 2.4), pickV(-15.0, 15.0);
+        for (int trial = 0; trial < 12; ++trial) {
+            PlaygroundRoom room;
+            room.reset();
+            const Vec3 start{pickX(rng), pickY(rng), 0};
+            if (!room.ballPlacementClear(start)) continue;  // not a spot the ball fits in
+            ++scenes;
+            room.clearRepairCounts();
+            for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
+                auto& body = room.bodies_[index];
+                body.frozen = false;
+                body.velocity = Vec3{0.25 * pickV(rng), 0.25 * pickV(rng), 0};
+                body.spin = 0.5 * pickV(rng);
+            }
+            room.ball_.position = start;
+            room.ball_.velocity = Vec3{pickV(rng), pickV(rng), 0};
+            room.ball_.spin = pickV(rng) / room.ball_.radius;
+            room.ball_.frozen = false;
+            for (int tick = 0; tick < 200; ++tick) {
+                room.advance(1.0 / 20.0);
+                for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
+                    Vec3 way{}, at{};
+                    violent = std::max(violent, -room.bodyBallGap(index, way, at));
+                }
+                violent = std::max(violent, room.ball_.radius - room.ball_.position.y);
+            }
+            byHandInFlight += room.ballFoundThroughCount();
+        }
+    }
+    std::snprintf(detail, sizeof detail,
+                  "%d scenes of every corner and the ball thrown at once, worst end of tick %.3e m inside, "
+                  "%zu repairs",
+                  scenes, violent, byHandInFlight);
+    check(violent <= 1e-6 && byHandInFlight <= scenes,
+          "nor is a ball in a room where everything is moving at once", detail);
 }
 
 void interactionDoesNotStick() {
