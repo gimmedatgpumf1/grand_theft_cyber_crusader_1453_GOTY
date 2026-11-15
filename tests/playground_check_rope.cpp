@@ -489,6 +489,13 @@ int playgroundRopeChecks() {
         triangle.previousAngle = triangle.angle;
         triangle.velocity = {};
         triangle.spin = 0.0;
+        // And it is *held* there, because that is the only way it can be there: the room
+        // will not let a shape be put down inside anything -- bodyPlacementClear() is
+        // asked before the mouse lets go -- so a slope pressed into the ball is a slope
+        // somebody is still holding. A body the hand is carrying gives nothing (see
+        // ballContact), which is the whole question this check asks: when the hand and
+        // the rope both say no, it is the ball that gives way, and nothing else moves.
+        triangle.frozen = true;
         // The press is answered in the first tick and it is the hand's, not the room's:
         // a slope that cannot give way is a slope the ball is pushed out of, and the
         // ball is the one thing here that may be moved out of something it is in. So
