@@ -387,8 +387,15 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // the hop was worth a hundredth of a joule that came out of nothing, and the room
         // put it straight back when the shape came to rest again. The slope under a
         // resting ball is not woken by the ball's weight. See ballOffTheRope().
+        // The rope's part comes off the ball's *middle*, not off the patch: a spinning
+        // ball's patch is moving along the face and cannot close on it, but take the
+        // rope's share off the patch as a whole and the turn leaks into the normal --
+        // a ball resting on the slope, spinning on the spot against it with no load at
+        // all, read as closing at 0.16 m/s and woke the shape it was merely touching.
+        const Vec3 arm = contactPoint - ball.position;
+        const Vec3 turned{-ball.spin * arm.y, ball.spin * arm.x, 0.0};
         const Vec3 closingVelocity =
-            ballOffTheRope(ball, ballPointSpeed(ball, contactPoint)) - pointSpeed(*body, contactPoint);
+            ballOffTheRope(ball, ball.velocity) + turned - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
