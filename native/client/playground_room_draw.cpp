@@ -192,7 +192,7 @@ void PlaygroundRoom::interpolate() {
     if (sceneReady_) {
         const Vec3 legal = ball_.position;  // where the tick really left it
         bool clear = false;
-        for (int pass = 0; pass < 16 && !clear; ++pass) {
+        for (int pass = 0; pass < 64 && !clear; ++pass) {
             double inside = ball_.radius - ball_.shown.y;
             Vec3 way{0, 1, 0};
             for (std::size_t index = 0; index < kBodyCount; ++index) {
