@@ -122,6 +122,11 @@ const char* kindColour(std::size_t kind) {
         // it is not friction: it is the ground pushing a little ahead of the
         // bottom of the ball, and it is what stops a ball rolling for ever.
         case PlaygroundRoom::ForceKind::Rolling: return "#d98c5f";
+        // The rope's pull, in the colour of rope. It is the one force here that is
+        // neither a surface nor the air, and the only one that can be nothing at all:
+        // a slack rope writes no arrow, and a taut one writes two, at the bob and at
+        // the anchor, along the rope between them.
+        case PlaygroundRoom::ForceKind::Rope: return "#f0e2c0";
         case PlaygroundRoom::ForceKind::KindCount: break;
     }
     return "#ffffff";
