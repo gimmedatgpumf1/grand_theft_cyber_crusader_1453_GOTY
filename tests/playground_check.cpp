@@ -386,16 +386,24 @@ void airDependsOnSpeed() {
 }
 
 // A bounce is one number, and it must be the same number whichever way the surface
-// happens to point. It is measured on the speed the two bodies *close* at and the
-// speed they *separate* at: a cube the ball can move takes part of the blow with it,
-// and that is conservation of momentum, not a softer bounce.
+// happens to point. It is a ratio of forces and it is measured as one: the impulse the
+// meeting dealt the ball, over the impulse that would just have stopped it, both in
+// newton seconds and both read at the instant of the meeting. A cube the ball can move
+// takes part of the blow with it, and that is conservation of momentum, not a softer
+// bounce.
 //
-// The hit has to land on the middle of the face, though. A ball fired from a metre
-// away has fallen a hand's width by the time it arrives -- gravity, which is the whole
-// point of the room -- so it strikes below the middle, and a blow below the middle
-// turns the cube as well as moving it. The bounce is then smaller because some of it
-// became a turn. That is not a weaker coefficient, so it is checked separately, and
-// what is checked about it is that the missing bounce is in the cube's spin.
+// Read across a tick instead -- the ball's speed after it over its speed before it --
+// the same room reads 0.81 off the floor and 0.75 off a wall, and neither of those is
+// the coefficient: a tick of gravity is half a metre a second of momentum that never
+// touched either surface, and where in the tick the meeting fell decides how much of
+// it lands in the ratio. That is not a difference in the room, it is a difference in
+// the arithmetic.
+//
+// And a blow below the middle does not make the bounce smaller. The coefficient is a
+// property of the pair of materials; where the blow lands decides how much of the
+// impulse goes into turning the cube, not how much of the approach comes back. So the
+// off-centre hit is checked for what it should do -- turn the cube -- and for still
+// coming back at the same coefficient, which is what a room with one law in it does.
 void bounceIsTheSameEveryWay() {
     say("\nbounciness is not only for vertical hits\n");
     PlaygroundRoom room;
@@ -455,10 +463,11 @@ void bounceIsTheSameEveryWay() {
 
     double lowSide = 0.0;
     const double spin = hitTheSide(1.2, lowSide);
-    std::snprintf(detail, sizeof detail, "hit a hand's width low: restitution %.4f, the cube turned at %.3f rad/s",
-                  lowSide, spin);
-    check(lowSide > 0.6 && lowSide < side && spin > 0.5,
-          "a hit below the middle turns the cube, and the turn is taken out of the bounce", detail);
+    std::snprintf(detail, sizeof detail,
+                  "hit a hand's width low: restitution %.4f (against %.4f on the middle), the cube turned at %.3f rad/s",
+                  lowSide, side, spin);
+    check(lowSide > 0.6 && std::abs(lowSide - side) < 0.01 && std::abs(spin) > 0.5,
+          "a hit below the middle turns the cube, at the same bounciness", detail);
 }
 
 // The ball is the one thing in the room small enough to be swallowed, and the one
