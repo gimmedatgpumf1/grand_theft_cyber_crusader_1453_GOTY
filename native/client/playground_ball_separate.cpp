@@ -266,7 +266,7 @@ void PlaygroundRoom::separateBall() {
         // into the shape it had just been taken out of, one pass after another, and
         // ended the tick inside by the last few bits of a double. The floor is the
         // next line, once.
-        ball_.position = ball_.position + way * (depth + ulps);
+        ball_.position = ball_.position + way * depth;
     }
     if (length(ball_.position - beforeTheLastWord) > kRepairDepth) ++ballFoundThrough_;
 }
