@@ -201,7 +201,14 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // read the way every other contact in this room reads it, from what the ball arrived
     // with to what it has now, at the fraction of the tick.
     Vec3 at = ball.previous + travel * crossed;
-    Vec3 speedNow = ball.arrival + (ball.velocity - ball.arrival) * crossed;
+    // The speed the ball's own tick started from, and the speed it has now, read at the
+    // fraction of the tick the crossing is at. `began` and not `arrival`: the arrival is
+    // what the ball had before *the room* moved, and a ball struck by the other ball
+    // before its own turn is moving at the blow's speed by the time its turn comes. Read
+    // from the arrival, a ball hit dead centre on the end of the rope was answered with
+    // the nothing it had before the blow: the swing was reset to a standstill every
+    // tick it was hit, and the ball that hit it took the whole of the momentum back.
+    Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
     // away from the anchor.
