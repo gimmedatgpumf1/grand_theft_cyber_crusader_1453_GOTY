@@ -379,5 +379,67 @@ int playgroundPictureChecks() {
         check(frames >= 20 && ballPixels > 500 && covered == 0, "nothing in the room is drawn over the ball", detail);
     }
 
+    // 3. The rope is behind the ball too. The rope, the bob and the anchor plate are
+    //    drawn at depths of their own, and the one place the question is worth asking
+    //    is where the ball is on top of them: hanging on the rope, a third of the way
+    //    down it, right at the top under the plate, and standing against the bob. In
+    //    every one of those the ball's pixels must be its own.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        for (int tick = 0; tick < 200; ++tick) room.advance(gtc::native::playground_tick::kTick);
+        gtc::native::RoomFreecam camera;
+        camera.reset({room.ropeAnchor().x, room.ropeAnchor().y - 0.55, 1.60}, 0.0, 0.0);
+        cameraFrom = &camera;
+        pictureRoom = &room;
+        gtc::native::setGpuRenderer(&renderOnHost);
+        gtc::native::ViewState view;
+        view.width = shotWidth;
+        view.height = shotHeight;
+        view.gpu = true;
+        const gtc::native::Vec3 places[] = {{room.ropeAnchor().x, room.ropeAnchor().y - 0.30, 0},
+                                            {room.ropeAnchor().x, room.ropeAnchor().y - 0.10, 0},
+                                            {room.ropeAnchor().x, room.ropeAnchor().y - room.ropeLength() + 0.10, 0}};
+        std::size_t ballPixels = 0, covered = 0;
+        int worstPlace = -1;
+        for (int place = 0; place < 3; ++place) {
+            // Frozen where the test put it: a ball falling through the rope would ask
+            // the same question, but it would ask it somewhere else every frame.
+            room.ball_.position = places[place];
+            room.ball_.previous = room.ball_.shown = room.ball_.position;
+            room.ball_.velocity = {};
+            room.ball_.spin = 0.0;
+            room.ball_.frozen = true;
+            haveWhole = haveBall = false;
+            gtc::native::NativeFrame frameOne;
+            wantOnlyTheBall = false;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = true;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = false;
+            if (!haveWhole || !haveBall || whole.rgb.size() != ballOnly.rgb.size()) continue;
+            std::size_t coveredHere = 0;
+            for (std::size_t i = 0; i + 2 < ballOnly.rgb.size(); i += 3) {
+                const bool isBall = ballOnly.rgb[i] != ballOnly.rgb[0] || ballOnly.rgb[i + 1] != ballOnly.rgb[1] ||
+                                    ballOnly.rgb[i + 2] != ballOnly.rgb[2];
+                if (!isBall) continue;
+                ++ballPixels;
+                if (whole.rgb[i] != ballOnly.rgb[i] || whole.rgb[i + 1] != ballOnly.rgb[i + 1] ||
+                    whole.rgb[i + 2] != ballOnly.rgb[i + 2]) {
+                    ++covered;
+                    ++coveredHere;
+                }
+            }
+            if (coveredHere > 0 && worstPlace < 0) worstPlace = place;
+        }
+        room.ball_.frozen = false;
+        gtc::native::setGpuRenderer(nullptr);
+        std::snprintf(detail, sizeof detail,
+                      "the ball frozen on the rope, under the plate and against the bob at %dx%d: %zu pixels of it, "
+                      "%zu of them covered by the rope or the bob (first bad place %d)",
+                      shotWidth, shotHeight, ballPixels, covered, worstPlace);
+        check(ballPixels > 500 && covered == 0, "the rope is drawn behind the ball, never across it", detail);
+    }
+
     return localFailures;
 }
