@@ -537,9 +537,11 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     double metArrival = 0.0;
     const auto noteMeeting = [&]() {
         if (!(metArrival > 0.0)) return;
-        if (ballMeetingArrival_ > 0.0 && metGiven * ballMeetingArrival_ <= ballMeetingGiven_ * metArrival) return;
-        ballMeetingGiven_ = metGiven;
-        ballMeetingArrival_ = metArrival;
+        const std::size_t slot = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
+        if (ballMeetingArrival_[slot] > 0.0 && metGiven * ballMeetingArrival_[slot] <= ballMeetingGiven_[slot] * metArrival)
+            return;
+        ballMeetingGiven_[slot] = metGiven;
+        ballMeetingArrival_[slot] = metArrival;
     };
     if (closing < 0.0) {
         if (canMove) {

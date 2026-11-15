@@ -409,9 +409,9 @@ void bounceIsTheSameEveryWay() {
     // momentum that never touched the surface. A meeting that only stops the ball
     // gives back nothing and reads nought; a meeting that gives back e of the arrival
     // reads e, from any direction and at any point in the tick.
-    const auto bounceOf = [](const PlaygroundRoom& room) {
-        if (!(room.ballMeetingArrival_ > 0.0)) return 0.0;
-        return room.ballMeetingGiven_ / room.ballMeetingArrival_ - 1.0;
+    const auto bounceOf = [](const PlaygroundRoom& room, std::size_t surface) {
+        if (!(room.ballMeetingArrival_[surface] > 0.0)) return 0.0;
+        return room.ballMeetingGiven_[surface] / room.ballMeetingArrival_[surface] - 1.0;
     };
     // Fire the ball at the flat middle of a face: a hand's width away, so that what
     // gravity takes out of its line on the way is nearly nothing.
@@ -425,7 +425,7 @@ void bounceIsTheSameEveryWay() {
         into.ball_.frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
             into.advance(1.0 / 20.0);
-            const double met = bounceOf(into);
+            const double met = bounceOf(into, 0);
             if (met > 0.0) {
                 bounce = met;
                 return into.bodies_[0].spin;
@@ -444,7 +444,7 @@ void bounceIsTheSameEveryWay() {
         down.ball_.frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
             down.advance(1.0 / 20.0);
-            floor = bounceOf(down);
+            floor = bounceOf(down, PlaygroundRoom::kBodyCount);
             if (floor > 0.0) break;
         }
     }
