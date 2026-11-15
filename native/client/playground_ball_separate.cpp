@@ -121,14 +121,14 @@ void PlaygroundRoom::separateBall() {
     // The step is re-read after each of those, because pushing a shape out changes which
     // surfaces the ball is inside.
     if (!stuck.empty() && !ball_.frozen && dragTarget_ != DragTarget::Ball) {
+        // Counted once, however many rounds it takes: the count is "the room moved the
+        // ball by its place", and a repair that takes two steps is one repair.
+        const Vec3 beganAt = ball_.position;
         for (int round = 0; round < 5; ++round) {
             double left = 0.0;
             const Vec3 clear = ballClearStep(left);
             if (!(left > playground_tick::kQuantum)) {
-                if (length(clear) > playground_tick::kQuantum) {
-                    ball_.position = ball_.position + clear;
-                    ++ballFoundThrough_;
-                }
+                ball_.position = ball_.position + clear;
                 break;
             }
             // A pinch. The ball goes to the best place the projection reached -- which
@@ -142,7 +142,6 @@ void PlaygroundRoom::separateBall() {
             Vec3 here = ball_.position + clear;
             here.y = std::max(here.y, ball_.radius);
             ball_.position = here;
-            ++ballFoundThrough_;
             // The deepest surface the ball is inside here that can give way at all: a
             // pinned body, a sleeping one and one in the mouse's hand cannot, and
             // neither can the floor.
@@ -197,9 +196,9 @@ void PlaygroundRoom::separateBall() {
                     low = middle;
             }
             ball_.position = Vec3{here.x + side * high, here.y, 0};
-            ++ballFoundThrough_;
             break;
         }
+        if (length(ball_.position - beganAt) > playground_tick::kQuantum) ++ballFoundThrough_;
     }
     // And the floor, for the ball as well, after everything else -- the same rule in
     // the same place as the shapes above. The ball's own contact is what rests it on
