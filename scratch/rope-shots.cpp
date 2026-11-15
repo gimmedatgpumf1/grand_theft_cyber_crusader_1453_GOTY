@@ -182,8 +182,8 @@ int main() {
     }
     room.endDrag();
 
-    // 5. The King's picture: the triangle stood on its vertical edge with the slope under
-    //    the hanging ball, and the ball resting exactly on that slope with the rope taut.
+    // 5. The King's picture: the triangle standing on the floor with its slope under the
+    //    hanging ball, and the ball set down exactly on that slope with the rope taut.
     //    Two pictures 150 seconds apart, from the same camera: nothing moves, and nothing
     //    appears.
     room.reset();
@@ -204,16 +204,25 @@ int main() {
     }
     gtc::native::RoomFreecam close;
     close.reset({3.60, 1.50, 2.60}, 0.0, 0.0);
-    for (int tick = 0; tick < 20; ++tick) room.advance(1.0 / 20.0);
+    // Ten seconds for everything the placing disturbed to finish going where it is going;
+    // the two pictures below are of the ten-second mark and of a hundred and sixty.
+    for (int tick = 0; tick < 200; ++tick) room.advance(1.0 / 20.0);
     const Vec3 settled = room.ropeBall().position;
     const double energyThen = room.totalEnergy();
+    const auto ballEnergy = [&] {
+        const auto& b = room.ropeBall();
+        return 0.5 * b.mass * gtc::native::dot(b.velocity, b.velocity) + b.mass * 9.8 * b.position.y;
+    };
+    const double ballEnergyThen = ballEnergy();
     shoot(room, close, "scratch/rope-5-on-the-slope-0.png");
     for (int tick = 0; tick < 3000; ++tick) room.advance(1.0 / 20.0);
     const Vec3 later = room.ropeBall().position;
-    std::printf("150 s on the slope: the ball moved %.3e m, the room's energy changed by %+.3e J; it is %.6f m from "
-                "its anchor with the rope carrying %.3f N\n",
-                gtc::native::length(later - settled), room.totalEnergy() - energyThen,
-                room.ropeBallDistance(), room.ropeTension());
+    const double ballEnergyAfter = ballEnergy();
+    std::printf("150 s on the slope: the ball moved %.3e m, its own energy changed by %+.3e J, the room's by "
+                "%+.3e J; it is %.6f m from its anchor with the rope carrying %.3f N and is at %.3e m/s\n",
+                gtc::native::length(later - settled), ballEnergyAfter - ballEnergyThen,
+                room.totalEnergy() - energyThen, room.ropeBallDistance(), room.ropeTension(),
+                gtc::native::length(room.ropeBall().velocity));
     shoot(room, close, "scratch/rope-5-on-the-slope-3000.png");
     return 0;
 }
