@@ -472,4 +472,43 @@ void PlaygroundRoom::settleBallFriction() {
     ballTouchCount_ = 0;
 }
 
+// Whether the ball is lying on something that can carry it: a surface the room is not
+// stepping, underneath it. Asked of the room and not of the list of contacts -- that
+// list is the shapes' solver's, and it only holds what the solver is stepping, so a
+// ball lying on a sleeping shape read as a ball held up by nothing and took a whole
+// tick's weight, twenty times a second. Its share of any blow came out as nothing (a
+// ball fired at a cube let the cube take 41.8 newton seconds out of the 3.7 it was
+// carrying), and on a face a twentieth of a degree off level it walked a micrometre and
+// a half a tick along it for as long as the room was left alone, which is the wriggle.
+bool PlaygroundRoom::ballRestingOnStillSurface() const {
+    const Ball& ball = ball_;
+    // Asked of the room and not of the list of contacts. The list is the shapes'
+        // solver's, and the solver only writes a contact for a body it is stepping:
+        // gatherContacts() skips a body the room has put to sleep. So a ball lying on
+        // a sleeping shape had an empty list, was read as a ball held up by nothing,
+        // and took the whole of a tick's weight -- 0.49 m/s downwards, twenty times a
+        // second -- which the sleeping face then answered and the grip took back
+        // again. The speed was never spent and never left, so the ball was never
+        // still: on a face a twentieth of a degree off level it walked a micrometre
+        // and a half a tick along it, for as long as the room was left alone, which
+        // is the wriggle. It was not a ball that could not stop; it was a list with
+        // the answer missing from it.
+        bool onSomething = false;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            Vec3 way{0, 1, 0}, at{};
+            if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
+            // A surface the room is stepping is not a still one: it moves with the
+            // ball's weight, so the weight has to be handed to it.
+            if (!body.frozen || bodyHeld(index)) return false;
+            // Only what is underneath can carry it. A ball leaning on an upright
+            // side is carried by the floor, not by the side, and reading the side
+            // as a surface that holds it would let it hang there.
+            if (!(-way.y > 0.0)) continue;
+            onSomething = true;
+        }
+        return onSomething;
+}
+
 }  // namespace gtc::native

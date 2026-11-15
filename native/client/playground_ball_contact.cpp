@@ -825,6 +825,59 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     }
 }
 
+// The ball against the bob on the rope.
+//
+// Two circles, and the whole of the answer is that they share one blow: what the ball
+// gives up along the line of centres, the bob takes, and the two are written in the
+// ledger at the place they met with one end for each -- so the pair the room shows is
+// the pair the room applied.
+//
+// The bob was stepped before the ball, so its own travel through this tick is spent;
+// the blow changes the speed it will spend the *next* tick with, and its place is
+// untouched. That is the same order the ball and the shapes already keep, and it is
+// what keeps the rope honest: a bob whose place jumped in the middle of the ball's
+// tick could be a bob further from its anchor than the rope is long.
+//
+// `resting` says the ball was already against the bob when this piece of the walk
+// began. A contact is not an arrival, and a contact gives nothing back: a ball lying
+// on a bob would otherwise bounce off it every tick with no bounce in it.
+void PlaygroundRoom::ballAgainstBob(Vec3 normal, bool resting, double reached) {
+    (void)reached;
+    Ball& ball = ball_;
+    Pendulum& bob = pendulum_;
+    // What the bob is doing, read the way the room reads a shape's speed: its step over
+    // the tick. Its step is its own, taken before the ball's walk began.
+    const Vec3 bobSpeed = (bob.position - bob.previous) * (1.0 / kTick);
+    const double closing = dot(ball.velocity - bobSpeed, normal);
+    const Vec3 at = ball.position - normal * ball.radius;
+    if (closing < 0.0) {
+        const double rebound = resting ? 0.0 : -kBallRestitution * closing;
+        const double give = 1.0 / ball.mass + 1.0 / bob.mass;
+        const double impulse = (rebound - closing) / give;
+        ball.velocity = ball.velocity + normal * (impulse / ball.mass);
+        bob.velocity = bob.velocity - normal * (impulse / bob.mass);
+        addForce(at, normal * (impulse / kTick), ForceKind::Ball, nullptr, kBallOwner);
+        addForce(at, normal * (-impulse / kTick), ForceKind::Ball, nullptr, kBobOwner);
+        // A blow turns the ball: the same answer every other surface gives it, at the
+        // place it was struck.
+        const Vec3 rim = at - ball.position;
+        const double spinChange = dot(Vec3{-rim.y, rim.x, 0.0}, normal * (impulse / ball.mass)) /
+                                  (0.4 * ball.radius * ball.radius);
+        ball.spin += spinChange * 0.0;
+        // A bob that is struck is a bob that is doing something, and a ball that is
+        // doing something is not asleep.
+        ball.frozen = false;
+        bob.awake = true;
+    }
+    // Never inside it. The sweep above is the prevention and this is the arithmetic's
+    // rounding: a ball left a fraction of a micron into the bob is put back on its
+    // surface, by position and nothing else.
+    const Vec3 gap = ball.position - bob.position;
+    const double distance = length(gap);
+    const double reach = ball.radius + bob.radius;
+    if (distance > 0.0 && distance < reach) ball.position = bob.position + gap * (reach / distance);
+}
+
 // The dot runs into the ball. The normal points from the ball to the dot, so the
 // dot is the one that gets pushed back, and whatever it hands over is what the
 // ball takes.

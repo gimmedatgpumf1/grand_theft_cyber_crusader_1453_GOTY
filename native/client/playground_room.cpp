@@ -161,12 +161,13 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     pendulum_.bobBatch = bobBatch;
     pendulum_.anchorBatch = anchorBatch;
     pendulum_.ghostBatch = ghostBatch;
-    const double letGo = 0.55;  // radians out to the side: a third of a right angle
-    pendulum_.position = pendulum_.anchor + Vec3{std::sin(letGo), -std::cos(letGo), 0} * pendulum_.length;
+    // Hanging dead straight, at rest: the room resets to a room that is standing
+    // still. What makes it swing is a blow, and the room has a ball for that.
+    pendulum_.position = pendulum_.anchor + Vec3{0.0, -pendulum_.length, 0.0};
     pendulum_.previous = pendulum_.shown = pendulum_.position;
     pendulum_.velocity = {};
     pendulum_.taut = true;
-    pendulum_.tension = pendulum_.mass * kGravity * std::cos(letGo);
+    pendulum_.tension = pendulum_.mass * kGravity;
     return true;
 }
 

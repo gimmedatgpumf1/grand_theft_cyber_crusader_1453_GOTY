@@ -83,6 +83,51 @@ void arcStep(double theta0, double omega0, double gravityOverLength, double dt, 
 
 }  // namespace
 
+// Where, along what is left of the ball's walk, the ball's circle and the bob's first
+// meet. The bob is stepped before the ball, so its whole travel through this tick is
+// known, and the sweep is between two moving circles: the ball at its velocity through
+// the walk and the bob along its own step. Solved outright -- a quadratic in how far
+// along the walk the two centres come within the sum of their radii -- so neither can be
+// overtaken by the other, at any speed either is going.
+bool PlaygroundRoom::bobFirstTouch(Vec3 from, Vec3 travel, double remaining, double& along, Vec3& normal,
+                                   Vec3& contact, bool& resting) const {
+    const Pendulum& bob = pendulum_;
+    const Vec3 bobWas = bob.previous + (bob.position - bob.previous) * (1.0 - remaining);
+    const Vec3 bobStep = bob.position - bobWas;
+    const Vec3 arm = from - bobWas;
+    const Vec3 closing = travel - bobStep;
+    const double reach = ball_.radius + bob.radius;
+    const double c = dot(arm, arm) - reach * reach;
+    double metAt = 2.0;
+    if (c <= 0.0) {
+        metAt = 0.0;  // already against it: a contact, not an arrival
+    } else {
+        const double a = dot(closing, closing);
+        if (a > 0.0) {
+            const double b = 2.0 * dot(arm, closing);
+            const double disc = b * b - 4.0 * a * c;
+            if (disc >= 0.0) {
+                const double root = std::sqrt(disc);
+                // The stable pair of roots: c / q for the far one, q / a for the near
+                // one, so neither is lost to cancellation.
+                const double q = -0.5 * (b + (b >= 0.0 ? root : -root));
+                const double nearRoot = q / a;
+                const double farRoot = q != 0.0 ? c / q : 2.0;
+                if (nearRoot >= 0.0 && nearRoot <= 1.0) metAt = nearRoot;
+                if (farRoot >= 0.0 && farRoot <= 1.0) metAt = std::min(metAt, farRoot);
+            }
+        }
+    }
+    if (metAt > 1.0) return false;
+    const Vec3 where = arm + closing * metAt;
+    const double distance = length(where);
+    along = metAt;
+    normal = distance > 0.0 ? where / distance : Vec3{0, 1, 0};
+    contact = from + travel * metAt - normal * ball_.radius;
+    resting = c <= 0.0;
+    return true;
+}
+
 void PlaygroundRoom::tickPendulum() {
     Pendulum& bob = pendulum_;
     bob.previous = bob.position;

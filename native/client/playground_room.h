@@ -567,20 +567,12 @@ private:
     // The step that takes the ball out of everything it is inside, all at once.
     //
     // One surface's way out is not the room's: a ball pinched between a swinging plank
-    // and the side of a triangle has a way out of the plank that runs straight into the
-    // triangle, and a room that moves it there has not repaired anything -- it has
-    // pushed the ball out of one shape and into the next, and the next tick finds it
-    // there. That is how a ball ends a tick half a millimetre inside a shape it was
-    // never near: the shape it was moved out of could not give way (a plank is pinned
-    // to its axle), so the ball was carried six tenths of a millimetre along the
-    // plank's own normal and straight through the triangle's face.
+    // and a triangle has a way out of the plank that runs into the triangle, and moving
+    // it there repairs nothing -- the next tick finds it there.
     //
     // So every surface the ball is inside is answered together, as one step: each pass
-    // measures how deep the ball still is at the place the passes have reached, and
-    // takes it out of the worst one, so the surfaces answer each other the way they do
-    // everywhere else in this room. What comes back is the smallest step found, and
-    // what is left of the deepest overlap at that place -- nought when the step really
-    // does take the ball clear of everything.
+    // takes it out of the worst one, so the surfaces answer each other. What comes back
+    // is the smallest step found and what overlap is left at that place.
     Vec3 ballClearStep(double& left) const;
     // Nothing ends a tick inside the ball: the sweep cannot see a shape turning into
     // it, so what a turn carried through it is put back out, by place alone. See the
@@ -589,16 +581,11 @@ private:
     // How much of a body's step is clear, as the fraction of it that may be taken.
     //
     // A body's step is its middle travelling and its outline turning at once, and the
-    // room's other sweeps do not cover it: the ball has its own, and a pinned body's
-    // turn has its own, but a shape thrown across the room was simply put where its
-    // speed said and answered afterwards -- so a shape at six metres a second went
-    // through a plank seventy-seven millimetres deep in one tick, and the answer it
-    // got afterwards was the recovery, which is a kick.
-    //
-    // This is that sweep. It is conservative advancement, not sampling: the step is
-    // advanced by the time the clearance itself allows -- the gap divided by the
-    // fastest any point of the body can be closing it -- so no speed and no turn can
-    // carry the outline through anything between two looks.
+    // room's other sweeps do not cover it, so a shape thrown across the room was put
+    // where its speed said and answered afterwards -- a kick. This is that sweep, by
+    // conservative advancement and not sampling: the step advances by the time the
+    // clearance itself allows -- the gap over the fastest closing speed of any point of
+    // the body -- so no speed and no turn can carry the outline through anything.
     //
     // `mayBeginInContact` is the difference between the simulation and the hand. A
     // body's own step may begin against something: it is in contact then, and contact
@@ -637,13 +624,10 @@ public:
     std::size_t ballLiftedOutCount() const { return ballLiftedOut_; }
     void clearRepairCounts() { ballFoundThrough_ = bodyStepClamped_ = ballLiftedOut_ = 0; }
 private:
-    // Whether the body carrying `index` really carries it. See the file.
-    bool carriedBySolvedSupport(std::size_t index) const;
+    bool carriedBySolvedSupport(std::size_t index) const;  // see the file
     // Whether the surface a sleeping body is lying on is still there: if it is not,
     // the body wakes and falls.
     void wakeUnsupportedBodies();
-    // A sleeping body with a load arriving on it wakes: it is carrying a load, not
-    // being a wall.
     void wakeLoadedBodies(double band);
     // One body's weight: the same pull at every corner, and the impulse it delivers
     // over the tick. Used by the gravity pass, and for a body woken after it.
@@ -802,6 +786,8 @@ private:
     // Whether anything else in the room is moving enough to reach the ball. A
     // ball asleep on the floor still has to be hit by whatever is falling on it.
     bool ballNeighboursMoving() const;
+    // Whether the ball is lying on a surface that can carry it; see the touch file.
+    bool ballRestingOnStillSurface() const;
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
@@ -814,6 +800,13 @@ private:
     // the answer to the speed the ball had *there*, and a tick of gravity is half a
     // metre a second in this room: measured at the start of the tick the blow is too
     // small and measured at the end of it too large, so the moment itself is passed.
+    // The ball against the bob on the rope: two circles, one blow, equal and opposite,
+    // and the ledger written at the place they met with one end for each of them.
+    void ballAgainstBob(Vec3 normal, bool resting, double reached);
+    // Where, along what is left of the ball's walk, the ball's circle and the bob's
+    // first meet. False when they never do.
+    bool bobFirstTouch(Vec3 from, Vec3 travel, double remaining, double& along, Vec3& normal, Vec3& contact,
+                       bool& resting) const;
     void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
                      double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0);
     // A face of the ball, said once: what it is against, and which way out of the

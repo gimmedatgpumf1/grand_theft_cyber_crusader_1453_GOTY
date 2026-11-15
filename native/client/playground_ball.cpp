@@ -32,6 +32,9 @@ bool PlaygroundRoom::ballNeighboursMoving() const {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         if (!bodies_[index].frozen) return true;
     }
+    // The bob on its rope is a solid too, and a bob swinging at a sleeping ball is
+    // something arriving at it.
+    if (length(pendulum_.position - pendulum_.previous) > 0.0) return true;
     return false;
 }
 
@@ -130,35 +133,6 @@ void PlaygroundRoom::tickBall() {
     // at 9.65 m/s from a hit at 6. That is the side restitution of 0.0000 the King's
     // check has been failing on, and it was never about restitution at all: the ball
     // was stone for that one tick.
-    const auto restingOnStillSurface = [this]() {
-        // Asked of the room and not of the list of contacts. The list is the shapes'
-        // solver's, and the solver only writes a contact for a body it is stepping:
-        // gatherContacts() skips a body the room has put to sleep. So a ball lying on
-        // a sleeping shape had an empty list, was read as a ball held up by nothing,
-        // and took the whole of a tick's weight -- 0.49 m/s downwards, twenty times a
-        // second -- which the sleeping face then answered and the grip took back
-        // again. The speed was never spent and never left, so the ball was never
-        // still: on a face a twentieth of a degree off level it walked a micrometre
-        // and a half a tick along it, for as long as the room was left alone, which
-        // is the wriggle. It was not a ball that could not stop; it was a list with
-        // the answer missing from it.
-        bool onSomething = false;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            if (body.count == 0) continue;
-            Vec3 way{0, 1, 0}, at{};
-            if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
-            // A surface the room is stepping is not a still one: it moves with the
-            // ball's weight, so the weight has to be handed to it.
-            if (!body.frozen || bodyHeld(index)) return false;
-            // Only what is underneath can carry it. A ball leaning on an upright
-            // side is carried by the floor, not by the side, and reading the side
-            // as a surface that holds it would let it hang there.
-            if (!(-way.y > 0.0)) continue;
-            onSomething = true;
-        }
-        return onSomething;
-    };
     // And the one surface that can always hold it is the ground. A ball resting on
     // the floor with a shape leaning against its side is held -- by the floor. Asking
     // "can anything it touches move" and answering no only when nothing can is to say
@@ -198,7 +172,7 @@ void PlaygroundRoom::tickBall() {
     // falls -- which is what the outgoing half of a bounce is, and it is the one thing
     // this rule has to keep. A ball pressed sideways along the floor is not leaving it.
     const bool leaving = ball.touching && dot(ball.velocity, ball.supportNormal) > 0.0;
-    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || restingOnStillSurface());
+    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || ballRestingOnStillSurface());
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -394,7 +368,11 @@ void PlaygroundRoom::tickBall() {
         double depth = 0.0;
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
-        int what = -1;  // -2 the floor, otherwise a body
+        int what = -1;  // -2 the floor, -3 the bob on its rope, otherwise a body
+    // One blow from the bob per tick, like one per shape: a bob met again in what is
+    // left of the tick has already given its answer, and this time it only stops the
+    // ball.
+    bool bobAnswered = false;
         // Whether the meeting that wins this iteration was already a contact when
         // the tick began. It travels with the meeting, not with the last body that
         // happened to be looked at.
@@ -408,6 +386,24 @@ void PlaygroundRoom::tickBall() {
         // The floor is the one thing nothing gets below, so it is met whenever the
         // ball is at it or on its way through it -- and if the ball is somehow
         // already under it, that is answered at once too.
+        // The bob on its rope. It is a circle and the ball is a circle, so their
+        // meeting is solved outright; see bobFirstTouch. The bob is stepped before the
+        // ball, so its whole travel through this tick is already known, and the sweep is
+        // between two moving things -- neither can be overtaken by the other.
+        if (!bobAnswered) {
+            double alongTheWalk = 2.0;
+            Vec3 meetingNormal{}, meetingPoint{};
+            bool alreadyAgainst = false;
+            if (bobFirstTouch(ball.position, travel, remaining, alongTheWalk, meetingNormal, meetingPoint,
+                              alreadyAgainst) &&
+                alongTheWalk < first) {
+                first = alongTheWalk;
+                normal = meetingNormal;
+                contactPoint = meetingPoint;
+                what = -3;
+                meetingResting = alreadyAgainst;
+            }
+        }
         if (!floorAnswered && (ball.position.y < ball.radius || (next.y < ball.radius && travel.y < 0.0))) {
             // Not negative zero: a distance of zero along a downward step divides
             // out to -0, and -0 loses every "did I get there first" comparison it
@@ -687,6 +683,13 @@ void PlaygroundRoom::tickBall() {
         if (what == -1) {
             // Nothing to answer: the travel was refused by a surface that has already
             // said its piece this tick, or there was no travel to refuse.
+        } else if (what == -3) {
+            // The bob, answered here and not by the shapes' solver: it is a solid of
+            // its own and nothing else in the room steps it.
+            bobAnswered = true;
+            ballAgainstBob(normal, meetingResting, reached);
+            weightForTheRest(remaining);
+            if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else if (what == -2) {
             floorAnswered = true;
             // The floor is met at the ball's underside, not at its middle: an arrow
