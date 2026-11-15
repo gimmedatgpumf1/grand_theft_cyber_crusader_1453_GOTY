@@ -58,7 +58,8 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // early: what the room has already made of it this tick is the state a constraint
     // applied after the tick has to read.
     ball.began = ball.velocity;
-    // Cleared here, and set by whatever answers the ball below -- see `alone`.
+    // Cleared here, and set only where the ball *arrives* at something below -- see
+    // the note on the flag.
     ball.answered = false;
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
@@ -81,7 +82,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     ball.bent = false;
     if (ballHeld(ball)) {
         ball.velocity = {};
-        ball.alone = ball.velocity;
         ball.answered = true;  // the hand is the answer, and it is not the rope's to change
         ball.spin = 0.0;
         ball.frozen = false;
@@ -91,7 +91,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         return;
     }
     if (ball.frozen && !ballNeighboursMoving(ball)) {
-        ball.alone = ball.velocity;
         ball.answered = true;  // asleep and still: nothing here for the rope to move
         return;
     }
@@ -196,10 +195,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
-    // What the tick's own account comes to: the air and the weight, and nothing else.
-    // Everything below this line that changes the ball's speed is something in the room
-    // answering it, and the rope has to be able to tell the two apart.
-    ball.alone = ball.velocity;
 
 
     // What the ball is standing on is not relearned halfway through the tick. It
@@ -558,6 +553,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
                     // direction, and stopping the ball along the wrong one left it
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
+                    if (!hit.resting) ball.answered = true;
                     ballContact(ball, endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
@@ -694,6 +690,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // ball, so the answer is a ball's -- equal and opposite, at the place they
             // met, written on the ledger once for each of them.
             otherAnswered[otherIndex] = true;
+            if (!meetingResting) ball.answered = true;
             ballAgainstBall(ball, otherIndex, normal, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
@@ -702,6 +699,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
+            if (!startedOnFloor) ball.answered = true;
             ballContact(ball, normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
@@ -710,6 +708,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
+            if (!meetingResting) ball.answered = true;
             ballContact(ball, normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
@@ -971,14 +970,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         const double left = 1.0 - ball.bendAt;
         if (left > 0.0) ball.bendOut = (ball.position - met) / (kTick * left);
     }
-    // Whether the room answered this tick: it is against something, or its speed is
-    // not the speed its own weight and the air would have left it with. The second
-    // reading is what catches the blow of a tick that ends with the ball already
-    // clear of the thing that struck it, and the first is what catches a ball asleep
-    // on a surface. Both are the room's own numbers, and the speed is compared at the
-    // room's own resolution.
-    ball.answered = ball.answered || ball.touching ||
-                    length(ball.velocity - ball.alone) > playground_tick::kQuantumSpeed;
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
