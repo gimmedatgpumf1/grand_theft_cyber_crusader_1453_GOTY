@@ -119,5 +119,49 @@ int main() {
         if (tick == 12) shoot(room, near, "scratch/host-lean-12.png");
         if (tick == 40) shoot(room, near, "scratch/host-lean-40.png");
     }
+    // The ball in a wedge: the cube's left face and the triangle's slope at once, which
+    // is the arrangement two sweeps answered one at a time get wrong. The ball comes
+    // down between them and stays there, touching both and inside neither.
+    {
+        PlaygroundRoom wedge;
+        wedge.reset();
+        for (int i = 0; i < 300; ++i) wedge.advance(1.0 / 20.0);
+        auto& cube = wedge.bodies_[0];
+        cube.centre = Vec3{-0.35, 0.3501, 0};
+        cube.angle = 0.0;
+        cube.velocity = {};
+        cube.spin = 0.0;
+        wedge.placeCorners(cube);
+        cube.previous = cube.position;
+        wedge.bodies_[1].frozen = true;
+        wedge.ball_.position = Vec3{-0.62, 1.2, 0};
+        wedge.ball_.velocity = Vec3{0, -3.0, 0};
+        wedge.ball_.frozen = false;
+        for (int i = 0; i < 200; ++i) wedge.advance(1.0 / 20.0);
+        RoomFreecam close;
+        close.reset({-0.62, 0.62, 2.10}, 0.00, -0.06);
+        shoot(wedge, close, "scratch/host-wedge.png");
+        std::printf("wedge: ball (%.4f,%.4f) radius %.3f, speed %.3e, frozen %d\n", wedge.ball_.position.x,
+                    wedge.ball_.position.y, wedge.ball_.radius, length(wedge.ball_.velocity), wedge.ball_.frozen ? 1 : 0);
+    }
+    // And the ball lying on the seesaw: a sleeping plate under it, which is where the
+    // wriggle was -- the ball took a tick of weight on every tick because no contact is
+    // written for a body the room is not stepping, and spent the along-the-face part of
+    // that fall as travel for ever.
+    {
+        PlaygroundRoom plank;
+        plank.reset();
+        for (int i = 0; i < 300; ++i) plank.advance(1.0 / 20.0);
+        plank.ball_.position = Vec3{-3.85, 1.6, 0};
+        plank.ball_.velocity = {};
+        plank.ball_.frozen = false;
+        for (int i = 0; i < 400; ++i) plank.advance(1.0 / 20.0);
+        RoomFreecam close;
+        close.reset({-3.85, 1.35, 2.30}, 0.00, -0.12);
+        shoot(plank, close, "scratch/host-plank.png");
+        std::printf("plank: ball (%.4f,%.4f) speed %.3e, plank angle %.6f, frozen %d\n", plank.ball_.position.x,
+                    plank.ball_.position.y, length(plank.ball_.velocity), plank.bodies_[2].angle,
+                    plank.ball_.frozen ? 1 : 0);
+    }
     return 0;
 }
