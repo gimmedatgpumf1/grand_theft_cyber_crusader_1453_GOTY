@@ -830,15 +830,14 @@ private:
     // ball cannot move away from the anchor, so that part of its motion is the rope's and
     // no surface it is merely lying against has to answer it. See ballContact(), where a
     // contact being kept is measured with this and an arrival is not.
-    Vec3 ballOffTheRope(const Ball& ball, Vec3 speed) const {
-        if (!rope_.attached || rope_.ball >= kBallCount || &ball != &balls_[rope_.ball] || !rope_.taut) return speed;
-        const Vec3 arm = ball.position - rope_.anchor;
-        const double reach = length(arm);
-        if (!(reach > 0.0)) return speed;
-        const Vec3 outward = arm / reach;
-        const double leaving = dot(speed, outward);
-        return leaving > 0.0 ? speed - outward * leaving : speed;
-    }
+    // The rope as a constraint on a *speed*, and as the projection a contact being kept
+    // is measured through. Both are written in playground_rope.cpp, with the rest of the
+    // rope, because they are the rope: `tied` takes the part of a speed that is running
+    // away from the anchor, and `offTheRope` is the same reading for a speed a contact is
+    // about to answer. See tickBall(), which applies the first before the ball meets
+    // anything, and ballContact(), which uses the second.
+    Vec3 ballTiedToRope(const Ball& ball, Vec3 speed) const;
+    Vec3 ballOffTheRope(const Ball& ball, Vec3 speed) const;
     double ballCompliance(const Ball& ball, Vec3 push, bool held) const {
         if (held) return 0.0;
         return ballFreedom(ball, push) / ball.mass;
