@@ -235,25 +235,42 @@ void PlaygroundRoom::settleBallFriction() {
     // each round handing back a 1/1.4 share of what the last one took, converging on
     // nothing only after eight rounds and never reaching it. Measured: 1.9 um a tick
     // before, 1.38 um after eight rounds of that, with the answer still on its way.
+    //
+    // And the bound is the bound on the *tick*, not on a round. M = Crr * N * r is a
+    // couple in newton metres and a tick is a twentieth of a second, so the most turn
+    // it can ever take out of a ball is M * dt newton metre seconds -- once, for the
+    // whole tick, however many rounds it takes the two laws to agree. Charging it
+    // afresh every round was eight ticks of rolling resistance inside one: a ball
+    // rolling at three metres a second died in a metre and a half at nearly two
+    // metres a second squared, eight times Crr * g / 1.4, and that is exactly what
+    // "it does not roll like a real basketball" was. The budget below is what is left
+    // of the tick's own angular impulse, and it only ever goes down.
     Vec3 drawWay = ball.velocity;
     if (!(length(drawWay) > 1e-9)) drawWay = Vec3{-ball.spin, 0.0, 0.0};
     const double coupleLimit = ball_shape::kBallRollingResistance * normalForce * ball.radius;  // N.m
+    // The whole tick's worth of it, in N.m.s, and what is left of it after each round.
+    const double coupleBudget = coupleLimit * ball_shape::kTick;
+    double coupleLeft = coupleBudget;
     // What a tick of the turn the ball arrived with costs, in N.m of couple.
     bool spinHeld = normalForce > 0.0 && std::abs(ball.spin) * inertia / ball_shape::kTick <= coupleLimit;
     double heldMoment = 0.0;  // N.m.s of turn the ground has held against, this tick
     double resisted = 0.0;    // rad/s of turn the ground's couple took over the whole tick
     const auto resistRoll = [&]() {
-        if (!(normalForce > 0.0) || ball.spin == 0.0) return;
-        if (spinHeld) {
-            // The ground has the couple to end this turn, so it does: held, not
-            // shaved. It costs the same couple either way, and taking it whole is what
-            // makes the tick end rolled-out instead of mid-roll.
+        if (!(normalForce > 0.0) || ball.spin == 0.0 || !(coupleLeft > 0.0)) return;
+        // Held, not shaved, whenever the rest of the tick's couple can carry it: the
+        // turn is ended rather than reduced, which is what makes a tick finish
+        // rolled-out instead of mid-roll. What it costs comes off the budget.
+        const double costs = std::abs(ball.spin) * inertia;
+        if (spinHeld && costs <= coupleLeft) {
+            coupleLeft -= costs;
             resisted += ball.spin;
             ball.spin = 0.0;
             return;
         }
-        const double take = coupleLimit * ball_shape::kTick / inertia;  // rad/s, this tick
-        const double turn = std::copysign(std::min(std::abs(ball.spin), take), ball.spin);
+        // Otherwise the couple is spent at its limit, and how much turn that is over
+        // this tick is what is left of the budget over the ball's own inertia.
+        const double turn = std::copysign(std::min(std::abs(ball.spin), coupleLeft / inertia), ball.spin);
+        coupleLeft -= std::abs(turn) * inertia;
         ball.spin -= turn;
         resisted += turn;
     };
@@ -350,11 +367,13 @@ void PlaygroundRoom::settleBallFriction() {
             ball.velocity = ball.velocity + tangents[i] * (impulse / ball.mass);
             if (spinHeld) {
                 heldMoment += lever * impulse;
-                // The couple has a limit like everything else. Too much asked of it
-                // and it lets go, and every newton metre second the ball has been
-                // holding back is the ball's turn after all -- given to it, not
-                // thrown away.
-                if (std::abs(heldMoment) > coupleLimit * ball_shape::kTick) {
+                // The couple has a limit like everything else, and it is the tick's
+                // -- what is left of it, not a fresh one for this round. Too much
+                // asked of it and it lets go, and every newton metre second the ball
+                // has been holding back is the ball's turn after all -- given to it,
+                // not thrown away, which is why nothing comes off the budget when it
+                // does: the impulse was returned, so it was never spent.
+                if (std::abs(heldMoment) > coupleLeft) {
                     ball.spin += heldMoment / inertia;
                     heldMoment = 0.0;
                     spinHeld = false;
