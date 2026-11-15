@@ -549,15 +549,22 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // tick as well: one that was not closing then is closing now only because its weight
     // fell for a tick. Nothing is taken from the ball and nothing given to it -- the
     // ball's velocity is left for the rope, which is the one thing entitled to change it.
-    // A ball that *did* bring a speed is a blow, and a blow is answered in full.
+    // A ball that *did* bring a speed is a blow, and a blow is answered in full -- it
+    // is the one case the projection may not touch. A ball swung into the triangle's
+    // slope arrives along the face's normal, and on a taut rope that is very nearly
+    // along the rope: stripped of it, the blow read as nothing, the slope was handed
+    // almost none of the ball's momentum, and the ball did not bounce away. Measured
+    // on a ball swung at 2.1 m/s into the slope, closing at 1.66 m/s: it left at 0.05.
     const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
-    const Vec3 ballSpeed = ballOffTheRope(ball, ball.velocity);
+    const bool blow = arrived && !resting;
+    const auto answered = [&](Vec3 speed) { return blow ? speed : ballOffTheRope(ball, speed); };
+    const Vec3 ballSpeed = answered(ball.velocity);
     const double closing = dot(ballSpeed - surfaceVelocity, normal);
     // What the ball was doing at the instant it met the surface. Its speed is carried
     // through the tick from `arrival` to what it is now, so the fraction of the way
     // through the tick is the fraction of the way from one to the other: at the very
     // moment of a contact, that is the speed the blow is answered to.
-    const Vec3 arrivalSpeed = ballOffTheRope(ball, ball.arrival);
+    const Vec3 arrivalSpeed = answered(ball.arrival);
     const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface. A ball that was already lying
