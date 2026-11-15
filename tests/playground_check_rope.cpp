@@ -526,12 +526,13 @@ int playgroundRopeChecks() {
         std::snprintf(detail, sizeof detail,
                       "150 s after a millimetre of press: the ball was left at %.6f J after the tick the press was "
                       "answered in, never rose by more than %.3e J (log2 %.1f) over the next 150 s, and ended at "
-                      "%.6f J -- %.3f J of it spent on the air, %.3e m a tick at the end; the triangle it was "
-                      "pressed with moved %.3e m; the rope carries %.3f N",
+                      "%.6f J -- %.3f J of it spent on the air, %.3e m a tick at the end; THE SHAPE IT WAS "
+                      "PRESSED WITH MOVED %.3e m; the rope carries %.3f N",
                       start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, end, start - end, travel, spoke,
                       room.ropeTension());
         check(rise <= 0.0 && end < start && spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
+        (void)0;
     }
 
     return localFailures;
