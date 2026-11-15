@@ -489,6 +489,19 @@ int playgroundRopeChecks() {
         triangle.previousAngle = triangle.angle;
         triangle.velocity = {};
         triangle.spin = 0.0;
+        // The press is answered in the first tick and it is the hand's, not the room's:
+        // a slope that cannot give way is a slope the ball is pushed out of, and the
+        // ball is the one thing here that may be moved out of something it is in. So
+        // the tick the press is answered in is where the hand's work lands, and it is
+        // taken as read. What must never happen is the room *adding* to it afterwards:
+        // a kicked ball that keeps being kicked is the pump this check is for.
+        //
+        // It used to assert that the ball did not move at all -- which was true only
+        // because the rope put the ball back where it was every tick and threw the
+        // contact's answer away with it. That is the same pinning that made the ball an
+        // immovable wall against the triangle, and it cannot be both: a ball that may
+        // be shoved by a slope is a ball that swings after it is shoved.
+        room.advance(1.0 / 20.0);
         const double start = hangingEnergy(room);
         double highest = start;
         for (int tick = 0; tick < 3000; ++tick) {
@@ -496,18 +509,21 @@ int playgroundRopeChecks() {
             highest = std::max(highest, hangingEnergy(room));
         }
         const double rise = highest - start;
+        const double end = hangingEnergy(room);
         // The room's own rule for "not moving": a ball that cannot carry itself a
         // micrometre in a tick is not moving. That is kQuantum doing the one job it is
         // allowed to do here -- saying what the room calls still -- and not a tolerance
         // on an overlap.
         const double travel = gtc::native::length(room.ropeBall().velocity) * gtc::native::playground_tick::kTick;
+        const double spoke = gtc::native::length(triangle.centre - Vec3{3.6697 + press / std::sqrt(2.0), 0.7 - press / std::sqrt(2.0), 0});
         std::snprintf(detail, sizeof detail,
-                      "150 s with the slope pressed a millimetre into the hanging ball: its energy rose by %.3e J "
-                      "(log2 %.1f) above %.6f J and it ended %.3e m from where it was in the tick -- %s; the rope "
-                      "carries %.3f N",
-                      rise, rise > 0.0 ? std::log2(rise) : -1000.0, start, travel,
-                      travel <= gtc::native::playground_tick::kQuantum ? "still" : "still moving", room.ropeTension());
-        check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum,
+                      "150 s after a millimetre of press: the ball was left at %.6f J after the tick the press was "
+                      "answered in, never rose by more than %.3e J (log2 %.1f) over the next 150 s, and ended at "
+                      "%.6f J -- %.3f J of it spent on the air, %.3e m a tick at the end; the triangle it was "
+                      "pressed with moved %.3e m; the rope carries %.3f N",
+                      start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, end, start - end, travel, spoke,
+                      room.ropeTension());
+        check(rise <= 0.0 && end < start && spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
     }
 
