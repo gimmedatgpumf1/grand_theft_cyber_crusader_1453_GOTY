@@ -542,7 +542,17 @@ int playgroundRopeChecks() {
         // somebody is still holding. A body the hand is carrying gives nothing (see
         // ballContact), which is the whole question this check asks: when the hand and
         // the rope both say no, it is the ball that gives way, and nothing else moves.
-        triangle.frozen = true;
+        //
+        // Held, and not merely asleep: those were the same flag here, and they are not
+        // the same thing. A body asleep is a body a real blow wakes, and it must be --
+        // that is how the triangle is shoved by the ball in the check below. But a body
+        // in the hand has nowhere to be shoved *to*, and the room says so where it
+        // matters: `bodyHeld`, which the drag sets and which no blow wakes. Frozen here
+        // was standing in for held, so the ball's own swing back onto the slope woke a
+        // shape nobody was going to let go of and carried it a millimetre.
+        triangle.frozen = false;
+        room.dragTarget_ = PlaygroundRoom::DragTarget::Body;
+        room.dragBody_ = 1;
         // The press is answered in the first tick and it is the hand's, not the room's:
         // a slope that cannot give way is a slope the ball is pushed out of, and the
         // ball is the one thing here that may be moved out of something it is in. So
