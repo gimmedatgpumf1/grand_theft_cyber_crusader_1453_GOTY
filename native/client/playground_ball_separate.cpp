@@ -121,7 +121,7 @@ void PlaygroundRoom::separateBall() {
     // The step is re-read after each of those, because pushing a shape out changes which
     // surfaces the ball is inside.
     if (!stuck.empty() && !ball_.frozen && dragTarget_ != DragTarget::Ball) {
-        for (int round = 0; round < 4; ++round) {
+        for (int round = 0; round < 5; ++round) {
             double left = 0.0;
             const Vec3 clear = ballClearStep(left);
             if (!(left > playground_tick::kQuantum)) {
@@ -131,45 +131,43 @@ void PlaygroundRoom::separateBall() {
                 }
                 break;
             }
-            // The step may have gone below the floor -- the floor is a surface like any
-            // other and its answer is upward, and a projection that is fighting a shape
-            // above it can overshoot through it. Nothing is below the floor, so that is
-            // not a place to search from.
+            // A pinch. The ball goes to the best place the projection reached -- which
+            // is the place that leaves the least overlap there is to leave -- and then a
+            // shape that is free to move gives way from where the ball now is, so that
+            // the next read of the step has something new to work with. Pushing the
+            // shape by the depth measured at a place the ball was never at is a push of
+            // the wrong size: measured, the ball stayed the same six tenths of a
+            // millimetre inside a pinned plank while a triangle beside it crept away a
+            // little at a time and nothing was ever put right.
             Vec3 here = ball_.position + clear;
             here.y = std::max(here.y, ball_.radius);
-            // The surface the ball is deepest inside at that place, if it is one that can
-            // give way at all: a pinned body, a sleeping one and one in the mouse's hand
-            // cannot, and neither can the floor.
-            const auto depthAt = [&](std::size_t index, ball_shape::OutlineGap& gap) {
-                gap = ball_shape::outlineGap(here, bodies_[index].position.data(), bodies_[index].position.data(),
-                                             bodies_[index].count, 1.0);
-                return ball_.radius - gap.gap;
-            };
+            ball_.position = here;
+            ++ballFoundThrough_;
+            // The deepest surface the ball is inside here that can give way at all: a
+            // pinned body, a sleeping one and one in the mouse's hand cannot, and
+            // neither can the floor.
             std::size_t worst = kBodyCount;
             double deepest = playground_tick::kQuantum;
+            Vec3 worstWay{};
             for (std::size_t index = 0; index < kBodyCount; ++index) {
                 const Body& body = bodies_[index];
                 if (body.count == 0 || body.frozen || bodyHeld(index) || body.pivoted) continue;
-                ball_shape::OutlineGap gap;
-                const double depth = depthAt(index, gap);
+                Vec3 way{}, at{};
+                const double depth = -bodyBallGap(index, way, at);
                 if (depth > deepest) {
                     deepest = depth;
                     worst = index;
+                    worstWay = way;
                 }
             }
             if (worst < kBodyCount) {
-                ball_shape::OutlineGap gap;
-                depthAt(worst, gap);
-                // The shape gives way along the other way: the normal runs from the
-                // shape towards the ball, so the shape travels against it.
-                if (pushBodyOutOfBall(worst, gap.normal, deepest)) ++ballFoundThrough_;
+                pushBodyOutOfBall(worst, worstWay * -1.0, deepest);
                 continue;
             }
-            // Nothing in the room can give way. A ball in that corner is a ball under
-            // something that is pinned to its axle or bolted down, and the only way out
-            // left is along whatever is under it: the ball rolls out from under the
-            // shape, which is what a real ball does. The way out is looked for along the
-            // floor, and it is only taken to a place that is clear of *everything*.
+            // Nothing in the room can give way: the ball is under something pinned to
+            // its axle or bolted down, and the only way out left is along whatever is
+            // under it -- the ball rolls out from under the shape, which is what a real
+            // ball does. It is only taken to a place that is clear of *everything*.
             const auto clearAt = [&](Vec3 at) {
                 if (at.y < ball_.radius - kSkin) return false;
                 for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -181,24 +179,16 @@ void PlaygroundRoom::separateBall() {
                 }
                 return true;
             };
-            // Along the floor it is, and both ways are tried: the ball is under a shape
-            // that may have a longer side on one side than the other.
-            const double side = here.x >= ball_.position.x ? 1.0 : -1.0;
+            const double side = here.x >= ball_.position.x ? -1.0 : 1.0;
             double low = 0.0, high = 0.0;
-            for (double reach = 0.0005; reach <= 0.4; reach *= 1.5) {
+            for (double reach = 0.0005; reach <= 0.5; reach *= 1.5) {
                 if (clearAt(Vec3{here.x + side * reach, here.y, 0})) {
                     high = reach;
                     break;
                 }
                 low = reach;
             }
-            if (high == 0.0) {
-                // Nowhere at all: the ball goes to the place that leaves the least
-                // overlap, and the room says so in its count rather than pretending.
-                ball_.position = here;
-                ++ballFoundThrough_;
-                break;
-            }
+            if (high == 0.0) break;
             for (int step = 0; step < 24; ++step) {
                 const double middle = 0.5 * (low + high);
                 if (clearAt(Vec3{here.x + side * middle, here.y, 0}))
