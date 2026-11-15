@@ -158,7 +158,19 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     const Vec3 travel = ball.position - ball.previous;
     const Vec3 from = ball.previous - anchor;
     double crossed = 2.0;
-    {
+    // A ball that begins the tick already on the sphere -- which is every tick a ball
+    // on a taut rope begins, because the rope left it there -- is held from the start
+    // whenever its travel runs away from the anchor, and tangential travel counts:
+    // that is the whole of a swing. Reading that off the quadratic alone is reading it
+    // off rounding: the ball sits at exactly one length, and (|from|^2 - L^2) is then
+    // a fraction of a picometre either side of zero, so on the ticks where the
+    // arithmetic rounded it *outwards* the equation had two roots behind the ball and
+    // no crossing ahead of it -- the rope read as slack, let go of a ball that was
+    // still on it, and never caught it again: measured, a swing released from 0.5 rad
+    // was 1.38 m outside its own rope within a tick. Touching is not inside, here as
+    // everywhere else in the room: a ball on the sphere is a ball the rope has hold of.
+    if (length(from) >= ropeLength - ball_shape::kTouch && dot(from, travel) >= 0.0) crossed = 0.0;
+    if (!(crossed <= 1.0)) {
         const double a = dot(travel, travel);
         if (a > 0.0) {
             const double b = 2.0 * dot(from, travel);
