@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace gtc::native {
@@ -232,8 +233,20 @@ void PlaygroundRoom::separateBall() {
     // that moves, by exactly the depth it is in, along the way out -- and if that depth
     // is more than the arithmetic's dust it is counted, because the room moving the
     // ball by its place is a miss and saying so is the only way it ever gets fixed.
+    //
+    // It is put out to the *next place that is not inside*, not to the place whose
+    // depth comes out as nought: at a radius of 0.12 m the last bit of a double is
+    // 1.4e-17 m, so "exactly one radius away" is not a number a face at an angle can
+    // be at, and a correction that aims at it lands on one side or the other of it.
+    // The correction is the depth plus a few units in the last place, which is the
+    // smallest step this arithmetic can express, and it is not a tolerance: nothing
+    // is ever measured against it, and a ball put out by it is outside by 1e-16 m
+    // rather than inside by 1e-16 m. The King asked for not one micrometre, and the
+    // honest answer is that the ball is not one part in nine billion of a micrometre
+    // through anything -- it is outside.
+    const double ulps = 4.0 * std::numeric_limits<double>::epsilon() * ball_.radius;
     const Vec3 beforeTheLastWord = ball_.position;
-    for (int pass = 0; pass < 4; ++pass) {
+    for (int pass = 0; pass < 8; ++pass) {
         std::size_t deepest = kBodyCount;
         double depth = 0.0;
         Vec3 way{};
@@ -248,7 +261,7 @@ void PlaygroundRoom::separateBall() {
             }
         }
         if (deepest == kBodyCount) break;
-        ball_.position = ball_.position + way * depth;
+        ball_.position = ball_.position + way * (depth + ulps);
         ball_.position.y = std::max(ball_.position.y, ball_.radius);
     }
     if (length(ball_.position - beforeTheLastWord) > kRepairDepth) ++ballFoundThrough_;
