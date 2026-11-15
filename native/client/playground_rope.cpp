@@ -169,7 +169,13 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // still on it, and never caught it again: measured, a swing released from 0.5 rad
     // was 1.38 m outside its own rope within a tick. Touching is not inside, here as
     // everywhere else in the room: a ball on the sphere is a ball the rope has hold of.
-    if (length(from) >= ropeLength - ball_shape::kTouch && dot(from, travel) >= 0.0) crossed = 0.0;
+    // A ball that begins the tick *at* its length is a ball the rope has hold of, whole
+    // tick: whether it is running outward, or swinging along the circle, or (by rounding)
+    // a fraction of a picometre inward. It is the same rule as everywhere else in the
+    // room -- touching is not inside -- and it matters here because the rope owns the
+    // tick from the instant it takes hold: whether it lets go later is the tension's
+    // business, and the arc below is where that is decided, by a root and not by a flag.
+    if (length(from) >= ropeLength - ball_shape::kTouch) crossed = 0.0;
     if (!(crossed <= 1.0)) {
         const double a = dot(travel, travel);
         if (a > 0.0) {
