@@ -70,10 +70,10 @@ void arcStep(double theta0, double omega0, double gravityOverLength, double dt, 
     //   m = θ0 + (dt ω0)/2 - (dt² g / (4L)) sin m,
     // which is a contraction for any tick this room can run and is solved by asking it
     // again until it stops changing.
-    const double pull = dt * gravityOverLength;
+    const double pull = dt * gravityOverLength;      // the tick, in units of sqrt(g/L)
     double middle = theta0 + 0.5 * dt * omega0;
     for (int pass = 0; pass < kMidpointPasses; ++pass) {
-        const double next = theta0 + 0.5 * dt * omega0 - 0.25 * pull * std::sin(middle);
+        const double next = theta0 + 0.5 * dt * omega0 - 0.25 * dt * pull * std::sin(middle);
         if (next == middle) break;
         middle = next;
     }
