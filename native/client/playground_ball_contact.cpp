@@ -642,7 +642,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
             // side" still shoves the ball across the room.
             // The ball's say in this blow is the way it is still free to move, not whether
             // it is resting; the way it cannot go is what the surface under it refuses.
-            const double ballShare = ballCompliance(ball, normal, PlaygroundRoom::ballHeld(ball));
+            const double ballShare = ballCompliance(ball, normal, false);
             // A contact pushes and never pulls: where the two are already separating
             // the solve asks for a negative impulse, which pulls the ball back onto the
             // face it is leaving -- a bounce stopped dead in the tick after it.
