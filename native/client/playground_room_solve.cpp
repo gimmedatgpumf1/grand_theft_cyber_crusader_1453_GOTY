@@ -208,7 +208,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // them they add up to the ball's speed not changing, which is what a ball
         // pressed into the ground does -- and not one newton of it came from nowhere.
         const bool ballFixed = onABall && ballSide->frozen;
-        const double ballMoment = 0.4 * ballSide->mass * ballSide->radius * ballSide->radius;
+        // A body against a body has no ball on the other side of it, and its share of the
+        // solve is a body with an outline: the ball's moment is what a *ball* adds, and
+        // there is none here -- so it is nought rather than an object that is not there.
+        const double ballMoment =
+            onABall ? 0.4 * ballSide->mass * ballSide->radius * ballSide->radius : 0.0;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
         // How fast a place on the body is going away from the other side of the
