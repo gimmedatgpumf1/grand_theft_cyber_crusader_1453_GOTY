@@ -185,13 +185,17 @@ void PlaygroundRoom::interpolate() {
     // motion join is the place it touched. Spreading the tick as a single line put
     // the join halfway up the rebound instead, which is why a ball landing fast
     // looked like it bounced on air a hand's width above the cube.
-    if (ball_.bent && ballAlpha < 1.0) {
-        const double when = ball_.bendAt;
-        ball_.shown = ballAlpha <= when ? ball_.previous + ball_.bendIn * (kTick * ballAlpha)
-                                        : ball_.bendPoint + ball_.bendOut * (kTick * (ballAlpha - when));
-    } else {
-        ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
-    }
+    //
+    // One function for the place at a fraction of the tick, because the picture has
+    // to be able to ask for a fraction *earlier* than the frame's own when the frame's
+    // own is under a surface -- see below.
+    const auto alongPath = [&](double t) -> Vec3 {
+        if (t >= 1.0) return ball_.position;
+        if (!ball_.bent) return ball_.previous + (ball_.position - ball_.previous) * t;
+        return t <= ball_.bendAt ? ball_.previous + ball_.bendIn * (kTick * t)
+                                 : ball_.bendPoint + ball_.bendOut * (kTick * (t - ball_.bendAt));
+    };
+    ball_.shown = alongPath(ballAlpha);
     // The picture may not show a configuration the physics never had.
     //
     // A tick's travel is a straight line for the ball and a straight line for each
@@ -203,44 +207,63 @@ void PlaygroundRoom::interpolate() {
     // inside. Measured in the King's corner: 1.2e-4 m. A tenth of a millimetre is
     // invisible, and it is still a lie, and the King is looking at pixels.
     //
-    // So the drawn place is put outside the drawn outlines by the depth it is inside,
-    // the same way the room puts the ball outside a face it is found through. It is a
-    // projection of the drawn position only: it touches no velocity, no force and no
-    // ledger line, and it cannot conjure anything, because it is not part of the tick.
-    if (sceneReady_) {
-        const Vec3 legal = ball_.position;  // where the tick really left it
-        bool clear = false;
-        for (int pass = 0; pass < 64 && !clear; ++pass) {
-            double inside = ball_.radius - ball_.shown.y;
-            Vec3 way{0, 1, 0};
-            for (std::size_t index = 0; index < kBodyCount; ++index) {
-                const Body& body = bodies_[index];
-                if (body.count == 0) continue;
-                const ball_shape::OutlineGap gap =
-                    ball_shape::outlineGap(ball_.shown, body.shown.data(), body.shown.data(), body.count, 1.0);
-                if (ball_.radius - gap.gap > inside) {
-                    inside = ball_.radius - gap.gap;
-                    way = gap.normal;
-                }
-            }
-            if (!(inside > 0.0)) {
-                clear = true;
-                break;
-            }
-            ball_.shown = ball_.shown + way * inside;
+    // The cure is to keep the drawn ball on the path its own tick took. That path is
+    // already known exactly -- it is the two straight pieces the interpolation is
+    // built from -- so the drawn place is the *latest* point of it that is outside
+    // everything, found by halving the fraction until the last clear place is
+    // pinned down to a part in 2^40 of a tick. Nothing here is a step size or a
+    // tolerance: it is a root of "where does the path stop being outside", and it is
+    // found exactly the way the room finds where a walk stops being clear.
+    //
+    // Why not push the ball sideways off a surface instead, which is what this used
+    // to do? Because a push moves the drawn ball off its own path, and two surfaces
+    // closing on it push it out of one and into the other until the push gives up and
+    // the frame is drawn at the newest tick -- a jump forward of up to a tick's
+    // travel, then a jump back on the next frame. That is what made the ball look
+    // laggy in a corner, and it is measurable: in the King's corner the drawn ball
+    // was thrown off its path by 5e-2 m on some frames, and then teleported. Walking
+    // back along the path cannot do that: every place it can choose is a place the
+    // tick really passed through.
+    // How deep a candidate drawn place is inside the drawn room. Anything not greater
+    // than zero is outside everything, which is where the ball has to be.
+    const auto depthInside = [&](const Vec3& where) {
+        double inside = ball_.radius - where.y;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            const ball_shape::OutlineGap gap =
+                ball_shape::outlineGap(where, body.shown.data(), body.shown.data(), body.count, 1.0);
+            inside = std::max(inside, ball_.radius - gap.gap);
         }
-        // A ball drawn between two surfaces that close on it may be pushed out of one
-        // and into the other, round and round: there is no place in the middle of a
-        // pinch. Then the picture shows the ball where the tick left it, which is a
-        // place the room has already made legal, and the frame is one of the two ends
-        // of its own motion rather than a place it was never in.
-        if (!clear) ball_.shown = legal;
+        return inside;
+    };
+    double drawnAt = ballAlpha;
+    if (sceneReady_ && depthInside(alongPath(drawnAt)) > 0.0) {
+        if (depthInside(alongPath(0.0)) > 0.0) {
+            // Not one place of this tick's path is outside the room it is drawn in.
+            // That only happens when a shape has been drawn over the ground the ball
+            // already covered, and then the newest tick is the best place there is:
+            // the room made that one legal against the shapes as they really are.
+            ball_.shown = ball_.position;
+            drawnAt = 1.0;
+        } else {
+            double clear = 0.0, inside = drawnAt;
+            for (int pass = 0; pass < 40; ++pass) {
+                const double middle = 0.5 * (clear + inside);
+                if (depthInside(alongPath(middle)) > 0.0) inside = middle;
+                else clear = middle;
+            }
+            drawnAt = clear;
+            ball_.shown = alongPath(drawnAt);
+        }
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
     // the ball turned a fifteenth of the way it rolled and the seams looked
     // nailed on.
-    ball_.shownAngle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * ballAlpha;
+    // The turn goes with the place; a ball drawn a little earlier in its tick must
+    // not have turned all the way through it.
+    ball_.shownAngle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * drawnAt;
 }
 
 void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
