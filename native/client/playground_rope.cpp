@@ -230,6 +230,12 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // all, and bounced off the slope for ever. That is where the infinite energy came
     // from, and this is the line it came from.
     Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
+    // And the air, over the part of the tick that is left. The ball's own tick spent it
+    // over the part behind the crossing, and the arc below is the rope's own motion: if
+    // the air were not asked again here, a ball on a rope would swing for ever in a room
+    // with air in it, which is the one thing this room's air is not allowed to do. It is
+    // the same law and the same exact solve, over a shorter time.
+    speedNow = ballAirDrag(ball, speedNow, dt * (1.0 - crossed));
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
     // away from the anchor.

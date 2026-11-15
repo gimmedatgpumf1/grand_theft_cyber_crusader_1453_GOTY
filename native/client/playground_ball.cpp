@@ -184,7 +184,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     }
     // The air, on everything that moves through it -- held up or not. See
     // ballAirDrag() for the law and for why it is solved rather than stepped into.
-    ball.velocity = ballAirDrag(ball, ball.velocity);
+    ball.velocity = ballAirDrag(ball, ball.velocity, kTick);
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));

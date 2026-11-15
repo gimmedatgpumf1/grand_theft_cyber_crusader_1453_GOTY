@@ -389,7 +389,9 @@ private:
     // The same air, on the ball, answered by solving its law over the tick rather
     // than by adding the force times the tick. Returns the ball's speed after it.
     // See playground_ball_air.cpp.
-    Vec3 ballAirDrag(Ball& ball, Vec3 velocity);
+    // The air over a tick of `over` seconds: the ball's own tick hands it one whole tick,
+    // and the rope hands it whatever is left of the tick after it takes hold.
+    Vec3 ballAirDrag(Ball& ball, Vec3 velocity, double over);
     // Carries every body that is being simulated by `seconds` of its own speed and
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.
