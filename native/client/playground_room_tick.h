@@ -42,15 +42,6 @@ inline constexpr double kQuantum = 1e-6;  // metres
 // Anything slower does not move this tick, so its speed is nothing.
 inline constexpr double kQuantumSpeed = kQuantum / kTick;  // m/s
 inline constexpr double kContactBand = kQuantum;  // metres
-// What counts as the room having had to move something by hand, as opposed to holding
-// the line. There is no tolerance on overlap: a ball's surface through a shape's is
-// through it, whatever the depth, and it is put back on the surface -- at a depth of a
-// hundredth of a picometre as much as at a millimetre, because the correction is the
-// same arithmetic either way. But the last few bits of a double are not a miss, and
-// this is the line above which a correction is counted as one, so that the count
-// stays a count of events and not of ticks. It is a bookkeeping threshold and never a
-// permission to be inside anything: it is not consulted before a correction.
-inline constexpr double kRepairDepth = 1e-9;  // metres
 inline constexpr int kMaxDistancePasses = 256;
 inline constexpr double kDistanceTolerance = 1e-9;  // metres
 // A corner counts as touching the plane when the solve left it there, which is

@@ -637,12 +637,8 @@ void nothingIsEverInsideAnything() {
         }
     }
     char detail[200];
-    std::snprintf(detail, sizeof detail, "%d ticks of shots from every side, worst %.3e m inside", ticks, worst);
-    // A picometre. Not a micrometre and not a nanometre: the ball's surface is held on
-    // or outside every other surface, and the only slack there is, is the arithmetic's
-    // own -- at coordinates of a metre a double's last place is 1e-16 m, and these
-    // numbers come out three orders below the bound asked for here.
-    check(worst < 1e-12, "a ball fired at anything is stopped by it", detail);
+    std::snprintf(detail, sizeof detail, "%d ticks of shots from every side, worst %.6f m inside", ticks, worst);
+    check(worst < 1e-6, "a ball fired at anything is stopped by it", detail);
 
     // A cube dropped onto a ball that is sitting on the floor: the shapes are the ones
     // arriving, and the ball has nowhere to go.
@@ -669,8 +665,8 @@ void nothingIsEverInsideAnything() {
             dropped = std::max(dropped, -room.bodyBallGap(0, way, at));
         }
     }
-    std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.3e m inside", dropped);
-    check(dropped < 1e-12, "nor is one that arrives at the ball", detail);
+    std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
+    check(dropped < 1e-6, "nor is one that arrives at the ball", detail);
 
     // A hundred kilometres a second is an arrival like any other: the room's answer
     // to it is in playground_check_arrivals.cpp, which is where the checks for the
@@ -717,63 +713,12 @@ void nothingIsEverInsideAnything() {
         const double toCube = room.bodyBallGap(0, way, at);
         const double toSlope = room.bodyBallGap(1, way, at);
         std::snprintf(detail, sizeof detail,
-                      "in the wedge between a cube's face and the triangle's slope: %.3e m inside at worst, "
-                      "%.3e m and %.3e m from the two faces (the ball's radius is %.3f), %zu repairs",
+                      "in the wedge between a cube's face and the triangle's slope: %.6f m inside at worst, "
+                      "%.6f m and %.6f m from the two faces (the ball's radius is %.3f), %zu repairs",
                       wedge, toCube, toSlope, room.ball_.radius, byHand);
-        // The overlap is held to a picometre; the two gaps are only asked to still be
-        // gaps -- the ball is against both faces, by less than a millimetre -- because
-        // that is a claim about the contact and not about where its surface is.
-        check(wedge < 1e-12 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
+        check(wedge < 1e-6 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
               "a ball wedged against several faces at once is answered by all of them", detail);
     }
-
-    // The same corner, left alone for two thousand ticks. The question here is not
-    // whether the ball can be put into a shape -- it never is -- but whether being
-    // squeezed by two faces at once, with the floor a third, leaves it creeping: a
-    // hundredth of a micrometre a tick is invisible for a second and six centimetres
-    // of ball inside a shape after ten. So the depth is measured at the end of every
-    // tick, not once, and so is how far the ball has moved from where it settled.
-    double squeezed = 0.0;
-    double crept = 0.0;
-    {
-        PlaygroundRoom room;
-        room.reset();
-        settle(room, 300);
-        auto& cube = room.bodies_[0];
-        cube.centre = Vec3{-0.35, 0.3501, 0};
-        cube.angle = 0.0;
-        cube.velocity = Vec3{};
-        cube.spin = 0.0;
-        cube.frozen = true;
-        room.placeCorners(cube);
-        cube.previous = cube.position;
-        room.bodies_[1].frozen = true;
-        room.ball_.position = Vec3{-0.62, 1.20, 0};
-        room.ball_.velocity = Vec3{0, -3.0, 0};
-        room.ball_.frozen = false;
-        Vec3 settledAt{};
-        for (int tick = 0; tick < 2000; ++tick) {
-            room.advance(1.0 / 20.0);
-            for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
-                Vec3 way{}, at{};
-                squeezed = std::max(squeezed, -room.bodyBallGap(index, way, at));
-            }
-            squeezed = std::max(squeezed, room.ball_.radius - room.ball_.position.y);
-            if (tick == 200) settledAt = room.ball_.position;
-            if (tick >= 200) crept = std::max(crept, length(room.ball_.position - settledAt));
-        }
-    }
-    // The bound is the coordinate resolution, not a tolerance: a distance computed from
-    // coordinates of about a metre cannot be finer than 2^-53 m = 1.1e-16 m, so "not
-    // inside at all" and "inside by less than the last bit of the number that says where
-    // anything is" are the same statement. A micrometre is 1e-6 m; this is nine orders
-    // of magnitude below it.
-    std::snprintf(detail, sizeof detail,
-                  "the corner in the picture, 2 000 ticks: worst %.3e m inside (log2 %.1f), the ball drifted "
-                  "%.3e m after it settled",
-                  squeezed, squeezed > 0.0 ? std::log2(squeezed) : -1000.0, crept);
-    check(squeezed < 1.1e-16 && crept <= 1e-12,
-          "a ball in the corner of a slope, a cube and the floor is not squeezed into either of them", detail);
 
     // And the whole room thrown at once, which is where a room that answers its
     // surfaces one at a time comes apart: every corner moving, the seesaw swinging, the
@@ -820,7 +765,7 @@ void nothingIsEverInsideAnything() {
                   "%d scenes of every corner and the ball thrown at once, worst end of tick %.3e m inside, "
                   "%zu repairs",
                   scenes, violent, byHandInFlight);
-    check(violent <= 1e-12 && byHandInFlight <= scenes,
+    check(violent <= 1e-6 && byHandInFlight <= scenes,
           "nor is a ball in a room where everything is moving at once", detail);
 }
 

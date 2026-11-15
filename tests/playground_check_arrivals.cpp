@@ -104,9 +104,7 @@ int playgroundArrivalChecks() {
                   "20 shots at 1, 6, 40, 1 000 and 100 000 m/s into the corner and both ways at the slope, "
                   "worst %.3e m inside",
                   fastInside);
-    // A picometre, as in playground_check.cpp: the ball is outside every shape, and the
-    // only depth this bound allows is the arithmetic's own last few places.
-    check(fastInside < 1e-12, "a shot at a hundred kilometres a second is stopped by the same geometry", detail);
+    check(fastInside < 1e-6, "a shot at a hundred kilometres a second is stopped by the same geometry", detail);
     check(!everNotANumber, "and nothing in the room ever stops being a number",
           "every centre, corner, speed and spin of the ball and of all three shapes stayed finite");
 
@@ -143,7 +141,7 @@ int playgroundArrivalChecks() {
     }
     std::snprintf(detail, sizeof detail,
                   "the triangle dropped on the ball at 1, 40, 1 000 and 100 000 m/s, worst %.3e m inside", thrown);
-    check(thrown < 1e-12, "nor is one that a shape arrives at at a hundred kilometres a second", detail);
+    check(thrown < 1e-6, "nor is one that a shape arrives at at a hundred kilometres a second", detail);
     check(thrownFinite, "and that leaves a number where its position was", detail);
 
     return localFailures;

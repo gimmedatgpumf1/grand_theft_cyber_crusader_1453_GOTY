@@ -730,15 +730,10 @@ void PlaygroundRoom::separateBodies() {
 bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
     if (index >= kBodyCount || !(through > 0.0)) return false;
     Body& body = bodies_[index];
-    if (body.count == 0 || bodyHeld(index) || body.pivoted || body.frozen) {
+    if (body.count == 0 || bodyHeld(index) || body.pivoted) {
         // A pinned body cannot give way -- it has nowhere to go -- so a ball that has
         // come to be inside one is answered by the ball moving, which is the honest
-        // last resort and the only one left. Neither can one that is asleep: a body
-        // the room has stopped stepping is a body the room has said is not moving, and
-        // moving it here would be the room moving a shape by hand from somewhere it
-        // never looked at -- and it did, the first time the separation was asked about
-        // sleeping shapes: the ball was put inside the triangle and the triangle was
-        // shoved half a metre to make room.
+        // last resort and the only one left.
         return false;
     }
     const Vec3 was = body.centre;
