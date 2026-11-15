@@ -783,8 +783,17 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // the very face it had just been answered on and left the plank unloaded for the
     // ticks the ball spent falling back. The ball was in the air half the time and
     // the plank was kicked the other half: stop, move, stop, move.
+    //
+    // And what "pointing into" means is the same question the blow was asked, so it is
+    // answered the same way: for a contact being kept on a taut rope, the part of the
+    // ball's speed that is running away from the anchor is the rope's, and the rope is
+    // going to take it before this tick is over. Cancelling it here as well is how a ball
+    // set down on the slope slid along it for ever -- the fall was stopped square to the
+    // face, the part along the face was left in the ball, and the face did the same thing
+    // again next tick. Nothing is conjured by leaving it: holdOnRope() takes it, and the
+    // contact takes nothing it was not given.
     {
-        const double into = dot(ball.velocity - surfaceVelocity, normal);
+        const double into = dot(ballSpeed - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
     // What this shape gave the ball, drawn where the two met.

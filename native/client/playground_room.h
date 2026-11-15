@@ -826,17 +826,10 @@ private:
         const Vec3 unit = push * (1.0 / size);
         return std::max(0.0, dot(unit, ballFree(ball, unit)));
     }
-    // The ball's speed with the part the rope already owns taken out: on a taut rope the
-    // ball cannot move away from the anchor, so that part of its motion is the rope's and
-    // no surface it is merely lying against has to answer it. See ballContact(), where a
-    // contact being kept is measured with this and an arrival is not.
-    // The rope as a constraint on a *speed*, and as the projection a contact being kept
-    // is measured through. Both are written in playground_rope.cpp, with the rest of the
-    // rope, because they are the rope: `tied` takes the part of a speed that is running
-    // away from the anchor, and `offTheRope` is the same reading for a speed a contact is
-    // about to answer. See tickBall(), which applies the first before the ball meets
-    // anything, and ballContact(), which uses the second.
-    Vec3 ballTiedToRope(const Ball& ball, Vec3 speed) const;
+    // The rope's own reading of a speed: the part of it that is running away from the
+    // anchor belongs to the rope, and no surface the ball is merely leaning against has
+    // to answer it. Written in playground_rope.cpp, with the rest of the rope. See
+    // ballContact(): a contact being kept is measured through this, an arrival is not.
     Vec3 ballOffTheRope(const Ball& ball, Vec3 speed) const;
     double ballCompliance(const Ball& ball, Vec3 push, bool held) const {
         if (held) return 0.0;

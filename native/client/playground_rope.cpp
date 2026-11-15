@@ -144,37 +144,7 @@ void arcStep(double theta0, double omega0, double gravityOverLength, double dt, 
 // T = 0 is the instant the rope stops pulling, and that is exactly the instant it is
 // allowed to go slack. A slack rope writes no force at all: it is not holding anything,
 // and a rope that pushes is not a rope.
-// The rope, as a constraint on a speed.
-//
-// The rope is a constraint on the ball's *motion*, so it has to act before anything in
-// the room reads that motion. Applied only at the end of the tick -- which is where it
-// still goes, to put the ball back on its circle -- the tick's own weight is still in the
-// ball when it meets a face, and every surface it is merely leaning on has to answer a
-// fall the rope is going to answer anyway. Two things follow, and the King has seen both:
-// the ball on the rope pushed the triangle with a force that came out of its own weight,
-// twenty times a second (the tick's half a metre a second of fall handed to the shape and
-// then taken back off the ball by the rope); and a ball set down on the slope slid along
-// it for ever, because the slope did what a slope does to a falling ball -- stopped it
-// square to the face and left it the part along the face -- and that part is the whole of
-// a fall once the rope has taken the radial half. Neither is a surface behaving badly: the
-// ball was simply not the constrained thing it is by the time the surface was asked.
-//
-// What a taut rope does to a velocity is exactly one thing -- it takes the part running
-// away from the anchor -- and that is what this does, at the same length, on the speed the
-// tick has just given the ball. It is one-sided, as a rope is: a speed towards the anchor
-// is a slackening, and slack is holdOnRope()'s to catch.
-Vec3 PlaygroundRoom::ballTiedToRope(const Ball& ball, Vec3 speed) const {
-    if (!rope_.attached || rope_.ball >= kBallCount || &ball != &balls_[rope_.ball]) return speed;
-    if (!rope_.taut) return speed;
-    const Vec3 arm = ball.position - rope_.anchor;
-    const double reach = length(arm);
-    if (!(reach > 0.0)) return speed;
-    const Vec3 outward = arm / reach;
-    const double leaving = dot(speed, outward);
-    return leaving > 0.0 ? speed - outward * leaving : speed;
-}
-
-// The same reading, for a speed a contact is about to answer.
+// The rope's own reading of a speed: what a contact being kept must not answer.
 //
 // A contact being *kept* is not a blow, and the difference shows up the moment the ball is
 // held by something else. A ball hanging on a taut rope that is touching the triangle's

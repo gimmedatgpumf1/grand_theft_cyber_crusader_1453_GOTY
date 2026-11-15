@@ -197,10 +197,6 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
-    // And the rope, here and not only at the end of the tick: it is a constraint on the
-    // ball's motion, so it has to be in the motion before anything in the room reads it.
-    // See ballTiedToRope(), and holdOnRope() for the arc that is still the rope's own.
-    ball.velocity = ballTiedToRope(ball, ball.velocity);
     // What the tick's own account comes to: the air and the weight, and the rope's own
     // answer, and nothing else. Everything after this line that changes the ball's speed
     // is something in the room answering it, and the rope has to be able to tell the two
