@@ -567,17 +567,18 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     const Vec3 arrivalSpeed = answered(ball.arrival);
     const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
-    // A bounce is the answer to arriving at a surface. A ball that was already lying
-    // on this one when the tick began did not arrive at it: the two are in contact,
-    // the contact is being kept, and what it may not do is close. It gets no blow
-    // back -- and that is not a damping rule, it is what restitution means. Applied
-    // to a sustained contact it is a pump: a ball riding a turning plank is closing
-    // on that plank's face every tick by a few millimetres, because the face is
-    // moving, and three quarters of that was handed back as a launch each tick. The
-    // ball left the plank, fell for a tick, landed, and was launched again -- the
-    // plank was loaded on every other tick and coasted the ticks between, and that
-    // square wave of angular acceleration is the stop-move-stop-move on screen.
-    const double rebound = (approach < 0.0 && !resting && arrived) ? -kBallRestitution * approach : 0.0;
+    // A bounce is the answer to arriving at a surface, and `arrived` says so: closing at
+    // the beginning of the ball's own tick, with the speed the rope permits. It used to
+    // say "and not `resting`" as well, and `resting` only means the walk found the ball
+    // already against the face -- so a ball that bounced off the slope, swung back and
+    // hit it again at four tenths of a metre a second was stopped dead, every time, and
+    // that is the ball that is not jumpy.
+    //
+    // A sustained contact needs no blow back, and `arrived` is what tells that apart: a
+    // ball riding a turning plank closes on its face by a few millimetres a tick because
+    // the *face* is moving, and three quarters of that came back as a launch each tick --
+    // the plank loaded on every other tick and coasted the ones between.
+    const double rebound = (approach < 0.0 && arrived) ? -kBallRestitution * approach : 0.0;
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
     // impulse its arrival was worth -- the momentum it took to stop it. See the note
