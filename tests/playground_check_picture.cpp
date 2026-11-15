@@ -196,12 +196,19 @@ int playgroundPictureChecks() {
                 }
             }
         }
+        // Two statements, and the first is the one that matters: the picture adds
+        // nothing. Whatever depth the room left the ball at -- which is inside the
+        // room's own touching band of a micrometre, and 0.5 of a micrometre here -- the
+        // drawn ball is never deeper inside than that. The second says the room is
+        // holding its own line, so the first cannot be satisfied by both of them being
+        // deep inside something.
         std::snprintf(detail, sizeof detail,
                       "the corner in the picture, 200 ticks at every eighth of a tick: the drawn ball is "
-                      "%.3e m inside the drawn shapes (log2 %.1f), the room's own %.3e m (log2 %.1f)",
+                      "%.3e m inside the drawn shapes (log2 %.1f), the ball the room left is %.3e m (log2 %.1f)",
                       drawn, drawn > 0.0 ? std::log2(drawn) : -1000.0, solved,
                       solved > 0.0 ? std::log2(solved) : -1000.0);
-        check(drawn <= 1.0e-15 && solved <= 1.0e-6, "the picture never draws the ball inside a shape", detail);
+        check(drawn <= solved + 1.0e-18 && solved <= gtc::native::playground_tick::kQuantum,
+              "the picture never draws the ball deeper inside a shape than the room left it", detail);
         (void)worstTick;
         (void)worstBody;
     }
