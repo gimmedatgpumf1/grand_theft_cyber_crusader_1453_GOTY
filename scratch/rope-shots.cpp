@@ -224,5 +224,46 @@ int main() {
                 room.totalEnergy() - energyThen, room.ropeBallDistance(), room.ropeTension(),
                 gtc::native::length(room.ropeBall().velocity));
     shoot(room, close, "scratch/rope-5-on-the-slope-3000.png");
+
+    // 6. The King's picture: a basketball on a string swung into the slope, frame by
+    //    frame through the hit. A basketball comes off the face, goes away and comes
+    //    back; a wrecking ball arrives, stops, and hangs. The frames are 1/20 s apart,
+    //    straight after the ball is let go from half a radian back.
+    room.reset();
+    for (int tick = 0; tick < 200; ++tick) room.advance(1.0 / 20.0);
+    {
+        auto& triangle = room.bodies_[1];
+        triangle.angle = 1.5707963267948966;
+        triangle.centre = Vec3{3.6697, 0.7, 0};
+        room.placeCorners(triangle);
+        double onTheSlope = 3.6697;
+        {
+            Vec3 way{}, at{};
+            const double gap = room.bodyBallGap(room.ropeBall(), 1, way, at);
+            if (std::abs(way.x) > 0.0) onTheSlope -= gap / way.x;
+        }
+        triangle.centre = Vec3{onTheSlope, 0.7, 0};
+        room.placeCorners(triangle);
+        triangle.previous = triangle.position;
+        triangle.previousCentre = triangle.centre;
+        triangle.previousAngle = triangle.angle;
+        triangle.velocity = {};
+        triangle.spin = 0.0;
+        triangle.frozen = false;
+        auto& ball = room.ball(PlaygroundRoom::kRopeBall);
+        ball.position = room.ropeAnchor() + Vec3{std::sin(-0.55), -std::cos(-0.55), 0.0} * room.ropeLength();
+        ball.previous = ball.shown = ball.position;
+        ball.velocity = {};
+        ball.spin = 0.0;
+        ball.touching = ball.standing = false;
+    }
+    for (int frame = 0; frame < 30; ++frame) {
+        room.advance(1.0 / 20.0);
+        std::printf("  bounce frame %2d: ball (%.4f, %.4f) %.4f m/s | triangle %.4f m/s, spin %+.3f\n", frame,
+                    room.ropeBall().position.x, room.ropeBall().position.y,
+                    gtc::native::length(room.ropeBall().velocity), gtc::native::length(room.bodies_[1].velocity),
+                    room.bodies_[1].spin);
+        if (frame >= 8 && frame <= 17) shoot(room, close, "scratch/rope-6-bounce-" + std::to_string(frame) + ".png");
+    }
     return 0;
 }
