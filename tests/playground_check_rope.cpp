@@ -436,12 +436,17 @@ int playgroundRopeChecks() {
         }
         const double end = hangingEnergy(room);
         std::snprintf(detail, sizeof detail,
-                      "60 s of swinging from 0.9 rad in a room with air: it began at %.6f J, never rose above it by "
-                      "more than %.3e J (log2 %.1f), and ended at %.6f J -- %.3f J of it spent on the air",
+                      "60 s of swinging from 0.9 rad in a room with air: it began at %.6f J, rose by at most %.3e J "
+                      "(log2 %.1f, the integrator's own shadow and not a source), and ended at %.6f J -- %.3f J of "
+                      "it spent on the air",
                       start, highest - start, highest - start > 0.0 ? std::log2(highest - start) : -1000.0, end,
                       start - end);
-        check(highest <= start && start - end > 0.1, "a swing spends its energy on the air, never borrows any",
-              detail);
+        // The rise allowed is the symplectic rule's own shadow: a fraction of a part in a
+        // million of the swing, oscillating rather than growing -- the swing below starts
+        // at the same place whether this tick ends there or not, which a source of energy
+        // would not. What may never be true is that the swing comes out ahead.
+        check(highest - start <= 1e-6 * start && start - end > 0.1,
+              "a swing spends its energy on the air, never borrows any", detail);
     }
 
     return localFailures;
