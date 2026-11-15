@@ -913,7 +913,7 @@ void PlaygroundRoom::pointAgainstBall(Ball& ball, Vec3 normal) {
         // the surface it is standing on. Straight down onto a ball on the floor is
         // the floor's to answer and the dot bounces off the ball; across it is the
         // ball's, and the ball goes.
-        const double ballShare = ballCompliance(ball, normal * -1.0, dragTarget_ == DragTarget::Ball);
+        const double ballShare = ballCompliance(ball, normal * -1.0, ballHeld(ball));
         const double impulse = (rebound - closing) / (1.0 / kMass + ballShare);
         velocity_ = velocity_ + normal * (impulse / kMass);
         ball.velocity = ball.velocity - normal * (impulse * ballShare);
@@ -935,7 +935,7 @@ void PlaygroundRoom::pointAgainstBall(Ball& ball, Vec3 normal) {
         // question as above. Pushing the ball half the overlap downwards put it
         // through the floor it was resting on.
         const Vec3 way = gap * (1.0 / distance);            // ball -> dot
-        const double ballCan = ballCompliance(ball, way, dragTarget_ == DragTarget::Ball) * ball.mass;
+        const double ballCan = ballCompliance(ball, way, ballHeld(ball)) * ball.mass;
         const double ballPart = std::clamp(0.5 * ballCan, 0.0, 1.0);
         point_ = point_ + way * (overlap * (1.0 - ballPart));
         ball.position = ball.position - way * (overlap * ballPart);

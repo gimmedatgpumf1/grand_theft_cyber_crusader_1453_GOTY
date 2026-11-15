@@ -119,7 +119,7 @@ void PlaygroundRoom::separateBall(Ball& ball) {
     // and the something is a shape that is free to move, at the place the step reached.
     // The step is re-read after each of those, because pushing a shape out changes which
     // surfaces the ball is inside.
-    if (!stuck.empty() && !ball.frozen && dragTarget_ != DragTarget::Ball) {
+    if (!stuck.empty() && !ball.frozen && !ballHeld(ball)) {
         // Counted once, however many rounds it takes: the count is "the room moved the
         // ball by its place", and a repair that takes two steps is one repair.
         const Vec3 beganAt = ball.position;

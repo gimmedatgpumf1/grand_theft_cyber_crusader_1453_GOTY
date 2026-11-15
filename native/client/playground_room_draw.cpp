@@ -196,7 +196,7 @@ void PlaygroundRoom::interpolate() {
     for (std::size_t index = 0; index < kBallCount; ++index) {
         Ball& ball = balls_[index];
         const double alpha =
-            ball.frozen || (dragTarget_ == DragTarget::Ball && dragBall_ == index) ? 1.0 : fraction;
+            ball.frozen || ballHeld(ball) ? 1.0 : fraction;
         interpolateBall(ball, alpha);
     }
 }

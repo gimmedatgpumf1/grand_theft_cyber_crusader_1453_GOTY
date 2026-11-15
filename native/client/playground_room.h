@@ -739,6 +739,15 @@ private:
     // driven back out, and nothing in this room is driven out of anything -- it
     // never gets in.
     bool ballPlacementClear(const Ball& ball, Vec3 at) const;
+    // Whether the mouse is holding *this* ball. Not whether it is holding a ball: the
+    // room has two of them, and the two of them are two objects. A carried ball is not
+    // simulated -- the hand is where it is -- and reading that as "a ball is being
+    // carried" pinned *both* of them: grab the thrown ball and the one on the rope
+    // stopped dead in the air, hanging there with its own weight unanswered, as though
+    // the two were one thing on a stick.
+    bool ballHeld(const Ball& ball) const {
+        return dragTarget_ == DragTarget::Ball && dragBall_ < kBallCount && &ball == &balls_[dragBall_];
+    }
     // Which ball is under this place on the plane, or kBallCount for none. A click
     // takes whichever ball it is actually on.
     std::size_t ballUnderClick(Vec3 at) const;
