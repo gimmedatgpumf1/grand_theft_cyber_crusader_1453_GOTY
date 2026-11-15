@@ -525,12 +525,37 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     //
     // The ball's speed at the meeting is its speed now, and the surface's is read
     // from the very contact point it is being asked about.
-    const double closing = dot(ball.velocity - surfaceVelocity, normal);
+    // What the ball is doing, as far as this surface can tell.
+    //
+    // A contact being *kept* is not a blow, and the difference shows up the moment the
+    // ball is held by something else. A ball hanging on a taut rope that is touching the
+    // triangle's slope is in equilibrium: its weight is what the rope is carrying, and
+    // the slope is carrying nothing. Measure the closing with the speed the ball would
+    // have had if the rope were not there -- which is the tick's own half metre a second
+    // of fall -- and the slope is asked to answer a fall that the rope has already
+    // answered, every tick, for ever: the ball is shoved out along the slope's normal,
+    // the rope catches the part of it that goes up, and the rest is a push the King can
+    // see. That is the "infinite force" the triangle was being shoved away with, and it
+    // is also why a ball lying on the slope crept away from where it was put.
+    //
+    // So a kept contact is answered with the speed the ball has along the directions the
+    // rope *permits*: on the circle, its radial part is the rope's and not the slope's.
+    // Nothing is taken from the ball here and nothing is given to it -- this is the speed
+    // the surface is answered to, and the ball's own velocity is left exactly as it is
+    // for the rope, which is the one thing entitled to change it.
+    //
+    // An *arrival* is the other case, and it is not touched: what comes at a surface comes
+    // at it with everything it has, and that is the blow the King wants it to lose.
+    Vec3 ballSpeed = ball.velocity;
+    if (resting) ballSpeed = ballOffTheRope(ball, ballSpeed);
+    const double closing = dot(ballSpeed - surfaceVelocity, normal);
     // What the ball was doing at the instant it met the surface. Its speed is carried
     // through the tick from `arrival` to what it is now, so the fraction of the way
     // through the tick is the fraction of the way from one to the other: at the very
     // moment of a contact, that is the speed the blow is answered to.
-    const Vec3 atMeeting = ball.arrival + (ball.velocity - ball.arrival) * std::clamp(reached, 0.0, 1.0);
+    Vec3 arrivalSpeed = ball.arrival;
+    if (resting) arrivalSpeed = ballOffTheRope(ball, arrivalSpeed);
+    const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface. A ball that was already lying
     // on this one when the tick began did not arrive at it: the two are in contact,

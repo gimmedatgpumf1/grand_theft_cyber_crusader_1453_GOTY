@@ -820,6 +820,19 @@ private:
         const double into = std::max(0.0, -dot(push, ball.supportNormal));
         return 1.0 - into * into;
     }
+    // The ball's speed with the part the rope already owns taken out: on a taut rope the
+    // ball cannot move away from the anchor, so that part of its motion is the rope's and
+    // no surface it is merely lying against has to answer it. See ballContact(), where a
+    // contact being kept is measured with this and an arrival is not.
+    Vec3 ballOffTheRope(const Ball& ball, Vec3 speed) const {
+        if (!rope_.attached || rope_.ball >= kBallCount || &ball != &balls_[rope_.ball] || !rope_.taut) return speed;
+        const Vec3 arm = ball.position - rope_.anchor;
+        const double reach = length(arm);
+        if (!(reach > 0.0)) return speed;
+        const Vec3 outward = arm / reach;
+        const double leaving = dot(speed, outward);
+        return leaving > 0.0 ? speed - outward * leaving : speed;
+    }
     double ballCompliance(const Ball& ball, Vec3 push, bool held) const {
         if (held) return 0.0;
         return ballFreedom(ball, push) / ball.mass;
