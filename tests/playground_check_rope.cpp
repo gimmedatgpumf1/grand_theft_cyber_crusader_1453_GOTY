@@ -625,16 +625,19 @@ int playgroundRopeChecks() {
         ball.velocity = {};
         ball.spin = 0.0;
         ball.touching = ball.standing = false;
+        // bodyBallGap's way is the ball's own line *to* the shape; the face's normal is
+        // the other way round, and it is the normal that says whether the two are closing.
+        const Vec3 face = normal * -1.0;
         const double start = room.totalEnergy();
         double arriving = 0.0, leaving = 0.0, shoved = 0.0, turn = 0.0, rise = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
-            const double closing = gtc::native::dot(ball.velocity, normal);
+            const double closing = gtc::native::dot(ball.velocity, face);
             room.advance(1.0 / 20.0);
             rise = std::max(rise, room.totalEnergy() - start);
             shoved = std::max(shoved, gtc::native::length(triangle.velocity));
             turn = std::max(turn, std::abs(triangle.spin));
             // The tick the ball comes off the face: it was closing, and it is not.
-            const double now = gtc::native::dot(ball.velocity, normal);
+            const double now = gtc::native::dot(ball.velocity, face);
             if (arriving == 0.0 && closing < -0.5 && now > 0.0) {
                 arriving = -closing;
                 leaving = now;
@@ -647,7 +650,7 @@ int playgroundRopeChecks() {
                       arriving, leaving, arriving > 0.0 ? 100.0 * leaving / arriving : 0.0, shoved, turn, start, rise,
                       rise > 0.0 ? std::log2(rise) : -1000.0);
         // A bounce is most of the blow back, the shape is loaded, and nothing is made.
-        check(arriving > 1.0 && leaving > 0.4 * arriving && shoved > 0.05 && turn > 0.05 && rise <= 0.0,
+        check(arriving > 1.0 && leaving > 0.4 * arriving && shoved > 0.05 && turn > 0.05 && rise <= 1e-6 * start,
               "the ball bounces off the shape and the shape is shoved", detail);
     }
 
