@@ -744,7 +744,15 @@ bool PlaygroundRoom::pushBodyOutOfBall(const Ball& ball, std::size_t index, Vec3
     // room that is not part of its own physics, and moving a shape against the hand is
     // the room pretending it owns it.
     Body& body = bodies_[index];
-    if (body.count == 0 || bodyHeld(index)) return false;
+    // A body that is asleep is not a thing that can give way to anything, and neither
+    // is one in the hand. Both are surfaces for the length of this contact, and a
+    // surface that is moved out of the way by what leans on it is not a surface: the
+    // ball on the rope, pressed by a slope being held still, moved that slope -- asleep,
+    // and moved by a shape that was never asked -- by the whole of the press, only
+    // because the ball was in its way and the ball could not be the one to give. A held
+    // body gives way to nothing, so what is left is the ball, which is what the caller
+    // does when this answers false.
+    if (body.count == 0 || bodyHeld(index) || body.frozen) return false;
     if (body.pivoted) {
         // A plank on its axle has nowhere to go, but it has somewhere to *turn*, and
         // turning is how a thing on a pin gives ground: the ball presses on the face,

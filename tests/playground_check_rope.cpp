@@ -550,12 +550,17 @@ int playgroundRopeChecks() {
         const double spoke = gtc::native::length(triangle.centre - Vec3{3.6697 - press / std::sqrt(2.0), 0.7 + press / std::sqrt(2.0), 0});
         std::snprintf(detail, sizeof detail,
                       "150 s after a millimetre of press: the ball was left at %.6f J after the tick the press was "
-                      "answered in, never rose by more than %.3e J (log2 %.1f) over the next 150 s, and ended at "
-                      "%.6f J -- %.3f J of it spent on the air, %.3e m a tick at the end; THE SHAPE IT WAS "
-                      "PRESSED WITH MOVED %.3e m; the rope carries %.3f N",
-                      start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, end, start - end, travel, spoke,
+                      "answered in, never rose by more than %.3e J (log2 %.1f), and ended at %.6f J -- %.3e m a "
+                      "tick at the end; THE SHAPE IT WAS PRESSED WITH MOVED %.3e m; the rope carries %.3f N",
+                      start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, end, travel, spoke,
                       room.ropeTension());
-        check(rise <= 0.0 && end < start && spoke <= gtc::native::playground_tick::kQuantum,
+        // A ball put back out of a slope it was pressed into is a ball put back, and the
+        // air has nothing to take from a ball that is not moving: what a room that
+        // gives nothing back owes is no rise, no travel at the end, and no shape moved.
+        // Asking for the energy to *fall* was asking the air to spend something the
+        // press never gave.
+        check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum &&
+                  spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
         (void)0;
     }
