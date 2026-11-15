@@ -165,9 +165,25 @@ Vec3 PlaygroundRoom::ballOffTheRope(const Ball& ball, Vec3 speed) const {
 }
 
 void PlaygroundRoom::holdOnRope(Ball& ball) {
-    // Where the room left the ball, before the rope touches it: the one place the rope
-    // may never move it back to being inside something.
-    const Vec3 theRoomsPlace = ball.position;
+    // A place the rope may not put the ball: inside a shape, or through the floor.
+    //
+    // The rope pulls and never pushes, so a ball wedged between it and a face is held
+    // by the face. Putting the ball back on its own circle anyway drove it into the
+    // shape, and the room then stood it up on the face -- for nothing. Measured in the
+    // pressed scene: nine tenths of a millimetre inside the slope, twelve millijoules
+    // handed over at each turn of the swing, and a ball that swung for ever because the
+    // height it lost falling was given back to it every time it came round.
+    const auto clear = [&](Vec3 place) {
+        if (place.y < playground_tick::kSurfaceY + ball.radius - ball_shape::kTouch) return false;
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            const Body& body = bodies_[index];
+            if (body.count == 0) continue;
+            const double gap =
+                ball_shape::outlineGap(place, body.position.data(), body.position.data(), body.count, 1.0).gap;
+            if (gap < ball.radius - ball_shape::kTouch) return false;
+        }
+        return true;
+    };
     Rope& rope = rope_;
     if (!rope.attached || &ball != &balls_[rope.ball]) return;
     const std::size_t owner = ownerOf(ball);
@@ -370,9 +386,43 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
                     taken = clear;
                     arcStep(theta, omega, pull, dt * taken, theta1, omega1);
                 }
-                const Vec3 tangent{std::cos(theta1), std::sin(theta1), 0};
-                const Vec3 next = anchor + Vec3{std::sin(theta1), -std::cos(theta1), 0} * ropeLength;
-                const Vec3 nextSpeed = tangent * (ropeLength * omega1);
+                // The face in the way clips the arc, and it is the same solve: the ball
+                // travels along the circle as far as it may and stops against what is
+                // there -- it does not pass through it and get carried back out of it
+                // afterwards, which is a lift out of nothing and the pump above. Where
+                // the arc is cut short the ball keeps the speed it has at the cut, which
+                // is less than the arc would have given it, and that loss is the face's.
+                const auto placeAt = [&](double turn, Vec3& place, Vec3& speed) {
+                    double th = theta, om = omega;
+                    arcStep(theta, omega, pull, dt * turn, th, om);
+                    place = anchor + Vec3{std::sin(th), -std::cos(th), 0} * ropeLength;
+                    speed = Vec3{std::cos(th), std::sin(th), 0} * (ropeLength * om);
+                };
+                double turn = taken;
+                Vec3 next{}, nextSpeed{};
+                placeAt(turn, next, nextSpeed);
+                if (!clear(next)) {
+                    double free = 0.0, blocked = turn;
+                    for (int pass = 0; pass < kSlackBisections; ++pass) {
+                        const double middle = 0.5 * (free + blocked);
+                        Vec3 probe{}, probeSpeed{};
+                        placeAt(middle, probe, probeSpeed);
+                        if (clear(probe)) free = middle;
+                        else blocked = middle;
+                    }
+                    turn = free;
+                    placeAt(turn, next, nextSpeed);
+                    // And the rope is no longer pulling: it has nothing left to hold.
+                    theta1 = theta;
+                    const Vec3 arm = next - anchor;
+                    const double reach = length(arm);
+                    if (reach > 0.0) {
+                        const Vec3 out = arm / reach;
+                        const double alongIt = dot(nextSpeed, out);
+                        nextSpeed = nextSpeed - out * alongIt;
+                        omega1 = dot(nextSpeed, Vec3{out.y, -out.x, 0}) / ropeLength;
+                    }
+                }
                 at = next;
                 speedNow = nextSpeed;
                 // The rope let go at `taken`, and what is left of the tick is a fall -- not a
@@ -408,29 +458,6 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const Vec3 inward = outward * -1.0;
         addForce(at, inward * rope.tension, ForceKind::Rope, nullptr, owner);
         addForce(anchor, inward * (rope.tension * -1.0), ForceKind::Rope, nullptr, kAnchorOwner);
-    }
-    // A place the rope may not put the ball: inside a shape, or through the floor. A
-    // ball wedged between the rope and a face is held by the face -- the rope has
-    // nothing to pull with -- and putting it on its own circle anyway drove it into the
-    // shape, which the room then lifted it out of for nothing. Measured in the pressed
-    // scene: nine tenths of a millimetre inside the slope, stood up on the face, twelve
-    // millijoules a bounce, and a swing that never decayed because the height it lost
-    // falling was handed back to it.
-    const auto clear = [&](Vec3 place) {
-        if (place.y < playground_tick::kSurfaceY + ball.radius - ball_shape::kTouch) return false;
-        for (std::size_t index = 0; index < kBodyCount; ++index) {
-            const Body& body = bodies_[index];
-            if (body.count == 0) continue;
-            const double gap =
-                ball_shape::outlineGap(place, body.position.data(), body.position.data(), body.count, 1.0).gap;
-            if (gap < ball.radius - ball_shape::kTouch) return false;
-        }
-        return true;
-    };
-    if (!clear(at)) {
-        at = theRoomsPlace;
-        rope.taut = false;
-        rope.tension = 0.0;
     }
     ball.position = at;
     ball.velocity = speedNow;
