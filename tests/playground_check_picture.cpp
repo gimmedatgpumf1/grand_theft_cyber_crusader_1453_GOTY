@@ -162,6 +162,16 @@ double drawnDepth(PlaygroundRoom& room, std::size_t& which) {
         }
     }
     return room.ball_.radius - closest;
+}
+
+// How far a place is from the straight piece between two places.
+double offSegment(const gtc::native::Vec3& p, const gtc::native::Vec3& a, const gtc::native::Vec3& b) {
+    const gtc::native::Vec3 ab = b - a;
+    const double length2 = gtc::native::dot(ab, ab);
+    if (!(length2 > 0.0)) return gtc::native::length(p - a);
+    double t = gtc::native::dot(p - a, ab) / length2;
+    t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+    return gtc::native::length(p - (a + ab * t));
 }}  // namespace
 
 // Returns how many of the checks failed.
@@ -211,6 +221,42 @@ int playgroundPictureChecks() {
               "the picture never draws the ball deeper inside a shape than the room left it", detail);
         (void)worstTick;
         (void)worstBody;
+    }
+
+    // 3. The drawn place is on the path its own tick took. This is the check the ball
+    //    needed and did not have: the drawing is handed two pieces of path, and the
+    //    second one used to be built from the speed the ball had *after* a meeting --
+    //    a speed the tick then resolved away when it stopped the ball at the face. The
+    //    drawn ball therefore flew up to 6.2 cm past the cube's face every tick it
+    //    bounced and was pulled back at the end of the tick: on screen, a ball that
+    //    stutters and lags in exactly the corner the King was looking at. Nothing the
+    //    drawing shows may be off the path the tick really took.
+    {
+        PlaygroundRoom room;
+        buildTheCorner(room, 300);
+        room.sceneReady_ = true;
+        double worst = 0.0;
+        int worstFrame = -1;
+        for (int frame = 0; frame < 180; ++frame) {
+            room.advance(1.0 / 60.0);
+            const gtc::native::Vec3 previous = room.ball_.previous;
+            const gtc::native::Vec3 position = room.ball_.position;
+            const bool bent = room.ball_.bent;
+            const gtc::native::Vec3 bend = room.ball_.bendPoint;
+            room.interpolate();
+            const gtc::native::Vec3 drawn = room.ball_.shown;
+            const double off = bent ? std::min(offSegment(drawn, previous, bend), offSegment(drawn, bend, position))
+                                    : offSegment(drawn, previous, position);
+            if (off > worst) {
+                worst = off;
+                worstFrame = frame;
+            }
+        }
+        std::snprintf(detail, sizeof detail,
+                      "180 frames of a drop at 60 Hz: the drawn ball is at most %.3e m off the path its tick "
+                      "took (log2 %.1f), worst frame %d", worst, worst > 0.0 ? std::log2(worst) : -1000.0,
+                      worstFrame);
+        check(worst <= 1.0e-9, "the ball is drawn on the path its own tick took, never off it", detail);
     }
 
     // 2. The pixels, over a whole drop. The whole frame and a frame of the ball alone are
