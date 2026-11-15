@@ -378,7 +378,17 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // times in 1800 ticks and never spent a second asleep, so its weight was
         // answered against the ball's mass once per tick and the ball crept for ever.
         // A contact that is not approaching cannot push anything.
-        const Vec3 closingVelocity = ballPointSpeed(ball, contactPoint) - pointSpeed(*body, contactPoint);
+        //
+        // And the last thing a blow is, is the *ball's whole speed*. A ball on a taut rope
+        // is carrying a tick of fall that the rope is about to take back -- that is what
+        // the rope is for, and it is why ballOffTheRope() exists. Read whole, that fall
+        // woke the shape the ball was merely lying against, every tick, and each waking
+        // handed the shape a share of an impulse that was never a blow: the shape hopped,
+        // the hop was worth a hundredth of a joule that came out of nothing, and the room
+        // put it straight back when the shape came to rest again. The slope under a
+        // resting ball is not woken by the ball's weight. See ballOffTheRope().
+        const Vec3 closingVelocity =
+            ballOffTheRope(ball, ballPointSpeed(ball, contactPoint)) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
