@@ -468,5 +468,48 @@ int playgroundRopeChecks() {
               "a swing spends its energy on the air, never borrows any", detail);
     }
 
+    // 10. The same picture, pressed. Dragging the triangle a millimetre further into the
+    //     ball is what the King did to see it bounce: the slope is then genuinely under
+    //     the ball, and the ball's weight is shared between the slope and the rope. It
+    //     must take the push, come to rest against the slope, and be handed nothing at
+    //     all -- no sway, no hum, no swing that never decays. Before this the same scene
+    //     was still swaying at 3.7e-2 m/s a hundred and fifty seconds later, on an energy
+    //     it had been given at the start and never gave back.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 200);
+        auto& triangle = room.bodies_[1];
+        triangle.angle = 1.5707963267948966;
+        const double press = 1e-3;
+        triangle.centre = Vec3{3.6697 + press / std::sqrt(2.0), 0.7 - press / std::sqrt(2.0), 0};
+        room.placeCorners(triangle);
+        triangle.previous = triangle.position;
+        triangle.previousCentre = triangle.centre;
+        triangle.previousAngle = triangle.angle;
+        triangle.velocity = {};
+        triangle.spin = 0.0;
+        const double start = hangingEnergy(room);
+        double highest = start;
+        for (int tick = 0; tick < 3000; ++tick) {
+            room.advance(1.0 / 20.0);
+            highest = std::max(highest, hangingEnergy(room));
+        }
+        const double rise = highest - start;
+        // The room's own rule for "not moving": a ball that cannot carry itself a
+        // micrometre in a tick is not moving. That is kQuantum doing the one job it is
+        // allowed to do here -- saying what the room calls still -- and not a tolerance
+        // on an overlap.
+        const double travel = gtc::native::length(room.ropeBall().velocity) * gtc::native::playground_tick::kTick;
+        std::snprintf(detail, sizeof detail,
+                      "150 s with the slope pressed a millimetre into the hanging ball: its energy rose by %.3e J "
+                      "(log2 %.1f) above %.6f J and it ended %.3e m from where it was in the tick -- %s; the rope "
+                      "carries %.3f N",
+                      rise, rise > 0.0 ? std::log2(rise) : -1000.0, start, travel,
+                      travel <= gtc::native::playground_tick::kQuantum ? "still" : "still moving", room.ropeTension());
+        check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum,
+              "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
+    }
+
     return localFailures;
 }
