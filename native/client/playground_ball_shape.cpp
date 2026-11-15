@@ -319,3 +319,70 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
 }
 
 }  // namespace gtc::native::ball_shape
+
+// The push the ball is given, with the surfaces under it taken out: the projection
+// onto the orthogonal complement of every support normal at once. See the note beside
+// the declaration in playground_room.h -- it was there, and it is here because a
+// function of this size does not belong in a header.
+namespace gtc::native {
+
+Vec3 PlaygroundRoom::ballFree(Vec3 push, std::size_t except) const {
+    // The projection is onto the *orthogonal complement of all of them at once*,
+    // which is not the same as taking them one after another. With one support
+    // the two agree; with two they do not, and the difference is momentum.
+    // Taking the floor's normal out of a push and then the cube's puts back a
+    // little of the floor's -- the normals are not perpendicular, so removing one
+    // does not preserve the other -- and a ball held by a floor and a shape was
+    // handed 1.7 N s *upward* by an impulse that was pressing it down.
+    //
+    // It is solved and not swept towards. Sweeping the normals one after another
+    // is a projection only in the limit, and it converges at the cosine of the
+    // angle between them to the power of the number of sweeps: eight sweeps over a
+    // floor and a plank's end a third of a turn apart leave seven parts in a
+    // hundred of the push unaccounted for. Seven parts in a hundred is nothing
+    // until the solve starts leaning on it -- a ball wedged between two surfaces
+    // that give nothing has nowhere to go at all, so the impulse needed to stop
+    // the closing is unbounded, and every pass that leaked a little of it put a
+    // little more speed into the ball, sideways, where the leak pointed. That is
+    // how a ball standing still under a seesaw's end left at eight metres a
+    // second. The complement is the answer of a small linear system -- the
+    // support normals' own Gram matrix -- and it is exact.
+    // The supports that count: every one but the body being solved against.
+    std::array<Vec3, kMaxBallSupports> normals{};
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < ballSupportCount_; ++i) {
+        if (ballSupports_[i].body == except) continue;
+        normals[count++] = ballSupports_[i].normal;
+    }
+    if (count == 0) return push;
+    double m[kMaxBallSupports][kMaxBallSupports + 1]{};
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(normals[i], normals[j]);
+        m[i][count] = dot(normals[i], push);
+    }
+    // Gaussian elimination with partial pivoting. A row with no pivot left is a
+    // support that another support already says -- two faces on the same line, or
+    // the same face twice -- and it carries no share of its own.
+    std::array<double, kMaxBallSupports> share{};
+    for (std::size_t col = 0; col < count; ++col) {
+        std::size_t pivot = col;
+        for (std::size_t row = col + 1; row < count; ++row)
+            if (std::abs(m[row][col]) > std::abs(m[pivot][col])) pivot = row;
+        if (!(std::abs(m[pivot][col]) > 1e-12)) continue;
+        if (pivot != col)
+            for (std::size_t j = col; j <= count; ++j) std::swap(m[col][j], m[pivot][j]);
+        for (std::size_t row = 0; row < count; ++row) {
+            if (row == col) continue;
+            const double factor = m[row][col] / m[col][col];
+            if (factor == 0.0) continue;
+            for (std::size_t j = col; j <= count; ++j) m[row][j] -= factor * m[col][j];
+        }
+    }
+    for (std::size_t i = 0; i < count; ++i)
+        if (std::abs(m[i][i]) > 1e-12) share[i] = m[i][count] / m[i][i];
+    Vec3 out = push;
+    for (std::size_t i = 0; i < count; ++i) out = out - normals[i] * share[i];
+    return out;
+}
+
+}  // namespace gtc::native

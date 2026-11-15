@@ -402,10 +402,26 @@ void bounceIsTheSameEveryWay() {
     room.reset();
     settle(room, 300);
     const Vec3 cube = room.bodyMiddle(0);
+    // What a surface gave back, as a force: the impulse the meeting dealt the ball
+    // over the impulse that would just have stopped it, less one. Both numbers are
+    // newton seconds read at the instant of the meeting -- not a speed divided by a
+    // speed across a tick, in which gravity alone is half a metre a second of
+    // momentum that never touched the surface. A meeting that only stops the ball
+    // gives back nothing and reads nought; a meeting that gives back e of the arrival
+    // reads e, from any direction and at any point in the tick.
+    const auto bounceOf = [](const PlaygroundRoom& room) {
+        double bounce = 0.0;
+        for (std::size_t i = 0; i < room.ballTouchCount_; ++i) {
+            const auto& touch = room.ballTouches_[i];
+            if (!(touch.arrival > 0.0)) continue;
+            bounce = std::max(bounce, touch.given / touch.arrival - 1.0);
+        }
+        return bounce;
+    };
     // Fire the ball at the flat middle of a face: a hand's width away, so that what
     // gravity takes out of its line on the way is nearly nothing.
-    const auto hitTheSide = [&](double away, double& separation) {
-        separation = 0.0;
+    const auto hitTheSide = [&](double away, double& bounce) {
+        bounce = 0.0;
         PlaygroundRoom into;
         into.reset();
         settle(into, 300);
@@ -413,10 +429,10 @@ void bounceIsTheSameEveryWay() {
         into.ball_.velocity = Vec3{6.0, 0, 0};
         into.ball_.frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
-            const double approach = into.ballVelocity().x - into.bodies_[0].velocity.x;
             into.advance(1.0 / 20.0);
-            if (approach > 0.5 && into.ballVelocity().x < into.bodies_[0].velocity.x) {
-                separation = (into.bodies_[0].velocity.x - into.ballVelocity().x) / approach;
+            const double met = bounceOf(into);
+            if (met > 0.0) {
+                bounce = met;
                 return into.bodies_[0].spin;
             }
         }
@@ -432,12 +448,9 @@ void bounceIsTheSameEveryWay() {
         down.ball_.velocity = {};
         down.ball_.frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
-            const double before = down.ballVelocity().y;
             down.advance(1.0 / 20.0);
-            if (before < -0.5 && down.ballVelocity().y > 0.0) {
-                floor = down.ballVelocity().y / -before;
-                break;
-            }
+            floor = bounceOf(down);
+            if (floor > 0.0) break;
         }
     }
     char detail[220];

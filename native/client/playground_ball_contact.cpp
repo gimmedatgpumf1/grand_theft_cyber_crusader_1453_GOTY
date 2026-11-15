@@ -528,6 +528,13 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // square wave of angular acceleration is the stop-move-stop-move on screen.
     const double rebound = (approach < 0.0 && !resting) ? -kBallRestitution * approach : 0.0;
     double pressed = 0.0;
+    // What this meeting was, kept in force: the impulse the ball was dealt, and the
+    // impulse its arrival was worth -- the momentum it took to stop it. See the note
+    // on BallTouch: a bounce is a pair of forces at one instant, and the coefficient
+    // is the ratio between them, so this is where it is written down and this is the
+    // only way it is ever read back.
+    double metGiven = 0.0;
+    double metArrival = 0.0;
     if (closing < 0.0) {
         if (canMove) {
             // A body struck by the ball takes the blow as the solid it is: every
@@ -609,12 +616,20 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
             blown = handed * -1.0;
             pressed = impulse * ballShare;
+            // The ball's share of the blow, as the momentum it was given: the impulse
+            // the solve worked out, less the part of it a surface under the ball
+            // refused. And what the arrival was worth, over the same compliance, so
+            // that the two numbers are the same kind of thing.
+            metGiven = ball.mass * impulse * ballShare;
+            metArrival = -approach / (ballShare + bodyShare);
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
             ball.velocity = ball.velocity + normal * (impulse / ball.mass);
             blown = normal * impulse;
             pressed = impulse;
+            metGiven = impulse;
+            metArrival = -approach * ball.mass;
         }
     }
 
@@ -681,9 +696,15 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         }
         if (slot == ballTouchCount_) {
             ballTouches_[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
+            ballTouches_[slot].given = metGiven;
+            ballTouches_[slot].arrival = metArrival;
             ++ballTouchCount_;
         } else {
             ballTouches_[slot].pressed = std::max(ballTouches_[slot].pressed, pressed);
+            // One face, one meeting: a second answer at the same face in the same tick
+            // is the same blow carried further, so what it dealt adds up.
+            ballTouches_[slot].given += metGiven;
+            ballTouches_[slot].arrival += metArrival;
             if (length(ballTouches_[slot].surfaceVelocity) < length(surfaceVelocity))
                 ballTouches_[slot].surfaceVelocity = surfaceVelocity;
         }
