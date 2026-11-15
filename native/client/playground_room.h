@@ -728,6 +728,13 @@ private:
     static constexpr std::size_t kMaxBallTouches = 8;
     std::array<BallTouch, kMaxBallTouches> ballTouches_{};
     std::size_t ballTouchCount_ = 0;
+    // The meeting this tick that dealt the ball the most, kept in force and kept past
+    // the end of the tick: what it gave the ball and what the ball's arrival was worth,
+    // in newton seconds. The touch list above is consumed by the grip before the tick
+    // is over, and a bounce is a thing you have to be able to look at afterwards --
+    // this is the one record of it that survives. See BallTouch and ballContact().
+    double ballMeetingGiven_ = 0.0;
+    double ballMeetingArrival_ = 0.0;
     // Where every shape was when the ball's half of the tick began: its speed and its
     // turn, as the tick's own solve of the shapes left them. A face the ball's grip is
     // measured against is the face the ball met, and that is where it was standing when

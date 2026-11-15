@@ -535,6 +535,12 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // only way it is ever read back.
     double metGiven = 0.0;
     double metArrival = 0.0;
+    const auto noteMeeting = [&]() {
+        if (!(metArrival > 0.0)) return;
+        if (ballMeetingArrival_ > 0.0 && metGiven * ballMeetingArrival_ <= ballMeetingGiven_ * metArrival) return;
+        ballMeetingGiven_ = metGiven;
+        ballMeetingArrival_ = metArrival;
+    };
     if (closing < 0.0) {
         if (canMove) {
             // A body struck by the ball takes the blow as the solid it is: every
@@ -622,6 +628,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // that the two numbers are the same kind of thing.
             metGiven = ball.mass * impulse * ballShare;
             metArrival = -approach / (ballShare + bodyShare);
+            noteMeeting();
         } else {
             // Nowhere to go: the ball takes the whole answer itself.
             const double impulse = (rebound - closing) * ball.mass;
@@ -630,6 +637,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             pressed = impulse;
             metGiven = impulse;
             metArrival = -approach * ball.mass;
+            noteMeeting();
         }
     }
 

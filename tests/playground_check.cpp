@@ -410,13 +410,8 @@ void bounceIsTheSameEveryWay() {
     // gives back nothing and reads nought; a meeting that gives back e of the arrival
     // reads e, from any direction and at any point in the tick.
     const auto bounceOf = [](const PlaygroundRoom& room) {
-        double bounce = 0.0;
-        for (std::size_t i = 0; i < room.ballTouchCount_; ++i) {
-            const auto& touch = room.ballTouches_[i];
-            if (!(touch.arrival > 0.0)) continue;
-            bounce = std::max(bounce, touch.given / touch.arrival - 1.0);
-        }
-        return bounce;
+        if (!(room.ballMeetingArrival_ > 0.0)) return 0.0;
+        return room.ballMeetingGiven_ / room.ballMeetingArrival_ - 1.0;
     };
     // Fire the ball at the flat middle of a face: a hand's width away, so that what
     // gravity takes out of its line on the way is nearly nothing.

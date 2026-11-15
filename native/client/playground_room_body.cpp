@@ -646,6 +646,7 @@ void PlaygroundRoom::tickBodies() {
     // the tick and not at the end of the ball's half, or the shape being carried would
     // be registered and then erased. See noteBallTouch() and settleBallFriction().
     ballTouchCount_ = 0;
+    ballMeetingGiven_ = ballMeetingArrival_ = 0.0;
     ManifoldSet& patches = tickPatches_;
     gatherContacts(patches, band);
     // Every patch that is a meeting with the ball is a face the ball is against, and
