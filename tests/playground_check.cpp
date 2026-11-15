@@ -26,6 +26,10 @@
 
 using namespace gtc::native;
 
+// The arrival checks at the edge of what the room can be asked: a ball at a hundred
+// kilometres a second, and a shape arriving at the ball that fast.
+int playgroundArrivalChecks();
+
 namespace {
 
 int failures = 0;
@@ -663,6 +667,11 @@ void nothingIsEverInsideAnything() {
     }
     std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
     check(dropped < 1e-6, "nor is one that arrives at the ball", detail);
+
+    // A hundred kilometres a second is an arrival like any other: the room's answer
+    // to it is in playground_check_arrivals.cpp, which is where the checks for the
+    // fastest thing the room is ever asked to answer live.
+    failures += playgroundArrivalChecks();
 
     // And the case the two sweeps above cannot answer between them: more than one
     // surface against the ball at once. A ball in a wedge is held by two faces whose

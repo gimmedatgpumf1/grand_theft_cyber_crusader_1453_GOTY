@@ -74,6 +74,7 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 # drawn as held still while it moves, drag that depends on speed, a bounce the same
 # from every direction, and R that really resets the room.
 "$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/playground_check.cpp" \
+  "$ROOT/tests/playground_check_arrivals.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-playground-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
