@@ -261,8 +261,12 @@ void PlaygroundRoom::separateBall() {
             }
         }
         if (deepest == kBodyCount) break;
+        // Along the way out, and the floor is not consulted here: lifting the ball to
+        // the floor in the middle of this is how a ball on the floor was pushed back
+        // into the shape it had just been taken out of, one pass after another, and
+        // ended the tick inside by the last few bits of a double. The floor is the
+        // next line, once.
         ball_.position = ball_.position + way * (depth + ulps);
-        ball_.position.y = std::max(ball_.position.y, ball_.radius);
     }
     if (length(ball_.position - beforeTheLastWord) > kRepairDepth) ++ballFoundThrough_;
 }
