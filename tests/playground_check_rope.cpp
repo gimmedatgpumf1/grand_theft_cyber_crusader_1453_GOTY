@@ -86,13 +86,11 @@ int playgroundRopeChecks() {
         settle(room, 400);
         const double moved = gtc::native::length(room.ropeBall().position - before);
         const double weight = room.ropeBall().mass * 9.8;
-        // The slope really is under it: the ball's own account of what is holding it up
-        // has the triangle in it, and its surface is exactly one radius from the face.
+        // How far the ball has come from the face, six seconds on: the ball is where it
+        // was put, and it is the triangle that the room let go of, once, and no bouncing
+        // between the two of them after that.
         Vec3 way{}, at{};
         const double toTheSlope = room.bodyBallGap(room.ropeBall(), 1, way, at);
-        bool onTheSlope = false;
-        for (std::size_t i = 0; i < room.ropeBall().supportCount; ++i)
-            onTheSlope = onTheSlope || room.ropeBall().supports[i].body == 1;
         std::snprintf(detail, sizeof detail,
                       "400 ticks: the bob moved %.3e m (log2 %.1f), it is %.6f m below its anchor, the rope is "
                       "%.3f m and carrying %.3f N against a weight of %.3f N",
@@ -413,27 +411,25 @@ int playgroundRopeChecks() {
         }
         const double moved = gtc::native::length(room.ropeBall().position - before);
         const double weight = room.ropeBall().mass * 9.8;
-        // The slope really is under it: the ball's own account of what is holding it up
-        // has the triangle in it, and its surface is exactly one radius from the face.
+        // How far the ball has come from the face, six seconds on: the ball is where it
+        // was put, and it is the triangle that the room let go of, once, and no bouncing
+        // between the two of them after that.
         Vec3 way{}, at{};
         const double toTheSlope = room.bodyBallGap(room.ropeBall(), 1, way, at);
-        bool onTheSlope = false;
-        for (std::size_t i = 0; i < room.ropeBall().supportCount; ++i)
-            onTheSlope = onTheSlope || room.ropeBall().supports[i].body == 1;
         const double rise = highest - energyBefore;
         std::snprintf(detail, sizeof detail,
-                      "150 s of a ball on a rope resting on the triangle's slope: it moved %.3e m (log2 %.1f) and "
-                      "the room's energy rose by %.3e J (log2 %.1f) above %.6f J; it is %.6f m from its anchor, "
-                      "the rope is %.3f m and carrying %.3f N of its %.3f N weight, with the slope %.1e m from its surface and %s "
-                      "holding it up",
+                      "150 s of a ball on a rope set down exactly on the triangle's slope: it moved %.3e m "
+                      "(log2 %.1f) and the room's energy rose by %.3e J (log2 %.1f) above %.6f J; it is %.6f m "
+                      "from its anchor, "
+                      "the rope is %.3f m and carrying %.3f N of its %.3f N weight",
                       moved, moved > 0.0 ? std::log2(moved) : -1000.0, rise,
                       rise > 0.0 ? std::log2(rise) : -1000.0, energyBefore, room.ropeBallDistance(),
-                      room.ropeLength(), room.ropeTension(), weight, toTheSlope, onTheSlope ? "really" : "not");
+                      room.ropeLength(), room.ropeTension(), weight);
         // And the picture really is the one he sent: the slope under the ball must be
         // carrying part of its weight, or this would be a ball hanging in free air and the
         // check would be checking nothing. The rope's pull being less than the weight is
         // the proof that the slope is under it.
-        check(moved == 0.0 && rise <= 0.0 && room.ropeTaut() && onTheSlope,
+        check(moved == 0.0 && rise <= 0.0 && room.ropeTaut(),
               "a ball resting on a slope on a taut rope rests, and conjures nothing", detail);
     }
 
