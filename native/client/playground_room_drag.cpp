@@ -172,6 +172,7 @@ void PlaygroundRoom::updateDrag() {
                 return;
         }
         carryStep_ = wanted - ball.position;
+        handSpeed_ = carryStep_ * (1.0 / kTick);
         ball.position = wanted;
         ball.previous = ball.shown = ball.position;
         // Carried is not simulated: the hand's speed is the hand's, held outside the
@@ -198,6 +199,7 @@ void PlaygroundRoom::updateDrag() {
             const double wanted = std::atan2(arm.y, arm.x) - std::atan2(grabOffset_.y, grabOffset_.x);
             const double turned = bodyStepAllowed(dragBody_ < kBodyCount ? dragBody_ : 0, body.pivotPoint,
                                                   body.angle, body.pivotPoint, wanted, false);
+            handSpeed_ = {};
             body.angle += (wanted - body.angle) * turned;
             placeCorners(body);
             if (!(turned > 0.0)) return;
@@ -232,8 +234,13 @@ void PlaygroundRoom::updateDrag() {
         // comes back. What the hand may carry it through is a solve, not a yes or no:
         // it stops against the plank, where a hand carrying something against a plank
         // would stop, and comes away with it when the cursor does.
+        const Vec3 carried = body.centre;
         body.centre = body.centre + (centre - body.centre) * along;
         if (!(along > 0.0)) return;
+        // The hand is carrying it, and the hand has a speed: the shape is placed rather
+        // than stepped, so it is not written into the shape's own velocity, but the
+        // face of it is really travelling and everything that meets it has to know.
+        handSpeed_ = (body.centre - carried) * (1.0 / kTick);
         placeCorners(body);
         body.previousCentre = body.centre;
         body.previousAngle = body.angle;
@@ -271,7 +278,16 @@ void PlaygroundRoom::endDrag() {
         ball.velocity = thrown;
     }
     carryStep_ = {};
+    handSpeed_ = {};
     dragTarget_ = DragTarget::None;
 }
 
+
+// A shape's face as a ball meeting it reads it: the shape's own speed and turn, unless
+// the hand is carrying it -- and then the hand's.
+Vec3 PlaygroundRoom::bodyFaceSpeed(std::size_t body, Vec3 at) const {
+    if (body >= kBodyCount) return {};
+    if (bodyHeld(body)) return handSpeed_;
+    return pointSpeed(bodies_[body], at);
+}
 } // namespace gtc::native

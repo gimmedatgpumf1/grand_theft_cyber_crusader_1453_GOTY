@@ -88,12 +88,14 @@ void PlaygroundRoom::settleBallFriction(Ball& ball) {
         const std::size_t other = ball.touches[i].body;
         if (other >= kBodyCount) continue;  // the floor is the one surface that never moves
         const Body& mate = bodies_[other];
+        // From the face where the ball met it: see ball.tickSpeed. A shape the hand
+        // is carrying is placed and not stepped, but its face is still travelling at
+        // the hand's speed, and that is what the ball is being rubbed by.
+        const Vec3 at = ball.position + ball.touches[i].normal * -ball.radius;
         if (mate.frozen || bodyHeld(other)) {
-            ball.touches[i].surfaceVelocity = Vec3{};
+            ball.touches[i].surfaceVelocity = bodyFaceSpeed(other, at);
             continue;
         }
-        // From the face where the ball met it: see ball.tickSpeed.
-        const Vec3 at = ball.position + ball.touches[i].normal * -ball.radius;
         const Vec3 arm = at - mate.centre;
         ball.touches[i].surfaceVelocity =
             ball.tickSpeed[other] +

@@ -648,6 +648,8 @@ private:
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
     bool bodyHeld(std::size_t body) const { return dragTarget_ == DragTarget::Body && dragBody_ == body; }
+    // The speed of a shape's face at `at`: its own speed and turn, or the hand's when
+    // the hand is carrying it -- a carried shape is placed, not stepped.
     // The point meets a body: the impulse the point takes along the normal is
     // returned so the dot's own speed can be given it back.
     double answerPointOnBody(std::size_t body, Vec3 pointPosition, Vec3 pointVelocity, Vec3 normal);
@@ -847,6 +849,7 @@ private:
     bool pointSupportGone() const;
     void freezeCheck();
     void updateDrag();
+    Vec3 bodyFaceSpeed(std::size_t body, Vec3 at) const;
     // One force, written down as it is applied. Called from the tick itself and
     // from the pair and ball contacts, so the ledger is filled by the physics and
     // nothing else writes to it.
@@ -954,6 +957,10 @@ private:
     // How far the hand moved the ball in the tick it was carried: letting go turns
     // that into the speed the ball leaves with. Nothing else reads it.
     Vec3 carryStep_{};
+    // How fast the hand is moving what it has hold of, this tick. A carried shape is
+    // placed, not stepped, so its own speed is nothing -- but its face is really
+    // travelling, and a ball it runs into has to be told so or it is never struck.
+    Vec3 handSpeed_{};
     std::size_t dragBody_ = kBodyCount;
     Vec3 planeGrab_{}, grabOffset_{};
     // How much of the tick the point spent sliding on something. Friction acts

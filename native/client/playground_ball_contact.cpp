@@ -303,7 +303,7 @@ void PlaygroundRoom::settleBallSurfaces(Ball& ball) {
 // standing on the ball.
 void PlaygroundRoom::noteBallTouch(Ball& ball, std::size_t body, Vec3 normal, Vec3 at) {
     if (body >= kBodyCount || ball.touchCount >= Ball::kMaxTouches) return;
-    const Vec3 surfaceVelocity = pointSpeed(bodies_[body], at);
+    const Vec3 surfaceVelocity = bodyFaceSpeed(body, at);
     // One face, one contact: the same meeting can be reported by the walk and by the
     // patch, and it is one surface. Two copies of it would each carry half the real
     // load, and the grip would be half what it should be.
@@ -411,7 +411,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // interpolation of the two of them -- which is what outlineTouch already says for
     // the position. Reading the average instead says a body turning on the spot is not
     // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
-    const Vec3 surfaceVelocity = body != nullptr ? pointSpeed(*body, contactPoint) : Vec3{};
+    const Vec3 surfaceVelocity = body != nullptr ? bodyFaceSpeed(std::size_t(bodyIndex), contactPoint) : Vec3{};
 
     // A ball found through an outline is the ball's own way out: the body's tick
     // keeps its outline clear of the ball -- that is what the sweep in tickBody is
@@ -640,10 +640,8 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
             // that surface is not in the way. That is what turns "a shape landing on
             // the top of it" into the floor's answer while "a shape striking its
             // side" still shoves the ball across the room.
-            // The ball's say in this blow is the way it is still free to move, not
-            // whether it is resting: a ball lying on something has no say along that
-            // surface's normal and all of it everywhere else. Asking `held` here gave a
-            // resting ball no say in any direction -- welded to whatever it touched.
+            // The ball's say in this blow is the way it is still free to move, not whether
+            // it is resting; the way it cannot go is what the surface under it refuses.
             const double ballShare = ballCompliance(ball, normal, false);
             // A contact pushes and never pulls: where the two are already separating
             // the solve asks for a negative impulse, which pulls the ball back onto the
