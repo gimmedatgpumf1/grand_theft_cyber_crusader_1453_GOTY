@@ -259,6 +259,62 @@ int playgroundPictureChecks() {
         check(worst <= 1.0e-9, "the ball is drawn on the path its own tick took, never off it", detail);
     }
 
+    // 4. On a surface, the ball is drawn where the frame is -- not a tick behind.
+    //
+    // This is the check that fell out of the King's slide. A ball rolling down the
+    // triangle's slope sits at exactly one radius from the face, and the arithmetic
+    // that puts it there reads a fraction of a micrometre either side of zero; the
+    // drawing used to ask "is it deeper than zero?" and answered yes, so the draw-walk
+    // went back to where the tick began and the ball was drawn 50 ms behind the room
+    // on 100 of 132 frames of a slide, held back by up to 0.127 m. Here it is asked
+    // for directly: on every frame of a slide the ball is drawn at the place the
+    // frame's own fraction of the tick gives, and on no frame is the drawing left
+    // standing while the ball moves.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        for (int tick = 0; tick < 300; ++tick) room.advance(1.0 / 20.0);
+        room.ball_.position = gtc::native::Vec3{-2.20, 1.35, 0};
+        room.ball_.previous = room.ball_.shown = room.ball_.position;
+        room.ball_.velocity = {};
+        room.ball_.spin = 0.0;
+        room.ball_.frozen = false;
+        room.sceneReady_ = true;
+        double worst = 0.0, travel = 0.0;
+        int stuck = 0;
+        gtc::native::Vec3 lastShown{};
+        bool haveLast = false;
+        for (int frame = 0; frame < 120; ++frame) {
+            room.advance(1.0 / 60.0);
+            if (frame < 20 || room.ball_.frozen) continue;
+            const double fraction = std::clamp(room.accumulator_ / gtc::native::playground_tick::kTick, 0.0, 1.0);
+            const gtc::native::Vec3 previous = room.ball_.previous;
+            const gtc::native::Vec3 position = room.ball_.position;
+            gtc::native::Vec3 ownPlace = previous + (position - previous) * fraction;
+            if (room.ball_.bent) {
+                const double when = room.ball_.bendAt;
+                ownPlace = fraction <= when
+                               ? previous + room.ball_.bendIn * (gtc::native::playground_tick::kTick * fraction)
+                               : room.ball_.bendPoint + room.ball_.bendOut *
+                                     (gtc::native::playground_tick::kTick * (fraction - when));
+            }
+            room.interpolate();
+            const gtc::native::Vec3 shown = room.ball_.shown;
+            worst = std::max(worst, gtc::native::length(shown - ownPlace));
+            if (haveLast && gtc::native::length(shown - lastShown) < 1.0e-9 &&
+                gtc::native::length(position - previous) > 1.0e-6) ++stuck;
+            lastShown = shown;
+            haveLast = true;
+            travel += gtc::native::length(position - previous);
+        }
+        std::snprintf(detail, sizeof detail,
+                      "132 frames of a slide down the triangle's slope, %.3f m of travel: the drawn ball is at most "
+                      "%.3e m (log2 %.1f) from the place its frame is entitled to, and on %d frames the drawing stood "
+                      "still while the ball moved", travel, worst, worst > 0.0 ? std::log2(worst) : -1000.0, stuck);
+        check(worst <= gtc::native::playground_tick::kQuantum && stuck == 0 && travel > 1.0,
+              "a ball sliding down a slope is drawn where the frame is, never a tick behind", detail);
+    }
+
     // 2. The pixels, over a whole drop. The whole frame and a frame of the ball alone are
     //    drawn from the same camera, frame after frame, and every pixel the ball paints
     //    must be the ball's in both. A pixel that differs is a pixel of the ball that
