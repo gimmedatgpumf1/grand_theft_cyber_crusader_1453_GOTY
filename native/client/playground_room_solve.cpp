@@ -222,7 +222,19 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (other != nullptr) {
                 if (!otherFixed) otherSpeed = pointSpeed(*other, at);
             } else if (onABall) {
-                if (!ballFixed) otherSpeed = ballPointSpeed(*ballSide, at);
+                if (!ballFixed) {
+                    // What the ball is doing, as this patch is entitled to see it. A ball on
+                    // a taut rope cannot be pushed away from its anchor, so that part of its
+                    // speed is the rope's and the patch is not asked to answer it. Read whole,
+                    // the ball's own weight -- half a metre a second of fall, twenty times a
+                    // second -- was a closing speed at every face it was merely lying against,
+                    // and the shape on the other side was handed the impulse for it while the
+                    // rope took the speed back off the ball: the ball pushing the triangle
+                    // with a force that came out of nothing but its own weight. See
+                    // ballOffTheRope().
+                    const Vec3 turning = ballPointSpeed(*ballSide, at) - ballSide->velocity;
+                    otherSpeed = ballOffTheRope(*ballSide, ballSide->velocity) + turning;
+                }
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
