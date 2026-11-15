@@ -538,34 +538,28 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // from the very contact point it is being asked about.
     // What the ball is doing, as far as this surface can tell.
     //
-    // A contact being *kept* is not a blow, and the difference shows up the moment the
-    // ball is held by something else. A ball hanging on a taut rope that is touching the
-    // triangle's slope is in equilibrium: its weight is what the rope is carrying, and
-    // the slope is carrying nothing. Measure the closing with the speed the ball would
-    // have had if the rope were not there -- which is the tick's own half metre a second
-    // of fall -- and the slope is asked to answer a fall that the rope has already
-    // answered, every tick, for ever: the ball is shoved out along the slope's normal,
-    // the rope catches the part of it that goes up, and the rest is a push the King can
-    // see. That is the "infinite force" the triangle was being shoved away with, and it
-    // is also why a ball lying on the slope crept away from where it was put.
-    //
-    // So a kept contact is answered with the speed the ball has along the directions the
-    // rope *permits*: on the circle, its radial part is the rope's and not the slope's.
-    // Nothing is taken from the ball here and nothing is given to it -- this is the speed
-    // the surface is answered to, and the ball's own velocity is left exactly as it is
-    // for the rope, which is the one thing entitled to change it.
-    //
-    // An *arrival* is the other case, and it is not touched: what comes at a surface comes
-    // at it with everything it has, and that is the blow the King wants it to lose.
+    // A surface is answered with the speed the ball *brought* it, and a ball on a taut
+    // rope brings the speed the rope permits: on the circle, the radial part is the
+    // rope's and not the face's. Read whole, a ball resting on the triangle's slope hands
+    // the slope a tick's worth of its own weight twenty times a second -- the slope
+    // answers a fall the rope has already answered, its answer is not along the rope, and
+    // what is left is speed along the arc that nothing spent. That is the ball with an
+    // infinite force to shove a triangle away with, and the ball creeping along the slope
+    // out of its own weight. So the closing is read at the beginning of the ball's own
+    // tick as well: one that was not closing then is closing now only because its weight
+    // fell for a tick. Nothing is taken from the ball and nothing given to it -- the
+    // ball's velocity is left for the rope, which is the one thing entitled to change it.
+    // A ball that *did* bring a speed is a blow, and a blow is answered in full.
+    const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
     Vec3 ballSpeed = ball.velocity;
-    if (resting) ballSpeed = ballOffTheRope(ball, ballSpeed);
+    if (resting || !arrived) ballSpeed = ballOffTheRope(ball, ballSpeed);
     const double closing = dot(ballSpeed - surfaceVelocity, normal);
     // What the ball was doing at the instant it met the surface. Its speed is carried
     // through the tick from `arrival` to what it is now, so the fraction of the way
     // through the tick is the fraction of the way from one to the other: at the very
     // moment of a contact, that is the speed the blow is answered to.
     Vec3 arrivalSpeed = ball.arrival;
-    if (resting) arrivalSpeed = ballOffTheRope(ball, arrivalSpeed);
+    if (resting || !arrived) arrivalSpeed = ballOffTheRope(ball, arrivalSpeed);
     const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface. A ball that was already lying
@@ -578,13 +572,6 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // ball left the plank, fell for a tick, landed, and was launched again -- the
     // plank was loaded on every other tick and coasted the ticks between, and that
     // square wave of angular acceleration is the stop-move-stop-move on screen.
-    //
-    // And "arrived" is read at the *beginning* of the ball's own tick: a ball on a taut
-    // rope over the slope falls a tick's worth into it every tick -- that is what a tick
-    // is, the weight and then the walk -- and three quarters of the half metre a second
-    // gravity lent it came back as a launch, for ever. Read at the beginning, that ball
-    // brought nothing with it and did not arrive.
-    const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
     const double rebound = (approach < 0.0 && !resting && arrived) ? -kBallRestitution * approach : 0.0;
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
