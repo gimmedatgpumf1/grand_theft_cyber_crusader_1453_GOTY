@@ -54,9 +54,9 @@ void settle(PlaygroundRoom& room, int ticks) {
 }
 
 // Puts the ball where it is aimed at the ball on the rope, and lets go of it.
-void throwAtBob(PlaygroundRoom& room, Vec3 velocity, double fromTheSide) {
-    const Vec3 bob = room.ropeBall().position;
-    room.ball(PlaygroundRoom::kThrowBall).position = bob + Vec3{-fromTheSide, 0.0, 0.0};
+void throwAtTheHangingBall(PlaygroundRoom& room, Vec3 velocity, double fromTheSide) {
+    const Vec3 hanging = room.ropeBall().position;
+    room.ball(PlaygroundRoom::kThrowBall).position = hanging + Vec3{-fromTheSide, 0.0, 0.0};
     room.ball(PlaygroundRoom::kThrowBall).previous = room.ball(PlaygroundRoom::kThrowBall).shown = room.ball(PlaygroundRoom::kThrowBall).position;
     room.ball(PlaygroundRoom::kThrowBall).velocity = velocity;
     room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
@@ -65,7 +65,7 @@ void throwAtBob(PlaygroundRoom& room, Vec3 velocity, double fromTheSide) {
 
 // The energy of the ball on the rope: its travel and its height, the only two things a
 // ball on a rope has that a constraint like this can change.
-double bobEnergy(const PlaygroundRoom& room) {
+double hangingEnergy(const PlaygroundRoom& room) {
     const auto& ball = room.ropeBall();
     return 0.5 * ball.mass * gtc::native::dot(ball.velocity, ball.velocity) + ball.mass * 9.8 * ball.position.y;
 }
@@ -104,7 +104,7 @@ int playgroundRopeChecks() {
             PlaygroundRoom room;
             room.reset();
             settle(room, 200);
-            throwAtBob(room, Vec3{speed, 0.0, 0.0}, 0.45);
+            throwAtTheHangingBall(room, Vec3{speed, 0.0, 0.0}, 0.45);
             for (int tick = 0; tick < 400; ++tick) {
                 room.advance(1.0 / 20.0);
                 worst = std::max(worst, room.ropeBallDistance() - room.ropeLength());
@@ -180,11 +180,11 @@ int playgroundRopeChecks() {
         room.ball(PlaygroundRoom::kRopeBall).previous = room.ball(PlaygroundRoom::kRopeBall).shown =
             room.ball(PlaygroundRoom::kRopeBall).position;
         room.ball(PlaygroundRoom::kRopeBall).velocity = {};
-        const double start = bobEnergy(room);
+        const double start = hangingEnergy(room);
         double highest = start, highestLate = start;
         for (int tick = 0; tick < 1200; ++tick) {
             room.advance(1.0 / 20.0);
-            const double now = bobEnergy(room);
+            const double now = hangingEnergy(room);
             highest = std::max(highest, now);
             if (tick >= 600) highestLate = std::max(highestLate, now);
         }
@@ -193,7 +193,7 @@ int playgroundRopeChecks() {
                       "60 s of swinging from 0.9 rad: the bob started at %.9f J, never rose more than %.3e J above "
                       "it (log2 %.1f, a %.1e part of itself), and in its second half never got back up to %.9f J. "
                       "It ended at %.6f J",
-                      start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, rise / start, start, bobEnergy(room));
+                      start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, rise / start, start, hangingEnergy(room));
         check(rise <= 1e-6 * start && highestLate <= start, "a swing never makes energy", detail);
     }
 
@@ -217,7 +217,7 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
-        throwAtBob(room, Vec3{5.0, 0.0, 0.0}, 0.42);
+        throwAtTheHangingBall(room, Vec3{5.0, 0.0, 0.0}, 0.42);
         double after = 0.0, bounceBack = 0.0, exchanged = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
             const Vec3 ballWas = room.ballVelocity();
@@ -239,7 +239,7 @@ int playgroundRopeChecks() {
         room.reset();
         settle(room, 200);
         room.rope_.attached = false;  // the same two balls, with nothing else on them
-        throwAtBob(room, Vec3{5.0, 0.0, 0.0}, 0.42);
+        throwAtTheHangingBall(room, Vec3{5.0, 0.0, 0.0}, 0.42);
         double residual = 0.0, air = 0.0, exchanged = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
             const Vec3 ballWas = room.ballVelocity();
@@ -361,6 +361,87 @@ int playgroundRopeChecks() {
                       swung, std::hypot(free[2], free[3]));
         check(grabbed[0] > -0.5 && apart == 0.0 && swung > 0.5,
               "the two balls are two objects: carrying one leaves the other swinging", detail);
+    }
+
+    // 8. A ball on a rope resting against a slope: nothing happens, and nothing appears.
+    //
+    //    This is the King's picture. The triangle stood on its vertical edge with its
+    //    slope under the hanging ball, the ball exactly on the slope, the rope taut and
+    //    answering the rest of its weight. The ball bounced off the slope for ever, and
+    //    it was not bouncing: it was being handed half a metre a second of upward speed
+    //    out of nothing, every tick, by the rope. The rope read the speed the ball's own
+    //    tick *ended* with -- which is half a tick of fall -- and then applied another
+    //    tick of gravity on top of it on its own arc. A ball in free swing only ever threw
+    //    that extra half-tick of speed away again, which is why it showed as a swing that
+    //    ran a little fast; a ball with a surface under it could not, and the surface gave
+    //    it back. That is where the infinite energy came from.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 200);
+        auto& triangle = room.bodies_[1];
+        triangle.angle = -1.5707963267948966;
+        triangle.centre = Vec3{2.97, 1.4, 0};
+        room.placeCorners(triangle);
+        triangle.previous = triangle.position;
+        triangle.previousCentre = triangle.centre;
+        triangle.previousAngle = triangle.angle;
+        triangle.velocity = {};
+        triangle.spin = 0.0;
+        triangle.frozen = true;
+        // Everything that is going to happen, happens in the first tick: the slope answers
+        // a ball it is touching at exactly one radius, and the rope answers the rest.
+        for (int tick = 0; tick < 20; ++tick) room.advance(1.0 / 20.0);
+        const Vec3 before = room.ropeBall().position;
+        const double energyBefore = room.totalEnergy();
+        double highest = energyBefore;
+        int ticks = 0;
+        for (int tick = 0; tick < 3000; ++tick) {
+            room.advance(1.0 / 20.0);
+            highest = std::max(highest, room.totalEnergy());
+            ++ticks;
+        }
+        const double moved = gtc::native::length(room.ropeBall().position - before);
+        const double rise = highest - energyBefore;
+        std::snprintf(detail, sizeof detail,
+                      "150 s of a ball on a rope resting on the triangle's slope: it moved %.3e m (log2 %.1f) and "
+                      "the room's energy rose by %.3e J (log2 %.1f) above %.6f J; it is %.6f m from its anchor, "
+                      "the rope is %.3f m and carrying %.3f N",
+                      moved, moved > 0.0 ? std::log2(moved) : -1000.0, rise,
+                      rise > 0.0 ? std::log2(rise) : -1000.0, energyBefore, room.ropeBallDistance(),
+                      room.ropeLength(), room.ropeTension());
+        check(moved == 0.0 && rise <= 0.0 && room.ropeTaut(),
+              "a ball resting on a slope on a taut rope rests, and conjures nothing", detail);
+    }
+
+    // 9. And a swing in this room still loses energy, because the room has air in it. The
+    //    rope spends the part of the tick that is left after it takes hold -- the ball's
+    //    own tick spent the part before -- so the air is asked for every part of every
+    //    tick and no swing is free.
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 200);
+        auto& hanging = room.ball(PlaygroundRoom::kRopeBall);
+        const Vec3 anchor = room.ropeAnchor();
+        hanging.position = anchor + Vec3{std::sin(0.9), -std::cos(0.9), 0.0} * room.ropeLength();
+        hanging.previous = hanging.shown = hanging.position;
+        hanging.velocity = {};
+        hanging.frozen = false;
+        const double start = hangingEnergy(room);
+        double highest = start;
+        for (int tick = 0; tick < 1200; ++tick) {
+            room.advance(1.0 / 20.0);
+            highest = std::max(highest, hangingEnergy(room));
+        }
+        const double end = hangingEnergy(room);
+        std::snprintf(detail, sizeof detail,
+                      "60 s of swinging from 0.9 rad in a room with air: it began at %.6f J, never rose above it by "
+                      "more than %.3e J (log2 %.1f), and ended at %.6f J -- %.3f J of it spent on the air",
+                      start, highest - start, highest - start > 0.0 ? std::log2(highest - start) : -1000.0, end,
+                      start - end);
+        check(highest <= start && start - end > 0.1, "a swing spends its energy on the air, never borrows any",
+              detail);
     }
 
     return localFailures;
