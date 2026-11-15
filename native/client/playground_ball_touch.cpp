@@ -331,7 +331,19 @@ void PlaygroundRoom::settleBallFriction(Ball& ball) {
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
         for (std::size_t i = 0; i < ball.touchCount; ++i) {
-            const double slip = slipAt(i, ball.velocity, ball.spin);
+            // What this face's grip is asked to answer, read the way the rope reads a
+            // speed. A ball on a taut rope is carrying a tick of fall that the rope is
+            // about to take back, and every part of that fall the grip can see it turns
+            // into a *roll*: a ball resting on the triangle's slope, held by the rope,
+            // with nothing on the screen moving, was pinning its patch at two and a half
+            // radians a second out of its own weight, because the slip the grip saw was
+            // the tangential half of the fall and the spin it gave the ball in exchange
+            // was never given back by anything. Read whole, that ghost roll was the ball
+            // sliding against the slope at a fifth of a metre a second, which woke the
+            // shape it was resting on and cost the room a hundredth of a joule a second.
+            // The grip answers the slip the ball could actually keep: see
+            // ballOffTheRope().
+            const double slip = slipAt(i, ballOffTheRope(ball, ball.velocity), ball.spin);
             worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
             const double lever = arms[i].x * tangents[i].y - arms[i].y * tangents[i].x;
