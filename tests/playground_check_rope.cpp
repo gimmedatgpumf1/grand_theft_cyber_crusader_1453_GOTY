@@ -502,7 +502,12 @@ int playgroundRopeChecks() {
         auto& triangle = room.bodies_[1];
         triangle.angle = 1.5707963267948966;
         const double press = 1e-3;
-        triangle.centre = Vec3{3.6697 + press / std::sqrt(2.0), 0.7 - press / std::sqrt(2.0), 0};
+        // Into the ball, which is the way the slope's own face points: up and to the
+        // left. Pressing the other way drove the shape's lowest corner through the
+        // floor instead, and what the room then did was lift the shape back out of the
+        // floor by exactly the press -- seven tenths of a millimetre of the *floor's*
+        // doing, in a check about a ball.
+        triangle.centre = Vec3{3.6697 - press / std::sqrt(2.0), 0.7 + press / std::sqrt(2.0), 0};
         room.placeCorners(triangle);
         triangle.previous = triangle.position;
         triangle.previousCentre = triangle.centre;
@@ -542,7 +547,7 @@ int playgroundRopeChecks() {
         // allowed to do here -- saying what the room calls still -- and not a tolerance
         // on an overlap.
         const double travel = gtc::native::length(room.ropeBall().velocity) * gtc::native::playground_tick::kTick;
-        const double spoke = gtc::native::length(triangle.centre - Vec3{3.6697 + press / std::sqrt(2.0), 0.7 - press / std::sqrt(2.0), 0});
+        const double spoke = gtc::native::length(triangle.centre - Vec3{3.6697 - press / std::sqrt(2.0), 0.7 + press / std::sqrt(2.0), 0});
         std::snprintf(detail, sizeof detail,
                       "150 s after a millimetre of press: the ball was left at %.6f J after the tick the press was "
                       "answered in, never rose by more than %.3e J (log2 %.1f) over the next 150 s, and ended at "
