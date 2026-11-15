@@ -908,7 +908,12 @@ void PlaygroundRoom::separateBall() {
                 }
                 break;
             }
-            const Vec3 here = ball_.position + clear;
+            // The step may have gone below the floor -- the floor is a surface like any
+            // other and its answer is upward, and a projection that is fighting a shape
+            // above it can overshoot through it. Nothing is below the floor, so that is
+            // not a place to search from.
+            Vec3 here = ball_.position + clear;
+            here.y = std::max(here.y, ball_.radius);
             // The surface the ball is deepest inside at that place, if it is one that can
             // give way at all: a pinned body, a sleeping one and one in the mouse's hand
             // cannot, and neither can the floor.
@@ -953,6 +958,8 @@ void PlaygroundRoom::separateBall() {
                 }
                 return true;
             };
+            // Along the floor it is, and both ways are tried: the ball is under a shape
+            // that may have a longer side on one side than the other.
             const double side = here.x >= ball_.position.x ? 1.0 : -1.0;
             double low = 0.0, high = 0.0;
             for (double reach = 0.0005; reach <= 0.4; reach *= 1.5) {
