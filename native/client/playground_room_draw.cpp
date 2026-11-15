@@ -239,43 +239,18 @@ void PlaygroundRoom::interpolate() {
     };
     double drawnAt = ballAlpha;
     if (sceneReady_ && depthInside(alongPath(drawnAt)) > 0.0) {
-        if (depthInside(alongPath(0.0)) > 0.0) {
-            // Not one place of this tick's path is outside the room it is drawn in:
-            // something has been drawn over the ground the ball already covered. Then
-            // the newest place the tick left is the nearest thing to the truth, and it
-            // is put outside the drawn outlines by the depth it is inside, which is the
-            // last thing this picture does and the smallest thing it can do. It is not a
-            // teleport: it moves the ball by the millimetres it is under, in one frame,
-            // from a place that is already wrong.
-            ball_.shown = ball_.position;
-            drawnAt = 1.0;
-            for (int pass = 0; pass < 8; ++pass) {
-                const double inside = depthInside(ball_.shown);
-                if (!(inside > 0.0)) break;
-                double best = inside;
-                Vec3 way{0, 1, 0};
-                for (std::size_t index = 0; index < kBodyCount; ++index) {
-                    const Body& body = bodies_[index];
-                    if (body.count == 0) continue;
-                    const ball_shape::OutlineGap gap =
-                        ball_shape::outlineGap(ball_.shown, body.shown.data(), body.shown.data(), body.count, 1.0);
-                    if (ball_.radius - gap.gap > best - 1e-18 && ball_.radius - gap.gap > 0.0) {
-                        best = ball_.radius - gap.gap;
-                        way = gap.normal;
-                    }
-                }
-                ball_.shown = ball_.shown + way * inside;
-            }
-        } else {
-            double clear = 0.0, inside = drawnAt;
-            for (int pass = 0; pass < 40; ++pass) {
-                const double middle = 0.5 * (clear + inside);
-                if (depthInside(alongPath(middle)) > 0.0) inside = middle;
-                else clear = middle;
-            }
-            drawnAt = clear;
-            ball_.shown = alongPath(drawnAt);
+        // The latest place on this tick's path that is outside the room it is drawn
+        // in, found by halving until it is pinned down to a part in 2^40 of a tick.
+        // Not a step size and not a tolerance: the root of "where does the path stop
+        // being outside", found the way the room finds where a walk stops being clear.
+        double clear = 0.0, inside = drawnAt;
+        for (int pass = 0; pass < 40; ++pass) {
+            const double middle = 0.5 * (clear + inside);
+            if (depthInside(alongPath(middle)) > 0.0) inside = middle;
+            else clear = middle;
         }
+        drawnAt = clear;
+        ball_.shown = alongPath(drawnAt);
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
