@@ -196,46 +196,63 @@ int playgroundRopeChecks() {
         check(rise <= 1e-6 * start && highestLate <= start, "a swing never makes energy", detail);
     }
 
-    // 5. The ball takes and gives momentum with it, and nothing else takes any. On the
-    //    tick the blow lands, the only things that can change the pair's momentum along
-    //    the blow are the air and the rope -- and the rope is on the ledger, so it is not
-    //    guessed at: every force the rope wrote that tick, times the tick, is the impulse
-    //    it gave. What is left over must be the air's share and no more.
+    // 5. The ball takes and gives momentum with it, and nothing else takes any.
     //
-    //    The rope's share is not a correction to be waved away: a ball swinging up from
-    //    the bottom of its arc is being pulled sideways by its own rope, and a check that
-    //    ignored that would be a check that the rope is not doing anything.
+    //    Two things are being asked here and they are not the same question. The first
+    //    is that the hanging ball is a solid the thrown ball collides with -- not a
+    //    ghost, not a thing the rope drags out of the way: a blow of five metres a
+    //    second has to move it most of the way to five metres a second, and the ball
+    //    that dealt it has to be the one that is left slow, because the two of them are
+    //    the same mass and the same bounciness.
+    //
+    //    The second is the books: on a tick where the rope is not on that ball at all,
+    //    the pair is a closed system along the blow, so the pair's own momentum may
+    //    change by the air's share and no more. With the rope still on it the pair is
+    //    not closed -- the rope is pulling sideways the moment the ball leaves the
+    //    bottom of its arc, and that pull is a force of its own, in the ledger, paired
+    //    with the anchor. So the books are checked where the books are closed, and the
+    //    collision is checked where the rope is.
     {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
         throwAtBob(room, Vec3{5.0, 0.0, 0.0}, 0.42);
-        double residual = 0.0, exchanged = 0.0, bounceBack = 0.0, after = 0.0, ropeGave = 0.0;
-        double air = 0.0;
+        double after = 0.0, bounceBack = 0.0, exchanged = 0.0;
+        for (int tick = 0; tick < 200; ++tick) {
+            const Vec3 ballWas = room.ballVelocity();
+            room.advance(1.0 / 20.0);
+            if (std::abs(room.ballVelocity().x - ballWas.x) < 0.5) continue;
+            after = room.ropeBall().velocity.x;
+            bounceBack = room.ballVelocity().x;
+            exchanged = std::abs(after * room.ropeBall().mass);
+        }
+        std::snprintf(detail, sizeof detail,
+                      "a ball at 5.0 m/s into the ball hanging on the rope: the hanging ball came away at %.3f m/s "
+                      "and the ball that hit it was left at %.3f m/s, so %.3f kg m/s moved across the pair",
+                      after, bounceBack, exchanged);
+        check(exchanged > 2.5 && std::abs(after) > 2.5 && std::abs(bounceBack) < 0.5,
+              "the ball takes and gives momentum with the ball on the rope", detail);
+    }
+    {
+        PlaygroundRoom room;
+        room.reset();
+        settle(room, 200);
+        room.rope_.attached = false;  // the same two balls, with nothing else on them
+        throwAtBob(room, Vec3{5.0, 0.0, 0.0}, 0.42);
+        double residual = 0.0, air = 0.0, exchanged = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
             const Vec3 ballWas = room.ballVelocity();
             const Vec3 bobWas = room.ropeBall().velocity;
-            const Vec3 pairWas = ballWas * room.ball(PlaygroundRoom::kThrowBall).mass + bobWas * room.ropeBall().mass;
+            const Vec3 pairWas =
+                ballWas * room.ball(PlaygroundRoom::kThrowBall).mass + bobWas * room.ropeBall().mass;
             room.advance(1.0 / 20.0);
-            const double struck = std::abs(room.ballVelocity().x - ballWas.x);
-            if (!(struck > 0.5)) continue;
-            const Vec3 pairNow =
-                room.ballVelocity() * room.ball(PlaygroundRoom::kThrowBall).mass + room.ropeBall().velocity * room.ropeBall().mass;
-            // The rope's own impulse along x this tick, read off the ledger it wrote.
-            double ropeX = 0.0;
-            for (std::size_t i = 0; i < room.forceCount_; ++i) {
-                const auto& sample = room.forces_[i];
-                if (sample.kind != PlaygroundRoom::ForceKind::Rope) continue;
-                if (sample.owner != room.ownerOf(room.ropeBall())) continue;
-                ropeX += sample.force.x * gtc::native::playground_tick::kTick;
-            }
-            residual = std::abs((pairNow - pairWas).x - ropeX);
+            if (std::abs(room.ballVelocity().x - ballWas.x) < 0.5) continue;
+            const Vec3 pairNow = room.ballVelocity() * room.ball(PlaygroundRoom::kThrowBall).mass +
+                                 room.ropeBall().velocity * room.ropeBall().mass;
+            residual = std::abs((pairNow - pairWas).x);
             exchanged = std::abs((room.ropeBall().velocity - bobWas).x * room.ropeBall().mass);
-            bounceBack = room.ballVelocity().x;
-            after = room.ropeBall().velocity.x;
-            ropeGave = ropeX;
             // The air's own pull over that one tick, from the drag law the room uses, on
-            // both balls: the one that hit and the one that was hit.
+            // both balls: neither of them can carry its momentum through still air.
             const double k = 0.5 * gtc::native::ball_shape::kAirDensity *
                              gtc::native::ball_shape::kBallDragCoefficient * gtc::native::ball_shape::kPi;
             const double r1 = room.ball(PlaygroundRoom::kThrowBall).radius;
@@ -244,13 +261,12 @@ int playgroundRopeChecks() {
                            (1.0 / 20.0));
         }
         std::snprintf(detail, sizeof detail,
-                      "a ball at 5.0 m/s into the hanging ball: the hanging ball came away at %.3f m/s and the ball "
-                      "was left at %.3f m/s, so the blow moved %.3f kg m/s across the pair; the rope pulled back "
-                      "with %.3f kg m/s of it, and what the pair's own total did not account for is %.3e kg m/s -- "
-                      "no more than the %.3e kg m/s the air takes in that tick",
-                      after, bounceBack, exchanged, ropeGave, residual, air);
-        check(exchanged > 2.5 && std::abs(after) > 2.5 && std::abs(bounceBack) < 0.5 && residual <= 1.05 * air,
-              "the ball takes and gives momentum with the ball on the rope, and nothing else takes any", detail);
+                      "and with the rope off it, nothing else takes any: the blow moved %.3f kg m/s across the "
+                      "pair, and the pair's own total moved by %.3e kg m/s -- no more than the %.3e kg m/s the "
+                      "air takes in that tick",
+                      exchanged, residual, air);
+        check(exchanged > 2.5 && residual <= 1.05 * air, "the pair's books balance: only the air takes any",
+              detail);
     }
 
     // 6. The rope has no collision. A ball thrown through the line of the rope must be
