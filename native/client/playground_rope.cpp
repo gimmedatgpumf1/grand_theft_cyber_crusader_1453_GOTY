@@ -197,17 +197,7 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
 
-    // Which of the two the rope is. The room's answer is the ball's motion, and the rope
-    // may only keep it no further than its length -- but a ball that has run *past* the
-    // length is a ball the rope has something to say about, and it has to be said at the
-    // instant the travel crossed the sphere. Clamping the end of the tick instead put
-    // the ball back on the circle by lifting it wherever it had got to: a ball that came
-    // off the slope, went slack, hopped and fell was caught thirty millimetres below its
-    // arc and dropped there, dead, and that is the wrecking ball on the string -- it
-    // arrived, stopped, and hung. Caught where it crosses, it keeps the speed it has
-    // along the arc, which is what a string catching a ball does.
-    const bool pastTheLength = length(ball.position - anchor) > ropeLength;
-    if (ball.answered && !pastTheLength) {
+    if (ball.answered) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
         // length, and take the speed that is running away from the anchor -- which is
@@ -228,6 +218,21 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         const double reach = length(arm);
         if (reach > 0.0 && reach >= ropeLength - ball_shape::kTouch) {
             const Vec3 outward = arm / reach;
+            // The ball's place is the room's to choose on this tick, because the room
+            // has already chosen it -- it answered the ball, lifted it out of a face,
+            // put it back where it was pressed from. Moving it onto the circle here
+            // overruled that, and the two together were a pump: the ball's own walk ran
+            // it down the slope past the length, this line put it back on the arc, the
+            // arc is inside the slope, and the next tick lifted it out again. Measured
+            // in the pressed scene, the ball sat nine tenths of a millimetre inside the
+            // face, the repair stood it on the face, and the height it was stood up by
+            // came out of nothing -- twelve millijoules a bounce, for ever, which is a
+            // ball on a string that never stops swinging.
+            //
+            // So the rope takes the speed that is running away from the anchor and
+            // leaves the place alone. Its own circle is enforced on the ticks the room
+            // did not answer, where it catches the ball at the instant the travel
+            // crosses the sphere and swings what is left of the tick -- see below.
             const double leaving = dot(speedNow, outward);
             if (leaving > 0.0) {
                 const Vec3 loss = outward * -leaving;

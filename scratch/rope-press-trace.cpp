@@ -50,7 +50,11 @@ int main() {
     triangle.previousAngle = triangle.angle;
     triangle.velocity = {};
     triangle.spin = 0.0;
-    triangle.frozen = true;
+    triangle.frozen = false;
+    // Held in the hand, which is the only way a slope can be inside a ball: the room
+    // will not let a shape be put down inside anything.
+    room.dragTarget_ = PlaygroundRoom::DragTarget::Body;
+    room.dragBody_ = 1;
     const Vec3 was = triangle.centre;
 
     auto& ball = room.ball(PlaygroundRoom::kRopeBall);
