@@ -244,12 +244,16 @@ void PlaygroundRoom::separateBall() {
     // rather than inside by 1e-16 m. The King asked for not one micrometre, and the
     // honest answer is that the ball is not one part in nine billion of a micrometre
     // through anything -- it is outside.
-    const double ulps = 4.0 * std::numeric_limits<double>::epsilon() * ball_.radius;
     const Vec3 beforeTheLastWord = ball_.position;
-    for (int pass = 0; pass < 8; ++pass) {
-        std::size_t deepest = kBodyCount;
-        double depth = 0.0;
-        Vec3 way{};
+    for (int pass = 0; pass < 64; ++pass) {
+        // The floor is one of the constraints, not a line to be run afterwards: a ball
+        // in the corner where a slope meets the floor is held by both, and taking it
+        // out of one and then lifting it to the other is how two answers that are each
+        // right leave it a hair inside. Answered together, the projection converges --
+        // each pass is closer than the last, and at these depths the last pass is the
+        // last bits of a double.
+        double depth = ball_.radius - ball_.position.y;
+        Vec3 way{0, 1, 0};
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].count == 0) continue;
             Vec3 out{}, at{};
@@ -257,17 +261,16 @@ void PlaygroundRoom::separateBall() {
             if (inside > depth) {
                 depth = inside;
                 way = out;
-                deepest = index;
             }
         }
-        if (deepest == kBodyCount) break;
-        // Along the way out, and the floor is not consulted here: lifting the ball to
-        // the floor in the middle of this is how a ball on the floor was pushed back
-        // into the shape it had just been taken out of, one pass after another, and
-        // ended the tick inside by the last few bits of a double. The floor is the
-        // next line, once.
+        if (!(depth > 0.0)) break;
         ball_.position = ball_.position + way * depth;
     }
+    // And if the shapes still have it -- a ball under a shape lying on the floor, where
+    // no direction out of one is out of the other -- then the floor is the one thing
+    // that is certain, and the ball is above it: a ball that cannot be outside both is
+    // not left below the ground.
+    ball_.position.y = std::max(ball_.position.y, ball_.radius);
     if (length(ball_.position - beforeTheLastWord) > kRepairDepth) ++ballFoundThrough_;
 }
 
