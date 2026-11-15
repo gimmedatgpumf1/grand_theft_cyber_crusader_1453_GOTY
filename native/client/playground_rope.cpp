@@ -169,13 +169,7 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // still on it, and never caught it again: measured, a swing released from 0.5 rad
     // was 1.38 m outside its own rope within a tick. Touching is not inside, here as
     // everywhere else in the room: a ball on the sphere is a ball the rope has hold of.
-    // A ball that begins the tick *at* its length is a ball the rope has hold of, whole
-    // tick: whether it is running outward, or swinging along the circle, or (by rounding)
-    // a fraction of a picometre inward. It is the same rule as everywhere else in the
-    // room -- touching is not inside -- and it matters here because the rope owns the
-    // tick from the instant it takes hold: whether it lets go later is the tension's
-    // business, and the arc below is where that is decided, by a root and not by a flag.
-    if (length(from) >= ropeLength - ball_shape::kTouch) crossed = 0.0;
+    if (length(from) >= ropeLength - ball_shape::kTouch && dot(from, travel) >= 0.0) crossed = 0.0;
     if (!(crossed <= 1.0)) {
         const double a = dot(travel, travel);
         if (a > 0.0) {
@@ -230,11 +224,13 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     // all, and bounced off the slope for ever. That is where the infinite energy came
     // from, and this is the line it came from.
     Vec3 speedNow = ball.began + (ball.velocity - ball.began) * crossed;
-    // And the air, over the part of the tick that is left. The ball's own tick spent it
-    // over the part behind the crossing, and the arc below is the rope's own motion: if
-    // the air were not asked again here, a ball on a rope would swing for ever in a room
-    // with air in it, which is the one thing this room's air is not allowed to do. It is
-    // the same law and the same exact solve, over a shorter time.
+    // And the air, over the part of the tick that is left. The ball's own tick spent one
+    // tick of it, and the crossing carries the share of that which lies behind it -- the
+    // room's air is linear in the time it is given -- so this is the share in front: the
+    // whole tick, once, for a ball whose tick the rope takes over. Asked for here and not
+    // in the arc because a ball on a rope is in the same air as any other ball: without
+    // this line the rope's own arc has no air in it at all, and a swing in this room
+    // would never lose anything, which is the one thing air is for.
     speedNow = ballAirDrag(ball, speedNow, dt * (1.0 - crossed));
     // A place on the rope, read as the pendulum state that waits there: the angle it
     // hangs at, the speed it has along its own arc, how far out it is, and which way is
