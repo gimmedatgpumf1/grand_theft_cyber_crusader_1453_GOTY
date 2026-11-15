@@ -946,6 +946,21 @@ void PlaygroundRoom::tickBall() {
         const Vec3 correction = shorter - ball.position;
         if (dot(correction, walkStart) <= 0.0) ball.position = shorter;
     }
+    // The path the drawing is given, rebuilt from the place the tick really ended.
+    // A tick whose travel is resolved away does not end at the speed it had after the
+    // meeting: the walk stops at the face, and the speed that carried the ball there is
+    // spent. Drawn from that speed, the ball's second piece of path flew on past the
+    // face -- 6.2 cm into the cube in the King's corner -- and the frame at the end of
+    // the tick snapped back to it: a ball that flies into a shape every tick and is
+    // yanked back reads as lag, and it is a lie about where the ball went. Both ends of
+    // the piece are known here, so it is read off directly. This is the drawing's copy
+    // of the path only; no velocity, force or travel in the room reads it.
+    if (ball.bent) {
+        const Vec3 met = ball.bendPoint;
+        if (ball.bendAt > 0.0) ball.bendIn = (met - ball.previous) / (kTick * ball.bendAt);
+        const double left = 1.0 - ball.bendAt;
+        if (left > 0.0) ball.bendOut = (ball.position - met) / (kTick * left);
+    }
     // And a turn that carries the rim less than a micrometre is not a turn.
     ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
     ball.angle += ball.spin * kTick;
