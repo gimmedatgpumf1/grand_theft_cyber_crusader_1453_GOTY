@@ -387,16 +387,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
         // answered against the ball's mass once per tick and the ball crept for ever.
         // A contact that is not approaching cannot push anything.
         //
-        // A blow is not the ball's *whole* speed: a ball on a taut rope carries a tick of
-        // fall the rope is about to take back, and read whole it woke the shape it was
-        // merely lying on, every tick, with a share of an impulse that was never a blow.
-        // The rope's part comes off the ball's *middle*, not off the patch -- a patch
-        // spinning along the face cannot close on it, and taking it off the patch leaks
-        // the turn into the normal. See ballOffTheRope().
-        const Vec3 arm = contactPoint - ball.position;
-        const Vec3 turned{-ball.spin * arm.y, ball.spin * arm.x, 0.0};
-        const Vec3 closingVelocity =
-            ballOffTheRope(ball, ball.velocity) + turned - pointSpeed(*body, contactPoint);
+        // A blow is *travel*, and it is not the ball's whole speed either. A ball on a
+        // taut rope carries a tick of fall that the rope is about to take back, and read
+        // whole it woke the shape it was merely lying on, every tick, with a share of an
+        // impulse that was never a blow. A turn is not travel: a patch spinning along a
+        // face cannot close on it, it can only rub, and a rub nobody is pressing with is
+        // nothing at all -- a ball resting on the slope, turning on the spot against it
+        // with no load, was waking the triangle every tick for it. See ballOffTheRope().
+        const Vec3 closingVelocity = ballOffTheRope(ball, ball.velocity) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
