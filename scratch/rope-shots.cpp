@@ -151,5 +151,35 @@ int main() {
                     gtc::native::length(r.ballPosition() - r.ropeBall().position) -
                         (r.ballRadius() + r.ropeBall().radius));
     }
+    // 4. The other ball in the hand, with the rope ball swinging. The one on the rope is
+    //    not simulated while it is being told about the other one, and the numbers say
+    //    so: its angle and its speed carry on through the frames of the drag.
+    room.reset();
+    for (int tick = 0; tick < 200; ++tick) room.advance(1.0 / 20.0);
+    {
+        auto& hanging = room.ball(PlaygroundRoom::kRopeBall);
+        const Vec3 anchor = room.ropeAnchor();
+        hanging.position = anchor + Vec3{std::sin(0.7), -std::cos(0.7), 0.0} * room.ropeLength();
+        hanging.previous = hanging.shown = hanging.position;
+        hanging.velocity = {};
+        hanging.frozen = false;
+    }
+    for (int frame = 0; frame < 10; ++frame) room.advance(1.0 / 20.0);
+    const Vec3 taken = room.ball(PlaygroundRoom::kThrowBall).position;
+    room.setDragRay(Vec3{taken.x, taken.y, 1.0}, Vec3{0, 0, -1});
+    room.beginDrag();
+    std::printf("the hand took: %s\n",
+                room.dragTarget_ == PlaygroundRoom::DragTarget::Ball ? "a ball" : "something else");
+    for (int frame = 0; frame < 8; ++frame) {
+        room.setDragRay(Vec3{taken.x - 0.06 * frame, taken.y + 0.08 * frame, 1.0}, Vec3{0, 0, -1});
+        room.advance(1.0 / 20.0);
+        const Vec3 arm = room.ropeBall().position - room.ropeAnchor();
+        std::printf("  held ball at (%.3f, %.3f) | the ball on the rope: %.4f rad, %.3f m/s\n",
+                    room.ballPosition().x, room.ballPosition().y, std::atan2(arm.x, -arm.y),
+                    gtc::native::length(room.ropeBall().velocity));
+        if (frame == 0 || frame == 4 || frame == 7)
+            shoot(room, camera, "scratch/rope-4-hold-the-other-" + std::to_string(frame) + ".png");
+    }
+    room.endDrag();
     return 0;
 }
