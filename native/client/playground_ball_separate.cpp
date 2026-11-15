@@ -257,10 +257,12 @@ void PlaygroundRoom::separateBall() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (bodies_[index].count == 0) continue;
             Vec3 out{}, at{};
+            // bodyBallGap's way runs from the ball *into* the shape, so out is the
+            // other way; `out` is it, and it is the direction the ball leaves along.
             const double inside = -bodyBallGap(index, out, at);
             if (inside > depth) {
                 depth = inside;
-                way = out;
+                way = out * -1.0;
             }
         }
         if (!(depth > 0.0)) break;
