@@ -95,7 +95,7 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     slideSpan_ = 0.0;
     heldStill_ = false;
     supportNormal_ = Vec3{0, 1, 0};
-    ballTouchCount_ = 0;
+    for (Ball& ball : balls_) ball.touchCount = 0;
     clearForces();
     impulseCount_ = 0;
     restingBody_ = -1;
@@ -144,30 +144,41 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     // reset, so the two drawing handles it was given at build time have to be
     // kept: clearing them to zero puts the ball's transform on the ground batch
     // and leaves the ball itself where the last scene was built.
-    const std::size_t ballFace = ball_.faceBatch, ballMark = ball_.markBatch;
-    ball_ = Ball{};
-    ball_.faceBatch = ballFace;
-    ball_.markBatch = ballMark;
-    ball_.position = ball_.previous = ball_.shown = Vec3{3.10, ball_.radius + 1.60, 0};
-    ball_.angle = ball_.previousAngle = 0.0;
-    // The bob on its rope, let go from a hand's width out to the side: hanging dead
-    // straight it would be correct and would show nothing. It is released, not pushed
-    // -- the speed it starts with is nothing, and everything it ever does after that is
-    // its own weight on a rope of fixed length.
-    const std::size_t ropeBatch = pendulum_.ropeBatch, bobBatch = pendulum_.bobBatch,
-                      anchorBatch = pendulum_.anchorBatch, ghostBatch = pendulum_.ghostBatch;
-    pendulum_ = Pendulum{};
-    pendulum_.ropeBatch = ropeBatch;
-    pendulum_.bobBatch = bobBatch;
-    pendulum_.anchorBatch = anchorBatch;
-    pendulum_.ghostBatch = ghostBatch;
-    // Hanging dead straight, at rest: the room resets to a room that is standing
-    // still. What makes it swing is a blow, and the room has a ball for that.
-    pendulum_.position = pendulum_.anchor + Vec3{0.0, -pendulum_.length, 0.0};
-    pendulum_.previous = pendulum_.shown = pendulum_.position;
-    pendulum_.velocity = {};
-    pendulum_.taut = true;
-    pendulum_.tension = pendulum_.mass * kGravity;
+    //
+    // Both balls, and both for the same reasons. The one on the rope is a ball: it
+    // has the same two drawing handles, the same radius, the same mass and the same
+    // tick, and resetting it is resetting a ball. It is not a second thing to be
+    // written out here.
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        Ball& ball = balls_[index];
+        const std::size_t face = ball.faceBatch, mark = ball.markBatch;
+        ball = Ball{};
+        ball.faceBatch = face;
+        ball.markBatch = mark;
+    }
+    // The thrown ball, where the scene leaves it: up in the air, on the right.
+    Ball& thrown = balls_[kThrowBall];
+    thrown.position = thrown.previous = thrown.shown = Vec3{3.10, thrown.radius + 1.60, 0};
+    thrown.angle = thrown.previousAngle = 0.0;
+    // And the ball on the rope: hanging dead straight under its anchor, at rest. The
+    // room resets to a room that is standing still. What makes it swing is a blow, and
+    // the room has a ball for that -- the same tick, the same contact, the same ledger.
+    // It keeps its two drawing handles like the other one, and the rope keeps its own.
+    const std::size_t ropeBatch = rope_.ropeBatch, anchorBatch = rope_.anchorBatch;
+    rope_ = Rope{};
+    rope_.ropeBatch = ropeBatch;
+    rope_.anchorBatch = anchorBatch;
+    rope_.ball = kRopeBall;
+    rope_.attached = true;
+    Ball& hanging = balls_[kRopeBall];
+    hanging.position = hanging.previous = hanging.shown = rope_.anchor + Vec3{0.0, -rope_.length, 0.0};
+    hanging.angle = hanging.previousAngle = 0.0;
+    // Hanging taut: the rope is carrying the whole of its weight and no more.
+    rope_.taut = true;
+    rope_.tension = hanging.mass * kGravity;
+    restingOnBall_ = false;
+    restingBall_ = kThrowBall;
+    dragBall_ = kThrowBall;
     return true;
 }
 
@@ -402,17 +413,31 @@ void PlaygroundRoom::tick() {
                 wall = false;
             }
         }
-        // The ball is one more thing in the way: a point with a radius, so the
-        // point meets it when their surfaces touch.
+        // The balls are more things in the way: points with radii, so the point meets
+        // one when their surfaces touch. Both of them, because a ball is a ball -- the
+        // dot can lie on the one hanging from the rope exactly as it can lie on the one
+        // thrown, and there is nothing to say which it will be.
         if (!metBall) {
             double along = 2.0;
             Vec3 facing{0, 1, 0};
-            if (segmentHitsCircle(point_, next, ball_.position, kPointRadius + ball_.radius, along, facing) &&
-                !(along <= kQuantum && -dot(velocity_, facing) * (kTick * remaining) < kQuantum) && along < first) {
+            for (std::size_t index = 0; index < kBallCount; ++index) {
+                const Ball& ball = balls_[index];
+                double reach = 2.0;
+                Vec3 way{0, 1, 0};
+                if (!segmentHitsCircle(point_, next, ball.position, kPointRadius + ball.radius, reach, way)) continue;
+                if (reach <= kQuantum && -dot(velocity_, way) * (kTick * remaining) < kQuantum) continue;
+                if (!(reach < along)) continue;
+                along = reach;
+                facing = way;
+                ballHit = true;
+                hitIndex = index;
+                wall = false;
+            }
+            if (ballHit && along < first) {
                 first = along;
                 normal = facing;
-                ballHit = true;
-                wall = false;
+            } else {
+                ballHit = false;
             }
         }
         if (!(first <= 1.0)) {
@@ -425,7 +450,7 @@ void PlaygroundRoom::tick() {
             metBall = true;
             // Same rule as a body: what drives into the ball is answered by both
             // sides, and what runs along it is left alone.
-            pointAgainstBall(normal);
+            pointAgainstBall(balls_[hitIndex < kBallCount ? hitIndex : kThrowBall], normal);
             // A bounce is not a rest.
             //
             // Being held up is a fact about where the point is, not about what it
@@ -446,6 +471,7 @@ void PlaygroundRoom::tick() {
             resting_ = held;
             restingBody_ = -1;
             restingOnBall_ = held;
+            restingBall_ = hitIndex < kBallCount ? hitIndex : kThrowBall;
             supportNormal_ = normal;
             slideSpan_ += kTick * remaining;
             if (!(length(velocity_) > 1e-12)) break;
@@ -514,16 +540,18 @@ void PlaygroundRoom::tick() {
             // it never arrives at it, so nothing else would tell it there is
             // something underneath. Its own shape is a circle, so the test is the
             // distance between the two middles.
-            if (!resting_) {
-                const Vec3 gap = point_ - ball_.position;
+            for (std::size_t index = 0; index < kBallCount && !resting_; ++index) {
+                const Ball& ball = balls_[index];
+                const Vec3 gap = point_ - ball.position;
                 const double distance = length(gap);
-                const double reach = kPointRadius + ball_.radius;
+                const double reach = kPointRadius + ball.radius;
                 const double room = distance - reach;
                 if (room < kQuantum && distance > 0.0 && gap.y > 0.0 &&
                     dot(velocity_, gap / distance) <= 0.0) {
                     resting_ = true;
                     restingBody_ = -1;
                     restingOnBall_ = true;
+                    restingBall_ = index;
                     supportNormal_ = gap / distance;
                     slideSpan_ = kTick;
                 }
@@ -570,12 +598,13 @@ void PlaygroundRoom::tick() {
     // the first meeting of anything with anything, and that meeting is answered on
     // both sides at once.
     tickBodies();
-    // The bob on its rope, stepped on what the shapes have just done to the room: it is
-    // a solid of its own and the ball is swept against it, so it has to be where it
-    // really is before the ball's walk begins.
-    tickPendulum();
-    if (!ball_.frozen || ballNeighboursMoving()) tickBall();
-    else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
+    // Both balls, in order, each one a ball: it is swept through the room it has just
+    // had written into it, answered at every surface it meets, and -- for the one on the
+    // rope -- held on its rope once its own tick is over. The rope is a constraint on
+    // the ball, not a second body, so it is applied after the ball has moved and before
+    // the next ball is swept against it, which is why the rope ball goes first: the
+    // thrown ball's sweep then meets it where the rope really left it.
+    tickBalls();
     haveTrace_ = length(traceTo_ - traceFrom_) > kQuantum;
     if (length(point_ - from) > kQuantum) {
         ghosts_[ghostNext_] = point_;
@@ -598,8 +627,9 @@ void PlaygroundRoom::tick() {
 // it is not the dot wakes and falls, which is what it was about to do anyway.
 bool PlaygroundRoom::pointSupportGone() const {
     if (restingOnBall_) {
-        const Vec3 gap{point_.x - ball_.position.x, point_.y - ball_.position.y, 0.0};
-        return length(gap) > ball_.radius + kPointSupportBand;
+        const Ball& ball = balls_[restingBall_ < kBallCount ? restingBall_ : kThrowBall];
+        const Vec3 gap{point_.x - ball.position.x, point_.y - ball.position.y, 0.0};
+        return length(gap) > ball.radius + kPointSupportBand;
     }
     if (restingBody_ >= 0 && restingBody_ < int(kBodyCount)) {
         const Body& body = bodies_[std::size_t(restingBody_)];
@@ -678,11 +708,11 @@ void PlaygroundRoom::advance(double seconds) {
         // What the ball arrived with, taken before anything in the room moved this
         // tick. A bounce is the answer to arriving at something; a push it gets
         // part-way through the tick is not an arrival, and must not be bounced back.
-        ball_.arrival = ball_.velocity;
+        for (Ball& ball : balls_) ball.arrival = ball.velocity;
         // The ball's account for the tick, opened at the same instant and for the
         // same reason: the blows written into it below have to be every blow of this
         // tick, including the ones the shapes deal it before its own tick begins.
-        ballBlows_ = {};
+        for (Ball& ball : balls_) ball.blows = {};
         // A point parked on a body is only held up by that body. Take it away --
         // drag it, or let it slide -- and the support is gone, so the point goes
         // back to being a falling body.
@@ -693,8 +723,9 @@ void PlaygroundRoom::advance(double seconds) {
         }
         // The same for a ball: take it away and the dot has nothing under it.
         if (pointFrozen_ && restingOnBall_) {
-            const double distance = length(point_ - ball_.position);
-            if (distance > kPointRadius + ball_.radius + kQuantum) {
+            const Ball& ball = balls_[restingBall_ < kBallCount ? restingBall_ : kThrowBall];
+            const double distance = length(point_ - ball.position);
+            if (distance > kPointRadius + ball.radius + kQuantum) {
                 pointFrozen_ = false;
                 resting_ = false;
                 restingOnBall_ = false;
@@ -730,7 +761,9 @@ void PlaygroundRoom::advance(double seconds) {
         std::array<bool, kBodyCount> stepped{};
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = !bodies_[index].frozen;
         const bool pointStepped = !pointFrozen_;
-        const bool ballStepped = !ball_.frozen || ballNeighboursMoving();
+        std::array<bool, kBallCount> ballStepped{};
+        for (std::size_t index = 0; index < kBallCount; ++index)
+            ballStepped[index] = !balls_[index].frozen || ballNeighboursMoving(balls_[index]);
         if (!pointFrozen_) {
             tick();
         } else {
@@ -747,15 +780,13 @@ void PlaygroundRoom::advance(double seconds) {
                 }
             }
             tickBodies();
-            tickPendulum();
-            if (!ball_.frozen || ballNeighboursMoving()) tickBall();
-            else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
+            tickBalls();
         }
         // Whatever a turn carried through the ball is put back out, once, after both
         // halves of the tick have moved. It is here rather than inside either of them
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
-        separateBall();
+        for (Ball& ball : balls_) separateBall(ball);
         // And now the tick is over, having asked everything it is going to ask: this
         // is where a shape is measured for stillness, so that nothing later in the
         // same tick can hand it a push. See the note at the call this replaces.
@@ -784,7 +815,7 @@ void PlaygroundRoom::advance(double seconds) {
 }
 
 void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& stepped, bool pointStepped,
-                                        bool ballStepped) {
+                                        const std::array<bool, kBallCount>& ballStepped) {
     // A body that has come to rest is still pulled down by its own weight and still
     // held up by what it is standing on. Its tick is what would have said so, and
     // it has none -- so if the ledger were left to the ticks alone, every settled
@@ -821,20 +852,22 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // ball held still on a slope is held by its normal force and its friction
     // together, whose sum is exactly its weight -- so one arrow of -weight at that
     // point is the true total, not an approximation of it.
-    if (ball_.frozen && !ballStepped) {
-        const Vec3 weight{0.0, -ball_.mass * kGravity, 0.0};
-        const Vec3 at = ball_.position + ball_.supportNormal * (-ball_.radius);
-        addForce(ball_.position, weight, ForceKind::Gravity, nullptr, kBallOwner);
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        const Ball& ball = balls_[index];
+        if (!ball.frozen || ballStepped[index]) continue;
+        const Vec3 weight{0.0, -ball.mass * kGravity, 0.0};
+        const Vec3 at = ball.position + ball.supportNormal * (-ball.radius);
+        addForce(ball.position, weight, ForceKind::Gravity, nullptr, ownerOf(ball));
         // Split the way the dot's is, and for the same reason: what the ground
         // answers is a normal and a friction, and replaying the weight as one arrow
         // squeezed the friction out of sight. A ball held still on anything that is
         // not level is held by both, and both are drawn.
-        const Vec3 normal = ball_.supportNormal;
+        const Vec3 normal = ball.supportNormal;
         const double into = dot(weight, normal);
         const double carried = std::max(0.0, -into);
-        addForce(at, normal * carried, ForceKind::Contact, nullptr, kBallOwner);
+        addForce(at, normal * carried, ForceKind::Contact, nullptr, ownerOf(ball));
         const Vec3 along = weight - normal * into;
-        if (length(along) > 0.0) addForce(at, along * -1.0, ForceKind::Friction, nullptr, kBallOwner);
+        if (length(along) > 0.0) addForce(at, along * -1.0, ForceKind::Friction, nullptr, ownerOf(ball));
     }
     // A pinned body's axle.
     //
@@ -908,17 +941,16 @@ void PlaygroundRoom::energyBudget(double& kinetic, double& potential) const {
         kinetic += 0.5 * body.moment * body.spin * body.spin;
         potential += body.mass * kGravity * body.centre.y;
     }
-    // The bob on the rope: its travel and its height, the only two things it has. Its
-    // spin is not a state: a bob on a rope turns if it was turning when it was tied on,
-    // and nothing in the room can turn it.
-    kinetic += 0.5 * pendulum_.mass * dot(pendulum_.velocity, pendulum_.velocity);
-    potential += pendulum_.mass * kGravity * pendulum_.position.y;
-    // The ball: its travel and its turn, and the same height rule.
-    kinetic += 0.5 * ball_.mass * dot(ball_.velocity, ball_.velocity);
-    // A solid sphere, which is the moment the ball's own contacts are solved with.
-    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    kinetic += 0.5 * moment * ball_.spin * ball_.spin;
-    potential += ball_.mass * kGravity * ball_.position.y;
+    // The balls: their travel and their turn, and the same height rule. Both of them,
+    // because both of them are balls -- the one on the rope has as much kinetic energy
+    // as the one thrown, and the room's books would not balance if it were left out.
+    for (const Ball& ball : balls_) {
+        kinetic += 0.5 * ball.mass * dot(ball.velocity, ball.velocity);
+        // A solid sphere, which is the moment the ball's own contacts are solved with.
+        const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
+        kinetic += 0.5 * moment * ball.spin * ball.spin;
+        potential += ball.mass * kGravity * ball.position.y;
+    }
 }
 
 double PlaygroundRoom::totalEnergy() const {

@@ -26,6 +26,22 @@ constexpr double kGrabMargin = 0.06;       // and to take a body by its outline
 
 } // namespace
 
+// Which ball a click on the plane is on: the one whose disc it is inside, and the
+// nearer one if it is inside both. A ball is a circle of its own radius about its
+// middle, and a click inside one is a click on it.
+std::size_t PlaygroundRoom::ballUnderClick(Vec3 at) const {
+    std::size_t picked = kBallCount;
+    double closest = 1e30;
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        const Ball& ball = balls_[index];
+        const double gap = length(Vec3{at.x - ball.position.x, at.y - ball.position.y, 0}) - ball.radius;
+        if (gap > 0.0 || gap >= closest) continue;
+        closest = gap;
+        picked = index;
+    }
+    return picked;
+}
+
 void PlaygroundRoom::setDragRay(Vec3 origin, Vec3 direction) {
     dragOrigin_ = {float(origin.x), float(origin.y), float(origin.z), 0};
     dragDirection_ = {float(direction.x), float(direction.y), float(direction.z), 0};
@@ -93,11 +109,16 @@ void PlaygroundRoom::beginDrag() {
         body.frozen = false;
         body.velocity = {};
         body.spin = 0.0;
-    } else if (length(Vec3{hit.x - ball_.position.x, hit.y - ball_.position.y, 0}) <= ball_.radius) {
+    } else if (ballUnderClick(hit) < kBallCount) {
+        // Either ball is taken the same way. A ball on a rope is a ball: the mouse takes
+        // it by its disc and the rope holds it while it is carried, which is what a hand
+        // on a hanging ball would find.
+        dragBall_ = ballUnderClick(hit);
         dragTarget_ = DragTarget::Ball;
-        ball_.frozen = false;
-        ball_.velocity = {};
-        ball_.spin = 0.0;
+        Ball& ball = balls_[dragBall_];
+        ball.frozen = false;
+        ball.velocity = {};
+        ball.spin = 0.0;
     } else if (pointNear) {
         dragTarget_ = DragTarget::Point;
         pointFrozen_ = false;
@@ -118,13 +139,25 @@ void PlaygroundRoom::updateDrag() {
     const double distance = (0.0 - origin.z) / direction.z;
     if (!(distance > 0.0)) return;
     const Vec3 hit = origin + direction * distance;
-    if (dragTarget_ == DragTarget::Ball) {
+    if (dragTarget_ == DragTarget::Ball && dragBall_ < kBallCount) {
+        Ball& ball = balls_[dragBall_];
         // Being carried is not being simulated, so the ball goes where the mouse
         // goes -- but not into a solid or through the floor. A spot the ball does
         // not fit in is not a spot it can be put down, and it stays where it was
         // until the mouse finds one it does.
-        const Vec3 wanted{std::clamp(hit.x, -5.0, 5.0), std::max(ball_.radius, hit.y), 0};
-        if (!ballPlacementClear(wanted)) return;
+        Vec3 wanted{std::clamp(hit.x, -5.0, 5.0), std::max(ball.radius, hit.y), 0};
+        // A ball on a rope is held by the rope while it is carried, exactly as it is
+        // while it swings: the hand may take it anywhere inside the sphere the rope
+        // allows, and the rope stops it at the sphere. It is the same constraint as the
+        // tick's -- the same length, the same anchor -- and not a second rule about
+        // dragging: the hand asks for a place, and the place it may have is the place
+        // the rope permits.
+        if (rope_.attached && dragBall_ == rope_.ball) {
+            const Vec3 arm = wanted - rope_.anchor;
+            const double reach = length(arm);
+            if (reach > rope_.length) wanted = rope_.anchor + arm * (rope_.length / reach);
+        }
+        if (!ballPlacementClear(ball, wanted)) return;
         // A spot the ball fits in is not enough: the hand may not carry it *through*
         // a shape to get there. Refusing only the place a shape occupies left the ball
         // jumping from one side of a cube to the other in a single frame, because every
@@ -135,13 +168,13 @@ void PlaygroundRoom::updateDrag() {
             if (body.count == 0) continue;
             double along = 2.0;
             Vec3 normal{0, 1, 0};
-            if (segmentHitsPolygon(ball_.position, wanted, body.position.data(), body.count, along, normal))
+            if (segmentHitsPolygon(ball.position, wanted, body.position.data(), body.count, along, normal))
                 return;
         }
-        ball_.position = wanted;
-        ball_.previous = ball_.shown = ball_.position;
-        ball_.velocity = {};
-        ball_.spin = 0.0;
+        ball.position = wanted;
+        ball.previous = ball.shown = ball.position;
+        ball.velocity = {};
+        ball.spin = 0.0;
         return;
     }
     if (dragTarget_ == DragTarget::Body) {

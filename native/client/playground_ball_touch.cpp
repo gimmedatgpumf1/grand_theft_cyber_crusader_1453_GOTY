@@ -60,11 +60,10 @@ double PlaygroundRoom::loadOver(std::size_t body) const {
     return mass * ball_shape::kGravity;
 }
 
-void PlaygroundRoom::settleBallFriction() {
-    if (ballTouchCount_ == 0) return;
-    Ball& ball = ball_;
+void PlaygroundRoom::settleBallFriction(Ball& ball) {
+    if (ball.touchCount == 0) return;
     const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;  // a solid sphere
-    std::array<Vec3, kMaxBallTouches> tangents{}, arms{};
+    std::array<Vec3, Ball::kMaxTouches> tangents{}, arms{};
     // What each face's grip actually gave the ball this tick, in N.s. The passes
     // below are one solve and the totals are what the ball felt, so this is what
     // the ledger gets -- the same rule as every other contact in the room: the
@@ -85,30 +84,30 @@ void PlaygroundRoom::settleBallFriction() {
     // By the time the grip is solved the bodies have been answered and stepped, so
     // their speed is the one they are really carrying and their spin is the one they
     // are really turning with. That is the face the ball is against.
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-        const std::size_t other = ballTouches_[i].body;
+    for (std::size_t i = 0; i < ball.touchCount; ++i) {
+        const std::size_t other = ball.touches[i].body;
         if (other >= kBodyCount) continue;  // the floor is the one surface that never moves
         const Body& mate = bodies_[other];
         if (mate.frozen || bodyHeld(other)) {
-            ballTouches_[i].surfaceVelocity = Vec3{};
+            ball.touches[i].surfaceVelocity = Vec3{};
             continue;
         }
-        // From the face where the ball met it: see ballTickSpeed_.
-        const Vec3 at = ball.position + ballTouches_[i].normal * -ball.radius;
+        // From the face where the ball met it: see ball.tickSpeed.
+        const Vec3 at = ball.position + ball.touches[i].normal * -ball.radius;
         const Vec3 arm = at - mate.centre;
-        ballTouches_[i].surfaceVelocity =
-            ballTickSpeed_[other] +
-            Vec3{-ballTickSpin_[other] * arm.y, ballTickSpin_[other] * arm.x, 0.0};
+        ball.touches[i].surfaceVelocity =
+            ball.tickSpeed[other] +
+            Vec3{-ball.tickSpin[other] * arm.y, ball.tickSpin[other] * arm.x, 0.0};
     }
-    std::array<double, kMaxBallTouches> taken{};
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-        tangents[i] = Vec3{ballTouches_[i].normal.y, -ballTouches_[i].normal.x, 0};
-        arms[i] = ballTouches_[i].normal * -ball.radius;
+    std::array<double, Ball::kMaxTouches> taken{};
+    for (std::size_t i = 0; i < ball.touchCount; ++i) {
+        tangents[i] = Vec3{ball.touches[i].normal.y, -ball.touches[i].normal.x, 0};
+        arms[i] = ball.touches[i].normal * -ball.radius;
     }
     // The slip each face sees, for a given speed and turn of the ball.
     const auto slipAt = [&](std::size_t i, Vec3 velocity, double spin) {
         const Vec3 turned{-spin * arms[i].y, spin * arms[i].x, 0};
-        return dot(velocity + turned - ballTouches_[i].surfaceVelocity, tangents[i]);
+        return dot(velocity + turned - ball.touches[i].surfaceVelocity, tangents[i]);
     };
     // What each face is carrying.
     //
@@ -131,25 +130,25 @@ void PlaygroundRoom::settleBallFriction() {
         const double weight = ball.mass * ball_shape::kGravity * ball_shape::kTick;  // N.s
         double carried = weight;
         double under = 0.0;
-        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-            const Vec3 normal = ballTouches_[i].normal;
+        for (std::size_t i = 0; i < ball.touchCount; ++i) {
+            const Vec3 normal = ball.touches[i].normal;
             const double down = std::max(0.0, -normal.y);
             const double up = std::max(0.0, normal.y);
             if (down > 0.0) {
                 // Over the ball: it carries what stands on it. The blow of this tick,
                 // if there was one, is in that same number and is the larger of the
                 // two whenever anything has just landed.
-                const double above = loadOver(ballTouches_[i].body) * down * ball_shape::kTick;
-                ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, above);
-                carried += ballTouches_[i].pressed;
+                const double above = loadOver(ball.touches[i].body) * down * ball_shape::kTick;
+                ball.touches[i].pressed = std::max(ball.touches[i].pressed, above);
+                carried += ball.touches[i].pressed;
             }
             under += up * up;
         }
         if (under > 0.0) {
-            for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-                const double up = std::max(0.0, ballTouches_[i].normal.y);
+            for (std::size_t i = 0; i < ball.touchCount; ++i) {
+                const double up = std::max(0.0, ball.touches[i].normal.y);
                 if (up <= 0.0) continue;
-                ballTouches_[i].pressed = std::max(ballTouches_[i].pressed, carried * up / under);
+                ball.touches[i].pressed = std::max(ball.touches[i].pressed, carried * up / under);
             }
         }
     }
@@ -170,7 +169,7 @@ void PlaygroundRoom::settleBallFriction() {
     // The load the ball's faces are carrying altogether, in newtons, which is what
     // both friction and rolling resistance are measured against.
     double press = 0.0;
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) press += ballTouches_[i].pressed;
+    for (std::size_t i = 0; i < ball.touchCount; ++i) press += ball.touches[i].pressed;
     const double normalForce = press / ball_shape::kTick;
     const Vec3 velocityBefore = ball.velocity;
     const double spinBefore = ball.spin;
@@ -297,9 +296,9 @@ void PlaygroundRoom::settleBallFriction() {
     // sign, the ball ends where it started, and the shape it is against is left with
     // the last one. That alternation is momentum out of nothing, and it is what
     // squeezed the cube off the ball at a metre a second.
-    std::array<double, kMaxBallTouches> partner{};
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-        const std::size_t other = ballTouches_[i].body;
+    std::array<double, Ball::kMaxTouches> partner{};
+    for (std::size_t i = 0; i < ball.touchCount; ++i) {
+        const std::size_t other = ball.touches[i].body;
         if (other >= kBodyCount) continue;
         const Body& mate = bodies_[other];
         if (mate.frozen || bodyHeld(other)) continue;
@@ -322,7 +321,7 @@ void PlaygroundRoom::settleBallFriction() {
         partner[i] = dot(takes, tangents[i]) * inverseMass(mate) +
                      (arm.x * takes.y - arm.y * takes.x) * lever / mate.moment;
     }
-    std::array<double, kMaxBallTouches> lambda{};
+    std::array<double, Ball::kMaxTouches> lambda{};
     // Rounds, and only as many as it takes: a round is over when neither law has
     // anything left to say about the state the other one left.
     for (int round = 0; round < kRollGripRounds; ++round) {
@@ -331,7 +330,7 @@ void PlaygroundRoom::settleBallFriction() {
     resistRoll();
     for (int pass = 0; pass < kBallFrictionPasses; ++pass) {
         double worst = 0.0;
-        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+        for (std::size_t i = 0; i < ball.touchCount; ++i) {
             const double slip = slipAt(i, ball.velocity, ball.spin);
             worst = std::max(worst, std::abs(slip));
             if (slip == 0.0) continue;
@@ -342,7 +341,7 @@ void PlaygroundRoom::settleBallFriction() {
             // sphere the solver believes the ball yields to a turn it cannot yield to,
             // takes less slide than there is, and leaves the rest in the ball.
             const double effective = 1.0 / ball.mass + (spinHeld ? 0.0 : lever * lever / inertia) + partner[i];
-            const double load = ballTouches_[i].pressed;
+            const double load = ball.touches[i].pressed;
             // Static friction takes the slip away and the ball rolls from there; if
             // the whole of what it would take is more than the face can hold, it
             // slides, and what it holds with is the sliding coefficient and no more.
@@ -398,7 +397,7 @@ void PlaygroundRoom::settleBallFriction() {
             // does take it is moving differently from that moment on, so the slip the
             // next pass measures has to be against the face as it now is, or the two
             // would be solved against a state the room has already left.
-            const std::size_t other = ballTouches_[i].body;
+            const std::size_t other = ball.touches[i].body;
             if (other < kBodyCount) {
                 Body& mate = bodies_[other];
                 const Vec3 at = ball.position + arms[i];
@@ -408,9 +407,9 @@ void PlaygroundRoom::settleBallFriction() {
                     // shapes' tick, so the floor under the face is not in this
                     // solve and the face's refused share is answered here.
                     pushBody(mate, at, tangents[i] * -impulse, ForceKind::Ball);
-                    ballTouches_[i].surfaceVelocity = pointSpeed(mate, at);
+                    ball.touches[i].surfaceVelocity = pointSpeed(mate, at);
                 } else {
-                    ballTouches_[i].surfaceVelocity = Vec3{};
+                    ball.touches[i].surfaceVelocity = Vec3{};
                 }
             }
         }
@@ -432,7 +431,7 @@ void PlaygroundRoom::settleBallFriction() {
     // surface is another matter -- it is doing work, which is what being hit by a
     // moving body is -- so the check is only made against what is still.
     bool still = true;
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) still = still && length(ballTouches_[i].surfaceVelocity) <= 0.0;
+    for (std::size_t i = 0; i < ball.touchCount; ++i) still = still && length(ball.touches[i].surfaceVelocity) <= 0.0;
     const double energyAfter = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     static int guardCount = 0;
     if (still && energyAfter > energyBefore) ++guardCount;
@@ -454,22 +453,22 @@ void PlaygroundRoom::settleBallFriction() {
         const double coupleTotal = std::abs(coupleMoment) / ball_shape::kTick;  // N.m
         const Vec3 against = drawWay * (-1.0 / length(drawWay));
         addCouple(ball.position + Vec3{0.0, -ball.radius, 0.0}, coupleTotal,
-                  against * (coupleTotal / ball.radius), ForceKind::Rolling, kBallOwner);
+                  against * (coupleTotal / ball.radius), ForceKind::Rolling, ownerOf(ball));
     }
     // Grip, written down: a force along the face at the place the ball meets it.
     // Without this a ball rolling along the floor was drawn with a normal and
     // nothing else, and the thing that was actually slowing it down -- the friction
     // holding the bottom of it still against the ground -- was nowhere on screen.
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
+    for (std::size_t i = 0; i < ball.touchCount; ++i) {
         if (taken[i] == 0.0) continue;
         addForce(ball.position + arms[i], tangents[i] * (taken[i] / ball_shape::kTick), ForceKind::Friction,
-                 nullptr, kBallOwner);
+                 nullptr, ownerOf(ball));
         // Into the ball's account for the tick as well, or the ground's share --
         // worked out at the end of the tick as what is left over -- would have this
         // grip counted twice: once where it acts and once in the remainder.
-        ballBlows_ = ballBlows_ + tangents[i] * taken[i];
+        ball.blows = ball.blows + tangents[i] * taken[i];
     }
-    ballTouchCount_ = 0;
+    ball.touchCount = 0;
 }
 
 // Whether the ball is lying on something that can carry it: a surface the room is not
@@ -480,8 +479,55 @@ void PlaygroundRoom::settleBallFriction() {
 // ball fired at a cube let the cube take 41.8 newton seconds out of the 3.7 it was
 // carrying), and on a face a twentieth of a degree off level it walked a micrometre and
 // a half a tick along it for as long as the room was left alone, which is the wriggle.
-bool PlaygroundRoom::ballRestingOnStillSurface() const {
-    const Ball& ball = ball_;
+// Where, along what is left of a ball's walk, its circle and another ball's first meet.
+//
+// The other ball is stepped before this one, so its whole travel through the tick is
+// known, and the sweep is between two moving circles: this ball at its velocity along
+// the walk, and the other one along its own step. Solved outright -- a quadratic in how
+// far along the walk the two centres come within the sum of their radii -- so neither
+// can be overtaken by the other, at any speed either one is going.
+//
+// It is written once and used by whichever of the two is walking, because there is
+// nothing about either of them that makes it the one that does the hitting.
+bool PlaygroundRoom::ballFirstTouch(const Ball& ball, const Ball& other, Vec3 from, Vec3 travel, double remaining,
+                                   double& along, Vec3& normal, Vec3& contact, bool& resting) const {
+    const Vec3 otherWas = other.previous + (other.position - other.previous) * (1.0 - remaining);
+    const Vec3 otherStep = other.position - otherWas;
+    const Vec3 arm = from - otherWas;
+    const Vec3 closing = travel - otherStep;
+    const double reach = ball.radius + other.radius;
+    const double c = dot(arm, arm) - reach * reach;
+    double metAt = 2.0;
+    if (c <= 0.0) {
+        metAt = 0.0;  // already against it: a contact, not an arrival
+    } else {
+        const double a = dot(closing, closing);
+        if (a > 0.0) {
+            const double b = 2.0 * dot(arm, closing);
+            const double disc = b * b - 4.0 * a * c;
+            if (disc >= 0.0) {
+                const double root = std::sqrt(disc);
+                // The stable pair of roots: c / q for the far one, q / a for the near
+                // one, so neither is lost to cancellation.
+                const double q = -0.5 * (b + (b >= 0.0 ? root : -root));
+                const double nearRoot = q / a;
+                const double farRoot = q != 0.0 ? c / q : 2.0;
+                if (nearRoot >= 0.0 && nearRoot <= 1.0) metAt = nearRoot;
+                if (farRoot >= 0.0 && farRoot <= 1.0) metAt = std::min(metAt, farRoot);
+            }
+        }
+    }
+    if (metAt > 1.0) return false;
+    const Vec3 where = arm + closing * metAt;
+    const double distance = length(where);
+    along = metAt;
+    normal = distance > 0.0 ? where / distance : Vec3{0, 1, 0};
+    contact = from + travel * metAt - normal * ball.radius;
+    resting = c <= 0.0;
+    return true;
+}
+
+bool PlaygroundRoom::ballRestingOnStillSurface(const Ball& ball) const {
     // Asked of the room and not of the list of contacts. The list is the shapes'
         // solver's, and the solver only writes a contact for a body it is stepping:
         // gatherContacts() skips a body the room has put to sleep. So a ball lying on
@@ -498,7 +544,7 @@ bool PlaygroundRoom::ballRestingOnStillSurface() const {
             const Body& body = bodies_[index];
             if (body.count == 0) continue;
             Vec3 way{0, 1, 0}, at{};
-            if (bodyBallGap(index, way, at) > playground_tick::kQuantum) continue;
+            if (bodyBallGap(ball, index, way, at) > playground_tick::kQuantum) continue;
             // A surface the room is stepping is not a still one: it moves with the
             // ball's weight, so the weight has to be handed to it.
             if (!body.frozen || bodyHeld(index)) return false;

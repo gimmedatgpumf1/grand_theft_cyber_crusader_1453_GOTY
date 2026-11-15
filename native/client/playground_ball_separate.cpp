@@ -21,19 +21,19 @@ namespace gtc::native {
 using namespace playground_tick;
 using namespace ball_shape;
 
-Vec3 PlaygroundRoom::ballClearStep(double& left) const {
+Vec3 PlaygroundRoom::ballClearStep(const Ball& ball, double& left) const {
     // How deep the ball is inside anything at `at`, and which way is out of the worst
     // of them. The floor counts: the ground is a solid like any other, and the room's
     // only answer for a ball under it is that it is not under it.
     const auto deepest = [&](Vec3 at, Vec3& way) {
-        double pen = ball_.radius - at.y;
+        double pen = ball.radius - at.y;
         way = Vec3{0, 1, 0};
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
             if (body.count == 0) continue;
             const ball_shape::OutlineGap gap =
                 ball_shape::outlineGap(at, body.position.data(), body.position.data(), body.count, 1.0);
-            const double through = ball_.radius - gap.gap;
+            const double through = ball.radius - gap.gap;
             if (through > pen) {
                 pen = through;
                 way = gap.normal;
@@ -52,7 +52,7 @@ Vec3 PlaygroundRoom::ballClearStep(double& left) const {
     double best = 1e30;
     for (int pass = 0; pass < 8; ++pass) {
         Vec3 way{};
-        const double pen = deepest(ball_.position + step, way);
+        const double pen = deepest(ball.position + step, way);
         if (pen < best) {
             best = pen;
             bestStep = step;
@@ -64,7 +64,7 @@ Vec3 PlaygroundRoom::ballClearStep(double& left) const {
     return bestStep;
 }
 
-void PlaygroundRoom::separateBall() {
+void PlaygroundRoom::separateBall(Ball& ball) {
     // The floor first, before anything is measured against anything.
     //
     // A ball that is under the ground is not a state this room ever resolves, and the
@@ -76,7 +76,7 @@ void PlaygroundRoom::separateBall() {
     // had just been moved *around* it, leaving the pair 6.8 mm inside each other with
     // nothing left in the tick to notice. Put where it is now, the separation is
     // measured against the ball's real place and the overlap never survives the tick.
-    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
+    if (ball.position.y < ball.radius) ball.position.y = ball.radius;
     // The shapes that could not give way, to be answered together below.
     std::vector<std::size_t> stuck;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
@@ -84,7 +84,7 @@ void PlaygroundRoom::separateBall() {
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
         Vec3 way{};
         Vec3 at{};
-        const double gap = bodyBallGap(index, way, at);
+        const double gap = bodyBallGap(ball, index, way, at);
         // A gap a fraction of a picometre negative is touching, not inside: the room's
         // resolution is a micrometre, and the arithmetic that rests a ball on a face
         // lands it that far either side of exactly one radius, every tick. Read as an
@@ -102,7 +102,7 @@ void PlaygroundRoom::separateBall() {
         // So `way`, which runs out of the ball and into the body, is the direction
         // the body leaves along, and pushBodyOutOfBall does the moving -- including
         // refusing when the body has nowhere to go, because it is on the floor.
-        if (pushBodyOutOfBall(index, way * -1.0, -gap)) continue;
+        if (pushBodyOutOfBall(ball, index, way * -1.0, -gap)) continue;
         stuck.push_back(index);
     }
     // Nowhere to go, any of them: the ball gives the rest of it, and only what is left.
@@ -119,15 +119,15 @@ void PlaygroundRoom::separateBall() {
     // and the something is a shape that is free to move, at the place the step reached.
     // The step is re-read after each of those, because pushing a shape out changes which
     // surfaces the ball is inside.
-    if (!stuck.empty() && !ball_.frozen && dragTarget_ != DragTarget::Ball) {
+    if (!stuck.empty() && !ball.frozen && dragTarget_ != DragTarget::Ball) {
         // Counted once, however many rounds it takes: the count is "the room moved the
         // ball by its place", and a repair that takes two steps is one repair.
-        const Vec3 beganAt = ball_.position;
+        const Vec3 beganAt = ball.position;
         for (int round = 0; round < 5; ++round) {
             double left = 0.0;
-            const Vec3 clear = ballClearStep(left);
+            const Vec3 clear = ballClearStep(ball, left);
             if (!(left > playground_tick::kQuantum)) {
-                ball_.position = ball_.position + clear;
+                ball.position = ball.position + clear;
                 break;
             }
             // A pinch. The ball goes to the best place the projection reached -- which
@@ -138,9 +138,9 @@ void PlaygroundRoom::separateBall() {
             // the wrong size: measured, the ball stayed the same six tenths of a
             // millimetre inside a pinned plank while a triangle beside it crept away a
             // little at a time and nothing was ever put right.
-            Vec3 here = ball_.position + clear;
-            here.y = std::max(here.y, ball_.radius);
-            ball_.position = here;
+            Vec3 here = ball.position + clear;
+            here.y = std::max(here.y, ball.radius);
+            ball.position = here;
             // The deepest surface the ball is inside here that can give way at all: a
             // pinned body, a sleeping one and one in the mouse's hand cannot, and
             // neither can the floor.
@@ -151,7 +151,7 @@ void PlaygroundRoom::separateBall() {
                 const Body& body = bodies_[index];
                 if (body.count == 0 || body.frozen || bodyHeld(index) || body.pivoted) continue;
                 Vec3 way{}, at{};
-                const double depth = -bodyBallGap(index, way, at);
+                const double depth = -bodyBallGap(ball, index, way, at);
                 if (depth > deepest) {
                     deepest = depth;
                     worst = index;
@@ -159,7 +159,7 @@ void PlaygroundRoom::separateBall() {
                 }
             }
             if (worst < kBodyCount) {
-                pushBodyOutOfBall(worst, worstWay * -1.0, deepest);
+                pushBodyOutOfBall(ball, worst, worstWay * -1.0, deepest);
                 continue;
             }
             // Nothing in the room can give way: the ball is under something pinned to
@@ -167,17 +167,17 @@ void PlaygroundRoom::separateBall() {
             // under it -- the ball rolls out from under the shape, which is what a real
             // ball does. It is only taken to a place that is clear of *everything*.
             const auto clearAt = [&](Vec3 at) {
-                if (at.y < ball_.radius - kSkin) return false;
+                if (at.y < ball.radius - kSkin) return false;
                 for (std::size_t index = 0; index < kBodyCount; ++index) {
                     const Body& body = bodies_[index];
                     if (body.count == 0) continue;
                     if (ball_shape::outlineGap(at, body.position.data(), body.position.data(), body.count, 1.0).gap <
-                        ball_.radius - kSkin)
+                        ball.radius - kSkin)
                         return false;
                 }
                 return true;
             };
-            const double side = here.x >= ball_.position.x ? -1.0 : 1.0;
+            const double side = here.x >= ball.position.x ? -1.0 : 1.0;
             double low = 0.0, high = 0.0;
             for (double reach = 0.0005; reach <= 0.5; reach *= 1.5) {
                 if (clearAt(Vec3{here.x + side * reach, here.y, 0})) {
@@ -194,10 +194,10 @@ void PlaygroundRoom::separateBall() {
                 else
                     low = middle;
             }
-            ball_.position = Vec3{here.x + side * high, here.y, 0};
+            ball.position = Vec3{here.x + side * high, here.y, 0};
             break;
         }
-        if (length(ball_.position - beganAt) > playground_tick::kQuantum) ++ballFoundThrough_;
+        if (length(ball.position - beganAt) > playground_tick::kQuantum) ++ball.foundThrough;
     }
     // And the floor, for the ball as well, after everything else -- the same rule in
     // the same place as the shapes above. The ball's own contact is what rests it on
@@ -205,7 +205,7 @@ void PlaygroundRoom::separateBall() {
     // go hands the ball the whole of a separation, and a ball pushed through the
     // ground by a shape squeezed beside it is still a ball under the ground. Nothing
     // is below the floor at the end of a tick, which is this line.
-    if (ball_.position.y < ball_.radius) ball_.position.y = ball_.radius;
+    if (ball.position.y < ball.radius) ball.position.y = ball.radius;
 }
 
 

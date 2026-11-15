@@ -53,9 +53,12 @@ bool PlaygroundRoom::bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3&
 bool PlaygroundRoom::bodyPlacementClear(std::size_t index, const std::array<Vec3, kMaxCorners>& wanted) const {
     const Body& body = bodies_[index < kBodyCount ? index : 0];
     if (body.count == 0) return true;
-    if (outlineGap(ball_.position, wanted.data(), wanted.data(), body.count, 1.0).gap <
-        ball_.radius + kSkin)
-        return false;
+    // Not inside either ball. A body put down on a ball is a body the tick would have
+    // to push out of it, and nothing in this room is ever pushed out of anything.
+    for (const Ball& ball : balls_) {
+        if (outlineGap(ball.position, wanted.data(), wanted.data(), body.count, 1.0).gap < ball.radius + kSkin)
+            return false;
+    }
     for (std::size_t i = 0; i < body.count; ++i)
         if (wanted[i].y < kSurfaceY - kSkin) return false;
     for (std::size_t other = 0; other < kBodyCount; ++other) {
@@ -149,8 +152,10 @@ double PlaygroundRoom::pivotObjectDepthAt(const Body& body, double angle, bool w
         }
     }
     if (!withBall) return deepest;
-    const double gap = outlineGap(ball_.position, corners.data(), corners.data(), body.count, 1.0).gap;
-    deepest = std::max(deepest, ball_.radius - gap);
+    for (const Ball& ball : balls_) {
+        const double gap = outlineGap(ball.position, corners.data(), corners.data(), body.count, 1.0).gap;
+        deepest = std::max(deepest, ball.radius - gap);
+    }
     return deepest;
 }
 
@@ -288,10 +293,10 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         cornersAt(angle, here);
         return outlineInside(here.data(), body.count, bodies_[other].position.data(), bodies_[other].count);
     };
-    const auto ballDepth = [&](double angle) {
+    const auto ballDepth = [&](const Ball& ball, double angle) {
         cornersAt(angle, here);
-        const double gap = outlineGap(ball_.position, here.data(), here.data(), body.count, 1.0).gap;
-        return std::max(0.0, ball_.radius - gap);
+        const double gap = outlineGap(ball.position, here.data(), here.data(), body.count, 1.0).gap;
+        return std::max(0.0, ball.radius - gap);
     };
     // Which shapes are a load and not a wall: see shapeGivesWay(). A shape the plank is
     // carrying is answered by its own patch -- the face comes to it, the patch takes it,
@@ -342,9 +347,11 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
         // the room put it back out by hand. Five of those in one sweep of 165 random
         // scenes, every one of them the plank.
         if (!body.pivoted) {
-            const double b0 = ballDepth(body.angle);
-            const double b1 = ballDepth(body.angle + way * nudge);
-            if (b1 > b0 + 1e-12) return 0.0;
+            for (const Ball& ball : balls_) {
+                const double b0 = ballDepth(ball, body.angle);
+                const double b1 = ballDepth(ball, body.angle + way * nudge);
+                if (b1 > b0 + 1e-12) return 0.0;
+            }
         }
     }
     const auto take = [&](double u, double past, const auto& depth) {
@@ -421,21 +428,22 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 }
             }
         }
-        // And the ball, which is a circle rather than a face: the corner's own circle
-        // against it, and the ball against each of this body's faces.
-        {
-            const Vec3 away = ball_.position - pin;
+        // And the balls, which are circles rather than faces: the corner's own circle
+        // against each of them, and each ball against each of this body's faces.
+        for (std::size_t b = 0; b < kBallCount; ++b) {
+            const Ball& ball = balls_[b];
+            const Vec3 away = ball.position - pin;
             const double reach = length(away);
-            if (reach > 0.0 && std::abs(radius - ball_.radius) <= reach && reach <= radius + ball_.radius) {
+            if (reach > 0.0 && std::abs(radius - ball.radius) <= reach && reach <= radius + ball.radius) {
                 const double cosAt =
-                    (radius * radius + reach * reach - ball_.radius * ball_.radius) / (2.0 * radius * reach);
+                    (radius * radius + reach * reach - ball.radius * ball.radius) / (2.0 * radius * reach);
                 const double spread = std::acos(std::max(-1.0, std::min(1.0, cosAt)));
                 const double middle = std::atan2(away.y, away.x);
                 for (const double which : {1.0, -1.0}) {
                     double u = way * (middle + which * spread - phase - body.angle);
                     while (u > span) u -= 2.0 * kPi;
                     while (u <= -span) u += 2.0 * kPi;
-                    take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
+                    take(u, u + nudge, [&](double t) { return ballDepth(ball, body.angle + way * t); });
                 }
             }
             Vec3 localMiddle{};
@@ -451,9 +459,9 @@ double PlaygroundRoom::pivotTurnAllowed(const Body& body, double turn) const {
                 const double k1 = dot(away, outward);
                 const double k2 = away.y * outward.x - away.x * outward.y;
                 double u = 0.0;
-                if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball_.radius, body.angle, way, span, u))
+                if (!firstSinusoidCrossing(k1, k2, dot(a0, outward) + ball.radius, body.angle, way, span, u))
                     continue;
-                take(u, u + nudge, [&](double t) { return ballDepth(body.angle + way * t); });
+                take(u, u + nudge, [&](double t) { return ballDepth(ball, body.angle + way * t); });
             }
         }
     }
@@ -730,7 +738,7 @@ void PlaygroundRoom::separateBodies() {
 // it had stopped when it hit something, which is where a contact would have stopped
 // it: no speed is changed, so no energy is made, and the ball's own tick then finds
 // it exactly where a contact belongs and answers it as one.
-bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double through) {
+bool PlaygroundRoom::pushBodyOutOfBall(const Ball& ball, std::size_t index, Vec3 normal, double through) {
     if (index >= kBodyCount || !(through > 0.0)) return false;
     // A shape the mouse is carrying gives nothing: the hand is the one thing in the
     // room that is not part of its own physics, and moving a shape against the hand is
@@ -752,11 +760,17 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
         const double turned = body.spin * playground_tick::kTick;
         if (std::abs(turned) > 0.0) {
             const double way = turned > 0.0 ? -1.0 : 1.0;  // back along the way it came
+            // The closest the body comes to any ball at this angle: it is out of all
+            // of them or it is out of none.
             const auto gapAt = [&](double angle) {
                 body.angle = angle;
                 placeCorners(body);
-                Vec3 out{}, at{};
-                return bodyBallGap(index, out, at);
+                double closest = 1e30;
+                for (const Ball& ball : balls_) {
+                    Vec3 out{}, at{};
+                    closest = std::min(closest, bodyBallGap(ball, index, out, at));
+                }
+                return closest;
             };
             const double here = gapAt(body.angle);
             double best = 0.0, bestGap = here;
@@ -869,7 +883,7 @@ bool PlaygroundRoom::pushBodyOutOfBall(std::size_t index, Vec3 normal, double th
         // The normal runs from the shape to the ball, so the shape leaves the way the
         // ball would have and the ball answers along the other way: the impulse on
         // the shape is against the closing, and it acts where the two are closest.
-        recordImpulse(ball_.position - normal * ball_.radius, way * (-closing * body.mass), ForceKind::Ball, index);
+        recordImpulse(ball.position - normal * ball.radius, way * (-closing * body.mass), ForceKind::Ball, index);
     }
     ++bodyStepClamped_;
     return true;

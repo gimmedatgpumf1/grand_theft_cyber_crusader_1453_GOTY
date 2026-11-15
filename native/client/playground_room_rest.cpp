@@ -91,8 +91,18 @@ void PlaygroundRoom::settleBodies() {
         // awake to be crept along. Nothing was moving. A shape standing on something
         // that is standing still is standing still.
         Vec3 ballWay{}, ballAt{};
-        const bool carriedByBall = body.onBall && ball_.frozen && ballWay.y > 0.5 &&
-                                   bodyBallGap(index, ballWay, ballAt) <= kContactBand &&
+        // Every ball, because a shape standing on a ball is standing on that one: the
+        // question is not "is there a ball asleep in the room", it is "is the ball
+        // under me asleep".
+        bool sleepingBallUnder = false;
+        for (const Ball& ball : balls_) {
+            if (!ball.frozen) continue;
+            if (bodyBallGap(ball, index, ballWay, ballAt) > kContactBand) continue;
+            if (!(ballWay.y > 0.5)) continue;
+            sleepingBallUnder = true;
+            break;
+        }
+        const bool carriedByBall = body.onBall && sleepingBallUnder &&
                                    body.centre.x >= body.supportLow - kContactBand &&
                                    body.centre.x <= body.supportHigh + kContactBand;
         const bool carried = carriedByPlane || carriedByBody || carriedByBall;
@@ -180,7 +190,10 @@ void PlaygroundRoom::wakeUnsupportedBodies() {
                 touching = true;
         }
         Vec3 way{}, at{};
-        if (!touching && bodyBallGap(index, way, at) <= kContactBand) touching = true;
+        for (const Ball& ball : balls_) {
+            if (touching) break;
+            if (bodyBallGap(ball, index, way, at) <= kContactBand) touching = true;
+        }
         if (touching) continue;
         body.frozen = false;
         body.woken = true;

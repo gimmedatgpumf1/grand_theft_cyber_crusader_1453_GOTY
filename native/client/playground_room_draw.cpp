@@ -41,17 +41,18 @@ constexpr double kPivotPostHalf = 0.055, kPivotPinRadius = 0.075;
 // The bodies run 200, 300, 400 ..., so the ball has to start beyond the last of
 // them -- three bodies now reach 500, and a ball sharing a body's id draws the ball
 // where that body is and leaves the body itself at the last frame it was placed at.
-constexpr std::uint32_t kBallId = 600, kBallMarkId = 601;
+// Two balls, so two ids each: the disc and the seams, side by side in the numbering.
+constexpr std::uint32_t kBallId = 600, kBallSpan = 2;
+constexpr std::uint32_t ballId(std::size_t index) { return kBallId + static_cast<std::uint32_t>(index) * kBallSpan; }
 // The seesaw's axle: a post from the floor to the pin, and the pin itself.
 constexpr std::uint32_t kPivotPostId = 700, kPivotPinId = 701;
-// The rope, the bob on the end of it, the plate it is tied to, and the mark of where
-// the bob was a tick ago. Depths: the rope goes behind the bob, because a rope that
-// was drawn over its own bob would read as a rope passing in front of it; both are
-// behind the ball, because the ball is the one thing in the room that nothing may be
-// drawn over.
-constexpr std::uint32_t kRopeId = 800, kBobId = 801, kAnchorId = 802, kRopeGhostId = 803;
-constexpr double kRopeHalfWidth = 0.014, kAnchorRadius = 0.075, kRopeGhostRadius = 0.030;
-constexpr double kRopeZ = 0.010, kBobZ = 0.012, kAnchorZ = 0.011, kRopeGhostZ = 0.009;
+// The rope and the plate it is tied to. There is no bob in this list: the thing on the
+// end of the rope is a ball, drawn by the ball's own batch, at the ball's own depth.
+// Depths: the rope and its anchor go behind the balls, because the ball is the one
+// thing in the room that nothing may be drawn over.
+constexpr std::uint32_t kRopeId = 800, kAnchorId = 802;
+constexpr double kRopeHalfWidth = 0.014, kAnchorRadius = 0.075;
+constexpr double kRopeZ = 0.010, kAnchorZ = 0.009;
 // One shaft and one head per arrow. The ids are well clear of the bodies' own,
 // which run in hundreds from kBodyFaceId.
 // The ids are laid out from the room's own count of arrows per kind, so a change
@@ -189,26 +190,41 @@ void PlaygroundRoom::interpolate() {
         const double alpha = body.frozen || bodyHeld(index) ? 1.0 : fraction;
         interpolateBody(body, alpha);
     }
-    // The ball is one point: where it is and how far it has turned, both spread
-    // over the frames the same way as everything else.
-    const double ballAlpha = ball_.frozen || dragTarget_ == DragTarget::Ball ? 1.0 : fraction;
-    // Two straight pieces when it bent, one when it did not. This is not the drawing
-    // inventing a path: it is the path the tick took. The ball went to the meeting
-    // at one speed and left it at another, and the only place the two pieces of that
-    // motion join is the place it touched. Spreading the tick as a single line put
-    // the join halfway up the rebound instead, which is why a ball landing fast
-    // looked like it bounced on air a hand's width above the cube.
-    //
-    // One function for the place at a fraction of the tick, because the picture has
-    // to be able to ask for a fraction *earlier* than the frame's own when the frame's
-    // own is under a surface -- see below.
-    const auto alongPath = [&](double t) -> Vec3 {
-        if (t >= 1.0) return ball_.position;
-        if (!ball_.bent) return ball_.previous + (ball_.position - ball_.previous) * t;
-        return t <= ball_.bendAt ? ball_.previous + ball_.bendIn * (kTick * t)
-                                 : ball_.bendPoint + ball_.bendOut * (kTick * (t - ball_.bendAt));
-    };
-    ball_.shown = alongPath(ballAlpha);
+    // Every ball, one at a time. Both of them are balls -- the one hanging from the
+    // rope is not another kind of thing, it is this kind of thing -- so there is one
+    // interpolator and it is asked for each in turn.
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        Ball& ball = balls_[index];
+        const double alpha =
+            ball.frozen || (dragTarget_ == DragTarget::Ball && dragBall_ == index) ? 1.0 : fraction;
+        interpolateBall(ball, alpha);
+    }
+}
+
+// Where a ball's own tick had it at a fraction of the tick. One function, because the
+// picture has to be able to ask for a fraction *earlier* than the frame's own when the
+// frame's own is under something -- see below.
+Vec3 PlaygroundRoom::ballPlaceAt(const Ball& ball, double t) {
+    if (t >= 1.0) return ball.position;
+    if (!ball.bent) return ball.previous + (ball.position - ball.previous) * t;
+    return t <= ball.bendAt ? ball.previous + ball.bendIn * (kTick * t)
+                            : ball.bendPoint + ball.bendOut * (kTick * (t - ball.bendAt));
+}
+
+// One ball, on the frame: where it is, how far it has turned, and -- the one question
+// the picture has to ask that the physics does not -- whether drawing it there would
+// show a place the room never allowed.
+//
+// Two straight pieces when it bent, one when it did not. This is not the drawing
+// inventing a path: it is the path the tick took. The ball went to the meeting
+// at one speed and left it at another, and the only place the two pieces of that
+// motion join is the place it touched. Spreading the tick as a single line put
+// the join halfway up the rebound instead, which is why a ball landing fast
+// looked like it bounced on air a hand's width above the cube.
+void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
+    // One function for the place at a fraction of the tick (ballPlaceAt above), because
+    // the picture has to be able to ask for a fraction *earlier* than the frame's own
+    // when the frame's own is under a surface -- see below.
     // The picture may not show a configuration the physics never had.
     //
     // A tick's travel is a straight line for the ball and a straight line for each
@@ -237,15 +253,52 @@ void PlaygroundRoom::interpolate() {
     // was thrown off its path by 5e-2 m on some frames, and then teleported. Walking
     // back along the path cannot do that: every place it can choose is a place the
     // tick really passed through.
-    // How deep a candidate drawn place is inside the drawn room.
+    // The picture may not show a configuration the physics never had.
+    //
+    // A tick's travel is a straight line for the ball and a straight line for each
+    // corner of a shape, and two straight lines do not keep a circle and a face the
+    // same distance apart: at the end of every tick the ball is on or outside every
+    // outline -- the walk and the separation are what make that true -- but at a
+    // fraction of a tick between the two, which is what the screen draws sixty to
+    // three hundred times a second, the two chords can cross and the ball is drawn
+    // inside. Measured in the King's corner: 1.2e-4 m. A tenth of a millimetre is
+    // invisible, and it is still a lie, and the King is looking at pixels.
+    //
+    // The cure is to keep the drawn ball on the path its own tick took. That path is
+    // already known exactly -- it is the two straight pieces the interpolation is
+    // built from -- so the drawn place is the *latest* point of it that is not deeper
+    // inside anything than the place the room itself left, found by halving the
+    // fraction until that point is pinned down to a part in 2^40 of a tick. Nothing
+    // here is a step size or a tolerance: it is a root, found the way the room finds
+    // where a walk stops being clear.
+    //
+    // Why not push the ball sideways off a surface instead, which is what this used
+    // to do? Because a push moves the drawn ball off its own path, and two surfaces
+    // closing on it push it out of one and into the other until the push gives up and
+    // the frame is drawn at the newest tick -- a jump forward of up to a tick's
+    // travel, then a jump back on the next frame. That is what made the ball look
+    // laggy in a corner, and it is measurable: in the King's corner the drawn ball
+    // was thrown off its path by 5e-2 m on some frames, and then teleported. Walking
+    // back along the path cannot do that: every place it can choose is a place the
+    // tick really passed through.
     const auto depthInside = [&](const Vec3& where) {
-        double inside = ball_.radius - where.y;
+        double inside = ball.radius - where.y;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
             if (body.count == 0) continue;
             const ball_shape::OutlineGap gap =
                 ball_shape::outlineGap(where, body.shown.data(), body.shown.data(), body.count, 1.0);
-            inside = std::max(inside, ball_.radius - gap.gap);
+            inside = std::max(inside, ball.radius - gap.gap);
+        }
+        // And the other ball, which is a solid too: two balls drawn through each other
+        // are the same lie as a ball drawn through a cube. Its place is read off its own
+        // path at the same fraction of the same tick, so the pair is drawn as the pair
+        // the tick had.
+        for (const Ball& other : balls_) {
+            if (&other == &ball) continue;
+            const Vec3 there = ballPlaceAt(other, fraction);
+            const double apart = length(Vec3{where.x - there.x, where.y - there.y, 0.0});
+            inside = std::max(inside, ball.radius - (apart - other.radius));
         }
         return inside;
     };
@@ -264,15 +317,15 @@ void PlaygroundRoom::interpolate() {
     // "How deep may it be drawn?" is a separate question, and the answer is not the
     // touch band: it is exactly as deep as the place the room itself left the ball, in
     // that same frame, and no deeper.
-    const double allowed = sceneReady_ ? std::max(0.0, depthInside(alongPath(1.0))) : 0.0;
-    double drawnAt = ballAlpha;
-    if (sceneReady_ && depthInside(alongPath(drawnAt)) > ball_shape::kTouch) {
-        if (depthInside(alongPath(0.0)) > allowed) {
+    const double allowed = sceneReady_ ? std::max(0.0, depthInside(ballPlaceAt(ball, 1.0))) : 0.0;
+    double drawnAt = fraction;
+    if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt)) > ball_shape::kTouch) {
+        if (depthInside(ballPlaceAt(ball, 0.0)) > allowed) {
             // Not one place of this tick's path is as clear as the place the room ends
             // on: something has been drawn over the ground the ball already covered.
             // The room's own place is then the best there is, and it is legal by the
             // room's own measure.
-            ball_.shown = alongPath(1.0);
+            ball.shown = ballPlaceAt(ball, 1.0);
             drawnAt = 1.0;
         } else {
             // The latest place on this tick's path that is as clear as the room's own,
@@ -283,25 +336,12 @@ void PlaygroundRoom::interpolate() {
             double clear = 0.0, inside = drawnAt;
             for (int pass = 0; pass < 40; ++pass) {
                 const double middle = 0.5 * (clear + inside);
-                if (depthInside(alongPath(middle)) > allowed) inside = middle;
+                if (depthInside(ballPlaceAt(ball, middle)) > allowed) inside = middle;
                 else clear = middle;
             }
             drawnAt = clear;
-            ball_.shown = alongPath(drawnAt);
+            ball.shown = ballPlaceAt(ball, drawnAt);
         }
-    }
-    // The bob, spread over the frames the same way: between where the last tick left
-    // it and where this one did, along the pieces its own tick took. A taut piece is an
-    // arc and is drawn as its chord, which cuts the corner *inside* the circle -- so
-    // the drawn bob can be nearer the anchor than the rope is long, and can never be
-    // further, which is the only direction that would be a lie about the rope.
-    if (pendulum_.bent && fraction < 1.0) {
-        const double when = pendulum_.bendAt;
-        pendulum_.shown = fraction <= when
-                              ? pendulum_.previous + pendulum_.bendIn * (kTick * fraction)
-                              : pendulum_.bendPoint + pendulum_.bendOut * (kTick * (fraction - when));
-    } else {
-        pendulum_.shown = pendulum_.previous + (pendulum_.position - pendulum_.previous) * fraction;
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
@@ -309,7 +349,7 @@ void PlaygroundRoom::interpolate() {
     // nailed on.
     // The turn goes with the place; a ball drawn a little earlier in its tick must
     // not have turned all the way through it.
-    ball_.shownAngle = ball_.previousAngle + (ball_.angle - ball_.previousAngle) * drawnAt;
+    ball.shownAngle = ball.previousAngle + (ball.angle - ball.previousAngle) * drawnAt;
 }
 
 void PlaygroundRoom::interpolateBody(Body& body, double alpha) {
@@ -420,9 +460,11 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         raster.mesh(points, faces, flat("#e8e2c9"));
     }
 
-    // The rope, its anchor, and the bob. The rope is one quad along its own length, so
-    // its ends follow the anchor and the bob every frame without any geometry being
-    // rebuilt: it is as long as the distance between them, which is what a rope is.
+    // The rope and the plate it is tied to. The rope is one quad along its own length,
+    // so its ends follow the anchor and the ball on the end of it every frame without
+    // any geometry being rebuilt: it is as long as the distance between them, which is
+    // what a rope is. Nothing else is drawn for the hanging end, because the hanging
+    // end is a ball and the balls are drawn next.
     points.clear();
     faces.clear();
     quad(points, faces, 0, -1, 1, 1, 0.0);
@@ -431,29 +473,26 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     disc(points, faces, kAnchorRadius);
     raster.setObject(kAnchorId, {0, 0}, 0);
     raster.mesh(points, faces, flat("#8d9aa0"));
-    points.clear();
-    faces.clear();
-    disc(points, faces, 1.0);
-    raster.setObject(kBobId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#7f8fa6"));
-    disc(points, faces, kRopeGhostRadius);
-    raster.setObject(kRopeGhostId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#5c716c"));
 
-    // The ball: a disc of its own radius, and a cross of two seams so the turning
-    // can be seen. The seams are thin quads turned together by the ball's angle,
-    // so the spin needs no geometry of its own either.
-    points.clear();
-    faces.clear();
-    disc(points, faces, 1.0);
-    raster.setObject(kBallId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#c8763a"));
-    points.clear();
-    faces.clear();
-    quad(points, faces, -0.80, -0.09, 0.80, 0.09, 0.01);
-    quad(points, faces, -0.09, -0.80, 0.09, 0.80, 0.01);
-    raster.setObject(kBallMarkId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#3a2016"));
+    // Every ball: a disc of its own radius, and a cross of two seams so the turning can
+    // be seen. The seams are thin quads turned together by the ball's angle, so the
+    // spin needs no geometry of its own either. The same two batches per ball, in the
+    // same order, for both of them: one is on a rope and one is not, and that is a fact
+    // about the rope.
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        const std::uint32_t base = ballId(index);
+        points.clear();
+        faces.clear();
+        disc(points, faces, 1.0);
+        raster.setObject(base, {0, 0}, 0);
+        raster.mesh(points, faces, flat("#c8763a"));
+        points.clear();
+        faces.clear();
+        quad(points, faces, -0.80, -0.09, 0.80, 0.09, 0.01);
+        quad(points, faces, -0.09, -0.80, 0.09, 0.80, 0.01);
+        raster.setObject(base + 1, {0, 0}, 0);
+        raster.mesh(points, faces, flat("#3a2016"));
+    }
 
     // The forces: a unit bar along +x for the shaft and a unit triangle for the head,
     // both placed by a model matrix every frame, exactly as the bodies' edges and
@@ -482,12 +521,12 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
     traceBatch_ = findBatch(scene_, kTraceId);
-    pendulum_.ropeBatch = findBatch(scene_, kRopeId);
-    pendulum_.bobBatch = findBatch(scene_, kBobId);
-    pendulum_.anchorBatch = findBatch(scene_, kAnchorId);
-    pendulum_.ghostBatch = findBatch(scene_, kRopeGhostId);
-    ball_.faceBatch = findBatch(scene_, kBallId);
-    ball_.markBatch = findBatch(scene_, kBallMarkId);
+    rope_.ropeBatch = findBatch(scene_, kRopeId);
+    rope_.anchorBatch = findBatch(scene_, kAnchorId);
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        balls_[index].faceBatch = findBatch(scene_, ballId(index));
+        balls_[index].markBatch = findBatch(scene_, ballId(index) + 1);
+    }
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
         ghostBatches_[i] = findBatch(scene_, kGhostId + static_cast<std::uint32_t>(i));
     }
@@ -525,33 +564,29 @@ void PlaygroundRoom::placeMarkers() {
                             : translation({0, -1000, 0});
     }
     {
-        // The drawn bob: where the tick's own path had it, spread over the frames
-        // between ticks the same way everything else is. It is the bob that is
-        // interpolated, and the rope is drawn to wherever that lands -- a rope from the
-        // anchor to the frame's bob, at its own length, taut or slack exactly as the
-        // bob's distance makes it.
-        const Vec3 bobShown = pendulum_.shown;
-        const Vec3 anchor = pendulum_.anchor;
-        scene_.batches[pendulum_.ropeBatch].modelMatrix =
-            segment(Vec3{anchor.x, anchor.y, kRopeZ}, Vec3{bobShown.x, bobShown.y, kRopeZ}, kRopeHalfWidth);
-        const double r = pendulum_.radius;
-        scene_.batches[pendulum_.bobBatch].modelMatrix =
-            {r, 0, 0, 0, 0, r, 0, 0, 0, 0, 1, 0, bobShown.x, bobShown.y, kBobZ, 1};
-        scene_.batches[pendulum_.anchorBatch].modelMatrix =
-            translation(Vec3{anchor.x, anchor.y, kAnchorZ});
-        scene_.batches[pendulum_.ghostBatch].modelMatrix =
-            translation(Vec3{pendulum_.previous.x, pendulum_.previous.y, kRopeGhostZ});
+        // The rope: from the plate to the ball on the end of it, where that ball is
+        // being drawn this frame -- not where the physics last left it. A rope drawn to
+        // the tick's end while the ball is drawn halfway through it is a rope of the
+        // wrong length, and the wrong length is exactly what a rope is not.
+        const Ball& hanging = balls_[rope_.ball < kBallCount ? rope_.ball : kThrowBall];
+        const Vec3 at = hanging.shown;
+        const Vec3 anchor = rope_.anchor;
+        scene_.batches[rope_.ropeBatch].modelMatrix =
+            rope_.attached ? segment(Vec3{anchor.x, anchor.y, kRopeZ}, Vec3{at.x, at.y, kRopeZ}, kRopeHalfWidth)
+                           : translation({0, -1000, 0});
+        scene_.batches[rope_.anchorBatch].modelMatrix = translation(Vec3{anchor.x, anchor.y, kAnchorZ});
     }
-    {
-        const double radius = ball_.radius;
-        // A unit disc scaled to the ball's radius, so a ball of a different size
-        // needs no new geometry.
-        scene_.batches[ball_.faceBatch].modelMatrix =
-            {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball_.shown.x, ball_.shown.y, kBallZ, 1};
-        const double c = std::cos(ball_.shownAngle), s = std::sin(ball_.shownAngle);
-        scene_.batches[ball_.markBatch].modelMatrix =
+    // Every ball, at the radius it has and the turn it was drawn with. A unit disc
+    // scaled to the ball's radius, so a ball of a different size needs no new geometry
+    // -- and there is nothing here that knows which ball is on a rope.
+    for (const Ball& ball : balls_) {
+        const double radius = ball.radius;
+        scene_.batches[ball.faceBatch].modelMatrix =
+            {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball.shown.x, ball.shown.y, kBallZ, 1};
+        const double c = std::cos(ball.shownAngle), s = std::sin(ball.shownAngle);
+        scene_.batches[ball.markBatch].modelMatrix =
             {radius * c, radius * s, 0, 0, -radius * s, radius * c, 0, 0, 0, 0, 1, 0,
-             ball_.shown.x, ball_.shown.y, kBallMarkZ, 1};
+             ball.shown.x, ball.shown.y, kBallMarkZ, 1};
     }
     // The arrows: hidden unless F is on, and otherwise every force the ledger
     // holds, drawn at the point it acts with its own length. An arrow that is not

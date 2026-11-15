@@ -46,8 +46,7 @@ bool holdsBall(Vec3 normal) {
 // into the floor for ever that way, because the grip solved its friction along the
 // cube's tilted face and a tangent on a tilted face has a downward part. The ball was
 // stopped, moved nowhere, and shook for as long as the room was left alone.
-void PlaygroundRoom::settleBallSurfaces() {
-    Ball& ball = ball_;
+void PlaygroundRoom::settleBallSurfaces(Ball& ball) {
     {
         ball.touching = false;
         ball.standing = true;
@@ -207,7 +206,7 @@ void PlaygroundRoom::settleBallSurfaces() {
         }
         for (const FaceBlow& slot : blows)
             if (slot.used && length(slot.impulse) > 1e-12)
-                addForce(slot.at, slot.impulse, ForceKind::Contact, nullptr, kBallOwner);
+                addForce(slot.at, slot.impulse, ForceKind::Contact, nullptr, ownerOf(ball));
         {
             // The dot is a surface when the ball is sitting on it, and a load when
             // it is sitting on the ball. Only the first can hold the ball up.
@@ -296,26 +295,25 @@ void PlaygroundRoom::settleBallSurfaces() {
 // the ball into the shape. The load is not written here: what a face carries is a
 // question about the whole stack and settleBallFriction() works it out from what is
 // standing on the ball.
-void PlaygroundRoom::noteBallTouch(std::size_t body, Vec3 normal, Vec3 at) {
-    if (body >= kBodyCount || ballTouchCount_ >= kMaxBallTouches) return;
+void PlaygroundRoom::noteBallTouch(Ball& ball, std::size_t body, Vec3 normal, Vec3 at) {
+    if (body >= kBodyCount || ball.touchCount >= Ball::kMaxTouches) return;
     const Vec3 surfaceVelocity = pointSpeed(bodies_[body], at);
     // One face, one contact: the same meeting can be reported by the walk and by the
     // patch, and it is one surface. Two copies of it would each carry half the real
     // load, and the grip would be half what it should be.
-    for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-        if (ballTouches_[i].body != body) continue;
-        if (dot(ballTouches_[i].normal, normal) < 0.999) continue;
-        if (length(ballTouches_[i].surfaceVelocity) < length(surfaceVelocity))
-            ballTouches_[i].surfaceVelocity = surfaceVelocity;
+    for (std::size_t i = 0; i < ball.touchCount; ++i) {
+        if (ball.touches[i].body != body) continue;
+        if (dot(ball.touches[i].normal, normal) < 0.999) continue;
+        if (length(ball.touches[i].surfaceVelocity) < length(surfaceVelocity))
+            ball.touches[i].surfaceVelocity = surfaceVelocity;
         return;
     }
-    ballTouches_[ballTouchCount_] = BallTouch{normal, surfaceVelocity, 0.0, body};
-    ++ballTouchCount_;
+    ball.touches[ball.touchCount] = BallTouch{normal, surfaceVelocity, 0.0, body};
+    ++ball.touchCount;
 }
 
-void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
+void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ballHeld, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached) {
-    Ball& ball = ball_;
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
@@ -338,7 +336,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // line and not about the middle.
         const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
         const double turned = inertia * (ball.spin - spinBefore) / kTick;
-        if (std::abs(turned) > 1e-9) addCouple(contactPoint, turned, Vec3{}, ForceKind::Ball, kBallOwner);
+        if (std::abs(turned) > 1e-9) addCouple(contactPoint, turned, Vec3{}, ForceKind::Ball, ownerOf(ball));
     };
     Vec3 answer = normal;
     bool canMove = false;
@@ -380,7 +378,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // times in 1800 ticks and never spent a second asleep, so its weight was
         // answered against the ball's mass once per tick and the ball crept for ever.
         // A contact that is not approaching cannot push anything.
-        const Vec3 closingVelocity = ballPointSpeed(contactPoint) - pointSpeed(*body, contactPoint);
+        const Vec3 closingVelocity = ballPointSpeed(ball, contactPoint) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
@@ -433,7 +431,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
                                       ? std::max(0.0, (ball.radius - ball.position.y) / normal.y)
                                       : through;
             const double byBall = std::min(through, ground);
-            ballLiftedOut_ += byBall > kSkin ? 1 : 0;
+            ball.liftedOut += byBall > kSkin ? 1 : 0;
             ball.position = ball.position + normal * byBall;
             const double left = through - byBall;
             if (body != nullptr && left > kSkin) {
@@ -498,9 +496,9 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
         // a blow the shape had really given. It is not a bounce -- the blow has
         // already been struck -- but it is not nothing either.
         const Vec3 stopped = (ball.velocity - ballBefore) * ball.mass;
-        ballBlows_ = ballBlows_ + stopped;
+        ball.blows = ball.blows + stopped;
         if (length(stopped) > 1e-9)
-            addForce(contactPoint, stopped * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
+            addForce(contactPoint, stopped * (1.0 / kTick), ForceKind::Contact, nullptr, ownerOf(ball));
         recordBall();
         return;
     }
@@ -556,10 +554,10 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     const auto noteMeeting = [&]() {
         if (!(metArrival > 0.0)) return;
         const std::size_t slot = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
-        if (ballMeetingArrival_[slot] > 0.0 && metGiven * ballMeetingArrival_[slot] <= ballMeetingGiven_[slot] * metArrival)
+        if (ball.meetingArrival[slot] > 0.0 && metGiven * ball.meetingArrival[slot] <= ball.meetingGiven[slot] * metArrival)
             return;
-        ballMeetingGiven_[slot] = metGiven;
-        ballMeetingArrival_[slot] = metArrival;
+        ball.meetingGiven[slot] = metGiven;
+        ball.meetingArrival[slot] = metArrival;
     };
     if (closing < 0.0) {
         if (canMove) {
@@ -606,7 +604,7 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
             // that surface is not in the way. That is what turns "a shape landing on
             // the top of it" into the floor's answer while "a shape striking its
             // side" still shoves the ball across the room.
-            const double ballShare = ballCompliance(normal, ballHeld);
+            const double ballShare = ballCompliance(ball, normal, ballHeld);
             const double impulse = (rebound - closing) / (ballShare + bodyShare);
             ball.velocity = ball.velocity + normal * (impulse * ballShare);
             // Struck is not asleep. A ball given any of this blow has something to
@@ -712,28 +710,28 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // so each copy presses with half the force that is really there, and the ball's
     // grip on it is half what it should be. A pinched ball had the floor counted
     // twice under it, and the floor was then no stronger than the weight above.
-    if (ballTouchCount_ < kMaxBallTouches) {
+    if (ball.touchCount < Ball::kMaxTouches) {
         const std::size_t mate = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
-        std::size_t slot = ballTouchCount_;
-        for (std::size_t i = 0; i < ballTouchCount_; ++i) {
-            if (ballTouches_[i].body != mate) continue;
-            if (dot(ballTouches_[i].normal, normal) < 0.999) continue;
+        std::size_t slot = ball.touchCount;
+        for (std::size_t i = 0; i < ball.touchCount; ++i) {
+            if (ball.touches[i].body != mate) continue;
+            if (dot(ball.touches[i].normal, normal) < 0.999) continue;
             slot = i;
             break;
         }
-        if (slot == ballTouchCount_) {
-            ballTouches_[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
-            ballTouches_[slot].given = metGiven;
-            ballTouches_[slot].arrival = metArrival;
-            ++ballTouchCount_;
+        if (slot == ball.touchCount) {
+            ball.touches[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
+            ball.touches[slot].given = metGiven;
+            ball.touches[slot].arrival = metArrival;
+            ++ball.touchCount;
         } else {
-            ballTouches_[slot].pressed = std::max(ballTouches_[slot].pressed, pressed);
+            ball.touches[slot].pressed = std::max(ball.touches[slot].pressed, pressed);
             // One face, one meeting: a second answer at the same face in the same tick
             // is the same blow carried further, so what it dealt adds up.
-            ballTouches_[slot].given += metGiven;
-            ballTouches_[slot].arrival += metArrival;
-            if (length(ballTouches_[slot].surfaceVelocity) < length(surfaceVelocity))
-                ballTouches_[slot].surfaceVelocity = surfaceVelocity;
+            ball.touches[slot].given += metGiven;
+            ball.touches[slot].arrival += metArrival;
+            if (length(ball.touches[slot].surfaceVelocity) < length(surfaceVelocity))
+                ball.touches[slot].surfaceVelocity = surfaceVelocity;
         }
     }
     // Rolling resistance is not done here, and it is not a force taken off the
@@ -771,15 +769,14 @@ void PlaygroundRoom::ballContact(Vec3 normal, int bodyIndex, bool ballHeld, Vec3
     // by the floor, and the blow it took and the blow it handed back are two forces
     // at one place, not none. The other half -- what the ground supplied -- is worked
     // out once at the end of the tick, from the ball's account, in tickBall().
-    ballBlows_ = ballBlows_ + blown;
-    if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, kBallOwner);
+    ball.blows = ball.blows + blown;
+    if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, ownerOf(ball));
     recordBall();
 }
 
 // The ball runs into the dot. Both have mass, so they exchange momentum along the
 // line between them.
-void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
-    Ball& ball = ball_;
+void PlaygroundRoom::hitBallWithPoint(Ball& ball, Vec3 normal) {
     const Vec3 ballBefore = ball.velocity, pointBefore = velocity_;
     const double spinBefore = ball.spin;
     const double closing = dot(ball.velocity - velocity_, normal);
@@ -808,11 +805,11 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
     {
         const Vec3 onBall = (ball.velocity - ballBefore) * (ball.mass / kTick);
         const Vec3 onPoint = (velocity_ - pointBefore) * (kMass / kTick);
-        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball, nullptr, kBallOwner);
-        ballBlows_ = ballBlows_ + (ball.velocity - ballBefore) * ball.mass;
+        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball, nullptr, ownerOf(ball));
+        ball.blows = ball.blows + (ball.velocity - ballBefore) * ball.mass;
         const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
         const double turned = inertia * (ball.spin - spinBefore) / kTick;
-        if (std::abs(turned) > 1e-9) addCouple(point_, turned, Vec3{}, ForceKind::Ball, kBallOwner);
+        if (std::abs(turned) > 1e-9) addCouple(point_, turned, Vec3{}, ForceKind::Ball, ownerOf(ball));
         if (length(onPoint) > 1e-6) addForce(point_, onPoint, ForceKind::Ball, nullptr, kDotOwner);
     }
     // Separate them, so they are not still overlapping next tick.
@@ -838,51 +835,51 @@ void PlaygroundRoom::hitBallWithPoint(Vec3 normal) {
 // what keeps the rope honest: a bob whose place jumped in the middle of the ball's
 // tick could be a bob further from its anchor than the rope is long.
 //
-// `resting` says the ball was already against the bob when this piece of the walk
-// began. A contact is not an arrival, and a contact gives nothing back: a ball lying
-// on a bob would otherwise bounce off it every tick with no bounce in it.
-void PlaygroundRoom::ballAgainstBob(Vec3 normal, bool resting, double reached) {
+// `resting` says the ball was already against the other one when this piece of the
+// walk began. A contact is not an arrival, and a contact gives nothing back: two balls
+// lying against each other would otherwise bounce apart every tick with no bounce in
+// them.
+//
+// Both ends are balls, so both ends are treated the same: the impulse is worked out
+// against the two masses together and given to one and taken from the other, and it is
+// written on the ledger twice, at the one place the two of them met, once for each of
+// them. There is no "the bob" here -- there is a ball, and the ball it met.
+void PlaygroundRoom::ballAgainstBall(Ball& ball, std::size_t other, Vec3 normal, bool resting, double reached) {
     (void)reached;
-    Ball& ball = ball_;
-    Pendulum& bob = pendulum_;
-    // What the bob is doing, read the way the room reads a shape's speed: its step over
-    // the tick. Its step is its own, taken before the ball's walk began.
-    const Vec3 bobSpeed = (bob.position - bob.previous) * (1.0 / kTick);
-    const double closing = dot(ball.velocity - bobSpeed, normal);
+    Ball& partner = balls_[other < kBallCount ? other : 0];
+    // What the other ball is doing, read the way the room reads a shape's speed: its
+    // step over the tick. Its step is its own, taken before this ball's walk began.
+    const Vec3 partnerSpeed = (partner.position - partner.previous) * (1.0 / kTick);
+    const double closing = dot(ball.velocity - partnerSpeed, normal);
     const Vec3 at = ball.position - normal * ball.radius;
     if (closing < 0.0) {
         const double rebound = resting ? 0.0 : -kBallRestitution * closing;
-        const double give = 1.0 / ball.mass + 1.0 / bob.mass;
+        const double give = 1.0 / ball.mass + 1.0 / partner.mass;
         const double impulse = (rebound - closing) / give;
         ball.velocity = ball.velocity + normal * (impulse / ball.mass);
-        bob.velocity = bob.velocity - normal * (impulse / bob.mass);
-        addForce(at, normal * (impulse / kTick), ForceKind::Ball, nullptr, kBallOwner);
-        addForce(at, normal * (-impulse / kTick), ForceKind::Ball, nullptr, kBobOwner);
-        // A blow turns the ball: the same answer every other surface gives it, at the
-        // place it was struck.
-        const Vec3 rim = at - ball.position;
-        const double spinChange = dot(Vec3{-rim.y, rim.x, 0.0}, normal * (impulse / ball.mass)) /
-                                  (0.4 * ball.radius * ball.radius);
-        ball.spin += spinChange * 0.0;
-        // A bob that is struck is a bob that is doing something, and a ball that is
-        // doing something is not asleep.
+        partner.velocity = partner.velocity - normal * (impulse / partner.mass);
+        // A blow along the line between two centres has no lever about either of them,
+        // so neither ball is spun by it: a ball struck through its middle turns no
+        // faster than it did, and adding a turn here would be a turn out of nothing.
+        addForce(at, normal * (impulse / kTick), ForceKind::Ball, nullptr, ownerOf(ball));
+        addForce(at, normal * (-impulse / kTick), ForceKind::Ball, nullptr, ownerOf(partner));
+        // Struck is not asleep, at either end.
         ball.frozen = false;
-        bob.awake = true;
+        partner.frozen = false;
     }
     // Never inside it. The sweep above is the prevention and this is the arithmetic's
-    // rounding: a ball left a fraction of a micron into the bob is put back on its
-    // surface, by position and nothing else.
-    const Vec3 gap = ball.position - bob.position;
+    // rounding: a ball left a fraction of a micron into the other one is put back on
+    // its surface, by position and nothing else.
+    const Vec3 gap = ball.position - partner.position;
     const double distance = length(gap);
-    const double reach = ball.radius + bob.radius;
-    if (distance > 0.0 && distance < reach) ball.position = bob.position + gap * (reach / distance);
+    const double reach = ball.radius + partner.radius;
+    if (distance > 0.0 && distance < reach) ball.position = partner.position + gap * (reach / distance);
 }
 
 // The dot runs into the ball. The normal points from the ball to the dot, so the
 // dot is the one that gets pushed back, and whatever it hands over is what the
 // ball takes.
-void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
-    Ball& ball = ball_;
+void PlaygroundRoom::pointAgainstBall(Ball& ball, Vec3 normal) {
     const double closing = dot(velocity_ - ball.velocity, normal);
     // The ball is the elastic one, so a blow against it answers with the ball's
     // restitution -- the same number every other thing that meets it is answered
@@ -916,11 +913,11 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
         // the surface it is standing on. Straight down onto a ball on the floor is
         // the floor's to answer and the dot bounces off the ball; across it is the
         // ball's, and the ball goes.
-        const double ballShare = ballCompliance(normal * -1.0, dragTarget_ == DragTarget::Ball);
+        const double ballShare = ballCompliance(ball, normal * -1.0, dragTarget_ == DragTarget::Ball);
         const double impulse = (rebound - closing) / (1.0 / kMass + ballShare);
         velocity_ = velocity_ + normal * (impulse / kMass);
         ball.velocity = ball.velocity - normal * (impulse * ballShare);
-        ballBlows_ = ballBlows_ - normal * (impulse * ballShare);
+        ball.blows = ball.blows - normal * (impulse * ballShare);
         // A ball that has been struck is a ball that is doing something, and a ball
         // that is doing something is not asleep. It used to be woken here and then
         // given no speed at all, which is a ball that wakes up and stands still.
@@ -938,7 +935,7 @@ void PlaygroundRoom::pointAgainstBall(Vec3 normal) {
         // question as above. Pushing the ball half the overlap downwards put it
         // through the floor it was resting on.
         const Vec3 way = gap * (1.0 / distance);            // ball -> dot
-        const double ballCan = ballCompliance(way, dragTarget_ == DragTarget::Ball) * ball.mass;
+        const double ballCan = ballCompliance(ball, way, dragTarget_ == DragTarget::Ball) * ball.mass;
         const double ballPart = std::clamp(0.5 * ballCan, 0.0, 1.0);
         point_ = point_ + way * (overlap * (1.0 - ballPart));
         ball.position = ball.position - way * (overlap * ballPart);

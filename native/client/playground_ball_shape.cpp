@@ -326,7 +326,7 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
 // function of this size does not belong in a header.
 namespace gtc::native {
 
-Vec3 PlaygroundRoom::ballFree(Vec3 push, std::size_t except) const {
+Vec3 PlaygroundRoom::ballFree(const Ball& ball, Vec3 push, std::size_t except) {
     // The projection is onto the *orthogonal complement of all of them at once*,
     // which is not the same as taking them one after another. With one support
     // the two agree; with two they do not, and the difference is momentum.
@@ -348,14 +348,14 @@ Vec3 PlaygroundRoom::ballFree(Vec3 push, std::size_t except) const {
     // second. The complement is the answer of a small linear system -- the
     // support normals' own Gram matrix -- and it is exact.
     // The supports that count: every one but the body being solved against.
-    std::array<Vec3, kMaxBallSupports> normals{};
+    std::array<Vec3, Ball::kMaxSupports> normals{};
     std::size_t count = 0;
-    for (std::size_t i = 0; i < ballSupportCount_; ++i) {
-        if (ballSupports_[i].body == except) continue;
-        normals[count++] = ballSupports_[i].normal;
+    for (std::size_t i = 0; i < ball.supportCount; ++i) {
+        if (ball.supports[i].body == except) continue;
+        normals[count++] = ball.supports[i].normal;
     }
     if (count == 0) return push;
-    double m[kMaxBallSupports][kMaxBallSupports + 1]{};
+    double m[Ball::kMaxSupports][Ball::kMaxSupports + 1]{};
     for (std::size_t i = 0; i < count; ++i) {
         for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(normals[i], normals[j]);
         m[i][count] = dot(normals[i], push);
@@ -363,7 +363,7 @@ Vec3 PlaygroundRoom::ballFree(Vec3 push, std::size_t except) const {
     // Gaussian elimination with partial pivoting. A row with no pivot left is a
     // support that another support already says -- two faces on the same line, or
     // the same face twice -- and it carries no share of its own.
-    std::array<double, kMaxBallSupports> share{};
+    std::array<double, Ball::kMaxSupports> share{};
     for (std::size_t col = 0; col < count; ++col) {
         std::size_t pivot = col;
         for (std::size_t row = col + 1; row < count; ++row)

@@ -75,15 +75,15 @@ int playgroundArrivalChecks() {
                 PlaygroundRoom room;
                 room.reset();
                 settle(room, 400);
-                room.ball_.position = starts[shot];
-                room.ball_.velocity = aims[shot] * speed;
-                room.ball_.spin = 0.0;
-                room.ball_.frozen = false;
+                room.ball(PlaygroundRoom::kThrowBall).position = starts[shot];
+                room.ball(PlaygroundRoom::kThrowBall).velocity = aims[shot] * speed;
+                room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+                room.ball(PlaygroundRoom::kThrowBall).frozen = false;
                 for (int tick = 0; tick < 120; ++tick) {
                     room.advance(1.0 / 20.0);
                     for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
                         Vec3 way{}, at{};
-                        fastInside = std::max(fastInside, -room.bodyBallGap(index, way, at));
+                        fastInside = std::max(fastInside, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), index, way, at));
                         const PlaygroundRoom::Body& body = room.bodies_[index];
                         if (!std::isfinite(body.centre.x) || !std::isfinite(body.velocity.x) ||
                             !std::isfinite(body.spin))
@@ -92,9 +92,9 @@ int playgroundArrivalChecks() {
                             if (!std::isfinite(body.position[corner].x) || !std::isfinite(body.position[corner].y))
                                 everNotANumber = true;
                     }
-                    if (!std::isfinite(room.ball_.position.x) || !std::isfinite(room.ball_.position.y) ||
-                        !std::isfinite(room.ball_.velocity.x) || !std::isfinite(room.ball_.velocity.y) ||
-                        !std::isfinite(room.ball_.spin))
+                    if (!std::isfinite(room.ball(PlaygroundRoom::kThrowBall).position.x) || !std::isfinite(room.ball(PlaygroundRoom::kThrowBall).position.y) ||
+                        !std::isfinite(room.ball(PlaygroundRoom::kThrowBall).velocity.x) || !std::isfinite(room.ball(PlaygroundRoom::kThrowBall).velocity.y) ||
+                        !std::isfinite(room.ball(PlaygroundRoom::kThrowBall).spin))
                         everNotANumber = true;
                 }
             }
@@ -117,10 +117,10 @@ int playgroundArrivalChecks() {
             PlaygroundRoom room;
             room.reset();
             settle(room, 400);
-            room.ball_.position = Vec3{0.30, room.ball_.radius, 0};
-            room.ball_.velocity = Vec3{};
-            room.ball_.spin = 0.0;
-            room.ball_.frozen = false;
+            room.ball(PlaygroundRoom::kThrowBall).position = Vec3{0.30, room.ball(PlaygroundRoom::kThrowBall).radius, 0};
+            room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{};
+            room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+            room.ball(PlaygroundRoom::kThrowBall).frozen = false;
             // The triangle's bottom face, level, just above the ball, coming down.
             room.bodies_[1].centre = Vec3{0.30, 0.99, 0};
             room.bodies_[1].angle = 0.0;
@@ -132,8 +132,8 @@ int playgroundArrivalChecks() {
             for (int tick = 0; tick < 120; ++tick) {
                 room.advance(1.0 / 20.0);
                 Vec3 way{}, at{};
-                thrown = std::max(thrown, -room.bodyBallGap(1, way, at));
-                if (!std::isfinite(room.ball_.position.x) || !std::isfinite(room.bodies_[1].centre.x) ||
+                thrown = std::max(thrown, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), 1, way, at));
+                if (!std::isfinite(room.ball(PlaygroundRoom::kThrowBall).position.x) || !std::isfinite(room.bodies_[1].centre.x) ||
                     !std::isfinite(room.bodies_[1].velocity.x))
                     thrownFinite = false;
             }

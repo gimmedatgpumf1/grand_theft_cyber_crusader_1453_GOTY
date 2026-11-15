@@ -1,6 +1,7 @@
 #pragma once
 
-#include "client/playground_pendulum.h"
+#include "client/playground_ball_state.h"
+#include "client/playground_rope.h"
 #include "client/raster.h"
 #include "client/ui_layer.h"
 
@@ -41,6 +42,15 @@ struct ViewState;
 // position alone, at the end of the tick, and there is normally nothing for it to do.
 class PlaygroundRoom {
 public:
+    // One kind of ball, and two of them. What a ball is and what the room writes
+    // down about it while it is ticked lives in playground_ball_state.h: the thrown
+    // ball and the ball hanging on the rope are the same struct, stepped by the same
+    // tick and drawn by the same code. `Ball` is spelled here only so that the room's
+    // own names -- PlaygroundRoom::Ball -- still mean what they meant.
+    using Ball = playground_ball::Ball;
+    using BallTouch = playground_ball::BallTouch;
+    using BallSupport = playground_ball::BallSupport;
+
     // The bodies in the room, in the order they are simulated.
     static constexpr std::size_t kCube = 0, kTriangle = 1, kSeesaw = 2, kBodyCount = 3;
     // The most corners a shape in the room has. A body's corners are the shape, and
@@ -80,9 +90,21 @@ public:
     Vec3 bodyCentreVelocity(std::size_t body) const {
         return body < kBodyCount ? bodies_[body].velocity : Vec3{};
     }
-    static constexpr std::size_t kBallOwner = kBodyCount, kDotOwner = kBodyCount + 1;
-    // The bob, and the anchor at the far end of every pull the rope gives it.
-    static constexpr std::size_t kBobOwner = kBodyCount + 3, kAnchorOwner = kBodyCount + 4;
+    // Which solid feels a force, for the ledger. A body is its own index; the balls
+    // are their own, one each, because a blow between two balls is a pair of forces on
+    // two different solids and the arrows have to be able to tell them apart. The dot
+    // and the anchor are the two ends of other pairs, and they have slots of their own.
+    static constexpr std::size_t kBallCount = 2;
+    // The ball on the rope, and the ball that is thrown. Two of one kind; the names are
+    // only about where each one starts.
+    static constexpr std::size_t kThrowBall = 0, kRopeBall = 1;
+    static constexpr std::size_t ballOwner(std::size_t ball) { return kBodyCount + ball; }
+    static constexpr std::size_t kDotOwner = kBodyCount + kBallCount,
+                                 kAnchorOwner = kBodyCount + kBallCount + 1;
+    // The floor, as far as a ball's contacts are concerned: not a body and not a ball.
+    static constexpr std::size_t kFloorOwner = kBodyCount + kBallCount + 2;
+    // "No ball at all", for the patches and touches that are not about a ball.
+    static constexpr std::size_t kNoBall = kBallCount;
     bool bodyFrozen(std::size_t body) const { return body < kBodyCount ? bodies_[body].frozen : true; }
     // Forces, as they are applied, and the room's energy.
     //
@@ -154,75 +176,35 @@ public:
     // Which surface is holding the point up: a ball, as opposed to a body or the floor.
     bool supportedByBall() const { return restingOnBall_; }
     // The ball: one point with a radius, its spin, and the angle it is drawn at.
-    Vec3 ballPosition() const { return ball_.position; }
-    Vec3 ballShown() const { return ball_.shown; }
-    Vec3 ballVelocity() const { return ball_.velocity; }
-    double ballRadius() const { return ball_.radius; }
-    double ballSpin() const { return ball_.spin; }
-    double ballAngle() const { return ball_.angle; }
-    double ballShownAngle() const { return ball_.shownAngle; }
-    bool ballFrozen() const { return ball_.frozen; }
-    // The rope and the bob: drawn place, solved place, length, anchor, tension.
-    Vec3 bobPosition() const { return pendulum_.position; }
-    Vec3 bobShown() const { return pendulum_.shown; }
-    Vec3 bobVelocity() const { return pendulum_.velocity; }
-    double bobRadius() const { return pendulum_.radius; }
-    double bobMass() const { return pendulum_.mass; }
-    Vec3 ropeAnchor() const { return pendulum_.anchor; }
-    double ropeLength() const { return pendulum_.length; }
-    bool ropeTaut() const { return pendulum_.taut; }
-    double ropeTension() const { return pendulum_.tension; }
-    double bobDistance() const { return length(pendulum_.position - pendulum_.anchor); }
+    Vec3 ballPosition() const { return ball(kThrowBall).position; }
+    Vec3 ballShown() const { return ball(kThrowBall).shown; }
+    Vec3 ballVelocity() const { return ball(kThrowBall).velocity; }
+    double ballRadius() const { return ball(kThrowBall).radius; }
+    double ballSpin() const { return ball(kThrowBall).spin; }
+    double ballAngle() const { return ball(kThrowBall).angle; }
+    double ballShownAngle() const { return ball(kThrowBall).shownAngle; }
+    bool ballFrozen() const { return ball(kThrowBall).frozen; }
+    // The two balls. Both are balls: the same tick, the same contacts, the same
+    // drawing. One of them is on a rope and the rope is the only difference.
+    Ball& ball(std::size_t index) { return balls_[index < kBallCount ? index : kThrowBall]; }
+    const Ball& ball(std::size_t index) const { return balls_[index < kBallCount ? index : kThrowBall]; }
+    const Ball& thrownBall() const { return balls_[kThrowBall]; }
+    const Ball& ropeBall() const { return balls_[kRopeBall]; }
+    double ballPositionX(std::size_t index) const { return ball(index).position.x; }
+    // Which solid this ball is, for the ledger: a ball carries its own index, so a
+    // force written on it lands on the right arrow without anyone having to say which.
+    std::size_t ownerOf(const Ball& ball) const { return ballOwner(std::size_t(&ball - balls_.data())); }
+    // The rope: where it hangs from, how long it is, and what it is doing.
+    Vec3 ropeAnchor() const { return rope_.anchor; }
+    double ropeLength() const { return rope_.length; }
+    bool ropeTaut() const { return rope_.taut; }
+    double ropeTension() const { return rope_.tension; }
+    double ropeBallDistance() const { return length(ropeBall().position - rope_.anchor); }
 
 private:
     // What the mouse is holding, if anything.
     enum class DragTarget { None, Point, Body, Ball };
 
-    // A ball is one point with a radius, not a set of corner points. It carries
-    // spin as well as speed: a sphere that slid without turning would be slowed
-    // like a brick, which is not what a ball does.
-    struct Ball {
-        Vec3 position{}, previous{}, shown{}, velocity{};
-        // The speed the ball had when the tick began, before this tick's forces.
-        // A bounce is the answer to hitting something, so it is measured against
-        // what the ball arrived with -- not against the speed gravity lent it on
-        // the way, which a ball already lying on the floor has too.
-        Vec3 arrival{};
-        // Where the tick bent. A ball that meets something takes the answer there and
-        // spends the rest of the tick going elsewhere, so its path through a tick is
-        // two straight pieces and not one. Drawn as one piece it never goes near the
-        // surface: a ball landing at eight metres a second is at eight tenths of a
-        // metre above the face at the frame before the meeting and a quarter of a
-        // metre above it at the frame after, and it looks for all the world as if it
-        // bounced on air. It did not -- it bounced where it was told to, between two
-        // frames. This is the record of that meeting, so the drawing can follow the
-        // path that was actually taken. The physics does not read any of it.
-        bool bent = false;
-        double bendAt = 0.0;   // the fraction of the tick the meeting happened at
-        Vec3 bendPoint{};      // where the ball was when it happened
-        Vec3 bendIn{};         // what it was doing up to the meeting
-        Vec3 bendOut{};        // and what it was doing after it
-        double radius = 0.12;   // basketball: 0.24 m across
-        double mass = 0.62;     // kg, a real basketball
-        double spin = 0.0;      // radians per second about z
-        // The angle the simulation has actually turned through, and the one
-        // the screen is shown. They are separate because the drawing spreads a
-        // tick over the frames between ticks; writing that back into `angle`
-        // would throw away most of every tick's turn.
-        double angle = 0.0, previousAngle = 0.0, shownAngle = 0.0;
-        // The forces on the ball this tick, in newtons, before the integrator.
-        Vec3 force{};
-        bool frozen = false, touching = false;
-        // Whether static friction could hold the ball at every surface it touched
-        // this tick. A slope cannot, so a ball on one is never at rest.
-        bool standing = true;
-        // The way out of the surface that is under it, from the last contact that
-        // could carry it. A ball at rest is pressed at that point and nowhere else,
-        // so this is where its weight comes back up, and the arrow on F is drawn
-        // there -- not under the middle of a ball that may be sitting on a slope.
-        Vec3 supportNormal{0, 1, 0};
-        std::size_t faceBatch = 0, markBatch = 0;
-    };
     // A solid: one rigid body, with a mass, a moment of inertia, a place, a turn,
     // a speed and a spin. Its corners are the shape, not the state.
     struct Body {
@@ -407,7 +389,7 @@ private:
     // The same air, on the ball, answered by solving its law over the tick rather
     // than by adding the force times the tick. Returns the ball's speed after it.
     // See playground_ball_air.cpp.
-    Vec3 ballAirDrag(Vec3 velocity);
+    Vec3 ballAirDrag(Ball& ball, Vec3 velocity);
     // Carries every body that is being simulated by `seconds` of its own speed and
     // turn. This is the only place a body's place or turn is ever changed by the
     // simulation, and it integrates -- it never corrects.
@@ -468,7 +450,10 @@ private:
     static constexpr std::size_t kMaxPatchEnds = 2;
     struct Manifold {
         std::size_t body = 0, other = kBodyCount;
-        bool ball = false;  // the other side is the ball rather than a body
+        // Which ball the other side is, or kNoBall for a body. It is an index and not
+        // a yes: a body resting on a ball is resting on *that* ball, and the answer it
+        // gets is that ball's mass, that ball's speed and that ball's support.
+        std::size_t ball = kNoBall;
         std::size_t ends = 0;
         std::size_t corner[kMaxPatchEnds] = {0, 0};
         Vec3 point[kMaxPatchEnds]{}, normal{};
@@ -513,7 +498,7 @@ private:
                 double carried[kMaxPatchEnds]{}, grip[kMaxPatchEnds]{};
                 for (std::size_t k = 0; k < patch.ends; ++k) {
                     for (std::size_t j = 0; j < known.ends; ++j) {
-                        if (patch.ball && j != k) continue;
+                        if (patch.ball < kBallCount && j != k) continue;
                         const Vec3 apart = known.point[j] - patch.point[k];
                         if (std::hypot(apart.x, apart.y) > 1e-6) continue;
                         carried[k] = known.normalImpulse[j];
@@ -563,7 +548,7 @@ private:
     // has come into the ball is a shape that has overstepped. Returns false when the
     // shape cannot be the one to give way -- the mouse is holding it, or moving it
     // would put it through the floor -- and then it is the ball's turn.
-    bool pushBodyOutOfBall(std::size_t index, Vec3 normal, double through);
+    bool pushBodyOutOfBall(const Ball& ball, std::size_t index, Vec3 normal, double through);
     // The step that takes the ball out of everything it is inside, all at once.
     //
     // One surface's way out is not the room's: a ball pinched between a swinging plank
@@ -573,11 +558,11 @@ private:
     // So every surface the ball is inside is answered together, as one step: each pass
     // takes it out of the worst one, so the surfaces answer each other. What comes back
     // is the smallest step found and what overlap is left at that place.
-    Vec3 ballClearStep(double& left) const;
+    Vec3 ballClearStep(const Ball& ball, double& left) const;
     // Nothing ends a tick inside the ball: the sweep cannot see a shape turning into
     // it, so what a turn carried through it is put back out, by place alone. See the
     // file: it is the same rule a shape inside another shape gets.
-    void separateBall();
+    void separateBall(Ball& ball);
     // How much of a body's step is clear, as the fraction of it that may be taken.
     //
     // A body's step is its middle travelling and its outline turning at once, and the
@@ -619,10 +604,16 @@ private:
 public:
     // Read by the checks and the probes: how much of this room is prevention and how
     // much is repair.
-    std::size_t ballFoundThroughCount() const { return ballFoundThrough_; }
+    std::size_t ballFoundThroughCount() const {
+        return ball(kThrowBall).foundThrough + ball(kRopeBall).foundThrough;
+    }
     std::size_t bodyStepClampedCount() const { return bodyStepClamped_; }
-    std::size_t ballLiftedOutCount() const { return ballLiftedOut_; }
-    void clearRepairCounts() { ballFoundThrough_ = bodyStepClamped_ = ballLiftedOut_ = 0; }
+    std::size_t ballLiftedOutCount() const { return ball(kThrowBall).liftedOut + ball(kRopeBall).liftedOut; }
+    void clearRepairCounts() {
+        ball(kThrowBall).foundThrough = ball(kRopeBall).foundThrough = 0;
+        ball(kThrowBall).liftedOut = ball(kRopeBall).liftedOut = 0;
+        bodyStepClamped_ = 0;
+    }
 private:
     bool carriedBySolvedSupport(std::size_t index) const;  // see the file
     // Whether the surface a sleeping body is lying on is still there: if it is not,
@@ -638,17 +629,17 @@ private:
     void pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind);
     // The ball is a rigid body too, so a blow given to it at a place changes its
     // speed and its turn by the same law -- m and I of a solid sphere.
-    Vec3 ballPointSpeed(Vec3 at) const {
-        const Vec3 arm = at - ball_.position;
-        return {ball_.velocity.x - ball_.spin * arm.y, ball_.velocity.y + ball_.spin * arm.x, ball_.velocity.z};
+    static Vec3 ballPointSpeed(const Ball& ball, Vec3 at) {
+        const Vec3 arm = at - ball.position;
+        return {ball.velocity.x - ball.spin * arm.y, ball.velocity.y + ball.spin * arm.x, ball.velocity.z};
     }
-    double ballGiveAt(Vec3 at, Vec3 direction) const {
-        const Vec3 arm = at - ball_.position;
+    static double ballGiveAt(const Ball& ball, Vec3 at, Vec3 direction) {
+        const Vec3 arm = at - ball.position;
         const double lever = arm.x * direction.y - arm.y * direction.x;
-        const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-        return 1.0 / ball_.mass + lever * lever / moment;
+        const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
+        return 1.0 / ball.mass + lever * lever / moment;
     }
-    void pushBall(Vec3 at, Vec3 impulse, ForceKind kind);
+    void pushBall(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind);
     void recordImpulse(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t on);
     bool supportedBy(std::size_t body) const;
     bool bodyTopAt(std::size_t body, double x, double& height) const;
@@ -661,36 +652,21 @@ private:
     // The gap between a body's outline and the ball's surface, which way the body
     // has to go to be clear of it, and the place they would touch. Negative when
     // the ball is already into the outline.
-    double bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const;
-    void tickBall();
+    double bodyBallGap(const Ball& ball, std::size_t index, Vec3& way, Vec3& at) const;
+    void tickBall(Ball& ball);
+    // Every ball in the room, each one ticked by tickBall() and, for whichever ball the
+    // rope is on the end of, held on the rope straight afterwards. There is no second
+    // kind of motion in the room; there are two balls.
+    void tickBalls();
     // Stepped after the shapes and before the ball, so the ball is swept against
-    // where the bob really ended the tick.
-    void tickPendulum();
+    // The rope, on the ball that hangs from it: the constraint, applied to a ball
+    // that has already had its own tick. It is not a second ball and not a second kind
+    // of motion -- see the file.
+    void holdOnRope(Ball& ball);
     // The surfaces the ball is against, holding it out of themselves.
-    void settleBallSurfaces();
+    void settleBallSurfaces(Ball& ball);
     // What the ball was against this tick, so the grip at each of them can be
     // worked out against the others instead of one after another.
-    struct BallTouch {
-        Vec3 normal{}, surfaceVelocity{};
-        // What this face is carrying, in newton seconds. It is not a property of the
-        // face on its own: it is what the face has to hold up, which is a question
-        // about the whole stack -- see settleBallFriction().
-        double pressed = 0.0;
-        // Which body is on the other side, or kBodyCount for the floor. A face over
-        // the ball is carrying the weight of what stands on it, and that is read from
-        // the body: a floor patch beneath a ball carries the ball, but a cube resting
-        // on top of one carries the cube.
-        std::size_t body = kBodyCount;
-        // What the meeting dealt the ball, in newton seconds, and the momentum the
-        // arrival was worth. Bounciness is not a fraction of a speed: it is the
-        // impulse a surface gives back over the impulse that would just have stopped
-        // the ball, and it is struck at one instant -- so both numbers are the ones
-        // the solver used at that instant, and neither is read across a tick, where
-        // gravity alone is half a metre a second of momentum that has nothing to do
-        // with the surface. See ballContact().
-        double given = 0.0;
-        double arrival = 0.0;
-    };
     // What is holding the ball up, as the constraint it is.
     //
     // The ball is one rigid body, and the shapes are solved against it before its own
@@ -718,14 +694,7 @@ private:
     // and eighty radians a second: a normal push through the middle has no lever, but
     // its projection along the floor does, and that lever is a force the floor never
     // gave.
-    struct BallSupport {
-        Vec3 normal{};                 // out of the surface, into the ball
-        std::size_t body = kBodyCount; // kBodyCount for the floor, kDotOwner for the dot
-    };
-    static constexpr std::size_t kMaxBallSupports = 4;
-    std::array<BallSupport, kMaxBallSupports> ballSupports_{};
-    std::size_t ballSupportCount_ = 0;
-    void gatherBallSupports();
+    void gatherBallSupports(Ball& ball);
     // `except` is a body that must not be counted among the ball's supports -- the
     // one this push is being solved *against*. Its own contact is what the solver is
     // working out, so counting it as a surface the ball is held by makes the answer
@@ -736,27 +705,22 @@ private:
     // hundred and seventy newton seconds that came from nowhere. Every other surface
     // is still there: a wall on the other side of the ball is a wall.
     static constexpr std::size_t kNoBody = kBodyCount + 2;
-    Vec3 ballFree(Vec3 push, std::size_t except = kNoBody) const;
+    static Vec3 ballFree(const Ball& ball, Vec3 push, std::size_t except = kNoBody);
     // The same projection, as the share of the compliance a patch may count on: how
     // much of a push along `way` the ball is free to answer.
-    double ballTake(Vec3 way) const {
+    double ballTake(const Ball& ball, Vec3 way) const {
         const double size = length(way);
         if (!(size > 0.0)) return 1.0;
         const Vec3 unit = way * (1.0 / size);
-        return std::max(0.0, dot(unit, ballFree(unit)));
+        return std::max(0.0, dot(unit, ballFree(ball, unit)));
     }
-    void pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except = kNoBody);
-    static constexpr std::size_t kMaxBallTouches = 8;
-    std::array<BallTouch, kMaxBallTouches> ballTouches_{};
-    std::size_t ballTouchCount_ = 0;
+    void pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except = kNoBody);
     // The meeting this tick that dealt the ball the most, kept in force and kept past
     // the end of the tick: what it gave the ball and what the ball's arrival was worth,
     // in newton seconds, one record per surface it met -- the floor at kBodyCount and a
     // shape at its own index. The touch list above is consumed by the grip before the
     // tick is over, and a bounce is a thing you have to be able to look at afterwards;
     // this is the one record of it that survives. See BallTouch and ballContact().
-    std::array<double, kBodyCount + 1> ballMeetingGiven_{};
-    std::array<double, kBodyCount + 1> ballMeetingArrival_{};
     // Where every shape was when the ball's half of the tick began: its speed and its
     // turn, as the tick's own solve of the shapes left them. A face the ball's grip is
     // measured against is the face the ball met, and that is where it was standing when
@@ -765,9 +729,7 @@ private:
     // a face, the face moves, the grip reads the movement as the face running away and
     // drags the ball after it, and a ball wedged in a corner keeps a speed that carries
     // it nowhere for as long as it is left there.
-    std::array<Vec3, kBodyCount> ballTickSpeed_{};
-    std::array<double, kBodyCount> ballTickSpin_{};
-    void settleBallFriction();
+    void settleBallFriction(Ball& ball);
     // How much weight stands on a body, in newtons: its own, plus whatever the
     // solver found resting on it this tick. A face of the ball that has a body over
     // it is carrying this, and friction is mu times it.
@@ -776,7 +738,10 @@ private:
     // the room, but not inside a solid. A ball placed inside one would have to be
     // driven back out, and nothing in this room is driven out of anything -- it
     // never gets in.
-    bool ballPlacementClear(Vec3 at) const;
+    bool ballPlacementClear(const Ball& ball, Vec3 at) const;
+    // Which ball is under this place on the plane, or kBallCount for none. A click
+    // takes whichever ball it is actually on.
+    std::size_t ballUnderClick(Vec3 at) const;
     // Whether a body can be put down where its corners would be: the mouse may carry
     // it anywhere in the room, but not into another shape, another body's corner, or
     // the ball. Nothing in this room is ever driven out of anything -- it never gets
@@ -785,9 +750,9 @@ private:
     bool bodyPlacementClear(std::size_t index, const std::array<Vec3, kMaxCorners>& wanted) const;
     // Whether anything else in the room is moving enough to reach the ball. A
     // ball asleep on the floor still has to be hit by whatever is falling on it.
-    bool ballNeighboursMoving() const;
+    bool ballNeighboursMoving(const Ball& ball) const;
     // Whether the ball is lying on a surface that can carry it; see the touch file.
-    bool ballRestingOnStillSurface() const;
+    bool ballRestingOnStillSurface(const Ball& ball) const;
     // Answers a ball's contact. A ball against the room shares nothing; a ball
     // against a body shares the answer with the corner it struck, so the ball
     // gives up only what the body takes.
@@ -800,14 +765,16 @@ private:
     // the answer to the speed the ball had *there*, and a tick of gravity is half a
     // metre a second in this room: measured at the start of the tick the blow is too
     // small and measured at the end of it too large, so the moment itself is passed.
-    // The ball against the bob on the rope: two circles, one blow, equal and opposite,
-    // and the ledger written at the place they met with one end for each of them.
-    void ballAgainstBob(Vec3 normal, bool resting, double reached);
-    // Where, along what is left of the ball's walk, the ball's circle and the bob's
-    // first meet. False when they never do.
-    bool bobFirstTouch(Vec3 from, Vec3 travel, double remaining, double& along, Vec3& normal, Vec3& contact,
-                       bool& resting) const;
-    void ballContact(Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
+    // Two balls meeting: two circles, one blow, equal and opposite, and the ledger
+    // written at the place they met with one end for each of them. The same function
+    // answers it whichever of them is moving, because there is nothing about either
+    // ball that makes it the special one.
+    void ballAgainstBall(Ball& ball, std::size_t other, Vec3 normal, bool resting, double reached);
+    // Where, along what is left of `ball`'s walk, its circle and `other`'s first meet.
+    // False when they never do.
+    bool ballFirstTouch(const Ball& ball, const Ball& other, Vec3 from, Vec3 travel, double remaining,
+                        double& along, Vec3& normal, Vec3& contact, bool& resting) const;
+    void ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ballHeld = false, Vec3 contactPoint = {},
                      double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0);
     // A face of the ball, said once: what it is against, and which way out of the
     // ball. The ball's grip is solved for all of its faces at once in
@@ -815,11 +782,11 @@ private:
     // something has to report the face it is against -- and a shape resting on the
     // ball is answered as a *patch*, not through ballContact(), which is why a weight
     // sitting on the crown had no grip at all. See noteBallTouch().
-    void noteBallTouch(std::size_t body, Vec3 normal, Vec3 at);
+    void noteBallTouch(Ball& ball, std::size_t body, Vec3 normal, Vec3 at);
     // The ball meets the point, and the point meets the ball. Both exchange the
     // same momentum along the line between them.
-    void hitBallWithPoint(Vec3 normal);
-    void pointAgainstBall(Vec3 normal);
+    void hitBallWithPoint(Ball& ball, Vec3 normal);
+    void pointAgainstBall(Ball& ball, Vec3 normal);
     // How much say the ball has in a blow that pushes it along `push`, as an inverse
     // mass. It is not simply 1/m: a ball resting on something cannot be driven into
     // it, because the surface underneath answers that part of the blow -- the floor
@@ -835,16 +802,16 @@ private:
     // The fraction of a unit push the ball can actually take: everything, except
     // along the way the surface under it will not let it go. One is a ball in the
     // air or a push along the floor; zero is a push straight down onto it.
-    double ballFreedom(Vec3 push) const {
+    double ballFreedom(const Ball& ball, Vec3 push) const {
         // Only a surface that is actually under it holds it. A ball in mid-air has
         // no support at all, and its last one is not a fact about this tick.
-        if (!ball_.touching || !ball_.standing) return 1.0;
-        const double into = std::max(0.0, -dot(push, ball_.supportNormal));
+        if (!ball.touching || !ball.standing) return 1.0;
+        const double into = std::max(0.0, -dot(push, ball.supportNormal));
         return 1.0 - into * into;
     }
-    double ballCompliance(Vec3 push, bool held) const {
+    double ballCompliance(const Ball& ball, Vec3 push, bool held) const {
         if (held) return 0.0;
-        return ballFreedom(push) / ball_.mass;
+        return ballFreedom(ball, push) / ball.mass;
     }
     // Whether a body has arrived at the resting point this tick. A point that is
     // asleep is not stepped, and a step that is not taken runs no hitscan -- so a
@@ -880,7 +847,8 @@ private:
     // `stepped` says, per body, whether this tick stepped it -- and the two flags
     // do the same for the dot and the ball. Anything that was stepped has already
     // written its own forces and is skipped here.
-    void recordStaticForces(const std::array<bool, kBodyCount>& stepped, bool pointStepped, bool ballStepped);
+    void recordStaticForces(const std::array<bool, kBodyCount>& stepped, bool pointStepped,
+                            const std::array<bool, kBallCount>& ballStepped);
     // The arrows, and the numbers written beside them.
     void placeForceArrows();
     void appendForceLabels(const Camera& camera, NativeFrame& frame);
@@ -888,6 +856,10 @@ private:
     void placeMarkers();
     void interpolate();
     void interpolateBody(Body& body, double alpha);
+    // One ball's place and turn for this frame, and the place its own tick had it at
+    // any fraction of the tick. Both are per ball, because there are two balls.
+    void interpolateBall(Ball& ball, double fraction);
+    static Vec3 ballPlaceAt(const Ball& ball, double t);
 
     Vec3 point_{0, 2, 0}, previous_{0, 2, 0}, shown_{0, 2, 0};
     // The point's speed once the tick's forces had been applied to it, before any
@@ -901,14 +873,10 @@ private:
     std::array<Vec3, 40> ghosts_{};
     std::size_t ghostCount_ = 0, ghostNext_ = 0;
     std::array<Body, kBodyCount> bodies_{};
-    Ball ball_{};
-    // Every blow the ball has been given this tick, summed, in newton seconds.
-    // The ball's account is closed against this: what actually happened to its
-    // momentum, minus the blows written where they landed, is what its support
-    // supplied -- and that is the one force in the room with no solid to hang it on,
-    // so it is the one that has to be worked out rather than assumed.
-    Vec3 ballBlows_{};
-    Pendulum pendulum_{};
+    // Two of one kind. Index 0 is thrown, index 1 hangs on the rope.
+    std::array<Ball, kBallCount> balls_{};
+    // The rope, which is a constraint on one of them and is not part of either.
+    Rope rope_{};
 
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
@@ -955,6 +923,10 @@ private:
     std::array<std::size_t, 40> ghostBatches_{};
     double accumulator_ = 0;
     DragTarget dragTarget_ = DragTarget::None;
+    // Which ball the mouse has hold of. Both are balls, so the hand does not care
+    // which one it took -- but the room has to know, because the other one is not
+    // being carried.
+    std::size_t dragBall_ = kThrowBall;
     std::size_t dragBody_ = kBodyCount;
     Vec3 planeGrab_{}, grabOffset_{};
     // How much of the tick the point spent sliding on something. Friction acts
@@ -979,14 +951,15 @@ private:
     // Which body is holding the point up, or -1 when none is.
     int restingBody_ = -1;
     bool restingOnBall_ = false;
+    // Which ball it is lying on. Both are surfaces a point can rest on -- a ball is a
+    // ball -- so "on a ball" is not an answer; "on that ball" is.
+    std::size_t restingBall_ = kThrowBall;
     // How often the room has had to *repair* an overlap instead of preventing it:
     // a ball found already through a shape at the start of its own tick, a body
     // carried back to where it met the ball, and a ball lifted out sideways from
     // under something. Prevention is the rule and these are the last resort, so
     // they are counted -- a number that only ever goes up in a room where something
     // is still being missed is how the thing being missed gets found.
-    std::size_t ballFoundThrough_ = 0;
     std::size_t bodyStepClamped_ = 0;
-    std::size_t ballLiftedOut_ = 0;
 };
 } // namespace gtc::native

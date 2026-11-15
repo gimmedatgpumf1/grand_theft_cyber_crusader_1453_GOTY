@@ -1,11 +1,14 @@
 // The rope, held to what a rope is.
 //
 // A rope is the one constraint in this room that is not a surface. These checks are
-// the ones that would catch it ceasing to be one: a bob further from its anchor than
+// the ones that would catch it ceasing to be one: a ball further from its anchor than
 // the rope is long, a rope that pushes as well as pulls, a swing that gains energy
-// instead of spending it, a pendulum whose period is not the pendulum's, a ball that
-// passes through the bob, and -- the other way round -- a ball that is stopped by the
-// rope itself, which has no collision and must not have one.
+// instead of spending it, a swing whose period is not the pendulum's, a ball that
+// passes through the ball on the rope, and -- the other way round -- a ball that is
+// stopped by the rope itself, which has no collision and must not have one.
+//
+// The thing on the end of the rope is a ball, so everywhere below it is read and set
+// as a ball: there is no second kind of object here to have its own name.
 
 #include <algorithm>
 #include <cmath>
@@ -49,19 +52,21 @@ void settle(PlaygroundRoom& room, int ticks) {
     for (int tick = 0; tick < ticks; ++tick) room.advance(1.0 / 20.0);
 }
 
-// Puts the ball where it is aimed at the bob, and lets go of it.
+// Puts the ball where it is aimed at the ball on the rope, and lets go of it.
 void throwAtBob(PlaygroundRoom& room, Vec3 velocity, double fromTheSide) {
-    const Vec3 bob = room.bobPosition();
-    room.ball_.position = bob + Vec3{-fromTheSide, 0.0, 0.0};
-    room.ball_.previous = room.ball_.shown = room.ball_.position;
-    room.ball_.velocity = velocity;
-    room.ball_.spin = 0.0;
-    room.ball_.frozen = false;
+    const Vec3 bob = room.ropeBall().position;
+    room.ball(PlaygroundRoom::kThrowBall).position = bob + Vec3{-fromTheSide, 0.0, 0.0};
+    room.ball(PlaygroundRoom::kThrowBall).previous = room.ball(PlaygroundRoom::kThrowBall).shown = room.ball(PlaygroundRoom::kThrowBall).position;
+    room.ball(PlaygroundRoom::kThrowBall).velocity = velocity;
+    room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+    room.ball(PlaygroundRoom::kThrowBall).frozen = false;
 }
 
+// The energy of the ball on the rope: its travel and its height, the only two things a
+// ball on a rope has that a constraint like this can change.
 double bobEnergy(const PlaygroundRoom& room) {
-    return 0.5 * room.bobMass() * gtc::native::dot(room.bobVelocity(), room.bobVelocity()) +
-           room.bobMass() * 9.8 * room.bobPosition().y;
+    const auto& ball = room.ropeBall();
+    return 0.5 * ball.mass * gtc::native::dot(ball.velocity, ball.velocity) + ball.mass * 9.8 * ball.position.y;
 }
 
 }  // namespace
@@ -76,16 +81,16 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
-        const Vec3 before = room.bobPosition();
+        const Vec3 before = room.ropeBall().position;
         settle(room, 400);
-        const double moved = gtc::native::length(room.bobPosition() - before);
+        const double moved = gtc::native::length(room.ropeBall().position - before);
         std::snprintf(detail, sizeof detail,
                       "400 ticks: the bob moved %.3e m (log2 %.1f), it is %.6f m below its anchor, the rope is "
                       "%.3f m and carrying %.3f N against a weight of %.3f N",
-                      moved, moved > 0.0 ? std::log2(moved) : -1000.0, room.ropeAnchor().y - room.bobPosition().y,
-                      room.ropeLength(), room.ropeTension(), room.bobMass() * 9.8);
-        check(moved == 0.0 && std::abs(room.ropeTension() - room.bobMass() * 9.8) < 1e-9 && room.ropeTaut(),
-              "a bob on a rope hangs at rest and stays there", detail);
+                      moved, moved > 0.0 ? std::log2(moved) : -1000.0, room.ropeAnchor().y - room.ropeBall().position.y,
+                      room.ropeLength(), room.ropeTension(), room.ropeBall().mass * 9.8);
+        check(moved == 0.0 && std::abs(room.ropeTension() - room.ropeBall().mass * 9.8) < 1e-9 && room.ropeTaut(),
+              "a ball on a rope hangs at rest and stays there", detail);
     }
 
     // 2. Nothing gets it past its length. Four blows, from a tap to a hard one, with
@@ -101,11 +106,11 @@ int playgroundRopeChecks() {
             throwAtBob(room, Vec3{speed, 0.0, 0.0}, 0.45);
             for (int tick = 0; tick < 400; ++tick) {
                 room.advance(1.0 / 20.0);
-                worst = std::max(worst, room.bobDistance() - room.ropeLength());
+                worst = std::max(worst, room.ropeBallDistance() - room.ropeLength());
                 worstBallIn = std::min(worstBallIn,
-                                       gtc::native::length(room.ballPosition() - room.bobPosition()) -
-                                           (room.ballRadius() + room.bobRadius()));
-                bestSlack = std::max(bestSlack, room.ropeLength() - room.bobDistance());
+                                       gtc::native::length(room.ballPosition() - room.ropeBall().position) -
+                                           (room.ballRadius() + room.ropeBall().radius));
+                bestSlack = std::max(bestSlack, room.ropeLength() - room.ropeBallDistance());
                 ++ticks;
             }
         }
@@ -118,7 +123,7 @@ int playgroundRopeChecks() {
                       worstBallIn > 0.0 ? std::log2(worstBallIn) : -1000.0, bestSlack);
         check(worst <= gtc::native::playground_tick::kQuantum &&
                   worstBallIn >= -gtc::native::playground_tick::kQuantum && bestSlack > 0.1,
-              "the rope holds the bob inside its length, and the bob may come closer", detail);
+              "the rope holds the ball inside its length, and the ball may come closer", detail);
     }
 
     // 3. The swing keeps time. Mass does not appear in theta'' = -(g/L) sin theta, so a
@@ -129,11 +134,12 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
-        room.pendulum_.mass = 1.0e6;  // the air's share of a swing: (c/m) is a millionth
+        room.ball(PlaygroundRoom::kRopeBall).mass = 1.0e6;  // the air's share of a swing: (c/m) is a millionth
         const double length = room.ropeLength();
-        room.pendulum_.position = room.ropeAnchor() + Vec3{std::sin(0.5), -std::cos(0.5), 0.0} * length;
-        room.pendulum_.previous = room.pendulum_.shown = room.pendulum_.position;
-        room.pendulum_.velocity = {};
+        room.ball(PlaygroundRoom::kRopeBall).position = room.ropeAnchor() + Vec3{std::sin(0.5), -std::cos(0.5), 0.0} * length;
+        room.ball(PlaygroundRoom::kRopeBall).previous = room.ball(PlaygroundRoom::kRopeBall).shown =
+            room.ball(PlaygroundRoom::kRopeBall).position;
+        room.ball(PlaygroundRoom::kRopeBall).velocity = {};
         double theta = 0.5, omega = 0.0;
         const double step = (1.0 / 20.0) / 5000.0;
         const double pull = 9.8 / length;
@@ -150,13 +156,13 @@ int playgroundRopeChecks() {
                 theta += step / 6.0 * (k1t + 2.0 * k2t + 2.0 * k3t + k4t);
                 omega += step / 6.0 * (k1o + 2.0 * k2o + 2.0 * k3o + k4o);
             }
-            const Vec3 arm = room.bobPosition() - room.ropeAnchor();
+            const Vec3 arm = room.ropeBall().position - room.ropeAnchor();
             worst = std::max(worst, std::abs(std::atan2(arm.x, -arm.y) - theta));
         }
         std::snprintf(detail, sizeof detail,
                       "8 s of a swing let go from 0.5 rad: the room's bob is at %.9f rad, the same equation "
                       "integrated finely is at %.9f rad -- they never differ by more than %.3e rad (log2 %.1f)",
-                      std::atan2((room.bobPosition() - room.ropeAnchor()).x, -(room.bobPosition() - room.ropeAnchor()).y),
+                      std::atan2((room.ropeBall().position - room.ropeAnchor()).x, -(room.ropeBall().position - room.ropeAnchor()).y),
                       theta, worst, worst > 0.0 ? std::log2(worst) : -1000.0);
         check(worst < 5e-4, "a swing keeps the pendulum's own time", detail);
     }
@@ -169,9 +175,10 @@ int playgroundRopeChecks() {
         room.reset();
         settle(room, 200);
         const double length = room.ropeLength();
-        room.pendulum_.position = room.ropeAnchor() + Vec3{std::sin(0.9), -std::cos(0.9), 0.0} * length;
-        room.pendulum_.previous = room.pendulum_.shown = room.pendulum_.position;
-        room.pendulum_.velocity = {};
+        room.ball(PlaygroundRoom::kRopeBall).position = room.ropeAnchor() + Vec3{std::sin(0.9), -std::cos(0.9), 0.0} * length;
+        room.ball(PlaygroundRoom::kRopeBall).previous = room.ball(PlaygroundRoom::kRopeBall).shown =
+            room.ball(PlaygroundRoom::kRopeBall).position;
+        room.ball(PlaygroundRoom::kRopeBall).velocity = {};
         const double start = bobEnergy(room);
         double highest = start, highestLate = start;
         for (int tick = 0; tick < 1200; ++tick) {
@@ -201,16 +208,16 @@ int playgroundRopeChecks() {
         double residual = 0.0, exchanged = 0.0, bounceBack = 0.0, after = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
             const Vec3 ballWas = room.ballVelocity();
-            const Vec3 bobWas = room.bobVelocity();
-            const Vec3 pairWas = ballWas * room.ball_.mass + bobWas * room.bobMass();
+            const Vec3 bobWas = room.ropeBall().velocity;
+            const Vec3 pairWas = ballWas * room.ball(PlaygroundRoom::kThrowBall).mass + bobWas * room.ropeBall().mass;
             room.advance(1.0 / 20.0);
             const double struck = std::abs(room.ballVelocity().x - ballWas.x);
             if (struck > 0.5) {
-                const Vec3 pairNow = room.ballVelocity() * room.ball_.mass + room.bobVelocity() * room.bobMass();
+                const Vec3 pairNow = room.ballVelocity() * room.ball(PlaygroundRoom::kThrowBall).mass + room.ropeBall().velocity * room.ropeBall().mass;
                 residual = std::abs((pairNow - pairWas).x);
-                exchanged = std::abs((room.bobVelocity() - bobWas).x * room.bobMass());
+                exchanged = std::abs((room.ropeBall().velocity - bobWas).x * room.ropeBall().mass);
                 bounceBack = room.ballVelocity().x;
-                after = room.bobVelocity().x;
+                after = room.ropeBall().velocity.x;
             }
         }
         // The air's own pull over that one tick, from the drag law the room uses.
@@ -219,12 +226,12 @@ int playgroundRopeChecks() {
                                 room.ballRadius() * room.ballRadius();
         const double air = dragBall * 25.0 * (1.0 / 20.0);
         std::snprintf(detail, sizeof detail,
-                      "a ball at 5.0 m/s into a hanging bob: the bob came away at %.3f m/s and the ball was left at "
+                      "a ball at 5.0 m/s into the hanging ball: the bob came away at %.3f m/s and the ball was left at "
                       "%.3f m/s, so the blow moved %.3f kg m/s across the pair; the pair's own total moved by "
                       "%.3e kg m/s -- no more than the %.3e kg m/s the air takes in that tick",
                       after, bounceBack, exchanged, residual, air);
         check(exchanged > 2.5 && std::abs(after) > 2.5 && std::abs(bounceBack) < 0.5 && residual <= 1.05 * air,
-              "the ball takes and gives momentum with the bob, and nothing else takes any", detail);
+              "the ball takes and gives momentum with the ball on the rope, and nothing else takes any", detail);
     }
 
     // 6. The rope has no collision. A ball thrown through the line of the rope must be
@@ -238,11 +245,11 @@ int playgroundRopeChecks() {
             const Vec3 anchor = room.ropeAnchor();
             // The rope hangs from the anchor down to the bob at 1.10 m: this is a third
             // of the way down it, well clear of the bob itself.
-            room.ball_.position = Vec3{anchor.x + (throughTheRope ? -0.30 : 0.30), anchor.y - 0.45, 0.0};
-            room.ball_.previous = room.ball_.shown = room.ball_.position;
-            room.ball_.velocity = Vec3{6.0, 0.0, 0.0};
-            room.ball_.spin = 0.0;
-            room.ball_.frozen = false;
+            room.ball(PlaygroundRoom::kThrowBall).position = Vec3{anchor.x + (throughTheRope ? -0.30 : 0.30), anchor.y - 0.45, 0.0};
+            room.ball(PlaygroundRoom::kThrowBall).previous = room.ball(PlaygroundRoom::kThrowBall).shown = room.ball(PlaygroundRoom::kThrowBall).position;
+            room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{6.0, 0.0, 0.0};
+            room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+            room.ball(PlaygroundRoom::kThrowBall).frozen = false;
             slowest = 1e9;
             crossed = false;
             for (int tick = 0; tick < 3; ++tick) {

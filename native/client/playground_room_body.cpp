@@ -448,114 +448,119 @@ void PlaygroundRoom::gatherContacts(ManifoldSet& patches, double band) const {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
-        Vec3 way{0, 1, 0}, at{};
-        const double gap = bodyBallGap(index, way, at);
-        // Touching, not "within the reach of a tick".
-        //
-        // This used to be `gap > band`, and the band is as big as the furthest
-        // anything can be carried in a tick -- which for a spinning shape is its
-        // *turn*, and a triangle leaning on a ball with a slanted face turns. Measured
-        // in the King's corner: the pair was answered as a contact at a gap of 36 um,
-        // thirty-six times the room's own definition of touching, because the
-        // triangle's turn swept forty microns of its outline in one tick. A shape is
-        // not in contact with anything it is not touching, and a perfectly still pair
-        // was being handed a contact it did not have: the triangle's spinning surface
-        // was read as a surface sweeping into the ball, the ball was answered with that
-        // surface speed -- five hundredths of a millimetre per second, every tick -- and
-        // the friction solve turned it into a roll the ball could never lose.
-        //
-        // What is left is an arrival, and an arrival is answered as one: a shape that
-        // really will touch the ball before this tick is over is answered here, at the
-        // instant it arrives -- see hitAt -- instead of being carried into the surface
-        // and having its whole step refused. A shape that is merely *near* the ball is
-        // not: it is not touching it, and a contact it does not have is a contact that
-        // answers a surface speed it never had.
-        if (gap > playground_tick::kQuantum) {
-            const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(at), way);
-            if (!(closing > 0.0) || !(gap <= closing * kTick)) continue;
-        }
-        // Does it get there? A contact is a meeting, and a shape that is still on its
-        // way to the ball has not met it: it is falling, and falling is the walk's
-        // business. The band is the reach of one tick, so a shape inside it may or may
-        // not arrive before the tick is over -- and answering it either way is how the
-        // bounce got its free height. A cube 90 mm above the ball's crown, closing at
-        // 1.46 m/s, covers 73 mm in a tick and arrives at neither: answered, it was
-        // turned around in mid-air and placed nine centimetres higher than it ever
-        // fell to, which is a bounce off a surface it never touched. Small drops came
-        // back at a hundred and fifty per cent of their own height that way.
-        //
-        // So the reach is the distance the tick can actually cover, and a shape beyond
-        // it is not answered at all -- it falls, and next tick it arrives. A shape
-        // within it is answered at the instant it arrives, which is what hitAt is for.
-        //
-        // The distance is the closing speed at the closest point, which is what
-        // carries the outline into the ball; a shape sliding past does not close at
-        // all and is not an arrival however near it is.
-        const double reach = std::max(0.0, -dot(pointSpeed(body, at) - ballPointSpeed(at), way)) * kTick;
-        // A shape already resting on the ball is not arriving anywhere, and asking it
-        // to close a distance would throw its contact away every tick it stood still:
-        // it would be held up for one tick, dropped for the next, and would walk its
-        // way along the ball in a tremor. What is arriving is the shape with nothing
-        // under it, and that is the only one the reach is for.
-        // Only a shape that is *approaching* can fail to arrive. One that is not
-        // closing at all is not on its way anywhere: it is resting, or sliding along
-        // the ball, and that is a contact whether or not it covers any ground.
-        if (reach > 0.0 && gap > reach) continue;
-        // Whose contact is it? A meeting belongs to the one that arrived at it, and the
-        // room has two solvers for it, which are not interchangeable.
-        //
-        // The ball's own walk answers *the ball* arriving at a shape: it carries the
-        // ball to the instant of the meeting, it knows the ball is round and it bounces
-        // it, which is the ball's restitution and its spin. This solver answers *a
-        // shape* arriving at the ball: it is a contact against a surface, and it has no
-        // restitution in it at all.
-        //
-        // So a ball flying at a shape has to be the walk's, and it was not: the ball was
-        // gathered here, answered as a resting contact, and stopped dead. Measured, a
-        // ball fired at 6 m/s at the flat middle of a cube's face came off at 0.00 m/s
-        // of separation -- no bounce at all -- and the two of them left the meeting
-        // travelling together at 0.57 m/s. The check that fires it every which way read
-        // side restitution 0.0000 against the floor's 0.8120. What it was measuring was
-        // this: the ball never got to bounce, because the shape's half had already
-        // answered the blow as a push.
-        //
-        // What stays here is the shape's own arrival -- a weight coming down on the
-        // crown -- and the resting pair, which is the case this patch was made for: a
-        // shape standing on a ball, held up by it. A ball rolling along under a shape
-        // is not closing on it either: a surface point of a rolling ball moves *along*
-        // the shape it carries, not into it.
-        {
-            const double bodyClosing = -dot(pointSpeed(body, at), way);  // the shape, into the ball
-            const double ballClosing = dot(ballPointSpeed(at), way);     // the ball, into the shape
-            // A shape that is not moving towards the ball, and a ball that is, is the
-            // ball's meeting: leave it to the walk.
-            if (!(bodyClosing > 0.0) && ballClosing > 0.0) continue;
-        }
-        Manifold patch;
-        patch.body = index;
-        patch.ball = true;
-        patch.ends = 1;
-        patch.point[0] = at;
-        patch.gap[0] = gap;
-        patch.normal = way;  // out of the ball, into the body
-        patch.kind = ForceKind::Ball;
-        // Was this pair already resting against each other when the tick opened?
-        // If so it is not an arrival, and this half of the tick has no blow to answer:
-        // the ball's own half solves it, with the floor under the ball in the same
-        // system. Measured in the King's corner -- a ball under the triangle's slope --
-        // the shapes' half answered the *triangle's own weight* as though it were an
-        // arrival at the ball: the ball was handed 0.155 m/s sideways and 3.2 rad/s of
-        // spin every tick, the ball's grip took nine tenths of it back, and the tenth
-        // that was left is the ball that would not stop creeping.
-        {
-            const Vec3 arm = at - body.centre;
-            const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
-                               body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
-            // Both sides as the tick found them: this runs before the solve, so the
-            // ball's own speed and turn are still the ones it arrived with.
-            if (dot(arrived - ballPointSpeed(at), way) >= 0.0) patch.quiet = true;
-        }
-        patches.add(patch);
+        // Two balls, one at a time: each is the same kind of ball and each is met in
+        // the same way. Nothing here knows which one is on the rope.
+    for (std::size_t ballIndex = 0; ballIndex < kBallCount; ++ballIndex) {
+        const Ball& ball = balls_[ballIndex];
+            Vec3 way{0, 1, 0}, at{};
+            const double gap = bodyBallGap(ball, index, way, at);
+            // Touching, not "within the reach of a tick".
+            //
+            // This used to be `gap > band`, and the band is as big as the furthest
+            // anything can be carried in a tick -- which for a spinning shape is its
+            // *turn*, and a triangle leaning on a ball with a slanted face turns. Measured
+            // in the King's corner: the pair was answered as a contact at a gap of 36 um,
+            // thirty-six times the room's own definition of touching, because the
+            // triangle's turn swept forty microns of its outline in one tick. A shape is
+            // not in contact with anything it is not touching, and a perfectly still pair
+            // was being handed a contact it did not have: the triangle's spinning surface
+            // was read as a surface sweeping into the ball, the ball was answered with that
+            // surface speed -- five hundredths of a millimetre per second, every tick -- and
+            // the friction solve turned it into a roll the ball could never lose.
+            //
+            // What is left is an arrival, and an arrival is answered as one: a shape that
+            // really will touch the ball before this tick is over is answered here, at the
+            // instant it arrives -- see hitAt -- instead of being carried into the surface
+            // and having its whole step refused. A shape that is merely *near* the ball is
+            // not: it is not touching it, and a contact it does not have is a contact that
+            // answers a surface speed it never had.
+            if (gap > playground_tick::kQuantum) {
+                const double closing = -dot(pointSpeed(body, at) - ballPointSpeed(ball, at), way);
+                if (!(closing > 0.0) || !(gap <= closing * kTick)) continue;
+            }
+            // Does it get there? A contact is a meeting, and a shape that is still on its
+            // way to the ball has not met it: it is falling, and falling is the walk's
+            // business. The band is the reach of one tick, so a shape inside it may or may
+            // not arrive before the tick is over -- and answering it either way is how the
+            // bounce got its free height. A cube 90 mm above the ball's crown, closing at
+            // 1.46 m/s, covers 73 mm in a tick and arrives at neither: answered, it was
+            // turned around in mid-air and placed nine centimetres higher than it ever
+            // fell to, which is a bounce off a surface it never touched. Small drops came
+            // back at a hundred and fifty per cent of their own height that way.
+            //
+            // So the reach is the distance the tick can actually cover, and a shape beyond
+            // it is not answered at all -- it falls, and next tick it arrives. A shape
+            // within it is answered at the instant it arrives, which is what hitAt is for.
+            //
+            // The distance is the closing speed at the closest point, which is what
+            // carries the outline into the ball; a shape sliding past does not close at
+            // all and is not an arrival however near it is.
+            const double reach = std::max(0.0, -dot(pointSpeed(body, at) - ballPointSpeed(ball, at), way)) * kTick;
+            // A shape already resting on the ball is not arriving anywhere, and asking it
+            // to close a distance would throw its contact away every tick it stood still:
+            // it would be held up for one tick, dropped for the next, and would walk its
+            // way along the ball in a tremor. What is arriving is the shape with nothing
+            // under it, and that is the only one the reach is for.
+            // Only a shape that is *approaching* can fail to arrive. One that is not
+            // closing at all is not on its way anywhere: it is resting, or sliding along
+            // the ball, and that is a contact whether or not it covers any ground.
+            if (reach > 0.0 && gap > reach) continue;
+            // Whose contact is it? A meeting belongs to the one that arrived at it, and the
+            // room has two solvers for it, which are not interchangeable.
+            //
+            // The ball's own walk answers *the ball* arriving at a shape: it carries the
+            // ball to the instant of the meeting, it knows the ball is round and it bounces
+            // it, which is the ball's restitution and its spin. This solver answers *a
+            // shape* arriving at the ball: it is a contact against a surface, and it has no
+            // restitution in it at all.
+            //
+            // So a ball flying at a shape has to be the walk's, and it was not: the ball was
+            // gathered here, answered as a resting contact, and stopped dead. Measured, a
+            // ball fired at 6 m/s at the flat middle of a cube's face came off at 0.00 m/s
+            // of separation -- no bounce at all -- and the two of them left the meeting
+            // travelling together at 0.57 m/s. The check that fires it every which way read
+            // side restitution 0.0000 against the floor's 0.8120. What it was measuring was
+            // this: the ball never got to bounce, because the shape's half had already
+            // answered the blow as a push.
+            //
+            // What stays here is the shape's own arrival -- a weight coming down on the
+            // crown -- and the resting pair, which is the case this patch was made for: a
+            // shape standing on a ball, held up by it. A ball rolling along under a shape
+            // is not closing on it either: a surface point of a rolling ball moves *along*
+            // the shape it carries, not into it.
+            {
+                const double bodyClosing = -dot(pointSpeed(body, at), way);  // the shape, into the ball
+                const double ballClosing = dot(ballPointSpeed(ball, at), way);     // the ball, into the shape
+                // A shape that is not moving towards the ball, and a ball that is, is the
+                // ball's meeting: leave it to the walk.
+                if (!(bodyClosing > 0.0) && ballClosing > 0.0) continue;
+            }
+            Manifold patch;
+            patch.body = index;
+            patch.ball = ballIndex;
+            patch.ends = 1;
+            patch.point[0] = at;
+            patch.gap[0] = gap;
+            patch.normal = way;  // out of the ball, into the body
+            patch.kind = ForceKind::Ball;
+            // Was this pair already resting against each other when the tick opened?
+            // If so it is not an arrival, and this half of the tick has no blow to answer:
+            // the ball's own half solves it, with the floor under the ball in the same
+            // system. Measured in the King's corner -- a ball under the triangle's slope --
+            // the shapes' half answered the *triangle's own weight* as though it were an
+            // arrival at the ball: the ball was handed 0.155 m/s sideways and 3.2 rad/s of
+            // spin every tick, the ball's grip took nine tenths of it back, and the tenth
+            // that was left is the ball that would not stop creeping.
+            {
+                const Vec3 arm = at - body.centre;
+                const Vec3 arrived{body.arrivalVelocity.x - body.arrivalSpin * arm.y,
+                                   body.arrivalVelocity.y + body.arrivalSpin * arm.x, 0.0};
+                // Both sides as the tick found them: this runs before the solve, so the
+                // ball's own speed and turn are still the ones it arrived with.
+                if (dot(arrived - ballPointSpeed(ball, at), way) >= 0.0) patch.quiet = true;
+            }
+            patches.add(patch);
+    }
     }
     // Another shape, met over the whole span the two of them share. The separating
     // axis gives the way the load can go and the span of the face lying on the other
@@ -660,7 +665,9 @@ void PlaygroundRoom::tickBodies() {
         for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
         reach = std::max(reach, (length(body.velocity) + std::abs(body.spin) * furthest) * kTick);
     }
-    reach = std::max(reach, length(ball_.velocity) * kTick);
+    // How far a ball can get in a tick: every ball, because every one of them is
+    // something a shape can arrive at.
+    for (const Ball& ball : balls_) reach = std::max(reach, length(ball.velocity) * kTick);
     const double band = reach;
     // A load that arrives before this tick ends is a load arriving, so the wake is
     // asked with the same reach the patches are gathered with.
@@ -668,15 +675,17 @@ void PlaygroundRoom::tickBodies() {
     // What is holding the ball up, gathered before the tick's solve moves anything:
     // the patches are solved against the ball, and a ball resting on the floor is
     // answered through the floor. See gatherBallSupports().
-    gatherBallSupports();
+    for (Ball& ball : balls_) gatherBallSupports(ball);
     // The faces of the ball are this tick's, and this is where the tick opens them:
     // before the bodies are solved, so that every shape against the ball is in the
     // list before the ball's own walk adds the ones it meets. Emptied at the start of
     // the tick and not at the end of the ball's half, or the shape being carried would
     // be registered and then erased. See noteBallTouch() and settleBallFriction().
-    ballTouchCount_ = 0;
-    ballMeetingGiven_.fill(0.0);
-    ballMeetingArrival_.fill(0.0);
+    for (Ball& ball : balls_) {
+        ball.touchCount = 0;
+        ball.meetingGiven.fill(0.0);
+        ball.meetingArrival.fill(0.0);
+    }
     ManifoldSet& patches = tickPatches_;
     gatherContacts(patches, band);
     // Every patch that is a meeting with the ball is a face the ball is against, and
@@ -685,8 +694,8 @@ void PlaygroundRoom::tickBodies() {
     // ballContact(), and without this the ball gave it no grip whatsoever.
     for (std::size_t i = 0; i < patches.count; ++i) {
         const Manifold& patch = patches.items[i];
-        if (!patch.ball) continue;
-        noteBallTouch(patch.body, patch.normal * -1.0, patch.point[0]);
+        if (patch.ball >= kBallCount) continue;
+        noteBallTouch(balls_[patch.ball], patch.body, patch.normal * -1.0, patch.point[0]);
     }
     solveContacts(patches);
     advanceBodies(kTick);

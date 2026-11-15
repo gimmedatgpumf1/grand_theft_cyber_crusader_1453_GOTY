@@ -61,12 +61,12 @@ constexpr double kAgree = 1e-9;  // N s
 // Only a surface it is *on*, not one it is falling towards: an arrival is the walk's
 // business, where the bounce is. A ball within a micrometre of a surface is on it --
 // that is the room's whole idea of touching.
-void PlaygroundRoom::gatherBallSupports() {
-    ballSupportCount_ = 0;
+void PlaygroundRoom::gatherBallSupports(Ball& ball) {
+    ball.supportCount = 0;
     const auto hold = [&](Vec3 normal, std::size_t body) {
         const double size = length(normal);
-        if (!(size > 0.0) || ballSupportCount_ >= kMaxBallSupports) return;
-        ballSupports_[ballSupportCount_++] = BallSupport{normal * (1.0 / size), body};
+        if (!(size > 0.0) || ball.supportCount >= Ball::kMaxSupports) return;
+        ball.supports[ball.supportCount++] = BallSupport{normal * (1.0 / size), body};
     };
     // The floor, and only the floor.
     //
@@ -88,7 +88,7 @@ void PlaygroundRoom::gatherBallSupports() {
     // step of it is momentum somebody actually had. What the floor answers is
     // answered by nobody and costs nothing, which is why it is the one that may be a
     // support.
-    if (ball_.position.y <= ball_.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
+    if (ball.position.y <= ball.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
 }
 
 // The answer to a whole configuration of patches at once.
@@ -162,7 +162,9 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // patches' own bias and compliance are made of.
         const std::size_t count = patch.ends;
         Body* body = &bodies_[patch.body];
-        Body* other = (!patch.ball && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
+        const bool onABall = patch.ball < kBallCount;
+        Ball* ballSide = onABall ? &balls_[patch.ball] : nullptr;
+        Body* other = (!onABall && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
         // A body asleep is a surface, for the same reason the ball is: it has no speed
         // for a contact to change and nothing in the room can move it, so it may not
         // take a share of anything. Treated as movable it would be pushed by every
@@ -184,12 +186,12 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // nothing, which is a ball that is not there. A contact that is merely
         // resting closes at nothing and does not wake it, so a shape sitting on a
         // sleeping ball still cannot buzz it awake.
-        if (patch.ball && ball_.frozen) {
+        if (onABall && ballSide->frozen) {
             for (std::size_t k = 0; k < count; ++k) {
                 const double closing =
-                    dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(patch.point[k]), patch.normal);
+                    dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(*ballSide, patch.point[k]), patch.normal);
                 if (closing < -kRestSpeed) {
-                    ball_.frozen = false;
+                    ballSide->frozen = false;
                     break;
                 }
             }
@@ -205,8 +207,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // the floor answers, and every one of those steps is in the ledger. Between
         // them they add up to the ball's speed not changing, which is what a ball
         // pressed into the ground does -- and not one newton of it came from nowhere.
-        const bool ballFixed = patch.ball && ball_.frozen;
-        const double ballMoment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
+        const bool ballFixed = onABall && ballSide->frozen;
+        const double ballMoment = 0.4 * ballSide->mass * ballSide->radius * ballSide->radius;
         const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
         const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
         // How fast a place on the body is going away from the other side of the
@@ -215,8 +217,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             Vec3 otherSpeed{};
             if (other != nullptr) {
                 if (!otherFixed) otherSpeed = pointSpeed(*other, at);
-            } else if (patch.ball) {
-                if (!ballFixed) otherSpeed = ballPointSpeed(at);
+            } else if (onABall) {
+                if (!ballFixed) otherSpeed = ballPointSpeed(*ballSide, at);
             }
             return dot(pointSpeed(*body, at) - otherSpeed, direction);
         };
@@ -235,8 +237,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // reading more than the drop. What the floor blocks is one component: take
         // that out and give the ball the rest of the push, all of it.
         const auto free = [&](Vec3 impulse) {
-            if (!patch.ball || ballFixed || !ball_.touching || !ball_.standing) return impulse;
-            return impulse - ball_.supportNormal * dot(impulse, ball_.supportNormal);
+            if (!onABall || ballFixed || !ballSide->touching || !ballSide->standing) return impulse;
+            return impulse - ballSide->supportNormal * dot(impulse, ballSide->supportNormal);
         };
         const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
             // The share this body gives is the share it actually gives, read from the
@@ -270,7 +272,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                              lever(at - other->centre, partner) *
                                  lever(pushAt - other->centre, direction) / other->moment;
                 }
-            } else if (patch.ball) {
+            } else if (onABall) {
                 if (!ballFixed) {
                     // The compliance has to be the compliance of the impulse that is
                     // going to be applied, at the place it is going to be applied.
@@ -289,10 +291,11 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     // was handed all of it. Read at the place the push really lands,
                     // the normal lever is exactly nought and the tangential one is
                     // exactly the radius, and the answer is the sphere's own.
-                    const Vec3 onBall = ball_.position + patch.normal * ball_.radius;
-                    value += dot(direction, ballFree(toward, patch.body)) / ball_.mass +
-                             lever(onBall - ball_.position, direction) *
-                                 lever(onBall - ball_.position, ballFree(toward, patch.body)) / ballMoment;
+                    const Vec3 onBall = ballSide->position + patch.normal * ballSide->radius;
+                    value += dot(direction, ballFree(*ballSide, toward, patch.body)) / ballSide->mass +
+                             lever(onBall - ballSide->position, direction) *
+                                 lever(onBall - ballSide->position, ballFree(*ballSide, toward, patch.body)) /
+                                 ballMoment;
                 }
             }
             return value;
@@ -300,7 +303,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         const auto pushOther = [&](Vec3 at, Vec3 impulse, ForceKind kind) {
             if (other != nullptr) {
                 if (!otherFixed) pushBody(*other, at, impulse, kind);
-            } else if (patch.ball) {
+            } else if (onABall) {
                 // Where the ball is touched is on the ball, and it is on the radius
                 // that points at the face -- not at the face's own corner. A round ball
                 // pressed by a flat face meets it at one point, and that point lies on
@@ -312,7 +315,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // one of those radians is a surface speed the next contact answers.
                 // The lever is the radius along the normal, and the door is shut.
                 if (!ballFixed)
-                    pushBallSupported(ball_.position + patch.normal * ball_.radius, impulse, kind, patch.body);
+                    pushBallSupported(*ballSide, ballSide->position + patch.normal * ballSide->radius, impulse, kind,
+                                      patch.body);
             }
         };
         const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
@@ -442,7 +446,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 // metres a second of it, from a shape that has not touched it yet.
                 // The walk carries both of them to the instant they meet; what is
                 // answered here is the closing speed at that instant.
-                const bool spendsClearance = !patch.ball && patch.rebound[k] == 0.0;
+                const bool spendsClearance = !onABall && patch.rebound[k] == 0.0;
                 u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
                 // Both halves of the matrix, because what one end is given at the
                 // other end's place is what the other end is given at its own: the
@@ -597,14 +601,14 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         // gave it. Solved here as well, the same face was gripped twice, once with
         // the shape taken and once without, and the ball's turn was taken off it by
         // an impulse nothing on the other side ever felt.
-        if (withGrip && !patch.ball) {
+        if (withGrip && !onABall) {
         const double staticMu =
             other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
-            : patch.ball   ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
+            : onABall     ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
                            : body->staticFriction;
         const double kineticMu =
             other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
-            : patch.ball   ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
+            : onABall     ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
                            : body->kineticFriction;
         // The ends that are pressed, and how much load is under the whole face.
         //
@@ -668,7 +672,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         // This body is against the ball, and it is worth remembering: a contact that
         // is still there next tick has not arrived at it.
-        if (patch.ball && patch.normalImpulse[0] > 0.0) body->onBall = true;
+        if (onABall && patch.normalImpulse[0] > 0.0) body->onBall = true;
         // What is under each end decides what each body is standing on.
         //
         // A patch is one meeting, held by whichever of the two is the lower-numbered
@@ -683,7 +687,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             if (!(patch.normalImpulse[k] > 0.0)) continue;
             if (patch.normal.y > 0.5) {
                 ++body->contacts;
-                if (other == nullptr && !patch.ball) {
+                if (other == nullptr && !onABall) {
                     body->touchingPlane = true;
                 } else if (other != nullptr) {
                     body->onBody = true;

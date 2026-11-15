@@ -25,19 +25,6 @@ using namespace playground_detail;
 // is playground_ball_touch.cpp. There is no speed at which one rule turns into
 // another.
 
-// A ball that is asleep is not stepped, but only while nothing can reach it. The
-// dot and every body count: if any of them is moving, the ball is looked at.
-bool PlaygroundRoom::ballNeighboursMoving() const {
-    if (!pointFrozen_ && length(velocity_) > 0.0) return true;
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        if (!bodies_[index].frozen) return true;
-    }
-    // The bob on its rope is a solid too, and a bob swinging at a sleeping ball is
-    // something arriving at it.
-    if (length(pendulum_.position - pendulum_.previous) > 0.0) return true;
-    return false;
-}
-
 // The gap between a body's outline and the ball's surface: how far apart they are,
 // which way the body has to travel to be further from the ball, and the place the
 // two of them would touch. Negative when the ball is already into the outline.
@@ -45,13 +32,13 @@ bool PlaygroundRoom::ballNeighboursMoving() const {
 // The bodies are walked first and the ball afterwards, so for the length of the
 // bodies' walk the ball is a surface that stays where it is; this is what the walk
 // measures its step against, and what it stops at.
-double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const {
+double PlaygroundRoom::bodyBallGap(const Ball& ball, std::size_t index, Vec3& way, Vec3& at) const {
     const Body& body = bodies_[index];
     way = Vec3{0, 1, 0};
-    at = ball_.position;
+    at = ball.position;
     if (body.count == 0) return 1e30;
     const OutlineGap gap =
-        outlineGap(ball_.position, body.position.data(), body.position.data(), body.count, 1.0);
+        outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0);
     way = gap.normal * -1.0;
     // Where the two meet is on the ball's own surface, in the direction the body
     // lies from its centre. It is not the body's nearest point: a round ball pressed
@@ -60,13 +47,13 @@ double PlaygroundRoom::bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const
     // the body's point and a ball wedged on the end of a face is answered half a
     // metre from where it is really pressed, which is a lever about the ball's
     // centre that nothing in the room gave it.
-    at = ball_.position + way * ball_.radius;
-    return gap.gap - ball_.radius;
+    at = ball.position + way * ball.radius;
+    return gap.gap - ball.radius;
 }
 
 
-void PlaygroundRoom::tickBall() {
-    Ball& ball = ball_;
+void PlaygroundRoom::tickBall(Ball& ball) {
+    const std::size_t ballIndex = std::size_t(&ball - balls_.data());
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
     // ball -- and this half of the tick only adds the faces the ball's own walk meets.
@@ -74,8 +61,8 @@ void PlaygroundRoom::tickBall() {
     // face it most needs a grip on: a cube resting on the crown was registered, then
     // erased, and the ball went on being greased under a weight it was pressing on.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        ballTickSpeed_[index] = bodies_[index].velocity;
-        ballTickSpin_[index] = bodies_[index].spin;
+        ball.tickSpeed[index] = bodies_[index].velocity;
+        ball.tickSpin[index] = bodies_[index].spin;
     }
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
@@ -95,7 +82,7 @@ void PlaygroundRoom::tickBall() {
         ball.standing = true;
         return;
     }
-    if (ball.frozen && !ballNeighboursMoving()) return;
+    if (ball.frozen && !ballNeighboursMoving(ball)) return;
     ball.frozen = false;
     // Was the ball already lying on the floor when this tick began? A ball that was
     // is in contact, and a contact is not an arrival: it may not bounce off the
@@ -143,7 +130,7 @@ void PlaygroundRoom::tickBall() {
     //
     // And the floor is asked where the floor is, not where a contact list says.
     //
-    // This used to be read out of ballTouches_ -- any face whose owner was not a
+    // This used to be read out of ball.touches -- any face whose owner was not a
     // shape -- and that list has not been filled in yet when this line runs: it is
     // emptied at the top of the shapes' half of the tick, filled with the shapes'
     // own patches, and the ground is not one of those. So a ball lying on the ground
@@ -172,7 +159,7 @@ void PlaygroundRoom::tickBall() {
     // falls -- which is what the outgoing half of a bounce is, and it is the one thing
     // this rule has to keep. A ball pressed sideways along the floor is not leaving it.
     const bool leaving = ball.touching && dot(ball.velocity, ball.supportNormal) > 0.0;
-    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || ballRestingOnStillSurface());
+    const bool held = ball.touching && ball.standing && !leaving && (onTheFloor || ballRestingOnStillSurface(ball));
 
     // Forces for this tick: weight, and the air it has to push through. Both are
     // forces in newtons in one accumulator, and the integrator turns the pair of
@@ -180,7 +167,7 @@ void PlaygroundRoom::tickBall() {
     // falls for exactly that reason.
     const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
     ball.force = {};
-    addForce(ball.position, weight, ForceKind::Gravity, &ball.force, kBallOwner);
+    addForce(ball.position, weight, ForceKind::Gravity, &ball.force, ballOwner(ballIndex));
     if (held) {
         // The surface under it carries it, and that force is not written here: it is
         // written at the end of the tick, by the account below, together with
@@ -193,7 +180,7 @@ void PlaygroundRoom::tickBall() {
     }
     // The air, on everything that moves through it -- held up or not. See
     // ballAirDrag() for the law and for why it is solved rather than stepped into.
-    ball.velocity = ballAirDrag(ball.velocity);
+    ball.velocity = ballAirDrag(ball, ball.velocity);
     // And the room's resolution, as everywhere else: a ball that cannot carry
     // itself a micrometre in a tick is not moving.
     ball.velocity = playground_tick::resolved(playground_tick::accelerated(ball.velocity, ball.force, ball.mass));
@@ -368,11 +355,12 @@ void PlaygroundRoom::tickBall() {
         double depth = 0.0;
         Vec3 normal{0, 1, 0};
         Vec3 contactPoint = ball.position;
-        int what = -1;  // -2 the floor, -3 the bob on its rope, otherwise a body
+        int what = -1;  // -2 the floor, -3 the other ball, otherwise a body
     // One blow from the bob per tick, like one per shape: a bob met again in what is
     // left of the tick has already given its answer, and this time it only stops the
     // ball.
-    bool bobAnswered = false;
+    std::array<bool, kBallCount> otherAnswered{};
+    std::size_t otherIndex = 0;
         // Whether the meeting that wins this iteration was already a contact when
         // the tick began. It travels with the meeting, not with the last body that
         // happened to be looked at.
@@ -386,23 +374,25 @@ void PlaygroundRoom::tickBall() {
         // The floor is the one thing nothing gets below, so it is met whenever the
         // ball is at it or on its way through it -- and if the ball is somehow
         // already under it, that is answered at once too.
-        // The bob on its rope. It is a circle and the ball is a circle, so their
-        // meeting is solved outright; see bobFirstTouch. The bob is stepped before the
-        // ball, so its whole travel through this tick is already known, and the sweep is
-        // between two moving things -- neither can be overtaken by the other.
-        if (!bobAnswered) {
+        // The other balls. A ball is a circle and so is this one, so their meeting is
+        // solved outright -- see ballFirstTouch. The other ball's travel through this
+        // tick is known, so the sweep is between two moving things and neither can be
+        // overtaken by the other, at any speed either of them is going.
+        for (std::size_t other = 0; other < kBallCount; ++other) {
+            if (&balls_[other] == &ball || otherAnswered[other]) continue;
             double alongTheWalk = 2.0;
             Vec3 meetingNormal{}, meetingPoint{};
             bool alreadyAgainst = false;
-            if (bobFirstTouch(ball.position, travel, remaining, alongTheWalk, meetingNormal, meetingPoint,
-                              alreadyAgainst) &&
-                alongTheWalk < first) {
-                first = alongTheWalk;
-                normal = meetingNormal;
-                contactPoint = meetingPoint;
-                what = -3;
-                meetingResting = alreadyAgainst;
-            }
+            if (!ballFirstTouch(ball, balls_[other], ball.position, travel, remaining, alongTheWalk, meetingNormal,
+                                meetingPoint, alreadyAgainst))
+                continue;
+            if (!(alongTheWalk < first)) continue;
+            first = alongTheWalk;
+            normal = meetingNormal;
+            contactPoint = meetingPoint;
+            what = -3;
+            otherIndex = other;
+            meetingResting = alreadyAgainst;
         }
         if (!floorAnswered && (ball.position.y < ball.radius || (next.y < ball.radius && travel.y < 0.0))) {
             // Not negative zero: a distance of zero along a downward step divides
@@ -494,15 +484,15 @@ void PlaygroundRoom::tickBall() {
                     // through the floor -- does the ball step aside, and only then is
                     // it a miss worth counting.
                     const double through = ball.radius - on.gap;
-                    if (!pushBodyOutOfBall(index, on.normal, through)) {
-                        ++ballFoundThrough_;
+                    if (!pushBodyOutOfBall(ball, index, on.normal, through)) {
+                        ++ball.foundThrough;
                         ball.position = ball.position + on.normal * through;
                     }
                 }
                 ball.touching = true;
                 const bool answer = !answered[index];
                 if (answer) answered[index] = true;
-                ballContact(hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
+                ballContact(ball, hit.normal, int(index), held, hit.contact, 0.0, answer, hit.resting, 1.0 - remaining);
                 // Answered, not skipped. What is left of the tick is still the
                 // ball's to spend, and the face is still a face: it is tested again
                 // below, so a ball that gravity has driven into it mid-tick is
@@ -552,7 +542,7 @@ void PlaygroundRoom::tickBall() {
                     // direction, and stopping the ball along the wrong one left it
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
-                    ballContact(endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
+                    ballContact(ball, endOut.normal, int(index), held, endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
                     // is worked out again against it instead of being handed back.
@@ -684,10 +674,11 @@ void PlaygroundRoom::tickBall() {
             // Nothing to answer: the travel was refused by a surface that has already
             // said its piece this tick, or there was no travel to refuse.
         } else if (what == -3) {
-            // The bob, answered here and not by the shapes' solver: it is a solid of
-            // its own and nothing else in the room steps it.
-            bobAnswered = true;
-            ballAgainstBob(normal, meetingResting, reached);
+            // The other ball, answered here and not by the shapes' solver: it is a
+            // ball, so the answer is a ball's -- equal and opposite, at the place they
+            // met, written on the ledger once for each of them.
+            otherAnswered[otherIndex] = true;
+            ballAgainstBall(ball, otherIndex, normal, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else if (what == -2) {
@@ -695,7 +686,7 @@ void PlaygroundRoom::tickBall() {
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
-            ballContact(normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
+            ballContact(ball, normal, -1, held, ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         } else {
@@ -703,7 +694,7 @@ void PlaygroundRoom::tickBall() {
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
-            ballContact(normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
+            ballContact(ball, normal, what, held, contactPoint, depth, exchange, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
         }
@@ -743,8 +734,8 @@ void PlaygroundRoom::tickBall() {
     // already lying on something never arrives at it again.
     // Every surface the ball is against, asked to hold it out of itself. This is the
     // contact constraint, and it is enforced here and again after the grip: see
-    // settleBallSurfaces().
-    settleBallSurfaces();
+    // settleBallSurfaces(ball).
+    settleBallSurfaces(ball);
     // The floor, met without being travelled into.
     //
     // A ball resting on the floor is in contact with it every tick, and this walk
@@ -756,7 +747,7 @@ void PlaygroundRoom::tickBall() {
     // answered against the weight alone, and the weight span it out sideways just
     // as a grip should. The face is what it is whether or not anything moved.
     if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
-        ballContact(Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
+        ballContact(ball, Vec3{0, 1, 0}, -1, held, ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
                     1.0 - remaining);
 
     // The grip is not solved here. It is the last thing the tick does, and the note
@@ -765,7 +756,7 @@ void PlaygroundRoom::tickBall() {
 
     // And the contact constraint once more, because the grip is the last thing that
     // moved the ball and it can push it into a surface it is lying against -- see
-    // settleBallSurfaces(). Same rule, same place in the order: whatever changed the
+    // settleBallSurfaces(ball). Same rule, same place in the order: whatever changed the
     // speed last, the surfaces have the last word after it.
     //
     // The surfaces, though, are only half of that question in a corner. The ball is
@@ -783,7 +774,7 @@ void PlaygroundRoom::tickBall() {
     //   1. the shapes' own supports, so that every face really is where it ends the
     //      tick -- a shape standing on the floor is a still face, and still is what
     //      the ball is measured against;
-    //   2. the ball's faces, solved against those still faces (settleBallSurfaces()
+    //   2. the ball's faces, solved against those still faces (settleBallSurfaces(ball)
     //      reads them once, when it begins, so a pass cannot see its own push);
     //   3. the shapes' supports again, because the ball has just leaned on them and
     //      what it leaned with is the floor's to answer, exactly as another shape's
@@ -795,7 +786,7 @@ void PlaygroundRoom::tickBall() {
     // the dot was dropped on the ball's shoulder. The solve is one pass of the loop
     // the shapes' own solver does, not a repetition of it.
     answerSupportedShapes();
-    settleBallSurfaces();
+    settleBallSurfaces(ball);
     // And the shapes have the last word on themselves: the blow the ball has just
     // given them is answered by what is under them, exactly as it would be if it had
     // come from another shape. Without this the tick would end with a shape holding a
@@ -826,7 +817,7 @@ void PlaygroundRoom::tickBall() {
     // and the energy never moved.
     //
     // Rolling resistance was in the same position and for the same reason. It is a
-    // couple on the turn (M = Crr * N * r, see settleBallFriction()), and it was
+    // couple on the turn (M = Crr * N * r, see settleBallFriction(ball)), and it was
     // taking the turn out of the ball every tick -- and every tick the grip, running
     // earlier, put it straight back by closing a slip that had already been answered.
     // The turn measured -0.0229 rad/s for as long as the room was left alone, exactly
@@ -839,7 +830,7 @@ void PlaygroundRoom::tickBall() {
     // m/s, the ball's turn decays to exactly 0.0000 rad/s, and the room is unchanged
     // after 1400 ticks (70 s). Nothing was added to damp it -- the same air, the same
     // friction, the same Crr; they were simply given the speed to act on.
-    settleBallFriction();
+    settleBallFriction(ball);
     // And the shapes have the last word on themselves, again: the grip is a pair, and
     // the half of it that landed on a shape has just given that shape a speed its own
     // floor answers. Left unanswered until the next tick, that speed is a face moving
@@ -878,11 +869,11 @@ void PlaygroundRoom::tickBall() {
     // ground, so it is written wherever the ball has a surface to be against.
     if (ball.touching) {
         const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
-        const Vec3 support = total - ballBlows_ - weight * kTick;
+        const Vec3 support = total - ball.blows - weight * kTick;
         if (length(support) > 1e-9) {
             const Vec3 where = length(ball.supportNormal) > 0.0 ? ball.supportNormal : Vec3{0, 1, 0};
             addForce(ball.position + where * (-ball.radius), support * (1.0 / kTick), ForceKind::Contact, nullptr,
-                     kBallOwner);
+                     ballOwner(ballIndex));
         }
     }
 
@@ -969,30 +960,4 @@ void PlaygroundRoom::tickBall() {
     ball.angle += ball.spin * kTick;
 }
 
-// The ball against something.// Whether the ball can be put down at this spot. It is the mouse that needs this,
-// not the physics: the ball is carried, not simulated, while it is held, and a
-// ball put down inside a solid would have to be pushed back out -- which is not
-// something this room ever does, because nothing ever gets in. So the put-down
-// itself is where the rule belongs: a spot the ball's circle would not fit in is
-// simply not a spot it can be put.
-bool PlaygroundRoom::ballPlacementClear(Vec3 at) const {
-    if (at.y < ball_.radius - 1e-9) return false;
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        const Body& body = bodies_[index];
-        if (insideOutline(at, body.position.data(), body.count)) return false;
-        for (std::size_t edge = 0; edge < body.count; ++edge) {
-            const Vec3 a = body.position[edge];
-            const Vec3 b = body.position[(edge + 1) % body.count];
-            const Vec3 side = b - a;
-            const double sideLength = std::sqrt(dot(side, side));
-            if (!(sideLength > 1e-12)) continue;
-            // How far the ball's middle is from this edge: closer than its own
-            // radius and its surface would be through the outline.
-            const double t = std::clamp(dot(at - a, side) / dot(side, side), 0.0, 1.0);
-            if (length(at - (a + side * t)) < ball_.radius) return false;
-        }
-    }
-    return true;
-}
-
-}  // namespace gtc::native}  // namespace gtc::native
+}  // namespace gtc::native

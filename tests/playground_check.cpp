@@ -83,7 +83,7 @@ Vec3 drawnCorner(const PlaygroundRoom& room, std::size_t body, std::size_t corne
 }
 
 Vec3 drawnBall(const PlaygroundRoom& room) {
-    const auto& matrix = room.scene_.batches[room.ball_.faceBatch].modelMatrix;
+    const auto& matrix = room.scene_.batches[room.ball(PlaygroundRoom::kThrowBall).faceBatch].modelMatrix;
     return {matrix[12], matrix[13], matrix[14]};
 }
 
@@ -137,7 +137,7 @@ bool anythingOverlapping(PlaygroundRoom& room) {
             if (body.position[i].y < -1e-6) return true;
         Vec3 way{};
         Vec3 at{};
-        if (room.bodyBallGap(one, way, at) < -1e-6) return true;
+        if (room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), one, way, at) < -1e-6) return true;
         for (std::size_t two = 0; two < PlaygroundRoom::kBodyCount; ++two) {
             if (two == one) continue;
             pair_shape::PairManifold meeting;
@@ -376,9 +376,9 @@ void airDependsOnSpeed() {
         PlaygroundRoom bally;
         bally.reset();
         settle(bally, 300);
-        bally.ball_.velocity = Vec3{speed, 0, 0};
-        bally.ball_.frozen = false;
-        bally.tickBall();
+        bally.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{speed, 0, 0};
+        bally.ball(PlaygroundRoom::kThrowBall).frozen = false;
+        bally.tickBall(bally.ball(PlaygroundRoom::kThrowBall));
         const double ball = largestForce(bally, PlaygroundRoom::ForceKind::Drag);
         char detail[220];
         std::snprintf(detail, sizeof detail,
@@ -427,8 +427,8 @@ void bounceIsTheSameEveryWay() {
     // gives back nothing and reads nought; a meeting that gives back e of the arrival
     // reads e, from any direction and at any point in the tick.
     const auto bounceOf = [](const PlaygroundRoom& room, std::size_t surface) {
-        if (!(room.ballMeetingArrival_[surface] > 0.0)) return 0.0;
-        return room.ballMeetingGiven_[surface] / room.ballMeetingArrival_[surface] - 1.0;
+        if (!(room.ball(PlaygroundRoom::kThrowBall).meetingArrival[surface] > 0.0)) return 0.0;
+        return room.ball(PlaygroundRoom::kThrowBall).meetingGiven[surface] / room.ball(PlaygroundRoom::kThrowBall).meetingArrival[surface] - 1.0;
     };
     // Fire the ball at the flat middle of a face: a hand's width away, so that what
     // gravity takes out of its line on the way is nearly nothing.
@@ -437,9 +437,9 @@ void bounceIsTheSameEveryWay() {
         PlaygroundRoom into;
         into.reset();
         settle(into, 300);
-        into.ball_.position = Vec3{cube.x - 0.35 - into.ball_.radius - away, cube.y, 0};
-        into.ball_.velocity = Vec3{6.0, 0, 0};
-        into.ball_.frozen = false;
+        into.ball(PlaygroundRoom::kThrowBall).position = Vec3{cube.x - 0.35 - into.ball(PlaygroundRoom::kThrowBall).radius - away, cube.y, 0};
+        into.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{6.0, 0, 0};
+        into.ball(PlaygroundRoom::kThrowBall).frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
             into.advance(1.0 / 20.0);
             const double met = bounceOf(into, 0);
@@ -456,9 +456,9 @@ void bounceIsTheSameEveryWay() {
         PlaygroundRoom down;
         down.reset();
         settle(down, 300);
-        down.ball_.position = Vec3{3.1, 2.0, 0};
-        down.ball_.velocity = {};
-        down.ball_.frozen = false;
+        down.ball(PlaygroundRoom::kThrowBall).position = Vec3{3.1, 2.0, 0};
+        down.ball(PlaygroundRoom::kThrowBall).velocity = {};
+        down.ball(PlaygroundRoom::kThrowBall).frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
             down.advance(1.0 / 20.0);
             floor = bounceOf(down, PlaygroundRoom::kBodyCount);
@@ -503,20 +503,20 @@ void aRollIsARoll() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 400);
-        room.ball_.frozen = false;
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         // Rolled away from everything else in the room, along the open floor: the
         // ball starts beside the cube, and a roll into the cube is a collision, not a
         // roll.
-        room.ball_.velocity = Vec3{speed, 0, 0};
-        room.ball_.spin = -speed / room.ball_.radius;
-        const double from = room.ball_.position.x;
+        room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{speed, 0, 0};
+        room.ball(PlaygroundRoom::kThrowBall).spin = -speed / room.ball(PlaygroundRoom::kThrowBall).radius;
+        const double from = room.ball(PlaygroundRoom::kThrowBall).position.x;
         slip = 0.0;
         for (int tick = 0; tick < ticks; ++tick) {
             room.advance(1.0 / 20.0);
-            slip = std::max(slip, std::abs(room.ball_.velocity.x + room.ball_.spin * room.ball_.radius));
+            slip = std::max(slip, std::abs(room.ball(PlaygroundRoom::kThrowBall).velocity.x + room.ball(PlaygroundRoom::kThrowBall).spin * room.ball(PlaygroundRoom::kThrowBall).radius));
         }
-        distance = std::abs(room.ball_.position.x - from);
-        asleep = room.ball_.frozen;
+        distance = std::abs(room.ball(PlaygroundRoom::kThrowBall).position.x - from);
+        asleep = room.ball(PlaygroundRoom::kThrowBall).frozen;
     };
     double slowDistance = 0.0, slowSlip = 0.0, fastDistance = 0.0, fastSlip = 0.0;
     bool slowAsleep = false, fastAsleep = false;
@@ -569,18 +569,18 @@ void whatHoldsABall() {
         room.placeCorners(plate);
         plate.previous = plate.position;
         const Vec3 normal{-std::sin(angle), std::cos(angle), 0};
-        room.ball_.position = Vec3{plate.centre.x, plate.centre.y, 0} + normal * (0.05 + room.ball_.radius);
-        room.ball_.velocity = Vec3{};
-        room.ball_.spin = 0.0;
-        room.ball_.frozen = false;
-        const Vec3 start = room.ball_.position;
+        room.ball(PlaygroundRoom::kThrowBall).position = Vec3{plate.centre.x, plate.centre.y, 0} + normal * (0.05 + room.ball(PlaygroundRoom::kThrowBall).radius);
+        room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{};
+        room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
+        const Vec3 start = room.ball(PlaygroundRoom::kThrowBall).position;
         double furthest = 0.0;
         for (int tick = 0; tick < ticks; ++tick) {
             room.advance(1.0 / 20.0);
-            furthest = std::max(furthest, std::sqrt(dot(room.ball_.position - start, room.ball_.position - start)));
+            furthest = std::max(furthest, std::sqrt(dot(room.ball(PlaygroundRoom::kThrowBall).position - start, room.ball(PlaygroundRoom::kThrowBall).position - start)));
         }
         moved = furthest;
-        asleep = room.ball_.frozen;
+        asleep = room.ball(PlaygroundRoom::kThrowBall).frozen;
     };
     const double critical = std::atan(ball_shape::kBallRollingResistance);  // radians
     double stayed = 0.0, rolled = 0.0;
@@ -623,16 +623,16 @@ void nothingIsEverInsideAnything() {
         room.reset();
         const Vec3 cube = room.bodyMiddle(0);
         const Vec3 start{cube.x - 1.6 * std::cos(angle), cube.y + 1.2 * std::sin(angle), 0};
-        if (!room.ballPlacementClear(start)) continue;
-        room.ball_.position = start;
-        room.ball_.velocity = Vec3{std::cos(angle), std::sin(angle), 0} * speed;
-        room.ball_.frozen = false;
+        if (!room.ballPlacementClear(room.ball(PlaygroundRoom::kThrowBall), start)) continue;
+        room.ball(PlaygroundRoom::kThrowBall).position = start;
+        room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{std::cos(angle), std::sin(angle), 0} * speed;
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         for (int tick = 0; tick < 40; ++tick) {
             room.advance(1.0 / 20.0);
             ++ticks;
             for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
                 Vec3 way{}, at{};
-                const double inside = -room.bodyBallGap(index, way, at);
+                const double inside = -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), index, way, at);
                 if (inside > worst) {
                     worst = inside;
                     worstTrial = trial;
@@ -652,9 +652,9 @@ void nothingIsEverInsideAnything() {
         room.reset();
         settle(room, 300);
         const Vec3 under{room.bodyMiddle(0).x, 0.5, 0};
-        room.ball_.position = Vec3{under.x + 1.2, room.ball_.radius, 0};
-        room.ball_.velocity = {};
-        room.ball_.frozen = false;
+        room.ball(PlaygroundRoom::kThrowBall).position = Vec3{under.x + 1.2, room.ball(PlaygroundRoom::kThrowBall).radius, 0};
+        room.ball(PlaygroundRoom::kThrowBall).velocity = {};
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         // The cube, straight above it, falling.
         room.bodies_[0].centre = Vec3{under.x + 1.2, 2.4, 0};
         room.bodies_[0].angle = 0.0;
@@ -666,7 +666,7 @@ void nothingIsEverInsideAnything() {
         for (int tick = 0; tick < 60; ++tick) {
             room.advance(1.0 / 20.0);
             Vec3 way{}, at{};
-            dropped = std::max(dropped, -room.bodyBallGap(0, way, at));
+            dropped = std::max(dropped, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), 0, way, at));
         }
     }
     std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
@@ -704,25 +704,25 @@ void nothingIsEverInsideAnything() {
         room.placeCorners(room.bodies_[0]);
         room.bodies_[0].previous = room.bodies_[0].position;
         room.bodies_[1].frozen = true;
-        room.ball_.position = Vec3{-0.62, 1.2, 0};
-        room.ball_.velocity = Vec3{0, -3.0, 0};
-        room.ball_.frozen = false;
+        room.ball(PlaygroundRoom::kThrowBall).position = Vec3{-0.62, 1.2, 0};
+        room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{0, -3.0, 0};
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         for (int tick = 0; tick < 200; ++tick) {
             room.advance(1.0 / 20.0);
             for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
                 Vec3 way{}, at{};
-                wedge = std::max(wedge, -room.bodyBallGap(index, way, at));
+                wedge = std::max(wedge, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), index, way, at));
             }
         }
         byHand = room.ballFoundThroughCount();
         // Both faces still against it, and it is not inside either.
         Vec3 way{}, at{};
-        const double toCube = room.bodyBallGap(0, way, at);
-        const double toSlope = room.bodyBallGap(1, way, at);
+        const double toCube = room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), 0, way, at);
+        const double toSlope = room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), 1, way, at);
         std::snprintf(detail, sizeof detail,
                       "in the wedge between a cube's face and the triangle's slope: %.6f m inside at worst, "
                       "%.6f m and %.6f m from the two faces (the ball's radius is %.3f), %zu repairs",
-                      wedge, toCube, toSlope, room.ball_.radius, byHand);
+                      wedge, toCube, toSlope, room.ball(PlaygroundRoom::kThrowBall).radius, byHand);
         check(wedge < 1e-6 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
               "a ball wedged against several faces at once is answered by all of them", detail);
     }
@@ -744,7 +744,7 @@ void nothingIsEverInsideAnything() {
             PlaygroundRoom room;
             room.reset();
             const Vec3 start{pickX(rng), pickY(rng), 0};
-            if (!room.ballPlacementClear(start)) continue;  // not a spot the ball fits in
+            if (!room.ballPlacementClear(room.ball(PlaygroundRoom::kThrowBall), start)) continue;  // not a spot the ball fits in
             ++scenes;
             room.clearRepairCounts();
             for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
@@ -753,17 +753,17 @@ void nothingIsEverInsideAnything() {
                 body.velocity = Vec3{0.25 * pickV(rng), 0.25 * pickV(rng), 0};
                 body.spin = 0.5 * pickV(rng);
             }
-            room.ball_.position = start;
-            room.ball_.velocity = Vec3{pickV(rng), pickV(rng), 0};
-            room.ball_.spin = pickV(rng) / room.ball_.radius;
-            room.ball_.frozen = false;
+            room.ball(PlaygroundRoom::kThrowBall).position = start;
+            room.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{pickV(rng), pickV(rng), 0};
+            room.ball(PlaygroundRoom::kThrowBall).spin = pickV(rng) / room.ball(PlaygroundRoom::kThrowBall).radius;
+            room.ball(PlaygroundRoom::kThrowBall).frozen = false;
             for (int tick = 0; tick < 200; ++tick) {
                 room.advance(1.0 / 20.0);
                 for (std::size_t index = 0; index < PlaygroundRoom::kBodyCount; ++index) {
                     Vec3 way{}, at{};
-                    violent = std::max(violent, -room.bodyBallGap(index, way, at));
+                    violent = std::max(violent, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), index, way, at));
                 }
-                violent = std::max(violent, room.ball_.radius - room.ball_.position.y);
+                violent = std::max(violent, room.ball(PlaygroundRoom::kThrowBall).radius - room.ball(PlaygroundRoom::kThrowBall).position.y);
             }
             byHandInFlight += room.ballFoundThroughCount();
         }
@@ -823,8 +823,8 @@ void resetIsAReset() {
         used.advance(1.0 / 20.0);
     }
     used.endDrag();
-    used.ball_.velocity = Vec3{7.0, 4.0, 0};
-    used.ball_.frozen = false;
+    used.ball(PlaygroundRoom::kThrowBall).velocity = Vec3{7.0, 4.0, 0};
+    used.ball(PlaygroundRoom::kThrowBall).frozen = false;
     settle(used, 100);
     used.bodies_[0].frozen = false;
     used.bodies_[0].velocity = Vec3{-3.0, 1.0, 0};
@@ -845,8 +845,8 @@ void resetIsAReset() {
         worst = std::max(worst, std::abs(used.bodies_[i].angle - fresh.bodies_[i].angle));
         check(!used.bodies_[i].frozen, "no body left asleep", "");
     }
-    worst = std::max(worst, std::abs(used.ball_.position.x - fresh.ball_.position.x));
-    worst = std::max(worst, std::abs(used.ball_.position.y - fresh.ball_.position.y));
+    worst = std::max(worst, std::abs(used.ball(PlaygroundRoom::kThrowBall).position.x - fresh.ball(PlaygroundRoom::kThrowBall).position.x));
+    worst = std::max(worst, std::abs(used.ball(PlaygroundRoom::kThrowBall).position.y - fresh.ball(PlaygroundRoom::kThrowBall).position.y));
     std::snprintf(detail, sizeof detail, "largest difference from a room that was never touched: %.3e", worst);
     check(worst == 0.0, "every position is the starting one", detail);
 
@@ -873,8 +873,8 @@ void resetIsAReset() {
     }
     const Vec3 ballWas = drawnBall(fresh), ballNow = drawnBall(used);
     drawnApart = std::max(drawnApart, std::max(std::abs(ballWas.x - ballNow.x), std::abs(ballWas.y - ballNow.y)));
-    shownThere = shownThere && std::abs(ballNow.x - used.ball_.position.x) < 1e-9 &&
-                 std::abs(ballNow.y - used.ball_.position.y) < 1e-9;
+    shownThere = shownThere && std::abs(ballNow.x - used.ball(PlaygroundRoom::kThrowBall).position.x) < 1e-9 &&
+                 std::abs(ballNow.y - used.ball(PlaygroundRoom::kThrowBall).position.y) < 1e-9;
     std::snprintf(detail, sizeof detail, "the screen differs from a fresh room's by %.3e", drawnApart);
     check(drawnApart == 0.0, "the first frame after R draws the starting room", detail);
     check(shownThere, "every corner and the ball are drawn where they are", "");
@@ -903,7 +903,7 @@ void resetIsAReset() {
         apart = std::max(apart, std::abs(used.bodies_[i].centre.x - fresh.bodies_[i].centre.x));
         apart = std::max(apart, std::abs(used.bodies_[i].centre.y - fresh.bodies_[i].centre.y));
     }
-    apart = std::max(apart, std::abs(used.ball_.position.x - fresh.ball_.position.x));
+    apart = std::max(apart, std::abs(used.ball(PlaygroundRoom::kThrowBall).position.x - fresh.ball(PlaygroundRoom::kThrowBall).position.x));
     apart = std::max(apart, std::abs(used.totalEnergy() - fresh.totalEnergy()));
     std::snprintf(detail, sizeof detail, "after four hundred more ticks the two rooms differ by %.3e", apart);
     check(apart == 0.0, "a reset room behaves exactly like a new one", detail);

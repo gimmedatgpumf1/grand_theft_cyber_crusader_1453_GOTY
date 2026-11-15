@@ -89,7 +89,8 @@ bool renderOnHost(const gtc::native::GpuScene& scene, gtc::native::NativeFrame& 
     for (std::size_t b = 0; b < scene.batches.size(); ++b) {
         const gtc::native::GpuBatch& batch = scene.batches[b];
         if (batch.isUi) continue;  // the labels are composited from the layer instead
-        if (wantOnlyTheBall && b != pictureRoom->ball_.faceBatch && b != pictureRoom->ball_.markBatch) continue;
+        if (wantOnlyTheBall && b != pictureRoom->ball(PlaygroundRoom::kThrowBall).faceBatch &&
+            b != pictureRoom->ball(PlaygroundRoom::kThrowBall).markBatch) continue;
         for (std::size_t i = 0; i + 2 < batch.indices.size(); i += 3) {
             std::array<gtc::native::RenderVertex, 3> corners;
             for (int k = 0; k < 3; ++k) {
@@ -133,10 +134,10 @@ void buildTheCorner(PlaygroundRoom& room, int settleTicks) {
     cube.previousCentre = cube.centre;
     cube.previousAngle = cube.angle;
     room.bodies_[1].frozen = true;
-    room.ball_.position = gtc::native::Vec3{-0.62, 1.20, 0};
-    room.ball_.velocity = gtc::native::Vec3{0, -3.0, 0};
-    room.ball_.spin = 0.0;
-    room.ball_.frozen = false;
+    room.ball(PlaygroundRoom::kThrowBall).position = gtc::native::Vec3{-0.62, 1.20, 0};
+    room.ball(PlaygroundRoom::kThrowBall).velocity = gtc::native::Vec3{0, -3.0, 0};
+    room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+    room.ball(PlaygroundRoom::kThrowBall).frozen = false;
 }
 
 // How far the drawn ball is inside the drawn shapes, as the room is about to draw
@@ -148,12 +149,12 @@ double drawnDepth(PlaygroundRoom& room, std::size_t& which) {
     // A gap is a distance, not a depth: the closest surface wins, so the answer is the
     // smallest gap there is, and a depth is what is left of the ball's radius when that
     // gap is smaller than it.
-    double closest = room.ball_.shown.y;  // the floor: the height of the ball's middle
+    double closest = room.ball(PlaygroundRoom::kThrowBall).shown.y;  // the floor: the height of the ball's middle
     which = room.kBodyCount;
     for (std::size_t index = 0; index < room.kBodyCount; ++index) {
         const auto& body = room.bodies_[index];
         if (body.count == 0) continue;
-        const double gap = gtc::native::ball_shape::outlineGap(room.ball_.shown, body.shown.data(),
+        const double gap = gtc::native::ball_shape::outlineGap(room.ball(PlaygroundRoom::kThrowBall).shown, body.shown.data(),
                                                               body.shown.data(), body.count, 1.0)
                                .gap;
         if (gap < closest) {
@@ -161,7 +162,7 @@ double drawnDepth(PlaygroundRoom& room, std::size_t& which) {
             which = index;
         }
     }
-    return room.ball_.radius - closest;
+    return room.ball(PlaygroundRoom::kThrowBall).radius - closest;
 }
 
 // How far a place is from the straight piece between two places.
@@ -192,7 +193,7 @@ int playgroundPictureChecks() {
             room.advance(1.0 / 20.0);
             for (std::size_t index = 0; index < room.kBodyCount; ++index) {
                 gtc::native::Vec3 way{}, at{};
-                solved = std::max(solved, -room.bodyBallGap(index, way, at));
+                solved = std::max(solved, -room.bodyBallGap(room.ball(PlaygroundRoom::kThrowBall), index, way, at));
             }
             room.sceneReady_ = true;
             for (int eighth = 0; eighth <= 8; ++eighth) {
@@ -239,12 +240,12 @@ int playgroundPictureChecks() {
         int worstFrame = -1;
         for (int frame = 0; frame < 180; ++frame) {
             room.advance(1.0 / 60.0);
-            const gtc::native::Vec3 previous = room.ball_.previous;
-            const gtc::native::Vec3 position = room.ball_.position;
-            const bool bent = room.ball_.bent;
-            const gtc::native::Vec3 bend = room.ball_.bendPoint;
+            const gtc::native::Vec3 previous = room.ball(PlaygroundRoom::kThrowBall).previous;
+            const gtc::native::Vec3 position = room.ball(PlaygroundRoom::kThrowBall).position;
+            const bool bent = room.ball(PlaygroundRoom::kThrowBall).bent;
+            const gtc::native::Vec3 bend = room.ball(PlaygroundRoom::kThrowBall).bendPoint;
             room.interpolate();
-            const gtc::native::Vec3 drawn = room.ball_.shown;
+            const gtc::native::Vec3 drawn = room.ball(PlaygroundRoom::kThrowBall).shown;
             const double off = bent ? std::min(offSegment(drawn, previous, bend), offSegment(drawn, bend, position))
                                     : offSegment(drawn, previous, position);
             if (off > worst) {
@@ -274,11 +275,11 @@ int playgroundPictureChecks() {
         PlaygroundRoom room;
         room.reset();
         for (int tick = 0; tick < 300; ++tick) room.advance(1.0 / 20.0);
-        room.ball_.position = gtc::native::Vec3{-2.20, 1.35, 0};
-        room.ball_.previous = room.ball_.shown = room.ball_.position;
-        room.ball_.velocity = {};
-        room.ball_.spin = 0.0;
-        room.ball_.frozen = false;
+        room.ball(PlaygroundRoom::kThrowBall).position = gtc::native::Vec3{-2.20, 1.35, 0};
+        room.ball(PlaygroundRoom::kThrowBall).previous = room.ball(PlaygroundRoom::kThrowBall).shown = room.ball(PlaygroundRoom::kThrowBall).position;
+        room.ball(PlaygroundRoom::kThrowBall).velocity = {};
+        room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         room.sceneReady_ = true;
         double worst = 0.0, travel = 0.0;
         int stuck = 0;
@@ -286,20 +287,20 @@ int playgroundPictureChecks() {
         bool haveLast = false;
         for (int frame = 0; frame < 120; ++frame) {
             room.advance(1.0 / 60.0);
-            if (frame < 20 || room.ball_.frozen) continue;
+            if (frame < 20 || room.ball(PlaygroundRoom::kThrowBall).frozen) continue;
             const double fraction = std::clamp(room.accumulator_ / gtc::native::playground_tick::kTick, 0.0, 1.0);
-            const gtc::native::Vec3 previous = room.ball_.previous;
-            const gtc::native::Vec3 position = room.ball_.position;
+            const gtc::native::Vec3 previous = room.ball(PlaygroundRoom::kThrowBall).previous;
+            const gtc::native::Vec3 position = room.ball(PlaygroundRoom::kThrowBall).position;
             gtc::native::Vec3 ownPlace = previous + (position - previous) * fraction;
-            if (room.ball_.bent) {
-                const double when = room.ball_.bendAt;
+            if (room.ball(PlaygroundRoom::kThrowBall).bent) {
+                const double when = room.ball(PlaygroundRoom::kThrowBall).bendAt;
                 ownPlace = fraction <= when
-                               ? previous + room.ball_.bendIn * (gtc::native::playground_tick::kTick * fraction)
-                               : room.ball_.bendPoint + room.ball_.bendOut *
+                               ? previous + room.ball(PlaygroundRoom::kThrowBall).bendIn * (gtc::native::playground_tick::kTick * fraction)
+                               : room.ball(PlaygroundRoom::kThrowBall).bendPoint + room.ball(PlaygroundRoom::kThrowBall).bendOut *
                                      (gtc::native::playground_tick::kTick * (fraction - when));
             }
             room.interpolate();
-            const gtc::native::Vec3 shown = room.ball_.shown;
+            const gtc::native::Vec3 shown = room.ball(PlaygroundRoom::kThrowBall).shown;
             worst = std::max(worst, gtc::native::length(shown - ownPlace));
             if (haveLast && gtc::native::length(shown - lastShown) < 1.0e-9 &&
                 gtc::native::length(position - previous) > 1.0e-6) ++stuck;
@@ -405,11 +406,11 @@ int playgroundPictureChecks() {
         for (int place = 0; place < 3; ++place) {
             // Frozen where the test put it: a ball falling through the rope would ask
             // the same question, but it would ask it somewhere else every frame.
-            room.ball_.position = places[place];
-            room.ball_.previous = room.ball_.shown = room.ball_.position;
-            room.ball_.velocity = {};
-            room.ball_.spin = 0.0;
-            room.ball_.frozen = true;
+            room.ball(PlaygroundRoom::kThrowBall).position = places[place];
+            room.ball(PlaygroundRoom::kThrowBall).previous = room.ball(PlaygroundRoom::kThrowBall).shown = room.ball(PlaygroundRoom::kThrowBall).position;
+            room.ball(PlaygroundRoom::kThrowBall).velocity = {};
+            room.ball(PlaygroundRoom::kThrowBall).spin = 0.0;
+            room.ball(PlaygroundRoom::kThrowBall).frozen = true;
             haveWhole = haveBall = false;
             gtc::native::NativeFrame frameOne;
             wantOnlyTheBall = false;
@@ -432,7 +433,7 @@ int playgroundPictureChecks() {
             }
             if (coveredHere > 0 && worstPlace < 0) worstPlace = place;
         }
-        room.ball_.frozen = false;
+        room.ball(PlaygroundRoom::kThrowBall).frozen = false;
         gtc::native::setGpuRenderer(nullptr);
         std::snprintf(detail, sizeof detail,
                       "the ball frozen on the rope, under the plate and against the bob at %dx%d: %zu pixels of it, "

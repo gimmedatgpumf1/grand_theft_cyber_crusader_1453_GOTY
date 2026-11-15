@@ -58,7 +58,7 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // A shape standing on the floor cannot be driven into it, and the floor is what
     // answers the part of a push that would.
     //
-    // It is the rule the ball already follows -- see ballFree() and
+    // It is the rule the ball already follows -- see ballFree(ball, ) and
     // pushBallSupported(): a support takes the share of a blow that is into it, and
     // what is left is the body's. It matters for the shapes because the ball's own
     // contacts are solved *after* the shapes have had their tick, so a push the ball
@@ -124,27 +124,27 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
 
 // And the same for the ball: a blow at a place changes its speed along the line of
 // the blow, and its turn by the moment of it, with the moment of a solid sphere.
-void PlaygroundRoom::pushBall(Vec3 at, Vec3 impulse, ForceKind kind) {
+void PlaygroundRoom::pushBall(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind) {
     if (!(length(impulse) > 0.0)) return;
-    const Vec3 arm = at - ball_.position;
-    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    ball_.velocity = ball_.velocity + impulse * (1.0 / ball_.mass);
-    ball_.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
-    ballBlows_ = ballBlows_ + impulse;
-    ball_.frozen = false;
+    const Vec3 arm = at - ball.position;
+    const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
+    ball.velocity = ball.velocity + impulse * (1.0 / ball.mass);
+    ball.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
+    ball.blows = ball.blows + impulse;
+    ball.frozen = false;
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.
-    recordImpulse(at, impulse, kind, kBallOwner);
+    recordImpulse(at, impulse, kind, ownerOf(ball));
 }
 
 // An impulse on a ball that is resting on something: the translation it is free to
 // take and the turn of the whole impulse. See the note beside BallSupport.
-void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except) {
+void PlaygroundRoom::pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind, std::size_t except) {
     if (!(length(impulse) > 0.0)) return;
-    const Vec3 arm = at - ball_.position;
-    const double moment = 0.4 * ball_.mass * ball_.radius * ball_.radius;
-    const Vec3 free = ballFree(impulse, except);
-    ball_.velocity = ball_.velocity + free * (1.0 / ball_.mass);
+    const Vec3 arm = at - ball.position;
+    const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
+    const Vec3 free = ballFree(ball, impulse, except);
+    ball.velocity = ball.velocity + free * (1.0 / ball.mass);
     // The turn comes from the impulse the ball was actually given, not from the one
     // that was offered. The part a support refuses is refused whole: it is not a push
     // on the ball, and a push that never happened cannot turn it. Taking the moment of
@@ -154,16 +154,16 @@ void PlaygroundRoom::pushBallSupported(Vec3 at, Vec3 impulse, ForceKind kind, st
     // them pumped each other, round after round, until the ball left at eight metres a
     // second from standing still. A refused push is now nothing at all in both halves
     // of the ball's answer, which is the only way the two add up.
-    ball_.spin += (arm.x * free.y - arm.y * free.x) / moment;
-    ballBlows_ = ballBlows_ + free;
-    ball_.frozen = false;
+    ball.spin += (arm.x * free.y - arm.y * free.x) / moment;
+    ball.blows = ball.blows + free;
+    ball.frozen = false;
     // What is written down is what the ball felt, and that is the projected impulse:
     // the part the supports refused was refused by a surface, and it appears in the
     // ledger as that surface's answer -- which is what the account at the end of
     // tickBall works out. Recording the whole impulse here booked the ball as taking
     // a blow it never took, and the account was off by twenty-five newton seconds on
     // a cube dropped a metre onto it.
-    recordImpulse(at, free, kind, kBallOwner);
+    recordImpulse(at, free, kind, ownerOf(ball));
 }
 
 // A point of the room meets a body. The same law as every other contact: the

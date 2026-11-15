@@ -41,14 +41,15 @@
 namespace gtc::native {
 using namespace ball_shape;
 
-Vec3 PlaygroundRoom::ballAirDrag(Vec3 velocity) {
+Vec3 PlaygroundRoom::ballAirDrag(Ball& ball, Vec3 velocity) {
     const double speed = length(velocity);
     if (!(speed > 0.0)) return velocity;
-    const double area = kPi * ball_.radius * ball_.radius;
+    const double area = kPi * ball.radius * ball.radius;
     const double c = 0.5 * kAirDensity * kBallDragCoefficient * area;  // N per (m/s)^2
     // The force, drawn where it acts: at the middle, against the way the ball is going.
-    addForce(ball_.position, velocity * (-(c * speed * speed) / speed), ForceKind::Drag, nullptr, kBallOwner);
-    const double after = speed / (1.0 + (c / ball_.mass) * speed * playground_tick::kTick);
+    addForce(ball.position, velocity * (-(c * speed * speed) / speed), ForceKind::Drag, nullptr,
+             ownerOf(ball));
+    const double after = speed / (1.0 + (c / ball.mass) * speed * playground_tick::kTick);
     return velocity * (after / speed);
 }
 
