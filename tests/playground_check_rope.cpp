@@ -65,6 +65,24 @@ void throwAtTheHangingBall(PlaygroundRoom& room, Vec3 velocity, double fromTheSi
 
 // The energy of the ball on the rope: its travel and its height, the only two things a
 // ball on a rope has that a constraint like this can change.
+// The other ball, parked out of the way.
+//
+// Both scenes below stand the triangle up at the King's spot, and that spot is where the
+// thrown ball has come to rest by the end of the settling -- the triangle is then drawn
+// around a ball, and what the next hundred and fifty seconds measure is the separation
+// pushing the *thrown* ball out of a shape that was placed on top of it. Measured: the
+// triangle walked 0.26 m and the room's energy rose by 0.18 J, with the ball on the rope
+// perfectly still the whole time. A check whose scene has a ball inside a shape is
+// checking the placement, not the rope.
+void parkTheOtherBall(PlaygroundRoom& room) {
+    auto& other = room.ball(PlaygroundRoom::kThrowBall);
+    other.position = gtc::native::Vec3{-3.0, other.radius, 0};
+    other.previous = other.shown = other.position;
+    other.velocity = {};
+    other.spin = 0.0;
+    other.frozen = false;
+}
+
 double hangingEnergy(const PlaygroundRoom& room) {
     const auto& ball = room.ropeBall();
     return 0.5 * ball.mass * gtc::native::dot(ball.velocity, ball.velocity) + ball.mass * 9.8 * ball.position.y;
@@ -385,6 +403,7 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
+        parkTheOtherBall(room);
         // The triangle stood on its vertical edge with its slope rising to the right and
         // its face exactly under the hanging ball: the King's picture, to the millimetre.
         auto& triangle = room.bodies_[1];
@@ -479,6 +498,7 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
+        parkTheOtherBall(room);
         auto& triangle = room.bodies_[1];
         triangle.angle = 1.5707963267948966;
         const double press = 1e-3;
