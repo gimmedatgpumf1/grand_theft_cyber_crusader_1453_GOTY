@@ -236,19 +236,24 @@ void PlaygroundRoom::interpolate() {
         }
         return inside;
     };
-    // How deep the drawn ball is allowed to be: exactly as deep as the place the room
-    // itself left, in the same frame. That is the King's standard -- the picture may
-    // never show the ball deeper inside a shape than the room put it -- and it is what
-    // keeps a ball that is *touching* a surface on the screen. A ball lying on the
-    // triangle's slope is at exactly one radius from the face, and the arithmetic that
-    // puts it there reads 1.11e-16 m either side of zero from tick to tick: without
-    // this, every place of a sliding ball's path is judged "inside", the draw-walk goes
-    // back to where the tick began, and the ball is drawn a whole tick -- 50 ms --
-    // behind the room on every frame of a slide. That is the lag the King saw. Touching
-    // is not inside, and the place that says so is the room's own.
+    // Two different questions, and they were being asked as one.
+    //
+    // "Is this place inside something?" is the room's own question, and the room has
+    // always answered it with a band: a ball at exactly one radius from a face is
+    // *touching* it, and the arithmetic that puts it there reads a fraction of a
+    // micrometre either side of zero from tick to tick. The physics calls a place
+    // inside only when it is deeper than that touch (`ball_shape::kTouch`), never when
+    // it is 1.11e-16 m inside. Asking it the drawing's old way -- deeper than zero --
+    // meant that every place of a sliding ball's path counted as inside, the draw-walk
+    // ran back to where the tick began, and the ball was drawn a whole tick, 50 ms,
+    // behind the room on every frame of a slide down the triangle. That is the lag.
+    //
+    // "How deep may it be drawn?" is a separate question, and the answer is not the
+    // touch band: it is exactly as deep as the place the room itself left the ball, in
+    // that same frame, and no deeper.
     const double allowed = sceneReady_ ? std::max(0.0, depthInside(alongPath(1.0))) : 0.0;
     double drawnAt = ballAlpha;
-    if (sceneReady_ && depthInside(alongPath(drawnAt)) > allowed) {
+    if (sceneReady_ && depthInside(alongPath(drawnAt)) > ball_shape::kTouch) {
         if (depthInside(alongPath(0.0)) > allowed) {
             // Not one place of this tick's path is as clear as the place the room ends
             // on: something has been drawn over the ground the ball already covered.
