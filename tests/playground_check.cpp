@@ -637,8 +637,12 @@ void nothingIsEverInsideAnything() {
         }
     }
     char detail[200];
-    std::snprintf(detail, sizeof detail, "%d ticks of shots from every side, worst %.6f m inside", ticks, worst);
-    check(worst < 1e-6, "a ball fired at anything is stopped by it", detail);
+    std::snprintf(detail, sizeof detail, "%d ticks of shots from every side, worst %.3e m inside", ticks, worst);
+    // A picometre. Not a micrometre and not a nanometre: the ball's surface is held on
+    // or outside every other surface, and the only slack there is, is the arithmetic's
+    // own -- at coordinates of a metre a double's last place is 1e-16 m, and these
+    // numbers come out three orders below the bound asked for here.
+    check(worst < 1e-12, "a ball fired at anything is stopped by it", detail);
 
     // A cube dropped onto a ball that is sitting on the floor: the shapes are the ones
     // arriving, and the ball has nowhere to go.
@@ -665,8 +669,8 @@ void nothingIsEverInsideAnything() {
             dropped = std::max(dropped, -room.bodyBallGap(0, way, at));
         }
     }
-    std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.6f m inside", dropped);
-    check(dropped < 1e-6, "nor is one that arrives at the ball", detail);
+    std::snprintf(detail, sizeof detail, "a cube dropped on a ball on the floor, worst %.3e m inside", dropped);
+    check(dropped < 1e-12, "nor is one that arrives at the ball", detail);
 
     // A hundred kilometres a second is an arrival like any other: the room's answer
     // to it is in playground_check_arrivals.cpp, which is where the checks for the
@@ -713,10 +717,13 @@ void nothingIsEverInsideAnything() {
         const double toCube = room.bodyBallGap(0, way, at);
         const double toSlope = room.bodyBallGap(1, way, at);
         std::snprintf(detail, sizeof detail,
-                      "in the wedge between a cube's face and the triangle's slope: %.6f m inside at worst, "
-                      "%.6f m and %.6f m from the two faces (the ball's radius is %.3f), %zu repairs",
+                      "in the wedge between a cube's face and the triangle's slope: %.3e m inside at worst, "
+                      "%.3e m and %.3e m from the two faces (the ball's radius is %.3f), %zu repairs",
                       wedge, toCube, toSlope, room.ball_.radius, byHand);
-        check(wedge < 1e-6 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
+        // The overlap is held to a picometre; the two gaps are only asked to still be
+        // gaps -- the ball is against both faces, by less than a millimetre -- because
+        // that is a claim about the contact and not about where its surface is.
+        check(wedge < 1e-12 && toCube < 1e-3 && toSlope < 1e-3 && byHand == 0,
               "a ball wedged against several faces at once is answered by all of them", detail);
     }
 
@@ -765,7 +772,7 @@ void nothingIsEverInsideAnything() {
                   "%d scenes of every corner and the ball thrown at once, worst end of tick %.3e m inside, "
                   "%zu repairs",
                   scenes, violent, byHandInFlight);
-    check(violent <= 1e-6 && byHandInFlight <= scenes,
+    check(violent <= 1e-12 && byHandInFlight <= scenes,
           "nor is a ball in a room where everything is moving at once", detail);
 }
 
