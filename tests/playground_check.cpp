@@ -29,6 +29,9 @@ using namespace gtc::native;
 // The arrival checks at the edge of what the room can be asked: a ball at a hundred
 // kilometres a second, and a shape arriving at the ball that fast.
 int playgroundArrivalChecks();
+// The picture: the drawn positions at every fraction of a tick, and the finished
+// pixels -- the ball may not be drawn inside a shape, and nothing may be drawn over it.
+int playgroundPictureChecks();
 
 namespace {
 
@@ -672,6 +675,8 @@ void nothingIsEverInsideAnything() {
     // to it is in playground_check_arrivals.cpp, which is where the checks for the
     // fastest thing the room is ever asked to answer live.
     failures += playgroundArrivalChecks();
+    // And what the screen does with it.
+    failures += playgroundPictureChecks();
 
     // And the case the two sweeps above cannot answer between them: more than one
     // surface against the ball at once. A ball in a wedge is held by two faces whose

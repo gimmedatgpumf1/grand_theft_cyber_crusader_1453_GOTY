@@ -23,6 +23,19 @@ constexpr std::uint32_t kBodyFaceId = 200, kBodySpan = 100, kBodyEdgeOffset = 10
 constexpr const char* kSky = "#101c22";
 constexpr double kGhostRadius = 0.032, kTraceHalfWidth = 0.010;
 constexpr double kCornerRadius = 0.045, kEdgeHalfWidth = 0.008;
+// The ball is drawn in front of every solid thing in the room, and its seams in
+// front of the ball. Not for looks: the edge stroke is 16 mm wide and the corner
+// dots are 90 mm discs, both of them decoration that reaches outside the outline
+// they belong to, and a ball resting exactly against a face is a ball whose disc
+// those two things cover. Measured on the King's picture: the light edge of the
+// triangle ran across the ball's orange disc and the corner dots sat on top of it,
+// and the picture therefore said the ball was inside a shape the physics had it
+// exactly touching. Nothing in the room can be drawn over the ball now.
+//
+// Arrows keep their own depth in front of the ball: they are annotations about the
+// solid, not solid things, and a force arrow hidden behind the ball it acts on is
+// an arrow nobody can read.
+constexpr double kBallZ = 0.015, kBallMarkZ = 0.016;
 // The seesaw's axle, drawn as a post of this half-width and a pin of this radius.
 constexpr double kPivotPostHalf = 0.055, kPivotPinRadius = 0.075;
 // The bodies run 200, 300, 400 ..., so the ball has to start beyond the last of
@@ -160,6 +173,42 @@ void PlaygroundRoom::interpolate() {
                                         : ball_.bendPoint + ball_.bendOut * (kTick * (ballAlpha - when));
     } else {
         ball_.shown = ball_.previous + (ball_.position - ball_.previous) * ballAlpha;
+    }
+    // The picture may not show a configuration the physics never had.
+    //
+    // A tick's travel is a straight line for the ball and a straight line for each
+    // corner of a shape, and two straight lines do not keep a circle and a face the
+    // same distance apart: at the end of every tick the ball is on or outside every
+    // outline -- the walk and the separation are what make that true -- but at a
+    // fraction of a tick between the two, which is what the screen draws sixty to
+    // three hundred times a second, the two chords can cross and the ball is drawn
+    // inside. Measured in the King's corner: 1.2e-4 m. A tenth of a millimetre is
+    // invisible, and it is still a lie, and the King is looking at pixels.
+    //
+    // So the drawn place is put outside the drawn outlines by the depth it is inside,
+    // the same way the room puts the ball outside a face it is found through. It is a
+    // projection of the drawn position only: it touches no velocity, no force and no
+    // ledger line, and it cannot conjure anything, because it is not part of the tick.
+    if (sceneReady_) {
+        for (int pass = 0; pass < 4; ++pass) {
+            std::size_t worst = kBodyCount;
+            double inside = ball_.radius - ball_.shown.y;
+            Vec3 way{0, 1, 0};
+            for (std::size_t index = 0; index < kBodyCount; ++index) {
+                const Body& body = bodies_[index];
+                if (body.count == 0) continue;
+                const ball_shape::OutlineGap gap =
+                    ball_shape::outlineGap(ball_.shown, body.shown.data(), body.shown.data(), body.count, 1.0);
+                if (ball_.radius - gap.gap > inside) {
+                    inside = ball_.radius - gap.gap;
+                    way = gap.normal;
+                    worst = index;
+                }
+            }
+            if (!(inside > 0.0)) break;
+            ball_.shown = ball_.shown + way * inside;
+            (void)worst;
+        }
     }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
@@ -360,11 +409,11 @@ void PlaygroundRoom::placeMarkers() {
         // A unit disc scaled to the ball's radius, so a ball of a different size
         // needs no new geometry.
         scene_.batches[ball_.faceBatch].modelMatrix =
-            {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
+            {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball_.shown.x, ball_.shown.y, kBallZ, 1};
         const double c = std::cos(ball_.shownAngle), s = std::sin(ball_.shownAngle);
         scene_.batches[ball_.markBatch].modelMatrix =
             {radius * c, radius * s, 0, 0, -radius * s, radius * c, 0, 0, 0, 0, 1, 0,
-             ball_.shown.x, ball_.shown.y, ball_.shown.z, 1};
+             ball_.shown.x, ball_.shown.y, kBallMarkZ, 1};
     }
     // The arrows: hidden unless F is on, and otherwise every force the ledger
     // holds, drawn at the point it acts with its own length. An arrow that is not
@@ -393,8 +442,23 @@ void PlaygroundRoom::placeMarkers() {
         const Vec3 middle = centroid(body.shown.data(), body.count);
         scene_.batches[body.faceBatch].modelMatrix = pose(middle, edgeAngle(body.shown.data()));
         for (std::size_t i = 0; i < body.count; ++i) {
-            scene_.batches[body.edgeBatches[i]].modelMatrix =
-                segment(body.shown[i], body.shown[(i + 1) % body.count], kEdgeHalfWidth);
+            // The stroke is sixteen millimetres wide and it used to be centred on the
+            // outline, so eight of them were outside the shape -- exactly the eight a
+            // ball lying against the face has to put its own surface in. Drawn inside,
+            // with its outer edge on the outline, the stroke stops where the shape
+            // stops. It is the same outline either way; one of the two ways leaves the
+            // room's own picture claiming an overlap the room does not have.
+            const Vec3 a = body.shown[i];
+            const Vec3 b = body.shown[(i + 1) % body.count];
+            const Vec3 side = b - a;
+            const double span = length(side);
+            Vec3 inward{0, 1, 0};
+            if (span > 1e-9) {
+                const Vec3 outward{side.y / span, -side.x / span, 0};
+                inward = dot(middle - a, outward) > 0.0 ? outward : outward * -1.0;
+            }
+            const Vec3 shift = inward * kEdgeHalfWidth;
+            scene_.batches[body.edgeBatches[i]].modelMatrix = segment(a + shift, b + shift, kEdgeHalfWidth);
             scene_.batches[body.cornerBatches[i]].modelMatrix = translation(body.shown[i]);
         }
     }
