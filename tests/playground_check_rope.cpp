@@ -513,6 +513,7 @@ int playgroundRopeChecks() {
         parkTheOtherBall(room);
         auto& triangle = room.bodies_[1];
         triangle.angle = 1.5707963267948966;
+        triangle.centre = Vec3{3.6697, 0.7, 0};
         room.placeCorners(triangle);
         double onTheSlope = 3.6697;
         {
