@@ -76,6 +76,7 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
 "$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/playground_check.cpp" \
   "$ROOT/tests/playground_check_arrivals.cpp" \
   "$ROOT/tests/playground_check_picture.cpp" \
+  "$ROOT/tests/playground_check_rope.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-playground-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"

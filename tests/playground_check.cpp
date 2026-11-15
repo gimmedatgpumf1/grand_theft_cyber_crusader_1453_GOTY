@@ -32,6 +32,7 @@ int playgroundArrivalChecks();
 // The picture: the drawn positions at every fraction of a tick, and the finished
 // pixels -- the ball may not be drawn inside a shape, and nothing may be drawn over it.
 int playgroundPictureChecks();
+int playgroundRopeChecks();
 
 namespace {
 
@@ -677,6 +678,7 @@ void nothingIsEverInsideAnything() {
     failures += playgroundArrivalChecks();
     // And what the screen does with it.
     failures += playgroundPictureChecks();
+    failures += playgroundRopeChecks();
 
     // And the case the two sweeps above cannot answer between them: more than one
     // surface against the ball at once. A ball in a wedge is held by two faces whose
