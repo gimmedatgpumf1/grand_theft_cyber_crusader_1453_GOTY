@@ -213,15 +213,16 @@ int playgroundPictureChecks() {
         (void)worstBody;
     }
 
-    // 2. The pixels. The whole frame and a frame of the ball alone are drawn from the
-    //    same camera, and every pixel the ball paints must be the ball's in both. A
-    //    pixel that differs is a pixel of the ball that something else was drawn over
-    //    -- which is what the King saw: the triangle's light edge running across the
-    //    disc, and the corner dots sitting on it.
+    // 2. The pixels, over a whole drop. The whole frame and a frame of the ball alone are
+    //    drawn from the same camera, frame after frame, and every pixel the ball paints
+    //    must be the ball's in both. A pixel that differs is a pixel of the ball that
+    //    something else was drawn over -- which is what the King saw: the triangle's
+    //    light edge running across the disc as a chord, and the corner dots sitting on
+    //    it. Measured on his own screenshot, the chord was 5.5 px deep, which at its
+    //    scale is 34 mm.
     {
         PlaygroundRoom room;
         buildTheCorner(room, 300);
-        for (int tick = 0; tick < 40; ++tick) room.advance(1.0 / 20.0);
         gtc::native::RoomFreecam camera;
         camera.reset({-0.55, 0.45, 0.62}, 0.0, 0.0);
         cameraFrom = &camera;
@@ -231,20 +232,24 @@ int playgroundPictureChecks() {
         view.width = shotWidth;
         view.height = shotHeight;
         view.gpu = true;
-        haveWhole = haveBall = false;
-        // A little way into the tick, which is where a frame usually lands.
-        room.advance(gtc::native::playground_tick::kTick * 0.25);
-        gtc::native::NativeFrame frame;
-        wantOnlyTheBall = false;
-        room.render(frame, view, camera);
-        wantOnlyTheBall = true;
-        room.render(frame, view, camera);
-        wantOnlyTheBall = false;
-        gtc::native::setGpuRenderer(nullptr);
-        std::size_t ballPixels = 0, covered = 0;
+        std::size_t ballPixels = 0, covered = 0, frames = 0;
         long coveredBy[3] = {0, 0, 0};
-        if (haveWhole && haveBall && whole.rgb.size() == ballOnly.rgb.size()) {
-            const std::size_t sky = 0;  // the top-left pixel is sky, whatever the sky is
+        int worstFrame = -1;
+        for (int frame = 0; frame < 24; ++frame) {
+            // A frame's worth of a tick, then a whole tick: the drop, the landing, the
+            // settling and the ball at rest in the corner, at every phase of the tick.
+            room.advance(gtc::native::playground_tick::kTick * 0.37);
+            haveWhole = haveBall = false;
+            gtc::native::NativeFrame frameOne;
+            wantOnlyTheBall = false;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = true;
+            room.render(frameOne, view, camera);
+            wantOnlyTheBall = false;
+            if (!haveWhole || !haveBall || whole.rgb.size() != ballOnly.rgb.size()) continue;
+            ++frames;
+            const std::size_t sky = 0;
+            std::size_t coveredHere = 0;
             for (std::size_t i = 0; i + 2 < ballOnly.rgb.size(); i += 3) {
                 const bool isBall = ballOnly.rgb[i] != ballOnly.rgb[sky] ||
                                     ballOnly.rgb[i + 1] != ballOnly.rgb[sky + 1] ||
@@ -255,17 +260,21 @@ int playgroundPictureChecks() {
                     whole.rgb[i + 2] == ballOnly.rgb[i + 2])
                     continue;
                 ++covered;
+                ++coveredHere;
                 const int r = whole.rgb[i], g = whole.rgb[i + 1], b = whole.rgb[i + 2];
-                if (g > r && b > r) ++coveredBy[0];        // the edges: light blue
+                if (g > r && b > r) ++coveredBy[0];           // the edges: light blue
                 else if (r > 200 && g > 100) ++coveredBy[1];  // the corner dots: orange
-                else ++coveredBy[2];                       // the fill, or anything else
+                else ++coveredBy[2];                          // the fill, or anything else
             }
+            if (coveredHere > 0 && worstFrame < 0) worstFrame = frame;
         }
+        gtc::native::setGpuRenderer(nullptr);
         std::snprintf(detail, sizeof detail,
-                      "%zu pixels of the ball at 900x600, %zu of them covered by something else "
-                      "(light blue %ld, orange %ld, other %ld)",
-                      ballPixels, covered, coveredBy[0], coveredBy[1], coveredBy[2]);
-        check(ballPixels > 500 && covered == 0, "nothing in the room is drawn over the ball", detail);
+                      "%zu frames of the drop at %dx%d, %zu pixels of the ball, %zu of them covered by "
+                      "something else (light blue %ld, orange %ld, other %ld), first bad frame %d",
+                      frames, shotWidth, shotHeight, ballPixels, covered, coveredBy[0], coveredBy[1], coveredBy[2],
+                      worstFrame);
+        check(frames >= 20 && ballPixels > 500 && covered == 0, "nothing in the room is drawn over the ball", detail);
     }
 
     return localFailures;
