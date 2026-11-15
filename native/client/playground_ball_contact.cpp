@@ -551,15 +551,13 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, bool ba
     // ball's velocity is left for the rope, which is the one thing entitled to change it.
     // A ball that *did* bring a speed is a blow, and a blow is answered in full.
     const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
-    Vec3 ballSpeed = ball.velocity;
-    if (resting || !arrived) ballSpeed = ballOffTheRope(ball, ballSpeed);
+    const Vec3 ballSpeed = ballOffTheRope(ball, ball.velocity);
     const double closing = dot(ballSpeed - surfaceVelocity, normal);
     // What the ball was doing at the instant it met the surface. Its speed is carried
     // through the tick from `arrival` to what it is now, so the fraction of the way
     // through the tick is the fraction of the way from one to the other: at the very
     // moment of a contact, that is the speed the blow is answered to.
-    Vec3 arrivalSpeed = ball.arrival;
-    if (resting || !arrived) arrivalSpeed = ballOffTheRope(ball, arrivalSpeed);
+    const Vec3 arrivalSpeed = ballOffTheRope(ball, ball.arrival);
     const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface. A ball that was already lying
