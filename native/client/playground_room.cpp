@@ -150,6 +150,23 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     ball_.markBatch = ballMark;
     ball_.position = ball_.previous = ball_.shown = Vec3{3.10, ball_.radius + 1.60, 0};
     ball_.angle = ball_.previousAngle = 0.0;
+    // The bob on its rope, let go from a hand's width out to the side: hanging dead
+    // straight it would be correct and would show nothing. It is released, not pushed
+    // -- the speed it starts with is nothing, and everything it ever does after that is
+    // its own weight on a rope of fixed length.
+    const std::size_t ropeBatch = pendulum_.ropeBatch, bobBatch = pendulum_.bobBatch,
+                      anchorBatch = pendulum_.anchorBatch, ghostBatch = pendulum_.ghostBatch;
+    pendulum_ = Pendulum{};
+    pendulum_.ropeBatch = ropeBatch;
+    pendulum_.bobBatch = bobBatch;
+    pendulum_.anchorBatch = anchorBatch;
+    pendulum_.ghostBatch = ghostBatch;
+    const double letGo = 0.55;  // radians out to the side: a third of a right angle
+    pendulum_.position = pendulum_.anchor + Vec3{std::sin(letGo), -std::cos(letGo), 0} * pendulum_.length;
+    pendulum_.previous = pendulum_.shown = pendulum_.position;
+    pendulum_.velocity = {};
+    pendulum_.taut = true;
+    pendulum_.tension = pendulum_.mass * kGravity * std::cos(letGo);
     return true;
 }
 
@@ -552,6 +569,10 @@ void PlaygroundRoom::tick() {
     // the first meeting of anything with anything, and that meeting is answered on
     // both sides at once.
     tickBodies();
+    // The bob on its rope, stepped on what the shapes have just done to the room: it is
+    // a solid of its own and the ball is swept against it, so it has to be where it
+    // really is before the ball's walk begins.
+    tickPendulum();
     if (!ball_.frozen || ballNeighboursMoving()) tickBall();
     else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
     haveTrace_ = length(traceTo_ - traceFrom_) > kQuantum;
@@ -725,6 +746,7 @@ void PlaygroundRoom::advance(double seconds) {
                 }
             }
             tickBodies();
+            tickPendulum();
             if (!ball_.frozen || ballNeighboursMoving()) tickBall();
             else { ball_.previous = ball_.position; ball_.previousAngle = ball_.angle; }
         }
@@ -885,6 +907,11 @@ void PlaygroundRoom::energyBudget(double& kinetic, double& potential) const {
         kinetic += 0.5 * body.moment * body.spin * body.spin;
         potential += body.mass * kGravity * body.centre.y;
     }
+    // The bob on the rope: its travel and its height, the only two things it has. Its
+    // spin is not a state: a bob on a rope turns if it was turning when it was tied on,
+    // and nothing in the room can turn it.
+    kinetic += 0.5 * pendulum_.mass * dot(pendulum_.velocity, pendulum_.velocity);
+    potential += pendulum_.mass * kGravity * pendulum_.position.y;
     // The ball: its travel and its turn, and the same height rule.
     kinetic += 0.5 * ball_.mass * dot(ball_.velocity, ball_.velocity);
     // A solid sphere, which is the moment the ball's own contacts are solved with.

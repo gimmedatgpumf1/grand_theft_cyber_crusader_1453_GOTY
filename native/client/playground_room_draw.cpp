@@ -44,6 +44,14 @@ constexpr double kPivotPostHalf = 0.055, kPivotPinRadius = 0.075;
 constexpr std::uint32_t kBallId = 600, kBallMarkId = 601;
 // The seesaw's axle: a post from the floor to the pin, and the pin itself.
 constexpr std::uint32_t kPivotPostId = 700, kPivotPinId = 701;
+// The rope, the bob on the end of it, the plate it is tied to, and the mark of where
+// the bob was a tick ago. Depths: the rope goes behind the bob, because a rope that
+// was drawn over its own bob would read as a rope passing in front of it; both are
+// behind the ball, because the ball is the one thing in the room that nothing may be
+// drawn over.
+constexpr std::uint32_t kRopeId = 800, kBobId = 801, kAnchorId = 802, kRopeGhostId = 803;
+constexpr double kRopeHalfWidth = 0.014, kAnchorRadius = 0.075, kRopeGhostRadius = 0.030;
+constexpr double kRopeZ = 0.010, kBobZ = 0.012, kAnchorZ = 0.011, kRopeGhostZ = 0.009;
 // One shaft and one head per arrow. The ids are well clear of the bodies' own,
 // which run in hundreds from kBodyFaceId.
 // The ids are laid out from the room's own count of arrows per kind, so a change
@@ -277,6 +285,19 @@ void PlaygroundRoom::interpolate() {
             ball_.shown = alongPath(drawnAt);
         }
     }
+    // The bob, spread over the frames the same way: between where the last tick left
+    // it and where this one did, along the pieces its own tick took. A taut piece is an
+    // arc and is drawn as its chord, which cuts the corner *inside* the circle -- so
+    // the drawn bob can be nearer the anchor than the rope is long, and can never be
+    // further, which is the only direction that would be a lie about the rope.
+    if (pendulum_.bent && fraction < 1.0) {
+        const double when = pendulum_.bendAt;
+        pendulum_.shown = fraction <= when
+                              ? pendulum_.previous + pendulum_.bendIn * (kTick * fraction)
+                              : pendulum_.bendPoint + pendulum_.bendOut * (kTick * (fraction - when));
+    } else {
+        pendulum_.shown = pendulum_.previous + (pendulum_.position - pendulum_.previous) * fraction;
+    }
     // What is drawn, not what is simulated. Writing this back into `angle` used
     // to divide every tick's turn by the number of frames in it, so at 300 FPS
     // the ball turned a fifteenth of the way it rolled and the seams looked
@@ -394,6 +415,26 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
         raster.mesh(points, faces, flat("#e8e2c9"));
     }
 
+    // The rope, its anchor, and the bob. The rope is one quad along its own length, so
+    // its ends follow the anchor and the bob every frame without any geometry being
+    // rebuilt: it is as long as the distance between them, which is what a rope is.
+    points.clear();
+    faces.clear();
+    quad(points, faces, 0, -1, 1, 1, 0.0);
+    raster.setObject(kRopeId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#c9b48a"));
+    disc(points, faces, kAnchorRadius);
+    raster.setObject(kAnchorId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#8d9aa0"));
+    points.clear();
+    faces.clear();
+    disc(points, faces, 1.0);
+    raster.setObject(kBobId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#7f8fa6"));
+    disc(points, faces, kRopeGhostRadius);
+    raster.setObject(kRopeGhostId, {0, 0}, 0);
+    raster.mesh(points, faces, flat("#5c716c"));
+
     // The ball: a disc of its own radius, and a cross of two seams so the turning
     // can be seen. The seams are thin quads turned together by the ball's angle,
     // so the spin needs no geometry of its own either.
@@ -436,6 +477,10 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
     traceBatch_ = findBatch(scene_, kTraceId);
+    pendulum_.ropeBatch = findBatch(scene_, kRopeId);
+    pendulum_.bobBatch = findBatch(scene_, kBobId);
+    pendulum_.anchorBatch = findBatch(scene_, kAnchorId);
+    pendulum_.ghostBatch = findBatch(scene_, kRopeGhostId);
     ball_.faceBatch = findBatch(scene_, kBallId);
     ball_.markBatch = findBatch(scene_, kBallMarkId);
     for (std::size_t i = 0; i < ghostBatches_.size(); ++i) {
@@ -473,6 +518,24 @@ void PlaygroundRoom::placeMarkers() {
         scene_.batches[ghostBatches_[i]].modelMatrix =
             i < ghostCount_ ? translation(Vec3{ghosts_[i].x, ghosts_[i].y, kGhostZ})
                             : translation({0, -1000, 0});
+    }
+    {
+        // The drawn bob: where the tick's own path had it, spread over the frames
+        // between ticks the same way everything else is. It is the bob that is
+        // interpolated, and the rope is drawn to wherever that lands -- a rope from the
+        // anchor to the frame's bob, at its own length, taut or slack exactly as the
+        // bob's distance makes it.
+        const Vec3 bobShown = pendulum_.shown;
+        const Vec3 anchor = pendulum_.anchor;
+        scene_.batches[pendulum_.ropeBatch].modelMatrix =
+            segment(Vec3{anchor.x, anchor.y, kRopeZ}, Vec3{bobShown.x, bobShown.y, kRopeZ}, kRopeHalfWidth);
+        const double r = pendulum_.radius;
+        scene_.batches[pendulum_.bobBatch].modelMatrix =
+            {r, 0, 0, 0, 0, r, 0, 0, 0, 0, 1, 0, bobShown.x, bobShown.y, kBobZ, 1};
+        scene_.batches[pendulum_.anchorBatch].modelMatrix =
+            translation(Vec3{anchor.x, anchor.y, kAnchorZ});
+        scene_.batches[pendulum_.ghostBatch].modelMatrix =
+            translation(Vec3{pendulum_.previous.x, pendulum_.previous.y, kRopeGhostZ});
     }
     {
         const double radius = ball_.radius;

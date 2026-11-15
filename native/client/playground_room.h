@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/playground_pendulum.h"
 #include "client/raster.h"
 #include "client/ui_layer.h"
 
@@ -80,6 +81,8 @@ public:
         return body < kBodyCount ? bodies_[body].velocity : Vec3{};
     }
     static constexpr std::size_t kBallOwner = kBodyCount, kDotOwner = kBodyCount + 1;
+    // The bob, and the anchor at the far end of every pull the rope gives it.
+    static constexpr std::size_t kBobOwner = kBodyCount + 3, kAnchorOwner = kBodyCount + 4;
     bool bodyFrozen(std::size_t body) const { return body < kBodyCount ? bodies_[body].frozen : true; }
     // Forces, as they are applied, and the room's energy.
     //
@@ -102,7 +105,10 @@ public:
     // no sliding anywhere to rub, which is exactly why friction can never account
     // for it.
     enum class ForceKind {
-        Gravity = 0, Contact = 1, Friction = 2, Pair = 3, Ball = 4, Drag = 5, Rolling = 6, KindCount = 7
+        Gravity = 0, Contact = 1, Friction = 2, Pair = 3, Ball = 4, Drag = 5, Rolling = 6,
+        // The rope: the only force that can pull and never push, and the only one
+        // that acts on two things that are not touching.
+        Rope = 7, KindCount = 8
     };
     // Room for a whole tick's worth of every kind at once: two bodies of four
     // corners, the dot, the ball, and the contacts and pairs between them. The
@@ -156,6 +162,17 @@ public:
     double ballAngle() const { return ball_.angle; }
     double ballShownAngle() const { return ball_.shownAngle; }
     bool ballFrozen() const { return ball_.frozen; }
+    // The rope and the bob: drawn place, solved place, length, anchor, tension.
+    Vec3 bobPosition() const { return pendulum_.position; }
+    Vec3 bobShown() const { return pendulum_.shown; }
+    Vec3 bobVelocity() const { return pendulum_.velocity; }
+    double bobRadius() const { return pendulum_.radius; }
+    double bobMass() const { return pendulum_.mass; }
+    Vec3 ropeAnchor() const { return pendulum_.anchor; }
+    double ropeLength() const { return pendulum_.length; }
+    bool ropeTaut() const { return pendulum_.taut; }
+    double ropeTension() const { return pendulum_.tension; }
+    double bobDistance() const { return length(pendulum_.position - pendulum_.anchor); }
 
 private:
     // What the mouse is holding, if anything.
@@ -620,18 +637,13 @@ public:
     std::size_t ballLiftedOutCount() const { return ballLiftedOut_; }
     void clearRepairCounts() { ballFoundThrough_ = bodyStepClamped_ = ballLiftedOut_ = 0; }
 private:
-    // Whether the body carrying `index` actually carries it: its own replayed forces
-    // are where it would be felt, so a support with no load of this body in them was
-    // never carrying anything. See the file.
+    // Whether the body carrying `index` really carries it. See the file.
     bool carriedBySolvedSupport(std::size_t index) const;
-    // Whether the surface a sleeping body is lying on is still there. A body that
-    // was put to rest by a floor, a shape or the ball, and that is touching nothing
-    // at all, is a body that has nothing holding it up any more -- and it wakes to
-    // fall, because that is what it is doing.
+    // Whether the surface a sleeping body is lying on is still there: if it is not,
+    // the body wakes and falls.
     void wakeUnsupportedBodies();
-    // A sleeping body with a load arriving on it is a shape carrying a load, not a
-    // wall: it wakes, so that what leans on it is answered against its mass. See the
-    // file.
+    // A sleeping body with a load arriving on it wakes: it is carrying a load, not
+    // being a wall.
     void wakeLoadedBodies(double band);
     // One body's weight: the same pull at every corner, and the impulse it delivers
     // over the tick. Used by the gravity pass, and for a body woken after it.
@@ -667,6 +679,9 @@ private:
     // the ball is already into the outline.
     double bodyBallGap(std::size_t index, Vec3& way, Vec3& at) const;
     void tickBall();
+    // Stepped after the shapes and before the ball, so the ball is swept against
+    // where the bob really ended the tick.
+    void tickPendulum();
     // The surfaces the ball is against, holding it out of themselves.
     void settleBallSurfaces();
     // What the ball was against this tick, so the grip at each of them can be
@@ -900,6 +915,8 @@ private:
     // supplied -- and that is the one force in the room with no solid to hang it on,
     // so it is the one that has to be worked out rather than assumed.
     Vec3 ballBlows_{};
+    Pendulum pendulum_{};
+
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;
     std::size_t pointBatch_ = 0, traceBatch_ = 0;
