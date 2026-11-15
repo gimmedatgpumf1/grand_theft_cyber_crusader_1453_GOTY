@@ -380,9 +380,74 @@ Vec3 PlaygroundRoom::ballFree(const Ball& ball, Vec3 push, std::size_t except) {
     }
     for (std::size_t i = 0; i < count; ++i)
         if (std::abs(m[i][i]) > 1e-12) share[i] = m[i][count] / m[i][i];
-    Vec3 out = push;
-    for (std::size_t i = 0; i < count; ++i) out = out - normals[i] * share[i];
-    return out;
+    // And a support pushes and never pulls.
+    //
+    // The complement above is two-sided: it says the ball may not move along a
+    // support's normal *either way*. For a ball the room is holding that is what is
+    // wanted -- a ball on the floor cannot be driven into the floor. But a surface
+    // cannot hold a ball *down*: it can only push it away, and an impulse that runs
+    // away from the surface is entirely the ball's own. Answering it as blocked is a
+    // ball welded to everything it touches: measured, a ball bounced off the floor at
+    // 81% of what it arrived with exactly once, and from the second bounce on it came
+    // back at nought -- the floor was holding it down. The same weld is why a ball on
+    // the rope could not come away from a shape it had touched: it arrived, stopped,
+    // and hung, which is a wrecking ball and not a basketball.
+    //
+    // So the shares are solved for the supports the push actually runs into, and any
+    // support whose share comes out negative -- one the push is already leaving --
+    // is dropped and the rest solved again. That is a projection onto the one-sided
+    // cone {v : v . n_i >= 0} and not onto the plane.
+    std::array<bool, Ball::kMaxSupports> active{};
+    for (std::size_t i = 0; i < count; ++i) active[i] = dot(normals[i], push) < 0.0;
+    for (int pass = 0; pass < int(Ball::kMaxSupports) + 1; ++pass) {
+        // The Gram system over the active supports only.
+        double g[Ball::kMaxSupports][Ball::kMaxSupports + 1]{};
+        std::size_t row = 0;
+        std::array<std::size_t, Ball::kMaxSupports> used{};
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!active[i]) continue;
+            used[row] = i;
+            for (std::size_t j = 0; j < count; ++j) g[row][j] = active[j] ? dot(normals[i], normals[j]) : 0.0;
+            g[row][row] = dot(normals[i], normals[i]);
+            double rhs = dot(normals[i], push);
+            for (std::size_t j = 0; j < count; ++j)
+                if (active[j] && j != i) rhs -= 0.0;
+            g[row][Ball::kMaxSupports] = rhs;
+            ++row;
+        }
+        if (row == 0) break;
+        // Gaussian elimination over the square block, as above.
+        for (std::size_t col = 0; col < row; ++col) {
+            std::size_t pivot = col;
+            for (std::size_t r = col + 1; r < row; ++r)
+                if (std::abs(g[r][col]) > std::abs(g[pivot][col])) pivot = r;
+            if (!(std::abs(g[pivot][col]) > 1e-12)) continue;
+            if (pivot != col)
+                for (std::size_t j = col; j <= row; ++j) std::swap(g[col][j], g[pivot][j]);
+            for (std::size_t r = 0; r < row; ++r) {
+                if (r == col) continue;
+                const double factor = g[r][col] / g[col][col];
+                if (factor == 0.0) continue;
+                for (std::size_t j = col; j <= row; ++j) g[r][j] -= factor * g[col][j];
+            }
+        }
+        std::array<double, Ball::kMaxSupports> lambda{};
+        for (std::size_t i = 0; i < row; ++i)
+            if (std::abs(g[i][i]) > 1e-12) lambda[i] = g[i][Ball::kMaxSupports] / g[i][i];
+        // A share that came out negative is a support the push is leaving: it has no
+        // say, and the solve is asked again without it.
+        std::size_t drop = count;
+        double worst = 0.0;
+        for (std::size_t i = 0; i < row; ++i)
+            if (lambda[i] < worst) { worst = lambda[i]; drop = used[i]; }
+        if (drop == count) {
+            Vec3 out = push;
+            for (std::size_t i = 0; i < row; ++i) out = out - normals[used[i]] * lambda[i];
+            return out;
+        }
+        active[drop] = false;
+    }
+    return push;
 }
 
 }  // namespace gtc::native
