@@ -11,6 +11,7 @@
 // as a ball: there is no second kind of object here to have its own name.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -311,6 +312,55 @@ int playgroundRopeChecks() {
                       crossed ? "yes" : "no", through.x, through.y, beside.x, beside.y, difference,
                       difference > 0.0 ? std::log2(difference) : -1000.0);
         check(crossed && difference == 0.0, "the rope has no collision: a ball thrown through it is not touched", detail);
+    }
+
+    // 7. Two balls are two objects. Taking one of them in the hand may not do anything
+    //    at all to the other: a carried ball is not simulated -- the hand says where it
+    //    is -- and reading that as "a ball is being carried" stopped both of them, so
+    //    the ball on the rope hung dead still in the air, its own weight unanswered,
+    //    while the mouse was somewhere else entirely. The same room is run twice from
+    //    the same state; in one of them the thrown ball is taken by the hand, and the
+    //    ball on the rope has to be bit-for-bit where it would have been anyway.
+    {
+        const auto swinging = [](bool grabTheOther) {
+            PlaygroundRoom room;
+            room.reset();
+            settle(room, 200);
+            // Let it go from a hand's width out to the side, so it is swinging.
+            auto& hanging = room.ball(PlaygroundRoom::kRopeBall);
+            const Vec3 anchor = room.ropeAnchor();
+            hanging.position = anchor + Vec3{std::sin(0.7), -std::cos(0.7), 0.0} * room.ropeLength();
+            hanging.previous = hanging.shown = hanging.position;
+            hanging.velocity = {};
+            hanging.frozen = false;
+            if (grabTheOther) {
+                // The mouse takes the thrown ball, on the floor, and carries it.
+                const Vec3 there = room.ball(PlaygroundRoom::kThrowBall).position;
+                room.setDragRay(Vec3{there.x, there.y, 1.0}, Vec3{0, 0, -1});
+                room.beginDrag();
+                const bool tookOne = room.dragTarget_ == PlaygroundRoom::DragTarget::Ball &&
+                                     room.dragBall_ == PlaygroundRoom::kThrowBall;
+                if (!tookOne) return std::array<double, 4>{-1, -1, -1, -1};
+                room.setDragRay(Vec3{there.x - 0.4, there.y + 0.6, 1.0}, Vec3{0, 0, -1});
+            }
+            std::array<double, 4> ends{};
+            for (int tick = 0; tick < 20; ++tick) room.advance(1.0 / 20.0);
+            const auto& ball = room.ropeBall();
+            ends = {ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y};
+            return ends;
+        };
+        const std::array<double, 4> free = swinging(false);
+        const std::array<double, 4> grabbed = swinging(true);
+        const double apart = gtc::native::length(Vec3{free[0] - grabbed[0], free[1] - grabbed[1], 0.0});
+        const double swung = gtc::native::length(Vec3{free[2], free[3], 0.0});
+        std::snprintf(detail, sizeof detail,
+                      "one second of a swing, with the hand holding the other ball for all of it: the ball on the rope "
+                      "was at (%.9f, %.9f) and is at (%.9f, %.9f), %.3e m apart (log2 %.1f), still doing %.3f m/s "
+                      "where the same swing with nothing in the hand is doing %.3f m/s",
+                      free[0], free[1], grabbed[0], grabbed[1], apart, apart > 0.0 ? std::log2(apart) : -1000.0,
+                      swung, std::hypot(free[2], free[3]));
+        check(grabbed[0] > -0.5 && apart == 0.0 && swung > 0.5,
+              "the two balls are two objects: carrying one leaves the other swinging", detail);
     }
 
     return localFailures;
