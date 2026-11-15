@@ -181,5 +181,39 @@ int main() {
             shoot(room, camera, "scratch/rope-4-hold-the-other-" + std::to_string(frame) + ".png");
     }
     room.endDrag();
+
+    // 5. The King's picture: the triangle stood on its vertical edge with the slope under
+    //    the hanging ball, and the ball resting exactly on that slope with the rope taut.
+    //    Two pictures 150 seconds apart, from the same camera: nothing moves, and nothing
+    //    appears.
+    room.reset();
+    for (int tick = 0; tick < 200; ++tick) room.advance(1.0 / 20.0);
+    {
+        // The triangle stood on its vertical edge, slope rising to the right, its face
+        // passing exactly under the hanging ball -- the King's picture, to the millimetre.
+        auto& triangle = room.bodies_[1];
+        triangle.angle = 1.5707963267948966;
+        triangle.centre = Vec3{3.62, 0.7, 0};
+        room.placeCorners(triangle);
+        triangle.previous = triangle.position;
+        triangle.previousCentre = triangle.centre;
+        triangle.previousAngle = triangle.angle;
+        triangle.velocity = {};
+        triangle.spin = 0.0;
+        triangle.frozen = true;
+    }
+    gtc::native::RoomFreecam close;
+    close.reset({3.60, 1.50, 2.60}, 0.0, 0.0);
+    for (int tick = 0; tick < 20; ++tick) room.advance(1.0 / 20.0);
+    const Vec3 settled = room.ropeBall().position;
+    const double energyThen = room.totalEnergy();
+    shoot(room, close, "scratch/rope-5-on-the-slope-0.png");
+    for (int tick = 0; tick < 3000; ++tick) room.advance(1.0 / 20.0);
+    const Vec3 later = room.ropeBall().position;
+    std::printf("150 s on the slope: the ball moved %.3e m, the room's energy changed by %+.3e J; it is %.6f m from "
+                "its anchor with the rope carrying %.3f N\n",
+                gtc::native::length(later - settled), room.totalEnergy() - energyThen,
+                room.ropeBallDistance(), room.ropeTension());
+    shoot(room, close, "scratch/rope-5-on-the-slope-3000.png");
     return 0;
 }

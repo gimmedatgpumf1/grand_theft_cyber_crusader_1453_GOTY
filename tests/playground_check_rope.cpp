@@ -379,9 +379,11 @@ int playgroundRopeChecks() {
         PlaygroundRoom room;
         room.reset();
         settle(room, 200);
+        // The triangle stood on its vertical edge with its slope rising to the right and
+        // its face exactly under the hanging ball: the King's picture, to the millimetre.
         auto& triangle = room.bodies_[1];
-        triangle.angle = -1.5707963267948966;
-        triangle.centre = Vec3{2.97, 1.4, 0};
+        triangle.angle = 1.5707963267948966;
+        triangle.centre = Vec3{3.62, 0.7, 0};
         room.placeCorners(triangle);
         triangle.previous = triangle.position;
         triangle.previousCentre = triangle.centre;
