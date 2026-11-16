@@ -309,7 +309,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         // the legacy walk.
         constrainedStep = true;
         namespace pc = playground_constraints;
-        constexpr int kSubsteps = 128;
+        constexpr int kSubsteps = 64;
         constexpr std::size_t kPairs = kBodyCount * (kBodyCount - 1) / 2;
         constexpr std::size_t kRows = 1 + kBodyCount * (1 + kMaxCorners) + kPairs * kMaxPatchEnds;
         std::array<Vec3, kBodyCount> normalTotal{}, gripTotal{}, atBody{}, floorNormal{}, floorGrip{}, atFloor{};
@@ -535,7 +535,31 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     row.kineticFriction = body.kineticFriction;
                 }
             }
+            const auto kinetic = [](const auto& set) {
+                double energy = 0.0;
+                for (const auto& body : set) {
+                    energy += body.inverseMass > 0.0 ? 0.5 * dot(body.velocity, body.velocity) / body.inverseMass : 0.0;
+                    energy += body.inverseMoment > 0.0 ? 0.5 * body.spin * body.spin / body.inverseMoment : 0.0;
+                }
+                return energy;
+            };
+            const double kineticBefore = kinetic(motion);
             pc::solve(motion, rows, count);
+            const double kineticAfter = kinetic(motion);
+            if (std::getenv("GTC_TRACE_SOLVER_WORK") && kineticAfter > kineticBefore + 1e-7) {
+                static int workTrace = 0;
+                if (workTrace++ < 50) {
+                    std::printf("SOLVER WORK %+0.9f J rows %zu ball (%+.5f,%+.5f)\n",
+                                kineticAfter - kineticBefore, count, state.position.x, state.position.y);
+                    for (std::size_t row = 0; row < count; ++row)
+                        if (rows[row].normalImpulse > 0.0 || std::abs(rows[row].tangentImpulse) > 0.0 ||
+                            std::abs(rows[row].rollingImpulse) > 0.0)
+                            std::printf(" row %zu a%zu b%zu target %+.6g n(%+.4f,%+.4f) Jn %.6g Jt %.6g Jr %.6g\n",
+                                        row, rows[row].a, rows[row].b, rows[row].target, rows[row].normal.x,
+                                        rows[row].normal.y, rows[row].normalImpulse, rows[row].tangentImpulse,
+                                        rows[row].rollingImpulse);
+                }
+            }
             state.velocity = motion[0].velocity;
             ball.spin = motion[0].spin;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
