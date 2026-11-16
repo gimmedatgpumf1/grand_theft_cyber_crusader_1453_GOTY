@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -208,6 +209,19 @@ int playgroundPictureChecks() {
                     drawn = depth;
                     worstTick = tick;
                     worstBody = which;
+                    if (std::getenv("GTC_TRACE_PICTURE_DEPTH") && depth > 1e-6) {
+                        const auto& ball = room.ball(PlaygroundRoom::kThrowBall);
+                        const auto& other = room.ball(PlaygroundRoom::kRopeBall);
+                        gtc::native::Vec3 way{}, at{};
+                        const double actualGap = which < room.kBodyCount ? room.bodyBallGap(ball, which, way, at) :
+                                                 ball.position.y - ball.radius;
+                        std::printf("PICTURE tick %d fraction %.3f body %zu depth %.9g actualGap %+.9g "
+                                    "previous (%+.6f,%+.6f) end (%+.6f,%+.6f) shown (%+.6f,%+.6f) "
+                                    "bent %d at %.6f otherEnd (%+.6f,%+.6f) otherFrozen %d\n",
+                                    tick, eighth / 8.0, which, depth, actualGap, ball.previous.x, ball.previous.y,
+                                    ball.position.x, ball.position.y, ball.shown.x, ball.shown.y, int(ball.bent),
+                                    ball.bendAt, other.position.x, other.position.y, int(other.frozen));
+                    }
                 }
             }
         }
@@ -227,6 +241,7 @@ int playgroundPictureChecks() {
         (void)worstTick;
         (void)worstBody;
     }
+    if (std::getenv("GTC_ONLY_PICTURE_INTERPOLATION")) return localFailures;
 
     // 3. The drawn place is on the path its own tick took. This is the check the ball
     //    needed and did not have: the drawing is handed two pieces of path, and the

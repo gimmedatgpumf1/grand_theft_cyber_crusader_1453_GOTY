@@ -290,11 +290,6 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             if (tension(state) <= 0.0) taut = false;
         }
-        // The struck body was rewound to the time of impact. It must also
-        // advance through the remaining time with its new velocity; leaving it
-        // at the meeting while keeping a full tick of forces can create energy.
-        // Continue the coupled island below instead of walking only the ball.
-        if (!bodyHeld(std::size_t(hitBody))) break;
     }
 
     static int traced = 0;
