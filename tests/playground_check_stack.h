@@ -68,6 +68,27 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
     for (int tick = 1; tick <= ticks; ++tick) {
         const double energy = room.totalEnergy(), localBefore = islandEnergy();
         const Vec3 triangleBefore = triangle.velocity, cubeBefore = cube.velocity;
+        if (std::getenv("GTC_TRACE_STACK_LEDGER") && angle == -1.0 && supportOffset == -0.15 &&
+            !supportAsleep && ticks == 200 && tick >= 83 && tick <= 85) {
+            PlaygroundRoom probe = room;
+            for (auto& bob : probe.balls_) { bob.arrival = bob.velocity; bob.blows = {}; }
+            for (auto& shape : probe.bodies_) shape.woken = false;
+            probe.clearForces();
+            const auto stage = [&](const char* label) {
+                const auto& b = probe.ball(PlaygroundRoom::kRopeBall);
+                const auto& t = probe.bodies_[PlaygroundRoom::kTriangle];
+                std::printf("  STAGE %d %s E %.9f ball p (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.6f "
+                            "shape p (%+.6f,%+.6f) v (%+.6f,%+.6f) angle %+.6f spin %+.6f\n",
+                            tick, label, probe.totalEnergy(), b.position.x, b.position.y, b.velocity.x, b.velocity.y,
+                            b.spin, t.centre.x, t.centre.y, t.velocity.x, t.velocity.y, t.angle, t.spin);
+            };
+            stage("start");
+            probe.tickBodies(); stage("bodies");
+            probe.tickBalls(); stage("balls");
+            for (auto& bob : probe.balls_) probe.separateBall(bob);
+            stage("separate");
+            probe.settleBodies(); probe.freezeCheck(); stage("settle");
+        }
         room.advance(1.0 / 20.0);
         pair_shape::PairManifold patch;
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&
