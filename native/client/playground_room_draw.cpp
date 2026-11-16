@@ -334,7 +334,18 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
             // on: something has been drawn over the ground the ball already covered.
             // The room's own place is then the best there is, and it is legal by the
             // room's own measure.
-            ball.shown = ballPlaceAt(ball, 1.0);
+            // The shapes were already interpolated to this frame before the ball.
+            // If their current pose overlaps the ball's tick-start pose, there is no
+            // legal point to walk back to. Snap the whole displayed scene to the
+            // known-clear solved pose rather than drawing mismatched times.
+            for (Body& body : bodies_) {
+                body.shown = body.position;
+            }
+            for (Ball& other : balls_) {
+                other.shown = other.position;
+                other.shownAngle = other.angle;
+            }
+            ball.shown = ball.position;
             drawnAt = 1.0;
         } else {
             // The latest place on this tick's path that is as clear as the room's own,
@@ -359,6 +370,13 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
                 inside = candidate;
             }
             if (clear < 0.0) {
+                for (Body& body : bodies_) {
+                    body.shown = body.position;
+                }
+                for (Ball& other : balls_) {
+                    other.shown = other.position;
+                    other.shownAngle = other.angle;
+                }
                 drawnAt = 1.0;
             } else {
                 for (int pass = 0; pass < 40; ++pass) {
