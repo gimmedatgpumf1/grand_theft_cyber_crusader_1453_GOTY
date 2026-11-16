@@ -93,7 +93,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
         overlap = std::max(overlap, -gap);
         stretch = std::max(stretch, room.ropeBallDistance() - rope);
         if (std::getenv("GTC_TRACE_BOUNDS") && fps == 60 &&
-            (room.ropeBallDistance() - rope > 1e-6 || gap < -1.1e-6 || gain > 1e-4))
+            (room.ropeBallDistance() - rope > 1e-6 || gap < -1.0e-6 || gain > 1e-4))
             std::printf("   bounds offset %.2f %s tick %d stretch %.7f gap %+.7f dE %+.7f "
                         "pos (%+.5f,%+.5f) v (%+.5f,%+.5f) taut %d hit %.5f -> %.5f\n",
                         sideOffset, awake ? "awake" : "asleep", tick, room.ropeBallDistance() - rope, gap, gain,
@@ -159,7 +159,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
           "the contact itself has the material's relative restitution", impactDetail);
     check(hit && triangleMove > 0.001,
           "the triangle reacts at its centre or corners", detail);
-    check(maxGain < 1e-4 && overlap < 1.1e-6 && stretch < 1.1e-6,
+    check(maxGain < 1e-4 && overlap < 1.0e-6 && stretch < 1.1e-6,
           "the swing does not gain energy, penetrate the triangle or stretch the rope", detail);
 }
 
@@ -249,7 +249,7 @@ void floorBallHitsCube(double speed, bool awake, double initialGap) {
     check(hit && outgoing > 0.1 && impactX < -0.1 && maxGap > 0.03,
           "a rolling ball rebounds and separates from the cube", detail);
     // An impact transfers momentum to the cube as well as reversing the ball.
-    check(hit && movement > 0.001 && penetration < 1.1e-6,
+    check(hit && movement > 0.001 && penetration < 1.0e-6,
           "the floor-supported cube does not let the ball through", detail);
 }
 

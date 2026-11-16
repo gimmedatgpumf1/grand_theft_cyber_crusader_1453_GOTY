@@ -95,7 +95,7 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
                   "overlap %.6g m at %d, stretch %.6g m, room/island gains %.6g J at %d / %.6g J at %d",
                   ticks, angle, supportOffset, supportAsleep ? "asleep" : "awake", meeting, overlap, overlapTick,
                   stretch, gain, worstTick, islandGain, worstIslandTick);
-    check(meeting > 1e-5 && overlap < 1.1e-6 && stretch < 1.1e-6 && gain < 1e-4 && islandGain < 1e-4,
+    check(meeting > 1e-5 && overlap < 1.0e-6 && stretch < 1.1e-6 && gain < 1e-4 && islandGain < 1e-4,
           "a rope-ball contact keeps a supporting stack solid and does not create energy", detail);
 }
 
