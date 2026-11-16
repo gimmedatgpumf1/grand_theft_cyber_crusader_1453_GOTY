@@ -13,6 +13,8 @@
 #include "client/playground_shapes.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -415,6 +417,14 @@ void PlaygroundRoom::finishBallTick(Ball& ball, Vec3 walkStart, Vec3 beganAt, bo
                                     bool startedOnFloor, double remaining) {
     const std::size_t ballIndex = std::size_t(&ball - balls_.data());
     const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
+    const bool trace = std::getenv("GTC_TRACE_SOLVE") && rope_.attached && &ball == &balls_[rope_.ball] &&
+                       length(ball.began) > 1.0;
+    const auto debug = [&](const char* stage) {
+        if (trace) std::printf("      FINISH %s pos (%+.5f,%+.5f) v (%+.5f,%+.5f) spin %+.5f touch %d\n",
+                               stage, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
+                               ball.spin, int(ball.touching));
+    };
+    debug("start");
     // What the ball is touching when the tick ends, and what may therefore not be
     // driven into. This runs whether or not the walk found anything, because the
     // walk answers contacts in the order it meets them and the last one it meets
@@ -477,7 +487,9 @@ void PlaygroundRoom::finishBallTick(Ball& ball, Vec3 walkStart, Vec3 beganAt, bo
     // the dot was dropped on the ball's shoulder. The solve is one pass of the loop
     // the shapes' own solver does, not a repetition of it.
     answerSupportedShapes();
+    debug("first supports");
     settleBallSurfaces(ball);
+    debug("surfaces");
     // And the shapes have the last word on themselves: the blow the ball has just
     // given them is answered by what is under them, exactly as it would be if it had
     // come from another shape. Without this the tick would end with a shape holding a

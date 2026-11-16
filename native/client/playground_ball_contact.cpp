@@ -2,6 +2,9 @@
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace gtc::native {
 using namespace ball_shape;
 using namespace playground_detail;
@@ -277,6 +280,15 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // the *face* is moving, and three quarters of that came back as a launch each tick --
     // the plank loaded on every other tick and coasted the ones between.
     const double rebound = (approach < 0.0 && arrived) ? -kBallRestitution * approach : 0.0;
+    const bool trace = std::getenv("GTC_TRACE_SOLVE") && rope_.attached && &ball == &balls_[rope_.ball] &&
+                       bodyIndex == 1 && length(ball.began) > 1.0;
+    if (trace)
+        std::printf("      CONTACT t %.5f rest %d exchange %d pos (%+.5f,%+.5f) n (%+.4f,%+.4f) "
+                    "began (%+.5f,%+.5f) raw (%+.5f,%+.5f) projected (%+.5f,%+.5f) "
+                    "surface (%+.5f,%+.5f) approach %.5f close %.5f rebound %.5f\n",
+                    reached, int(resting), int(exchange), ball.position.x, ball.position.y, normal.x, normal.y,
+                    ball.began.x, ball.began.y, ball.velocity.x, ball.velocity.y, ballSpeed.x, ballSpeed.y,
+                    surfaceVelocity.x, surfaceVelocity.y, approach, closing, rebound);
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
     // impulse its arrival was worth -- the momentum it took to stop it. See the note
@@ -517,6 +529,9 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
         const double into = dot(check - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
+    if (trace)
+        std::printf("      CONTACT after v (%+.5f,%+.5f) blow (%+.5f,%+.5f) given %.5f arrival %.5f\n",
+                    ball.velocity.x, ball.velocity.y, blown.x, blown.y, metGiven, metArrival);
     // What this shape gave the ball, drawn where the two met.
     //
     // It is written even when the ball's speed does not change by it, because what

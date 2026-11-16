@@ -655,6 +655,9 @@ int playgroundRopeChecks() {
         for (int tick = 0; tick < 200; ++tick) {
             const double closing = gtc::native::dot(ball.velocity, face);
             const double before = room.totalEnergy();
+            if (std::getenv("GTC_TRACE_SOLVE") && tick < 15)
+                std::printf("   SLOPE START %d pos (%+.5f,%+.5f) v (%+.5f,%+.5f)\n", tick,
+                            ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y);
             room.advance(1.0 / 20.0);
             if (std::getenv("GTC_TRACE_SLOPE") && tick < 40) {
                 Vec3 way{}, at{};
