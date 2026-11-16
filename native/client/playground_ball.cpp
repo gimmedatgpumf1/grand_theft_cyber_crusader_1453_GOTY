@@ -639,7 +639,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             if (!met.pivoted) {
                 const double when =
                     keepAboveFloor(std::size_t(what), met.previousCentre, met.previousAngle, met.centre, met.angle,
-                                   (1.0 - remaining) + first * remaining);
+                                   1.0 - remaining);
                 absorbRefusedStep(met, std::size_t(what), when);
                 met.centre = met.previousCentre + (met.centre - met.previousCentre) * when;
                 met.angle = met.previousAngle + (met.angle - met.previousAngle) * when;

@@ -259,9 +259,8 @@ void floorBallHitsCube(double speed, bool awake, double initialGap) {
                   incoming, outgoing, impactX, maxGap, movement, penetration, maxGain);
     check(hit && outgoing > 0.1 && impactX < -0.1 && maxGap > 0.03,
           "a rolling ball rebounds and separates from the cube", detail);
-    // A light hit may be absorbed by static friction at the cube's feet. A hard
-    // hit should move the cube; neither case may put the ball through it.
-    check(hit && (speed < 3.0 || movement > 0.001) && penetration < 1.1e-6,
+    // An impact transfers momentum to the cube as well as reversing the ball.
+    check(hit && movement > 0.001 && penetration < 1.1e-6,
           "the floor-supported cube does not let the ball through", detail);
 }
 

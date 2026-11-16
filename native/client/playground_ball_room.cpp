@@ -425,6 +425,9 @@ void PlaygroundRoom::finishBallTick(Ball& ball, Vec3 walkStart, Vec3 beganAt, bo
                                ball.spin, int(ball.touching));
     };
     debug("start");
+    // Do not ask a touching face to answer a radial fall that the taut rope
+    // already prevents. Otherwise the face receives an unpaired gravity kick.
+    if (ball.touching) ball.velocity = ballOffTheRope(ball, ball.velocity);
     // What the ball is touching when the tick ends, and what may therefore not be
     // driven into. This runs whether or not the walk found anything, because the
     // walk answers contacts in the order it meets them and the last one it meets

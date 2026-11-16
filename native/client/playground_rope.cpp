@@ -464,7 +464,10 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     Vec3 outward{};
     stateOf(at, speedNow, theta, omega, radius, outward);
     const double endTension = tensionFor(ball.mass, ropeLength, omega, theta, gravity);
-    rope.taut = radius >= ropeLength - ball_shape::kTouch && endTension > 0.0;
+    // An inward impact makes the rope slack even if the ball happens to be
+    // exactly at its length at this instant; a rope cannot pull it outward.
+    rope.taut = radius >= ropeLength - ball_shape::kTouch && endTension > 0.0 &&
+                dot(speedNow, outward) >= -playground_tick::kQuantumSpeed;
     rope.tension = rope.taut ? endTension : 0.0;
     if (rope.taut) {
         const Vec3 inward = outward * -1.0;

@@ -34,6 +34,15 @@ bool holdsBall(Vec3 normal) {
 void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached) {
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
+    // The rope's constrained velocity at an actual arrival, not the free-fall
+    // velocity for the *end* of the tick. The remaining gravity is applied by
+    // the walk after this contact. Resting contacts use their existing path.
+    const bool ropeArrival = exchange && !resting && rope_.attached && rope_.taut &&
+                             rope_.ball < kBallCount && &ball == &balls_[rope_.ball];
+    if (ropeArrival) {
+        const Vec3 atTime = ball.began + (ball.alone - ball.began) * std::clamp(reached, 0.0, 1.0);
+        ball.velocity = ballOffTheRope(ball, atTime);
+    }
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
