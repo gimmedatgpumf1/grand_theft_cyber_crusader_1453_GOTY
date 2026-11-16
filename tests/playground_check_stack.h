@@ -56,6 +56,15 @@ void ropeAgainstSupportedStack() {
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch))
             overlap = std::max(overlap, patch.overlap);
         const double change = room.totalEnergy() - energy;
+        if (std::getenv("GTC_TRACE_STACK") && (tick <= 30 || patch.overlap > 0.01 || change > 0.001)) {
+            std::printf("stack %d overlap %.6f dE %+.6f ball (%+.4f,%+.4f) v (%+.4f,%+.4f) "
+                        "triangle (%+.4f,%+.4f) v (%+.4f,%+.4f) spin %+.4f "
+                        "cube (%+.4f,%+.4f) v (%+.4f,%+.4f) spin %+.4f\n",
+                        tick, patch.overlap, change, ball.position.x, ball.position.y,
+                        ball.velocity.x, ball.velocity.y, triangle.centre.x, triangle.centre.y,
+                        triangle.velocity.x, triangle.velocity.y, triangle.spin, cube.centre.x, cube.centre.y,
+                        cube.velocity.x, cube.velocity.y, cube.spin);
+        }
         if (change > gain) { gain = change; worstTick = tick; }
         stretch = std::max(stretch, room.ropeBallDistance() - room.ropeLength());
         for (std::size_t i = 0; i < room.forceCount(); ++i) {
