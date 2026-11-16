@@ -38,6 +38,7 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_body_air.h"
 #include "client/playground_constraints.h"
+#include "client/playground_pair.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"

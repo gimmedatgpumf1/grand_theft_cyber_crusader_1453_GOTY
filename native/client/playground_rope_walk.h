@@ -1,106 +1,7 @@
 #pragma once
 
-namespace {
+#include "client/playground_rope_math.h"
 
-// Isolate all sign-changing roots of a polynomial on [0, 1]. Its derivative's
-// roots divide the interval into monotone pieces, so even a crossing followed by
-// a return inside one tick cannot be missed. Long double avoids losing the very
-// small distance of a nearly tangential rope catch to cancellation.
-using RopePolynomial = std::array<long double, 7>;
-struct RopeRoots { std::array<long double, 6> value{}; int count = 0; };
-
-long double ropePolynomialAt(const RopePolynomial& coefficients, int degree, long double t) {
-    long double value = coefficients[degree];
-    for (int i = degree - 1; i >= 0; --i) value = value * t + coefficients[i];
-    return value;
-}
-
-RopeRoots ropePolynomialRoots(const RopePolynomial& coefficients, int degree) {
-    RopeRoots roots;
-    while (degree > 0 && coefficients[degree] == 0.0L) --degree;
-    if (degree == 0) return roots;
-    if (degree == 1) {
-        const long double t = -coefficients[0] / coefficients[1];
-        if (t > 0.0L && t < 1.0L) roots.value[roots.count++] = t;
-        return roots;
-    }
-    RopePolynomial derivative{};
-    for (int i = 1; i <= degree; ++i) derivative[i - 1] = i * coefficients[i];
-    const RopeRoots extrema = ropePolynomialRoots(derivative, degree - 1);
-    const auto add = [&](long double t) {
-        if (t <= 0.0L || t >= 1.0L || roots.count >= degree) return;
-        if (roots.count == 0 || t - roots.value[roots.count - 1] > 1e-16L)
-            roots.value[roots.count++] = t;
-    };
-    long double left = 0.0L, atLeft = ropePolynomialAt(coefficients, degree, left);
-    for (int i = 0; i <= extrema.count; ++i) {
-        const long double right = i < extrema.count ? extrema.value[i] : 1.0L;
-        const long double atRight = ropePolynomialAt(coefficients, degree, right);
-        if ((atLeft < 0.0L && atRight > 0.0L) || (atLeft > 0.0L && atRight < 0.0L)) {
-            long double low = left, high = right;
-            for (int pass = 0; pass < 80; ++pass) {
-                const long double mid = 0.5L * (low + high);
-                const long double value = ropePolynomialAt(coefficients, degree, mid);
-                if ((atLeft < 0.0L && value < 0.0L) || (atLeft > 0.0L && value > 0.0L)) low = mid;
-                else high = mid;
-            }
-            add(0.5L * (low + high));
-        }
-        if (atRight == 0.0L) add(right);
-        left = right;
-        atLeft = atRight;
-    }
-    return roots;
-}
-
-// The slack trajectory sampled below has p(t) = p0 + v0*t/(1+a*t) + g*t^2/2.
-// Multiplying |p(t)-anchor|^2 - length^2 by (1+a*t)^2 gives a sixth-degree
-// polynomial. Find its first inside-to-outside crossing, not merely its endpoint.
-double ropeCatchTime(Vec3 arm, Vec3 velocity, double ropeLength, double gravity, double drag, double duration) {
-    if (!(duration > 0.0)) return duration + 1.0;
-    const double reach = length(arm);
-    const double radial = reach > 0.0 ? dot(arm, velocity) / reach : 0.0;
-    if (reach >= ropeLength - 1e-12 && radial > 1e-12) return 0.0;
-    const double a = 0.5 * drag * length(velocity);
-    const Vec3 g{0.0, -gravity, 0.0};
-    const std::array<Vec3, 4> q{arm, velocity + arm * a, g * 0.5, g * (0.5 * a)};
-    RopePolynomial coefficients{};
-    const auto preciseDot = [](Vec3 x, Vec3 y) {
-        return static_cast<long double>(x.x) * y.x + static_cast<long double>(x.y) * y.y +
-               static_cast<long double>(x.z) * y.z;
-    };
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j) coefficients[i + j] += preciseDot(q[i], q[j]);
-    const long double l2 = static_cast<long double>(ropeLength) * ropeLength;
-    coefficients[0] -= l2;
-    coefficients[1] -= 2.0L * a * l2;
-    coefficients[2] -= static_cast<long double>(a) * a * l2;
-    // A boundary point is exactly on the rope; do not let floating-point noise
-    // turn an inward velocity into an immediate outward crossing.
-    if (std::abs(reach - ropeLength) <= 1e-14 * std::max(1.0, ropeLength)) coefficients[0] = 0.0L;
-    long double scale = 1.0L;
-    for (int i = 1; i <= 6; ++i) { scale *= duration; coefficients[i] *= scale; }
-    RopePolynomial derivative{};
-    for (int i = 1; i <= 6; ++i) derivative[i - 1] = i * coefficients[i];
-    const RopeRoots extrema = ropePolynomialRoots(derivative, 5);
-    long double left = 0.0L;
-    for (int i = 0; i <= extrema.count; ++i) {
-        const long double right = i < extrema.count ? extrema.value[i] : 1.0L;
-        if (ropePolynomialAt(coefficients, 6, right) > 0.0L) {
-            long double low = left, high = right;
-            for (int pass = 0; pass < 80; ++pass) {
-                const long double mid = 0.5L * (low + high);
-                if (ropePolynomialAt(coefficients, 6, mid) <= 0.0L) low = mid;
-                else high = mid;
-            }
-            return duration * static_cast<double>(high);
-        }
-        left = right;
-    }
-    return duration + 1.0;
-}
-
-}  // namespace
 
 // Included once by playground_rope.cpp, after the arc integrator. A rope bob
 // near a body must meet it on the pendulum arc, not on a full tick of free fall
@@ -409,9 +310,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         constrainedStep = true;
         namespace pc = playground_constraints;
         constexpr int kSubsteps = 64;
-        constexpr std::size_t kRows = 1 + kBodyCount * (1 + kMaxCorners);
+        constexpr std::size_t kPairs = kBodyCount * (kBodyCount - 1) / 2;
+        constexpr std::size_t kRows = 1 + kBodyCount * (1 + kMaxCorners) + kPairs * kMaxPatchEnds;
         std::array<Vec3, kBodyCount> normalTotal{}, gripTotal{}, atBody{}, floorNormal{}, floorGrip{}, atFloor{};
         std::array<double, kBodyCount> rollTotal{};
+        struct PairImpulse {
+            Vec3 normal{}, friction{}, weightedPoint{};
+            double weight = 0.0, momentA = 0.0, momentB = 0.0;
+        };
+        std::array<std::array<PairImpulse, kBodyCount>, kBodyCount> pairImpulses{};
         const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
         const auto localEnergy = [&]() {
             double energy = 0.5 * ball.mass * dot(state.velocity, state.velocity) +
@@ -476,7 +383,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         for (std::size_t i = 0; i < kBodyCount; ++i)
             if (stopped[i]) rebaseBody(i, elapsed);
 
-        const auto constrain = [&](double step, double time) {
+        const auto constrain = [&](double step, double time, bool atStart) {
             std::array<pc::Body, kBodyCount + 1> motion{};
             motion[0] = {state.position, state.velocity, ball.spin, 1.0 / ball.mass, 1.0 / inertia};
             const double fraction = std::clamp(time / dt, 0.0, 1.0);
@@ -493,6 +400,35 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,
                                  fixed ? 0.0 : 1.0 / body.moment};
             }
+            // Shapes not yet in this solve still follow the room's predicted
+            // path. Once a contact reaches one, bring it into the same time slice
+            // and solve its contacts with the rest of the island.
+            std::array<std::array<Vec3, kMaxCorners>, kBodyCount> outlines{};
+            for (std::size_t i = 0; i < kBodyCount; ++i)
+                for (std::size_t j = 0; j < bodies_[i].count; ++j)
+                    outlines[i][j] = stopped[i] ? bodies_[i].position[j]
+                        : bodies_[i].previous[j] + (bodies_[i].position[j] - bodies_[i].previous[j]) * fraction;
+            const auto activate = [&](std::size_t i) {
+                if (stopped[i]) return;
+                Body& body = bodies_[i];
+                if (!bodyHeld(i)) {
+                    const double when = body.pivoted ? fraction
+                        : keepAboveFloor(i, body.previousCentre, body.previousAngle, body.centre, body.angle, fraction);
+                    body.centre = body.pivoted ? body.pivotPoint
+                        : body.previousCentre + (body.centre - body.previousCentre) * when;
+                    body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;
+                    placeCorners(body);
+                }
+                stopped[i] = true;
+                rebaseBody(i, time);
+                // An arrival at the end of this substep has already followed the
+                // old prediction through it; do not give it another half-step.
+                if (atStart) bodyForces(i, 0.5 * step);
+                motion[i + 1].centre = body.centre;
+                motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
+                motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
+                outlines[i] = body.position;
+            };
             std::array<pc::Contact, kRows> rows{};
             std::size_t count = 0;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
@@ -507,19 +443,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                                      gap.normal);
                 if (spare > quantum + std::max(0.0, -closing * step)) continue;
                 if (!stopped[i]) {
-                    if (!bodyHeld(i) && !body.pivoted) {
-                        const double when = keepAboveFloor(i, body.previousCentre, body.previousAngle,
-                                                           body.centre, body.angle, fraction);
-                        body.centre = body.previousCentre + (body.centre - body.previousCentre) * when;
-                        body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;
-                        placeCorners(body);
-                    }
-                    stopped[i] = true;
-                    rebaseBody(i, time);
-                    bodyForces(i, 0.5 * step);
-                    motion[i + 1].centre = body.centre;
-                    motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
-                    motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
+                    activate(i);
                     gap = outlineGap(state.position, body.position.data(), body.position.data(), body.count, 1.0);
                     spare = gap.gap - ball.radius;
                     at = state.position - gap.normal * ball.radius;
@@ -536,6 +460,53 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 ball.touching = true;
                 if (gap.normal.y > 0.0) ball.supportNormal = gap.normal;
                 stopped[i] = true;
+            }
+
+            // Extend the active island through arbitrary shape/shape contacts.
+            // A body supporting the one touched by the ball must share this time
+            // slice; treating its predicted pose as a fixed ghost lets the first
+            // body fall straight through it. The band only gathers candidates;
+            // each row below may spend no more than its actual clearance.
+            double speedBound = length(state.velocity) + gravity * step;
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                double radius = 0.0;
+                for (std::size_t j = 0; j < bodies_[i].count; ++j)
+                    radius = std::max(radius, length(bodies_[i].local[j]));
+                speedBound += length(motion[i + 1].velocity) + std::abs(motion[i + 1].spin) * radius;
+            }
+            const double band = quantum + 2.0 * speedBound * step;
+            for (std::size_t pass = 0; pass < kBodyCount; ++pass) {
+                bool changed = false;
+                for (std::size_t i = 0; i < kBodyCount; ++i) {
+                    if (bodies_[i].count == 0) continue;
+                    for (std::size_t j = i + 1; j < kBodyCount; ++j) {
+                        if (bodies_[j].count == 0 || (!stopped[i] && !stopped[j])) continue;
+                        pair_shape::PairManifold pair;
+                        if (!pair_shape::collide(outlines[i].data(), bodies_[i].count,
+                                                 outlines[j].data(), bodies_[j].count, band, pair)) continue;
+                        if (!stopped[i]) { activate(i); changed = true; }
+                        if (!stopped[j]) { activate(j); changed = true; }
+                    }
+                }
+                if (!changed) break;
+            }
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                if (!stopped[i] || bodies_[i].count == 0) continue;
+                for (std::size_t j = i + 1; j < kBodyCount; ++j) {
+                    if (!stopped[j] || bodies_[j].count == 0) continue;
+                    pair_shape::PairManifold pair;
+                    if (!pair_shape::collide(outlines[i].data(), bodies_[i].count,
+                                             outlines[j].data(), bodies_[j].count, band, pair)) continue;
+                    for (std::size_t end = 0; end < pair.ends; ++end) {
+                        const double spare = -pair.depth[end];
+                        pc::Contact& row = rows[count++];
+                        row.a = i + 1; row.b = j + 1;
+                        row.point = pair.at[end]; row.normal = pair.normal;
+                        row.target = spare > quantum ? -spare / step : 0.0;
+                        row.staticFriction = std::min(bodies_[i].staticFriction, bodies_[j].staticFriction);
+                        row.kineticFriction = std::min(bodies_[i].kineticFriction, bodies_[j].kineticFriction);
+                    }
+                }
             }
             const Vec3 arm = state.position - anchor;
             const double reach = length(arm);
@@ -589,9 +560,20 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     const std::size_t i = row.b - 1;
                     normalTotal[i] += normal; gripTotal[i] += grip; atBody[i] = row.point;
                     rollTotal[i] += row.rollingImpulse;
-                } else {
+                } else if (row.b == pc::kWorld) {
                     const std::size_t i = row.a - 1;
                     floorNormal[i] += normal; floorGrip[i] += grip; atFloor[i] = row.point;
+                } else {
+                    const std::size_t i = row.a - 1, k = row.b - 1;
+                    PairImpulse& pair = pairImpulses[i][k];
+                    pair.normal += normal;
+                    pair.friction += grip;
+                    const double weight = row.normalImpulse + std::abs(row.tangentImpulse);
+                    pair.weightedPoint += row.point * weight;
+                    pair.weight += weight;
+                    const Vec3 total = normal + grip;
+                    pair.momentA += pc::cross2(row.point - motion[row.a].centre, total);
+                    pair.momentB -= pc::cross2(row.point - motion[row.b].centre, total);
                 }
             }
             return ropeLoad;
@@ -602,7 +584,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
             for (std::size_t i = 0; i < kBodyCount; ++i)
                 if (stopped[i]) bodyForces(i, 0.5 * step);
-            const double firstLoad = constrain(step, elapsed);
+            const double firstLoad = constrain(step, elapsed, true);
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
@@ -643,7 +625,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
             for (std::size_t i = 0; i < kBodyCount; ++i)
                 if (stopped[i]) bodyForces(i, 0.5 * step);
-            finalRopeLoad = (firstLoad + constrain(step, elapsed + step)) / step;
+            finalRopeLoad = (firstLoad + constrain(step, elapsed + step, false)) / step;
             elapsed += step;
         }
         static int constraintTraces = 0;
@@ -682,6 +664,29 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             recordImpulse(atFloor[i], floorNormal[i], ForceKind::Contact, i);
             recordImpulse(atFloor[i], floorGrip[i], ForceKind::Friction, i);
+        }
+        // Each shape pair is an equal-and-opposite impulse. Keep its normal
+        // and friction separate in the ledger, and preserve the moment lost
+        // by drawing the distributed substep impulses at one averaged point.
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            for (std::size_t j = i + 1; j < kBodyCount; ++j) {
+                const PairImpulse& pair = pairImpulses[i][j];
+                if (!(pair.weight > 0.0)) continue;
+                const Vec3 at = pair.weightedPoint / pair.weight;
+                const Vec3 total = pair.normal + pair.friction;
+                if (length(pair.normal) > 1e-12) {
+                    recordImpulse(at, pair.normal, ForceKind::Pair, i);
+                    recordImpulse(at, pair.normal * -1.0, ForceKind::Pair, j);
+                }
+                if (length(pair.friction) > 1e-12) {
+                    recordImpulse(at, pair.friction, ForceKind::Friction, i);
+                    recordImpulse(at, pair.friction * -1.0, ForceKind::Friction, j);
+                }
+                const double residualA = pair.momentA - pc::cross2(at - bodies_[i].centre, total);
+                const double residualB = pair.momentB + pc::cross2(at - bodies_[j].centre, total);
+                if (std::abs(residualA) > 1e-12) addCouple(at, residualA / dt, {}, ForceKind::Pair, i);
+                if (std::abs(residualB) > 1e-12) addCouple(at, residualB / dt, {}, ForceKind::Pair, j);
+            }
         }
         if (length(ropeTotal) > 1e-12) ropeImpulse(ropeTotal);
     }
