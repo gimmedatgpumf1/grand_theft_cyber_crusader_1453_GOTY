@@ -216,12 +216,23 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
 
-    // A new impact must not be reconstructed from the pre-impact velocity: the
-    // other body has already taken its impulse. Keep that answer even when the
-    // ballistic walk ended outside the rope's reach. A kept contact is different:
-    // if it took the ball past the rope, the arc below still supplies its motion.
+    // A real impact must not be reconstructed from the pre-impact velocity: the
+    // other body has already taken its impulse. The meeting record also catches a
+    // blow at the beginning of a tick, after the rope's arc reached the face on the
+    // previous tick. A bent path alone is not proof of a blow: a sweep can bend while
+    // leaving a surface, without exchanging an impulse.
+    bool impact = false;
+    for (double arrival : ball.meetingArrival) impact = impact || arrival > 0.0;
+    if (ball.impacted && ball.bent) {
+        for (const Ball& other : balls_) {
+            if (&other == &ball) continue;
+            const Vec3 otherAt = other.previous + (other.position - other.previous) * ball.bendAt;
+            if (length(ball.bendPoint - otherAt) <= ball.radius + other.radius + ball_shape::kTouch)
+                impact = true;
+        }
+    }
     const bool pastTheLength = length(ball.position - anchor) > ropeLength;
-    if (ball.answered && (ball.impacted || !pastTheLength)) {
+    if (ball.answered && (impact || !pastTheLength)) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
         // length, and take the speed that is running away from the anchor -- which is
