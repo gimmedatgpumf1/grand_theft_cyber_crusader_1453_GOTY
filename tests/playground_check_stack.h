@@ -1,6 +1,6 @@
 // A ball and a stack must not be solved as if the supporting body disappeared
 // when the ball's sustained-contact step takes over.
-void ropeAgainstSupportedStack() {
+void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportAsleep, int ticks) {
     PlaygroundRoom room;
     room.reset();
     settle(room, 200);
@@ -27,7 +27,6 @@ void ropeAgainstSupportedStack() {
     plank.previous = plank.shown = plank.position;
 
     auto& ball = room.ball(PlaygroundRoom::kRopeBall);
-    const double angle = -1.0;
     ball.position = ball.previous = ball.shown = room.ropeAnchor() +
                     Vec3{std::sin(angle), -std::cos(angle), 0} * room.ropeLength();
     ball.velocity = {};
@@ -46,11 +45,11 @@ void ropeAgainstSupportedStack() {
     triangle.previous = triangle.shown = triangle.position;
 
     auto& cube = room.bodies_[PlaygroundRoom::kCube];
-    cube.centre = cube.previousCentre = {triangle.centre.x, 0.35, 0};
+    cube.centre = cube.previousCentre = {triangle.centre.x + supportOffset, 0.35, 0};
     cube.angle = cube.previousAngle = 0;
     cube.velocity = {};
     cube.spin = 0;
-    cube.frozen = false;
+    cube.frozen = supportAsleep;
     room.placeCorners(cube);
     cube.previous = cube.shown = cube.position;
 
@@ -64,9 +63,11 @@ void ropeAgainstSupportedStack() {
                0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     };
     double overlap = 0, gain = 0, islandGain = 0, stretch = 0, meeting = 0;
-    int worstTick = 0, worstIslandTick = 0, overlapTick = 0;
-    for (int tick = 1; tick <= 200; ++tick) {
+    double momentumError = 0, pairError = 0;
+    int worstTick = 0, worstIslandTick = 0, overlapTick = 0, momentumTick = 0;
+    for (int tick = 1; tick <= ticks; ++tick) {
         const double energy = room.totalEnergy(), localBefore = islandEnergy();
+        const Vec3 triangleBefore = triangle.velocity, cubeBefore = cube.velocity;
         room.advance(1.0 / 20.0);
         pair_shape::PairManifold patch;
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&
@@ -84,17 +85,45 @@ void ropeAgainstSupportedStack() {
         if (change > gain) { gain = change; worstTick = tick; }
         if (localChange > islandGain) { islandGain = localChange; worstIslandTick = tick; }
         stretch = std::max(stretch, room.ropeBallDistance() - room.ropeLength());
+        Vec3 triangleImpulse{}, cubeImpulse{}, pairImpulse{};
         for (std::size_t i = 0; i < room.forceCount(); ++i) {
             const auto& force = room.forces()[i];
-            if (force.owner == PlaygroundRoom::kTriangle && force.kind == PlaygroundRoom::ForceKind::Ball)
-                meeting = std::max(meeting, length(force.force) / 20.0);
+            if (force.couple) continue;
+            if (force.owner == PlaygroundRoom::kTriangle) {
+                triangleImpulse += force.force / 20.0;
+                if (force.kind == PlaygroundRoom::ForceKind::Ball)
+                    meeting = std::max(meeting, length(force.force) / 20.0);
+            }
+            if (force.owner == PlaygroundRoom::kCube) cubeImpulse += force.force / 20.0;
+            if ((force.owner == PlaygroundRoom::kTriangle || force.owner == PlaygroundRoom::kCube) &&
+                force.kind == PlaygroundRoom::ForceKind::Pair) pairImpulse += force.force / 20.0;
         }
+        const double error = std::max(length((triangle.velocity - triangleBefore) * triangle.mass - triangleImpulse),
+                                      length((cube.velocity - cubeBefore) * cube.mass - cubeImpulse));
+        if (error > momentumError) { momentumError = error; momentumTick = tick; }
+        pairError = std::max(pairError, length(pairImpulse));
     }
-    char detail[320];
+    char detail[400];
     std::snprintf(detail, sizeof detail,
-                  "200 ticks: ball impulse %.5f N s, stack overlap %.6g m at tick %d, rope stretch %.6g m, "
-                  "room/island single-tick gains %.6g J at %d / %.6g J at %d",
-                  meeting, overlap, overlapTick, stretch, gain, worstTick, islandGain, worstIslandTick);
+                  "%d ticks, angle %.2f, offset %+.2f, support %s: ball impulse %.5f N s, "
+                  "overlap %.6g m at %d, stretch %.6g m, room/island gains %.6g J at %d / %.6g J at %d",
+                  ticks, angle, supportOffset, supportAsleep ? "asleep" : "awake", meeting, overlap, overlapTick,
+                  stretch, gain, worstTick, islandGain, worstIslandTick);
     check(meeting > 1e-5 && overlap < 1.1e-6 && stretch < 1.1e-6 && gain < 1e-4 && islandGain < 1e-4,
           "a rope-ball contact keeps a supporting stack solid and does not create energy", detail);
+    std::snprintf(detail, sizeof detail,
+                  "%d ticks, angle %.2f, offset %+.2f, support %s: peak body momentum error %.6g N s at %d; "
+                  "net pair impulse %.6g N s",
+                  ticks, angle, supportOffset, supportAsleep ? "asleep" : "awake", momentumError, momentumTick,
+                  pairError);
+    check(momentumError < 1e-3 && pairError < 1e-3,
+          "the stack's recorded impulses account for momentum on both bodies", detail);
+}
+
+void supportedStackChecks() {
+    for (double angle : {-1.30, -1.00, -0.65})
+        for (double offset : {-0.15, 0.0, 0.15})
+            for (bool asleep : {false, true})
+                ropeAgainstSupportedStack(angle, offset, asleep, 200);
+    ropeAgainstSupportedStack(-1.00, 0.0, false, 3000);
 }

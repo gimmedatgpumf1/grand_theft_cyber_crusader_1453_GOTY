@@ -404,7 +404,7 @@ int playgroundArrivalChecks() {
     if (std::getenv("GTC_ONLY_GRAVITY_CONTACT")) {
         fallingShapeAgainstRope();
         ordinaryBallImpactGravity();
-        ropeAgainstSupportedStack();
+        supportedStackChecks();
         return localFailures;
     }
     char detail[240];
@@ -502,7 +502,7 @@ int playgroundArrivalChecks() {
     contactConstraintChecks();
     fallingShapeAgainstRope();
     ordinaryBallImpactGravity();
-    ropeAgainstSupportedStack();
+    supportedStackChecks();
     slackRopeBallMovesOnSlope();
     bounceIsTheSameEveryWay();
     aRollIsARoll();
