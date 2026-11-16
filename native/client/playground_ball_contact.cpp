@@ -259,8 +259,8 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // motion is left untouched, because the rope cannot push the ball away.
     const auto answered = [&](Vec3 speed) { return ballOffTheRope(ball, speed); };
     const Vec3 ballSpeed = instantaneous ? ball.velocity : answered(ball.velocity);
-    const double closing = dot(ballSpeed - surfaceVelocity, normal);
-    const bool arrived = instantaneous ? closing < -kRestSpeed
+    const double predictedClosing = dot(ballSpeed - surfaceVelocity, normal);
+    const bool arrived = instantaneous ? predictedClosing < -kRestSpeed
                                        : dot(answered(ball.began) - surfaceVelocity, normal) < -kRestSpeed;
     const bool blow = arrived && !resting;
     // What the ball was doing at the instant it met the surface. Its speed is carried
@@ -271,6 +271,11 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     const Vec3 atMeeting = instantaneous ? ballSpeed
                                         : arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
+    // The impulse is an event at the meeting, not at the end of the tick.
+    // Using the end-of-tick closing speed made it cancel the remaining gravity
+    // along the normal and left tangential gravity untouched; adding a whole
+    // remaining gravity kick afterwards then applied the tangential part twice.
+    const double closing = approach;
     // A bounce is the answer to arriving at a surface, and `arrived` says so: closing at
     // the beginning of the ball's own tick, with the speed the rope permits. It used to
     // say "and not `resting`" as well, and `resting` only means the walk found the ball

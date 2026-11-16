@@ -316,28 +316,15 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     // Set while the meeting is being recorded and cleared once the contact has had
     // its say: what the ball leaves with is the answer, not what it arrived with.
     bool bendRecording = false;
-    // What gravity still has to do to the ball in the time that is left of the tick.
-    //
-    // The tick's weight is put on the ball once, at the top, for a whole tick -- which
-    // is right only while the ball is falling freely for that whole tick. The moment
-    // a contact answers it, the ball's speed is the speed it has *then*, at the
-    // instant of the meeting, and a ball that leaves a surface at four centimetres a
-    // second with no weight acting on it for the rest of the tick flies that whole
-    // piece of time -- it ends the tick two millimetres above the floor still going
-    // up, and the next tick it is an arrival again. Measured: a ball rolled into the
-    // foot of the triangle and left alone sat two millimetres off the floor, bouncing
-    // twenty times a second, and because it was never *on* anything no friction and
-    // no rolling resistance could touch it -- it kept a centimetre a second of drift
-    // and crept into the wedge until it was thrown out of it. That micro-bounce is a
-    // piece of time with no weight in it, and it is what the King saw shaking.
-    //
-    // So the weight is put back on for whatever is left of the tick after a contact,
-    // which is the same force over the same time it would have had if it had never
-    // been interrupted. A ball that leaves a face at a few centimetres a second is
-    // pulled back down within the same tick, lands, and is answered as resting --
-    // which is what a ball that cannot get off the ground is.
-    const auto weightForTheRest = [&ball](double left) {
+    // Free flight already received one whole tick of gravity above. A supported
+    // ball did not: its support cancelled the weight until it leaves. Only in
+    // that case add the gravity for the unspent time after a meeting. If the
+    // floor stops it again, a later departure can start a new free interval.
+    bool gravityThroughEnd = !held;
+    const auto weightForTheRest = [&ball, &gravityThroughEnd](double left) {
+        if (gravityThroughEnd || !(left > 0.0)) return;
         ball.velocity.y -= playground_tick::kGravity * kTick * left;
+        gravityThroughEnd = true;
     };
     for (int step = 0; step < kMaxContacts && remaining > 1e-12; ++step) {
         const Vec3 next = ball.position + ball.velocity * (kTick * remaining);
@@ -708,7 +695,10 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         // keeps its height and loses the speed that was pointing into the floor.
         if (ball.position.y <= ball.radius + kTouch) {
             ball.position.y = std::max(ball.position.y, ball.radius);
-            if (ball.velocity.y < 0.0) ball.velocity.y = 0.0;
+            if (ball.velocity.y < 0.0) {
+                ball.velocity.y = 0.0;
+                gravityThroughEnd = false;
+            }
         }
         // A surface that is still met at the very start of the remaining time has
         // already been answered as far as it can be, and going round again would
