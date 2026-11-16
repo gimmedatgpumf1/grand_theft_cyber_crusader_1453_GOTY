@@ -87,9 +87,12 @@ void fallingShapeAgainstRope() {
                               contact.gap, contact.ballImpulse.x, contact.ballImpulse.y, unexplainedY,
                               contact.energyChange, length(contact.deltaMomentum - contact.recorded));
                 // Fast air drag can move the triangle's face away from the ball;
-                // a separating pair is not required to exchange an impulse.
+                // a separating pair is not required to exchange an impulse. The
+                // legacy drag arrow is the initial force, not its integrated mean,
+                // so use the free-fall reference's own ledger error as allowance.
+                const double airDisplayError = length(reference.deltaMomentum - reference.recorded);
                 check(std::abs(unexplainedY) < 0.03 && std::abs(contact.centreY - reference.centreY) < 0.005 &&
-                          (!met || length(contact.deltaMomentum - contact.recorded) < 0.03) &&
+                          length(contact.deltaMomentum - contact.recorded) < airDisplayError + 0.03 &&
                           contact.gap >= -1.1e-6 && contact.energyChange < 0.005,
                       "a rope-ball neighbour does not give an airborne shape an extra tick of gravity", detail);
             }
