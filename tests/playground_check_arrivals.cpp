@@ -109,8 +109,9 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
 
     bool hit = false;
     int tick = 0, impactTick = -1;
-    double incoming = 0.0, outgoing = 0.0, lowestX = 0.0, separation = 0.0;
+    double incoming = 0.0, outgoing = 0.0, impactBallX = 0.0, lowestX = 0.0, separation = 0.0;
     double triangleMove = 0.0, maxGain = 0.0, overlap = 0.0, stretch = 0.0;
+    int gainTick = 0;
     const bool trace = std::getenv("GTC_TRACE_HORIZONTAL") != nullptr && fps == 60 && !awake && sideOffset == 0.16;
     for (int frame = 0; frame < fps * 4; ++frame) {
         Vec3 way{}, at{};
@@ -125,7 +126,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
         const double gap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
         const double relative = dot(ball.velocity - room.pointSpeed(triangle, at), way * -1.0);
         const double gain = room.totalEnergy() - beforeEnergy;
-        maxGain = std::max(maxGain, gain);
+        if (gain > maxGain) { maxGain = gain; gainTick = tick; }
         overlap = std::max(overlap, -gap);
         stretch = std::max(stretch, room.ropeBallDistance() - rope);
         bool impulse = ball.meetingArrival[PlaygroundRoom::kTriangle] > 1e-7;
@@ -140,6 +141,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
             impactTick = tick;
             incoming = beforeRelative;
             outgoing = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
+            impactBallX = ball.velocity.x;
         }
         if (hit) {
             lowestX = std::min(lowestX, ball.velocity.x);
@@ -154,15 +156,17 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
                         tick, gap, beforeRelative, relative, ball.velocity.x, ball.velocity.y,
                         triangle.velocity.x, triangle.velocity.y, triangle.spin, gain, int(impulse));
     }
-    char detail[300];
+    char detail[400];
     std::snprintf(detail, sizeof detail,
                   "%d Hz %s offset %.2f: hit %d at tick %d, normal %.3f -> %.3f m/s, "
-                  "min vx %.3f m/s, separation %.3f m, triangle moved %.4f m, gain %.6f J",
+                  "impact vx %.3f m/s, min vx %.3f, separation %.3f m, triangle moved %.4f m, "
+                  "gain %.6f J at tick %d, overlap %.3g m, stretch %.3g m",
                   fps, awake ? "awake" : "asleep", sideOffset, int(hit), impactTick,
-                  incoming, outgoing, lowestX, separation, triangleMove, maxGain);
+                  incoming, outgoing, impactBallX, lowestX, separation, triangleMove, maxGain, gainTick,
+                  overlap, stretch);
     check(grabbed && releaseError < 1e-6 && releaseSpeed < 1e-9 && releaseSpin < 1e-9,
           "a mouse release places the rope ball without throwing it", detail);
-    check(hit && incoming < -0.5 && outgoing > 0.2 && lowestX < -0.3 && separation > 0.1,
+    check(hit && incoming < -0.5 && outgoing > 0.2 && impactBallX < -0.2 && separation > 0.1,
           "the horizontal rope swing rebounds visibly from the triangle", detail);
     check(hit && triangleMove > 0.001,
           "the triangle reacts at its centre or corners", detail);

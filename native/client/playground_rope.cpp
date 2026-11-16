@@ -216,17 +216,11 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
 
-    // Which of the two the rope is, and it is not "did the room answer" but "has the
-    // ball run past its length". A ball that is still inside its circle is the room's
-    // to place, and the rope may only take the speed running away from the anchor. A
-    // ball that has gone *past* the length is the rope's, whatever the room said, and
-    // it has to be caught at the instant the travel crossed the sphere -- because
-    // putting it back on the circle wherever it happens to have got to is a lift, and
-    // a lift is height for nothing. That is the ball on the string that would not
-    // bounce: it came off the slope, went slack, hopped and fell, was caught thirty
-    // millimetres below its own arc and set down there dead, and hung.
-    const bool pastTheLength = length(ball.position - anchor) > ropeLength;
-    if (ball.answered && !pastTheLength) {
+    // An answered contact must not be reconstructed from the pre-impact velocity:
+    // the other body has already taken its impulse, and replaying the incoming arc
+    // gives that impulse to it without taking it from the ball. Constrain the contact
+    // result instead. An untouched tick can still use the pendulum solve below.
+    if (ball.answered) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
         // length, and take the speed that is running away from the anchor -- which is
