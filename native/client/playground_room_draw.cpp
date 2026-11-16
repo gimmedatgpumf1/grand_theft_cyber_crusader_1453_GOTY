@@ -335,13 +335,32 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
             // a step size and not a tolerance: the root of "where does this path stop
             // being deeper inside than the room left the ball", found the way the room
             // finds where a walk stops being clear.
-            double clear = 0.0, inside = drawnAt;
-            for (int pass = 0; pass < 40; ++pass) {
-                const double middle = 0.5 * (clear + inside);
-                if (depthInside(ballPlaceAt(ball, middle), middle) > allowed) inside = middle;
-                else clear = middle;
+            // Contact paths can enter, leave, and re-enter a moving outline in one
+            // tick. A single bisection from tick start assumes one crossing and can
+            // converge on an earlier crossing while the requested frame lies inside
+            // a later one. Walk backward from the requested frame to bracket its
+            // nearest clear point, then refine just that crossing.
+            double inside = drawnAt;
+            double clear = -1.0;
+            constexpr int kBrackets = 256;
+            for (int sample = 1; sample <= kBrackets; ++sample) {
+                const double candidate = drawnAt * (1.0 - double(sample) / kBrackets);
+                if (depthInside(ballPlaceAt(ball, candidate), candidate) <= allowed) {
+                    clear = candidate;
+                    break;
+                }
+                inside = candidate;
             }
-            drawnAt = clear;
+            if (clear < 0.0) {
+                drawnAt = 1.0;
+            } else {
+                for (int pass = 0; pass < 40; ++pass) {
+                    const double middle = 0.5 * (clear + inside);
+                    if (depthInside(ballPlaceAt(ball, middle), middle) > allowed) inside = middle;
+                    else clear = middle;
+                }
+                drawnAt = clear;
+            }
             ball.shown = ballPlaceAt(ball, drawnAt);
         }
     }
