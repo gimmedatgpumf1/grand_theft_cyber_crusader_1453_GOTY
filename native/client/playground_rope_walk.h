@@ -384,6 +384,18 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         std::array<Vec3, kBodyCount> normalTotal{}, gripTotal{}, atBody{}, floorNormal{}, floorGrip{}, atFloor{};
         std::array<double, kBodyCount> rollTotal{};
         const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+        const auto localEnergy = [&]() {
+            double energy = 0.5 * ball.mass * dot(state.velocity, state.velocity) +
+                            0.5 * inertia * ball.spin * ball.spin + ball.mass * gravity * state.position.y;
+            for (const Body& body : bodies_) {
+                if (body.count == 0) continue;
+                energy += 0.5 * body.mass * dot(body.velocity, body.velocity) +
+                          0.5 * body.moment * body.spin * body.spin + body.mass * gravity * body.centre.y;
+            }
+            return energy;
+        };
+        const double initialEnergy = localEnergy();
+        double projectionWork = 0.0;
         ball.touchCount = 0;  // the simultaneous solve below owns these contacts
 
         const auto constrain = [&](double step) {
@@ -494,6 +506,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             // Correct only geometrical drift, iterating because a rope and a
             // face can both be active. The velocity solve remains one-sided.
+            const double beforeProjectionY = state.position.y;
             for (int pass = 0; pass < 16; ++pass) {
                 double error = 0.0;
                 const Vec3 arm = state.position - anchor;
@@ -516,10 +529,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 }
                 if (error < 1e-12) break;
             }
+            projectionWork += ball.mass * gravity * (state.position.y - beforeProjectionY);
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
             finalRopeLoad = (firstLoad + constrain(step)) / step;
             elapsed += step;
         }
+        static int constraintTraces = 0;
+        if (std::getenv("GTC_TRACE_CONSTRAINTS") && localEnergy() - initialEnergy > 1e-5 && constraintTraces++ < 25)
+            std::printf("CONSTRAINT energy %+.8f J projection %+.8f J pos (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.5f held %d\n",
+                        localEnergy() - initialEnergy, projectionWork, state.position.x, state.position.y,
+                        state.velocity.x, state.velocity.y, ball.spin, int(bodyHeld(kTriangle)));
         for (std::size_t i = 0; i < kBodyCount; ++i) {
             const Vec3 total = normalTotal[i] + gripTotal[i];
             ball.blows += total;

@@ -64,8 +64,8 @@ void throwAtTheHangingBall(PlaygroundRoom& room, Vec3 velocity, double fromTheSi
     room.ball(PlaygroundRoom::kThrowBall).frozen = false;
 }
 
-// The energy of the ball on the rope: its travel and its height, the only two things a
-// ball on a rope has that a constraint like this can change.
+// The hanging ball's energy includes spin: slope friction can exchange it with
+// translation, so omitting it would mistake that exchange for an energy source.
 // The other ball, parked out of the way.
 //
 // Both scenes below stand the triangle up at the King's spot, and that spot is where the
@@ -86,7 +86,9 @@ void parkTheOtherBall(PlaygroundRoom& room) {
 
 double hangingEnergy(const PlaygroundRoom& room) {
     const auto& ball = room.ropeBall();
-    return 0.5 * ball.mass * gtc::native::dot(ball.velocity, ball.velocity) + ball.mass * 9.8 * ball.position.y;
+    const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+    return 0.5 * ball.mass * gtc::native::dot(ball.velocity, ball.velocity) +
+           0.5 * inertia * ball.spin * ball.spin + ball.mass * 9.8 * ball.position.y;
 }
 
 }  // namespace
@@ -568,20 +570,24 @@ int playgroundRopeChecks() {
         // be shoved by a slope is a ball that swings after it is shoved.
         room.advance(1.0 / 20.0);
         const double start = hangingEnergy(room);
-        double highest = start;
+        double highest = start, maxTickGain = 0.0;
+        int maxGainTick = -1, reportedGains = 0;
         for (int tick = 0; tick < 3000; ++tick) {
             const double before = hangingEnergy(room);
             room.advance(1.0 / 20.0);
-            highest = std::max(highest, hangingEnergy(room));
-            if (std::getenv("GTC_TRACE_PRESS") && (tick < 35 || tick >= 2990)) {
+            const double after = hangingEnergy(room);
+            highest = std::max(highest, after);
+            if (after - before > maxTickGain) { maxTickGain = after - before; maxGainTick = tick; }
+            const bool showGain = after - before > 1e-5 && reportedGains++ < 15;
+            if (std::getenv("GTC_TRACE_PRESS") && (tick < 35 || tick >= 2990 || showGain)) {
                 const auto& bob = room.ropeBall();
                 Vec3 way{}, at{};
                 const double gap = room.bodyBallGap(bob, 1, way, at);
                 std::printf("   press %d gap %+.7f began (%+.4f,%+.4f) v (%+.4f,%+.4f) "
-                            "impact %d bent %d meeting %.5g dE %+.7f energy %.7f\n", tick, gap,
-                            bob.began.x, bob.began.y, bob.velocity.x, bob.velocity.y,
-                            int(bob.impacted), int(bob.bent), bob.meetingArrival[1],
-                            hangingEnergy(room) - before, hangingEnergy(room));
+                            "spin %+.5f reach %.9f impact %d bent %d meeting %.5g dE %+.7f energy %.7f\n", tick, gap,
+                            bob.began.x, bob.began.y, bob.velocity.x, bob.velocity.y, bob.spin,
+                            room.ropeBallDistance(), int(bob.impacted), int(bob.bent), bob.meetingArrival[1],
+                            after - before, after);
             }
         }
         const double rise = highest - start;
@@ -607,6 +613,10 @@ int playgroundRopeChecks() {
         check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum &&
                   spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
+        char gainDetail[120];
+        std::snprintf(gainDetail, sizeof gainDetail, "largest single-tick energy gain %.9f J at tick %d",
+                      maxTickGain, maxGainTick);
+        check(maxTickGain < 1e-5, "repeated contacts do not pump the hanging ball", gainDetail);
         // The press displaces the 45-degree face left, putting its contact a small
         // distance above and left of the free-hanging point. With a slack rope, a
         // solid sphere cannot stay on this slope: tan(45) exceeds the 0.035 rolling
