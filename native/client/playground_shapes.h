@@ -183,8 +183,8 @@ inline constexpr std::array<Shape, PlaygroundRoom::kBodyCount> kShapes{{
      {{{-kHalfSize, -kHalfSize, 0}, {kHalfSize, -kHalfSize, 0}, {kHalfSize, kHalfSize, 0}, {-kHalfSize, kHalfSize, 0}}},
      {1.20, 2.05, 0},
      kStartAngle,
-     0.35,
-     0.25},
+     0.70,
+     0.55},
     // The right isosceles triangle: two legs three cubes long, the right angle
     // standing on the plane so it is held up by two corners and its mass sits
     // between them.
