@@ -7,8 +7,15 @@ void ropeAgainstSupportedStack() {
     auto& other = room.ball(PlaygroundRoom::kThrowBall);
     other.position = other.previous = other.shown = {-3, other.radius, 0};
     other.velocity = {};
-    room.point_ = room.previous_ = {-4, 4, 0};
+    other.spin = 0;
+    other.frozen = true;
+    // Park the unrelated dot on its own floor support. In mid-air it wakes and
+    // loses energy as it falls, masking energy gained by the stack under test.
+    room.point_ = room.previous_ = {-4, 0, 0};
     room.velocity_ = {};
+    room.resting_ = true;
+    room.restingBody_ = -1;
+    room.restingOnBall_ = false;
     room.pointFrozen_ = true;
 
     auto& plank = room.bodies_[PlaygroundRoom::kSeesaw];
@@ -47,25 +54,35 @@ void ropeAgainstSupportedStack() {
     room.placeCorners(cube);
     cube.previous = cube.shown = cube.position;
 
-    double overlap = 0, gain = 0, stretch = 0, meeting = 0;
-    int worstTick = 0;
+    const auto islandEnergy = [&]() {
+        const auto bodyEnergy = [](const auto& body) {
+            return body.mass * ball_shape::kGravity * body.centre.y + 0.5 * body.mass * dot(body.velocity, body.velocity) +
+                   0.5 * body.moment * body.spin * body.spin;
+        };
+        const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+        return bodyEnergy(triangle) + bodyEnergy(cube) + ball.mass * ball_shape::kGravity * ball.position.y +
+               0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
+    };
+    double overlap = 0, gain = 0, islandGain = 0, stretch = 0, meeting = 0;
+    int worstTick = 0, worstIslandTick = 0, overlapTick = 0;
     for (int tick = 1; tick <= 200; ++tick) {
-        const double energy = room.totalEnergy();
+        const double energy = room.totalEnergy(), localBefore = islandEnergy();
         room.advance(1.0 / 20.0);
         pair_shape::PairManifold patch;
-        if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch))
-            overlap = std::max(overlap, patch.overlap);
-        const double change = room.totalEnergy() - energy;
-        if (std::getenv("GTC_TRACE_STACK") && (tick <= 30 || patch.overlap > 0.01 || change > 0.001)) {
-            std::printf("stack %d overlap %.6f dE %+.6f ball (%+.4f,%+.4f) v (%+.4f,%+.4f) "
+        if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&
+            patch.overlap > overlap) { overlap = patch.overlap; overlapTick = tick; }
+        const double change = room.totalEnergy() - energy, localChange = islandEnergy() - localBefore;
+        if (std::getenv("GTC_TRACE_STACK") && (tick <= 30 || patch.overlap > 1e-6 || localChange > 0.001)) {
+            std::printf("stack %d overlap %.9f dE %+.8f island %+.8f ball (%+.4f,%+.4f) v (%+.4f,%+.4f) "
                         "triangle (%+.4f,%+.4f) v (%+.4f,%+.4f) spin %+.4f "
                         "cube (%+.4f,%+.4f) v (%+.4f,%+.4f) spin %+.4f\n",
-                        tick, patch.overlap, change, ball.position.x, ball.position.y,
+                        tick, patch.overlap, change, localChange, ball.position.x, ball.position.y,
                         ball.velocity.x, ball.velocity.y, triangle.centre.x, triangle.centre.y,
                         triangle.velocity.x, triangle.velocity.y, triangle.spin, cube.centre.x, cube.centre.y,
                         cube.velocity.x, cube.velocity.y, cube.spin);
         }
         if (change > gain) { gain = change; worstTick = tick; }
+        if (localChange > islandGain) { islandGain = localChange; worstIslandTick = tick; }
         stretch = std::max(stretch, room.ropeBallDistance() - room.ropeLength());
         for (std::size_t i = 0; i < room.forceCount(); ++i) {
             const auto& force = room.forces()[i];
@@ -73,11 +90,11 @@ void ropeAgainstSupportedStack() {
                 meeting = std::max(meeting, length(force.force) / 20.0);
         }
     }
-    char detail[240];
+    char detail[320];
     std::snprintf(detail, sizeof detail,
-                  "200 ticks: ball impulse %.5f N s, stack overlap %.6g m, rope stretch %.6g m, "
-                  "largest single-tick energy gain %.6g J at tick %d",
-                  meeting, overlap, stretch, gain, worstTick);
-    check(meeting > 1e-5 && overlap < 1.1e-6 && stretch < 1.1e-6 && gain < 1e-4,
+                  "200 ticks: ball impulse %.5f N s, stack overlap %.6g m at tick %d, rope stretch %.6g m, "
+                  "room/island single-tick gains %.6g J at %d / %.6g J at %d",
+                  meeting, overlap, overlapTick, stretch, gain, worstTick, islandGain, worstIslandTick);
+    check(meeting > 1e-5 && overlap < 1.1e-6 && stretch < 1.1e-6 && gain < 1e-4 && islandGain < 1e-4,
           "a rope-ball contact keeps a supporting stack solid and does not create energy", detail);
 }

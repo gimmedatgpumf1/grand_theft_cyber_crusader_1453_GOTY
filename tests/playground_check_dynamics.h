@@ -26,8 +26,12 @@ void fallingShapeAgainstRope() {
             room.placeCorners(parked);
             parked.previous = parked.shown = parked.position;
         }
-        room.point_ = room.previous_ = {-4, 4, 0};
+        // Keep unrelated motion from concealing an energy gain in this trial.
+        room.point_ = room.previous_ = {-4, 0, 0};
         room.velocity_ = {};
+        room.resting_ = true;
+        room.restingBody_ = -1;
+        room.restingOnBall_ = false;
         room.pointFrozen_ = true;
 
         auto& ball = room.ball(PlaygroundRoom::kRopeBall);
