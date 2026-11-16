@@ -77,10 +77,14 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
             const auto stage = [&](const char* label) {
                 const auto& b = probe.ball(PlaygroundRoom::kRopeBall);
                 const auto& t = probe.bodies_[PlaygroundRoom::kTriangle];
+                Vec3 way{}, at{};
+                const double gap = probe.bodyBallGap(b, PlaygroundRoom::kTriangle, way, at);
                 std::printf("  STAGE %d %s E %.9f ball p (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.6f "
-                            "shape p (%+.6f,%+.6f) v (%+.6f,%+.6f) angle %+.6f spin %+.6f\n",
+                            "shape p (%+.6f,%+.6f) v (%+.6f,%+.6f) angle %+.6f spin %+.6f "
+                            "gap %+.9f bent %d at %.6f\n",
                             tick, label, probe.totalEnergy(), b.position.x, b.position.y, b.velocity.x, b.velocity.y,
-                            b.spin, t.centre.x, t.centre.y, t.velocity.x, t.velocity.y, t.angle, t.spin);
+                            b.spin, t.centre.x, t.centre.y, t.velocity.x, t.velocity.y, t.angle, t.spin,
+                            gap, int(b.bent), b.bendAt);
             };
             stage("start");
             probe.tickBodies(); stage("bodies");
