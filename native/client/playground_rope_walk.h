@@ -431,10 +431,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         ball.touchCount = 0;  // the simultaneous solve below owns these contacts
         std::array<bool, kBodyCount> rebased{};
         std::array<double, kBodyCount> gravityTime{};
-        const auto rebaseBody = [&](std::size_t i) {
+        const auto rebaseBody = [&](std::size_t i, double time) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
-            const double spent = std::clamp(elapsed / dt, 0.0, 1.0);
+            const double spent = std::clamp(time / dt, 0.0, 1.0);
             // Replacing the unspent prediction prevents gravity and support
             // impulses from being applied twice when we integrate the remainder.
             // This prorates the old body's net tick impulse; it is an approximation
@@ -455,15 +455,22 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             rebased[i] = true;
         };
         for (std::size_t i = 0; i < kBodyCount; ++i)
-            if (stopped[i]) rebaseBody(i);
+            if (stopped[i]) rebaseBody(i, elapsed);
 
-        const auto constrain = [&](double step) {
+        const auto constrain = [&](double step, double time) {
             std::array<pc::Body, kBodyCount + 1> motion{};
             motion[0] = {state.position, state.velocity, ball.spin, 1.0 / ball.mass, 1.0 / inertia};
+            const double fraction = std::clamp(time / dt, 0.0, 1.0);
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 const Body& body = bodies_[i];
                 const bool fixed = bodyHeld(i);
-                motion[i + 1] = {body.centre, fixed ? handSpeed_ : body.velocity, fixed ? 0.0 : body.spin,
+                const Vec3 centre = stopped[i] ? body.centre
+                                               : body.previousCentre + (body.centre - body.previousCentre) * fraction;
+                const Vec3 velocity = stopped[i] ? body.velocity
+                    : body.velocity + (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - fraction);
+                const double spin = stopped[i] ? body.spin
+                    : body.spin + (body.arrivalSpin - predictedSpin[i]) * (1.0 - fraction);
+                motion[i + 1] = {centre, fixed ? handSpeed_ : velocity, fixed ? 0.0 : spin,
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,
                                  fixed ? 0.0 : 1.0 / body.moment};
             }
@@ -472,22 +479,36 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 Body& body = bodies_[i];
                 if (body.count == 0) continue;
-                const OutlineGap gap = outlineGap(state.position, body.position.data(), body.position.data(),
-                                                  body.count, 1.0);
-                const double spare = gap.gap - ball.radius;
-                const Vec3 at = state.position - gap.normal * ball.radius;
-                const double closing = dot(pc::pointVelocity(motion[0], at) - pc::pointVelocity(motion[i + 1], at),
-                                           gap.normal);
+                OutlineGap gap = stopped[i]
+                    ? outlineGap(state.position, body.position.data(), body.position.data(), body.count, 1.0)
+                    : outlineGap(state.position, body.previous.data(), body.position.data(), body.count, fraction);
+                double spare = gap.gap - ball.radius;
+                Vec3 at = state.position - gap.normal * ball.radius;
+                double closing = dot(pc::pointVelocity(motion[0], at) - pc::pointVelocity(motion[i + 1], at),
+                                     gap.normal);
                 if (spare > quantum + std::max(0.0, -closing * step)) continue;
                 if (!stopped[i]) {
+                    if (!bodyHeld(i) && !body.pivoted) {
+                        const double when = keepAboveFloor(i, body.previousCentre, body.previousAngle,
+                                                           body.centre, body.angle, fraction);
+                        body.centre = body.previousCentre + (body.centre - body.previousCentre) * when;
+                        body.angle = body.previousAngle + (body.angle - body.previousAngle) * when;
+                        placeCorners(body);
+                    }
                     stopped[i] = true;
-                    rebaseBody(i);
+                    rebaseBody(i, time);
                     if (!bodyHeld(i) && !body.pivoted) {
                         body.velocity.y -= 0.5 * gravity * step;
                         gravityTime[i] += 0.5 * step;
                     }
+                    motion[i + 1].centre = body.centre;
                     motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
                     motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
+                    gap = outlineGap(state.position, body.position.data(), body.position.data(), body.count, 1.0);
+                    spare = gap.gap - ball.radius;
+                    at = state.position - gap.normal * ball.radius;
+                    closing = dot(pc::pointVelocity(motion[0], at) - pc::pointVelocity(motion[i + 1], at), gap.normal);
+                    if (spare > quantum + std::max(0.0, -closing * step)) continue;
                 }
                 pc::Contact& row = rows[count++];
                 row.a = 0; row.b = i + 1; row.point = at; row.normal = gap.normal;
@@ -570,7 +591,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     gravityTime[i] += 0.5 * step;
                 }
             }
-            const double firstLoad = constrain(step);
+            const double firstLoad = constrain(step, elapsed);
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
@@ -595,8 +616,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 for (std::size_t i = 0; i < kBodyCount; ++i) {
                     const Body& body = bodies_[i];
                     if (body.count == 0) continue;
-                    const OutlineGap gap = outlineGap(state.position, body.position.data(), body.position.data(),
-                                                      body.count, 1.0);
+                    const OutlineGap gap = stopped[i]
+                        ? outlineGap(state.position, body.position.data(), body.position.data(), body.count, 1.0)
+                        : outlineGap(state.position, body.previous.data(), body.position.data(), body.count,
+                                     std::clamp((elapsed + step) / dt, 0.0, 1.0));
                     const double depth = ball.radius - gap.gap;
                     if (depth > 0.0) {
                         state.position += gap.normal * depth;
@@ -614,7 +637,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     gravityTime[i] += 0.5 * step;
                 }
             }
-            finalRopeLoad = (firstLoad + constrain(step)) / step;
+            finalRopeLoad = (firstLoad + constrain(step, elapsed + step)) / step;
             elapsed += step;
         }
         static int constraintTraces = 0;

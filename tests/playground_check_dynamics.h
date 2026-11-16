@@ -5,8 +5,8 @@
 // change as well as the motion itself.
 void fallingShapeAgainstRope() {
     struct Result {
-        double vy, gap, energyChange, ballImpulse;
-        Vec3 deltaMomentum, recorded;
+        double vy, centreY, gap, energyChange;
+        Vec3 ballImpulse, deltaMomentum, recorded;
     };
     const auto run = [](bool touching, std::size_t bodyIndex, double initialSpeed, double clearance) {
         PlaygroundRoom room;
@@ -66,7 +66,7 @@ void fallingShapeAgainstRope() {
         }
         Vec3 way{}, at{};
         const double gap = room.bodyBallGap(ball, bodyIndex, way, at);
-        return Result{body.velocity.y, gap, room.totalEnergy() - initialEnergy, length(fromBall),
+        return Result{body.velocity.y, body.centre.y, gap, room.totalEnergy() - initialEnergy, fromBall,
                       (body.velocity - initialVelocity) * body.mass, sum};
     };
     for (std::size_t body : {PlaygroundRoom::kCube, PlaygroundRoom::kTriangle}) {
@@ -74,12 +74,17 @@ void fallingShapeAgainstRope() {
             for (double gap : {0.0, 0.005}) {
                 const Result reference = run(false, body, speed, gap), contact = run(true, body, speed, gap);
                 char detail[320];
+                const double mass = body == PlaygroundRoom::kCube ? 4.0 : 3.0;
+                const double unexplainedY = contact.vy - reference.vy - contact.ballImpulse.y / mass;
                 std::snprintf(detail, sizeof detail,
-                              "body %zu initial vy %+.1f, clearance %.3f: free vy %.5f, contact vy %.5f m/s, "
-                              "gap %.6f m, ball impulse %.5f N s, dE %+.6f J, momentum error %.5f N s",
-                              body, speed, gap, reference.vy, contact.vy, contact.gap, contact.ballImpulse,
+                              "body %zu initial vy %+.1f, clearance %.3f: free/contact vy %.5f/%.5f, "
+                              "height difference %+.6f m, gap %.6f m, impulse (%+.5f,%+.5f) N s, "
+                              "unexplained vy %+.5f, dE %+.5f J, momentum error %.5f N s",
+                              body, speed, gap, reference.vy, contact.vy, contact.centreY - reference.centreY,
+                              contact.gap, contact.ballImpulse.x, contact.ballImpulse.y, unexplainedY,
                               contact.energyChange, length(contact.deltaMomentum - contact.recorded));
-                check(contact.ballImpulse > 1e-6 && std::abs(contact.vy - reference.vy) < 0.03 &&
+                check(length(contact.ballImpulse) > 1e-6 && std::abs(unexplainedY) < 0.03 &&
+                          std::abs(contact.centreY - reference.centreY) < 0.005 &&
                           length(contact.deltaMomentum - contact.recorded) < 0.03 && contact.energyChange < 0.005,
                       "a contact does not apply a second tick of gravity to a falling shape", detail);
             }
