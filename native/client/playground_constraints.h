@@ -75,6 +75,16 @@ void solve(std::array<Body, Bodies>& bodies, std::array<Contact, Contacts>& cont
             const double normalGive = compliance(a, contact.point, contact.normal) +
                                       (b ? compliance(*b, contact.point, contact.normal) : 0.0);
             if (!(normalGive > 1e-15)) continue;
+            const auto pairEnergy = [&]() {
+                const auto bodyEnergy = [](const Body& value) {
+                    const double mass = value.inverseMass > 0.0 ? 1.0 / value.inverseMass : 0.0;
+                    const double moment = value.inverseMoment > 0.0 ? 1.0 / value.inverseMoment : 0.0;
+                    return 0.5 * mass * dot(value.velocity, value.velocity) +
+                           0.5 * moment * value.spin * value.spin;
+                };
+                return bodyEnergy(a) + (b ? bodyEnergy(*b) : 0.0);
+            };
+            const double energyBeforeRow = pairEnergy();
             const double normalSpeed = dot(relative(), contact.normal);
             const double nextNormal = std::max(0.0, contact.normalImpulse +
                                                         (contact.target - normalSpeed) / normalGive);
@@ -111,6 +121,14 @@ void solve(std::array<Body, Bodies>& bodies, std::array<Contact, Contacts>& cont
                 if (b) b->spin -= change * b->inverseMoment;
                 largest = std::max(largest, std::abs(change));
             }
+            const double rowEnergyChange = pairEnergy() - energyBeforeRow;
+            static int energyTraceCount = 0;
+            if (std::getenv("GTC_TRACE_ROW_ENERGY") && rowEnergyChange > 1e-8 && energyTraceCount++ < 80)
+                std::fprintf(stderr, "ROW dK=%+.9g J target=%+.6g vn=%+.6g dn=%+.6g dt=%+.6g a=%zu b=%zu point=(%.5g,%.5g) n=(%.5g,%.5g) mu=(%.3g,%.3g)\\n",
+                             rowEnergyChange, contact.target, normalSpeed, normalChange, tangentChange,
+                             contact.a, contact.b, contact.point.x, contact.point.y,
+                             contact.normal.x, contact.normal.y, contact.staticFriction,
+                             contact.kineticFriction);
         }
         if (largest < 1e-12) break;
     }
