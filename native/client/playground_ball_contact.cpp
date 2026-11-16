@@ -32,17 +32,8 @@ bool holdsBall(Vec3 normal) {
 }
 
 void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint, double depth,
-                                bool exchange, bool resting, double reached) {
+                                bool exchange, bool resting, double reached, bool instantaneous) {
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
-    // The rope's constrained velocity at an actual arrival, not the free-fall
-    // velocity for the *end* of the tick. The remaining gravity is applied by
-    // the walk after this contact. Resting contacts use their existing path.
-    const bool ropeArrival = exchange && !resting && rope_.attached && rope_.taut &&
-                             rope_.ball < kBallCount && &ball == &balls_[rope_.ball];
-    if (ropeArrival) {
-        const Vec3 atTime = ball.began + (ball.alone - ball.began) * std::clamp(reached, 0.0, 1.0);
-        ball.velocity = ballOffTheRope(ball, atTime);
-    }
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
     // which is the force the ball's arrows are drawn from -- recorded where the
@@ -111,7 +102,8 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
         // carries a tick of fall the rope takes back. A turn is not travel either -- a
         // patch spinning along a face only rubs. And a body is woken by what the ball
         // *brought*: read at `arrival`, a ball at rest brings nothing. See ballOffTheRope().
-        const Vec3 closingVelocity = ballOffTheRope(ball, ball.arrival) - pointSpeed(*body, contactPoint);
+        const Vec3 incoming = instantaneous ? ball.velocity : ball.arrival;
+        const Vec3 closingVelocity = ballOffTheRope(ball, incoming) - pointSpeed(*body, contactPoint);
         if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
     }
     if (body != nullptr) {
@@ -120,7 +112,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
         // follows, at the place the two of them actually met. A body the mouse is
         // carrying has nowhere to go, and neither has one that is asleep until a
         // real blow wakes it.
-        answer = (dragTarget_ == DragTarget::Body || body->frozen) ? Vec3{} : normal;
+        answer = (bodyHeld(std::size_t(bodyIndex)) || body->frozen) ? Vec3{} : normal;
         canMove = dot(answer, normal) > 1e-9;
     }
     // What the body's step was before anything below shortens it. A corner's stored
@@ -266,16 +258,18 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // incoming speed makes a slow swing bounce faster than it arrived. Inward
     // motion is left untouched, because the rope cannot push the ball away.
     const auto answered = [&](Vec3 speed) { return ballOffTheRope(ball, speed); };
-    const bool arrived = dot(answered(ball.began) - surfaceVelocity, normal) < -kRestSpeed;
-    const bool blow = arrived && !resting;
-    const Vec3 ballSpeed = answered(ball.velocity);
+    const Vec3 ballSpeed = instantaneous ? ball.velocity : answered(ball.velocity);
     const double closing = dot(ballSpeed - surfaceVelocity, normal);
+    const bool arrived = instantaneous ? closing < -kRestSpeed
+                                       : dot(answered(ball.began) - surfaceVelocity, normal) < -kRestSpeed;
+    const bool blow = arrived && !resting;
     // What the ball was doing at the instant it met the surface. Its speed is carried
     // through the tick from `arrival` to what it is now, so the fraction of the way
     // through the tick is the fraction of the way from one to the other: at the very
     // moment of a contact, that is the speed the blow is answered to.
     const Vec3 arrivalSpeed = answered(ball.arrival);
-    const Vec3 atMeeting = arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
+    const Vec3 atMeeting = instantaneous ? ballSpeed
+                                        : arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
     const double approach = dot(atMeeting - surfaceVelocity, normal);
     // A bounce is the answer to arriving at a surface, and `arrived` says so: closing at
     // the beginning of the ball's own tick, with the speed the rope permits. It used to
@@ -288,16 +282,27 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // ball riding a turning plank closes on its face by a few millimetres a tick because
     // the *face* is moving, and three quarters of that came back as a launch each tick --
     // the plank loaded on every other tick and coasted the ones between.
-    const double rebound = (approach < 0.0 && arrived) ? -kBallRestitution * approach : 0.0;
-    const bool trace = std::getenv("GTC_TRACE_SOLVE") && rope_.attached && &ball == &balls_[rope_.ball] &&
-                       bodyIndex == 1 && length(ball.began) > 1.0;
-    if (trace)
-        std::printf("      CONTACT t %.5f rest %d exchange %d pos (%+.5f,%+.5f) n (%+.4f,%+.4f) "
-                    "began (%+.5f,%+.5f) raw (%+.5f,%+.5f) projected (%+.5f,%+.5f) "
-                    "surface (%+.5f,%+.5f) approach %.5f close %.5f rebound %.5f\n",
-                    reached, int(resting), int(exchange), ball.position.x, ball.position.y, normal.x, normal.y,
-                    ball.began.x, ball.began.y, ball.velocity.x, ball.velocity.y, ballSpeed.x, ballSpeed.y,
-                    surfaceVelocity.x, surfaceVelocity.y, approach, closing, rebound);
+    const double rebound = (approach < 0.0 && arrived && !(instantaneous && resting))
+                               ? -kBallRestitution * approach : 0.0;
+    // A taut rope answers only the part of an impact that would stretch it.
+    // It cannot resist a blow directed towards the anchor: that makes it slack.
+    Vec3 ballDirection = normal;
+    if (instantaneous && rope_.attached && rope_.taut && rope_.ball < kBallCount &&
+        &ball == &balls_[rope_.ball]) {
+        const Vec3 arm = ball.position - rope_.anchor;
+        const double reach = length(arm);
+        if (reach >= rope_.length - kTouch && reach > 0.0) {
+            const Vec3 outward = arm / reach;
+            ballDirection = normal - outward * std::max(0.0, dot(normal, outward));
+        }
+    }
+    const double instantShare = dot(normal, ballDirection) / ball.mass;
+    const auto recordRopeImpulse = [&](double impulse) {
+        const Vec3 ropeImpulse = (ballDirection - normal) * impulse;
+        if (length(ropeImpulse) <= 1e-12) return;
+        addForce(ball.position, ropeImpulse * (1.0 / kTick), ForceKind::Rope, nullptr, ownerOf(ball));
+        addForce(rope_.anchor, ropeImpulse * (-1.0 / kTick), ForceKind::Rope, nullptr, kAnchorOwner);
+    };
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
     // impulse its arrival was worth -- the momentum it took to stop it. See the note
@@ -313,6 +318,11 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
             return;
         ball.meetingGiven[slot] = metGiven;
         ball.meetingArrival[slot] = metArrival;
+        if (instantaneous) {
+            ball.meetingSpeedIn[slot] = closing;
+            const Vec3 afterSurface = body != nullptr ? bodyFaceSpeed(std::size_t(bodyIndex), contactPoint) : Vec3{};
+            ball.meetingSpeedOut[slot] = dot(ball.velocity - afterSurface, normal);
+        }
     };
     if (closing < 0.0) {
         if (canMove) {
@@ -331,6 +341,15 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
                 onFloor = lowest <= playground_tick::kSurfaceY + playground_tick::kQuantum;
             }
             double bodyShare = giveAtHeld(*body, contactPoint, answer, onFloor);
+            if (instantaneous && std::abs(normal.y) > 1e-8) {
+                // Match the compliance to the actual pushBody response, including
+                // the part a floor-supported body cannot receive downwards.
+                const Vec3 arm = contactPoint - body->centre;
+                const Vec3 freePush = bodyFree(*body, normal * -1.0);
+                const double lever = arm.x * normal.y - arm.y * normal.x;
+                const double turn = arm.x * freePush.y - arm.y * freePush.x;
+                bodyShare = -dot(freePush, normal) * inverseMass(*body) - turn * lever / body->moment;
+            }
             // What the ball can take of this blow is only what it is free to do with
             // it. A ball already held by a surface, or one on the floor that the
             // blow would drive downwards, has nowhere to go: the body takes the
@@ -361,14 +380,16 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
             // side" still shoves the ball across the room.
             // The ball's say in this blow is the way it is still free to move, not whether
             // it is resting; the way it cannot go is what the surface under it refuses.
-            const double ballShare = ballCompliance(ball, normal, false);
+            const double ballShare = instantaneous ? instantShare : ballCompliance(ball, normal, false);
             // A contact pushes and never pulls: where the two are already separating
             // the solve asks for a negative impulse, which pulls the ball back onto the
             // face it is leaving -- a bounce stopped dead in the tick after it.
             const double impulse = blow
                 ? sideImpactImpulse(*body, contactPoint, normal, ballShare, closing, rebound, bodyShare)
                 : std::max(0.0, (rebound - closing) / (ballShare + bodyShare));
-            ball.velocity = ball.velocity + normal * (impulse * ballShare);
+            ball.velocity = ball.velocity + (instantaneous ? ballDirection * (impulse / ball.mass)
+                                                            : normal * (impulse * ballShare));
+            if (instantaneous) recordRopeImpulse(impulse);
             // Struck is not asleep. A ball given any of this blow has something to
             // do with it, and a frozen ball is not stepped at all.
             if (impulse != 0.0) ball.frozen = false;
@@ -401,23 +422,25 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
             Vec3 handed = answer * -impulse;
             pushBody(*body, contactPoint, handed, ForceKind::Ball);
             blown = handed * -1.0;
-            pressed = impulse * ballShare;
+            pressed = instantaneous ? impulse : impulse * ballShare;
             // The ball's share of the blow, as the momentum it was given: the impulse
             // the solve worked out, less the part of it a surface under the ball
             // refused. And what the arrival was worth, over the same compliance, so
             // that the two numbers are the same kind of thing.
-            metGiven = ball.mass * impulse * ballShare;
+            metGiven = instantaneous ? impulse : ball.mass * impulse * ballShare;
             metArrival = -approach / (ballShare + bodyShare);
             noteMeeting();
         } else {
             // Nowhere to go: the ball takes the whole answer itself -- and, as above,
             // only the pushing half of it.
-            const double impulse = std::max(0.0, (rebound - closing)) * ball.mass;
-            ball.velocity = ball.velocity + normal * (impulse / ball.mass);
+            const double share = instantaneous ? instantShare : 1.0 / ball.mass;
+            const double impulse = share > 1e-12 ? std::max(0.0, (rebound - closing) / share) : 0.0;
+            ball.velocity = ball.velocity + (instantaneous ? ballDirection : normal) * (impulse / ball.mass);
+            if (instantaneous) recordRopeImpulse(impulse);
             blown = normal * impulse;
             pressed = impulse;
             metGiven = impulse;
-            metArrival = -approach * ball.mass;
+            metArrival = share > 1e-12 ? -approach / share : 0.0;
             noteMeeting();
         }
     }
@@ -530,17 +553,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // face, the part along the face was left in the ball, and the face did the same thing
     // again next tick. Nothing is conjured by leaving it: holdOnRope() takes it, and the
     // contact takes nothing it was not given.
-    {
-        // The normal check must use the same rope-constrained speed as the
-        // impact solve above. Rechecking the unconstrained gravity step here
-        // applies a second, unpaired kick even after the bounce was answered.
+    if (!instantaneous) {
+        // The legacy walk may still have a residual into this surface. An exact
+        // time-of-impact solve has already updated both bodies and must not be
+        // checked against the surface's old velocity a second time.
         const Vec3 check = ballOffTheRope(ball, ball.velocity);
         const double into = dot(check - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
-    if (trace)
-        std::printf("      CONTACT after v (%+.5f,%+.5f) blow (%+.5f,%+.5f) given %.5f arrival %.5f\n",
-                    ball.velocity.x, ball.velocity.y, blown.x, blown.y, metGiven, metArrival);
     // What this shape gave the ball, drawn where the two met.
     //
     // It is written even when the ball's speed does not change by it, because what

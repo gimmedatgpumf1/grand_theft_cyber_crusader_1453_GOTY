@@ -477,6 +477,7 @@ private:
     // that has already had its own tick. It is not a second ball and not a second kind
     // of motion -- see the file.
     void holdOnRope(Ball& ball);
+    bool walkRopeContacts(Ball& ball);
     // The surfaces the ball is against, holding it out of themselves.
     void settleBallSurfaces(Ball& ball);
     // The fixed supports a ball cannot be driven through.
@@ -570,7 +571,8 @@ private:
     bool ballFirstTouch(const Ball& ball, const Ball& other, Vec3 from, Vec3 travel, double remaining,
                         double& along, Vec3& normal, Vec3& contact, bool& resting) const;
     void ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint = {},
-                     double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0);
+                     double depth = 0.0, bool exchange = true, bool resting = false, double reached = 1.0,
+                     bool instantaneous = false);
     // A face of the ball, said once: what it is against, and which way out of the
     // ball. The ball's grip is solved for all of its faces at once in
     // settleBallFriction(), so every road by which the ball comes to be against

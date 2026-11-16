@@ -38,11 +38,10 @@
 #include "client/playground_ball_shape.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
+#include "client/playground_shapes.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -234,10 +233,6 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         }
     }
     const bool pastTheLength = length(ball.position - anchor) > ropeLength;
-    const bool trace = std::getenv("GTC_TRACE_SOLVE") && length(ball.began) > 1.0;
-    if (trace) std::printf("      ROPE before pos (%+.5f,%+.5f) v (%+.5f,%+.5f) answered %d impact %d past %d\n",
-                           ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
-                           int(ball.answered), int(impact), int(pastTheLength));
     if (ball.answered && (impact || !pastTheLength)) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
@@ -476,8 +471,6 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
     }
     ball.position = at;
     ball.velocity = speedNow;
-    if (trace) std::printf("      ROPE after  pos (%+.5f,%+.5f) v (%+.5f,%+.5f) taut %d\n",
-                           ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(rope.taut));
     // The path the drawing is given. A tick that the rope bent is two pieces, and the
     // drawing can show both -- unless the ball's own walk already bent this tick, in
     // which case that meeting is the one the drawing follows and it is closer to the
@@ -490,5 +483,7 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         ball.bendOut = bendOut;
     }
 }
+
+#include "client/playground_rope_walk.h"
 
 }  // namespace gtc::native

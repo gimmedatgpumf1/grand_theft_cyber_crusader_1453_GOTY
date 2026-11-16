@@ -165,6 +165,9 @@ struct Ball {
     // record of it that survives.
     std::array<double, kSurfaces> meetingGiven{};
     std::array<double, kSurfaces> meetingArrival{};
+    // Relative normal speeds at the instant of a resolved impact (not a tick apart).
+    std::array<double, kSurfaces> meetingSpeedIn{};
+    std::array<double, kSurfaces> meetingSpeedOut{};
     // The surfaces under it, as normals.
     std::array<BallSupport, kMaxSupports> supports{};
     std::size_t supportCount = 0;

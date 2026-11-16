@@ -520,6 +520,8 @@ void PlaygroundRoom::tickBodies() {
         ball.touchCount = 0;
         ball.meetingGiven.fill(0.0);
         ball.meetingArrival.fill(0.0);
+        ball.meetingSpeedIn.fill(0.0);
+        ball.meetingSpeedOut.fill(0.0);
     }
     ManifoldSet& patches = tickPatches_;
     gatherContacts(patches, band);
