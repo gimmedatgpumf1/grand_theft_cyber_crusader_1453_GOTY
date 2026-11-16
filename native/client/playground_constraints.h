@@ -126,9 +126,18 @@ void solve(std::array<Body, Bodies>& bodies, std::array<Contact, Contacts>& cont
             if (contact.rollingFriction > 0.0 && contact.rollingRadius > 0.0 && angularGive > 1e-15) {
                 const double relativeSpin = a.spin - (b ? b->spin : 0.0);
                 const double limit = contact.rollingFriction * contact.rollingRadius * nextNormal;
-                const double nextRolling = std::clamp(contact.rollingImpulse - relativeSpin / angularGive,
-                                                      -limit, limit);
-                const double change = nextRolling - contact.rollingImpulse;
+                double nextRolling = std::clamp(contact.rollingImpulse - relativeSpin / angularGive,
+                                                -limit, limit);
+                double change = nextRolling - contact.rollingImpulse;
+                const double rollingWork = change * relativeSpin +
+                                           0.5 * change * change * angularGive;
+                if (rollingWork > 0.0) {
+                    const double zeroWork = -2.0 * relativeSpin / angularGive;
+                    change = change * zeroWork > 0.0
+                        ? std::clamp(zeroWork, std::min(0.0, change), std::max(0.0, change))
+                        : 0.0;
+                    nextRolling = contact.rollingImpulse + change;
+                }
                 contact.rollingImpulse = nextRolling;
                 a.spin += change * a.inverseMoment;
                 if (b) b->spin -= change * b->inverseMoment;
