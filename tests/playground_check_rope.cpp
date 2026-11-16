@@ -570,6 +570,7 @@ int playgroundRopeChecks() {
         const double start = hangingEnergy(room);
         double highest = start;
         for (int tick = 0; tick < 3000; ++tick) {
+            const double before = hangingEnergy(room);
             room.advance(1.0 / 20.0);
             highest = std::max(highest, hangingEnergy(room));
             if (std::getenv("GTC_TRACE_PRESS") && (tick < 35 || tick >= 2990)) {
@@ -577,9 +578,10 @@ int playgroundRopeChecks() {
                 Vec3 way{}, at{};
                 const double gap = room.bodyBallGap(bob, 1, way, at);
                 std::printf("   press %d gap %+.7f began (%+.4f,%+.4f) v (%+.4f,%+.4f) "
-                            "impact %d bent %d meeting %.5g energy %.7f\n", tick, gap,
+                            "impact %d bent %d meeting %.5g dE %+.7f energy %.7f\n", tick, gap,
                             bob.began.x, bob.began.y, bob.velocity.x, bob.velocity.y,
-                            int(bob.impacted), int(bob.bent), bob.meetingArrival[1], hangingEnergy(room));
+                            int(bob.impacted), int(bob.bent), bob.meetingArrival[1],
+                            hangingEnergy(room) - before, hangingEnergy(room));
             }
         }
         const double rise = highest - start;
@@ -652,7 +654,19 @@ int playgroundRopeChecks() {
         double arriving = 0.0, leaving = 0.0, shoved = 0.0, turn = 0.0, rise = 0.0;
         for (int tick = 0; tick < 200; ++tick) {
             const double closing = gtc::native::dot(ball.velocity, face);
+            const double before = room.totalEnergy();
             room.advance(1.0 / 20.0);
+            if (std::getenv("GTC_TRACE_SLOPE") && tick < 40) {
+                Vec3 way{}, at{};
+                const double gap = room.bodyBallGap(ball, 1, way, at);
+                std::printf("   slope %d gap %+.7f n (%+.3f,%+.3f) ball (%+.3f,%+.3f) "
+                            "relative %+.3f tri v (%+.3f,%+.3f) spin %+.3f meeting %.5f "
+                            "taut %d bent %d dE %+.7f\n", tick, gap, way.x, way.y,
+                            ball.velocity.x, ball.velocity.y,
+                            gtc::native::dot(ball.velocity - room.pointSpeed(triangle, at), way * -1.0),
+                            triangle.velocity.x, triangle.velocity.y, triangle.spin, ball.meetingArrival[1],
+                            int(room.ropeTaut()), int(ball.bent), room.totalEnergy() - before);
+            }
             rise = std::max(rise, room.totalEnergy() - start);
             shoved = std::max(shoved, gtc::native::length(triangle.velocity));
             turn = std::max(turn, std::abs(triangle.spin));

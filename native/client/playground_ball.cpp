@@ -648,7 +648,8 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             bodyStopped[std::size_t(what)] = true;
         }
         // Where in the tick the two met: what the blow is answered to.
-        const double reached = (1.0 - remaining) + first * remaining;
+        // `remaining` was already reduced by this meeting above.
+        const double reached = 1.0 - remaining;
         const bool exchange = what < 0 || !answered[std::size_t(what)];
         if (what >= 0 && std::size_t(what) < kBodyCount) answered[std::size_t(what)] = true;
         // "Nothing was met" and "the floor was met" are two different answers, and

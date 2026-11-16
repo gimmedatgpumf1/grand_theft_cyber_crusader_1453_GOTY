@@ -510,8 +510,10 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // again next tick. Nothing is conjured by leaving it: holdOnRope() takes it, and the
     // contact takes nothing it was not given.
     {
-        Vec3 check = ball.velocity;
-        if (resting) check = ballOffTheRope(ball, check);
+        // The normal check must use the same rope-constrained speed as the
+        // impact solve above. Rechecking the unconstrained gravity step here
+        // applies a second, unpaired kick even after the bounce was answered.
+        const Vec3 check = ballOffTheRope(ball, ball.velocity);
         const double into = dot(check - surfaceVelocity, normal);
         if (into < 0.0) ball.velocity = ball.velocity - normal * into;
     }
