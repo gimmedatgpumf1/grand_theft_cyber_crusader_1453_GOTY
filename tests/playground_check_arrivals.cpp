@@ -332,6 +332,7 @@ void supportProjectionIsOneSided() {
 }
 
 #include "playground_check_constraints.h"
+#include "playground_check_dynamics.h"
 
 // A slack rope cannot hold a ball on a 45-degree slope. For a solid sphere the
 // no-slip acceleration is g*sin(45)/(1+0.4), about 4.95 m/s^2; rolling resistance
@@ -726,6 +727,7 @@ int playgroundArrivalChecks() {
     ordinaryReleaseDoesNotThrow();
     supportProjectionIsOneSided();
     contactConstraintChecks();
+    fallingShapeAgainstRope();
     slackRopeBallMovesOnSlope();
     bounceIsTheSameEveryWay();
     aRollIsARoll();
