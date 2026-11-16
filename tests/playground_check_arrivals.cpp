@@ -123,10 +123,26 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
         const Vec3 normal = way * -1.0;
         const double beforeRelative = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
         const double beforeEnergy = room.totalEnergy();
+        const Vec3 triangleSpeedBefore = triangle.velocity;
         const bool stepped = std::min(room.accumulator_ + 1.0 / fps, 0.25) >= 1.0 / 20.0;
         room.advance(1.0 / fps);
         if (!stepped) continue;
         ++tick;
+        if (std::getenv("GTC_TRACE_LEDGER") && fps == 60 && !awake && sideOffset == 0.12 && tick >= 30 && tick <= 55) {
+            Vec3 recorded{}, weight{}, floor{}, blow{};
+            for (std::size_t i = 0; i < room.forceCount(); ++i) {
+                const auto& f = room.forces()[i];
+                if (f.owner != PlaygroundRoom::kTriangle || f.couple) continue;
+                const Vec3 impulse = f.force * (1.0 / 20.0);
+                recorded += impulse;
+                if (f.kind == PlaygroundRoom::ForceKind::Gravity) weight += impulse;
+                if (f.kind == PlaygroundRoom::ForceKind::Contact) floor += impulse;
+                if (f.kind == PlaygroundRoom::ForceKind::Ball) blow += impulse;
+            }
+            const Vec3 delta = (triangle.velocity - triangleSpeedBefore) * triangle.mass;
+            std::printf("   ledger tick %d dp (%+.6f,%+.6f) impulse (%+.6f,%+.6f) weight %+.6f floor %+.6f blow (%+.6f,%+.6f)\n",
+                        tick, delta.x, delta.y, recorded.x, recorded.y, weight.y, floor.y, blow.x, blow.y);
+        }
         const double gap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
         const double relative = dot(ball.velocity - room.pointSpeed(triangle, at), way * -1.0);
         const double gain = room.totalEnergy() - beforeEnergy;
@@ -632,6 +648,10 @@ int playgroundArrivalChecks() {
     using gtc::native::Vec3;
     if (std::getenv("GTC_ONLY_PICTURED_IMPACT")) {
         horizontalRopeImpact(60, false, 0.12);
+        return localFailures;
+    }
+    if (std::getenv("GTC_ONLY_GRAVITY_CONTACT")) {
+        fallingShapeAgainstRope();
         return localFailures;
     }
     char detail[240];

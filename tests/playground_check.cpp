@@ -726,7 +726,8 @@ void costOfATick() {
 }  // namespace
 
 int main() {
-    if (std::getenv("GTC_ONLY_PICTURED_IMPACT")) return playgroundArrivalChecks() == 0 ? 0 : 1;
+    if (std::getenv("GTC_ONLY_PICTURED_IMPACT") || std::getenv("GTC_ONLY_GRAVITY_CONTACT"))
+        return playgroundArrivalChecks() == 0 ? 0 : 1;
     resetIsAReset();
     energyNeverRises();
     restingStatics();
