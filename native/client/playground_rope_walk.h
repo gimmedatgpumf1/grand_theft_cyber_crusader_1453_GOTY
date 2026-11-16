@@ -290,6 +290,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             if (tension(state) <= 0.0) taut = false;
         }
+        // The struck body was rewound to the time of impact. It must also
+        // advance through the remaining time with its new velocity; leaving it
+        // at the meeting while keeping a full tick of forces can create energy.
+        // Continue the coupled island below instead of walking only the ball.
+        if (!bodyHeld(std::size_t(hitBody))) break;
     }
 
     static int traced = 0;
@@ -693,9 +698,6 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
 
     ball.position = state.position;
     ball.velocity = state.velocity;
-    if (std::getenv("GTC_TRACE_ROPE_WALK"))
-        std::printf("ROPE WALK events %d fallback %d first %.9f stopped %d%d%d\n", events, int(constrainedStep),
-                    firstAt, int(stopped[0]), int(stopped[1]), int(stopped[2]));
     const Vec3 arm = ball.position - anchor;
     const double reach = length(arm);
     rope_.taut = constrainedStep ? reach >= ropeLength - quantum && finalRopeLoad > 1e-9
