@@ -365,8 +365,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             // impulses from being applied twice when we integrate the remainder.
             // This prorates the old body's net tick impulse; it is an approximation
             // if the old body walk itself contained an impact during that tick.
+            const Vec3 velocityBeforeRebase = body.velocity;
+            const double spinBeforeRebase = body.spin;
             body.velocity += (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - spent);
             body.spin += (body.arrivalSpin - predictedSpin[i]) * (1.0 - spent);
+            if (std::getenv("GTC_TRACE_REBASE"))
+                std::printf("REBASE body %zu time %.8f f %.6f v (%+.5f,%+.5f) arrival (%+.5f,%+.5f) predicted (%+.5f,%+.5f) -> (%+.5f,%+.5f) spin %.5f %.5f %.5f -> %.5f\\n",
+                            i, time, spent, velocityBeforeRebase.x, velocityBeforeRebase.y,
+                            body.arrivalVelocity.x, body.arrivalVelocity.y, predictedVelocity[i].x,
+                            predictedVelocity[i].y, body.velocity.x, body.velocity.y, spinBeforeRebase,
+                            body.arrivalSpin, predictedSpin[i], body.spin);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
