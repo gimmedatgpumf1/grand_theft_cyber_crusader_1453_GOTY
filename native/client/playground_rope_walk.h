@@ -365,9 +365,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             // the tick; interpolating that net delta rewinds only one member of a
             // collision pair and can add energy. Reapply continuous forces here;
             // contacts are solved together in this active island below.
+            const double rebaseEnergyBefore = localEnergy();
             body.velocity = body.arrivalVelocity;
             body.spin = body.arrivalSpin;
             bodyForces(i, time);
+            if (std::getenv("GTC_TRACE_REBASE_ENERGY") &&
+                std::abs(localEnergy() - rebaseEnergyBefore) > 1e-5)
+                std::printf("REBASE_E %zu t %.8f dE %+.8f arrival (%+.4f,%+.4f) pred (%+.4f,%+.4f) now (%+.4f,%+.4f)\\n",
+                            i, time, localEnergy() - rebaseEnergyBefore, body.arrivalVelocity.x,
+                            body.arrivalVelocity.y, predictedVelocity[i].x, predictedVelocity[i].y,
+                            body.velocity.x, body.velocity.y);
             const double spent = std::clamp(time / dt, 0.0, 1.0);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
