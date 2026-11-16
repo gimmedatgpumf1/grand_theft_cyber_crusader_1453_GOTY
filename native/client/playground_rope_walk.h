@@ -361,8 +361,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
             const double spent = std::clamp(time / dt, 0.0, 1.0);
+            const Vec3 oldV = body.velocity;
+            const double oldSpin = body.spin;
             body.velocity += (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - spent);
             body.spin += (body.arrivalSpin - predictedSpin[i]) * (1.0 - spent);
+            if (std::getenv("GTC_TRACE_REBASE") && i == 1)
+                std::printf("REBASE t=%.7f f=%.5f dv=(%.5f,%.5f) ds=%.5f pred=(%.4f,%.4f) arr=(%.4f,%.4f)\\n",
+                            time, spent, body.velocity.x - oldV.x, body.velocity.y - oldV.y,
+                            body.spin - oldSpin, predictedVelocity[i].x, predictedVelocity[i].y,
+                            body.arrivalVelocity.x, body.arrivalVelocity.y);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
