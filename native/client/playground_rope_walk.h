@@ -394,10 +394,21 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 const bool fixed = bodyHeld(i);
                 const Vec3 centre = stopped[i] ? body.centre
                                                : body.previousCentre + (body.centre - body.previousCentre) * fraction;
-                const Vec3 velocity = stopped[i] ? body.velocity
-                    : body.velocity + (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - fraction);
-                const double spin = stopped[i] ? body.spin
-                    : body.spin + (body.arrivalSpin - predictedSpin[i]) * (1.0 - fraction);
+                Vec3 velocity = body.velocity;
+                double spin = body.spin;
+                if (!stopped[i]) {
+                    Body atTime = body;
+                    atTime.centre = centre;
+                    atTime.velocity = body.arrivalVelocity;
+                    atTime.spin = body.arrivalSpin;
+                    for (std::size_t corner = 0; corner < atTime.count; ++corner)
+                        atTime.position[corner] = body.previous[corner] +
+                            (body.position[corner] - body.previous[corner]) * fraction;
+                    playground_body_air::apply(atTime, time, [](Vec3, Vec3, Vec3) {});
+                    if (!body.pivoted) atTime.velocity.y -= gravity * time;
+                    velocity = atTime.velocity;
+                    spin = atTime.spin;
+                }
                 motion[i + 1] = {centre, fixed ? handSpeed_ : velocity, fixed ? 0.0 : spin,
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,
                                  fixed ? 0.0 : 1.0 / body.moment};
