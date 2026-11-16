@@ -430,7 +430,26 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         double projectionWork = 0.0;
         ball.touchCount = 0;  // the simultaneous solve below owns these contacts
         std::array<bool, kBodyCount> rebased{};
-        std::array<double, kBodyCount> gravityTime{};
+        std::array<double, kBodyCount> gravityTime{}, airMoment{}, bearingMoment{};
+        std::array<Vec3, kBodyCount> airImpulse{};
+        const auto bodyForces = [&](std::size_t i, double seconds) {
+            Body& body = bodies_[i];
+            if (bodyHeld(i)) return;
+            playground_body_air::apply(body, seconds, [&](Vec3 at, Vec3 impulse, Vec3) {
+                airImpulse[i] += impulse;
+                const Vec3 arm = at - body.centre;
+                airMoment[i] += arm.x * impulse.y - arm.y * impulse.x;
+            });
+            if (!body.pivoted) body.velocity.y -= gravity * seconds;
+            gravityTime[i] += seconds;
+            if (body.pivoted && body.spin != 0.0) {
+                const double limit = playground_detail::kAxleBearingFriction * body.mass * gravity *
+                                     playground_detail::kAxleRadius * seconds;
+                const double removed = std::copysign(std::min(std::abs(body.spin), limit / body.moment), body.spin);
+                body.spin -= removed;
+                bearingMoment[i] -= removed * body.moment;
+            }
+        };
         const auto rebaseBody = [&](std::size_t i, double time) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
@@ -497,10 +516,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     }
                     stopped[i] = true;
                     rebaseBody(i, time);
-                    if (!bodyHeld(i) && !body.pivoted) {
-                        body.velocity.y -= 0.5 * gravity * step;
-                        gravityTime[i] += 0.5 * step;
-                    }
+                    bodyForces(i, 0.5 * step);
                     motion[i + 1].centre = body.centre;
                     motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
                     motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
@@ -584,13 +600,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         while (elapsed < dt - 1e-12) {
             const double step = std::min(dt / kSubsteps, dt - elapsed);
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
-            for (std::size_t i = 0; i < kBodyCount; ++i) {
-                Body& body = bodies_[i];
-                if (stopped[i] && !bodyHeld(i) && !body.pivoted) {
-                    body.velocity.y -= 0.5 * gravity * step;
-                    gravityTime[i] += 0.5 * step;
-                }
-            }
+            for (std::size_t i = 0; i < kBodyCount; ++i)
+                if (stopped[i]) bodyForces(i, 0.5 * step);
             const double firstLoad = constrain(step, elapsed);
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
@@ -630,13 +641,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             projectionWork += ball.mass * gravity * (state.position.y - beforeProjectionY);
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
-            for (std::size_t i = 0; i < kBodyCount; ++i) {
-                Body& body = bodies_[i];
-                if (stopped[i] && !bodyHeld(i) && !body.pivoted) {
-                    body.velocity.y -= 0.5 * gravity * step;
-                    gravityTime[i] += 0.5 * step;
-                }
-            }
+            for (std::size_t i = 0; i < kBodyCount; ++i)
+                if (stopped[i]) bodyForces(i, 0.5 * step);
             finalRopeLoad = (firstLoad + constrain(step, elapsed + step)) / step;
             elapsed += step;
         }
@@ -657,6 +663,12 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             if (gravityTime[i] > 0.0)
                 addForce(bodies_[i].centre, Vec3{0, -bodies_[i].mass * gravity * gravityTime[i] / dt, 0},
                          ForceKind::Gravity, nullptr, i);
+            if (length(airImpulse[i]) > 1e-12)
+                addForce(bodies_[i].centre, airImpulse[i] / dt, ForceKind::Drag, nullptr, i);
+            if (std::abs(airMoment[i]) > 1e-12)
+                addCouple(bodies_[i].centre, airMoment[i] / dt, {}, ForceKind::Drag, i);
+            if (std::abs(bearingMoment[i]) > 1e-12)
+                addCouple(bodies_[i].pivotPoint, bearingMoment[i] / dt, {}, ForceKind::Rolling, i);
             const Vec3 total = normalTotal[i] + gripTotal[i];
             ball.blows += total;
             if (length(normalTotal[i]) > 1e-12)
