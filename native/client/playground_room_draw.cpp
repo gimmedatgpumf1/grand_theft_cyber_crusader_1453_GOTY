@@ -319,7 +319,12 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // that same frame, and no deeper.
     // The place the frame is entitled to, before anything is asked about it.
     ball.shown = ballPlaceAt(ball, fraction);
-    const double allowed = sceneReady_ ? std::max(0.0, depthInside(ballPlaceAt(ball, 1.0), 1.0)) : 0.0;
+    // `body.shown` is the frame's interpolated pose, not the end-of-tick pose.
+    // Comparing the ball's end position against that pose can grant a penetration
+    // allowance that the physics never granted in the actual end-of-tick shapes.
+    // The presentation must remain clear of the shapes it draws, so its allowance
+    // is zero (within the geometry's existing contact tolerance).
+    const double allowed = 0.0;
     double drawnAt = fraction;
     if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt), drawnAt) > ball_shape::kTouch) {
         if (depthInside(ballPlaceAt(ball, 0.0), 0.0) > allowed) {
@@ -370,9 +375,6 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // nailed on.
     // The turn goes with the place; a ball drawn a little earlier in its tick must
     // not have turned all the way through it.
-    if (std::getenv("GTC_TRACE_INTERP") && depthInside(ball.shown, drawnAt) > allowed)
-        std::printf("INTERP fraction %.6f chosen %.9f depth %.9g allowed %.9g frozen %d bent %d\n",
-                    fraction, drawnAt, depthInside(ball.shown, drawnAt), allowed, int(ball.frozen), int(ball.bent));
     ball.shownAngle = ball.previousAngle + (ball.angle - ball.previousAngle) * drawnAt;
 }
 
