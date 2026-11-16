@@ -9,8 +9,17 @@ void fallingShapeAgainstRope() {
         auto& other = room.ball(PlaygroundRoom::kThrowBall);
         other.position = other.previous = other.shown = {-3.0, other.radius, 0};
         other.velocity = {};
-        for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
-            if (i != PlaygroundRoom::kTriangle) room.bodies_[i].count = 0;
+        for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i) {
+            if (i == PlaygroundRoom::kTriangle) continue;
+            auto& parked = room.bodies_[i];
+            parked.centre = parked.previousCentre = {-20.0 - 5.0 * double(i), 3.0, 0};
+            if (parked.pivoted) parked.pivotPoint = parked.centre;
+            parked.velocity = {};
+            parked.spin = 0;
+            parked.frozen = true;
+            room.placeCorners(parked);
+            parked.previous = parked.shown = parked.position;
+        }
         room.point_ = room.previous_ = {-4, 4, 0};
         room.velocity_ = {};
         room.pointFrozen_ = true;
