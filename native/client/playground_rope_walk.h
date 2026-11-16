@@ -249,6 +249,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
 
         double first = phase + 1.0;
         int hitBody = -1;
+        bool uncertain = false;
         Vec3 hitNormal{};
         const double bobBound = length(state.velocity) + gravity * phase + 1e-9;
         for (std::size_t i = 0; i < kBodyCount; ++i) {
@@ -261,7 +262,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             const double bound = bobBound + cornerSpeed;
             double at = 0.0;
-            for (int pass = 0; pass < 320 && at <= phase; ++pass) {
+            int pass = 0;
+            for (; pass < 320 && at <= phase; ++pass) {
                 const State probe = sample(state, taut, at);
                 const double fraction = stopped[i] ? 1.0 : std::clamp((elapsed + at) / dt, 0.0, 1.0);
                 const OutlineGap gap = outlineGap(probe.position, body.previous.data(), body.position.data(),
@@ -269,15 +271,20 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 const double spare = gap.gap - ball.radius;
                 const Vec3 contact = probe.position - gap.normal * ball.radius;
                 const double closing = dot(probe.velocity - bodyFaceSpeed(i, contact), gap.normal);
-                if (spare <= 1e-8 && (closing < -1e-8 || spare < -quantum)) {
-                    if (at < first) { first = at; hitBody = int(i); hitNormal = gap.normal; }
+                if (spare <= quantum && (closing < -1e-8 || spare < -quantum)) {
+                    if (at < first) { first = at; hitBody = int(i); hitNormal = gap.normal; uncertain = false; }
                     break;
                 }
                 if (!(bound > 0.0)) break;
                 // When touching but separating, advance just enough to become
                 // distinct; when clear, the distance/speed bound is conservative.
-                const double advance = spare > 1e-8 ? 0.8 * (spare - 1e-8) / bound : quantum / (4.0 * bound);
+                const double advance = spare > quantum ? 0.8 * (spare - quantum) / bound : quantum / (4.0 * bound);
                 at += std::max(advance, 1e-10);
+            }
+            // Exhausting the conservative walk is not proof that the rest of
+            // the path is clear, especially at a nearly tangential approach.
+            if (pass == 320 && at < phase && at < first) {
+                first = at; hitBody = -1; uncertain = true;
             }
         }
 
@@ -287,7 +294,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         bool catchRope = false;
         if (!taut) {
             const double at = ropeCatchTime(state.position - anchor, state.velocity, ropeLength, gravity, drag, phase);
-            if (at < first && at <= phase) { first = at; hitBody = -1; catchRope = true; }
+            if (at < first && at <= phase) { first = at; hitBody = -1; catchRope = true; uncertain = false; }
         }
 
         const double taken = std::min(first, phase);
@@ -300,6 +307,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             if (willSlack) { taut = false; continue; }
             break;
         }
+        if (uncertain) break;  // the remaining time is solved conservatively below
         if (catchRope) {
             const Vec3 arm = state.position - anchor;
             const double reach = length(arm);
