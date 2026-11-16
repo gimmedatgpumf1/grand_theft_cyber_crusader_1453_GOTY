@@ -324,7 +324,9 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // allowance that the physics never granted in the actual end-of-tick shapes.
     // The presentation must remain clear of the shapes it draws, so its allowance
     // is zero (within the geometry's existing contact tolerance).
-    const double allowed = 0.0;
+    // Leave a ten-nanometre outward margin so the final interpolation/root
+    // rounding cannot turn a mathematically touching pose into a visible overlap.
+    const double allowed = -1.0e-8;
     double drawnAt = fraction;
     if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt), drawnAt) > ball_shape::kTouch) {
         if (depthInside(ballPlaceAt(ball, 0.0), 0.0) > allowed) {
