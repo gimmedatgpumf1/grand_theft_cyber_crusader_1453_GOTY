@@ -29,7 +29,9 @@ struct Contact {
     // value can represent the distance still available during a time step.
     double target = 0.0;
     double staticFriction = 0.0, kineticFriction = 0.0;
-    double normalImpulse = 0.0, tangentImpulse = 0.0;
+    // A rolling-resistance couple, bounded by Crr * normal impulse * radius.
+    double rollingFriction = 0.0, rollingRadius = 0.0;
+    double normalImpulse = 0.0, tangentImpulse = 0.0, rollingImpulse = 0.0;
 };
 
 inline double cross2(Vec3 a, Vec3 b) { return a.x * b.y - a.y * b.x; }
@@ -96,6 +98,19 @@ void solve(std::array<Body, Bodies>& bodies, std::array<Contact, Contacts>& cont
             contact.tangentImpulse = nextTangent;
             applyPair(tangent * tangentChange);
             largest = std::max(largest, std::abs(tangentChange));
+
+            const double angularGive = a.inverseMoment + (b ? b->inverseMoment : 0.0);
+            if (contact.rollingFriction > 0.0 && contact.rollingRadius > 0.0 && angularGive > 1e-15) {
+                const double relativeSpin = a.spin - (b ? b->spin : 0.0);
+                const double limit = contact.rollingFriction * contact.rollingRadius * nextNormal;
+                const double nextRolling = std::clamp(contact.rollingImpulse - relativeSpin / angularGive,
+                                                      -limit, limit);
+                const double change = nextRolling - contact.rollingImpulse;
+                contact.rollingImpulse = nextRolling;
+                a.spin += change * a.inverseMoment;
+                if (b) b->spin -= change * b->inverseMoment;
+                largest = std::max(largest, std::abs(change));
+            }
         }
         if (largest < 1e-12) break;
     }

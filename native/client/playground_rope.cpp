@@ -36,6 +36,7 @@
 // allowed to go slack.
 
 #include "client/playground_ball_shape.h"
+#include "client/playground_constraints.h"
 #include "client/playground_room.h"
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"

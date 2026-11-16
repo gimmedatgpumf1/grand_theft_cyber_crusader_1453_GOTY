@@ -321,8 +321,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const Vec3 contact = ball.position - hitNormal * ball.radius;
         if (!bent) { bent = true; firstAt = elapsed / dt; firstPoint = ball.position; }
         rope_.taut = taut;
-        ball.answered = ball.impacted = true;
-        ballContact(ball, hitNormal, hitBody, contact, 0.0, true, false, elapsed / dt, true);
+        const double approach = dot(ball.velocity - bodyFaceSpeed(std::size_t(hitBody), contact), hitNormal);
+        const bool sustained = taken < dt / 100.0 && std::abs(approach) <= playground_detail::kRestSpeed;
+        ball.answered = true;
+        ball.impacted = !sustained;
+        ballContact(ball, hitNormal, hitBody, contact, 0.0, true, sustained, elapsed / dt, true);
         // Friction sees the body after the normal impulse, not its pre-impact speed.
         ball.tickSpeed[std::size_t(hitBody)] = body.velocity;
         ball.tickSpin[std::size_t(hitBody)] = body.spin;
@@ -331,6 +334,12 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             const double reach = length(arm);
             if (reach > 0.0 && dot(ball.velocity, arm / reach) < -playground_tick::kQuantumSpeed)
                 rope_.taut = taut = false;
+        }
+        if (sustained) {
+            // A maintained contact under gravity is not an endless sequence of
+            // tiny impacts. Integrate the unspent time with constraints below.
+            state = State{ball.position, ball.velocity};
+            break;
         }
         settleBallFriction(ball);
         answerSupportedShapes();
@@ -358,13 +367,185 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         radius0 < ropeLength - 1e-4 && radius0 > ropeLength - 0.01 && traced++ < 3)
         std::printf("ROPE EVENTS %d elapsed %.12f of %.12f, start reach %.9f, end (%+.9f,%+.9f) v (%+.9f,%+.9f)\n",
                     events, elapsed, dt, radius0, state.position.x, state.position.y, state.velocity.x, state.velocity.y);
+    bool constrainedStep = false;
+    double finalRopeLoad = 0.0;
+    Vec3 ropeTotal{};
+    if (elapsed < dt - 1e-12) {
+        // Resting contacts under a continuous force cannot be represented by
+        // repeatedly bouncing at zero time. Spend the remaining time in bounded
+        // steps and solve the rope, every touching shape, and their floor contacts
+        // together. This is a velocity-constraint fallback, not a complete room
+        // solver: the earlier broad-phase still routes ball/dot/floor meetings to
+        // the legacy walk.
+        constrainedStep = true;
+        namespace pc = playground_constraints;
+        constexpr int kSubsteps = 64;
+        constexpr std::size_t kRows = 1 + kBodyCount * (1 + kMaxCorners);
+        std::array<Vec3, kBodyCount> normalTotal{}, gripTotal{}, atBody{}, floorNormal{}, floorGrip{}, atFloor{};
+        std::array<double, kBodyCount> rollTotal{};
+        const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+        ball.touchCount = 0;  // the simultaneous solve below owns these contacts
+
+        const auto constrain = [&](double step) {
+            std::array<pc::Body, kBodyCount + 1> motion{};
+            motion[0] = {state.position, state.velocity, ball.spin, 1.0 / ball.mass, 1.0 / inertia};
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                const Body& body = bodies_[i];
+                const bool fixed = bodyHeld(i);
+                motion[i + 1] = {body.centre, fixed ? handSpeed_ : body.velocity, fixed ? 0.0 : body.spin,
+                                 fixed || body.pivoted ? 0.0 : 1.0 / body.mass,
+                                 fixed ? 0.0 : 1.0 / body.moment};
+            }
+            std::array<pc::Contact, kRows> rows{};
+            std::size_t count = 0;
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                Body& body = bodies_[i];
+                if (body.count == 0) continue;
+                const OutlineGap gap = outlineGap(state.position, body.position.data(), body.position.data(),
+                                                  body.count, 1.0);
+                const double spare = gap.gap - ball.radius;
+                const Vec3 at = state.position - gap.normal * ball.radius;
+                const double closing = dot(pc::pointVelocity(motion[0], at) - pc::pointVelocity(motion[i + 1], at),
+                                           gap.normal);
+                if (spare > quantum + std::max(0.0, -closing * step)) continue;
+                pc::Contact& row = rows[count++];
+                row.a = 0; row.b = i + 1; row.point = at; row.normal = gap.normal;
+                row.target = spare > quantum ? -spare / step : 0.0;
+                row.staticFriction = std::min(kBallStaticFriction, body.staticFriction);
+                row.kineticFriction = std::min(kBallKineticFriction, body.kineticFriction);
+                row.rollingFriction = kBallRollingResistance;
+                row.rollingRadius = ball.radius;
+                ball.touching = true;
+                if (gap.normal.y > 0.0) ball.supportNormal = gap.normal;
+                stopped[i] = true;
+            }
+            const Vec3 arm = state.position - anchor;
+            const double reach = length(arm);
+            if (reach > 0.0) {
+                const Vec3 inward = arm * (-1.0 / reach);
+                const double spare = ropeLength - reach;
+                const double closing = dot(state.velocity, inward);
+                if (spare <= quantum + std::max(0.0, -closing * step)) {
+                    pc::Contact& row = rows[count++];
+                    row.a = 0; row.point = state.position; row.normal = inward;
+                    row.target = spare > quantum ? -spare / step : 0.0;
+                }
+            }
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                const Body& body = bodies_[i];
+                if (!stopped[i] || bodyHeld(i) || body.pivoted) continue;
+                for (std::size_t j = 0; j < body.count; ++j) {
+                    const Vec3 at = body.position[j];
+                    const double spare = at.y - playground_tick::kSurfaceY;
+                    const double closing = pc::pointVelocity(motion[i + 1], at).y;
+                    if (spare > quantum + std::max(0.0, -closing * step)) continue;
+                    pc::Contact& row = rows[count++];
+                    row.a = i + 1; row.point = at; row.normal = {0, 1, 0};
+                    row.target = spare > quantum ? -spare / step : 0.0;
+                    row.staticFriction = body.staticFriction;
+                    row.kineticFriction = body.kineticFriction;
+                }
+            }
+            pc::solve(motion, rows, count);
+            state.velocity = motion[0].velocity;
+            ball.spin = motion[0].spin;
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                Body& body = bodies_[i];
+                if (bodyHeld(i) || !stopped[i]) continue;
+                const bool moved = length(body.velocity - motion[i + 1].velocity) > 1e-12 ||
+                                   std::abs(body.spin - motion[i + 1].spin) > 1e-12;
+                body.velocity = motion[i + 1].velocity;
+                body.spin = motion[i + 1].spin;
+                if (moved && body.frozen) { body.frozen = false; body.restTicks = 0; }
+            }
+            double ropeLoad = 0.0;
+            for (std::size_t j = 0; j < count; ++j) {
+                const pc::Contact& row = rows[j];
+                const Vec3 normal = row.normal * row.normalImpulse;
+                const Vec3 tangent{row.normal.y, -row.normal.x, 0};
+                const Vec3 grip = tangent * row.tangentImpulse;
+                if (row.a == 0 && row.b == pc::kWorld) {
+                    ropeTotal += normal;
+                    ropeLoad += row.normalImpulse;
+                } else if (row.a == 0) {
+                    const std::size_t i = row.b - 1;
+                    normalTotal[i] += normal; gripTotal[i] += grip; atBody[i] = row.point;
+                    rollTotal[i] += row.rollingImpulse;
+                } else {
+                    const std::size_t i = row.a - 1;
+                    floorNormal[i] += normal; floorGrip[i] += grip; atFloor[i] = row.point;
+                }
+            }
+            return ropeLoad;
+        };
+
+        while (elapsed < dt - 1e-12) {
+            const double step = std::min(dt / kSubsteps, dt - elapsed);
+            state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
+            const double firstLoad = constrain(step);
+            state.position += state.velocity * step;
+            ball.angle += ball.spin * step;
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                Body& body = bodies_[i];
+                if (!stopped[i] || bodyHeld(i) || body.frozen) continue;
+                if (!body.pivoted) body.centre += body.velocity * step;
+                body.angle += body.spin * step;
+                placeCorners(body);
+            }
+            // Correct only geometrical drift, iterating because a rope and a
+            // face can both be active. The velocity solve remains one-sided.
+            for (int pass = 0; pass < 16; ++pass) {
+                double error = 0.0;
+                const Vec3 arm = state.position - anchor;
+                const double reach = length(arm);
+                if (reach > ropeLength) {
+                    const double extra = reach - ropeLength;
+                    state.position -= arm * (extra / reach);
+                    error = std::max(error, extra);
+                }
+                for (std::size_t i = 0; i < kBodyCount; ++i) {
+                    const Body& body = bodies_[i];
+                    if (body.count == 0) continue;
+                    const OutlineGap gap = outlineGap(state.position, body.position.data(), body.position.data(),
+                                                      body.count, 1.0);
+                    const double depth = ball.radius - gap.gap;
+                    if (depth > 0.0) {
+                        state.position += gap.normal * depth;
+                        error = std::max(error, depth);
+                    }
+                }
+                if (error < 1e-12) break;
+            }
+            state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
+            finalRopeLoad = (firstLoad + constrain(step)) / step;
+            elapsed += step;
+        }
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            const Vec3 total = normalTotal[i] + gripTotal[i];
+            ball.blows += total;
+            if (length(normalTotal[i]) > 1e-12)
+                addForce(atBody[i], normalTotal[i] / dt, ForceKind::Contact, nullptr, ownerOf(ball));
+            if (length(gripTotal[i]) > 1e-12)
+                addForce(atBody[i], gripTotal[i] / dt, ForceKind::Friction, nullptr, ownerOf(ball));
+            if (!bodyHeld(i)) recordImpulse(atBody[i], total * -1.0, ForceKind::Ball, i);
+            if (std::abs(rollTotal[i]) > 1e-12) {
+                addCouple(atBody[i], rollTotal[i] / dt, {}, ForceKind::Rolling, ownerOf(ball));
+                if (!bodyHeld(i)) addCouple(atBody[i], -rollTotal[i] / dt, {}, ForceKind::Rolling, i);
+            }
+            recordImpulse(atFloor[i], floorNormal[i], ForceKind::Contact, i);
+            recordImpulse(atFloor[i], floorGrip[i], ForceKind::Friction, i);
+        }
+        if (length(ropeTotal) > 1e-12) ropeImpulse(ropeTotal);
+    }
+
     ball.position = state.position;
     ball.velocity = state.velocity;
     const Vec3 arm = ball.position - anchor;
     const double reach = length(arm);
-    rope_.taut = taut && reach >= ropeLength - quantum && tension(state) > 0.0;
-    rope_.tension = rope_.taut ? tension(state) : 0.0;
-    if (rope_.taut && reach > 0.0) {
+    rope_.taut = constrainedStep ? reach >= ropeLength - quantum && finalRopeLoad > 1e-9
+                                 : taut && reach >= ropeLength - quantum && tension(state) > 0.0;
+    rope_.tension = rope_.taut ? (constrainedStep ? finalRopeLoad : tension(state)) : 0.0;
+    if (!constrainedStep && rope_.taut && reach > 0.0) {
         const Vec3 pull = arm * (-rope_.tension / reach);
         addForce(ball.position, pull, ForceKind::Rope, nullptr, ownerOf(ball));
         addForce(anchor, pull * -1.0, ForceKind::Rope, nullptr, kAnchorOwner);
