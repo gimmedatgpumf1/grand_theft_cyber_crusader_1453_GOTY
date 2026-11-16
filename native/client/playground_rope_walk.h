@@ -693,6 +693,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
 
     ball.position = state.position;
     ball.velocity = state.velocity;
+    if (std::getenv("GTC_TRACE_ROPE_WALK"))
+        std::printf("ROPE WALK events %d fallback %d first %.9f stopped %d%d%d\n", events, int(constrainedStep),
+                    firstAt, int(stopped[0]), int(stopped[1]), int(stopped[2]));
     const Vec3 arm = ball.position - anchor;
     const double reach = length(arm);
     rope_.taut = constrainedStep ? reach >= ropeLength - quantum && finalRopeLoad > 1e-9
