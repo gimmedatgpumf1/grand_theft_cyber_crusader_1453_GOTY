@@ -361,20 +361,12 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
             const double spent = std::clamp(time / dt, 0.0, 1.0);
-            // Replacing the unspent prediction prevents gravity and support
-            // impulses from being applied twice when we integrate the remainder.
-            // This prorates the old body's net tick impulse; it is an approximation
-            // if the old body walk itself contained an impact during that tick.
-            const Vec3 velocityBeforeRebase = body.velocity;
-            const double spinBeforeRebase = body.spin;
-            body.velocity += (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - spent);
-            body.spin += (body.arrivalSpin - predictedSpin[i]) * (1.0 - spent);
-            if (std::getenv("GTC_TRACE_REBASE"))
-                std::printf("REBASE body %zu time %.8f f %.6f v (%+.5f,%+.5f) arrival (%+.5f,%+.5f) predicted (%+.5f,%+.5f) -> (%+.5f,%+.5f) spin %.5f %.5f %.5f -> %.5f\\n",
-                            i, time, spent, velocityBeforeRebase.x, velocityBeforeRebase.y,
-                            body.arrivalVelocity.x, body.arrivalVelocity.y, predictedVelocity[i].x,
-                            predictedVelocity[i].y, body.velocity.x, body.velocity.y, spinBeforeRebase,
-                            body.arrivalSpin, predictedSpin[i], body.spin);
+            // Undo only the known smooth gravity integrated over the unelapsed
+            // part of the tick. The end-of-tick arrival delta also includes
+            // discrete contact impulses; blending those backward in time applies
+            // a future collision before it occurs and can add kinetic energy.
+            body.velocity.y += gravity * (dt - time);
+            (void)spent;
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
@@ -400,10 +392,14 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 const bool fixed = bodyHeld(i);
                 const Vec3 centre = stopped[i] ? body.centre
                                                : body.previousCentre + (body.centre - body.previousCentre) * fraction;
-                const Vec3 velocity = stopped[i] ? body.velocity
-                    : body.velocity + (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - fraction);
-                const double spin = stopped[i] ? body.spin
-                    : body.spin + (body.arrivalSpin - predictedSpin[i]) * (1.0 - fraction);
+                Vec3 velocity = body.velocity;
+                double spin = body.spin;
+                if (!stopped[i]) {
+                    // Interpolate only the continuous gravitational part of the
+                    // prediction. Arrival deltas include discrete contacts and
+                    // must not be smeared across earlier times in the tick.
+                    velocity.y += gravity * dt * (1.0 - fraction);
+                }
                 motion[i + 1] = {centre, fixed ? handSpeed_ : velocity, fixed ? 0.0 : spin,
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,
                                  fixed ? 0.0 : 1.0 / body.moment};
