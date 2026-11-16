@@ -98,6 +98,7 @@ void supportProjectionIsOneSided() {
 
 #include "playground_check_constraints.h"
 #include "playground_check_dynamics.h"
+#include "playground_check_ball_timing.h"
 #include "playground_check_stack.h"
 
 // A slack rope cannot hold a ball on a 45-degree slope. For a solid sphere the
@@ -402,6 +403,7 @@ int playgroundArrivalChecks() {
     }
     if (std::getenv("GTC_ONLY_GRAVITY_CONTACT")) {
         fallingShapeAgainstRope();
+        ordinaryBallImpactGravity();
         ropeAgainstSupportedStack();
         return localFailures;
     }
@@ -499,6 +501,7 @@ int playgroundArrivalChecks() {
     supportProjectionIsOneSided();
     contactConstraintChecks();
     fallingShapeAgainstRope();
+    ordinaryBallImpactGravity();
     ropeAgainstSupportedStack();
     slackRopeBallMovesOnSlope();
     bounceIsTheSameEveryWay();
