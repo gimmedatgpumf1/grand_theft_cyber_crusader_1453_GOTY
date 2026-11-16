@@ -56,7 +56,7 @@ inline void apply(Body& body, Vec3 point, Vec3 impulse) {
 // Friction is bounded by the current normal impulse and acts at the same point.
 template <std::size_t Bodies, std::size_t Contacts>
 void solve(std::array<Body, Bodies>& bodies, std::array<Contact, Contacts>& contacts,
-           std::size_t count, int iterations = 48) {
+           std::size_t count, int iterations = 256) {
     count = std::min(count, Contacts);
     for (int pass = 0; pass < iterations; ++pass) {
         double largest = 0.0;
