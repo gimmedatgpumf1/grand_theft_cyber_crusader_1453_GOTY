@@ -360,22 +360,21 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const auto rebaseBody = [&](std::size_t i, double time) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
-            // Reconstruct the body at this event time from its tick-start state.
-            // The precomputed endpoint contains contact impulses from elsewhere in
-            // the tick; interpolating that net delta rewinds only one member of a
-            // collision pair and can add energy. Reapply continuous forces here;
-            // contacts are solved together in this active island below.
-            const double rebaseEnergyBefore = localEnergy();
-            body.velocity = body.arrivalVelocity;
-            body.spin = body.arrivalSpin;
-            bodyForces(i, time);
-            if (std::getenv("GTC_TRACE_REBASE_ENERGY") &&
-                std::abs(localEnergy() - rebaseEnergyBefore) > 1e-5)
-                std::printf("REBASE_E %zu t %.8f dE %+.8f arrival (%+.4f,%+.4f) pred (%+.4f,%+.4f) now (%+.4f,%+.4f)\\n",
-                            i, time, localEnergy() - rebaseEnergyBefore, body.arrivalVelocity.x,
-                            body.arrivalVelocity.y, predictedVelocity[i].x, predictedVelocity[i].y,
-                            body.velocity.x, body.velocity.y);
             const double spent = std::clamp(time / dt, 0.0, 1.0);
+            if (spent < body.ropeEventAt) {
+                const double preFraction = body.ropeEventAt > 0.0 ? spent / body.ropeEventAt : 0.0;
+                body.velocity = body.arrivalVelocity +
+                                (body.ropeEventVelocity - body.arrivalVelocity) * preFraction;
+                body.spin = body.arrivalSpin + (body.ropeEventSpin - body.arrivalSpin) * preFraction;
+            } else if (body.ropeEventAt < 1.0) {
+                const double postFraction = (spent - body.ropeEventAt) / (1.0 - body.ropeEventAt);
+                body.velocity = body.ropeEventVelocity +
+                                (predictedVelocity[i] - body.ropeEventVelocity) * postFraction;
+                body.spin = body.ropeEventSpin + (predictedSpin[i] - body.ropeEventSpin) * postFraction;
+            } else {
+                body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
+                body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
+            }
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
@@ -404,17 +403,19 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 Vec3 velocity = body.velocity;
                 double spin = body.spin;
                 if (!stopped[i]) {
-                    Body atTime = body;
-                    atTime.centre = centre;
-                    atTime.velocity = body.arrivalVelocity;
-                    atTime.spin = body.arrivalSpin;
-                    for (std::size_t corner = 0; corner < atTime.count; ++corner)
-                        atTime.position[corner] = body.previous[corner] +
-                            (body.position[corner] - body.previous[corner]) * fraction;
-                    playground_body_air::apply(atTime, time, [](Vec3, Vec3, Vec3) {});
-                    if (!body.pivoted) atTime.velocity.y -= gravity * time;
-                    velocity = atTime.velocity;
-                    spin = atTime.spin;
+                    if (fraction < body.ropeEventAt) {
+                        const double preFraction = body.ropeEventAt > 0.0 ? fraction / body.ropeEventAt : 0.0;
+                        velocity = body.arrivalVelocity +
+                                   (body.ropeEventVelocity - body.arrivalVelocity) * preFraction;
+                        spin = body.arrivalSpin + (body.ropeEventSpin - body.arrivalSpin) * preFraction;
+                    } else if (body.ropeEventAt < 1.0) {
+                        const double postFraction = (fraction - body.ropeEventAt) / (1.0 - body.ropeEventAt);
+                        velocity = body.ropeEventVelocity + (body.velocity - body.ropeEventVelocity) * postFraction;
+                        spin = body.ropeEventSpin + (body.spin - body.ropeEventSpin) * postFraction;
+                    } else {
+                        velocity = body.arrivalVelocity + (body.velocity - body.arrivalVelocity) * fraction;
+                        spin = body.arrivalSpin + (body.spin - body.arrivalSpin) * fraction;
+                    }
                 }
                 motion[i + 1] = {centre, fixed ? handSpeed_ : velocity, fixed ? 0.0 : spin,
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,

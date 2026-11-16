@@ -305,6 +305,25 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
+        // Retain the time of a positive-clearance arrival for the rope's partial
+        // tick solve. Keep this separate from hitAt: the room has already advanced
+        // its body trajectory, while the rope walk needs to avoid applying this
+        // future impulse before the surfaces meet.
+        for (std::size_t k = 0; k < count; ++k) {
+            const double closing = away(patch.point[k], patch.normal);
+            if (!(patch.gap[k] > kQuantum) || !(closing < -kRestSpeed)) continue;
+            const double fraction = std::clamp(patch.gap[k] / (-closing * kTick), 0.0, 1.0);
+            if (fraction < body->ropeEventAt) {
+                body->ropeEventAt = fraction;
+                body->ropeEventVelocity = body->velocity;
+                body->ropeEventSpin = body->spin;
+            }
+            if (other != nullptr && !otherFixed && fraction < other->ropeEventAt) {
+                other->ropeEventAt = fraction;
+                other->ropeEventVelocity = other->velocity;
+                other->ropeEventSpin = other->spin;
+            }
+        }
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
         // its travel is the solver's answer rather than a free fall.

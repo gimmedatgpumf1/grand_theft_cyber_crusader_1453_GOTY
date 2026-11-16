@@ -93,6 +93,13 @@ struct Body {
     // ask for lands. The move that spends it happens later in the same tick.
     mutable double hitAt = 1.0;
     mutable Vec3 hitArrival{};
+    // Earliest positive-clearance contact in the whole-tick prediction, retained
+    // separately from the body's path-walk event. The rope contact walk needs the
+    // pre-impact velocity at a partial-tick activation without moving the body's
+    // already-predicted trajectory a second time.
+    double ropeEventAt = 1.0;
+    Vec3 ropeEventVelocity{};
+    double ropeEventSpin = 0.0;
     // How many contact patches this body has been answered in since the room was
     // reset. It is a counter and not a flag so that a tick can tell, by comparing
     // with what it started from, whether the body met anything at all while it
