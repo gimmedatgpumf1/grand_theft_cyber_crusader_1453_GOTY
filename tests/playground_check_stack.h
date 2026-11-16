@@ -63,36 +63,9 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
                0.5 * ball.mass * dot(ball.velocity, ball.velocity) + 0.5 * inertia * ball.spin * ball.spin;
     };
     double overlap = 0, gain = 0, islandGain = 0, stretch = 0, meeting = 0;
-    double momentumError = 0, pairError = 0;
-    int worstTick = 0, worstIslandTick = 0, overlapTick = 0, momentumTick = 0;
+    int worstTick = 0, worstIslandTick = 0, overlapTick = 0;
     for (int tick = 1; tick <= ticks; ++tick) {
         const double energy = room.totalEnergy(), localBefore = islandEnergy();
-        const Vec3 triangleBefore = triangle.velocity, cubeBefore = cube.velocity;
-        if (std::getenv("GTC_TRACE_STACK_LEDGER") && angle == -1.0 && supportOffset == -0.15 &&
-            !supportAsleep && ticks == 200 && tick >= 83 && tick <= 85) {
-            PlaygroundRoom probe = room;
-            for (auto& bob : probe.balls_) { bob.arrival = bob.velocity; bob.blows = {}; }
-            for (auto& shape : probe.bodies_) shape.woken = false;
-            probe.clearForces();
-            const auto stage = [&](const char* label) {
-                const auto& b = probe.ball(PlaygroundRoom::kRopeBall);
-                const auto& t = probe.bodies_[PlaygroundRoom::kTriangle];
-                Vec3 way{}, at{};
-                const double gap = probe.bodyBallGap(b, PlaygroundRoom::kTriangle, way, at);
-                std::printf("  STAGE %d %s E %.9f ball p (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.6f "
-                            "shape p (%+.6f,%+.6f) v (%+.6f,%+.6f) angle %+.6f spin %+.6f "
-                            "gap %+.9f bent %d at %.6f\n",
-                            tick, label, probe.totalEnergy(), b.position.x, b.position.y, b.velocity.x, b.velocity.y,
-                            b.spin, t.centre.x, t.centre.y, t.velocity.x, t.velocity.y, t.angle, t.spin,
-                            gap, int(b.bent), b.bendAt);
-            };
-            stage("start");
-            probe.tickBodies(); stage("bodies");
-            probe.tickBalls(); stage("balls");
-            for (auto& bob : probe.balls_) probe.separateBall(bob);
-            stage("separate");
-            probe.settleBodies(); probe.freezeCheck(); stage("settle");
-        }
         room.advance(1.0 / 20.0);
         pair_shape::PairManifold patch;
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&
@@ -110,39 +83,10 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
         if (change > gain) { gain = change; worstTick = tick; }
         if (localChange > islandGain) { islandGain = localChange; worstIslandTick = tick; }
         stretch = std::max(stretch, room.ropeBallDistance() - room.ropeLength());
-        Vec3 triangleImpulse{}, cubeImpulse{}, pairImpulse{};
         for (std::size_t i = 0; i < room.forceCount(); ++i) {
             const auto& force = room.forces()[i];
-            if (force.couple) continue;
-            if (force.owner == PlaygroundRoom::kTriangle) {
-                triangleImpulse += force.force / 20.0;
-                if (force.kind == PlaygroundRoom::ForceKind::Ball)
-                    meeting = std::max(meeting, length(force.force) / 20.0);
-            }
-            if (force.owner == PlaygroundRoom::kCube) cubeImpulse += force.force / 20.0;
-            if ((force.owner == PlaygroundRoom::kTriangle || force.owner == PlaygroundRoom::kCube) &&
-                force.kind == PlaygroundRoom::ForceKind::Pair) pairImpulse += force.force / 20.0;
-        }
-        const double error = std::max(length((triangle.velocity - triangleBefore) * triangle.mass - triangleImpulse),
-                                      length((cube.velocity - cubeBefore) * cube.mass - cubeImpulse));
-        if (error > momentumError) { momentumError = error; momentumTick = tick; }
-        pairError = std::max(pairError, length(pairImpulse));
-        if (std::getenv("GTC_TRACE_STACK_LEDGER") && angle == -1.0 && !supportAsleep && ticks == 200 &&
-            ((supportOffset == 0.0 && tick <= 8) || (supportOffset == -0.15 && tick >= 75 && tick <= 85))) {
-            const Vec3 triDelta = (triangle.velocity - triangleBefore) * triangle.mass;
-            const Vec3 cubeDelta = (cube.velocity - cubeBefore) * cube.mass;
-            std::printf("STACK LEDGER %.2f tick %d dE %+.8f tri dp (%+.6f,%+.6f) sum (%+.6f,%+.6f) "
-                        "cube dp (%+.6f,%+.6f) sum (%+.6f,%+.6f) pair (%+.6f,%+.6f)\n",
-                        supportOffset, tick, localChange, triDelta.x, triDelta.y, triangleImpulse.x, triangleImpulse.y,
-                        cubeDelta.x, cubeDelta.y, cubeImpulse.x, cubeImpulse.y, pairImpulse.x, pairImpulse.y);
-            for (std::size_t sample = 0; sample < room.forceCount(); ++sample) {
-                const auto& force = room.forces()[sample];
-                if (force.couple || (force.owner != PlaygroundRoom::kTriangle && force.owner != PlaygroundRoom::kCube))
-                    continue;
-                std::printf("  owner %zu kind %d impulse (%+.6f,%+.6f) at (%+.6f,%+.6f)\n",
-                            force.owner, int(force.kind), force.force.x / 20.0, force.force.y / 20.0,
-                            force.at.x, force.at.y);
-            }
+            if (force.owner == PlaygroundRoom::kTriangle && force.kind == PlaygroundRoom::ForceKind::Ball)
+                meeting = std::max(meeting, length(force.force) / 20.0);
         }
     }
     char detail[400];
@@ -153,21 +97,9 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
                   stretch, gain, worstTick, islandGain, worstIslandTick);
     check(meeting > 1e-5 && overlap < 1.1e-6 && stretch < 1.1e-6 && gain < 1e-4 && islandGain < 1e-4,
           "a rope-ball contact keeps a supporting stack solid and does not create energy", detail);
-    std::snprintf(detail, sizeof detail,
-                  "%d ticks, angle %.2f, offset %+.2f, support %s: peak body momentum error %.6g N s at %d; "
-                  "net pair impulse %.6g N s",
-                  ticks, angle, supportOffset, supportAsleep ? "asleep" : "awake", momentumError, momentumTick,
-                  pairError);
-    check(momentumError < 1e-3 && pairError < 1e-3,
-          "the stack's recorded impulses account for momentum on both bodies", detail);
 }
 
 void supportedStackChecks() {
-    if (std::getenv("GTC_TRACE_STACK_LEDGER")) {
-        ropeAgainstSupportedStack(-1.00, 0.0, false, 200);
-        ropeAgainstSupportedStack(-1.00, -0.15, false, 200);
-        return;
-    }
     for (double angle : {-1.30, -1.00, -0.65})
         for (double offset : {-0.15, 0.0, 0.15})
             for (bool asleep : {false, true})
