@@ -305,24 +305,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             pushBody(*body, patch.point[k], impulse, kind);
             pushOther(patch.point[k], impulse * -1.0, kind);
         };
-        // Record the first actual arrival as an instantaneous event. The velocity
-        // solver applies an impulse at this time; spreading the endpoint delta over
-        // the whole tick rewinds that impulse before contact and creates energy.
-        for (std::size_t k = 0; k < count; ++k) {
-            const double closing = away(patch.point[k], patch.normal);
-            if (!(patch.gap[k] > kQuantum) || !(closing < -kRestSpeed)) continue;
-            const double fraction = std::clamp(patch.gap[k] / (-closing * kTick), 0.0, 1.0);
-            if (fraction < body->hitAt) {
-                body->hitAt = fraction;
-                body->hitArrival = body->velocity;
-                body->hitArrivalSpin = body->spin;
-            }
-            if (other != nullptr && !otherFixed && fraction < other->hitAt) {
-                other->hitAt = fraction;
-                other->hitArrival = other->velocity;
-                other->hitArrivalSpin = other->spin;
-            }
-        }
         // This body and its partner have now been answered at a patch: whatever
         // the patch's ends go on to do, the body has met something this tick, and
         // its travel is the solver's answer rather than a free fall.

@@ -360,19 +360,22 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const auto rebaseBody = [&](std::size_t i, double time) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
+            // Reconstruct the body at this event time from its tick-start state.
+            // The precomputed endpoint contains contact impulses from elsewhere in
+            // the tick; interpolating that net delta rewinds only one member of a
+            // collision pair and can add energy. Reapply continuous forces here;
+            // contacts are solved together in this active island below.
+            const double rebaseEnergyBefore = localEnergy();
+            body.velocity = body.arrivalVelocity;
+            body.spin = body.arrivalSpin;
+            bodyForces(i, time);
+            if (std::getenv("GTC_TRACE_REBASE_ENERGY") &&
+                std::abs(localEnergy() - rebaseEnergyBefore) > 1e-5)
+                std::printf("REBASE_E %zu t %.8f dE %+.8f arrival (%+.4f,%+.4f) pred (%+.4f,%+.4f) now (%+.4f,%+.4f)\\n",
+                            i, time, localEnergy() - rebaseEnergyBefore, body.arrivalVelocity.x,
+                            body.arrivalVelocity.y, predictedVelocity[i].x, predictedVelocity[i].y,
+                            body.velocity.x, body.velocity.y);
             const double spent = std::clamp(time / dt, 0.0, 1.0);
-            if (spent < body.hitAt) {
-                const double beforeImpact = body.hitAt > 0.0 ? spent / body.hitAt : 0.0;
-                body.velocity = body.arrivalVelocity + (body.hitArrival - body.arrivalVelocity) * beforeImpact;
-                body.spin = body.arrivalSpin + (body.hitArrivalSpin - body.arrivalSpin) * beforeImpact;
-            } else if (body.hitAt < 1.0) {
-                const double afterImpact = (spent - body.hitAt) / (1.0 - body.hitAt);
-                body.velocity = body.hitArrival + (predictedVelocity[i] - body.hitArrival) * afterImpact;
-                body.spin = body.hitArrivalSpin + (predictedSpin[i] - body.hitArrivalSpin) * afterImpact;
-            } else {
-                body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
-                body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
-            }
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
@@ -401,19 +404,17 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 Vec3 velocity = body.velocity;
                 double spin = body.spin;
                 if (!stopped[i]) {
-                    if (fraction < body.hitAt) {
-                        const double beforeImpact = body.hitAt > 0.0 ? fraction / body.hitAt : 0.0;
-                        velocity = body.arrivalVelocity +
-                                   (body.hitArrival - body.arrivalVelocity) * beforeImpact;
-                        spin = body.arrivalSpin + (body.hitArrivalSpin - body.arrivalSpin) * beforeImpact;
-                    } else if (body.hitAt < 1.0) {
-                        const double afterImpact = (fraction - body.hitAt) / (1.0 - body.hitAt);
-                        velocity = body.hitArrival + (body.velocity - body.hitArrival) * afterImpact;
-                        spin = body.hitArrivalSpin + (body.spin - body.hitArrivalSpin) * afterImpact;
-                    } else {
-                        velocity = body.arrivalVelocity + (body.velocity - body.arrivalVelocity) * fraction;
-                        spin = body.arrivalSpin + (body.spin - body.arrivalSpin) * fraction;
-                    }
+                    Body atTime = body;
+                    atTime.centre = centre;
+                    atTime.velocity = body.arrivalVelocity;
+                    atTime.spin = body.arrivalSpin;
+                    for (std::size_t corner = 0; corner < atTime.count; ++corner)
+                        atTime.position[corner] = body.previous[corner] +
+                            (body.position[corner] - body.previous[corner]) * fraction;
+                    playground_body_air::apply(atTime, time, [](Vec3, Vec3, Vec3) {});
+                    if (!body.pivoted) atTime.velocity.y -= gravity * time;
+                    velocity = atTime.velocity;
+                    spin = atTime.spin;
                 }
                 motion[i + 1] = {centre, fixed ? handSpeed_ : velocity, fixed ? 0.0 : spin,
                                  fixed || body.pivoted ? 0.0 : 1.0 / body.mass,

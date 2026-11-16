@@ -478,7 +478,6 @@ void PlaygroundRoom::tickBodies() {
         bodies_[index].arrivalSpin = bodies_[index].spin;
         bodies_[index].hitAt = 1.0;
         bodies_[index].hitArrival = bodies_[index].velocity;
-        bodies_[index].hitArrivalSpin = bodies_[index].spin;
         metBefore[index] = bodies_[index].met;
     }
     wakeUnsupportedBodies();

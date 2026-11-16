@@ -93,7 +93,6 @@ struct Body {
     // ask for lands. The move that spends it happens later in the same tick.
     mutable double hitAt = 1.0;
     mutable Vec3 hitArrival{};
-    mutable double hitArrivalSpin = 0.0;
     // How many contact patches this body has been answered in since the room was
     // reset. It is a counter and not a flag so that a tick can tell, by comparing
     // with what it started from, whether the body met anything at all while it
