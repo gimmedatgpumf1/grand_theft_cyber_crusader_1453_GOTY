@@ -320,6 +320,72 @@ void supportProjectionIsOneSided() {
     std::swap(ball.supports[0], ball.supports[1]);
     check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}), {0, 0, 0}),
           "the corner answer is independent of support order", "");
+    ball.supports[0] = {{0, 1, 0}, PlaygroundRoom::kBodyCount};
+    ball.supports[1] = {{diagonal, diagonal, 0}, PlaygroundRoom::kCube};
+    const Vec3 boundary{-0.4, 0.4, 0.7};
+    check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0.7}), boundary),
+          "two supports preserve the nearest feasible boundary and planar depth", "");
+    std::swap(ball.supports[0], ball.supports[1]);
+    check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0.7}), boundary),
+          "the boundary answer is independent of support order", "");
+}
+
+// A slack rope cannot hold a ball on a 45-degree slope. For a solid sphere the
+// no-slip acceleration is g*sin(45)/(1+0.4), about 4.95 m/s^2; rolling resistance
+// is far too small to hold it. This detects a contact loop that silently discards
+// the rest of a tick and reports a stationary ball as settled.
+void slackRopeBallMovesOnSlope() {
+    PlaygroundRoom room;
+    room.reset();
+    settle(room, 200);
+    auto& other = room.ball(PlaygroundRoom::kThrowBall);
+    other.position = other.previous = other.shown = {-3.0, other.radius, 0.0};
+    other.velocity = {};
+    auto& ball = room.ball(PlaygroundRoom::kRopeBall);
+    ball.position = ball.previous = ball.shown = room.ropeAnchor() + Vec3{0, -room.ropeLength() + 0.02, 0};
+    ball.velocity = {};
+    ball.spin = 0.0;
+    ball.frozen = false;
+    ball.touching = false;
+    room.rope_.taut = false;
+    auto& triangle = room.bodies_[PlaygroundRoom::kTriangle];
+    triangle.centre = {3.6697, 0.7, 0};
+    triangle.angle = 0.5 * ball_shape::kPi;
+    room.placeCorners(triangle);
+    Vec3 way{}, at{};
+    const double gap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
+    triangle.centre.x -= gap / way.x;
+    room.placeCorners(triangle);
+    triangle.previous = triangle.shown = triangle.position;
+    triangle.previousCentre = triangle.centre;
+    triangle.previousAngle = triangle.angle;
+    triangle.velocity = {};
+    triangle.spin = 0.0;
+    triangle.frozen = false;
+    room.dragTarget_ = PlaygroundRoom::DragTarget::Body;
+    room.dragBody_ = PlaygroundRoom::kTriangle;
+    const double initialGap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
+    const Vec3 normal = way * -1.0;
+    const Vec3 downhill{-normal.y, normal.x, 0};
+    const Vec3 start = ball.position;
+    const double energy = ball.mass * ball_shape::kGravity * start.y;
+    room.advance(ball_shape::kTick);
+    const double along = dot(ball.position - start, downhill);
+    const double afterGap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
+    const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+    const double energyAfter = ball.mass * ball_shape::kGravity * ball.position.y +
+                               0.5 * ball.mass * dot(ball.velocity, ball.velocity) +
+                               0.5 * inertia * ball.spin * ball.spin;
+    char detail[280];
+    std::snprintf(detail, sizeof detail,
+                  "one 50 ms tick: initial gap %.3g m, slope n (%+.3f,%+.3f), downhill %.6f m, "
+                  "speed %.4f m/s, gap %.3g m, rope slack %.6f m, energy change %+.6g J",
+                  initialGap, normal.x, normal.y, along, length(ball.velocity), afterGap,
+                  room.ropeLength() - room.ropeBallDistance(), energyAfter - energy);
+    check(std::abs(initialGap) < 1e-6 && normal.y > 0.7 && normal.x < -0.7 &&
+              along > 0.002 && length(ball.velocity) > 0.08 && afterGap >= -1.1e-6 &&
+              room.ropeLength() - room.ropeBallDistance() > 0.005 && energyAfter - energy < 1e-4,
+          "a slack-rope ball actually advances down a slope", detail);
 }
 
 void ordinaryReleaseDoesNotThrow() {
@@ -652,6 +718,7 @@ int playgroundArrivalChecks() {
             for (double gap : {0.03, 0.15}) floorBallHitsCube(speed, awake, gap);
     ordinaryReleaseDoesNotThrow();
     supportProjectionIsOneSided();
+    slackRopeBallMovesOnSlope();
     bounceIsTheSameEveryWay();
     aRollIsARoll();
     whatHoldsABall();

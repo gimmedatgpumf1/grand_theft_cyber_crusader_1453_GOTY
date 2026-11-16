@@ -213,6 +213,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     }
     std::array<bool, kBodyCount> stopped{};
     double elapsed = 0.0;
+    int events = 0;
     bool bent = false;
     double firstAt = 0.0;
     Vec3 firstPoint{};
@@ -221,6 +222,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     // every corner's speed. It cannot step past a face just because the arc is
     // curved. A micrometre is the room's contact resolution.
     for (int event = 0; event < 16 && elapsed < dt - 1e-12; ++event) {
+        ++events;
         const double left = dt - elapsed;
         double phase = left;
         bool willSlack = false;
@@ -351,6 +353,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         }
     }
 
+    static int traced = 0;
+    if (std::getenv("GTC_TRACE_ROPE_EVENTS") && bodyHeld(kTriangle) &&
+        radius0 < ropeLength - 1e-4 && radius0 > ropeLength - 0.01 && traced++ < 3)
+        std::printf("ROPE EVENTS %d elapsed %.12f of %.12f, start reach %.9f, end (%+.9f,%+.9f) v (%+.9f,%+.9f)\n",
+                    events, elapsed, dt, radius0, state.position.x, state.position.y, state.velocity.x, state.velocity.y);
     ball.position = state.position;
     ball.velocity = state.velocity;
     const Vec3 arm = ball.position - anchor;

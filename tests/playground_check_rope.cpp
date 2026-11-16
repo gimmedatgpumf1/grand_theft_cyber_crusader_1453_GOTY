@@ -595,9 +595,10 @@ int playgroundRopeChecks() {
         std::snprintf(detail, sizeof detail,
                       "150 s after a millimetre of press: the ball was left at %.6f J after the tick the press was "
                       "answered in, never rose by more than %.3e J (log2 %.1f), and ended at %.6f J -- %.3e m a "
-                      "tick at the end; THE SHAPE IT WAS PRESSED WITH MOVED %.3e m; the rope carries %.3f N",
+                      "tick at the end; THE SHAPE IT WAS PRESSED WITH MOVED %.3e m; rope distance %.9f/%.3f m, "
+                      "tension %.3f N",
                       start, rise, rise > 0.0 ? std::log2(rise) : -1000.0, end, travel, spoke,
-                      room.ropeTension());
+                      room.ropeBallDistance(), room.ropeLength(), room.ropeTension());
         // A ball put back out of a slope it was pressed into is a ball put back, and the
         // air has nothing to take from a ball that is not moving: what a room that
         // gives nothing back owes is no rise, no travel at the end, and no shape moved.
@@ -606,6 +607,12 @@ int playgroundRopeChecks() {
         check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum &&
                   spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
+        // The press displaces the 45-degree face left, putting its contact a small
+        // distance above and left of the free-hanging point. With a slack rope, a
+        // solid sphere cannot stay on this slope: tan(45) exceeds the 0.035 rolling
+        // resistance. It must roll downhill until the rope and face can both support
+        // it. At that intersection the rope is almost vertical and carries almost the
+        // ball's 6.076 N weight; 3 N is a deliberately loose lower bound.
         check(room.ropeTaut() && room.ropeBallDistance() >= room.ropeLength() - 1e-6 &&
                   room.ropeTension() > 3.0,
               "the settled ball reaches its rope and has a real supporting tension", detail);
