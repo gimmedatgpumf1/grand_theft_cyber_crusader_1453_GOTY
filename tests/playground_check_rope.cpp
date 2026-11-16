@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -571,6 +572,15 @@ int playgroundRopeChecks() {
         for (int tick = 0; tick < 3000; ++tick) {
             room.advance(1.0 / 20.0);
             highest = std::max(highest, hangingEnergy(room));
+            if (std::getenv("GTC_TRACE_PRESS") && (tick < 35 || tick >= 2990)) {
+                const auto& bob = room.ropeBall();
+                Vec3 way{}, at{};
+                const double gap = room.bodyBallGap(bob, 1, way, at);
+                std::printf("   press %d gap %+.7f began (%+.4f,%+.4f) v (%+.4f,%+.4f) "
+                            "impact %d bent %d meeting %.5g energy %.7f\n", tick, gap,
+                            bob.began.x, bob.began.y, bob.velocity.x, bob.velocity.y,
+                            int(bob.impacted), int(bob.bent), bob.meetingArrival[1], hangingEnergy(room));
+            }
         }
         const double rise = highest - start;
         const double end = hangingEnergy(room);

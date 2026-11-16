@@ -42,6 +42,47 @@ Vec3 PlaygroundRoom::bodyFree(const Body& body, Vec3 push) {
     return Vec3{push.x, 0.0, push.z};
 }
 
+// A side impact on a body standing on the floor is a coupled contact. The blow
+// tends to turn one floor corner down; the floor's upward impulse changes the
+// contact-point velocity during the impact, not one tick later. Solve the two
+// normal impulses together, and retain the free-body answer if the floor is not
+// actually needed. The floor response is frictionless here; its normal cannot pull.
+double PlaygroundRoom::sideImpactImpulse(Body& body, Vec3 at, Vec3 normal, double ballShare, double closing,
+                                         double rebound, double& bodyShare) {
+    const double freeImpulse = std::max(0.0, (rebound - closing) / (ballShare + bodyShare));
+    if (body.pivoted || std::abs(normal.y) > 1e-8) return freeImpulse;
+    const Vec3 arm = at - body.centre;
+    const double lever = arm.x * normal.y - arm.y * normal.x;
+    double largestViolation = 0.0, chosenCoupling = 0.0, chosenCompliance = 0.0, chosenSpeed = 0.0;
+    Vec3 support{};
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 corner = body.position[i];
+        if (corner.y > playground_tick::kSurfaceY + playground_tick::kQuantum) continue;
+        const double floorArm = corner.x - body.centre.x;
+        const double coupling = normal.y / body.mass + lever * floorArm / body.moment;
+        const double compliance = 1.0 / body.mass + floorArm * floorArm / body.moment;
+        const double floorSpeed = pointSpeed(body, corner).y;
+        const double violation = freeImpulse * coupling - floorSpeed;
+        if (coupling > 0.0 && violation > largestViolation) {
+            largestViolation = violation;
+            chosenCoupling = coupling;
+            chosenCompliance = compliance;
+            chosenSpeed = floorSpeed;
+            support = corner;
+        }
+    }
+    if (!(largestViolation > 0.0)) return freeImpulse;
+    const double share = bodyShare - chosenCoupling * chosenCoupling / chosenCompliance;
+    const double divisor = ballShare + share;
+    if (!(divisor > 1e-12)) return freeImpulse;
+    const double impulse = std::max(0.0, (rebound - closing - chosenCoupling * chosenSpeed / chosenCompliance) / divisor);
+    const double floorImpulse = std::max(0.0, (impulse * chosenCoupling - chosenSpeed) / chosenCompliance);
+    if (!(floorImpulse > 0.0)) return freeImpulse;
+    bodyShare = share;
+    pushBody(body, support, Vec3{0, floorImpulse, 0}, ForceKind::Contact);
+    return impulse;
+}
+
 // One impulse, given to one body at one place. This is the only door into a
 // body's motion anywhere in the room, because it is the only thing a force can do
 // to a rigid body: change the speed of its centre of mass by J/m and its turn by

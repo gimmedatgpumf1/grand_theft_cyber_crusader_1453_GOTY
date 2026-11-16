@@ -112,7 +112,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
     double incoming = 0.0, outgoing = 0.0, impactBallX = 0.0, lowestX = 0.0, separation = 0.0;
     double triangleMove = 0.0, maxGain = 0.0, overlap = 0.0, stretch = 0.0;
     int gainTick = 0;
-    const bool trace = std::getenv("GTC_TRACE_HORIZONTAL") != nullptr && fps == 60 && !awake && sideOffset == 0.16;
+    const bool trace = std::getenv("GTC_TRACE_HORIZONTAL") != nullptr && fps == 60 && !awake;
     for (int frame = 0; frame < fps * 4; ++frame) {
         Vec3 way{}, at{};
         const double beforeGap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
@@ -145,11 +145,13 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
             if (trace) {
                 std::printf("   impact: began (%+.4f,%+.4f), alone (%+.4f,%+.4f), "
                             "blows (%+.4f,%+.4f) N s, bend %.4f at (%+.4f,%+.4f), "
-                            "meeting %.4f / %.4f N s, spin %+.4f rad/s\n",
+                            "meeting %.4f / %.4f N s, spin %+.4f rad/s, impacted %d, "
+                            "answered %d, bent %d, before gap %.7f, offset %.2f\n",
                             ball.began.x, ball.began.y, ball.alone.x, ball.alone.y,
                             ball.blows.x, ball.blows.y, ball.bendAt, ball.bendPoint.x, ball.bendPoint.y,
                             ball.meetingGiven[PlaygroundRoom::kTriangle],
-                            ball.meetingArrival[PlaygroundRoom::kTriangle], ball.spin);
+                            ball.meetingArrival[PlaygroundRoom::kTriangle], ball.spin,
+                            int(ball.impacted), int(ball.answered), int(ball.bent), beforeGap, sideOffset);
             }
         }
         if (hit) {

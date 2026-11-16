@@ -365,6 +365,9 @@ private:
     // What of a push on a body actually becomes a step of that body: the floor under
     // a standing shape answers the part that runs into it. See playground_room_push.cpp.
     static Vec3 bodyFree(const Body& body, Vec3 push);
+    // Solve a horizontal ball impact together with a floor corner, when one is active.
+    double sideImpactImpulse(Body& body, Vec3 at, Vec3 normal, double ballShare, double closing,
+                             double rebound, double& bodyShare);
     // The same number for a body that is standing on the floor and is being pushed
     // into it: what it gives is the part of a push that runs along the floor, plus
     // the turn about its centre, which the floor cannot take.
