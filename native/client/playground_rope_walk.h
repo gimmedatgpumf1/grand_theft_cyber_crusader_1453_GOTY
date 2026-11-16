@@ -515,6 +515,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         while (elapsed < dt - 1e-12) {
             const double step = std::min(dt / kSubsteps, dt - elapsed);
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                Body& body = bodies_[i];
+                if (stopped[i] && !bodyHeld(i) && !body.pivoted)
+                    body.velocity.y -= 0.5 * gravity * step;
+            }
             const double firstLoad = constrain(step);
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
@@ -552,6 +557,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             projectionWork += ball.mass * gravity * (state.position.y - beforeProjectionY);
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                Body& body = bodies_[i];
+                if (stopped[i] && !bodyHeld(i) && !body.pivoted)
+                    body.velocity.y -= 0.5 * gravity * step;
+            }
             finalRopeLoad = (firstLoad + constrain(step)) / step;
             elapsed += step;
         }
