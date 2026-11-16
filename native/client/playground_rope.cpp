@@ -216,11 +216,12 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         omega = dot(v, tangent) / std::max(reach, 1e-12);
     };
 
-    // An answered contact must not be reconstructed from the pre-impact velocity:
-    // the other body has already taken its impulse, and replaying the incoming arc
-    // gives that impulse to it without taking it from the ball. Constrain the contact
-    // result instead. An untouched tick can still use the pendulum solve below.
-    if (ball.answered) {
+    // A new impact must not be reconstructed from the pre-impact velocity: the
+    // other body has already taken its impulse. Keep that answer even when the
+    // ballistic walk ended outside the rope's reach. A kept contact is different:
+    // if it took the ball past the rope, the arc below still supplies its motion.
+    const bool pastTheLength = length(ball.position - anchor) > ropeLength;
+    if (ball.answered && (ball.impacted || !pastTheLength)) {
         // The room answered this tick, and its answer is the ball's motion. All the
         // rope is allowed to do to it is what a rope does: keep it no further than its
         // length, and take the speed that is running away from the anchor -- which is

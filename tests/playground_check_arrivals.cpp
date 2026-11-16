@@ -142,6 +142,15 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
             incoming = beforeRelative;
             outgoing = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
             impactBallX = ball.velocity.x;
+            if (trace) {
+                std::printf("   impact: began (%+.4f,%+.4f), alone (%+.4f,%+.4f), "
+                            "blows (%+.4f,%+.4f) N s, bend %.4f at (%+.4f,%+.4f), "
+                            "meeting %.4f / %.4f N s, spin %+.4f rad/s\n",
+                            ball.began.x, ball.began.y, ball.alone.x, ball.alone.y,
+                            ball.blows.x, ball.blows.y, ball.bendAt, ball.bendPoint.x, ball.bendPoint.y,
+                            ball.meetingGiven[PlaygroundRoom::kTriangle],
+                            ball.meetingArrival[PlaygroundRoom::kTriangle], ball.spin);
+            }
         }
         if (hit) {
             lowestX = std::min(lowestX, ball.velocity.x);
@@ -172,6 +181,109 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
           "the triangle reacts at its centre or corners", detail);
     check(maxGain < 1e-4 && overlap < 1.1e-6 && stretch < 1.1e-6,
           "the swing does not gain energy, penetrate the triangle or stretch the rope", detail);
+}
+
+// A rolling ball reaches the cube's side while both are supported by the floor.
+// Measure motion, not just the restitution bookkeeping: a recorded bounce is not
+// useful if the subsequent solve leaves the ball moving into the cube.
+void floorBallHitsCube(double speed, bool awake, double initialGap) {
+    using gtc::native::PlaygroundRoom;
+    using gtc::native::Vec3;
+    using gtc::native::dot;
+    using gtc::native::length;
+
+    PlaygroundRoom room;
+    room.reset();
+    settle(room, 200);
+    auto& cube = room.bodies_[PlaygroundRoom::kCube];
+    cube.centre = cube.previousCentre = Vec3{1.2, 0.35, 0};
+    cube.angle = cube.previousAngle = 0.0;
+    cube.velocity = {};
+    cube.spin = 0.0;
+    cube.frozen = !awake;
+    room.placeCorners(cube);
+    cube.previous = cube.shown = cube.position;
+    const Vec3 start = cube.centre;
+    const auto corners = cube.position;
+    auto& ball = room.ball(PlaygroundRoom::kThrowBall);
+    ball.position = ball.previous = ball.shown = Vec3{1.2 - 0.35 - ball.radius - initialGap, ball.radius, 0};
+    ball.velocity = Vec3{speed, 0, 0};
+    ball.spin = -speed / ball.radius;
+    ball.frozen = false;
+    ball.touching = ball.standing = true;
+    ball.supportNormal = Vec3{0, 1, 0};
+
+    bool hit = false;
+    double incoming = 0.0, outgoing = 0.0, impactX = 0.0, maxGap = 0.0;
+    double movement = 0.0, penetration = 0.0, maxGain = 0.0;
+    int impactTick = -1;
+    for (int tick = 1; tick <= 60; ++tick) {
+        Vec3 way{}, at{};
+        const double beforeGap = room.bodyBallGap(ball, PlaygroundRoom::kCube, way, at);
+        const Vec3 normal = way * -1.0;
+        const double beforeRelative = dot(ball.velocity - room.pointSpeed(cube, at), normal);
+        const double energy = room.totalEnergy();
+        room.advance(1.0 / 20.0);
+        const double gap = room.bodyBallGap(ball, PlaygroundRoom::kCube, way, at);
+        maxGain = std::max(maxGain, room.totalEnergy() - energy);
+        penetration = std::max(penetration, -gap);
+        bool impulse = ball.meetingArrival[PlaygroundRoom::kCube] > 1e-7;
+        for (std::size_t i = 0; i < room.forceCount(); ++i) {
+            const auto& force = room.forces()[i];
+            if (force.owner == PlaygroundRoom::kCube && force.kind == PlaygroundRoom::ForceKind::Ball &&
+                length(force.force) > 1e-4) impulse = true;
+        }
+        if (!hit && impulse && beforeRelative < -0.1 && beforeGap < 0.3) {
+            hit = true;
+            impactTick = tick;
+            incoming = beforeRelative;
+            outgoing = dot(ball.velocity - room.pointSpeed(cube, at), normal);
+            impactX = ball.velocity.x;
+        }
+        if (hit) {
+            maxGap = std::max(maxGap, gap);
+            movement = std::max(movement, length(cube.centre - start));
+            for (std::size_t i = 0; i < cube.count; ++i)
+                movement = std::max(movement, length(cube.position[i] - corners[i]));
+        }
+    }
+    char detail[320];
+    std::snprintf(detail, sizeof detail,
+                  "%.1f m/s %s gap %.2f m: hit %d at tick %d, normal %.3f -> %.3f m/s, "
+                  "ball vx %.3f m/s, separation %.4f m, cube moved %.4f m, overlap %.3g m, gain %.6f J",
+                  speed, awake ? "awake" : "asleep", initialGap, int(hit), impactTick,
+                  incoming, outgoing, impactX, maxGap, movement, penetration, maxGain);
+    check(hit && outgoing > 0.1 && impactX < -0.1 && maxGap > 0.03,
+          "a rolling ball rebounds and separates from the cube", detail);
+    check(hit && movement > 0.001 && penetration < 1.1e-6,
+          "the cube reacts without the ball going through it", detail);
+}
+
+void ordinaryReleaseDoesNotThrow() {
+    using gtc::native::PlaygroundRoom;
+    using gtc::native::Vec3;
+    using gtc::native::length;
+    PlaygroundRoom room;
+    room.reset();
+    settle(room, 200);
+    auto& ball = room.ball(PlaygroundRoom::kThrowBall);
+    const Vec3 from{2.0, 2.6, 0}, to{2.3, 2.8, 0};
+    ball.position = ball.previous = ball.shown = from;
+    ball.velocity = {};
+    ball.frozen = false;
+    room.setDragRay(from + Vec3{0, 0, 5}, Vec3{0, 0, -1});
+    room.beginDrag();
+    const bool grabbed = room.dragTarget_ == PlaygroundRoom::DragTarget::Ball &&
+                         room.dragBall_ == PlaygroundRoom::kThrowBall;
+    room.setDragRay(to + Vec3{0, 0, 5}, Vec3{0, 0, -1});
+    room.endDrag();  // release before another rendered frame
+    const double error = length(ball.position - to), speed = length(ball.velocity);
+    room.advance(1.0 / 20.0);
+    char detail[180];
+    std::snprintf(detail, sizeof detail, "release error %.3g m, speed %.3g m/s, next velocity (%+.3f,%+.3f)",
+                  error, speed, ball.velocity.x, ball.velocity.y);
+    check(grabbed && error < 1e-6 && speed < 1e-9 && std::abs(ball.velocity.x) < 1e-6 && ball.velocity.y < 0.0,
+          "releasing the ordinary ball places it without throwing it", detail);
 }
 
 }  // namespace
@@ -269,5 +381,9 @@ int playgroundArrivalChecks() {
     for (int fps : {30, 60, 144})
         for (bool awake : {false, true})
             for (double offset : {0.12, 0.16, 0.20}) horizontalRopeImpact(fps, awake, offset);
+    for (double speed : {1.0, 2.0, 4.0})
+        for (bool awake : {false, true})
+            for (double gap : {0.03, 0.15}) floorBallHitsCube(speed, awake, gap);
+    ordinaryReleaseDoesNotThrow();
     return localFailures;
 }

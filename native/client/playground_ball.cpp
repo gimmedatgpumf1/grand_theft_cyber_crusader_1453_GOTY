@@ -60,7 +60,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
     ball.began = ball.velocity;
     // Cleared here, and set only where the ball *arrives* at something below -- see
     // the note on the flag.
-    ball.answered = false;
+    ball.answered = ball.impacted = false;
     // The list of faces is not emptied here. The tick opens it before the bodies are
     // solved -- see tickBodies(), which fills it with every shape that is against the
     // ball -- and this half of the tick only adds the faces the ball's own walk meets.
@@ -560,7 +560,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
                     // direction, and stopping the ball along the wrong one left it
                     // rolling into the corner for ever at a hundredth of a metre a
                     // second -- speed with nowhere to go.
-                    if (!hit.resting) ball.answered = true;
+                    if (!hit.resting) ball.answered = ball.impacted = true;
                     ballContact(ball, endOut.normal, int(index),  endAt - endOut.normal * ball.radius, 0.0,
                                 answered[index], hit.resting, 1.0 - remaining);
                     // The answer has changed the ball's speed, so the rest of the tick
@@ -697,7 +697,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // ball, so the answer is a ball's -- equal and opposite, at the place they
             // met, written on the ledger once for each of them.
             otherAnswered[otherIndex] = true;
-            if (!meetingResting) ball.answered = true;
+            if (!meetingResting) ball.answered = ball.impacted = true;
             ballAgainstBall(ball, otherIndex, normal, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
@@ -706,7 +706,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // The floor is met at the ball's underside, not at its middle: an arrow
             // drawn from the centre of a ball says the ground is pressing the ball
             // through its own middle, and a lever drawn that way turns nothing.
-            if (!startedOnFloor) ball.answered = true;
+            if (!startedOnFloor) ball.answered = ball.impacted = true;
             ballContact(ball, normal, -1,  ball.position - normal * ball.radius, 0.0, true, startedOnFloor, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }
@@ -715,7 +715,7 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             // tick has already given its answer, so this time it only stops the
             // ball: it is a resting contact for the rest of the tick, which is what
             // stops a ball sliding into a closing wedge and being left inside it.
-            if (!meetingResting) ball.answered = true;
+            if (!meetingResting) ball.answered = ball.impacted = true;
             ballContact(ball, normal, what,  contactPoint, depth, exchange, meetingResting, reached);
             weightForTheRest(remaining);
             if (bendRecording) { ball.bendOut = ball.velocity; bendRecording = false; }

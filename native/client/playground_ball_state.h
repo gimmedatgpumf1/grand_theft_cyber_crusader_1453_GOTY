@@ -94,6 +94,8 @@ struct Ball {
     // its circle each tick, and the swing grew by a quarter of a metre a second a tick
     // out of nothing. A kept contact is not an arrival, and the rope is what says so.
     bool answered = false;
+    // A new impact, as distinct from a contact that was already being kept.
+    bool impacted = false;
     // The speed this tick's own account leaves the ball with: its weight and the air, and
     // nothing else. Whatever the ball's speed has beyond this was given to it by something
     // in the room -- a face, the floor, the other ball, a hand, a shape's own solver -- and
