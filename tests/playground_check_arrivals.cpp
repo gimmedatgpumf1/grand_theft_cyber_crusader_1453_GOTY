@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <random>
 #include <sstream>
 #include <string>
@@ -50,6 +51,123 @@ void check(bool holds, const char* what, const char* detail) {
 
 void settle(gtc::native::PlaygroundRoom& room, int ticks) {
     for (int tick = 0; tick < ticks; ++tick) room.advance(1.0 / 20.0);
+}
+
+// Recreate the user's picture: the rope is almost horizontal to the left, and
+// the triangle stands on its long bottom edge, with its vertical side just left
+// of the anchor. The ball is placed by the same mouse ray used by the client.
+void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
+    using gtc::native::PlaygroundRoom;
+    using gtc::native::Vec3;
+    using gtc::native::dot;
+    using gtc::native::length;
+
+    PlaygroundRoom room;
+    room.reset();
+    settle(room, 200);
+    auto& other = room.ball(PlaygroundRoom::kThrowBall);
+    other.position = other.previous = other.shown = Vec3{-3.0, other.radius, 0.0};
+    other.velocity = {};
+    other.spin = 0.0;
+    other.frozen = false;
+
+    const Vec3 anchor = room.ropeAnchor();
+    auto& triangle = room.bodies_[PlaygroundRoom::kTriangle];
+    triangle.centre = triangle.previousCentre = Vec3{anchor.x - sideOffset + 0.7, 0.7, 0.0};
+    triangle.angle = triangle.previousAngle = 0.0;
+    triangle.velocity = {};
+    triangle.spin = 0.0;
+    triangle.frozen = !awake;
+    room.placeCorners(triangle);
+    triangle.previous = triangle.shown = triangle.position;
+    const auto startingCorners = triangle.position;
+    const Vec3 startingCentre = triangle.centre;
+
+    auto& ball = room.ball(PlaygroundRoom::kRopeBall);
+    const double rope = room.ropeLength();
+    const auto placeAt = [&](double angle) {
+        return anchor + Vec3{std::sin(angle), -std::cos(angle), 0.0} * rope;
+    };
+    const Vec3 first = placeAt(-1.44);
+    const Vec3 release = placeAt(-1.54);
+    ball.position = ball.previous = ball.shown = first;
+    ball.velocity = {};
+    ball.spin = 0.0;
+    ball.frozen = false;
+    ball.touching = false;
+    room.rope_.taut = true;
+    room.setDragRay(first + Vec3{0, 0, 5}, Vec3{0, 0, -1});
+    room.beginDrag();
+    const bool grabbed = room.dragTarget_ == PlaygroundRoom::DragTarget::Ball &&
+                         room.dragBall_ == PlaygroundRoom::kRopeBall;
+    room.setDragRay(release + Vec3{0, 0, 5}, Vec3{0, 0, -1});
+    room.advance(1.0 / fps);
+    room.endDrag();
+    const double releaseError = length(ball.position - release);
+    const double releaseSpeed = length(ball.velocity);
+    const double releaseSpin = std::abs(ball.spin);
+
+    bool hit = false;
+    int tick = 0, impactTick = -1;
+    double incoming = 0.0, outgoing = 0.0, lowestX = 0.0, separation = 0.0;
+    double triangleMove = 0.0, maxGain = 0.0, overlap = 0.0, stretch = 0.0;
+    const bool trace = std::getenv("GTC_TRACE_HORIZONTAL") != nullptr && fps == 60 && !awake && sideOffset == 0.16;
+    for (int frame = 0; frame < fps * 4; ++frame) {
+        Vec3 way{}, at{};
+        const double beforeGap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
+        const Vec3 normal = way * -1.0;
+        const double beforeRelative = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
+        const double beforeEnergy = room.totalEnergy();
+        const bool stepped = std::min(room.accumulator_ + 1.0 / fps, 0.25) >= 1.0 / 20.0;
+        room.advance(1.0 / fps);
+        if (!stepped) continue;
+        ++tick;
+        const double gap = room.bodyBallGap(ball, PlaygroundRoom::kTriangle, way, at);
+        const double relative = dot(ball.velocity - room.pointSpeed(triangle, at), way * -1.0);
+        const double gain = room.totalEnergy() - beforeEnergy;
+        maxGain = std::max(maxGain, gain);
+        overlap = std::max(overlap, -gap);
+        stretch = std::max(stretch, room.ropeBallDistance() - rope);
+        bool impulse = ball.meetingArrival[PlaygroundRoom::kTriangle] > 1e-7;
+        for (std::size_t i = 0; i < room.forceCount(); ++i) {
+            const auto& force = room.forces()[i];
+            if (force.owner == PlaygroundRoom::kTriangle && force.kind == PlaygroundRoom::ForceKind::Ball &&
+                length(force.force) > 1e-4)
+                impulse = true;
+        }
+        if (!hit && impulse && beforeRelative < -0.1 && beforeGap < 0.3) {
+            hit = true;
+            impactTick = tick;
+            incoming = beforeRelative;
+            outgoing = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
+        }
+        if (hit) {
+            lowestX = std::min(lowestX, ball.velocity.x);
+            separation = std::max(separation, gap);
+            triangleMove = std::max(triangleMove, length(triangle.centre - startingCentre));
+            for (std::size_t i = 0; i < triangle.count; ++i)
+                triangleMove = std::max(triangleMove, length(triangle.position[i] - startingCorners[i]));
+        }
+        if (trace && tick <= 50)
+            std::printf("   tick %02d gap %+.6f rel %+.4f -> %+.4f ball (%+.3f,%+.3f) "
+                        "triangle (%+.3f,%+.3f) spin %+.3f dE %+.7f impulse %d\n",
+                        tick, gap, beforeRelative, relative, ball.velocity.x, ball.velocity.y,
+                        triangle.velocity.x, triangle.velocity.y, triangle.spin, gain, int(impulse));
+    }
+    char detail[300];
+    std::snprintf(detail, sizeof detail,
+                  "%d Hz %s offset %.2f: hit %d at tick %d, normal %.3f -> %.3f m/s, "
+                  "min vx %.3f m/s, separation %.3f m, triangle moved %.4f m, gain %.6f J",
+                  fps, awake ? "awake" : "asleep", sideOffset, int(hit), impactTick,
+                  incoming, outgoing, lowestX, separation, triangleMove, maxGain);
+    check(grabbed && releaseError < 1e-6 && releaseSpeed < 1e-9 && releaseSpin < 1e-9,
+          "a mouse release places the rope ball without throwing it", detail);
+    check(hit && incoming < -0.5 && outgoing > 0.2 && lowestX < -0.3 && separation > 0.1,
+          "the horizontal rope swing rebounds visibly from the triangle", detail);
+    check(hit && triangleMove > 0.001,
+          "the triangle reacts at its centre or corners", detail);
+    check(maxGain < 1e-4 && overlap < 1.1e-6 && stretch < 1.1e-6,
+          "the swing does not gain energy, penetrate the triangle or stretch the rope", detail);
 }
 
 }  // namespace
@@ -144,5 +262,8 @@ int playgroundArrivalChecks() {
     check(thrown < 1e-6, "nor is one that a shape arrives at at a hundred kilometres a second", detail);
     check(thrownFinite, "and that leaves a number where its position was", detail);
 
+    for (int fps : {30, 60, 144})
+        for (bool awake : {false, true})
+            for (double offset : {0.12, 0.16, 0.20}) horizontalRopeImpact(fps, awake, offset);
     return localFailures;
 }

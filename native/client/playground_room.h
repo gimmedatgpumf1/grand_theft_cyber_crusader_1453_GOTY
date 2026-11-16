@@ -67,8 +67,7 @@ public:
     void advance(double seconds);
     void setDragRay(Vec3 origin, Vec3 direction);
     void beginDrag();
-    // Letting go hands the room what the hand was doing, not just the place the
-    // ball was left: a carried ball's speed is the speed it was being carried at.
+    // Release a carried ball at its placed position, without adding a throw.
     void endDrag();
     bool render(NativeFrame& frame, const ViewState& view, const RoomFreecam& camera);
     // What is on screen this frame: the point interpolated between the two
@@ -954,9 +953,6 @@ private:
     // which one it took -- but the room has to know, because the other one is not
     // being carried.
     std::size_t dragBall_ = kThrowBall;
-    // How far the hand moved the ball in the tick it was carried: letting go turns
-    // that into the speed the ball leaves with. Nothing else reads it.
-    Vec3 carryStep_{};
     // How fast the hand is moving what it has hold of, this tick. A carried shape is
     // placed, not stepped, so its own speed is nothing -- but its face is really
     // travelling, and a ball it runs into has to be told so or it is never struck.

@@ -83,7 +83,16 @@ void PlaygroundRoom::tickBalls() {
             ball.alone = ball.velocity;
             ball.answered = true;
         }
-        if (rope_.attached && rope_.ball == index) holdOnRope(ball);
+        if (rope_.attached && rope_.ball == index) {
+            if (ballHeld(ball)) {
+                // The hand, not gravity, owns the held position. Do not advance a
+                // pendulum step or invent tension until the ball is released.
+                rope_.taut = length(ball.position - rope_.anchor) >= rope_.length - ball_shape::kTouch;
+                rope_.tension = 0.0;
+            } else {
+                holdOnRope(ball);
+            }
+        }
     }
 }
 
