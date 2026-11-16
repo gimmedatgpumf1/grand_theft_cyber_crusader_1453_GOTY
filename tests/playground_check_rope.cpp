@@ -574,20 +574,25 @@ int playgroundRopeChecks() {
         int maxGainTick = -1, reportedGains = 0;
         for (int tick = 0; tick < 3000; ++tick) {
             const double before = hangingEnergy(room);
+            const Vec3 positionBefore = room.ropeBall().position;
+            Vec3 previousWay{}, previousAt{};
+            const double previousGap = room.bodyBallGap(room.ropeBall(), 1, previousWay, previousAt);
+            const double previousReach = room.ropeBallDistance();
             room.advance(1.0 / 20.0);
             const double after = hangingEnergy(room);
             highest = std::max(highest, after);
             if (after - before > maxTickGain) { maxTickGain = after - before; maxGainTick = tick; }
             const bool showGain = after - before > 1e-5 && reportedGains++ < 15;
-            if (std::getenv("GTC_TRACE_PRESS") && (tick < 35 || tick >= 2990 || showGain)) {
+            if (std::getenv("GTC_TRACE_PRESS") && (tick < 45 || tick >= 2990 || showGain)) {
                 const auto& bob = room.ropeBall();
                 Vec3 way{}, at{};
                 const double gap = room.bodyBallGap(bob, 1, way, at);
-                std::printf("   press %d gap %+.7f began (%+.4f,%+.4f) v (%+.4f,%+.4f) "
-                            "spin %+.5f reach %.9f impact %d bent %d meeting %.5g dE %+.7f energy %.7f\n", tick, gap,
+                std::printf("   press %d gap %+.7f -> %+.7f pos (%+.6f,%+.6f) began (%+.4f,%+.4f) v (%+.4f,%+.4f) "
+                            "spin %+.5f reach %.9f -> %.9f impact %d bent %d meeting %.5g dE %+.7f energy %.7f\n",
+                            tick, previousGap, gap, positionBefore.x, positionBefore.y,
                             bob.began.x, bob.began.y, bob.velocity.x, bob.velocity.y, bob.spin,
-                            room.ropeBallDistance(), int(bob.impacted), int(bob.bent), bob.meetingArrival[1],
-                            after - before, after);
+                            previousReach, room.ropeBallDistance(), int(bob.impacted), int(bob.bent),
+                            bob.meetingArrival[1], after - before, after);
             }
         }
         const double rise = highest - start;

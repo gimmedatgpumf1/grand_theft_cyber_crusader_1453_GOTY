@@ -114,7 +114,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     const double ropeLength = rope_.length;
     const Vec3 arm0 = ball.position - anchor;
     const double radius0 = length(arm0);
-    if (!(radius0 > 0.0) || radius0 > ropeLength + quantum) return false;
+    if (!(radius0 > 0.0) || radius0 > ropeLength + quantum) {
+        if (std::getenv("GTC_TRACE_HELD") && bodyHeld(kTriangle))
+            std::printf("ROPE REJECT reach %.9f > %.9f\n", radius0, ropeLength);
+        return false;
+    }
 
     // Leave ball/ball, dot and floor meetings to their existing contact walk.
     // The bound covers gravity and the other object's entire step this tick.
@@ -137,7 +141,13 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const Body& body = bodies_[i];
         if (body.count == 0) continue;
         const OutlineGap gap = outlineGap(ball.position, body.previous.data(), body.previous.data(), body.count, 1.0);
-        if (gap.gap < ball.radius - quantum) return false;  // placement recovery belongs to the ordinary walk
+        if (gap.gap < ball.radius - quantum) {
+            static int rejected = 0;
+            if (std::getenv("GTC_TRACE_HELD") && bodyHeld(kTriangle) && rejected++ < 30)
+                std::printf("ROPE REJECT overlap body %zu depth %.9f reach %.9f v (%+.6f,%+.6f)\n",
+                            i, ball.radius - gap.gap, radius0, ball.velocity.x, ball.velocity.y);
+            return false;  // placement recovery belongs to the ordinary walk
+        }
         double bodyTravel = 0.0;
         for (std::size_t j = 0; j < body.count; ++j)
             bodyTravel = std::max(bodyTravel, length(body.position[j] - body.previous[j]));
@@ -535,7 +545,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             elapsed += step;
         }
         static int constraintTraces = 0;
-        if (std::getenv("GTC_TRACE_CONSTRAINTS") && localEnergy() - initialEnergy > 1e-5 && constraintTraces++ < 25)
+        if (std::getenv("GTC_TRACE_CONSTRAINTS") && (!std::getenv("GTC_TRACE_HELD") || bodyHeld(kTriangle)) &&
+            localEnergy() - initialEnergy > 1e-5 && constraintTraces++ < 25)
             std::printf("CONSTRAINT energy %+.8f J projection %+.8f J pos (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.5f held %d\n",
                         localEnergy() - initialEnergy, projectionWork, state.position.x, state.position.y,
                         state.velocity.x, state.velocity.y, ball.spin, int(bodyHeld(kTriangle)));
