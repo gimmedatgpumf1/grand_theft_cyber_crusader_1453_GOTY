@@ -401,6 +401,10 @@ int playgroundArrivalChecks() {
         horizontalRopeImpact(60, false, 0.12);
         return localFailures;
     }
+    if (std::getenv("GTC_ONLY_STACK_FAILURE")) {
+        supportedStackChecks();
+        return localFailures;
+    }
     if (std::getenv("GTC_ONLY_GRAVITY_CONTACT")) {
         fallingShapeAgainstRope();
         ordinaryBallImpactGravity();
