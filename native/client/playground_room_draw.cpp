@@ -281,7 +281,7 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // was thrown off its path by 5e-2 m on some frames, and then teleported. Walking
     // back along the path cannot do that: every place it can choose is a place the
     // tick really passed through.
-    const auto depthInside = [&](const Vec3& where) {
+    const auto depthInside = [&](const Vec3& where, double atFraction) {
         double inside = ball.radius - where.y;
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             const Body& body = bodies_[index];
@@ -296,7 +296,7 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
         // the tick had.
         for (const Ball& other : balls_) {
             if (&other == &ball) continue;
-            const Vec3 there = ballPlaceAt(other, fraction);
+            const Vec3 there = ballPlaceAt(other, atFraction);
             const double apart = length(Vec3{where.x - there.x, where.y - there.y, 0.0});
             inside = std::max(inside, ball.radius - (apart - other.radius));
         }
@@ -319,10 +319,10 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // that same frame, and no deeper.
     // The place the frame is entitled to, before anything is asked about it.
     ball.shown = ballPlaceAt(ball, fraction);
-    const double allowed = sceneReady_ ? std::max(0.0, depthInside(ballPlaceAt(ball, 1.0))) : 0.0;
+    const double allowed = sceneReady_ ? std::max(0.0, depthInside(ballPlaceAt(ball, 1.0), 1.0)) : 0.0;
     double drawnAt = fraction;
-    if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt)) > ball_shape::kTouch) {
-        if (depthInside(ballPlaceAt(ball, 0.0)) > allowed) {
+    if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt), drawnAt) > ball_shape::kTouch) {
+        if (depthInside(ballPlaceAt(ball, 0.0), 0.0) > allowed) {
             // Not one place of this tick's path is as clear as the place the room ends
             // on: something has been drawn over the ground the ball already covered.
             // The room's own place is then the best there is, and it is legal by the
@@ -338,7 +338,7 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
             double clear = 0.0, inside = drawnAt;
             for (int pass = 0; pass < 40; ++pass) {
                 const double middle = 0.5 * (clear + inside);
-                if (depthInside(ballPlaceAt(ball, middle)) > allowed) inside = middle;
+                if (depthInside(ballPlaceAt(ball, middle), middle) > allowed) inside = middle;
                 else clear = middle;
             }
             drawnAt = clear;
