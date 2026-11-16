@@ -112,6 +112,7 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
     bool hit = false;
     int tick = 0, impactTick = -1;
     double incoming = 0.0, outgoing = 0.0, impactBallX = 0.0, lowestX = 0.0, separation = 0.0;
+    double contactIn = 0.0, contactOut = 0.0;
     double triangleMove = 0.0, maxGain = 0.0, overlap = 0.0, stretch = 0.0;
     int gainTick = 0;
     const bool trace = std::getenv("GTC_TRACE_HORIZONTAL") != nullptr && fps == 60 && !awake;
@@ -150,6 +151,8 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
             impactTick = tick;
             incoming = beforeRelative;
             outgoing = dot(ball.velocity - room.pointSpeed(triangle, at), normal);
+            contactIn = ball.meetingSpeedIn[PlaygroundRoom::kTriangle];
+            contactOut = ball.meetingSpeedOut[PlaygroundRoom::kTriangle];
             impactBallX = ball.velocity.x;
             if (trace) {
                 std::printf("   impact: began (%+.4f,%+.4f), alone (%+.4f,%+.4f), "
@@ -188,6 +191,12 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
           "a mouse release places the rope ball without throwing it", detail);
     check(hit && incoming < -0.5 && outgoing > 0.2 && impactBallX < -0.2 && separation > 0.1,
           "the horizontal rope swing rebounds visibly from the triangle", detail);
+    char impactDetail[180];
+    std::snprintf(impactDetail, sizeof impactDetail, "%d Hz %s offset %.2f: contact normal %.4f -> %.4f m/s",
+                  fps, awake ? "awake" : "asleep", sideOffset, contactIn, contactOut);
+    check(contactIn < -0.5 && contactOut > 0.0 &&
+              std::abs(contactOut + ball_shape::kBallRestitution * contactIn) < 1e-3,
+          "the contact itself has the material's relative restitution", impactDetail);
     check(hit && triangleMove > 0.001,
           "the triangle reacts at its centre or corners", detail);
     check(maxGain < 1e-4 && overlap < 1.1e-6 && stretch < 1.1e-6,
@@ -296,10 +305,14 @@ void supportProjectionIsOneSided() {
     check(close(PlaygroundRoom::ballFree(ball, {1, 2, 0}), {1, 2, 0}),
           "the floor never pulls a ball back down", "");
     const double diagonal = std::sqrt(0.5);
-    ball.supports[1] = {{diagonal, diagonal, 0}, PlaygroundRoom::kCube};
+    ball.supports[1] = {{diagonal, -diagonal, 0}, PlaygroundRoom::kCube};
     ball.supportCount = 2;
     check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}), {0, 0, 0}),
           "two simultaneous supports agree on a corner", "");
+    check(close(PlaygroundRoom::ballFree(ball, {-1, 0.2, 0}), {0, 0, 0}),
+          "one support can activate another that the original push was leaving", "");
+    check(close(PlaygroundRoom::ballFree(ball, {-1, 2, 0}), {0.5, 0.5, 0}),
+          "a sloping support preserves the available tangential motion", "");
     check(close(PlaygroundRoom::ballFree(ball, {1, -1, 0}), {1, 0, 0}),
           "a second support does not block motion away from it", "");
     check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}, PlaygroundRoom::kCube), {-1, 0, 0}),

@@ -606,7 +606,9 @@ int playgroundRopeChecks() {
         check(rise <= 0.0 && travel <= gtc::native::playground_tick::kQuantum &&
                   spoke <= gtc::native::playground_tick::kQuantum,
               "a slope pressed into a ball on a rope takes the push and gives nothing back", detail);
-        (void)0;
+        check(room.ropeTaut() && room.ropeBallDistance() >= room.ropeLength() - 1e-6 &&
+                  room.ropeTension() > 3.0,
+              "the settled ball reaches its rope and has a real supporting tension", detail);
     }
 
     // 11. The picture the King asked for. A ball on the rope swung into the triangle's

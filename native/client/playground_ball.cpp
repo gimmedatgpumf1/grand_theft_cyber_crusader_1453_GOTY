@@ -605,7 +605,10 @@ void PlaygroundRoom::tickBall(Ball& ball) {
         // shape keeps the step it took. A shape the ball really did arrive at -- or
         // one it finds inside itself, which is the same prevention asked afterwards
         // -- is carried back to the instant of the meeting, as before.
-        const double spent = length(walkStart) * kTick * (first * remaining);
+        // `remaining` has already been reduced above. Use the distance this
+        // segment actually covered; multiplying by the new remainder loses the
+        // arrival entirely when it occurs near the end of a tick.
+        const double spent = length(travel) * first;
         // Was the ball already against this shape when the tick began? Then this is a
         // contact, not an arrival, and a contact is the patch's to answer. Carrying
         // the shape back here was the plank's whole trouble: a ball rolling along a
