@@ -370,6 +370,9 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // nailed on.
     // The turn goes with the place; a ball drawn a little earlier in its tick must
     // not have turned all the way through it.
+    if (std::getenv("GTC_TRACE_INTERP") && depthInside(ball.shown, drawnAt) > allowed)
+        std::printf("INTERP fraction %.6f chosen %.9f depth %.9g allowed %.9g frozen %d bent %d\n",
+                    fraction, drawnAt, depthInside(ball.shown, drawnAt), allowed, int(ball.frozen), int(ball.bent));
     ball.shownAngle = ball.previousAngle + (ball.angle - ball.previousAngle) * drawnAt;
 }
 
