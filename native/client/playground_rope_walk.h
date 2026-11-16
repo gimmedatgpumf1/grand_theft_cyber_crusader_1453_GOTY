@@ -413,6 +413,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             return energy;
         };
         const double initialEnergy = localEnergy();
+        const Vec3 ballStartPosition = state.position, ballStartVelocity = state.velocity;
+        const Vec3 shapeStartPosition = bodies_[kTriangle].centre, shapeStartVelocity = bodies_[kTriangle].velocity;
+        const double shapeStartSpin = bodies_[kTriangle].spin, ballStartSpin = ball.spin;
         double projectionWork = 0.0;
         ball.touchCount = 0;  // the simultaneous solve below owns these contacts
 
@@ -555,9 +558,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         static int constraintTraces = 0;
         if (std::getenv("GTC_TRACE_CONSTRAINTS") && (!std::getenv("GTC_TRACE_HELD") || bodyHeld(kTriangle)) &&
             localEnergy() - initialEnergy > 1e-5 && constraintTraces++ < 25)
-            std::printf("CONSTRAINT energy %+.8f J projection %+.8f J pos (%+.6f,%+.6f) v (%+.6f,%+.6f) spin %+.5f held %d\n",
-                        localEnergy() - initialEnergy, projectionWork, state.position.x, state.position.y,
-                        state.velocity.x, state.velocity.y, ball.spin, int(bodyHeld(kTriangle)));
+            std::printf("CONSTRAINT energy %+.8f J projection %+.8f J "
+                        "ball p (%+.6f,%+.6f)->(%+.6f,%+.6f) v (%+.6f,%+.6f)->(%+.6f,%+.6f) spin %+.5f->%+.5f "
+                        "shape p (%+.6f,%+.6f)->(%+.6f,%+.6f) v (%+.6f,%+.6f)->(%+.6f,%+.6f) spin %+.5f->%+.5f held %d\n",
+                        localEnergy() - initialEnergy, projectionWork, ballStartPosition.x, ballStartPosition.y,
+                        state.position.x, state.position.y, ballStartVelocity.x, ballStartVelocity.y,
+                        state.velocity.x, state.velocity.y, ballStartSpin, ball.spin,
+                        shapeStartPosition.x, shapeStartPosition.y, bodies_[kTriangle].centre.x,
+                        bodies_[kTriangle].centre.y, shapeStartVelocity.x, shapeStartVelocity.y,
+                        bodies_[kTriangle].velocity.x, bodies_[kTriangle].velocity.y, shapeStartSpin,
+                        bodies_[kTriangle].spin, int(bodyHeld(kTriangle)));
         for (std::size_t i = 0; i < kBodyCount; ++i) {
             const Vec3 total = normalTotal[i] + gripTotal[i];
             ball.blows += total;

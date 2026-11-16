@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <random>
 #include <string>
 #include <vector>
@@ -725,6 +726,7 @@ void costOfATick() {
 }  // namespace
 
 int main() {
+    if (std::getenv("GTC_ONLY_PICTURED_IMPACT")) return playgroundArrivalChecks() == 0 ? 0 : 1;
     resetIsAReset();
     energyNeverRises();
     restingStatics();

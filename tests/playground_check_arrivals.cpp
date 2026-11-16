@@ -629,6 +629,10 @@ void whatHoldsABall() {
 int playgroundArrivalChecks() {
     using gtc::native::PlaygroundRoom;
     using gtc::native::Vec3;
+    if (std::getenv("GTC_ONLY_PICTURED_IMPACT")) {
+        horizontalRopeImpact(60, false, 0.12);
+        return localFailures;
+    }
     char detail[240];
 
     double fastInside = 0.0;
