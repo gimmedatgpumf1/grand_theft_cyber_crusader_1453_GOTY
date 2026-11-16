@@ -190,6 +190,17 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         addForce(anchor, impulse * (-1.0 / dt), ForceKind::Rope, nullptr, kAnchorOwner);
     };
 
+    // The shapes have already been predicted through the whole tick. Save that
+    // prediction before the ball can apply an impact, so a later substep can
+    // remove the unspent share of the prediction without undoing the impact.
+    std::array<Vec3, kBodyCount> predictedVelocity{};
+    std::array<double, kBodyCount> predictedSpin{};
+    for (std::size_t i = 0; i < kBodyCount; ++i) {
+        predictedVelocity[i] = bodies_[i].velocity;
+        predictedSpin[i] = bodies_[i].spin;
+    }
+    const std::size_t predictedForces = forceCount_;
+
     ball.began = ball.velocity;
     ball.previous = ball.position;
     ball.previousAngle = ball.angle;
@@ -418,6 +429,33 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const double shapeStartSpin = bodies_[kTriangle].spin, ballStartSpin = ball.spin;
         double projectionWork = 0.0;
         ball.touchCount = 0;  // the simultaneous solve below owns these contacts
+        std::array<bool, kBodyCount> rebased{};
+        std::array<double, kBodyCount> gravityTime{};
+        const auto rebaseBody = [&](std::size_t i) {
+            Body& body = bodies_[i];
+            if (rebased[i] || bodyHeld(i)) return;
+            const double spent = std::clamp(elapsed / dt, 0.0, 1.0);
+            // Replacing the unspent prediction prevents gravity and support
+            // impulses from being applied twice when we integrate the remainder.
+            // This prorates the old body's net tick impulse; it is an approximation
+            // if the old body walk itself contained an impact during that tick.
+            body.velocity += (body.arrivalVelocity - predictedVelocity[i]) * (1.0 - spent);
+            body.spin += (body.arrivalSpin - predictedSpin[i]) * (1.0 - spent);
+            for (std::size_t sample = 0; sample < predictedForces; ++sample) {
+                ForceSample& force = forces_[sample];
+                if (force.owner != i) continue;
+                force.force = force.force * spent;
+                force.moment *= spent;
+            }
+            if (body.frozen) {
+                body.frozen = false;
+                body.woken = true;
+                body.restTicks = 0;
+            }
+            rebased[i] = true;
+        };
+        for (std::size_t i = 0; i < kBodyCount; ++i)
+            if (stopped[i]) rebaseBody(i);
 
         const auto constrain = [&](double step) {
             std::array<pc::Body, kBodyCount + 1> motion{};
@@ -441,6 +479,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 const double closing = dot(pc::pointVelocity(motion[0], at) - pc::pointVelocity(motion[i + 1], at),
                                            gap.normal);
                 if (spare > quantum + std::max(0.0, -closing * step)) continue;
+                if (!stopped[i]) {
+                    stopped[i] = true;
+                    rebaseBody(i);
+                    if (!bodyHeld(i) && !body.pivoted) {
+                        body.velocity.y -= 0.5 * gravity * step;
+                        gravityTime[i] += 0.5 * step;
+                    }
+                    motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
+                    motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
+                }
                 pc::Contact& row = rows[count++];
                 row.a = 0; row.b = i + 1; row.point = at; row.normal = gap.normal;
                 row.target = spare > quantum ? -spare / step : 0.0;
@@ -517,8 +565,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 Body& body = bodies_[i];
-                if (stopped[i] && !bodyHeld(i) && !body.pivoted)
+                if (stopped[i] && !bodyHeld(i) && !body.pivoted) {
                     body.velocity.y -= 0.5 * gravity * step;
+                    gravityTime[i] += 0.5 * step;
+                }
             }
             const double firstLoad = constrain(step);
             state.position += state.velocity * step;
@@ -559,8 +609,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 Body& body = bodies_[i];
-                if (stopped[i] && !bodyHeld(i) && !body.pivoted)
+                if (stopped[i] && !bodyHeld(i) && !body.pivoted) {
                     body.velocity.y -= 0.5 * gravity * step;
+                    gravityTime[i] += 0.5 * step;
+                }
             }
             finalRopeLoad = (firstLoad + constrain(step)) / step;
             elapsed += step;
@@ -579,6 +631,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                         bodies_[kTriangle].velocity.x, bodies_[kTriangle].velocity.y, shapeStartSpin,
                         bodies_[kTriangle].spin, int(bodyHeld(kTriangle)));
         for (std::size_t i = 0; i < kBodyCount; ++i) {
+            if (gravityTime[i] > 0.0)
+                addForce(bodies_[i].centre, Vec3{0, -bodies_[i].mass * gravity * gravityTime[i] / dt, 0},
+                         ForceKind::Gravity, nullptr, i);
             const Vec3 total = normalTotal[i] + gripTotal[i];
             ball.blows += total;
             if (length(normalTotal[i]) > 1e-12)
