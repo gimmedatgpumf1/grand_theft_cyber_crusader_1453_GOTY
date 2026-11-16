@@ -102,6 +102,23 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
                                       length((cube.velocity - cubeBefore) * cube.mass - cubeImpulse));
         if (error > momentumError) { momentumError = error; momentumTick = tick; }
         pairError = std::max(pairError, length(pairImpulse));
+        if (std::getenv("GTC_TRACE_STACK_LEDGER") && angle == -1.0 && !supportAsleep && ticks == 200 &&
+            ((supportOffset == 0.0 && tick <= 8) || (supportOffset == -0.15 && tick >= 75 && tick <= 85))) {
+            const Vec3 triDelta = (triangle.velocity - triangleBefore) * triangle.mass;
+            const Vec3 cubeDelta = (cube.velocity - cubeBefore) * cube.mass;
+            std::printf("STACK LEDGER %.2f tick %d dE %+.8f tri dp (%+.6f,%+.6f) sum (%+.6f,%+.6f) "
+                        "cube dp (%+.6f,%+.6f) sum (%+.6f,%+.6f) pair (%+.6f,%+.6f)\n",
+                        supportOffset, tick, localChange, triDelta.x, triDelta.y, triangleImpulse.x, triangleImpulse.y,
+                        cubeDelta.x, cubeDelta.y, cubeImpulse.x, cubeImpulse.y, pairImpulse.x, pairImpulse.y);
+            for (std::size_t sample = 0; sample < room.forceCount(); ++sample) {
+                const auto& force = room.forces()[sample];
+                if (force.couple || (force.owner != PlaygroundRoom::kTriangle && force.owner != PlaygroundRoom::kCube))
+                    continue;
+                std::printf("  owner %zu kind %d impulse (%+.6f,%+.6f) at (%+.6f,%+.6f)\n",
+                            force.owner, int(force.kind), force.force.x / 20.0, force.force.y / 20.0,
+                            force.at.x, force.at.y);
+            }
+        }
     }
     char detail[400];
     std::snprintf(detail, sizeof detail,
@@ -121,6 +138,11 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
 }
 
 void supportedStackChecks() {
+    if (std::getenv("GTC_TRACE_STACK_LEDGER")) {
+        ropeAgainstSupportedStack(-1.00, 0.0, false, 200);
+        ropeAgainstSupportedStack(-1.00, -0.15, false, 200);
+        return;
+    }
     for (double angle : {-1.30, -1.00, -0.65})
         for (double offset : {-0.15, 0.0, 0.15})
             for (bool asleep : {false, true})
