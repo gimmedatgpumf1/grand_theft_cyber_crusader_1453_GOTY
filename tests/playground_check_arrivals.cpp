@@ -284,6 +284,31 @@ void floorBallHitsCube(double speed, bool awake, double initialGap) {
           "the floor-supported cube does not let the ball through", detail);
 }
 
+// Supports are unilateral: they can refuse an inward impulse, never an outward
+// one. Include a corner where projecting off one support activates the other.
+void supportProjectionIsOneSided() {
+    PlaygroundRoom::Ball ball;
+    ball.supportCount = 1;
+    ball.supports[0] = {{0, 1, 0}, PlaygroundRoom::kBodyCount};
+    const auto close = [](Vec3 a, Vec3 b) { return length(a - b) < 1e-10; };
+    check(close(PlaygroundRoom::ballFree(ball, {1, -2, 0}), {1, 0, 0}),
+          "the floor refuses a downward push, not the sideways part", "");
+    check(close(PlaygroundRoom::ballFree(ball, {1, 2, 0}), {1, 2, 0}),
+          "the floor never pulls a ball back down", "");
+    const double diagonal = std::sqrt(0.5);
+    ball.supports[1] = {{diagonal, diagonal, 0}, PlaygroundRoom::kCube};
+    ball.supportCount = 2;
+    check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}), {0, 0, 0}),
+          "two simultaneous supports agree on a corner", "");
+    check(close(PlaygroundRoom::ballFree(ball, {1, -1, 0}), {1, 0, 0}),
+          "a second support does not block motion away from it", "");
+    check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}, PlaygroundRoom::kCube), {-1, 0, 0}),
+          "a contact is not counted as its own support", "");
+    std::swap(ball.supports[0], ball.supports[1]);
+    check(close(PlaygroundRoom::ballFree(ball, {-1, -0.2, 0}), {0, 0, 0}),
+          "the corner answer is independent of support order", "");
+}
+
 void ordinaryReleaseDoesNotThrow() {
     using gtc::native::PlaygroundRoom;
     using gtc::native::Vec3;
@@ -613,6 +638,7 @@ int playgroundArrivalChecks() {
         for (bool awake : {false, true})
             for (double gap : {0.03, 0.15}) floorBallHitsCube(speed, awake, gap);
     ordinaryReleaseDoesNotThrow();
+    supportProjectionIsOneSided();
     bounceIsTheSameEveryWay();
     aRollIsARoll();
     whatHoldsABall();

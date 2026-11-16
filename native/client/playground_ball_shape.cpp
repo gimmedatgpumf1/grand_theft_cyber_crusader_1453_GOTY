@@ -342,127 +342,38 @@ double PlaygroundRoom::ballCompliance(const Ball& ball, Vec3 push, bool held) co
 }
 
 Vec3 PlaygroundRoom::ballFree(const Ball& ball, Vec3 push, std::size_t except) {
-    // The projection is onto the *orthogonal complement of all of them at once*,
-    // which is not the same as taking them one after another. With one support
-    // the two agree; with two they do not, and the difference is momentum.
-    // Taking the floor's normal out of a push and then the cube's puts back a
-    // little of the floor's -- the normals are not perpendicular, so removing one
-    // does not preserve the other -- and a ball held by a floor and a shape was
-    // handed 1.7 N s *upward* by an impulse that was pressing it down.
-    //
-    // It is solved and not swept towards. Sweeping the normals one after another
-    // is a projection only in the limit, and it converges at the cosine of the
-    // angle between them to the power of the number of sweeps: eight sweeps over a
-    // floor and a plank's end a third of a turn apart leave seven parts in a
-    // hundred of the push unaccounted for. Seven parts in a hundred is nothing
-    // until the solve starts leaning on it -- a ball wedged between two surfaces
-    // that give nothing has nowhere to go at all, so the impulse needed to stop
-    // the closing is unbounded, and every pass that leaked a little of it put a
-    // little more speed into the ball, sideways, where the leak pointed. That is
-    // how a ball standing still under a seesaw's end left at eight metres a
-    // second. The complement is the answer of a small linear system -- the
-    // support normals' own Gram matrix -- and it is exact.
-    // The supports that count: every one but the body being solved against.
-    std::array<Vec3, Ball::kMaxSupports> normals{};
-    std::size_t count = 0;
+    // Project onto the one-sided cone n . v >= 0. In this room all supports
+    // are planar, so its nearest point is either the original push, a projection
+    // onto one boundary, or the cone's vertex. Testing every boundary also
+    // handles a support that becomes active only after another is answered.
+    const auto allowed = [&](Vec3 candidate) {
+        for (std::size_t i = 0; i < ball.supportCount; ++i) {
+            const auto& support = ball.supports[i];
+            if (support.body == except) continue;
+            const double tolerance = 1e-12 * std::max(1.0, length(push) * length(support.normal));
+            if (dot(candidate, support.normal) < -tolerance) return false;
+        }
+        return true;
+    };
+    if (allowed(push)) return push;
+    Vec3 best{0.0, 0.0, push.z};
+    double bestDistance = dot(push - best, push - best);
     for (std::size_t i = 0; i < ball.supportCount; ++i) {
-        if (ball.supports[i].body == except) continue;
-        normals[count++] = ball.supports[i].normal;
-    }
-    if (count == 0) return push;
-    double m[Ball::kMaxSupports][Ball::kMaxSupports + 1]{};
-    for (std::size_t i = 0; i < count; ++i) {
-        for (std::size_t j = 0; j < count; ++j) m[i][j] = dot(normals[i], normals[j]);
-        m[i][count] = dot(normals[i], push);
-    }
-    // Gaussian elimination with partial pivoting. A row with no pivot left is a
-    // support that another support already says -- two faces on the same line, or
-    // the same face twice -- and it carries no share of its own.
-    std::array<double, Ball::kMaxSupports> share{};
-    for (std::size_t col = 0; col < count; ++col) {
-        std::size_t pivot = col;
-        for (std::size_t row = col + 1; row < count; ++row)
-            if (std::abs(m[row][col]) > std::abs(m[pivot][col])) pivot = row;
-        if (!(std::abs(m[pivot][col]) > 1e-12)) continue;
-        if (pivot != col)
-            for (std::size_t j = col; j <= count; ++j) std::swap(m[col][j], m[pivot][j]);
-        for (std::size_t row = 0; row < count; ++row) {
-            if (row == col) continue;
-            const double factor = m[row][col] / m[col][col];
-            if (factor == 0.0) continue;
-            for (std::size_t j = col; j <= count; ++j) m[row][j] -= factor * m[col][j];
+        const auto& support = ball.supports[i];
+        if (support.body == except) continue;
+        const double square = dot(support.normal, support.normal);
+        if (!(square > 1e-18)) continue;
+        const double into = dot(push, support.normal);
+        if (!(into < 0.0)) continue;  // a support cannot pull the ball back
+        const Vec3 candidate = push - support.normal * (into / square);
+        if (!allowed(candidate)) continue;
+        const double distance = dot(push - candidate, push - candidate);
+        if (distance < bestDistance) {
+            best = candidate;
+            bestDistance = distance;
         }
     }
-    for (std::size_t i = 0; i < count; ++i)
-        if (std::abs(m[i][i]) > 1e-12) share[i] = m[i][count] / m[i][i];
-    // And a support pushes and never pulls.
-    //
-    // The complement above is two-sided: it says the ball may not move along a
-    // support's normal *either way*. For a ball the room is holding that is what is
-    // wanted -- a ball on the floor cannot be driven into the floor. But a surface
-    // cannot hold a ball *down*: it can only push it away, and an impulse that runs
-    // away from the surface is entirely the ball's own. Answering it as blocked is a
-    // ball welded to everything it touches: measured, a ball bounced off the floor at
-    // 81% of what it arrived with exactly once, and from the second bounce on it came
-    // back at nought -- the floor was holding it down. The same weld is why a ball on
-    // the rope could not come away from a shape it had touched: it arrived, stopped,
-    // and hung, which is a wrecking ball and not a basketball.
-    //
-    // So the shares are solved for the supports the push actually runs into, and any
-    // support whose share comes out negative -- one the push is already leaving --
-    // is dropped and the rest solved again. That is a projection onto the one-sided
-    // cone {v : v . n_i >= 0} and not onto the plane.
-    std::array<bool, Ball::kMaxSupports> active{};
-    for (std::size_t i = 0; i < count; ++i) active[i] = dot(normals[i], push) < 0.0;
-    for (int pass = 0; pass < int(Ball::kMaxSupports) + 1; ++pass) {
-        // The Gram system over the active supports only.
-        double g[Ball::kMaxSupports][Ball::kMaxSupports + 1]{};
-        std::size_t row = 0;
-        std::array<std::size_t, Ball::kMaxSupports> used{};
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!active[i]) continue;
-            used[row] = i;
-            for (std::size_t j = 0; j < count; ++j) g[row][j] = active[j] ? dot(normals[i], normals[j]) : 0.0;
-            g[row][row] = dot(normals[i], normals[i]);
-            double rhs = dot(normals[i], push);
-            for (std::size_t j = 0; j < count; ++j)
-                if (active[j] && j != i) rhs -= 0.0;
-            g[row][Ball::kMaxSupports] = rhs;
-            ++row;
-        }
-        if (row == 0) break;
-        // Gaussian elimination over the square block, as above.
-        for (std::size_t col = 0; col < row; ++col) {
-            std::size_t pivot = col;
-            for (std::size_t r = col + 1; r < row; ++r)
-                if (std::abs(g[r][col]) > std::abs(g[pivot][col])) pivot = r;
-            if (!(std::abs(g[pivot][col]) > 1e-12)) continue;
-            if (pivot != col)
-                for (std::size_t j = col; j <= row; ++j) std::swap(g[col][j], g[pivot][j]);
-            for (std::size_t r = 0; r < row; ++r) {
-                if (r == col) continue;
-                const double factor = g[r][col] / g[col][col];
-                if (factor == 0.0) continue;
-                for (std::size_t j = col; j <= row; ++j) g[r][j] -= factor * g[col][j];
-            }
-        }
-        std::array<double, Ball::kMaxSupports> lambda{};
-        for (std::size_t i = 0; i < row; ++i)
-            if (std::abs(g[i][i]) > 1e-12) lambda[i] = g[i][Ball::kMaxSupports] / g[i][i];
-        // A share that came out negative is a support the push is leaving: it has no
-        // say, and the solve is asked again without it.
-        std::size_t drop = count;
-        double worst = 0.0;
-        for (std::size_t i = 0; i < row; ++i)
-            if (lambda[i] < worst) { worst = lambda[i]; drop = used[i]; }
-        if (drop == count) {
-            Vec3 out = push;
-            for (std::size_t i = 0; i < row; ++i) out = out - normals[used[i]] * lambda[i];
-            return out;
-        }
-        active[drop] = false;
-    }
-    return push;
+    return best;
 }
 
 }  // namespace gtc::native
