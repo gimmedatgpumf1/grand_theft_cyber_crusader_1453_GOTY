@@ -252,16 +252,11 @@ private:
     // the turn about its centre, which the floor cannot take.
     static double giveAtHeld(const Body& body, Vec3 at, Vec3 direction, bool onFloor) {
         const Vec3 arm = at - body.centre;
-        // The body's impulse points opposite the contact normal. A floor can
-        // refuse its downward component, but that changes both centre motion and
-        // torque; computing spin from the unprojected impulse overestimates the
-        // body's share and gives the ball too little of the impact response.
-        Vec3 bodyImpulse = direction * -1.0;
-        if (onFloor && direction.y > 0.0) bodyImpulse.y = 0.0;
-        const double linear = -dot(direction, bodyImpulse) * inverseMass(body);
-        const double normalLever = arm.x * direction.y - arm.y * direction.x;
-        const double impulseLever = arm.x * bodyImpulse.y - arm.y * bodyImpulse.x;
-        return linear - normalLever * impulseLever / body.moment;
+        const double lever = arm.x * direction.y - arm.y * direction.x;
+        const double step = (onFloor && direction.y > 0.0)
+                                ? (1.0 - direction.y * direction.y) * inverseMass(body)
+                                : inverseMass(body);
+        return step + lever * lever / body.moment;
     }
 
     void tick();
