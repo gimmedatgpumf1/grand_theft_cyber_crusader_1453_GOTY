@@ -29,6 +29,7 @@
 #include "client/playground_constraints.h"
 #include "client/playground_room.h"
 #undef private
+#include "client/playground_pair.h"
 
 namespace {
 
@@ -349,6 +350,7 @@ void supportProjectionIsOneSided() {
 
 #include "playground_check_constraints.h"
 #include "playground_check_dynamics.h"
+#include "playground_check_stack.h"
 
 // A slack rope cannot hold a ball on a 45-degree slope. For a solid sphere the
 // no-slip acceleration is g*sin(45)/(1+0.4), about 4.95 m/s^2; rolling resistance
@@ -652,6 +654,7 @@ int playgroundArrivalChecks() {
     }
     if (std::getenv("GTC_ONLY_GRAVITY_CONTACT")) {
         fallingShapeAgainstRope();
+        ropeAgainstSupportedStack();
         return localFailures;
     }
     char detail[240];
@@ -748,6 +751,7 @@ int playgroundArrivalChecks() {
     supportProjectionIsOneSided();
     contactConstraintChecks();
     fallingShapeAgainstRope();
+    ropeAgainstSupportedStack();
     slackRopeBallMovesOnSlope();
     bounceIsTheSameEveryWay();
     aRollIsARoll();
