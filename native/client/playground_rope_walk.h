@@ -197,6 +197,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     ballAirDrag(ball, ball.velocity, 0.0);  // draw the air force; sample() integrates it
 
     State state{ball.position, ball.velocity};
+    static int traceTicks = 0;
+    const bool trace = std::getenv("GTC_TRACE_ROPE_EVENTS") && bodyHeld(kTriangle) && traceTicks++ < 3;
+    if (trace) std::printf("ROPE WALK begin p (%+.9f,%+.9f) v (%+.9f,%+.9f) reach %.12f\n",
+                           state.position.x, state.position.y, state.velocity.x, state.velocity.y, radius0);
     const Vec3 outward0 = arm0 / radius0;
     const double radial0 = dot(state.velocity, outward0);
     bool taut = radius0 >= ropeLength - quantum && radial0 >= -playground_tick::kQuantumSpeed &&
@@ -277,6 +281,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         }
 
         const double taken = std::min(first, phase);
+        if (trace) std::printf("  event %d elapsed %.9f taut %d phase %.9f first %.9f catch %d body %d\n",
+                               event, elapsed, int(taut), phase, first, int(catchRope), hitBody);
         state = sample(state, taut, taken);
         ball.angle += ball.spin * taken;
         elapsed += taken;
@@ -351,6 +357,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
 
     ball.position = state.position;
     ball.velocity = state.velocity;
+    if (trace) std::printf("ROPE WALK end elapsed %.9f taut %d p (%+.9f,%+.9f) v (%+.9f,%+.9f) tension %.9f\n",
+                           elapsed, int(taut), state.position.x, state.position.y,
+                           state.velocity.x, state.velocity.y, tension(state));
     const Vec3 arm = ball.position - anchor;
     const double reach = length(arm);
     rope_.taut = taut && reach >= ropeLength - quantum && tension(state) > 0.0;

@@ -236,6 +236,19 @@ void floorBallHitsCube(double speed, bool awake, double initialGap) {
         const double energy = room.totalEnergy();
         room.advance(1.0 / 20.0);
         const double gap = room.bodyBallGap(ball, PlaygroundRoom::kCube, way, at);
+        if (std::getenv("GTC_TRACE_CUBE") && speed == 1.0 && initialGap == 0.03 && tick <= 8) {
+            std::printf("   cube %s tick %d gap %+.7f ball v (%+.6f,%+.6f) spin %+.5f "
+                        "cube x %.7f v (%+.6f,%+.6f) spin %+.5f contact %.6f/%.6f\n",
+                        awake ? "awake" : "asleep", tick, gap, ball.velocity.x, ball.velocity.y, ball.spin,
+                        cube.centre.x, cube.velocity.x, cube.velocity.y, cube.spin,
+                        ball.meetingGiven[PlaygroundRoom::kCube], ball.meetingArrival[PlaygroundRoom::kCube]);
+            for (std::size_t i = 0; i < room.forceCount(); ++i) {
+                const auto& f = room.forces()[i];
+                if (f.owner == PlaygroundRoom::kCube)
+                    std::printf("      force kind %d at (%+.5f,%+.5f) value (%+.5f,%+.5f)\n",
+                                int(f.kind), f.at.x, f.at.y, f.force.x, f.force.y);
+            }
+        }
         maxGain = std::max(maxGain, room.totalEnergy() - energy);
         penetration = std::max(penetration, -gap);
         bool impulse = ball.meetingArrival[PlaygroundRoom::kCube] > 1e-7;
