@@ -662,6 +662,9 @@ int playgroundRopeChecks() {
             if (std::getenv("GTC_TRACE_SLOPE") && tick < 40) {
                 Vec3 way{}, at{};
                 const double gap = room.bodyBallGap(ball, 1, way, at);
+                if (ball.meetingArrival[1] > 0.0)
+                    std::printf("   instant slope %.6f -> %.6f ratio %.4f\n", ball.meetingSpeedIn[1],
+                                ball.meetingSpeedOut[1], -ball.meetingSpeedOut[1] / ball.meetingSpeedIn[1]);
                 std::printf("   slope %d gap %+.7f n (%+.3f,%+.3f) ball (%+.3f,%+.3f) "
                             "relative %+.3f tri v (%+.3f,%+.3f) spin %+.3f meeting %.5f "
                             "taut %d bent %d dE %+.7f\n", tick, gap, way.x, way.y,

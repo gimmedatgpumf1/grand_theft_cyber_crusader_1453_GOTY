@@ -131,6 +131,13 @@ void horizontalRopeImpact(int fps, bool awake, double sideOffset) {
         if (gain > maxGain) { maxGain = gain; gainTick = tick; }
         overlap = std::max(overlap, -gap);
         stretch = std::max(stretch, room.ropeBallDistance() - rope);
+        if (std::getenv("GTC_TRACE_BOUNDS") && fps == 60 &&
+            (room.ropeBallDistance() - rope > 1e-6 || gap < -1.1e-6 || gain > 1e-4))
+            std::printf("   bounds offset %.2f %s tick %d stretch %.7f gap %+.7f dE %+.7f "
+                        "pos (%+.5f,%+.5f) v (%+.5f,%+.5f) taut %d hit %.5f -> %.5f\n",
+                        sideOffset, awake ? "awake" : "asleep", tick, room.ropeBallDistance() - rope, gap, gain,
+                        ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, int(room.ropeTaut()),
+                        ball.meetingSpeedIn[PlaygroundRoom::kTriangle], ball.meetingSpeedOut[PlaygroundRoom::kTriangle]);
         bool impulse = ball.meetingArrival[PlaygroundRoom::kTriangle] > 1e-7;
         for (std::size_t i = 0; i < room.forceCount(); ++i) {
             const auto& force = room.forces()[i];
