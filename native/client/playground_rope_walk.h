@@ -309,7 +309,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         // the legacy walk.
         constrainedStep = true;
         namespace pc = playground_constraints;
-        constexpr int kSubsteps = 64;
+        constexpr int kSubsteps = 128;
         constexpr std::size_t kPairs = kBodyCount * (kBodyCount - 1) / 2;
         constexpr std::size_t kRows = 1 + kBodyCount * (1 + kMaxCorners) + kPairs * kMaxPatchEnds;
         std::array<Vec3, kBodyCount> normalTotal{}, gripTotal{}, atBody{}, floorNormal{}, floorGrip{}, atFloor{};
