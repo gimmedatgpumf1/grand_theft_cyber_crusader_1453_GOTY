@@ -269,4 +269,127 @@ void PlaygroundRoom::wakeLoadedBodies(double band) {
 // between the pose the contacts were gathered at and the pose the tick ends at.
 //
 
+// Back to the room the demonstration starts in, and back to *only* that.
+//
+// A reset is not just where things are put -- it is everything the room was
+// carrying. The forces written into the ledger belong to the tick they were solved
+// in, so a reset that leaves them behind leaves last session's arrows hanging over
+// the new room until a tick overwrites them; the recorded impulses belong to a body
+// that was asleep, and the body is not asleep any more; the drag belongs to a mouse
+// that is not holding anything; the ball's contact list belongs to a tick that no
+// longer happened. All of it is cleared here, in one place, so that "the room after
+// R" and "the room on the first frame" are the same room and not merely the same
+// positions.
+bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
+    point_ = previous_ = shown_ = start;
+    velocity_ = startVelocity;
+    pointForce_ = {};
+    traceFrom_ = traceTo_ = point_;
+    ghostCount_ = ghostNext_ = 0;
+    accumulator_ = 0;
+    dragTarget_ = DragTarget::None;
+    dragBody_ = kBodyCount;
+    planeGrab_ = grabOffset_ = {};
+    slideSpan_ = 0.0;
+    heldStill_ = false;
+    supportNormal_ = Vec3{0, 1, 0};
+    for (Ball& ball : balls_) ball.touchCount = 0;
+    clearForces();
+    impulseCount_ = 0;
+    restingBody_ = -1;
+    restingOnBall_ = false;
+    resting_ = false;
+    haveTrace_ = false;
+    pointFrozen_ = false;
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        const Shape& shape = kShapes[index];
+        // The scene is not rebuilt by a reset, so the handles this body's face, edges
+        // and corners were given when the scene was built have to be kept, for the
+        // same reason the ball's two are kept below. Zeroing them was not a harmless
+        // clearing: every body then wrote its transform onto batch zero -- the
+        // ground -- and its own batches stayed frozen at the last frame drawn before
+        // the reset, so the room one frame after R showed the shapes where they had
+        // been abandoned while the simulation underneath them was already back at the
+        // start. The picture and the physics disagreed, and everything that reads the
+        // picture -- the mouse, the arrows, the eye -- was wrong with it.
+        const std::size_t face = body.faceBatch;
+        const auto edges = body.edgeBatches, corners = body.cornerBatches;
+        body = Body{};
+        body.faceBatch = face;
+        body.edgeBatches = edges;
+        body.cornerBatches = corners;
+        body.count = shape.count;
+        body.local = shape.local;
+        // The shape's corners are given about the centre of area, which is where a
+        // uniform plate balances: the body's centre of mass.
+        body.centre = body.previousCentre = shape.middle;
+        body.angle = body.previousAngle = shape.angle;
+        body.mass = static_cast<double>(body.count) * kMass;
+        body.moment = polygonMoment(body.local, body.count, body.mass);
+        body.velocity = {};
+        body.spin = 0.0;
+        body.staticFriction = shape.staticFriction;
+        body.kineticFriction = shape.kineticFriction;
+        body.pivoted = shape.pivoted;
+        body.pivotPoint = shape.middle;
+        body.frozen = false;
+        body.contacts = 0;
+        placeCorners(body);
+        body.previous = body.shown = body.position;
+    }
+    // A new ball, at the same place it starts in. The scene is not rebuilt by a
+    // reset, so the two drawing handles it was given at build time have to be
+    // kept: clearing them to zero puts the ball's transform on the ground batch
+    // and leaves the ball itself where the last scene was built.
+    //
+    // Both balls, and both for the same reasons. The one on the rope is a ball: it
+    // has the same two drawing handles, the same radius, the same mass and the same
+    // tick, and resetting it is resetting a ball. It is not a second thing to be
+    // written out here.
+    for (std::size_t index = 0; index < kBallCount; ++index) {
+        Ball& ball = balls_[index];
+        const std::size_t face = ball.faceBatch, mark = ball.markBatch;
+        ball = Ball{};
+        ball.faceBatch = face;
+        ball.markBatch = mark;
+    }
+    // The thrown ball, where the scene leaves it: up in the air, on the right.
+    Ball& thrown = balls_[kThrowBall];
+    thrown.position = thrown.previous = thrown.shown = Vec3{3.10, thrown.radius + 1.60, 0};
+    thrown.angle = thrown.previousAngle = 0.0;
+    // And the ball on the rope: hanging dead straight under its anchor, at rest. The
+    // room resets to a room that is standing still. What makes it swing is a blow, and
+    // the room has a ball for that -- the same tick, the same contact, the same ledger.
+    // It keeps its two drawing handles like the other one, and the rope keeps its own.
+    const std::size_t ropeBatch = rope_.ropeBatch, anchorBatch = rope_.anchorBatch;
+    rope_ = Rope{};
+    rope_.ropeBatch = ropeBatch;
+    rope_.anchorBatch = anchorBatch;
+    rope_.ball = kRopeBall;
+    rope_.attached = true;
+    Ball& hanging = balls_[kRopeBall];
+    hanging.position = hanging.previous = hanging.shown = rope_.anchor + Vec3{0.0, -rope_.length, 0.0};
+    hanging.angle = hanging.previousAngle = 0.0;
+    // Hanging taut: the rope is carrying the whole of its weight and no more.
+    rope_.taut = true;
+    rope_.tension = hanging.mass * kGravity;
+    restingOnBall_ = false;
+    restingBall_ = kThrowBall;
+    dragBall_ = kThrowBall;
+    return true;
+}
+
+void PlaygroundRoom::resetPoint(Vec3 start, Vec3 startVelocity) {
+    point_ = previous_ = shown_ = start;
+    velocity_ = startVelocity;
+    traceFrom_ = traceTo_ = point_;
+    resting_ = false;
+    restingBody_ = -1;
+    haveTrace_ = false;
+    pointFrozen_ = false;
+}
+
+
+
 }  // namespace gtc::native

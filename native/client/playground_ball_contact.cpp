@@ -248,26 +248,14 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // from the very contact point it is being asked about.
     // What the ball is doing, as far as this surface can tell.
     //
-    // A surface is answered with the speed the ball *brought* it, and a ball on a taut
-    // rope brings the speed the rope permits: on the circle, the radial part is the
-    // rope's and not the face's. Read whole, a ball resting on the triangle's slope hands
-    // the slope a tick's worth of its own weight twenty times a second -- the slope
-    // answers a fall the rope has already answered, its answer is not along the rope, and
-    // what is left is speed along the arc that nothing spent. That is the ball with an
-    // infinite force to shove a triangle away with, and the ball creeping along the slope
-    // out of its own weight. So the closing is read at the beginning of the ball's own
-    // tick as well: one that was not closing then is closing now only because its weight
-    // fell for a tick. Nothing is taken from the ball and nothing given to it -- the
-    // ball's velocity is left for the rope, which is the one thing entitled to change it.
-    // A ball that *did* bring a speed is a blow, and a blow is answered in full -- it
-    // is the one case the projection may not touch. A ball swung into the triangle's
-    // slope arrives along the face's normal, and on a taut rope that is very nearly
-    // along the rope: stripped of it, the blow read as nothing, the slope was handed
-    // almost none of the ball's momentum, and the ball did not bounce away. Measured
-    // on a ball swung at 2.1 m/s into the slope, closing at 1.66 m/s: it left at 0.05.
-    const bool arrived = dot(ball.began - surfaceVelocity, normal) < -kRestSpeed;
+    // A taut rope has already removed the outward radial part of the ball's
+    // motion, including the radial gravity acquired by the unconstrained walk.
+    // That applies to impacts too: treating a whole tick of radial fall as
+    // incoming speed makes a slow swing bounce faster than it arrived. Inward
+    // motion is left untouched, because the rope cannot push the ball away.
+    const auto answered = [&](Vec3 speed) { return ballOffTheRope(ball, speed); };
+    const bool arrived = dot(answered(ball.began) - surfaceVelocity, normal) < -kRestSpeed;
     const bool blow = arrived && !resting;
-    const auto answered = [&](Vec3 speed) { return blow ? speed : ballOffTheRope(ball, speed); };
     const Vec3 ballSpeed = answered(ball.velocity);
     const double closing = dot(ballSpeed - surfaceVelocity, normal);
     // What the ball was doing at the instant it met the surface. Its speed is carried

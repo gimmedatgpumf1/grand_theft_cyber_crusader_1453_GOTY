@@ -326,6 +326,21 @@ bool circleHitsBody(Vec3 from, Vec3 travel, const Vec3* corners, std::size_t cou
 // function of this size does not belong in a header.
 namespace gtc::native {
 
+// The support is one-sided: a ball in the air takes the whole push; a ball on
+// a fixed support can take the part that does not drive it through that support.
+double PlaygroundRoom::ballFreedom(const Ball& ball, Vec3 push) const {
+    const bool supported = ball.touching && ball.standing;
+    if (!supported && ball.supportCount == 0) return 1.0;
+    const double size = length(push);
+    if (!(size > 0.0)) return 1.0;
+    const Vec3 unit = push * (1.0 / size);
+    return std::max(0.0, dot(unit, ballFree(ball, unit)));
+}
+
+double PlaygroundRoom::ballCompliance(const Ball& ball, Vec3 push, bool held) const {
+    return held ? 0.0 : ballFreedom(ball, push) / ball.mass;
+}
+
 Vec3 PlaygroundRoom::ballFree(const Ball& ball, Vec3 push, std::size_t except) {
     // The projection is onto the *orthogonal complement of all of them at once*,
     // which is not the same as taking them one after another. With one support

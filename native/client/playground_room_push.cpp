@@ -20,6 +20,8 @@
 #include <cmath>
 
 namespace gtc::native {
+using namespace playground_detail;
+using namespace playground_tick;
 
 // What of a push on a body actually becomes a step of that body.
 //
@@ -212,5 +214,171 @@ void PlaygroundRoom::pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceK
 // of the answer is its inverse mass plus its lever about the centre, and the
 // impulse is given at the place the dot touched -- so a dot landing on the far end
 // of a shape turns it, which is what it always should have done.
+
+// Gravity, and nothing else, before the walk: m*g newtons at every corner, which
+// is the whole body's weight at its centre of mass and no torque at all. The
+// corners are treated exactly as the material points they are -- each one gets the
+// impulse its own weight delivers over the tick -- so the body is not told that it
+// is heavy, it is pulled at every point and the sum of those pulls is what it
+// feels.
+void PlaygroundRoom::applyBodyForces() {
+    const double share = kMass;  // every corner is a point of the body's mass
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        body.previousCentre = body.centre;
+        body.previousAngle = body.angle;
+        body.previous = body.position;
+        body.touchingPlane = false;
+        body.onBody = false;
+        // What was against the ball last tick is an arrival this tick only if it was
+        // not.
+        body.wasOnBall = body.onBall;
+        body.onBall = false;
+        body.supportLow = 1e30;
+        body.supportHigh = -1e30;
+        body.supportFrozen = false;
+        if (body.count == 0) continue;
+        if (body.frozen || bodyHeld(index)) continue;
+        // Only a body that is about to be solved for forgets what it was given last
+        // tick; a sleeping body keeps it, because that is what it is standing on.
+        body.appliedCount = 0;
+        applyBodyWeight(index);
+    }
+}
+
+// One body's own weight, corner by corner.
+void PlaygroundRoom::applyBodyWeight(std::size_t index) {
+    Body& body = bodies_[index];
+    const double share = kMass;  // every corner is a point of the body's mass
+    for (std::size_t i = 0; i < body.count; ++i) {
+        const Vec3 weight{0.0, -share * kGravity, 0.0};
+        addForce(body.position[i], weight, ForceKind::Gravity, nullptr, index);
+        // The impulse the weight delivers over one tick, at that very corner.
+        // Written out rather than short-circuited to g*dt: what a body feels is
+        // a force at a place, and this is that force at that place.
+        const Vec3 jog = weight * kTick;
+        const Vec3 arm = body.position[i] - body.centre;
+        // A pinned body's weight still acts, corner by corner, exactly like this -- but
+        // it cannot carry the body anywhere, because the axle will not have it, and the
+        // corners' moments about the middle cancel to nothing when the middle is the
+        // centre of mass. So the weight of a seesaw does nothing at all, which is the
+        // honest answer: a plank balanced on its own middle stays where it is put.
+        if (body.pivoted) continue;
+        body.velocity = body.velocity + jog * (1.0 / body.mass);
+        body.spin += (arm.x * jog.y - arm.y * jog.x) / body.moment;
+    }
+    // The pin's own bearing, which is the only thing that can ever take a turn out
+    // of a body whose centre of mass is its pivot. It is a couple at the axle, against
+    // the turn, and it is worth mu * N * r where N is the weight the axle carries --
+    // the plank's own, corner by corner, and nothing else, because the pin carries the
+    // plank and the floor carries what stands on the plank. It can stop the turn and
+    // it can never drive one: the same law as the ball's rolling resistance, and
+    // applied the same way, so a plank left spinning comes to rest instead of turning
+    // for ever.
+    if (body.pivoted && body.spin != 0.0) {
+        const double carried = body.mass * kGravity;
+        const double couple = kAxleBearingFriction * carried * kAxleRadius;  // N.m
+        const double take = couple * kTick / body.moment;                    // rad/s
+        const double turn = std::copysign(std::min(std::abs(body.spin), take), body.spin);
+        body.spin -= turn;
+        if (body.spin == 0.0) body.spin = 0.0;
+        addCouple(body.pivotPoint, couple, Vec3{0.0, 0.0, 0.0}, ForceKind::Rolling, index);
+    }
+}
+
+// The air, on everything in the room that moves through it.
+//
+// This is a force in its own right and it is applied in a pass of its own, before
+// the weight and independently of it -- not as something that happens to a body
+// because it is falling. A shape sliding along the floor at speed is slowed by the
+// air exactly as a shape dropping through it is, a shape turning is slowed by the
+// air it turns through, a dot thrown sideways is slowed the same way, and so is the
+// ball. Nothing that moves is exempt, and nothing has to be falling to feel it.
+//
+// The law is the flat-plate pressure law, which is what drag *is* for a body like
+// these: each face of the outline takes the pressure of the air it is pushing into,
+// and the pressure is the drag equation with the area that face actually presents --
+//
+//     F = half * rho * Cd * L * depth * v_n^2,     along the face's outward normal,
+//
+// applied at the middle of the face, where that pressure acts. v_n is the speed of
+// the face through the air *along its own normal*, so a face edge-on to the flow is
+// not dragged at all, and only the faces the air is being driven into take anything:
+// the lee side of a shape is not pushed, it is a shadow.
+//
+// Two things follow from doing it this way, and both of them matter. The area is the
+// face's own L * depth, so a square presents the one face it is driving into and not
+// the sum of every side it happens to have -- asking each corner for half of each of
+// its sides asked for four times the shape. And the force acts along the normal of
+// the face, at the middle of the face, so a shape moving straight through the air
+// takes a force through its middle and does not turn: a body is only turned by the
+// air when the air is taking hold of it unevenly, which is a real effect -- a shape
+// falling at an angle does turn, and that is why a leaf tumbles -- but a shape with
+// no turn of its own must not be given one.
+void PlaygroundRoom::applyAirDrag() {
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        // A body the mouse is carrying is not being accelerated by anything: its
+        // speed is put there by the hand that holds it, and the hand is the force.
+        // The weight pass leaves such a body alone for the same reason, and the air
+        // does too -- otherwise a shape being carried across the room is drawn with
+        // a drag that is nowhere in the motion that actually happened.
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        // The whole shape's force first, and then the impulse that force delivers over
+        // a tick -- which is not the force times the tick, for the same reason it is not
+        // for the ball: a force that can turn a body round inside one tick is not a
+        // force, and the air is always against the motion. The law is
+        // dv/dt = -(c/m) v^2, whose exact answer over a tick is a speed reduced by the
+        // factor 1/(1 + x) with x = |F| dt / (m |v|) -- a part in twenty at eight metres
+        // a second, and the whole of the body's momentum at a hundred kilometres a
+        // second, and never more than that. So every face's impulse takes that one
+        // factor, and the arrows stay the forces the faces really feel.
+        Vec3 total{};
+        double fastest = length(body.velocity);
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 from = body.position[i];
+            const Vec3 to = body.position[(i + 1) % body.count];
+            const Vec3 along = to - from;
+            const double span = length(along);
+            if (!(span > 0.0)) continue;
+            // The outline runs one way round, so this is the way out of the shape.
+            const Vec3 out{along.y / span, -along.x / span, 0.0};
+            const Vec3 at = from + along * 0.5;
+            const double vn = dot(pointSpeed(body, at), out);
+            fastest = std::max(fastest, length(pointSpeed(body, at)));
+            // Only a face the air is being driven into is pressed; the one behind is
+            // in the shape's shadow and the air there is not pushing it anywhere.
+            if (!(vn < 0.0)) continue;
+            total = total + out * (0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * span * kRoomDepth * vn * vn);
+        }
+        // The tick's share of it. A body that is not moving is not being pressed by
+        // anything, so there is nothing to share out.
+        double share = 1.0;
+        if (length(total) > 0.0 && fastest > 0.0)
+            share = 1.0 / (1.0 + length(total) * kTick / (body.mass * fastest));
+        for (std::size_t i = 0; i < body.count; ++i) {
+            const Vec3 from = body.position[i];
+            const Vec3 to = body.position[(i + 1) % body.count];
+            const Vec3 along = to - from;
+            const double span = length(along);
+            if (!(span > 0.0)) continue;
+            const Vec3 out{along.y / span, -along.x / span, 0.0};
+            const Vec3 at = from + along * 0.5;
+            const double vn = dot(pointSpeed(body, at), out);
+            if (!(vn < 0.0)) continue;
+            const double press = 0.5 * ball_shape::kAirDensity * kPlateDragCoefficient * span * kRoomDepth * vn * vn;
+            const Vec3 air = out * press;
+            addForce(at, air, ForceKind::Drag, nullptr, index);
+            const Vec3 puff = air * (kTick * share);
+            const Vec3 arm = at - body.centre;
+            // A pinned body is carried by its axle and by nothing else: the air is
+            // still a force on it, corner by corner, but the part of that force which
+            // would take the middle somewhere is the axle's to refuse.
+            body.velocity = body.velocity + puff * inverseMass(body);
+            body.spin += (arm.x * puff.y - arm.y * puff.x) / body.moment;
+        }
+    }
+}
+
 
 }  // namespace gtc::native

@@ -56,41 +56,6 @@ constexpr int kGripRoundsMax = 48;
 constexpr double kAgree = 1e-9;  // N s
 }  // namespace
 
-// Every surface the ball is already resting on, gathered before the tick is solved.
-//
-// Only a surface it is *on*, not one it is falling towards: an arrival is the walk's
-// business, where the bounce is. A ball within a micrometre of a surface is on it --
-// that is the room's whole idea of touching.
-void PlaygroundRoom::gatherBallSupports(Ball& ball) {
-    ball.supportCount = 0;
-    const auto hold = [&](Vec3 normal, std::size_t body) {
-        const double size = length(normal);
-        if (!(size > 0.0) || ball.supportCount >= Ball::kMaxSupports) return;
-        ball.supports[ball.supportCount++] = BallSupport{normal * (1.0 / size), body};
-    };
-    // The floor, and only the floor.
-    //
-    // A support is what the ball may not be driven into and what takes the answer
-    // when it is. That is a statement about something that cannot move: the ground.
-    // A shape is not that. Listing a shape the ball is leaning on as a support says
-    // the ball cannot move along the way that shape presses it -- true, as far as it
-    // goes -- but then the whole of the impulse is handed to the shape on the other
-    // side, as though the ball were stone, and the shape that is doing the pressing
-    // is given a blow the ball never took. A ball wedged between the triangle's face
-    // and the end of the seesaw's plank was declared unable to move, and the plank
-    // was answered with four hundred and seventy newton seconds of impulse from a
-    // ball carrying two: the plank left at fifteen radians a second and the ball at
-    // thirty-three metres a second, out of a touch at three.
-    //
-    // A shape that holds the ball up is a contact and not a support, and it answers
-    // through the contact: the ball takes the push, the shape takes it back, the
-    // floor takes it from the shape. That chain is the room's own ledger, and every
-    // step of it is momentum somebody actually had. What the floor answers is
-    // answered by nobody and costs nothing, which is why it is the one that may be a
-    // support.
-    if (ball.position.y <= ball.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
-}
-
 // The answer to a whole configuration of patches at once.
 //
 // One patch is solved as one load with a pressure that runs from one end to the

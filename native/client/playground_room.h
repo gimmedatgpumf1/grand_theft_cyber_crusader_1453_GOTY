@@ -2,6 +2,7 @@
 
 #include "client/playground_ball_state.h"
 #include "client/playground_rope.h"
+#include "client/playground_room_state.h"
 #include "client/raster.h"
 #include "client/ui_layer.h"
 
@@ -206,130 +207,8 @@ private:
     // What the mouse is holding, if anything.
     enum class DragTarget { None, Point, Body, Ball };
 
-    // A solid: one rigid body, with a mass, a moment of inertia, a place, a turn,
-    // a speed and a spin. Its corners are the shape, not the state.
-    struct Body {
-        std::size_t count = 0;
-        // The shape about the body's own centre of mass, at zero turn. It never
-        // changes: a body is not stretched, bent or repaired, ever.
-        std::array<Vec3, kMaxCorners> local{};
-        // Where it is and how far it has turned. These two are the whole of its
-        // position, and the corners are computed from them on demand.
-        Vec3 centre{}, previousCentre{};
-        double angle = 0.0, previousAngle = 0.0;
-        // What it is doing: the speed of its centre of mass, and its turn about
-        // that centre in radians per second.
-        Vec3 velocity{};
-        double spin = 0.0;
-        // What it arrived with, before this tick's forces changed it. A bounce is
-        // the answer to an arrival: the weight it gains on the way down is what
-        // carried it here, and bouncing that back would be bouncing it off nothing --
-        // and it is not nothing at rest, where the whole of the speed is the tick's
-        // own gravity, so a shape resting on the ball was bounced a little every
-        // tick and stood humming a centimetre above it.
-        Vec3 arrivalVelocity{};
-        double arrivalSpin = 0.0;
-        // What it is: the mass of the whole body and the moment of inertia about
-        // its centre of mass, both from the shape as a uniform plate.
-        double mass = 1.0, moment = 1.0;
-        // The corners of this tick and of the last, and the ones the screen shows.
-        // They are placeCorners() of the two above, kept so that the contacts, the
-        // dot and the drawing can read them without recomputing.
-        std::array<Vec3, kMaxCorners> position{}, previous{}, shown{};
-        // This body's own friction, from its shape's material.
-        double staticFriction = 0, kineticFriction = 0;
-        bool frozen = false;
-        // Woken during this tick, by a load arriving on it or by its support going
-        // away. It was stepped, so its forces are the ones the solver wrote and not a
-        // replay of its last waking tick -- counting both would draw its weight twice.
-        bool woken = false;
-        int contacts = 0;
-        // Whether the ball is one of the things holding this body up this tick, and
-        // whether it was last tick. A bounce is an *event*: it is the answer to
-        // arriving at a surface, and the coefficient of restitution is what turns the
-        // arrival round. A contact that goes on being a contact is not arriving any
-        // more -- it is resting -- and asking it to give the arrival back again every
-        // tick is a pump. It is easy to miss, because each tick's increment is small:
-        // a weight settling onto the ball gains the tick's gravity, the ball gives
-        // three quarters of it straight back, the body falls onto the ball again with
-        // that much more, and the pair climb for ever. Whatever comes out of the
-        // bounce then has to obey the grip, which turns it into a spin, which is the
-        // squeeze the King saw.
-        bool onBall = false, wasOnBall = false;
-        // Whether this body is pinned at a point and can only turn about it. A
-        // seesaw is a plank on an axle: the axle holds its middle in one place, so
-        // the plank cannot be carried anywhere, and the one thing it can do is turn.
-        // That is not a rule bolted onto the motion -- it is the constraint the axle
-        // is, and it enters the physics in the one place every constraint does, as
-        // how much the body gives when it is pushed: nothing along any direction,
-        // and its usual share of a turn about the pin.
-        //
-        // Nothing else needs to know. Its weight acts at its middle, which is the pin,
-        // so its weight gives no torque and it hangs in neutral balance wherever it is
-        // left -- which is exactly what a real seesaw on its centre does, and why they
-        // need a push. A load on one end is what turns it, and the axle answers the
-        // difference, which is a force at a place that never moves and therefore does
-        // no work.
-        bool pivoted = false;
-        // Where the axle is. It never moves, and a pinned body's centre is always here.
-        Vec3 pivotPoint{};
-        // When, within the tick, this body's velocity was turned around by a blow
-        // off the ball: the fraction of the tick that had passed when the two met.
-        //
-        // A blow lands at an instant, not over a whole tick. Advancing a body for a
-        // full tick at the speed the blow left it with is a body that travelled the
-        // whole tick upwards and not one instant of it downwards -- it is lifted off
-        // the surface it bounced on, by exactly one tick of its own rebound, every
-        // single bounce. A cube dropped half a metre onto the ball came back to
-        // forty-one per cent more height than its own rebound allows, which reads as
-        // a trampoline and is not one: no energy is made, the parabola is simply
-        // started a tick too early. See advanceBodies().
-        // Written while a patch is being gathered, which is a reading of the room
-        // and not a change to it: what it records is when the blow it is about to
-        // ask for lands. The move that spends it happens later in the same tick.
-        mutable double hitAt = 1.0;
-        mutable Vec3 hitArrival{};
-        // How many contact patches this body has been answered in since the room was
-        // reset. It is a counter and not a flag so that a tick can tell, by comparing
-        // with what it started from, whether the body met anything at all while it
-        // was being stepped -- which is what decides whether its travel this tick was
-        // a free fall or a supported one.
-        int met = 0;
-        // What held it up this tick, worked out from the contacts it ended the tick
-        // with: which way the contact patch runs, and whether what it stands on is
-        // itself asleep. A body whose weight does not run between its supports is
-        // not carried by them -- it tips instead, which is what a shape hanging
-        // over an edge does.
-        bool touchingPlane = false, onBody = false, supportFrozen = false;
-        // Which body is under this one, when one is: `supportFrozen` alone cannot
-        // tell a stack that was solved together from a shape propped against
-        // something that has already gone to sleep and never felt it (see
-        // carriedBySolvedSupport()).
-        std::size_t supportBody = kBodyCount;
-        double supportLow = 1e30, supportHigh = -1e30;
-        // The box its pose has stayed inside, and for how many ticks: a shape that
-        // has not been anywhere for a second is standing still, whether the
-        // arithmetic of its contacts leaves it a hair of a rock or not.
-        Vec3 restLow{1e30, 1e30, 0}, restHigh{-1e30, -1e30, 0};
-        double restAngleLow = 1e30, restAngleHigh = -1e30;
-        int restTicks = 0;
-        // The contact forces this body was actually given in its last simulated
-        // tick, as impulses, one per place they acted. A body that falls asleep has
-        // no tick to be solved in, and a shape at rest is still standing on
-        // something -- so what it is standing on is replayed exactly as it was last
-        // solved, not invented afterwards. This is what the arrows show while a body
-        // sleeps, and it is why a body on a slope shows its friction and a body on
-        // the level floor shows none.
-        static constexpr std::size_t kMaxRestForces = 24;
-        struct Applied {
-            Vec3 at{}, impulse{};
-            ForceKind kind = ForceKind::Contact;
-        };
-        std::array<Applied, kMaxRestForces> applied{};
-        std::size_t appliedCount = 0;
-        std::size_t faceBatch = 0;
-        std::array<std::size_t, kMaxCorners> edgeBatches{}, cornerBatches{};
-    };
+    // Rigid-body state and patch bookkeeping are defined in playground_room_state.h.
+    using Body = playground_room::Body<kMaxCorners, kBodyCount, ForceKind>;
 
     // The corner of a body, in the room. The only way a corner's place is ever
     // obtained, and it is obtained from where the body is: a corner is not state.
@@ -443,85 +322,10 @@ private:
                           double along);
     // Whether two bodies' outlines are into each other at all, and by how much.
     bool bodiesIntoEachOther(std::size_t one, std::size_t two, Vec3& way, double& depth) const;
-    // One patch: a face of a body resting on a surface. Its two ends are the ends
-    // of the load that face carries, not two independent meetings -- a body whose
-    // weight is answered at one corner alone cannot be held there without being
-    // turned by it, and that is a body that rocks forever. The pressure between
-    // the ends is what lets a flat face stand still, and what makes it lift off at
-    // one end when its weight no longer runs between them.
-    //
-    // `other` is kBodyCount when the other side is the floor, which cannot move.
-    // The impulses are accumulated over the solves of one tick and written into
-    // the ledger once the tick has finished.
     static constexpr std::size_t kMaxPatchEnds = 2;
-    struct Manifold {
-        std::size_t body = 0, other = kBodyCount;
-        // Which ball the other side is, or kNoBall for a body. It is an index and not
-        // a yes: a body resting on a ball is resting on *that* ball, and the answer it
-        // gets is that ball's mass, that ball's speed and that ball's support.
-        std::size_t ball = kNoBall;
-        std::size_t ends = 0;
-        std::size_t corner[kMaxPatchEnds] = {0, 0};
-        Vec3 point[kMaxPatchEnds]{}, normal{};
-        // How far each end still has to fall before it is on the surface. A patch
-        // is answered against the distance it really has to travel, not against the
-        // instant a tick happens to end, so an end that is a hair above the floor is
-        // allowed to close exactly that hair over the tick -- and no more.
-        double gap[kMaxPatchEnds]{};
-        double normalImpulse[kMaxPatchEnds]{}, tangentImpulse[kMaxPatchEnds]{};
-        // How fast this end has to be left *leaving* after the answer, in m/s. Zero
-        // everywhere the room is inelastic, which is everywhere but the ball: the
-        // ball is the one thing in the room with a bounciness, so a contact against
-        // it is the one contact that has to give some of the approach back. It is
-        // read once, from the speed the pair arrived at, and not again on each sweep,
-        // or a contact solved twice would bounce twice.
-        double rebound[kMaxPatchEnds]{};
-        ForceKind kind = ForceKind::Contact;
-        bool quiet = false;  // already resting, not an arrival: see gatherContacts()
-    };
     static constexpr std::size_t kMaxTickManifolds = 12;
-    struct ManifoldSet {
-        std::array<Manifold, kMaxTickManifolds> items{};
-        std::size_t count = 0;
-        // A patch that is found again is the same patch: each of its ends keeps what
-        // it has already carried, so a tick that solves more than once over the same
-        // meeting converges on one answer instead of answering it twice.
-        void add(const Manifold& patch) {
-            for (std::size_t i = 0; i < count; ++i) {
-                Manifold& known = items[i];
-                if (known.body != patch.body || known.other != patch.other || known.ball != patch.ball)
-                    continue;
-                // An end is the same end when it is in the same *place*, which is
-                // what it has always been: the place the load acts. Matching by
-                // corner number looked equivalent and was not -- an end where two
-                // edges cross is not any corner at all, so both ends of a shape
-                // lying across another one matched the same corner, and each
-                // inherited the whole of what that one had carried. The solver then
-                // started every iteration believing a load was already there when
-                // it was not, and answered it again: a shape rocking on another one
-                // with an amplitude that grew instead of dying -- energy out of the
-                // arithmetic, which is exactly what a warm start must never do.
-                double carried[kMaxPatchEnds]{}, grip[kMaxPatchEnds]{};
-                for (std::size_t k = 0; k < patch.ends; ++k) {
-                    for (std::size_t j = 0; j < known.ends; ++j) {
-                        if (patch.ball < kBallCount && j != k) continue;
-                        const Vec3 apart = known.point[j] - patch.point[k];
-                        if (std::hypot(apart.x, apart.y) > 1e-6) continue;
-                        carried[k] = known.normalImpulse[j];
-                        grip[k] = known.tangentImpulse[j];
-                    }
-                }
-                known = patch;
-                for (std::size_t k = 0; k < patch.ends; ++k) {
-                    known.normalImpulse[k] = carried[k];
-                    known.tangentImpulse[k] = grip[k];
-                }
-                return;
-            }
-            if (count < items.size()) items[count++] = patch;
-        }
-        void clear() { count = 0; }
-    };
+    using Manifold = playground_room::Manifold<kMaxPatchEnds, kBodyCount, kNoBall, ForceKind>;
+    using ManifoldSet = playground_room::ManifoldSet<Manifold, kMaxPatchEnds, kMaxTickManifolds, kBallCount>;
     // Every patch in the room at the pose the tick starts from, and the answer to all
     // of them at once: each patch is solved as one load over its two ends, and the
     // patches are swept until they agree with each other.
@@ -662,6 +466,8 @@ private:
     // the ball is already into the outline.
     double bodyBallGap(const Ball& ball, std::size_t index, Vec3& way, Vec3& at) const;
     void tickBall(Ball& ball);
+    void finishBallTick(Ball& ball, Vec3 walkStart, Vec3 beganAt, bool held, bool floorAnswered,
+                        bool startedOnFloor, double remaining);
     // Every ball in the room, each one ticked by tickBall() and, for whichever ball the
     // rope is on the end of, held on the rope straight afterwards. There is no second
     // kind of motion in the room; there are two balls.
@@ -673,35 +479,7 @@ private:
     void holdOnRope(Ball& ball);
     // The surfaces the ball is against, holding it out of themselves.
     void settleBallSurfaces(Ball& ball);
-    // What the ball was against this tick, so the grip at each of them can be
-    // worked out against the others instead of one after another.
-    // What is holding the ball up, as the constraint it is.
-    //
-    // The ball is one rigid body, and the shapes are solved against it before its own
-    // tick runs, so for the length of that solve the question "may the ball move that
-    // way" has to have a real answer. It used to have a fraction: `ballFreedom`, the
-    // share of a push that is along the surface under the ball rather than into it,
-    // applied as a factor on the impulse. The fraction is right and using it as a
-    // factor is not. The impulse is one vector and the floor blocks one component of
-    // it, so scaling the whole vector hands the ball the right answer along the normal
-    // it was solved on and throws away the component along the floor -- the only part
-    // that would have moved it. Measured on a cube set down on the ball's shoulder:
-    // the shape took +0.73 N s of sideways momentum in one tick and the ball answered
-    // with -0.04, and the missing 0.69 was made again every tick until the cube was
-    // squeezed off at a metre a second with the meter reading above the drop.
-    //
-    // So the surfaces under the ball are gathered as normals, and both halves of the
-    // answer are read off one projection of them:
-    //
-    //   * the translation the ball is given is the push with those normals taken out
-    //     (ballFree) -- it slides along the floor and cannot be driven into it;
-    //   * the turn it is given is the turn of the *whole* push (pushBallSupported),
-    //     because a support's answer passes through the middle and adds no moment.
-    //
-    // Projecting before taking the moment is what spun a resting ball to two hundred
-    // and eighty radians a second: a normal push through the middle has no lever, but
-    // its projection along the floor does, and that lever is a force the floor never
-    // gave.
+    // The fixed supports a ball cannot be driven through.
     void gatherBallSupports(Ball& ball);
     // `except` is a body that must not be counted among the ball's supports -- the
     // one this push is being solved *against*. Its own contact is what the solver is
@@ -804,43 +582,14 @@ private:
     // same momentum along the line between them.
     void hitBallWithPoint(Ball& ball, Vec3 normal);
     void pointAgainstBall(Ball& ball, Vec3 normal);
-    // How much say the ball has in a blow that pushes it along `push`, as an inverse
-    // mass. It is not simply 1/m: a ball resting on something cannot be driven into
-    // it, because the surface underneath answers that part of the blow -- the floor
-    // does not give. What is left of the blow is the part along that surface, and
-    // that part does move the ball.
-    //
-    // It used to be all or nothing: a ball resting on anything took *no* share of
-    // any blow, in any direction. A shape landing flat on the top of a ball is
-    // caught by the floor that way, and that is right; a shape or a dot striking
-    // the side of that same ball was given nothing as well, which is why the ball
-    // sat there like a painted circle while things bounced off it. This is the
-    // projection: zero along the way it cannot go, everything along the way it can.
-    // The fraction of a unit push the ball can actually take: everything, except
-    // along the way the surface under it will not let it go. One is a ball in the
-    // air or a push along the floor; zero is a push straight down onto it.
-    double ballFreedom(const Ball& ball, Vec3 push) const {
-        // Only a surface that is actually under it holds it. A ball in mid-air has
-        // no support at all, and its last one is not a fact about this tick. A rope is
-        // the other kind of thing that holds a ball, and it holds it whatever the ball
-        // is standing on -- so the two are asked together, through the same projection
-        // the shapes' solve uses. See gatherBallSupports(): the rope is a support.
-        const bool supported = ball.touching && ball.standing;
-        if (!supported && ball.supportCount == 0) return 1.0;
-        const double size = length(push);
-        if (!(size > 0.0)) return 1.0;
-        const Vec3 unit = push * (1.0 / size);
-        return std::max(0.0, dot(unit, ballFree(ball, unit)));
-    }
+    // Compliance after the fixed supports have refused any inward push.
+    double ballFreedom(const Ball& ball, Vec3 push) const;
     // The rope's own reading of a speed: the part of it that is running away from the
     // anchor belongs to the rope, and no surface the ball is merely leaning against has
     // to answer it. Written in playground_rope.cpp, with the rest of the rope. See
     // ballContact(): a contact being kept is measured through this, an arrival is not.
     Vec3 ballOffTheRope(const Ball& ball, Vec3 speed) const;
-    double ballCompliance(const Ball& ball, Vec3 push, bool held) const {
-        if (held) return 0.0;
-        return ballFreedom(ball, push) / ball.mass;
-    }
+    double ballCompliance(const Ball& ball, Vec3 push, bool held) const;
     // Whether a body has arrived at the resting point this tick. A point that is
     // asleep is not stepped, and a step that is not taken runs no hitscan -- so a
     // shape falling on a dot that is resting on the floor would pass straight

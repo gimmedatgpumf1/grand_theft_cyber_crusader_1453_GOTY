@@ -383,4 +383,316 @@ void PlaygroundRoom::noteBallTouch(Ball& ball, std::size_t body, Vec3 normal, Ve
     ++ball.touchCount;
 }
 
+// The gap between a body's outline and the ball's surface: how far apart they are,
+// which way the body has to travel to be further from the ball, and the place the
+// two of them would touch. Negative when the ball is already into the outline.
+//
+// The bodies are walked first and the ball afterwards, so for the length of the
+// bodies' walk the ball is a surface that stays where it is; this is what the walk
+// measures its step against, and what it stops at.
+double PlaygroundRoom::bodyBallGap(const Ball& ball, std::size_t index, Vec3& way, Vec3& at) const {
+    const Body& body = bodies_[index];
+    way = Vec3{0, 1, 0};
+    at = ball.position;
+    if (body.count == 0) return 1e30;
+    const OutlineGap gap =
+        outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0);
+    way = gap.normal * -1.0;
+    // Where the two meet is on the ball's own surface, in the direction the body
+    // lies from its centre. It is not the body's nearest point: a round ball pressed
+    // against a flat face touches at the foot of the perpendicular, and the body's
+    // nearest point is the same place only while the centre is over the face. Take
+    // the body's point and a ball wedged on the end of a face is answered half a
+    // metre from where it is really pressed, which is a lever about the ball's
+    // centre that nothing in the room gave it.
+    at = ball.position + way * ball.radius;
+    return gap.gap - ball.radius;
+}
+
+
+// Complete the ball tick after the contact walk has spent its travel.
+void PlaygroundRoom::finishBallTick(Ball& ball, Vec3 walkStart, Vec3 beganAt, bool held, bool floorAnswered,
+                                    bool startedOnFloor, double remaining) {
+    const std::size_t ballIndex = std::size_t(&ball - balls_.data());
+    const Vec3 weight{0.0, -ball.mass * playground_tick::kGravity, 0.0};
+    // What the ball is touching when the tick ends, and what may therefore not be
+    // driven into. This runs whether or not the walk found anything, because the
+    // walk answers contacts in the order it meets them and the last one it meets
+    // is not necessarily the one that has the final say: a body pressing the ball
+    // down onto the floor leaves the press in the ball's velocity, and it is the
+    // floor that answers it. Touching when the tick ends counts as touching,
+    // exactly as it does for the dot: the walk only reports arrivals, and a ball
+    // already lying on something never arrives at it again.
+    // Every surface the ball is against, asked to hold it out of itself. This is the
+    // contact constraint, and it is enforced here and again after the grip: see
+    // settleBallSurfaces(ball).
+    settleBallSurfaces(ball);
+    // The floor, met without being travelled into.
+    //
+    // A ball resting on the floor is in contact with it every tick, and this walk
+    // only finds the floor when the ball's travel would take it below: a ball that
+    // is being held up does not move at all, so the floor never appeared. It was
+    // still there. The consequence was not that the ball fell through: it was that
+    // the grip of the floor was missing from the one solve that has to know about
+    // it -- a ball pinched between the floor and a weight standing on it was
+    // answered against the weight alone, and the weight span it out sideways just
+    // as a grip should. The face is what it is whether or not anything moved.
+    if (!floorAnswered && ball.position.y <= ball.radius + kTouch)
+        ballContact(ball, Vec3{0, 1, 0}, -1,  ball.position - Vec3{0, ball.radius, 0.0}, 0.0, true, startedOnFloor,
+                    1.0 - remaining);
+
+    // The grip is not solved here. It is the last thing the tick does, and the note
+    // beside it says why: solved here, its answer is overwritten by the passes below
+    // and the speed it was asked to rub out is the one that survives.
+
+    // And the contact constraint once more, because the grip is the last thing that
+    // moved the ball and it can push it into a surface it is lying against -- see
+    // settleBallSurfaces(ball). Same rule, same place in the order: whatever changed the
+    // speed last, the surfaces have the last word after it.
+    //
+    // The surfaces, though, are only half of that question in a corner. The ball is
+    // pressed by two faces at once and both of those faces are standing on something;
+    // a grip along one of them pushes the ball into the other, the other answers and
+    // leaves a little along the first, and each answer also pushes the shape it came
+    // from. A shape pushed off its own floor is a face whose speed is not the speed it
+    // really has, and a ball measured against a face that is running away keeps a
+    // speed it can never spend -- the churn the King saw in the picture, with the ball
+    // standing still and everything in the room moving under it by a hundredth of a
+    // metre a second, twenty times a second.
+    //
+    // The order is the answer, and it is three questions, not a loop:
+    //
+    //   1. the shapes' own supports, so that every face really is where it ends the
+    //      tick -- a shape standing on the floor is a still face, and still is what
+    //      the ball is measured against;
+    //   2. the ball's faces, solved against those still faces (settleBallSurfaces(ball)
+    //      reads them once, when it begins, so a pass cannot see its own push);
+    //   3. the shapes' supports again, because the ball has just leaned on them and
+    //      what it leaned with is the floor's to answer, exactly as another shape's
+    //      weight would be.
+    //
+    // Repeating the whole thing until it agreed was tried and is wrong: each round
+    // hands the shapes another blow, and a round that is asked twice for the same
+    // contact applies the same impulse twice -- measured as 8.8 J out of nothing when
+    // the dot was dropped on the ball's shoulder. The solve is one pass of the loop
+    // the shapes' own solver does, not a repetition of it.
+    answerSupportedShapes();
+    settleBallSurfaces(ball);
+    // And the shapes have the last word on themselves: the blow the ball has just
+    // given them is answered by what is under them, exactly as it would be if it had
+    // come from another shape. Without this the tick would end with a shape holding a
+    // speed into its own floor -- a speed that is not a motion, because the floor
+    // takes it back on the next tick, but an arrow and a number that are only there
+    // because the ball spoke last.
+    answerSupportedShapes();
+    // And the grip has the last word on the ball.
+    //
+    // It is last, and that is not a detail of ordering: it is the difference between a
+    // ball that settles and a ball that holds a speed nothing can take off it. The
+    // King asked where the air, the rolling resistance and the friction were when a
+    // ball wedged in the notch sat at nine tenths of a millimetre a second and never
+    // lost it. Measured, they were all present and all doing nothing, for one reason:
+    // **none of them was ever shown the speed that survived the tick.** The grip was
+    // solved before the last two answers, and those answers changed the ball's speed
+    // after it -- the grip measured a slip of 4.3 mm/s along the slope, answered it,
+    // and then the contact passes and the shapes' supports left the ball with a
+    // different velocity altogether (measured: grip left -0.0343,-0.1418; the tick
+    // ended at +0.00089,+0.00089 with a slip of 1.26 mm/s at that same face). No
+    // force can act on a speed that appears after the solve, so the slip was never
+    // rubbed out; the ball carried it into the next tick, the wedge took the
+    // gravity-driven part of it back, and the tick ended on the same number again.
+    // That is a fixed point of the tick map, not a decaying motion. It also explains
+    // why the ball *travelled* nowhere while holding it: the walk refuses the travel
+    // of a ball already against two faces, so no displacement ever happened, and a
+    // friction force with no displacement does no work -- the room drew the arrows
+    // and the energy never moved.
+    //
+    // Rolling resistance was in the same position and for the same reason. It is a
+    // couple on the turn (M = Crr * N * r, see settleBallFriction(ball)), and it was
+    // taking the turn out of the ball every tick -- and every tick the grip, running
+    // earlier, put it straight back by closing a slip that had already been answered.
+    // The turn measured -0.0229 rad/s for as long as the room was left alone, exactly
+    // the turn that 1.26 mm/s of slip at that face would keep feeding it.
+    //
+    // With the grip last, the state the tick ends in is one the whole contact system
+    // has agreed on: friction is a push along a face, so it cannot open a closing into
+    // one, and the surfaces do not need to answer it afterwards. Measured after the
+    // change, at the same corner: 21 of 21 drop positions settle at exactly 0.0000
+    // m/s, the ball's turn decays to exactly 0.0000 rad/s, and the room is unchanged
+    // after 1400 ticks (70 s). Nothing was added to damp it -- the same air, the same
+    // friction, the same Crr; they were simply given the speed to act on.
+    settleBallFriction(ball);
+    // And the shapes have the last word on themselves, again: the grip is a pair, and
+    // the half of it that landed on a shape has just given that shape a speed its own
+    // floor answers. Left unanswered until the next tick, that speed is a face moving
+    // for exactly one tick -- long enough for the ball's grip to be measured against
+    // it and dragged along by a surface that never moves.
+    answerSupportedShapes();
+
+    // A whole tick of travel below a picometre is not motion a double can carry:
+    // that is the floor of what this simulation can represent, not a speed chosen
+    // out of the air. Below it the ball is at rest.
+    if (length(ball.velocity) < kRestSpeed) ball.velocity = {};
+
+    // What the ball's supporters had to supply, and it is the only force in the room
+    // whose source is a surface with no shape: the floor under the ball.
+    //
+    // The ball's whole momentum change over the tick is known exactly -- it is where
+    // the ball ends up going, less where it started. The blows it was given are known
+    // too, because every one of them was written down when it landed. What is left
+    // over is what nothing solid gave it, and there is exactly one such thing under a
+    // ball: the ground. Writing it is what makes the picture add up. Without it a blow
+    // that the floor answered was drawn as a lone arrow on the shape -- a cube thrown
+    // off a ball by a force that no ball and no floor ever felt -- and that is what a
+    // conjured force looks like, even when the arithmetic underneath is right.
+    //
+    // It is also the honest place for the two things the ball does with momentum that
+    // no contact of its own accounts for: the weight it gains every tick, and the
+    // speed the floor clips off its underside. Both are the ground's doing, and both
+    // arrive here as the difference between the account and the truth.
+    // A ball that is against anything at all, and not only one that is standing on
+    // it. A ball bouncing off the floor is not "held up" by it -- it is not standing
+    // -- but it is still the floor that answers what the bounce did not, and leaving
+    // the answer out because the ball happened to be on its way up lost it from the
+    // picture: the ball's account was out by a fifth of a newton second, in both
+    // directions at once, on exactly the ticks it was being knocked about. Whatever
+    // is left over is what nothing solid gave it, and under a ball that is the
+    // ground, so it is written wherever the ball has a surface to be against.
+    if (ball.touching) {
+        const Vec3 total = (ball.velocity - ball.arrival) * ball.mass;
+        const Vec3 support = total - ball.blows - weight * kTick;
+        if (length(support) > 1e-9) {
+            const Vec3 where = length(ball.supportNormal) > 0.0 ? ball.supportNormal : Vec3{0, 1, 0};
+            addForce(ball.position + where * (-ball.radius), support * (1.0 / kTick), ForceKind::Contact, nullptr,
+                     ballOwner(ballIndex));
+        }
+    }
+
+    // At rest means at rest: no speed left, and every surface it is sitting on
+    // able to hold it. A slope cannot hold a ball, so a ball on one is never
+    // frozen, however slowly it is going.
+    if (ball.touching && length(ball.velocity) < kRestSpeed && ball.standing) {
+        ball.frozen = true;
+        ball.velocity = {};
+        ball.spin = 0.0;
+        ball.previous = ball.position;
+        ball.shown = ball.position;
+    }
+    // And the walk is finished the way a shape's is: with the trapezoid.
+    //
+    // The ball is carried through its tick at the speed it *arrived* with, and the
+    // answers it gets -- the floor, a face, the grip -- take that speed away somewhere
+    // along the way. A move that is one speed for the whole tick and a different speed
+    // at the end of it is not the motion that happened: half of the change belongs in
+    // the travel, which is exactly the rule the shapes follow (see advanceBodies).
+    // Measured in the King's corner: the ball's place moved 12.2 um every second tick
+    // while its speed at the end of every tick was 0.93 um a tick's worth, and the
+    // difference -- eleven microns of travel that no speed of the ball accounts for --
+    // is a ball that is standing still and still moving.
+    if (!ball.bent && length(ball.velocity) < length(walkStart)) {
+        const Vec3 slower = (ball.velocity - walkStart) * (0.5 * kTick);
+        // Only ever backwards along the way it was already going, and never upwards:
+        // a correction that lifted the ball would be a height it never fell from.
+        if (slower.y <= 0.0 && dot(slower, walkStart) <= 0.0) ball.position = ball.position + slower;
+    }
+    // A ball that ends the tick where it began it went nowhere, so the speed that
+    // would have carried it is not a speed: it is a number below the room's own
+    // resolution that nothing in the room can ever spend, and every surface it leans
+    // on reads it as if the ball were moving. Measured: a ball wedged under the
+    // triangle's apex held (-1.2e-5, -8.9e-6) m/s tick after tick with its place fixed
+    // to a hundredth of a micron, and that is what its grip was made of.
+    if (ball.position.x == beganAt.x && ball.position.y == beganAt.y && ball.position.z == beganAt.z)
+        ball.velocity = {};
+    // A ball the ground is carrying is never in flight, and the distance it covers in
+    // a tick is the speed it ends the tick with -- not the speed it was pushed to
+    // part-way through it.
+    //
+    // This is the same rule the shapes follow: a body that is in contact travels as
+    // the solver left it, and a body in free flight follows a parabola. The ball was
+    // the one thing exempt, and it is the difference that would not die. A ball lying
+    // on the floor with the triangle's slope leaning on it is pushed a third of a
+    // millimetre a second along the floor by that slope during the shapes' half of
+    // the tick, the grip takes all of it back at the end of the ball's half, and the
+    // walk in between was already made -- so the ball crossed 12 um of floor, was
+    // stopped by a friction that no displacement showed, and did it again next tick.
+    // Measured over 400 ticks of the King's corner: 5.4 mm of travel across the scene
+    // by a ball whose speed at the end of every tick was three hundredths of a
+    // micrometre a tick. A ball in contact does not fly, so its travel is its answer.
+    //
+    // And it may only ever shorten the walk, never lengthen it and never turn it
+    // round. A ball that met something had its place decided by the meeting -- the
+    // wall stopped it, and a ball bouncing off a wall ends the tick with a speed
+    // pointing the other way, so "where it would have got to at its final speed" is
+    // behind where it really is. Taking that as the answer put the ball back through
+    // the wall it had just bounced off: the check that fires one at a side read a
+    // restitution of 0.0000 against the floor's 0.8120.
+    if (held) {
+        const Vec3 shorter = beganAt + ball.velocity * kTick;
+        const Vec3 correction = shorter - ball.position;
+        if (dot(correction, walkStart) <= 0.0) ball.position = shorter;
+    }
+    // The path the drawing is given, rebuilt from the place the tick really ended.
+    // A tick whose travel is resolved away does not end at the speed it had after the
+    // meeting: the walk stops at the face, and the speed that carried the ball there is
+    // spent. Drawn from that speed, the ball's second piece of path flew on past the
+    // face -- 6.2 cm into the cube in the King's corner -- and the frame at the end of
+    // the tick snapped back to it: a ball that flies into a shape every tick and is
+    // yanked back reads as lag, and it is a lie about where the ball went. Both ends of
+    // the piece are known here, so it is read off directly. This is the drawing's copy
+    // of the path only; no velocity, force or travel in the room reads it.
+    if (ball.bent) {
+        const Vec3 met = ball.bendPoint;
+        if (ball.bendAt > 0.0) ball.bendIn = (met - ball.previous) / (kTick * ball.bendAt);
+        const double left = 1.0 - ball.bendAt;
+        if (left > 0.0) ball.bendOut = (ball.position - met) / (kTick * left);
+    }
+    // Whether anything in the room answered this tick. A ball against something has been
+    // answered even if the answer was "no" -- a face holding it up is a face it is not
+    // falling through -- and a ball whose speed is no longer the speed its own weight and
+    // air would have left it with has been answered too. That second reading is what
+    // catches the answer a blow leaves behind after the ball is already clear of what
+    // struck it, and the solver's answers, which never pass through the walk at all.
+    ball.answered = ball.answered || ball.touching ||
+                    length(ball.velocity - ball.alone) > playground_tick::kQuantumSpeed;
+    // And a turn that carries the rim less than a micrometre is not a turn.
+    ball.spin = playground_tick::resolvedTurn(ball.spin, ball.radius);
+    ball.angle += ball.spin * kTick;
+}
+
+// Every surface the ball is already resting on, gathered before the tick is solved.
+//
+// Only a surface it is *on*, not one it is falling towards: an arrival is the walk's
+// business, where the bounce is. A ball within a micrometre of a surface is on it --
+// that is the room's whole idea of touching.
+void PlaygroundRoom::gatherBallSupports(Ball& ball) {
+    ball.supportCount = 0;
+    const auto hold = [&](Vec3 normal, std::size_t body) {
+        const double size = length(normal);
+        if (!(size > 0.0) || ball.supportCount >= Ball::kMaxSupports) return;
+        ball.supports[ball.supportCount++] = BallSupport{normal * (1.0 / size), body};
+    };
+    // The floor, and only the floor.
+    //
+    // A support is what the ball may not be driven into and what takes the answer
+    // when it is. That is a statement about something that cannot move: the ground.
+    // A shape is not that. Listing a shape the ball is leaning on as a support says
+    // the ball cannot move along the way that shape presses it -- true, as far as it
+    // goes -- but then the whole of the impulse is handed to the shape on the other
+    // side, as though the ball were stone, and the shape that is doing the pressing
+    // is given a blow the ball never took. A ball wedged between the triangle's face
+    // and the end of the seesaw's plank was declared unable to move, and the plank
+    // was answered with four hundred and seventy newton seconds of impulse from a
+    // ball carrying two: the plank left at fifteen radians a second and the ball at
+    // thirty-three metres a second, out of a touch at three.
+    //
+    // A shape that holds the ball up is a contact and not a support, and it answers
+    // through the contact: the ball takes the push, the shape takes it back, the
+    // floor takes it from the shape. That chain is the room's own ledger, and every
+    // step of it is momentum somebody actually had. What the floor answers is
+    // answered by nobody and costs nothing, which is why it is the one that may be a
+    // support.
+    if (ball.position.y <= ball.radius + playground_tick::kQuantum) hold(Vec3{0, 1, 0}, kBodyCount);
+}
+
+
 }  // namespace gtc::native
