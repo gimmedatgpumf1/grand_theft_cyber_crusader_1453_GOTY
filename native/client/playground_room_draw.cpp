@@ -328,7 +328,7 @@ void PlaygroundRoom::interpolateBall(Ball& ball, double fraction) {
     // rounding cannot turn a mathematically touching pose into a visible overlap.
     const double allowed = -1.0e-8;
     double drawnAt = fraction;
-    if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt), drawnAt) > ball_shape::kTouch) {
+    if (sceneReady_ && depthInside(ballPlaceAt(ball, drawnAt), drawnAt) > allowed) {
         if (depthInside(ballPlaceAt(ball, 0.0), 0.0) > allowed) {
             // Not one place of this tick's path is as clear as the place the room ends
             // on: something has been drawn over the ground the ball already covered.
