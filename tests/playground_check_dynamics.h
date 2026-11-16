@@ -69,12 +69,15 @@ void fallingShapeAgainstRope() {
         return Result{body.velocity.y, body.centre.y, gap, room.totalEnergy() - initialEnergy, fromBall,
                       (body.velocity - initialVelocity) * body.mass, sum};
     };
+    int contacts = 0;
     for (std::size_t body : {PlaygroundRoom::kCube, PlaygroundRoom::kTriangle}) {
         for (double speed : {-4.0, -1.0, 1.0}) {
             for (double gap : {0.0, 0.005}) {
                 const Result reference = run(false, body, speed, gap), contact = run(true, body, speed, gap);
                 char detail[320];
                 const double mass = body == PlaygroundRoom::kCube ? 4.0 : 3.0;
+                const bool met = length(contact.ballImpulse) > 1e-6;
+                contacts += int(met);
                 const double unexplainedY = contact.vy - reference.vy - contact.ballImpulse.y / mass;
                 std::snprintf(detail, sizeof detail,
                               "body %zu initial vy %+.1f, clearance %.3f: free/contact vy %.5f/%.5f, "
@@ -83,11 +86,16 @@ void fallingShapeAgainstRope() {
                               body, speed, gap, reference.vy, contact.vy, contact.centreY - reference.centreY,
                               contact.gap, contact.ballImpulse.x, contact.ballImpulse.y, unexplainedY,
                               contact.energyChange, length(contact.deltaMomentum - contact.recorded));
-                check(length(contact.ballImpulse) > 1e-6 && std::abs(unexplainedY) < 0.03 &&
-                          std::abs(contact.centreY - reference.centreY) < 0.005 &&
-                          length(contact.deltaMomentum - contact.recorded) < 0.03 && contact.energyChange < 0.005,
-                      "a contact does not apply a second tick of gravity to a falling shape", detail);
+                // Fast air drag can move the triangle's face away from the ball;
+                // a separating pair is not required to exchange an impulse.
+                check(std::abs(unexplainedY) < 0.03 && std::abs(contact.centreY - reference.centreY) < 0.005 &&
+                          (!met || length(contact.deltaMomentum - contact.recorded) < 0.03) &&
+                          contact.gap >= -1.1e-6 && contact.energyChange < 0.005,
+                      "a rope-ball neighbour does not give an airborne shape an extra tick of gravity", detail);
             }
         }
     }
+    char detail[120];
+    std::snprintf(detail, sizeof detail, "%d of 12 trials exchanged a ball/body impulse", contacts);
+    check(contacts >= 8, "the falling-shape matrix actually exercises contact", detail);
 }

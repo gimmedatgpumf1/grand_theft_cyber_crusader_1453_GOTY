@@ -539,7 +539,10 @@ void PlaygroundRoom::tickBodies() {
     // The parabola, finished, for the bodies that were free to follow one.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
-        if (body.count == 0 || body.frozen || bodyHeld(index) || body.met != metBefore[index]) continue;
+        if (body.count == 0 || body.frozen || bodyHeld(index)) continue;
+        // Merely gathering a nearby patch does not change free-fall motion.
+        // Only an applied contact impulse makes this a constrained step.
+        if (body.met != metBefore[index] && body.appliedCount != 0) continue;
         body.centre = body.centre + (arrival[index] - body.velocity) * (0.5 * kTick);
         placeCorners(body);
     }
