@@ -375,6 +375,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
                 body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
             }
+            if (!body.pivoted) body.velocity.y += gravity * (dt - time);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
