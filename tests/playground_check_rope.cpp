@@ -700,16 +700,17 @@ int playgroundRopeChecks() {
             rise = std::max(rise, room.totalEnergy() - start);
             shoved = std::max(shoved, gtc::native::length(triangle.velocity));
             turn = std::max(turn, std::abs(triangle.spin));
-            // The tick the ball comes off the face: it was closing, and it is not.
-            const double now = gtc::native::dot(ball.velocity, face);
-            if (arriving == 0.0 && closing < -0.5 && now > 0.0) {
-                arriving = -closing;
-                leaving = now;
+            // Read the same contact point and instant on both sides of the impact.
+            // Centre velocity at the end of the tick is not the collision velocity:
+            // the triangle moves and the ball continues under gravity after impact.
+            if (arriving == 0.0 && ball.meetingArrival[1] > 0.0) {
+                arriving = -ball.meetingSpeedIn[1];
+                leaving = ball.meetingSpeedOut[1];
             }
         }
         std::snprintf(detail, sizeof detail,
-                      "a ball on the rope swung at the triangle's slope: it closed on the face at %.3f m/s and came "
-                      "away at %.3f m/s (%.0f%% of it), the slope was given %.3f m/s and %.3f rad/s of turn, and the "
+                      "a ball on the rope swung at the triangle's slope: relative normal speed at impact %.3f -> %.3f "
+                      "m/s (%.0f%% restitution), the slope was given %.3f m/s and %.3f rad/s of turn, and the "
                       "room's energy never rose above its %.6f J (by %.3e J, log2 %.1f)",
                       arriving, leaving, arriving > 0.0 ? 100.0 * leaving / arriving : 0.0, shoved, turn, start, rise,
                       rise > 0.0 ? std::log2(rise) : -1000.0);
