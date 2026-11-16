@@ -581,10 +581,12 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
 
         while (elapsed < dt - 1e-12) {
             const double step = std::min(dt / kSubsteps, dt - elapsed);
+            const double energyStart = localEnergy();
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
             for (std::size_t i = 0; i < kBodyCount; ++i)
                 if (stopped[i]) bodyForces(i, 0.5 * step);
             const double firstLoad = constrain(step, elapsed, true);
+            const double energyAfterFirstSolve = localEnergy();
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
@@ -594,6 +596,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 body.angle += body.spin * step;
                 placeCorners(body);
             }
+            const double energyAfterDrift = localEnergy();
             // Correct only geometrical drift, iterating because a rope and a
             // face can both be active. The velocity solve remains one-sided.
             const double beforeProjectionY = state.position.y;
@@ -627,6 +630,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 if (stopped[i]) bodyForces(i, 0.5 * step);
             finalRopeLoad = (firstLoad + constrain(step, elapsed + step, false)) / step;
             elapsed += step;
+            if (std::getenv("GTC_TRACE_SUBSTEP_ENERGY")) {
+                const double energyEnd = localEnergy();
+                if (energyEnd - energyStart > 1e-5 || energyAfterFirstSolve - energyStart > 1e-5 ||
+                    energyAfterDrift - energyAfterFirstSolve > 1e-5)
+                    std::printf("SUBSTEP t %.6f dE %+0.8f solve %+0.8f drift %+0.8f end %+0.8f ball v (%+.4f,%+.4f) shape v (%+.4f,%+.4f)\\n",
+                                elapsed, energyEnd - energyStart, energyAfterFirstSolve - energyStart,
+                                energyAfterDrift - energyAfterFirstSolve, energyEnd - energyStart,
+                                state.velocity.x, state.velocity.y, bodies_[kTriangle].velocity.x,
+                                bodies_[kTriangle].velocity.y);
+            }
         }
         static int constraintTraces = 0;
         if (std::getenv("GTC_TRACE_CONSTRAINTS") && (!std::getenv("GTC_TRACE_HELD") || bodyHeld(kTriangle)) &&

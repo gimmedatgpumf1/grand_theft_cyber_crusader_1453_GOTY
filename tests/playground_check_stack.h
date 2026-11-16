@@ -100,6 +100,10 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
 }
 
 void supportedStackChecks() {
+    if (std::getenv("GTC_ONLY_STACK_FAILURE")) {
+        ropeAgainstSupportedStack(-1.30, -0.15, false, 200);
+        return;
+    }
     for (double angle : {-1.30, -1.00, -0.65})
         for (double offset : {-0.15, 0.0, 0.15})
             for (bool asleep : {false, true})
