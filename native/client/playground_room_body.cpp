@@ -635,9 +635,43 @@ void PlaygroundRoom::answerSupportedShapes() {
         // its index: `ball` is an index now, and read as a yes it skipped the body's
         // own patches (kNoBall is not nought) and kept the thrown ball's (index nought
         // is nought) -- the wrong set, both ways round.
-        if (tickPatches_.items[i].ball < kBallCount) continue;
+        Manifold& saved = tickPatches_.items[i];
+        if (saved.ball < kBallCount) continue;
+        // A predicted pair that is still separated at the rope event is not a
+        // contact at this event time. Its previous whole-tick speculative impulse
+        // has already been applied to the predicted velocities; undo that impulse
+        // exactly before dropping the stale row. The rope walk's substep island will
+        // gather the pair again if their actual trajectories meet later in the tick.
+        bool separatedPair = saved.other < kBodyCount && saved.ends > 0;
+        for (std::size_t k = 0; k < saved.ends; ++k)
+            separatedPair = separatedPair && saved.gap[k] > kQuantum;
+        if (separatedPair) {
+            const double energyBeforeUndo = std::getenv("GTC_TRACE_CONTEXT") ? totalEnergy() : 0.0;
+            const Vec3 tangent{saved.normal.y, -saved.normal.x, 0.0};
+            const auto oldNormal = saved.normalImpulse;
+            const auto oldTangent = saved.tangentImpulse;
+            Body& a = bodies_[saved.body];
+            Body& b = bodies_[saved.other];
+            for (std::size_t k = 0; k < saved.ends; ++k) {
+                const Vec3 prior = saved.normal * saved.normalImpulse[k] +
+                                   tangent * saved.tangentImpulse[k];
+                if (length(prior) <= 1e-14) continue;
+                if (!bodyHeld(saved.body)) pushBody(a,saved.point[k],prior * -1.0,ForceKind::Pair);
+                if (!bodyHeld(saved.other) && !b.frozen)
+                    pushBody(b,saved.point[k],prior,ForceKind::Pair);
+                saved.normalImpulse[k] = 0.0;
+                saved.tangentImpulse[k] = 0.0;
+            }
+            if (std::getenv("GTC_TRACE_CONTEXT"))
+                std::printf("SUPPORT_SPECULATIVE_CANCEL context=%s patch=%zu bodies=%zu,%zu gap=(%.9g,%.9g) "
+                            "oldJn=(%.9g,%.9g) oldJt=(%.9g,%.9g) dE=%+.12g\n",
+                            std::getenv("GTC_TRACE_CONTEXT"),i,saved.body,saved.other,
+                            saved.gap[0],saved.gap[1],oldNormal[0],oldNormal[1],
+                            oldTangent[0],oldTangent[1],totalEnergy()-energyBeforeUndo);
+            continue;
+        }
         slot[again.count] = i;
-        again.add(tickPatches_.items[i]);
+        again.add(saved);
     }
     if (again.count == 0) return;
     // Every impulse this applies is written into the ledger where it acts, by
