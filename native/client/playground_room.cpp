@@ -9,6 +9,7 @@
 #include "client/ui_layer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -475,7 +476,12 @@ void PlaygroundRoom::tick() {
     // the others have to be answered for at the same instant: the walk looks for
     // the first meeting of anything with anything, and that meeting is answered on
     // both sides at once.
+    const bool profileTick = std::getenv("GTC_PROFILE_CONTACT_TICK") != nullptr;
+    const auto profileStart = std::chrono::steady_clock::now();
     tickBodies();
+    const double bodiesMicros = std::chrono::duration<double, std::micro>(
+        std::chrono::steady_clock::now() - profileStart).count();
+    const auto ballStart = std::chrono::steady_clock::now();
     // Both balls, in order, each one a ball: it is swept through the room it has just
     // had written into it, answered at every surface it meets, and -- for the one on the
     // rope -- held on its rope once its own tick is over. The rope is a constraint on
@@ -483,6 +489,13 @@ void PlaygroundRoom::tick() {
     // the next ball is swept against it, which is why the rope ball goes first: the
     // thrown ball's sweep then meets it where the rope really left it.
     tickBalls();
+    if (profileTick) {
+        const double ballsMicros = std::chrono::duration<double, std::micro>(
+            std::chrono::steady_clock::now() - ballStart).count();
+        if (bodiesMicros > 1000.0 || ballsMicros > 1000.0)
+            std::printf("CONTACT_TICK profile body=%.1fus balls=%.1fus point=(%.4f,%.4f)\n",
+                        bodiesMicros, ballsMicros, point_.x, point_.y);
+    }
     haveTrace_ = length(traceTo_ - traceFrom_) > kQuantum;
     if (length(point_ - from) > kQuantum) {
         ghosts_[ghostNext_] = point_;
