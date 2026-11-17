@@ -12,9 +12,7 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
-#include <chrono>
 #include <cmath>
-#include <cstdio>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -26,16 +24,34 @@ bool holdsBall(Vec3 normal);
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
 // dot and every body count: if any of them is moving, the ball is looked at.
 bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
-    if (!pointFrozen_ && length(velocity_) > 0.0) return true;
+    // Motion elsewhere in the room is not a reason to tick this ball. Wake it only
+    // when a moving solid's swept reach can get to its surface this tick. Bodies are
+    // already stepped when this is queried, so translation plus furthest-corner arc
+    // bounds the whole path; the actual contact walk still decides the collision.
+    if (!pointFrozen_ && length(velocity_) > 0.0 &&
+        length(ball.position - point_) <= ball.radius + playground_detail::kPointRadius +
+                                                length(point_ - previous_) + playground_tick::kQuantum)
+        return true;
     for (std::size_t index = 0; index < kBodyCount; ++index) {
-        if (!bodies_[index].frozen) return true;
+        const Body& body = bodies_[index];
+        if (body.frozen || body.count == 0) continue;
+        double furthest = 0.0;
+        for (std::size_t i = 0; i < body.count; ++i) furthest = std::max(furthest, length(body.local[i]));
+        const double reach = length(body.centre - body.previousCentre) +
+                             std::abs(body.angle - body.previousAngle) * furthest;
+        Vec3 way{}, at{};
+        if (bodyBallGap(ball, index, way, at) <= reach + playground_tick::kQuantum) return true;
     }
-    // The other ball is a solid too, and a ball moving at a sleeping one is something
-    // arriving at it. There is nothing about the one on the rope that makes it less of
-    // a neighbour: it is a ball, and this is the test for a ball.
+    // Another ball wakes this one only if its swept circle can reach it. The moving
+    // ball's own walk handles the pair impulse; this test merely avoids advancing
+    // every sleeping ball whenever any unrelated ball moves.
     for (std::size_t other = 0; other < kBallCount; ++other) {
         if (&balls_[other] == &ball) continue;
-        if (length(balls_[other].position - balls_[other].previous) > 0.0) return true;
+        const Ball& neighbour = balls_[other];
+        const double reach = length(neighbour.position - neighbour.previous);
+        if (length(neighbour.position - ball.position) <= ball.radius + neighbour.radius + reach +
+                                                             playground_tick::kQuantum)
+            return true;
     }
     // A taut rope at its static hanging equilibrium is already balanced by its
     // stored tension. It does not by itself make a sleeping ball active; impacts,
@@ -74,9 +90,7 @@ bool PlaygroundRoom::ballPlacementClear(const Ball& ball, Vec3 at) const {
 // and the drawing -- meet it where the rope really left it rather than where its own
 // gravity took it.
 void PlaygroundRoom::tickBalls() {
-    const bool profile = std::getenv("GTC_PROFILE_CONTACT_TICK") != nullptr;
     for (std::size_t index = 0; index < kBallCount; ++index) {
-        const auto profileStart = std::chrono::steady_clock::now();
         Ball& ball = balls_[index];
         Rope& rope = ropeForBall(index);
         const bool traceBallTick = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
@@ -96,11 +110,6 @@ void PlaygroundRoom::tickBalls() {
         // Near a body, the rope's curved path has to meet that body at the
         // actual instant of contact rather than a later free-fall projection.
         if (rope.attached && rope.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) {
-            if (profile) {
-                const double micros = std::chrono::duration<double, std::micro>(
-                    std::chrono::steady_clock::now() - profileStart).count();
-                if (micros > 1000.0) std::printf("BALL_PROFILE id=%zu path=rope-walk %.1fus\n", index, micros);
-            }
             traceBallResult("rope-contact-walk");
             continue;
         }
@@ -124,11 +133,6 @@ void PlaygroundRoom::tickBalls() {
             } else {
                 holdOnRope(ball);
             }
-        }
-        if (profile) {
-            const double micros = std::chrono::duration<double, std::micro>(
-                std::chrono::steady_clock::now() - profileStart).count();
-            if (micros > 1000.0) std::printf("BALL_PROFILE id=%zu path=ordinary %.1fus frozen=%d\n", index, micros, int(ball.frozen));
         }
         traceBallResult("ordinary-ball-tick");
     }
