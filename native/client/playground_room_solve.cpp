@@ -75,7 +75,7 @@ constexpr double kAgree = 1e-9;  // N s
 // and ending on the normal means a tick can never finish with a corner still being
 // driven into the floor -- hold and slip may be a hair from where they settle, but
 // nothing goes into anything.
-bool PlaygroundRoom::solveContacts(ManifoldSet& patches, bool retainSpeculativeLoad) {
+bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
     static std::uint64_t solveTraceId = 0;
     const std::uint64_t thisSolveTraceId = solveTraceId++;
@@ -580,13 +580,6 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches, bool retainSpeculativeL
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
-                // During a mid-tick support re-solve, a positive-gap row is still
-                // speculative. It may add the remaining load, but it must not refund
-                // the already-applied predictive impulse before the body trajectories
-                // have been re-integrated from that event time.
-                if (retainSpeculativeLoad && patch.rebound[k] == 0.0 &&
-                    patch.gap[k] > kQuantum && delta[i] < 0.0)
-                    continue;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];

@@ -643,7 +643,7 @@ void PlaygroundRoom::answerSupportedShapes() {
     // Every impulse this applies is written into the ledger where it acts, by
     // pushBody(), exactly as the first solve's were -- so the tick's arrows include
     // both answers and the tick's account still closes.
-    solveContacts(again, true);
+    solveContacts(again);
     // And what it applied is remembered by the patch it applied it to.
     //
     // A patch carries the impulses the tick has already given it, and the solve reads
