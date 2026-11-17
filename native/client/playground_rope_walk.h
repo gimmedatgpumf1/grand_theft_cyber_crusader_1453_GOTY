@@ -412,20 +412,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
             const double spent = std::clamp(time / dt, 0.0, 1.0);
-            if (spent < body.ropeEventAt) {
-                const double preFraction = body.ropeEventAt > 0.0 ? spent / body.ropeEventAt : 0.0;
-                body.velocity = body.arrivalVelocity +
-                                (body.ropeEventVelocity - body.arrivalVelocity) * preFraction;
-                body.spin = body.arrivalSpin + (body.ropeEventSpin - body.arrivalSpin) * preFraction;
-            } else if (body.ropeEventAt < 1.0) {
-                const double postFraction = (spent - body.ropeEventAt) / (1.0 - body.ropeEventAt);
-                body.velocity = body.ropeEventVelocity +
-                                (predictedVelocity[i] - body.ropeEventVelocity) * postFraction;
-                body.spin = body.ropeEventSpin + (predictedSpin[i] - body.ropeEventSpin) * postFraction;
-            } else {
-                body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
-                body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
-            }
+            body.velocity = body.arrivalVelocity;
+            body.spin = body.arrivalSpin;
+            bodyForces(i, time);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
