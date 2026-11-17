@@ -583,6 +583,26 @@ void PlaygroundRoom::advance(double seconds) {
     int ticks = 0;
     while (accumulator_ >= kTick && ticks < 5) {
         accumulator_ -= kTick;
+        const bool tracePhysics = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+        const char* traceContext = tracePhysics ? std::getenv("GTC_TRACE_CONTEXT") : "";
+        const double traceInitialEnergy = totalEnergy();
+        const auto tracePhase = [&](const char* phase, double before) {
+            if (!tracePhysics) return;
+            std::printf("ROOM_TRACE context=%s phase=%s E_before=%.12g E_after=%.12g dE=%+.12g\\n",
+                        traceContext, phase, before, totalEnergy(), totalEnergy()-before);
+            for (std::size_t i=0; i<kBodyCount; ++i) {
+                const Body& b=bodies_[i];
+                if (!b.count) continue;
+                std::printf("  BODY_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\\n",
+                            i,b.centre.x,b.centre.y,b.velocity.x,b.velocity.y,b.spin,int(b.frozen));
+            }
+            for (std::size_t i=0; i<kBallCount; ++i) {
+                const Ball& b=balls_[i];
+                std::printf("  BALL_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\\n",
+                            i,b.position.x,b.position.y,b.velocity.x,b.velocity.y,b.spin,int(b.frozen));
+            }
+        };
+        double traceBeforePhase = totalEnergy();
         // What the ball arrived with, taken before anything in the room moved this
         // tick. A bounce is the answer to arriving at something; a push it gets
         // part-way through the tick is not an arrival, and must not be bounced back.
@@ -644,6 +664,7 @@ void PlaygroundRoom::advance(double seconds) {
             ballStepped[index] = !balls_[index].frozen || ballNeighboursMoving(balls_[index]);
         if (!pointFrozen_) {
             tick();
+            tracePhase("room.tick", traceBeforePhase);
         } else {
             // The dot is asleep, so the bodies and the ball are stepped on their
             // own. The dot's own handle is the only thing left out.
@@ -658,22 +679,32 @@ void PlaygroundRoom::advance(double seconds) {
                 }
             }
             tickBodies();
+            tracePhase("room.tickBodies", traceBeforePhase);
+            traceBeforePhase = totalEnergy();
             tickBalls();
+            tracePhase("room.tickBalls", traceBeforePhase);
         }
+        traceBeforePhase = totalEnergy();
         // Whatever a turn carried through the ball is put back out, once, after both
         // halves of the tick have moved. It is here rather than inside either of them
         // because it is about the state the tick ends in, whichever of the two put it
         // there -- and the ball's sweep cannot see a shape turning into it.
         for (Ball& ball : balls_) separateBall(ball);
+        tracePhase("room.separateBall", traceBeforePhase);
+        traceBeforePhase = totalEnergy();
         // And now the tick is over, having asked everything it is going to ask: this
         // is where a shape is measured for stillness, so that nothing later in the
         // same tick can hand it a push. See the note at the call this replaces.
         settleBodies();
+        tracePhase("room.settleBodies", traceBeforePhase);
+        traceBeforePhase = totalEnergy();
 
         // Read after the tick, so it covers the bodies the tick woke as well as the
         // ones that were already awake when it began.
         for (std::size_t index = 0; index < kBodyCount; ++index) stepped[index] = stepped[index] || bodies_[index].woken;
         freezeCheck();
+        tracePhase("room.freezeCheck", traceBeforePhase);
+        traceBeforePhase = totalEnergy();
         // What is still acting, now that the tick has finished with everything. It
         // is written here, at the end, because that is when it is known which things
         // were stepped and which were not: a body that was woken by this tick's
@@ -688,6 +719,10 @@ void PlaygroundRoom::advance(double seconds) {
         // back.
         writeImpulses();
         recordStaticForces(stepped, pointStepped, ballStepped);
+        tracePhase("room.writeImpulses+staticForces", traceBeforePhase);
+        if (tracePhysics)
+            std::printf("ROOM_TRACE_TOTAL context=%s E_start=%.12g E_end=%.12g dE=%+.12g\\n",
+                        traceContext, traceInitialEnergy, totalEnergy(), totalEnergy()-traceInitialEnergy);
         ++ticks;
     }
 }
