@@ -68,6 +68,7 @@ struct BallSupport {
 // One ball: one point with a radius, its turn, and its own account of the tick.
 struct Ball {
     Vec3 position{}, previous{}, shown{}, velocity{};
+    double restitution = 0.75;
     // The speed the ball had when the tick began, before this tick's forces. A bounce
     // is the answer to hitting something, so it is measured against what the ball
     // arrived with -- not against the speed gravity lent it on the way, which a ball

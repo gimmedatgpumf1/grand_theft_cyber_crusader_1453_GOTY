@@ -2,6 +2,7 @@
 #include "client/playground_shapes.h"
 #include "client/playground_room_tick.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
@@ -33,6 +34,7 @@ bool holdsBall(Vec3 normal) {
 
 void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint, double depth,
                                 bool exchange, bool resting, double reached, bool instantaneous) {
+    Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
     Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
     // What the ball was doing before this surface answered it. When the call is
     // done, the difference is the momentum the surface took from it or gave it,
@@ -288,15 +290,15 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
     // the *face* is moving, and three quarters of that came back as a launch each tick --
     // the plank loaded on every other tick and coasted the ones between.
     const double rebound = (approach < 0.0 && arrived && !(instantaneous && resting))
-                               ? -kBallRestitution * approach : 0.0;
+                               ? -ball.restitution * approach : 0.0;
     // A taut rope answers only the part of an impact that would stretch it.
     // It cannot resist a blow directed towards the anchor: that makes it slack.
     Vec3 ballDirection = normal;
-    if (instantaneous && rope_.attached && rope_.taut && rope_.ball < kBallCount &&
-        &ball == &balls_[rope_.ball]) {
-        const Vec3 arm = ball.position - rope_.anchor;
+    if (instantaneous && rope.attached && rope.taut && rope.ball < kBallCount &&
+        &ball == &balls_[rope.ball]) {
+        const Vec3 arm = ball.position - rope.anchor;
         const double reach = length(arm);
-        if (reach >= rope_.length - kTouch && reach > 0.0) {
+        if (reach >= rope.length - kTouch && reach > 0.0) {
             const Vec3 outward = arm / reach;
             ballDirection = normal - outward * std::max(0.0, dot(normal, outward));
         }
@@ -306,7 +308,7 @@ void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 co
         const Vec3 ropeImpulse = (ballDirection - normal) * impulse;
         if (length(ropeImpulse) <= 1e-12) return;
         addForce(ball.position, ropeImpulse * (1.0 / kTick), ForceKind::Rope, nullptr, ownerOf(ball));
-        addForce(rope_.anchor, ropeImpulse * (-1.0 / kTick), ForceKind::Rope, nullptr, kAnchorOwner);
+        addForce(rope.anchor, ropeImpulse * (-1.0 / kTick), ForceKind::Rope, nullptr, kAnchorOwner);
     };
     double pressed = 0.0;
     // What this meeting was, kept in force: the impulse the ball was dealt, and the
@@ -657,7 +659,8 @@ void PlaygroundRoom::ballAgainstBall(Ball& ball, std::size_t other, Vec3 normal,
     const double closing = dot(ball.velocity - partnerSpeed, normal);
     const Vec3 at = ball.position - normal * ball.radius;
     if (closing < 0.0) {
-        const double rebound = resting ? 0.0 : -kBallRestitution * closing;
+        const double restitution = std::min(ball.restitution, partner.restitution);
+        const double rebound = resting ? 0.0 : -restitution * closing;
         const double give = 1.0 / ball.mass + 1.0 / partner.mass;
         const double impulse = (rebound - closing) / give;
         ball.velocity = ball.velocity + normal * (impulse / ball.mass);
@@ -709,7 +712,7 @@ void PlaygroundRoom::pointAgainstBall(Ball& ball, Vec3 normal) {
     // arriving at it. What it gets is a contact, which stops it -- the same answer
     // the room gives anything that is already against what it has reached.
     const double arriving = dot(pointArrival_ - ball.velocity, normal);
-    const double rebound = (closing < 0.0 && arriving < 0.0) ? -kBallRestitution * closing : 0.0;
+    const double rebound = (closing < 0.0 && arriving < 0.0) ? -ball.restitution * closing : 0.0;
     if (closing < 0.0) {
         // The ball's say in the blow, along the direction the blow pushes it. The
         // dot pushes the ball along -normal (the normal runs from the ball to the

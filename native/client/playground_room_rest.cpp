@@ -354,26 +354,21 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         ball.faceBatch = face;
         ball.markBatch = mark;
     }
-    // The thrown ball, where the scene leaves it: up in the air, on the right.
     Ball& thrown = balls_[kThrowBall];
     thrown.position = thrown.previous = thrown.shown = Vec3{3.10, thrown.radius + 1.60, 0};
     thrown.angle = thrown.previousAngle = 0.0;
-    // And the ball on the rope: hanging dead straight under its anchor, at rest. The
-    // room resets to a room that is standing still. What makes it swing is a blow, and
-    // the room has a ball for that -- the same tick, the same contact, the same ledger.
-    // It keeps its two drawing handles like the other one, and the rope keeps its own.
-    const std::size_t ropeBatch = rope_.ropeBatch, anchorBatch = rope_.anchorBatch;
-    rope_ = Rope{};
-    rope_.ropeBatch = ropeBatch;
-    rope_.anchorBatch = anchorBatch;
-    rope_.ball = kRopeBall;
-    rope_.attached = true;
-    Ball& hanging = balls_[kRopeBall];
-    hanging.position = hanging.previous = hanging.shown = rope_.anchor + Vec3{0.0, -rope_.length, 0.0};
-    hanging.angle = hanging.previousAngle = 0.0;
-    // Hanging taut: the rope is carrying the whole of its weight and no more.
-    rope_.taut = true;
-    rope_.tension = hanging.mass * kGravity;
+    for (std::size_t i = 0; i < kRopeCount; ++i) {
+        Rope& rope = ropeForBall(i + 1);
+        const std::size_t rb = rope.ropeBatch, ab = rope.anchorBatch;
+        rope = Rope{}; rope.ropeBatch = rb; rope.anchorBatch = ab;
+        rope.ball = i + 1; rope.attached = true;
+        rope.anchor = Vec3{-3.55 + 2.0 * balls_[i + 1].radius * double(i), 3.65, 0};
+        rope.length = 0.72;
+        Ball& hanging = balls_[i + 1];
+        hanging.position = hanging.previous = hanging.shown = rope.anchor + Vec3{0.0, -rope.length, 0};
+        hanging.angle = hanging.previousAngle = 0.0; hanging.restitution = 0.02;
+        rope.taut = true; rope.tension = hanging.mass * kGravity;
+    }
     restingOnBall_ = false;
     restingBall_ = kThrowBall;
     dragBall_ = kThrowBall;

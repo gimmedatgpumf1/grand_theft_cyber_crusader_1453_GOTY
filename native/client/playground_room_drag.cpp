@@ -152,10 +152,11 @@ void PlaygroundRoom::updateDrag() {
         // tick's -- the same length, the same anchor -- and not a second rule about
         // dragging: the hand asks for a place, and the place it may have is the place
         // the rope permits.
-        if (rope_.attached && dragBall_ == rope_.ball) {
-            const Vec3 arm = wanted - rope_.anchor;
+        Rope& rope = ropeForBall(dragBall_);
+        if (rope.attached && dragBall_ == rope.ball) {
+            const Vec3 arm = wanted - rope.anchor;
             const double reach = length(arm);
-            if (reach > rope_.length) wanted = rope_.anchor + arm * (rope_.length / reach);
+            if (reach > rope.length) wanted = rope.anchor + arm * (rope.length / reach);
         }
         if (!ballPlacementClear(ball, wanted)) return;
         // A spot the ball fits in is not enough: the hand may not carry it *through*
@@ -259,7 +260,7 @@ void PlaygroundRoom::updateDrag() {
             // ball would have been given by that face if it had stepped into it.
             ball.position = ball.position - way * (deep - ball_shape::kSkin);
             const double along = dot(ball.velocity, normal);
-            ball.velocity = ball.velocity + normal * (ball_shape::kBallRestitution * pressing - along);
+            ball.velocity = ball.velocity + normal * (ball.restitution * pressing - along);
             ball.previous = ball.shown = ball.position;
             ball.frozen = false;
         }

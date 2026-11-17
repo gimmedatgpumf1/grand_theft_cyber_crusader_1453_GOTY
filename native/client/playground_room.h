@@ -96,7 +96,8 @@ public:
     // are their own, one each, because a blow between two balls is a pair of forces on
     // two different solids and the arrows have to be able to tell them apart. The dot
     // and the anchor are the two ends of other pairs, and they have slots of their own.
-    static constexpr std::size_t kBallCount = 2;
+    static constexpr std::size_t kRopeCount = 5;
+    static constexpr std::size_t kBallCount = kRopeCount + 1;
     // The ball on the rope, and the ball that is thrown. Two of one kind; the names are
     // only about where each one starts.
     static constexpr std::size_t kThrowBall = 0, kRopeBall = 1;
@@ -202,6 +203,8 @@ public:
     bool ropeTaut() const { return rope_.taut; }
     double ropeTension() const { return rope_.tension; }
     double ropeBallDistance() const { return length(ropeBall().position - rope_.anchor); }
+    Rope& ropeForBall(std::size_t i) { return i == 1 || i >= kBallCount ? rope_ : extraRopes_[i - 2]; }
+    const Rope& ropeForBall(std::size_t i) const { return i == 1 || i >= kBallCount ? rope_ : extraRopes_[i - 2]; }
 
 private:
     // What the mouse is holding, if anything.
@@ -657,6 +660,7 @@ private:
     std::array<Ball, kBallCount> balls_{};
     // The rope, which is a constraint on one of them and is not part of either.
     Rope rope_{};
+    std::array<Rope, kRopeCount - 1> extraRopes_{};
 
     std::array<float, 4> dragOrigin_{}, dragDirection_{};
     GpuScene scene_;

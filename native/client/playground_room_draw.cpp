@@ -50,7 +50,9 @@ constexpr std::uint32_t kPivotPostId = 700, kPivotPinId = 701;
 // end of the rope is a ball, drawn by the ball's own batch, at the ball's own depth.
 // Depths: the rope and its anchor go behind the balls, because the ball is the one
 // thing in the room that nothing may be drawn over.
-constexpr std::uint32_t kRopeId = 800, kAnchorId = 802;
+constexpr std::uint32_t kRopeId = 800, kRopeSpan = 2;
+constexpr std::uint32_t ropeId(std::size_t i) { return kRopeId + std::uint32_t(i) * kRopeSpan; }
+constexpr std::uint32_t anchorId(std::size_t i) { return ropeId(i) + 1; }
 constexpr double kRopeHalfWidth = 0.014, kAnchorRadius = 0.075;
 constexpr double kRopeZ = 0.010, kAnchorZ = 0.009;
 // One shaft and one head per arrow. The ids are well clear of the bodies' own,
@@ -496,11 +498,14 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     points.clear();
     faces.clear();
     quad(points, faces, 0, -1, 1, 1, 0.0);
-    raster.setObject(kRopeId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#c9b48a"));
-    disc(points, faces, kAnchorRadius);
-    raster.setObject(kAnchorId, {0, 0}, 0);
-    raster.mesh(points, faces, flat("#8d9aa0"));
+    for (std::size_t i = 0; i < kRopeCount; ++i) {
+        raster.setObject(ropeId(i), {0, 0}, 0);
+        raster.mesh(points, faces, flat("#c9b48a"));
+        points.clear(); faces.clear(); disc(points, faces, kAnchorRadius);
+        raster.setObject(anchorId(i), {0, 0}, 0);
+        raster.mesh(points, faces, flat("#8d9aa0"));
+        points.clear(); faces.clear(); quad(points, faces, 0, -1, 1, 1, 0.0);
+    }
 
     // Every ball: a disc of its own radius, and a cross of two seams so the turning can
     // be seen. The seams are thin quads turned together by the ball's angle, so the
@@ -549,8 +554,10 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     scene_.revision = 1;
     pointBatch_ = findBatch(scene_, kPointId);
     traceBatch_ = findBatch(scene_, kTraceId);
-    rope_.ropeBatch = findBatch(scene_, kRopeId);
-    rope_.anchorBatch = findBatch(scene_, kAnchorId);
+    for (std::size_t i = 0; i < kRopeCount; ++i) {
+        ropeForBall(i + 1).ropeBatch = findBatch(scene_, ropeId(i));
+        ropeForBall(i + 1).anchorBatch = findBatch(scene_, anchorId(i));
+    }
     for (std::size_t index = 0; index < kBallCount; ++index) {
         balls_[index].faceBatch = findBatch(scene_, ballId(index));
         balls_[index].markBatch = findBatch(scene_, ballId(index) + 1);
@@ -591,18 +598,14 @@ void PlaygroundRoom::placeMarkers() {
             i < ghostCount_ ? translation(Vec3{ghosts_[i].x, ghosts_[i].y, kGhostZ})
                             : translation({0, -1000, 0});
     }
-    {
-        // The rope: from the plate to the ball on the end of it, where that ball is
-        // being drawn this frame -- not where the physics last left it. A rope drawn to
-        // the tick's end while the ball is drawn halfway through it is a rope of the
-        // wrong length, and the wrong length is exactly what a rope is not.
-        const Ball& hanging = balls_[rope_.ball < kBallCount ? rope_.ball : kThrowBall];
-        const Vec3 at = hanging.shown;
-        const Vec3 anchor = rope_.anchor;
-        scene_.batches[rope_.ropeBatch].modelMatrix =
-            rope_.attached ? segment(Vec3{anchor.x, anchor.y, kRopeZ}, Vec3{at.x, at.y, kRopeZ}, kRopeHalfWidth)
-                           : translation({0, -1000, 0});
-        scene_.batches[rope_.anchorBatch].modelMatrix = translation(Vec3{anchor.x, anchor.y, kAnchorZ});
+    for (std::size_t i = 0; i < kRopeCount; ++i) {
+        const Rope& rope = ropeForBall(i + 1);
+        const Ball& hanging = balls_[rope.ball < kBallCount ? rope.ball : kThrowBall];
+        const Vec3 at = hanging.shown, anchor = rope.anchor;
+        scene_.batches[rope.ropeBatch].modelMatrix =
+            rope.attached ? segment({anchor.x, anchor.y, kRopeZ}, {at.x, at.y, kRopeZ}, kRopeHalfWidth)
+                          : translation({0, -1000, 0});
+        scene_.batches[rope.anchorBatch].modelMatrix = translation({anchor.x, anchor.y, kAnchorZ});
     }
     // Every ball, at the radius it has and the turn it was drawn with. A unit disc
     // scaled to the ball's radius, so a ball of a different size needs no new geometry

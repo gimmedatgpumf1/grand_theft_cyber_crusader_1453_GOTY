@@ -160,9 +160,10 @@ void arcStep(double theta0, double omega0, double gravityOverLength, double dt, 
 // An *arrival* is the other case and is not touched: what comes at a surface comes at it
 // with everything it has, and that is the blow the ball is meant to lose.
 Vec3 PlaygroundRoom::ballOffTheRope(const Ball& ball, Vec3 speed) const {
-    if (!rope_.attached || rope_.ball >= kBallCount || &ball != &balls_[rope_.ball]) return speed;
-    if (!rope_.taut) return speed;
-    const Vec3 arm = ball.position - rope_.anchor;
+    const std::size_t index = static_cast<std::size_t>(&ball - balls_.data());
+    const Rope& rope = ropeForBall(index);
+    if (!rope.attached || rope.ball != index || !rope.taut) return speed;
+    const Vec3 arm = ball.position - rope.anchor;
     const double reach = length(arm);
     if (!(reach > 0.0)) return speed;
     const Vec3 outward = arm / reach;
@@ -190,7 +191,7 @@ void PlaygroundRoom::holdOnRope(Ball& ball) {
         }
         return true;
     };
-    Rope& rope = rope_;
+    Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
     if (!rope.attached || &ball != &balls_[rope.ball]) return;
     const std::size_t owner = ownerOf(ball);
     const double dt = playground_tick::kTick;

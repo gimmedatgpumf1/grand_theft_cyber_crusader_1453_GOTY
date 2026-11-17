@@ -34,6 +34,7 @@ int playgroundArrivalChecks();
 // pixels -- the ball may not be drawn inside a shape, and nothing may be drawn over it.
 int playgroundPictureChecks();
 int playgroundRopeChecks();
+int playgroundRopeChainCheck();
 
 namespace {
 
@@ -726,6 +727,7 @@ void costOfATick() {
 }  // namespace
 
 int main() {
+    if (std::getenv("GTC_ONLY_ROPE_CHAIN")) return playgroundRopeChainCheck();
     if (std::getenv("GTC_ONLY_PICTURE_INTERPOLATION"))
         return playgroundPictureChecks() == 0 ? 0 : 1;
     if (std::getenv("GTC_ONLY_PICTURED_IMPACT") || std::getenv("GTC_ONLY_GRAVITY_CONTACT"))

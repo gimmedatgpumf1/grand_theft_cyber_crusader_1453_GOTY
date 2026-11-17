@@ -10,6 +10,7 @@
 // followed by a projection back to the rope. This walk advances to the meeting,
 // applies the ordinary ball/body impulse there, then spends the remaining time.
 bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
+    Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
     const double dt = playground_tick::kTick;
     const double gravity = playground_tick::kGravity;
     static std::uint64_t debugTick = 0;
@@ -47,8 +48,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         }
     }
     const double quantum = playground_tick::kQuantum;
-    const Vec3 anchor = rope_.anchor;
-    const double ropeLength = rope_.length;
+    const Vec3 anchor = rope.anchor;
+    const double ropeLength = rope.length;
     const Vec3 arm0 = ball.position - anchor;
     const double radius0 = length(arm0);
     if (!(radius0 > 0.0) || radius0 > ropeLength + quantum) {
@@ -312,7 +313,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         hitNormal = actual.normal;
         const Vec3 contact = ball.position - hitNormal * ball.radius;
         if (!bent) { bent = true; firstAt = elapsed / dt; firstPoint = ball.position; }
-        rope_.taut = taut;
+        rope.taut = taut;
         const double approach = dot(ball.velocity - bodyFaceSpeed(std::size_t(hitBody), contact), hitNormal);
         const bool sustained = taken < dt / 100.0 && std::abs(approach) <= playground_detail::kRestSpeed;
         ball.answered = true;
@@ -340,7 +341,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             const Vec3 arm = ball.position - anchor;
             const double reach = length(arm);
             if (reach > 0.0 && dot(ball.velocity, arm / reach) < -playground_tick::kQuantumSpeed)
-                rope_.taut = taut = false;
+                rope.taut = taut = false;
         }
         if (sustained) {
             // A maintained contact under gravity is not an endless sequence of
@@ -927,11 +928,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     ball.velocity = state.velocity;
     const Vec3 arm = ball.position - anchor;
     const double reach = length(arm);
-    rope_.taut = constrainedStep ? reach >= ropeLength - quantum && finalRopeLoad > 1e-9
+    rope.taut = constrainedStep ? reach >= ropeLength - quantum && finalRopeLoad > 1e-9
                                  : taut && reach >= ropeLength - quantum && tension(state) > 0.0;
-    rope_.tension = rope_.taut ? (constrainedStep ? finalRopeLoad : tension(state)) : 0.0;
-    if (!constrainedStep && rope_.taut && reach > 0.0) {
-        const Vec3 pull = arm * (-rope_.tension / reach);
+    rope.tension = rope.taut ? (constrainedStep ? finalRopeLoad : tension(state)) : 0.0;
+    if (!constrainedStep && rope.taut && reach > 0.0) {
+        const Vec3 pull = arm * (-rope.tension / reach);
         addForce(ball.position, pull, ForceKind::Rope, nullptr, ownerOf(ball));
         addForce(anchor, pull * -1.0, ForceKind::Rope, nullptr, kAnchorOwner);
     }

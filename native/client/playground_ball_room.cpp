@@ -40,7 +40,8 @@ bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
     // it is not lying on anything -- it is hanging, and its weight is answered by the
     // rope every tick. A ball that slept through that would be a ball with its weight
     // unanswered, which is not what a hanging ball is doing.
-    if (rope_.attached && &balls_[rope_.ball < kBallCount ? rope_.ball : kThrowBall] == &ball) return true;
+    const Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
+    if (rope.attached && rope.ball < kBallCount && &balls_[rope.ball] == &ball) return true;
     return false;
 }
 
@@ -77,6 +78,7 @@ bool PlaygroundRoom::ballPlacementClear(const Ball& ball, Vec3 at) const {
 void PlaygroundRoom::tickBalls() {
     for (std::size_t index = 0; index < kBallCount; ++index) {
         Ball& ball = balls_[index];
+        Rope& rope = ropeForBall(index);
         const bool traceBallTick = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
         const double traceEnergyBefore = traceBallTick ? totalEnergy() : 0.0;
         const Vec3 tracePositionBefore = ball.position, traceVelocityBefore = ball.velocity;
@@ -93,7 +95,7 @@ void PlaygroundRoom::tickBalls() {
         };
         // Near a body, the rope's curved path has to meet that body at the
         // actual instant of contact rather than a later free-fall projection.
-        if (rope_.attached && rope_.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) {
+        if (rope.attached && rope.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) {
             traceBallResult("rope-contact-walk");
             continue;
         }
@@ -108,12 +110,12 @@ void PlaygroundRoom::tickBalls() {
             ball.alone = ball.velocity;
             ball.answered = true;
         }
-        if (rope_.attached && rope_.ball == index) {
+        if (rope.attached && rope.ball == index) {
             if (ballHeld(ball)) {
                 // The hand, not gravity, owns the held position. Do not advance a
                 // pendulum step or invent tension until the ball is released.
-                rope_.taut = length(ball.position - rope_.anchor) >= rope_.length - ball_shape::kTouch;
-                rope_.tension = 0.0;
+                rope.taut = length(ball.position - rope.anchor) >= rope.length - ball_shape::kTouch;
+                rope.tension = 0.0;
             } else {
                 holdOnRope(ball);
             }

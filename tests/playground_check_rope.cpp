@@ -721,3 +721,31 @@ int playgroundRopeChecks() {
 
     return localFailures;
 }
+
+// Five rope-suspended objects must start at exact contact and stay non-overlapping.
+int playgroundRopeChainCheck() {
+    PlaygroundRoom room;
+    room.reset();
+    bool good = PlaygroundRoom::kRopeCount == 5 && PlaygroundRoom::kBallCount == 6;
+    for (std::size_t i = 1; i < PlaygroundRoom::kBallCount; ++i) {
+        const auto& rope = room.ropeForBall(i);
+        good = good && rope.attached && rope.ball == i && room.ball(i).restitution <= 0.02;
+        if (i > 1) {
+            const double gap = gtc::native::length(room.ball(i).position - room.ball(i - 1).position) -
+                               room.ball(i).radius - room.ball(i - 1).radius;
+            good = good && std::abs(gap) < 1e-8;
+        }
+    }
+    double worstPenetration = 0.0;
+    for (int tick = 0; tick < 600; ++tick) {
+        room.advance(1.0 / 20.0);
+        for (std::size_t i = 2; i < PlaygroundRoom::kBallCount; ++i) {
+            const double gap = gtc::native::length(room.ball(i).position - room.ball(i - 1).position) -
+                               room.ball(i).radius - room.ball(i - 1).radius;
+            worstPenetration = std::max(worstPenetration, -gap);
+        }
+    }
+    std::printf("five-rope chain: %s, worst penetration %.3g m over 600 ticks\n",
+                good && worstPenetration <= 1e-6 ? "PASS" : "FAIL", worstPenetration);
+    return good && worstPenetration <= 1e-6 ? 0 : 1;
+}
