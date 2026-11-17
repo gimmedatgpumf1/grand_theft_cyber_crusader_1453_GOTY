@@ -574,6 +574,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
                 if (delta[i] == 0.0) continue;
+                // A speculative row is a one-sided safeguard against a future
+                // intersection, not an impact that may pump energy by unwinding a
+                // previously accumulated impulse. Retain that safe impulse until
+                // the predicted clearance is actually spent (or a real contact
+                // solve replaces the row).
+                if (patch.gap[k] > kQuantum && patch.rebound[k] == 0.0 && delta[i] < 0.0)
+                    continue;
                 pushEnd(k, patch.normal * delta[i], patch.kind);
                 worst = std::max(worst, std::abs(delta[i]));
                 carried[k] += delta[i];
