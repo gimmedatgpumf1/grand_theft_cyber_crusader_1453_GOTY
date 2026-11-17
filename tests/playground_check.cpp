@@ -719,15 +719,16 @@ void resetIsAReset() {
 }
 
 int contactPlacementPerformance() {
-    say("\ntriangle resting on cube tick cost\n");
+    say("\ntriangle dropped onto cube tick cost\n");
     PlaygroundRoom room;
     room.reset();
     settle(room, 300);
     const Vec3 cube = room.bodyMiddle(1);
     double totalMicros = 0.0, worstMicros = 0.0;
-    carryTo(room, 0, cube.x, cube.y + 0.9, &worstMicros);
+    carryTo(room, 0, cube.x, cube.y + 2.0, &worstMicros);
     constexpr int ticks = 600;
     int overBudget = worstMicros > 50000.0 ? 1 : 0;
+    bool touchedCube = false;
     for (int i = 0; i < ticks; ++i) {
         const auto begin = std::chrono::steady_clock::now();
         room.advance(1.0 / 20.0);
@@ -735,12 +736,19 @@ int contactPlacementPerformance() {
                                   std::chrono::steady_clock::now() - begin).count();
         totalMicros += micros;
         worstMicros = std::max(worstMicros, micros);
+        const auto& triangle = room.bodies_[0];
+        const auto& cubeBody = room.bodies_[1];
+        pair_shape::PairManifold patch;
+        if (pair_shape::collide(triangle.position.data(), triangle.count, cubeBody.position.data(),
+                                cubeBody.count, 0.0, patch))
+            touchedCube = true;
         if (micros > 50000.0) ++overBudget;
     }
     char detail[180];
     std::snprintf(detail, sizeof detail, "%d settled ticks: mean %.1f us; worst including placement %.1f us; >50ms %d",
                   ticks, totalMicros / ticks, worstMicros, overBudget);
-    check(overBudget == 0, "triangle-on-cube stays within the 20 Hz budget", detail);
+    check(touchedCube, "released triangle actually contacts the cube during the timed run");
+    check(overBudget == 0, "triangle drop ticks stay within the 20 Hz budget", detail);
     return failures == 0 ? 0 : 1;
 }
 
