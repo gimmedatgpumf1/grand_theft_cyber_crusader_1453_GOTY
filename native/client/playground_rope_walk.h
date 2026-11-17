@@ -766,7 +766,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                         ? outlineGap(state.position, body.position.data(), body.position.data(), body.count, 1.0)
                         : outlineGap(state.position, body.previous.data(), body.position.data(), body.count,
                                      std::clamp((elapsed + step) / dt, 0.0, 1.0));
-                    const double depth = ball.radius - gap.gap;
+                    const double depth = ball.radius + quantum - gap.gap;
                     if (depth > 0.0) {
                         state.position += gap.normal * depth;
                         error = std::max(error, depth);
