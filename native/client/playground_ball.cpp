@@ -422,9 +422,12 @@ void PlaygroundRoom::tickBall(Ball& ball) {
             OutlineHit hit;
             const Vec3 travel = ball.velocity * (kTick * remaining);
             const bool found = stationaryOutline
-                ? circleHitsBody(ball.position,travel,body.position.data(),body.count,ball.radius,hit)
+                ? circleHitsBody(ball.position,travel,body.position.data(),body.count,
+                                 ball.radius + ball_shape::kSkin,hit)
                 : sweptBallAgainstMoving(was,body.position.data(),body.count,ball.position,ball.velocity,
                                          ball.radius,kTick*remaining,hit);
+            if (found && stationaryOutline && !hit.resting)
+                hit.contact = ball.position + travel * hit.along - hit.normal * ball.radius;
             if (!found) continue;
 
             // Already on this surface when the tick began: a contact for the whole
