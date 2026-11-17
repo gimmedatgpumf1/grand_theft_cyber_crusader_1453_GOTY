@@ -2,6 +2,8 @@
 
 #include "client/playground_rope_math.h"
 
+#include <cstdint>
+
 
 // Included once by playground_rope.cpp, after the arc integrator. A rope bob
 // near a body must meet it on the pendulum arc, not on a full tick of free fall
@@ -12,7 +14,13 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     const double gravity = playground_tick::kGravity;
     static std::uint64_t debugTick = 0;
     const std::uint64_t thisDebugTick = debugTick++;
-    const bool traceTick = std::getenv("GTC_TRACE_TICK") != nullptr;
+    const char* traceSetting = std::getenv("GTC_TRACE_TICK");
+    std::uint64_t requestedTraceTick = 0;
+    bool traceAllTicks = traceSetting && traceSetting[0] == 'a';
+    if (traceSetting && !traceAllTicks)
+        for (const char* digit = traceSetting; *digit >= '0' && *digit <= '9'; ++digit)
+            requestedTraceTick = requestedTraceTick * 10 + static_cast<unsigned>(*digit - '0');
+    const bool traceTick = traceSetting && (traceAllTicks || requestedTraceTick == thisDebugTick);
     if (traceTick) {
         std::printf("\\n=== ROPE TICK %llu dt %.9g ===\\n", static_cast<unsigned long long>(thisDebugTick), dt);
         std::printf("BALL mass %.9g radius %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g omega KE %.12g PE %.12g\\n",
