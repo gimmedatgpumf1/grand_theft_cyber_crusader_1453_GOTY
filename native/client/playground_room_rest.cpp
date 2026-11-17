@@ -373,6 +373,7 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
             rope.length = 0.72;
             hanging.position = hanging.previous = hanging.shown = rope.anchor + Vec3{0.0, -rope.length, 0};
             hanging.restitution = 0.02;
+            hanging.frozen = true; // at static equilibrium; wake only on an actual interaction
         }
         hanging.angle = hanging.previousAngle = 0.0;
         rope.taut = true; rope.tension = hanging.mass * kGravity;

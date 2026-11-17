@@ -36,12 +36,9 @@ bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
         if (&balls_[other] == &ball) continue;
         if (length(balls_[other].position - balls_[other].previous) > 0.0) return true;
     }
-    // And the rope, on the ball it is tied to. A rope pulls, and a ball with a rope on
-    // it is not lying on anything -- it is hanging, and its weight is answered by the
-    // rope every tick. A ball that slept through that would be a ball with its weight
-    // unanswered, which is not what a hanging ball is doing.
-    const Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
-    if (rope.attached && rope.ball < kBallCount && &balls_[rope.ball] == &ball) return true;
+    // A taut rope at its static hanging equilibrium is already balanced by its
+    // stored tension. It does not by itself make a sleeping ball active; impacts,
+    // moving neighbours, and moving bodies above wake it through the checks above.
     return false;
 }
 

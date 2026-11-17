@@ -734,7 +734,7 @@ int playgroundRopeChainCheck() {
     // The existing top-right pendulum remains lively; the five additions are quiet.
     good = good && room.ropeForBall(1).anchor.x > 0.0 && room.ball(1).restitution > 0.5;
     for (std::size_t i = 2; i < PlaygroundRoom::kBallCount; ++i) {
-        good = good && room.ball(i).restitution <= 0.02;
+        good = good && room.ball(i).restitution <= 0.02 && room.ball(i).frozen;
         if (i > 2) {
             const double gap = gtc::native::length(room.ball(i).position - room.ball(i - 1).position) -
                                room.ball(i).radius - room.ball(i - 1).radius;
