@@ -740,15 +740,27 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             worst = 0.0;
             for (std::size_t m = 0; m < patches.count; ++m) {
                 const double beforePatchK = traceContext ? traceKinetic() : 0.0;
+                const Manifold& before = patches.items[m];
+                const Vec3 beforeBodyV = bodies_[before.body].velocity;
+                const double beforeBodyW = bodies_[before.body].spin;
+                const Vec3 beforeOtherV = before.other < kBodyCount ? bodies_[before.other].velocity : Vec3{};
+                const double beforeOtherW = before.other < kBodyCount ? bodies_[before.other].spin : 0.0;
                 patchPass(patches.items[m], withGrip);
                 if (traceContext) {
                     const Manifold& p=patches.items[m];
                     const double afterPatchK=traceKinetic();
-                    if (std::abs(afterPatchK-beforePatchK)>1e-9)
-                        std::printf("PATCH_SOLVE_TRACE context=%s grip=%d roundpass=%d patch=%zu body=%zu other=%zu ball=%zu ends=%zu dK=%+.12g Jn0=%.9g Jt0=%.9g Jn1=%.9g Jt1=%.9g gap0=%.9g gap1=%.9g\n",
-                                    traceContext,int(withGrip),pass,m,p.body,p.other,p.ball,p.ends,
-                                    afterPatchK-beforePatchK,p.normalImpulse[0],p.tangentImpulse[0],
-                                    p.normalImpulse[1],p.tangentImpulse[1],p.gap[0],p.gap[1]);
+                    const double deltaK=afterPatchK-beforePatchK;
+                    if (deltaK > 1e-7 || std::getenv("GTC_TRACE_PATCH_ALL"))
+                        std::printf("PATCH_SOLVE_TRACE context=%s grip=%d sweepPass=%d patch=%zu body=%zu other=%zu ball=%zu ends=%zu "
+                                    "dK=%+.12g jn=(%.9g,%.9g) jt=(%.9g,%.9g) gap=(%.9g,%.9g) "
+                                    "bodyV=(%.9g,%.9g)->(%.9g,%.9g) w=%.9g->%.9g otherV=(%.9g,%.9g)->(%.9g,%.9g) ow=%.9g->%.9g\n",
+                                    traceContext,int(withGrip),pass,m,p.body,p.other,p.ball,p.ends,deltaK,
+                                    p.normalImpulse[0],p.normalImpulse[1],p.tangentImpulse[0],p.tangentImpulse[1],p.gap[0],p.gap[1],
+                                    beforeBodyV.x,beforeBodyV.y,bodies_[p.body].velocity.x,bodies_[p.body].velocity.y,
+                                    beforeBodyW,bodies_[p.body].spin,beforeOtherV.x,beforeOtherV.y,
+                                    p.other<kBodyCount?bodies_[p.other].velocity.x:0.0,
+                                    p.other<kBodyCount?bodies_[p.other].velocity.y:0.0,
+                                    beforeOtherW,p.other<kBodyCount?bodies_[p.other].spin:0.0);
                 }
             }
             if (worst < kImpulseTolerance && pass > 0) break;
