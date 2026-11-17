@@ -412,16 +412,20 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
             const double spent = std::clamp(time / dt, 0.0, 1.0);
-            // Activation is the instant before this island's contact impulse. The
-            // room-wide prediction contains impulses from later-in-tick contacts;
-            // interpolating those final velocities back to this event time moves
-            // future momentum into the past (the energy ledger showed +0.84 J in
-            // one activation). Reconstruct only the free-flight state up to the
-            // event from its tick-start velocity and continuous forces; the active
-            // island solve below then applies the contact impulses at this time.
-            body.velocity = body.arrivalVelocity;
-            body.spin = body.arrivalSpin;
-            bodyForces(i, time);
+            if (spent < body.ropeEventAt) {
+                const double preFraction = body.ropeEventAt > 0.0 ? spent / body.ropeEventAt : 0.0;
+                body.velocity = body.arrivalVelocity +
+                                (body.ropeEventVelocity - body.arrivalVelocity) * preFraction;
+                body.spin = body.arrivalSpin + (body.ropeEventSpin - body.arrivalSpin) * preFraction;
+            } else if (body.ropeEventAt < 1.0) {
+                const double postFraction = (spent - body.ropeEventAt) / (1.0 - body.ropeEventAt);
+                body.velocity = body.ropeEventVelocity +
+                                (predictedVelocity[i] - body.ropeEventVelocity) * postFraction;
+                body.spin = body.ropeEventSpin + (predictedSpin[i] - body.ropeEventSpin) * postFraction;
+            } else {
+                body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
+                body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
+            }
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
@@ -497,7 +501,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 // old prediction through it; do not give it another half-step.
                 if (atStart) bodyForces(i, 0.5 * step);
                 const double activationEnergyAfter = localEnergy();
-                if (activationEnergyAfter - activationEnergyBefore > 1e-6 || std::getenv("GTC_TRACE_ACTIVATE"))
+                if (traceTick || std::getenv("GTC_TRACE_ACTIVATE"))
                     std::printf("ACTIVATE t %.9f body %zu dE %+0.12g centre (%+.9g,%+.9g)->(%+.9g,%+.9g) v (%+.9g,%+.9g)->(%+.9g,%+.9g) omega %+.9g->%+.9g event %.9g time %.9g predicted (%+.9g,%+.9g) arrival (%+.9g,%+.9g)\\n",
                                 time, i, activationEnergyAfter-activationEnergyBefore,
                                 activationCentreBefore.x,activationCentreBefore.y,body.centre.x,body.centre.y,
