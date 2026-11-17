@@ -291,6 +291,13 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             placeCorners(body);
         }
         stopped[std::size_t(hitBody)] = true;
+        if (traceTick)
+            std::printf("ROPE_EVENT_REWIND tick %llu t=%.9g body=%d p=(%.12g,%.12g) predictedEnd=(%.12g,%.12g) previous=(%.12g,%.12g) "
+                        "eventVelocity=(%.12g,%.12g) arrival=(%.12g,%.12g)\\n",
+                        static_cast<unsigned long long>(thisDebugTick),elapsed,hitBody,
+                        body.centre.x,body.centre.y,predictedVelocity[std::size_t(hitBody)].x,
+                        predictedVelocity[std::size_t(hitBody)].y,body.previousCentre.x,body.previousCentre.y,
+                        body.velocity.x,body.velocity.y,body.arrivalVelocity.x,body.arrivalVelocity.y);
         const OutlineGap actual = outlineGap(ball.position, body.position.data(), body.position.data(), body.count, 1.0);
         hitNormal = actual.normal;
         const Vec3 contact = ball.position - hitNormal * ball.radius;
@@ -897,6 +904,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         if (length(ropeTotal) > 1e-12) ropeImpulse(ropeTotal);
     }
 
+    if (traceTick) {
+        std::printf("ROPE_END context=%s call=%llu elapsed=%.12g/%.12g constrained=%d ball p=(%.12g,%.12g) v=(%.12g,%.12g) spin=%.12g\\n",
+                    traceContext ? traceContext : "unspecified",static_cast<unsigned long long>(thisDebugTick),elapsed,dt,
+                    int(constrainedStep),state.position.x,state.position.y,state.velocity.x,state.velocity.y,ball.spin);
+        for (std::size_t i=0;i<kBodyCount;++i) if (bodies_[i].count)
+            std::printf("ROPE_END_BODY id=%zu p=(%.12g,%.12g) v=(%.12g,%.12g) spin=%.12g stopped=%d\\n",
+                        i,bodies_[i].centre.x,bodies_[i].centre.y,bodies_[i].velocity.x,bodies_[i].velocity.y,
+                        bodies_[i].spin,int(stopped[i]));
+    }
     ball.position = state.position;
     ball.velocity = state.velocity;
     const Vec3 arm = ball.position - anchor;
