@@ -77,16 +77,20 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         Vec3 normal{0, 1, 0};
         Vec3 closingSpeed{0, 0, 0};
     };
-    std::vector<Approach> approaches;
-    approaches.reserve(4 * kMaxCorners);
+    constexpr std::size_t kApproachCapacity = kMaxCorners + 2 * kMaxCorners * (kBodyCount - 1) + kBallCount;
+    std::array<Approach, kApproachCapacity> approaches{};
+    std::size_t approachCount = 0;
     const auto survey = [&] {
-        approaches.clear();
+        approachCount = 0;
+        const auto add = [&](const Approach& row) {
+            if (approachCount < approaches.size()) approaches[approachCount++] = row;
+        };
         for (std::size_t i = 0; i < body.count; ++i) {
             Approach row;
             row.gap = here[i].y - playground_tick::kSurfaceY;
             row.normal = Vec3{0, 1, 0};
             row.closingSpeed = pointSpeed(body, here[i]);
-            approaches.push_back(row);
+            add(row);
         }
         for (std::size_t other = 0; other < kBodyCount; ++other) {
             if (other == self || bodies_[other].count == 0) continue;
@@ -98,7 +102,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 row.gap = gap.gap;
                 row.normal = gap.normal;
                 row.closingSpeed = pointSpeed(body, here[i]) - pointSpeed(solid, here[i]);
-                approaches.push_back(row);
+                add(row);
             }
             for (std::size_t i = 0; i < solid.count; ++i) {
                 const OutlineGap gap =
@@ -107,7 +111,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
                 row.gap = gap.gap;
                 row.normal = gap.normal;
                 row.closingSpeed = pointSpeed(body, solid.position[i]) - pointSpeed(solid, solid.position[i]);
-                approaches.push_back(row);
+                add(row);
             }
         }
         // The balls, and the one kind of row in this survey whose normal is the wrong
@@ -142,7 +146,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             row.gap = gap.gap - ball.radius;
             row.normal = gap.normal * -1.0;
             row.closingSpeed = pointSpeed(body, ball.position) - ball.velocity;
-            approaches.push_back(row);
+            add(row);
         }
     };
 
@@ -153,7 +157,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     poseAt(0.0);
     survey();
     double startGap = 1e30;
-    for (const Approach& row : approaches) startGap = std::min(startGap, row.gap);
+    for (std::size_t i = 0; i < approachCount; ++i) startGap = std::min(startGap, approaches[i].gap);
     const double limit = (mayBeginInContact && startGap < -playground_tick::kQuantum)
                              ? startGap
                              : -playground_tick::kQuantum;
@@ -189,9 +193,9 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     // its turn taken by absorbRefusedStep(), and the face running out from under it.
     poseAt(1.0);
     survey();
-    std::vector<char> crossing(approaches.size(), 0);
+    std::array<char, kApproachCapacity> crossing{};
     bool anyCrossing = false;
-    for (std::size_t i = 0; i < approaches.size(); ++i) {
+    for (std::size_t i = 0; i < approachCount; ++i) {
         if (approaches[i].gap - limit < 0.0) {
             crossing[i] = 1;
             anyCrossing = true;
@@ -205,7 +209,7 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         poseAt(t);
         survey();
         double soonest = 1e30;
-        for (std::size_t i = 0; i < approaches.size(); ++i) {
+        for (std::size_t i = 0; i < approachCount; ++i) {
             if (!crossing[i]) continue;
             const Approach& row = approaches[i];
             const double need = row.gap - limit;
