@@ -21,6 +21,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         for (const char* digit = traceSetting; *digit >= '0' && *digit <= '9'; ++digit)
             requestedTraceTick = requestedTraceTick * 10 + static_cast<unsigned>(*digit - '0');
     const bool traceTick = traceSetting && (traceAllTicks || requestedTraceTick == thisDebugTick);
+    const auto systemKinetic = [&]() {
+        const double ballI = 0.4 * ball.mass * ball.radius * ball.radius;
+        double value = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) +
+                       0.5 * ballI * ball.spin * ball.spin;
+        for (const Body& b : bodies_)
+            if (b.count > 0) value += 0.5 * b.mass * dot(b.velocity,b.velocity) +
+                                     0.5 * b.moment * b.spin * b.spin;
+        return value;
+    };
     if (traceTick) {
         std::printf("\\n=== ROPE TICK %llu dt %.9g ===\\n", static_cast<unsigned long long>(thisDebugTick), dt);
         std::printf("BALL mass %.9g radius %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g omega KE %.12g PE %.12g\\n",
@@ -288,7 +297,20 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const bool sustained = taken < dt / 100.0 && std::abs(approach) <= playground_detail::kRestSpeed;
         ball.answered = true;
         ball.impacted = !sustained;
+        const double beforeNormalImpactK = systemKinetic();
+        const Vec3 preImpactBallVelocity = ball.velocity;
+        const Vec3 preImpactBodyVelocity = body.velocity;
+        const double preImpactBallSpin = ball.spin, preImpactBodySpin = body.spin;
         ballContact(ball, hitNormal, hitBody, contact, 0.0, true, sustained, elapsed / dt, true);
+        if (traceTick)
+            std::printf("EVENT_NORMAL_IMPULSE t %.9f body %d point(%.9g,%.9g) normal(%.9g,%.9g) "
+                        "K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g)->(%.9g,%.9g) ballW %.9g->%.9g "
+                        "bodyV(%.9g,%.9g)->(%.9g,%.9g) bodyW %.9g->%.9g\\n",
+                        elapsed, hitBody, contact.x,contact.y,hitNormal.x,hitNormal.y,
+                        beforeNormalImpactK,systemKinetic(),systemKinetic()-beforeNormalImpactK,
+                        preImpactBallVelocity.x,preImpactBallVelocity.y,ball.velocity.x,ball.velocity.y,
+                        preImpactBallSpin,ball.spin,preImpactBodyVelocity.x,preImpactBodyVelocity.y,
+                        body.velocity.x,body.velocity.y,preImpactBodySpin,body.spin);
         // Friction sees the body after the normal impulse, not its pre-impact speed.
         ball.tickSpeed[std::size_t(hitBody)] = body.velocity;
         ball.tickSpin[std::size_t(hitBody)] = body.spin;
@@ -304,8 +326,18 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state = State{ball.position, ball.velocity};
             break;
         }
+        const double beforeFrictionK = systemKinetic();
         settleBallFriction(ball);
+        if (traceTick)
+            std::printf("EVENT_BALL_FRICTION t %.9f K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g) spin %.9g\\n",
+                        elapsed,beforeFrictionK,systemKinetic(),systemKinetic()-beforeFrictionK,
+                        ball.velocity.x,ball.velocity.y,ball.spin);
+        const double beforeSupportK = systemKinetic();
         answerSupportedShapes();
+        if (traceTick)
+            std::printf("EVENT_SUPPORT_RESPONSE t %.9f K %.12g->%.12g dK %+.12g body %d V(%.9g,%.9g) spin %.9g\\n",
+                        elapsed,beforeSupportK,systemKinetic(),systemKinetic()-beforeSupportK,
+                        hitBody,body.velocity.x,body.velocity.y,body.spin);
         state = State{ball.position, ball.velocity};
         if (taut) {
             const Vec3 arm = state.position - anchor;
