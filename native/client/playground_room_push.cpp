@@ -125,6 +125,10 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // follows in pushBallSupported(), and for the same reason: an arrow for a blow
     // that was refused would be an arrow with no momentum behind it.
     const Vec3 given = kind == ForceKind::Ball ? bodyFree(body, impulse) : impulse;
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
+    const Vec3 traceVelocityBefore = body.velocity;
+    const double traceSpinBefore = body.spin;
     body.velocity = body.pivoted ? Vec3{} : body.velocity + given * (1.0 / body.mass);
     body.spin += (arm.x * given.y - arm.y * given.x) / body.moment;
     // A body that was asleep has just been woken by this, and it starts its
@@ -164,6 +168,12 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // body felt one. The refusal is the support's business, and it is the same rule
     // pushBallSupported() has always followed for the ball.
     recordImpulse(at, given, kind, index);
+    if (trace)
+        std::printf("IMPULSE_TRACE context=%s target=body:%zu kind=%u at=(%.9g,%.9g) offeredJ=(%.12g,%.12g) appliedJ=(%.12g,%.12g) "
+                    "v=(%.12g,%.12g)->(%.12g,%.12g) w=%.12g->%.12g systemDE=%+.12g\n",
+                    std::getenv("GTC_TRACE_CONTEXT"),index,static_cast<unsigned>(kind),at.x,at.y,
+                    impulse.x,impulse.y,given.x,given.y,traceVelocityBefore.x,traceVelocityBefore.y,
+                    body.velocity.x,body.velocity.y,traceSpinBefore,body.spin,totalEnergy()-traceEnergyBefore);
 }
 
 // And the same for the ball: a blow at a place changes its speed along the line of
@@ -172,6 +182,10 @@ void PlaygroundRoom::pushBall(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind)
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - ball.position;
     const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
+    const Vec3 traceVelocityBefore = ball.velocity;
+    const double traceSpinBefore = ball.spin;
     ball.velocity = ball.velocity + impulse * (1.0 / ball.mass);
     ball.spin += (arm.x * impulse.y - arm.y * impulse.x) / moment;
     ball.blows = ball.blows + impulse;
@@ -179,6 +193,12 @@ void PlaygroundRoom::pushBall(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind)
     // The ball is the room's other kind of solid, and it is its own entry: an impulse
     // on it is a force on the ball, not on whatever it is touching.
     recordImpulse(at, impulse, kind, ownerOf(ball));
+    if (trace)
+        std::printf("IMPULSE_TRACE context=%s target=ball:%zu kind=%u at=(%.9g,%.9g) J=(%.12g,%.12g) "
+                    "v=(%.12g,%.12g)->(%.12g,%.12g) w=%.12g->%.12g systemDE=%+.12g\n",
+                    std::getenv("GTC_TRACE_CONTEXT"),ownerOf(ball),static_cast<unsigned>(kind),at.x,at.y,
+                    impulse.x,impulse.y,traceVelocityBefore.x,traceVelocityBefore.y,
+                    ball.velocity.x,ball.velocity.y,traceSpinBefore,ball.spin,totalEnergy()-traceEnergyBefore);
 }
 
 // An impulse on a ball that is resting on something: the translation it is free to
@@ -188,6 +208,10 @@ void PlaygroundRoom::pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceK
     const Vec3 arm = at - ball.position;
     const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
     const Vec3 free = ballFree(ball, impulse, except);
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
+    const Vec3 traceVelocityBefore = ball.velocity;
+    const double traceSpinBefore = ball.spin;
     ball.velocity = ball.velocity + free * (1.0 / ball.mass);
     // The turn comes from the impulse the ball was actually given, not from the one
     // that was offered. The part a support refuses is refused whole: it is not a push
@@ -208,6 +232,12 @@ void PlaygroundRoom::pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceK
     // a blow it never took, and the account was off by twenty-five newton seconds on
     // a cube dropped a metre onto it.
     recordImpulse(at, free, kind, ownerOf(ball));
+    if (trace)
+        std::printf("IMPULSE_TRACE context=%s target=ball:%zu kind=%u at=(%.9g,%.9g) offeredJ=(%.12g,%.12g) freeJ=(%.12g,%.12g) "
+                    "v=(%.12g,%.12g)->(%.12g,%.12g) w=%.12g->%.12g systemDE=%+.12g\n",
+                    std::getenv("GTC_TRACE_CONTEXT"),ownerOf(ball),static_cast<unsigned>(kind),at.x,at.y,
+                    impulse.x,impulse.y,free.x,free.y,traceVelocityBefore.x,traceVelocityBefore.y,
+                    ball.velocity.x,ball.velocity.y,traceSpinBefore,ball.spin,totalEnergy()-traceEnergyBefore);
 }
 
 // A point of the room meets a body. The same law as every other contact: the
