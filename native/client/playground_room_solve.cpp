@@ -640,7 +640,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
                 patch.tangentImpulse[k] = 0.0;
             }
-            if (!(patch.normalImpulse[k] > 0.0)) continue;
+            // A speculative normal row may keep a pair from closing farther than
+            // its clearance permits, but separated shapes cannot transmit friction.
+            // Do not turn a predicted future meeting into a tangential impulse.
+            if (patch.gap[k] > kQuantum || !(patch.normalImpulse[k] > 0.0)) continue;
             ++pressed;
             load += patch.normalImpulse[k];
         }
