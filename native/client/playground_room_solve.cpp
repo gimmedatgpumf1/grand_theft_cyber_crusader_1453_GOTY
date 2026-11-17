@@ -42,7 +42,7 @@ constexpr double kSolveTolerance = 1e-12;// A sweep of the patches is over when 
 // see. It is a separate number from the one above because it answers a separate
 // question: the sweep now stops when the *answer* has stopped moving rather than when
 // the surfaces have stopped closing.
-constexpr double kImpulseTolerance = 1e-7;  // N s; changes smaller than a tenth of a micronewton are immaterial per solve
+constexpr double kImpulseTolerance = 1e-12;  // N s
 // The most times a patch is asked for its load, then its grip, then its load again
 // before the room is taken as answered. Grip lands a moment on a body that changes
 // where it presses, so the two answers change each other, and a round that changes
@@ -53,7 +53,7 @@ constexpr int kGripRoundsMax = 48;
 // micronewton second over a tick is a force of twenty nanonewtons: far below the
 // weight of a speck, and far below anything the eye can find in a shape's travel over
 // an hour. Asking for more than this buys nothing but arithmetic.
-constexpr double kAgree = 1e-4;  // N s; below any resolvable change in a body's tick motion
+constexpr double kAgree = 1e-9;  // N s
 }  // namespace
 
 // The answer to a whole configuration of patches at once.
