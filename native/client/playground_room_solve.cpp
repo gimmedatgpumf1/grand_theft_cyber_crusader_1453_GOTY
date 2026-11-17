@@ -76,6 +76,17 @@ constexpr double kAgree = 1e-9;  // N s
 // driven into the floor -- hold and slip may be a hair from where they settle, but
 // nothing goes into anything.
 bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
+    const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
+    const auto traceKinetic = [&]() {
+        double value=0.0;
+        for (const Body& b:bodies_) if (b.count)
+            value += 0.5*b.mass*dot(b.velocity,b.velocity)+0.5*b.moment*b.spin*b.spin;
+        for (const Ball& b:balls_) {
+            const double inertia=0.4*b.mass*b.radius*b.radius;
+            value += 0.5*b.mass*dot(b.velocity,b.velocity)+0.5*inertia*b.spin*b.spin;
+        }
+        return value;
+    };
     bool closingAtAll = false;
     // The largest change the last sweep made, in newton seconds. A sweep is over when
     // it has nothing left to say -- see kImpulseTolerance for why the question is
@@ -727,7 +738,19 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const auto sweep = [&](bool withGrip) {
         for (int pass = 0; pass < kSolvePasses; ++pass) {
             worst = 0.0;
-            for (std::size_t m = 0; m < patches.count; ++m) patchPass(patches.items[m], withGrip);
+            for (std::size_t m = 0; m < patches.count; ++m) {
+                const double beforePatchK = traceContext ? traceKinetic() : 0.0;
+                patchPass(patches.items[m], withGrip);
+                if (traceContext) {
+                    const Manifold& p=patches.items[m];
+                    const double afterPatchK=traceKinetic();
+                    if (std::abs(afterPatchK-beforePatchK)>1e-9)
+                        std::printf("PATCH_SOLVE_TRACE context=%s grip=%d roundpass=%d patch=%zu body=%zu other=%zu ball=%zu ends=%zu dK=%+.12g Jn0=%.9g Jt0=%.9g Jn1=%.9g Jt1=%.9g gap0=%.9g gap1=%.9g\n",
+                                    traceContext,int(withGrip),pass,m,p.body,p.other,p.ball,p.ends,
+                                    afterPatchK-beforePatchK,p.normalImpulse[0],p.tangentImpulse[0],
+                                    p.normalImpulse[1],p.tangentImpulse[1],p.gap[0],p.gap[1]);
+                }
+            }
             if (worst < kImpulseTolerance && pass > 0) break;
         }
     };
