@@ -238,6 +238,15 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         }
         const double next = t + soonest;
         if (!(next < 1.0)) return 1.0;
+        // The next conservative advance is below the room's geometric resolution:
+        // taking another survey cannot move any point by a resolvable amount. Stop
+        // at the current safe pose rather than re-surveying the same near-contact
+        // configuration through a long sequence of sub-quantum time advances.
+        const double pointSpeed = length(body.velocity) + std::abs(body.spin) * furthest;
+        if ((next - t) * kTick * pointSpeed <= playground_tick::kQuantum) {
+            if (blockedBy != nullptr) *blockedBy = stopping;
+            return t;
+        }
         // Stop when floating-point precision can no longer advance time. This is
         // convergence at the representable contact instant, not a pass-count cutoff.
         if (!(next > t)) {
