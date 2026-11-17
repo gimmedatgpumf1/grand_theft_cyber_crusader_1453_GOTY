@@ -20,7 +20,6 @@ using namespace playground_detail;
 
 // Defined with the contact response; shared by the standing-contact solve.
 bool holdsBall(Vec3 normal);
-constexpr int kBallSurfacePasses = 64;
 
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
 // dot and every body count: if any of them is moving, the ball is looked at.
@@ -188,7 +187,7 @@ void PlaygroundRoom::settleBallSurfaces(Ball& ball) {
             bool used = false;
         };
         std::array<FaceBlow, kBodyCount * kMaxOutlineCorners> blows{};
-        for (int pass = 0; pass < kBallSurfacePasses; ++pass) {
+        for (;;) {
             bool answered = false;
             const Vec3 wasSpeed = ball.velocity;
             for (std::size_t index = 0; index < kBodyCount; ++index) {

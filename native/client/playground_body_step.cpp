@@ -201,7 +201,6 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
     if (!anyCrossing) return 1.0;
 
     Vec3 stopping{0, 1, 0};
-    double fastest = 0.0;
     const auto soonestMeeting = [&](double t) {
         poseAt(t);
         survey();
@@ -223,14 +222,13 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             if (answer < soonest) {
                 soonest = answer;
                 stopping = row.normal;
-                fastest = closing;
             }
         }
         return soonest;
     };
 
     double t = 0.0;
-    for (int pass = 0; pass < 96; ++pass) {
+    for (;;) {
         const double soonest = soonestMeeting(t);
         if (!(soonest > 0.0)) {
             if (blockedBy != nullptr) *blockedBy = stopping;
@@ -238,11 +236,14 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         }
         const double next = t + soonest;
         if (!(next < 1.0)) return 1.0;
+        // Stop when floating-point precision can no longer advance time. This is
+        // convergence at the representable contact instant, not a pass-count cutoff.
+        if (!(next > t)) {
+            if (blockedBy != nullptr) *blockedBy = stopping;
+            return t;
+        }
         t = next;
     }
-    (void)fastest;
-    if (blockedBy != nullptr) *blockedBy = stopping;
-    return t;
 }
 
 // A shape may not be carried through the ball.
