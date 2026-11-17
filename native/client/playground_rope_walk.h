@@ -257,6 +257,16 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const double taken = std::min(first, phase);
         state = sample(state, taut, taken);
         ball.angle += ball.spin * taken;
+        // A body activated at an earlier contact time is no longer on its
+        // predicted (unimpacted) path. Advance its actual post-impact twist over
+        // this interval instead of pinning it at the rewound time-of-impact pose.
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            Body& moving = bodies_[i];
+            if (!stopped[i] || bodyHeld(i) || moving.pivoted || moving.frozen) continue;
+            moving.centre += moving.velocity * taken;
+            moving.angle += moving.spin * taken;
+            placeCorners(moving);
+        }
         elapsed += taken;
         ball.position = state.position;
         ball.velocity = state.velocity;
