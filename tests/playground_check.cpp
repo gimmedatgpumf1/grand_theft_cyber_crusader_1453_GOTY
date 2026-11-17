@@ -726,6 +726,13 @@ int contactPlacementPerformance() {
     const Vec3 cube = room.bodyMiddle(1);
     double totalMicros = 0.0, worstMicros = 0.0;
     carryTo(room, 0, cube.x, cube.y + 2.0, &worstMicros);
+    auto& droppedTriangle = room.bodies_[0];
+    const Vec3 dropOffset{cube.x - droppedTriangle.centre.x, cube.y + 2.0 - droppedTriangle.centre.y, 0.0};
+    droppedTriangle.centre += dropOffset;
+    for (std::size_t i = 0; i < droppedTriangle.count; ++i) droppedTriangle.position[i] += dropOffset;
+    droppedTriangle.velocity = {};
+    droppedTriangle.spin = 0.0;
+    droppedTriangle.frozen = false;
     constexpr int ticks = 600;
     int overBudget = worstMicros > 50000.0 ? 1 : 0;
     bool touchedCube = false;
