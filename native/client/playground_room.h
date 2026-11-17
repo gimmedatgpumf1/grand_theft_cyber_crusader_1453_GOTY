@@ -340,7 +340,7 @@ private:
     // The shapes' own supports, answered again: everything the ball pushed has its
     // weight on something, and that something has the last word on where the shape
     // ends the tick.
-    void answerSupportedShapes(double remaining = 0.0);
+    void answerSupportedShapes();
     // A body's state of rest, decided from its own motion and from what is under
     // it rather than from how little it happened to move.
     void settleBodies();

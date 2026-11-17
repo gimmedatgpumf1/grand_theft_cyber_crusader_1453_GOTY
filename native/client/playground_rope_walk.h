@@ -357,7 +357,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const double beforeSupportK = systemKinetic();
         const Vec3 supportCentreBefore = body.centre;
         const Vec3 supportBallPositionBefore = ball.position;
-        answerSupportedShapes(std::max(dt - elapsed, dt / 10000.0));
+        answerSupportedShapes();
         if (traceTick)
             std::printf("EVENT_SUPPORT_RESPONSE t %.9f K %.12g->%.12g dK %+.12g body %d "
                         "bodyP(%.9g,%.9g)->(%.9g,%.9g) ballP(%.9g,%.9g)->(%.9g,%.9g) "

@@ -627,7 +627,7 @@ void PlaygroundRoom::tickBodies() {
 // contact carried further and not a new one. It is only the shapes that are asked --
 // the ball's own faces are settled by the ball, in settleBallSurfaces(), and answering
 // them here as well would answer one meeting twice.
-void PlaygroundRoom::answerSupportedShapes(double remaining) {
+void PlaygroundRoom::answerSupportedShapes() {
     ManifoldSet again;
     std::size_t slot[kMaxTickManifolds] = {};
     for (std::size_t i = 0; i < tickPatches_.count; ++i) {
@@ -635,32 +635,9 @@ void PlaygroundRoom::answerSupportedShapes(double remaining) {
         // its index: `ball` is an index now, and read as a yes it skipped the body's
         // own patches (kNoBall is not nought) and kept the thrown ball's (index nought
         // is nought) -- the wrong set, both ways round.
-        const Manifold& saved = tickPatches_.items[i];
-        if (saved.ball < kBallCount) continue;
-        Manifold current = saved;
-        // Tick-body manifolds store clearance at the predicted end pose. A rope
-        // impact asks the support solver at an earlier event time, so transport each
-        // speculative gap back to that time before applying its clearance bias.
-        // Convert the resulting event-time clearance back to the solver's tick-sized
-        // bias convention; otherwise a future end-pose gap is spent over the wrong
-        // interval and the row can return impulse while the bodies are still far apart.
-        const double span = remaining > 0.0 ? std::clamp(remaining, kTick / 10000.0, kTick) : kTick;
-        for (std::size_t k = 0; k < current.ends; ++k) {
-            if (current.gap[k] <= kQuantum) continue;
-            Vec3 otherSpeed{};
-            if (current.other < kBodyCount)
-                otherSpeed = pointSpeed(bodies_[current.other], current.point[k]);
-            const double relativeNormal = dot(pointSpeed(bodies_[current.body],current.point[k])-
-                                              otherSpeed,current.normal);
-            const double eventGap = std::max(0.0,current.gap[k]-relativeNormal*span);
-            const double beforeGap = current.gap[k];
-            current.gap[k] = eventGap * (kTick / span);
-            if (std::getenv("GTC_TRACE_CONTEXT"))
-                std::printf("SUPPORT_GAP_TRANSPORT context=%s slot=%zu end=%zu gapEnd=%.12g relN=%.12g span=%.12g gapEvent=%.12g biasGap=%.12g\n",
-                            std::getenv("GTC_TRACE_CONTEXT"),i,k,beforeGap,relativeNormal,span,eventGap,current.gap[k]);
-        }
+        if (tickPatches_.items[i].ball < kBallCount) continue;
         slot[again.count] = i;
-        again.add(current);
+        again.add(tickPatches_.items[i]);
     }
     if (again.count == 0) return;
     // Every impulse this applies is written into the ledger where it acts, by
