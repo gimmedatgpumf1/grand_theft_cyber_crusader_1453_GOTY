@@ -210,9 +210,11 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             const Approach& row = approaches[i];
             const double need = row.gap - limit;
             const double closing = -dot(row.closingSpeed, row.normal);
-            if (!(need > 0.0)) {
-                // Already at the depth the step may not pass, and still going in: the
-                // step may not begin.
+            if (!(need > playground_tick::kQuantum)) {
+                // The sweep is within one geometric quantum of contact. Stop at the
+                // current conservative fraction instead of taking ever-smaller time
+                // advances around two faces that meet at a corner. This gives a
+                // scale-aware convergence condition without a fixed pass-count cap.
                 if (!(closing > 0.0)) continue;
                 stopping = row.normal;
                 return 0.0;
