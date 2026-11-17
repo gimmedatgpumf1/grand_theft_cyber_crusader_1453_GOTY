@@ -75,7 +75,7 @@ constexpr double kAgree = 1e-9;  // N s
 // and ending on the normal means a tick can never finish with a corner still being
 // driven into the floor -- hold and slip may be a hair from where they settle, but
 // nothing goes into anything.
-bool PlaygroundRoom::solveContacts(ManifoldSet& patches, bool suppressSeparatedGrip) {
+bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
     const auto traceKinetic = [&]() {
         double value=0.0;
@@ -643,8 +643,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches, bool suppressSeparatedG
             // A speculative normal row may keep a pair from closing farther than
             // its clearance permits, but separated shapes cannot transmit friction.
             // Do not turn a predicted future meeting into a tangential impulse.
-            if ((suppressSeparatedGrip && other != nullptr && patch.gap[k] > kQuantum) ||
-                !(patch.normalImpulse[k] > 0.0)) continue;
+            if (!(patch.normalImpulse[k] > 0.0)) continue;
             ++pressed;
             load += patch.normalImpulse[k];
         }
