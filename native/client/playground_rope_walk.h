@@ -737,7 +737,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             const Vec3 beforeProjectionPosition = state.position;
             const double energyBeforeProjection = localEnergy();
             const double beforeProjectionY = state.position.y;
-            for (int pass = 0; pass < 16; ++pass) {
+            for (int pass = 0; pass < 64; ++pass) {
                 double error = 0.0;
                 const Vec3 arm = state.position - anchor;
                 const double reach = length(arm);
