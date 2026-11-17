@@ -354,18 +354,12 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             std::printf("EVENT_BALL_FRICTION t %.9f K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g) spin %.9g\n",
                         elapsed,beforeFrictionK,systemKinetic(),systemKinetic()-beforeFrictionK,
                         ball.velocity.x,ball.velocity.y,ball.spin);
-        const double beforeSupportK = systemKinetic();
-        const Vec3 supportCentreBefore = body.centre;
-        const Vec3 supportBallPositionBefore = ball.position;
-        answerSupportedShapes();
+        // Do not solve the full-tick speculative support manifold at this earlier
+        // impact-time state. The remaining-time constrained island below gathers and
+        // answers shape supports along the actual post-impact trajectory.
         if (traceTick)
-            std::printf("EVENT_SUPPORT_RESPONSE t %.9f K %.12g->%.12g dK %+.12g body %d "
-                        "bodyP(%.9g,%.9g)->(%.9g,%.9g) ballP(%.9g,%.9g)->(%.9g,%.9g) "
-                        "bodyV(%.9g,%.9g) spin %.9g ballV(%.9g,%.9g) spin %.9g\n",
-                        elapsed,beforeSupportK,systemKinetic(),systemKinetic()-beforeSupportK,
-                        hitBody,supportCentreBefore.x,supportCentreBefore.y,body.centre.x,body.centre.y,
-                        supportBallPositionBefore.x,supportBallPositionBefore.y,ball.position.x,ball.position.y,
-                        body.velocity.x,body.velocity.y,body.spin,ball.velocity.x,ball.velocity.y,ball.spin);
+            std::printf("EVENT_SUPPORT_DEFER t %.9f body %d remaining %.9g to constrained island solve\n",
+                        elapsed,hitBody,dt-elapsed);
         state = State{ball.position, ball.velocity};
         if (taut) {
             const Vec3 arm = state.position - anchor;
