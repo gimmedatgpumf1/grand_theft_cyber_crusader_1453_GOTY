@@ -362,11 +362,19 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         const std::size_t rb = rope.ropeBatch, ab = rope.anchorBatch;
         rope = Rope{}; rope.ropeBatch = rb; rope.anchorBatch = ab;
         rope.ball = i + 1; rope.attached = true;
-        rope.anchor = Vec3{-3.55 + 2.0 * balls_[i + 1].radius * double(i), 3.65, 0};
-        rope.length = 0.72;
         Ball& hanging = balls_[i + 1];
-        hanging.position = hanging.previous = hanging.shown = rope.anchor + Vec3{0.0, -rope.length, 0};
-        hanging.angle = hanging.previousAngle = 0.0; hanging.restitution = 0.02;
+        if (i == 0) {
+            // Preserve the original lively pendulum at the upper right.
+            hanging.position = hanging.previous = hanging.shown = rope.anchor + Vec3{0.0, -rope.length, 0};
+        } else {
+            // Five new low-bounce bobs form a touching line at the upper left.
+            const std::size_t chainIndex = i - 1;
+            rope.anchor = Vec3{-3.55 + 2.0 * balls_[i + 1].radius * double(chainIndex), 3.65, 0};
+            rope.length = 0.72;
+            hanging.position = hanging.previous = hanging.shown = rope.anchor + Vec3{0.0, -rope.length, 0};
+            hanging.restitution = 0.02;
+        }
+        hanging.angle = hanging.previousAngle = 0.0;
         rope.taut = true; rope.tension = hanging.mass * kGravity;
     }
     restingOnBall_ = false;

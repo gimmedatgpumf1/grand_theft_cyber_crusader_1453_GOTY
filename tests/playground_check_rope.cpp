@@ -726,11 +726,16 @@ int playgroundRopeChecks() {
 int playgroundRopeChainCheck() {
     PlaygroundRoom room;
     room.reset();
-    bool good = PlaygroundRoom::kRopeCount == 5 && PlaygroundRoom::kBallCount == 6;
+    bool good = PlaygroundRoom::kRopeCount == 6 && PlaygroundRoom::kBallCount == 7;
     for (std::size_t i = 1; i < PlaygroundRoom::kBallCount; ++i) {
         const auto& rope = room.ropeForBall(i);
-        good = good && rope.attached && rope.ball == i && room.ball(i).restitution <= 0.02;
-        if (i > 1) {
+        good = good && rope.attached && rope.ball == i;
+    }
+    // The existing top-right pendulum remains lively; the five additions are quiet.
+    good = good && room.ropeForBall(1).anchor.x > 0.0 && room.ball(1).restitution > 0.5;
+    for (std::size_t i = 2; i < PlaygroundRoom::kBallCount; ++i) {
+        good = good && room.ball(i).restitution <= 0.02;
+        if (i > 2) {
             const double gap = gtc::native::length(room.ball(i).position - room.ball(i - 1).position) -
                                room.ball(i).radius - room.ball(i - 1).radius;
             good = good && std::abs(gap) < 1e-8;
@@ -739,7 +744,7 @@ int playgroundRopeChainCheck() {
     double worstPenetration = 0.0;
     for (int tick = 0; tick < 600; ++tick) {
         room.advance(1.0 / 20.0);
-        for (std::size_t i = 2; i < PlaygroundRoom::kBallCount; ++i) {
+        for (std::size_t i = 3; i < PlaygroundRoom::kBallCount; ++i) {
             const double gap = gtc::native::length(room.ball(i).position - room.ball(i - 1).position) -
                                room.ball(i).radius - room.ball(i - 1).radius;
             worstPenetration = std::max(worstPenetration, -gap);

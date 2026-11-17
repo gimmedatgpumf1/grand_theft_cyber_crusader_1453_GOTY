@@ -96,7 +96,7 @@ public:
     // are their own, one each, because a blow between two balls is a pair of forces on
     // two different solids and the arrows have to be able to tell them apart. The dot
     // and the anchor are the two ends of other pairs, and they have slots of their own.
-    static constexpr std::size_t kRopeCount = 5;
+    static constexpr std::size_t kRopeCount = 6; // one existing top-right bob plus five new bobs
     static constexpr std::size_t kBallCount = kRopeCount + 1;
     // The ball on the rope, and the ball that is thrown. Two of one kind; the names are
     // only about where each one starts.
