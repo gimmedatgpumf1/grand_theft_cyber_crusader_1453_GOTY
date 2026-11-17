@@ -77,6 +77,8 @@ constexpr double kAgree = 1e-9;  // N s
 // nothing goes into anything.
 bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
     const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
+    static std::uint64_t solveTraceId = 0;
+    const std::uint64_t thisSolveTraceId = solveTraceId++;
     const auto traceKinetic = [&]() {
         double value=0.0;
         for (const Body& b:bodies_) if (b.count)
@@ -87,6 +89,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         }
         return value;
     };
+    const double solveKineticBefore = traceContext ? traceKinetic() : 0.0;
+    if (traceContext)
+        std::printf("CONTACT_SOLVE_BEGIN context=%s id=%llu patches=%zu K=%.12g\n",traceContext,
+                    static_cast<unsigned long long>(thisSolveTraceId),patches.count,solveKineticBefore);
     bool closingAtAll = false;
     // The largest change the last sweep made, in newton seconds. A sweep is over when
     // it has nothing left to say -- see kImpulseTolerance for why the question is
@@ -789,6 +795,10 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
         if (loadWorst < kAgree && gripWorst < kAgree) break;
     }
     sweep(false);
+    if (traceContext)
+        std::printf("CONTACT_SOLVE_END context=%s id=%llu patches=%zu K=%.12g dK=%+.12g closing=%d\n",
+                    traceContext,static_cast<unsigned long long>(thisSolveTraceId),patches.count,
+                    traceKinetic(),traceKinetic()-solveKineticBefore,int(closingAtAll));
     return closingAtAll;
 }
 
