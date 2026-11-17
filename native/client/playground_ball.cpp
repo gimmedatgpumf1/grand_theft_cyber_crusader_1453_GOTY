@@ -412,18 +412,20 @@ void PlaygroundRoom::tickBall(Ball& ball) {
                 start[i] = bodyStopped[index] ? body.position[i]
                                               : body.previous[i] + (body.position[i] - body.previous[i]) * (1.0 - remaining);
             const Vec3* was = start;
-            // The body is stepped before the ball, and stepping it moves the piece of
-            // outline the ball would have met. So the meeting is solved between two
-            // *moving* things: the ball's travel and the body's, corner by corner,
-            // through the tick. Conservative advancement at a micrometre a pass, with
-            // the moment bracketed and closed in on, so neither how fast the ball is
-            // going nor how fast the body is turning can hide the arrival between two
-            // samples. That is the hitscan: solved outright, not stepped towards.
+            // A stationary outline is a true hitscan: solve the swept circle against
+            // every face and corner analytically over the whole remaining travel. Only
+            // moving outlines need conservative advancement; subdividing a fast ball's
+            // flight is both slower and capable of stepping over a thin contact.
+            bool stationaryOutline = true;
+            for (std::size_t i = 0; i < body.count; ++i)
+                stationaryOutline = stationaryOutline && length(was[i] - body.position[i]) <= 1e-12;
             OutlineHit hit;
-            if (!sweptBallAgainstMoving(was, body.position.data(), body.count, ball.position, ball.velocity,
-                                        ball.radius, kTick * remaining, hit)) {
-                continue;
-            }
+            const Vec3 travel = ball.velocity * (kTick * remaining);
+            const bool found = stationaryOutline
+                ? circleHitsBody(ball.position,travel,body.position.data(),body.count,ball.radius,hit)
+                : sweptBallAgainstMoving(was,body.position.data(),body.count,ball.position,ball.velocity,
+                                         ball.radius,kTick*remaining,hit);
+            if (!found) continue;
 
             // Already on this surface when the tick began: a contact for the whole
             // tick, answered here and then travelled along, not a meeting to stop
