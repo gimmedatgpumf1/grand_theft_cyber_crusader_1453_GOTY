@@ -749,6 +749,8 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                 const Vec3 beforeOtherV = before.other < kBodyCount ? bodies_[before.other].velocity : Vec3{};
                 const double beforeOtherW = before.other < kBodyCount ? bodies_[before.other].spin : 0.0;
                 const double oldJn0=before.normalImpulse[0], oldJt0=before.tangentImpulse[0];
+                const double beforeRelN=dot(pointSpeed(bodies_[before.body],before.point[0])-
+                    (before.other<kBodyCount?pointSpeed(bodies_[before.other],before.point[0]):Vec3{}),before.normal);
                 patchPass(patches.items[m], withGrip);
                 if (traceContext) {
                     const Manifold& p=patches.items[m];
@@ -756,12 +758,15 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
                     const double deltaK=afterPatchK-beforePatchK;
                     if (deltaK > 1e-7 || std::getenv("GTC_TRACE_PATCH_ALL"))
                         std::printf("PATCH_SOLVE_TRACE context=%s grip=%d sweepPass=%d patch=%zu body=%zu other=%zu ball=%zu ends=%zu "
-                                    "dK=%+.12g n=(%.9g,%.9g) point=(%.9g,%.9g) relN=%.9g dJn0=%+.9g dJt0=%+.9g jn=(%.9g,%.9g) jt=(%.9g,%.9g) gap=(%.9g,%.9g) "
+                                    "dK=%+.12g n=(%.9g,%.9g) point=(%.9g,%.9g) relN=%.9g->%.9g bias=%.9g rebound=%.9g "
+                                    "dJn0=%+.9g dJt0=%+.9g jn=(%.9g,%.9g) jt=(%.9g,%.9g) gap=(%.9g,%.9g) "
                                     "bodyV=(%.9g,%.9g)->(%.9g,%.9g) w=%.9g->%.9g otherV=(%.9g,%.9g)->(%.9g,%.9g) ow=%.9g->%.9g\n",
                                     traceContext,int(withGrip),pass,m,p.body,p.other,p.ball,p.ends,deltaK,
                                     p.normal.x,p.normal.y,p.point[0].x,p.point[0].y,
+                                    beforeRelN,
                                     dot(pointSpeed(bodies_[p.body],p.point[0])-
                                         (p.other<kBodyCount?pointSpeed(bodies_[p.other],p.point[0]):Vec3{}),p.normal),
+                                    p.gap[0]>kQuantum?p.gap[0]/kTick:0.0,p.rebound[0],
                                     p.normalImpulse[0]-oldJn0,p.tangentImpulse[0]-oldJt0,
                                     p.normalImpulse[0],p.normalImpulse[1],p.tangentImpulse[0],p.tangentImpulse[1],p.gap[0],p.gap[1],
                                     beforeBodyV.x,beforeBodyV.y,bodies_[p.body].velocity.x,bodies_[p.body].velocity.y,
