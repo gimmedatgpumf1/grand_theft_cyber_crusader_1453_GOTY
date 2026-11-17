@@ -94,25 +94,35 @@ void ray(PlaygroundRoom& room, double x, double y) {
 }
 
 // Carries a body to a place with the mouse, the way a hand does: up, across, down.
-void carryTo(PlaygroundRoom& room, std::size_t which, double x, double y) {
+void carryTo(PlaygroundRoom& room, std::size_t which, double x, double y, double* worstAdvanceMicros = nullptr) {
+    const auto advance = [&] {
+        if (worstAdvanceMicros == nullptr) {
+            room.advance(1.0 / 20.0);
+            return;
+        }
+        const auto begin = std::chrono::steady_clock::now();
+        room.advance(1.0 / 20.0);
+        *worstAdvanceMicros = std::max(*worstAdvanceMicros,
+            std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - begin).count());
+    };
     const Vec3 start = room.bodyMiddle(which);
     ray(room, start.x, start.y);
     room.beginDrag();
     const double top = std::max(start.y, y) + 0.9;
     for (double step = start.y; step <= top; step += 0.05) {
         ray(room, start.x, step);
-        room.advance(1.0 / 20.0);
+        advance();
     }
     for (double step = start.x; std::abs(x - step) > 0.02; step += (x > step ? 0.05 : -0.05)) {
         ray(room, step, top);
-        room.advance(1.0 / 20.0);
+        advance();
     }
     for (double step = top; step >= y; step -= 0.05) {
         ray(room, x, step);
-        room.advance(1.0 / 20.0);
+        advance();
     }
     ray(room, x, y);
-    room.advance(1.0 / 20.0);
+    advance();
     room.endDrag();
 }
 
@@ -714,10 +724,10 @@ int contactPlacementPerformance() {
     room.reset();
     settle(room, 300);
     const Vec3 cube = room.bodyMiddle(1);
-    carryTo(room, 0, cube.x, cube.y + 0.9);
-    constexpr int ticks = 600;
     double totalMicros = 0.0, worstMicros = 0.0;
-    int overBudget = 0;
+    carryTo(room, 0, cube.x, cube.y + 0.9, &worstMicros);
+    constexpr int ticks = 600;
+    int overBudget = worstMicros > 50000.0 ? 1 : 0;
     for (int i = 0; i < ticks; ++i) {
         const auto begin = std::chrono::steady_clock::now();
         room.advance(1.0 / 20.0);
@@ -728,7 +738,7 @@ int contactPlacementPerformance() {
         if (micros > 50000.0) ++overBudget;
     }
     char detail[180];
-    std::snprintf(detail, sizeof detail, "%d ticks: mean %.1f us, worst %.1f us, over-50ms ticks %d",
+    std::snprintf(detail, sizeof detail, "%d settled ticks: mean %.1f us; worst including placement %.1f us; >50ms %d",
                   ticks, totalMicros / ticks, worstMicros, overBudget);
     check(overBudget == 0, "triangle-on-cube stays within the 20 Hz budget", detail);
     return failures == 0 ? 0 : 1;
