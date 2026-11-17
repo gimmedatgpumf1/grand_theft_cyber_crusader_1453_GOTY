@@ -176,6 +176,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         }
     }
     std::array<bool, kBodyCount> stopped{};
+    std::array<Vec3, kBodyCount> eventImpulseVelocity{};
+    std::array<double, kBodyCount> eventImpulseSpin{};
     double elapsed = 0.0;
     int events = 0;
     bool bent = false;
@@ -312,8 +314,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                         preImpactBallSpin,ball.spin,preImpactBodyVelocity.x,preImpactBodyVelocity.y,
                         body.velocity.x,body.velocity.y,preImpactBodySpin,body.spin);
         // Friction sees the body after the normal impulse, not its pre-impact speed.
-        ball.tickSpeed[std::size_t(hitBody)] = body.velocity;
-        ball.tickSpin[std::size_t(hitBody)] = body.spin;
+                eventImpulseVelocity[std::size_t(hitBody)] += body.velocity - preImpactBodyVelocity;
+                eventImpulseSpin[std::size_t(hitBody)] += body.spin - preImpactBodySpin;
+                ball.tickSpeed[std::size_t(hitBody)] = body.velocity;
+                ball.tickSpin[std::size_t(hitBody)] = body.spin;
         if (taut) {
             const Vec3 arm = ball.position - anchor;
             const double reach = length(arm);
@@ -444,8 +448,8 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             Body& body = bodies_[i];
             if (rebased[i] || bodyHeld(i)) return;
             const double spent = std::clamp(time / dt, 0.0, 1.0);
-            body.velocity = body.arrivalVelocity;
-            body.spin = body.arrivalSpin;
+            body.velocity = body.arrivalVelocity + eventImpulseVelocity[i];
+            body.spin = body.arrivalSpin + eventImpulseSpin[i];
             bodyForces(i, time);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
