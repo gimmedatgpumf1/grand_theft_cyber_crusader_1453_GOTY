@@ -747,11 +747,7 @@ int contactPlacementPerformance() {
         totalMicros += micros;
         worstMicros = std::max(worstMicros, micros);
         const auto& triangle = room.bodies_[1];
-        const auto& cubeBody = room.bodies_[0];
-        pair_shape::PairManifold patch;
-        if (pair_shape::collide(triangle.position.data(), triangle.count, cubeBody.position.data(),
-                                cubeBody.count, 0.0, patch))
-            touchedCube = true;
+        if (triangle.onBody && triangle.supportBody == 0) touchedCube = true;
         if (micros > 50000.0) ++overBudget;
     }
     char detail[180];
