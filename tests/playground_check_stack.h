@@ -73,6 +73,11 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
         const char* previousTraceContext = std::getenv("GTC_TRACE_CONTEXT");
         const std::string savedTraceContext = previousTraceContext ? previousTraceContext : "";
         if (traceThisStackTick) {
+            // Tracing controls for this one room tick:
+            //   GTC_TRACE_STACK_TICK=N selects the test tick;
+            //   GTC_TRACE_IMPULSES=1 logs every applied/rejected rigid-body impulse;
+            //   GTC_TRACE_PATCH_ALL=1 logs every contact-patch iteration (otherwise
+            //     only iterations whose kinetic energy increases are emitted).
             std::printf("\n=== SELECTED SUPPORTING-STACK TEST TICK %d ===\n", tick);
             setenv("GTC_TRACE_TICK", "all", 1);
             char traceContext[96];
