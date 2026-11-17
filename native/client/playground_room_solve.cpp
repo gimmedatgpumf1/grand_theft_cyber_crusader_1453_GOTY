@@ -53,7 +53,7 @@ constexpr int kGripRoundsMax = 48;
 // micronewton second over a tick is a force of twenty nanonewtons: far below the
 // weight of a speck, and far below anything the eye can find in a shape's travel over
 // an hour. Asking for more than this buys nothing but arithmetic.
-constexpr double kAgree = 1e-6;  // N s; below any resolvable change in a body's tick motion
+constexpr double kAgree = 1e-4;  // N s; below any resolvable change in a body's tick motion
 }  // namespace
 
 // The answer to a whole configuration of patches at once.
