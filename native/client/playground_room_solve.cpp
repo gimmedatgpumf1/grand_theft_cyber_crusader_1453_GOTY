@@ -42,7 +42,7 @@ constexpr double kSolveTolerance = 1e-12;// A sweep of the patches is over when 
 // see. It is a separate number from the one above because it answers a separate
 // question: the sweep now stops when the *answer* has stopped moving rather than when
 // the surfaces have stopped closing.
-constexpr double kImpulseTolerance = 1e-12;  // N s
+constexpr double kImpulseTolerance = 1e-7;  // N s; changes smaller than a tenth of a micronewton are immaterial per solve
 // The most times a patch is asked for its load, then its grip, then its load again
 // before the room is taken as answered. Grip lands a moment on a body that changes
 // where it presses, so the two answers change each other, and a round that changes
