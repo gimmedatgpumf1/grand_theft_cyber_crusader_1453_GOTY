@@ -330,7 +330,7 @@ private:
     // of them at once: each patch is solved as one load over its two ends, and the
     // patches are swept until they agree with each other.
     void gatherContacts(ManifoldSet& patches, double band) const;
-    bool solveContacts(ManifoldSet& patches);
+    bool solveContacts(ManifoldSet& patches, bool preserveSpeculativeImpulse = false);
     // This tick's meetings, kept after the shapes have been solved so that their
     // supports can be asked again once the ball has had its say: see
     // answerSupportedShapes(). A patch solved a second time keeps what it has

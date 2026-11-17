@@ -75,7 +75,7 @@ constexpr double kAgree = 1e-9;  // N s
 // and ending on the normal means a tick can never finish with a corner still being
 // driven into the floor -- hold and slip may be a hair from where they settle, but
 // nothing goes into anything.
-bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
+bool PlaygroundRoom::solveContacts(ManifoldSet& patches, bool preserveSpeculativeImpulse) {
     const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
     static std::uint64_t solveTraceId = 0;
     const std::uint64_t thisSolveTraceId = solveTraceId++;
@@ -562,6 +562,13 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             }
             for (std::size_t i = 0; i < dofs; ++i) {
                 const std::size_t k = order[i];
+                // On a mid-tick reconciliation, keep an already-applied speculative
+                // normal impulse until the predicted pair actually reaches contact.
+                // Refunding that impulse at positive clearance injects kinetic energy
+                // while the row is still only a future-contact safeguard.
+                if (preserveSpeculativeImpulse && patch.gap[k] > kQuantum &&
+                    patch.rebound[k] == 0.0 && delta[i] < 0.0)
+                    delta[i] = 0.0;
                 // An end is let go only when the load it would be left with is a
                 // pull. An end that needs exactly nothing keeps its place: it is
                 // still standing on something, and the pass after this one may well
