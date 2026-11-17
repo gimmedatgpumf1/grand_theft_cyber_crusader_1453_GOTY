@@ -708,6 +708,32 @@ void resetIsAReset() {
     check(apart == 0.0, "a reset room behaves exactly like a new one", detail);
 }
 
+int contactPlacementPerformance() {
+    say("\ntriangle resting on cube tick cost\n");
+    PlaygroundRoom room;
+    room.reset();
+    settle(room, 300);
+    const Vec3 cube = room.bodyMiddle(1);
+    carryTo(room, 0, cube.x, cube.y + 0.9);
+    constexpr int ticks = 600;
+    double totalMicros = 0.0, worstMicros = 0.0;
+    int overBudget = 0;
+    for (int i = 0; i < ticks; ++i) {
+        const auto begin = std::chrono::steady_clock::now();
+        room.advance(1.0 / 20.0);
+        const double micros = std::chrono::duration<double, std::micro>(
+                                  std::chrono::steady_clock::now() - begin).count();
+        totalMicros += micros;
+        worstMicros = std::max(worstMicros, micros);
+        if (micros > 50000.0) ++overBudget;
+    }
+    char detail[180];
+    std::snprintf(detail, sizeof detail, "%d ticks: mean %.1f us, worst %.1f us, over-50ms ticks %d",
+                  ticks, totalMicros / ticks, worstMicros, overBudget);
+    check(overBudget == 0, "triangle-on-cube stays within the 20 Hz budget", detail);
+    return failures == 0 ? 0 : 1;
+}
+
 void costOfATick() {
     say("\nwhat a tick costs\n");
     PlaygroundRoom room;
@@ -727,6 +753,7 @@ void costOfATick() {
 }  // namespace
 
 int main() {
+    if (std::getenv("GTC_ONLY_CONTACT_PERF")) return contactPlacementPerformance();
     if (std::getenv("GTC_ONLY_ROPE_CHAIN")) return playgroundRopeChainCheck();
     if (std::getenv("GTC_ONLY_PICTURE_INTERPOLATION"))
         return playgroundPictureChecks() == 0 ? 0 : 1;
