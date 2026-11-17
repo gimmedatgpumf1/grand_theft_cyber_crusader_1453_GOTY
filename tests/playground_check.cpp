@@ -723,13 +723,16 @@ int contactPlacementPerformance() {
     PlaygroundRoom room;
     room.reset();
     settle(room, 300);
-    const Vec3 cube = room.bodyMiddle(1);
+    const Vec3 cube = room.bodyMiddle(0);
     double totalMicros = 0.0, worstMicros = 0.0;
-    carryTo(room, 0, cube.x, cube.y + 2.0, &worstMicros);
-    auto& droppedTriangle = room.bodies_[0];
+    auto& droppedTriangle = room.bodies_[1];
     const Vec3 dropOffset{cube.x - droppedTriangle.centre.x, cube.y + 2.0 - droppedTriangle.centre.y, 0.0};
     droppedTriangle.centre += dropOffset;
-    for (std::size_t i = 0; i < droppedTriangle.count; ++i) droppedTriangle.position[i] += dropOffset;
+    for (std::size_t i = 0; i < droppedTriangle.count; ++i) {
+        droppedTriangle.position[i] += dropOffset;
+        droppedTriangle.previous[i] = droppedTriangle.position[i];
+    }
+    droppedTriangle.previousCentre = droppedTriangle.centre;
     droppedTriangle.velocity = {};
     droppedTriangle.spin = 0.0;
     droppedTriangle.frozen = false;
