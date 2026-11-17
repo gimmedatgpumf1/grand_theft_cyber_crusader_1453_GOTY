@@ -363,6 +363,21 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             return energy;
         };
+        const auto traceStage = [&](const char* stage, double time, double priorEnergy) {
+            if (!traceTick) return;
+            std::printf("ENERGY_STAGE tick %llu t %.9f stage %s E %.12g dE %.12g ball p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g\\n",
+                        static_cast<unsigned long long>(thisDebugTick), time, stage, localEnergy(),
+                        localEnergy() - priorEnergy, state.position.x, state.position.y,
+                        state.velocity.x, state.velocity.y, ball.spin);
+            for (std::size_t i = 0; i < kBodyCount; ++i) {
+                const Body& b = bodies_[i];
+                if (b.count == 0) continue;
+                std::printf("  ENERGY_BODY %zu p(%.9g,%.9g) v(%.9g,%.9g) omega %.9g KE %.12g PE %.12g\\n",
+                            i,b.centre.x,b.centre.y,b.velocity.x,b.velocity.y,b.spin,
+                            0.5*b.mass*dot(b.velocity,b.velocity)+0.5*b.moment*b.spin*b.spin,
+                            b.mass*gravity*b.centre.y);
+            }
+        };
         const double initialEnergy = localEnergy();
         const Vec3 ballStartPosition = state.position, ballStartVelocity = state.velocity;
         const Vec3 shapeStartPosition = bodies_[kTriangle].centre, shapeStartVelocity = bodies_[kTriangle].velocity;
@@ -701,7 +716,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             state.velocity = damp(state.velocity, 0.5 * step) + Vec3{0, -0.5 * gravity * step, 0};
             for (std::size_t i = 0; i < kBodyCount; ++i)
                 if (stopped[i]) bodyForces(i, 0.5 * step);
+            const double energyAfterKick = localEnergy();
+            traceStage("gravity+air first half-kick", elapsed, energyStart);
             const double firstLoad = constrain(step, elapsed, true);
+            traceStage("first contact solve", elapsed, energyAfterKick);
             const double energyAfterFirstSolve = localEnergy();
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
@@ -713,8 +731,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 placeCorners(body);
             }
             const double energyAfterDrift = localEnergy();
+            traceStage("position drift", elapsed + step, energyAfterFirstSolve);
             // Correct only geometrical drift, iterating because a rope and a
             // face can both be active. The velocity solve remains one-sided.
+            const Vec3 beforeProjectionPosition = state.position;
+            const double energyBeforeProjection = localEnergy();
             const double beforeProjectionY = state.position.y;
             for (int pass = 0; pass < 16; ++pass) {
                 double error = 0.0;
@@ -741,10 +762,21 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 if (error < 1e-12) break;
             }
             projectionWork += ball.mass * gravity * (state.position.y - beforeProjectionY);
+            if (traceTick && length(state.position - beforeProjectionPosition) > 0.0)
+                std::printf("POSITION_CORRECTION tick %llu t %.9f ball p(%.9g,%.9g)->(%.9g,%.9g) dP(%.9g,%.9g) dE %.12g gravityWork %.12g\\n",
+                            static_cast<unsigned long long>(thisDebugTick), elapsed+step,
+                            beforeProjectionPosition.x,beforeProjectionPosition.y,state.position.x,state.position.y,
+                            state.position.x-beforeProjectionPosition.x,state.position.y-beforeProjectionPosition.y,
+                            localEnergy()-energyBeforeProjection,ball.mass*gravity*(state.position.y-beforeProjectionY));
+            traceStage("geometric position correction", elapsed + step, energyBeforeProjection);
+            const double energyBeforeSecondKick = localEnergy();
             state.velocity = damp(state.velocity + Vec3{0, -0.5 * gravity * step, 0}, 0.5 * step);
             for (std::size_t i = 0; i < kBodyCount; ++i)
                 if (stopped[i]) bodyForces(i, 0.5 * step);
+            const double energyBeforeSecondSolve = localEnergy();
+            traceStage("gravity+air second half-kick", elapsed + step, energyBeforeSecondKick);
             finalRopeLoad = (firstLoad + constrain(step, elapsed + step, false)) / step;
+            traceStage("second contact solve", elapsed + step, energyBeforeSecondSolve);
             elapsed += step;
             if (std::getenv("GTC_TRACE_SUBSTEP_ENERGY")) {
                 const double energyEnd = localEnergy();
