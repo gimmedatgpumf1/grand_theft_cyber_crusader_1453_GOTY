@@ -483,6 +483,10 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             const auto activate = [&](std::size_t i) {
                 if (stopped[i]) return;
                 Body& body = bodies_[i];
+                const double activationEnergyBefore = localEnergy();
+                const Vec3 activationCentreBefore = body.centre;
+                const Vec3 activationVelocityBefore = body.velocity;
+                const double activationSpinBefore = body.spin;
                 if (!bodyHeld(i)) {
                     const double when = body.pivoted ? fraction
                         : keepAboveFloor(i, body.previousCentre, body.previousAngle, body.centre, body.angle, fraction);
@@ -496,6 +500,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 // An arrival at the end of this substep has already followed the
                 // old prediction through it; do not give it another half-step.
                 if (atStart) bodyForces(i, 0.5 * step);
+                const double activationEnergyAfter = localEnergy();
+                if (activationEnergyAfter - activationEnergyBefore > 1e-6 || std::getenv("GTC_TRACE_ACTIVATE"))
+                    std::printf("ACTIVATE t %.9f body %zu dE %+0.12g centre (%+.9g,%+.9g)->(%+.9g,%+.9g) v (%+.9g,%+.9g)->(%+.9g,%+.9g) omega %+.9g->%+.9g event %.9g time %.9g predicted (%+.9g,%+.9g) arrival (%+.9g,%+.9g)\\n",
+                                time, i, activationEnergyAfter-activationEnergyBefore,
+                                activationCentreBefore.x,activationCentreBefore.y,body.centre.x,body.centre.y,
+                                activationVelocityBefore.x,activationVelocityBefore.y,body.velocity.x,body.velocity.y,
+                                activationSpinBefore,body.spin,body.ropeEventAt,time,
+                                predictedVelocity[i].x,predictedVelocity[i].y,
+                                body.arrivalVelocity.x,body.arrivalVelocity.y);
                 motion[i + 1].centre = body.centre;
                 motion[i + 1].velocity = bodyHeld(i) ? handSpeed_ : body.velocity;
                 motion[i + 1].spin = bodyHeld(i) ? 0.0 : body.spin;
