@@ -70,14 +70,21 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
         const bool traceThisStackTick = selectedStackTick && std::atoi(selectedStackTick) == tick;
         const char* previousTraceTick = std::getenv("GTC_TRACE_TICK");
         const std::string savedTraceTick = previousTraceTick ? previousTraceTick : "";
+        const char* previousTraceContext = std::getenv("GTC_TRACE_CONTEXT");
+        const std::string savedTraceContext = previousTraceContext ? previousTraceContext : "";
         if (traceThisStackTick) {
-            std::printf("\\n=== SELECTED SUPPORTING-STACK TEST TICK %d ===\\n", tick);
+            std::printf("\n=== SELECTED SUPPORTING-STACK TEST TICK %d ===\n", tick);
             setenv("GTC_TRACE_TICK", "all", 1);
+            char traceContext[96];
+            std::snprintf(traceContext, sizeof traceContext, "supporting-stack-test-tick-%d", tick);
+            setenv("GTC_TRACE_CONTEXT", traceContext, 1);
         }
         room.advance(1.0 / 20.0);
         if (traceThisStackTick) {
             if (previousTraceTick) setenv("GTC_TRACE_TICK", savedTraceTick.c_str(), 1);
             else unsetenv("GTC_TRACE_TICK");
+            if (previousTraceContext) setenv("GTC_TRACE_CONTEXT", savedTraceContext.c_str(), 1);
+            else unsetenv("GTC_TRACE_CONTEXT");
         }
         pair_shape::PairManifold patch;
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&

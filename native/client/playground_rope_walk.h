@@ -21,6 +21,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         for (const char* digit = traceSetting; *digit >= '0' && *digit <= '9'; ++digit)
             requestedTraceTick = requestedTraceTick * 10 + static_cast<unsigned>(*digit - '0');
     const bool traceTick = traceSetting && (traceAllTicks || requestedTraceTick == thisDebugTick);
+    const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
     const auto systemKinetic = [&]() {
         const double ballI = 0.4 * ball.mass * ball.radius * ball.radius;
         double value = 0.5 * ball.mass * dot(ball.velocity, ball.velocity) +
@@ -31,15 +32,15 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         return value;
     };
     if (traceTick) {
-        std::printf("\\n=== ROPE TICK %llu dt %.9g ===\\n", static_cast<unsigned long long>(thisDebugTick), dt);
-        std::printf("BALL mass %.9g radius %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g omega KE %.12g PE %.12g\\n",
+        std::printf("\n=== ROPE TRACE context=%s call=%llu dt=%.9g ===\n", traceContext ? traceContext : "unspecified", static_cast<unsigned long long>(thisDebugTick), dt);
+        std::printf("BALL mass %.9g radius %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g omega KE %.12g PE %.12g\n",
                     ball.mass, ball.radius, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
                     ball.spin, 0.5 * ball.mass * dot(ball.velocity, ball.velocity),
                     ball.mass * gravity * ball.position.y);
         for (std::size_t i = 0; i < kBodyCount; ++i) {
             const Body& b = bodies_[i];
             if (b.count == 0) continue;
-            std::printf("BODY %zu mass %.9g I %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g KE %.12g PE %.12g\\n",
+            std::printf("BODY %zu mass %.9g I %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g KE %.12g PE %.12g\n",
                         i, b.mass, b.moment, b.centre.x, b.centre.y, b.velocity.x, b.velocity.y, b.spin,
                         0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin,
                         b.mass * gravity * b.centre.y);
@@ -139,7 +140,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     if (traceTick) {
         for (std::size_t f = 0; f < predictedForces; ++f) {
             const ForceSample& x = forces_[f];
-            std::printf("FORCE owner %zu kind %u at(%.9g,%.9g) F(%.9g,%.9g) Nm %.9g\\n",
+            std::printf("FORCE owner %zu kind %u at(%.9g,%.9g) F(%.9g,%.9g) Nm %.9g\n",
                         x.owner, static_cast<unsigned>(x.kind), x.at.x, x.at.y, x.force.x, x.force.y, x.moment);
         }
     }
@@ -307,7 +308,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         if (traceTick)
             std::printf("EVENT_NORMAL_IMPULSE t %.9f body %d point(%.9g,%.9g) normal(%.9g,%.9g) "
                         "K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g)->(%.9g,%.9g) ballW %.9g->%.9g "
-                        "bodyV(%.9g,%.9g)->(%.9g,%.9g) bodyW %.9g->%.9g\\n",
+                        "bodyV(%.9g,%.9g)->(%.9g,%.9g) bodyW %.9g->%.9g\n",
                         elapsed, hitBody, contact.x,contact.y,hitNormal.x,hitNormal.y,
                         beforeNormalImpactK,systemKinetic(),systemKinetic()-beforeNormalImpactK,
                         preImpactBallVelocity.x,preImpactBallVelocity.y,ball.velocity.x,ball.velocity.y,
@@ -333,13 +334,13 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         const double beforeFrictionK = systemKinetic();
         settleBallFriction(ball);
         if (traceTick)
-            std::printf("EVENT_BALL_FRICTION t %.9f K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g) spin %.9g\\n",
+            std::printf("EVENT_BALL_FRICTION t %.9f K %.12g->%.12g dK %+.12g ballV(%.9g,%.9g) spin %.9g\n",
                         elapsed,beforeFrictionK,systemKinetic(),systemKinetic()-beforeFrictionK,
                         ball.velocity.x,ball.velocity.y,ball.spin);
         const double beforeSupportK = systemKinetic();
         answerSupportedShapes();
         if (traceTick)
-            std::printf("EVENT_SUPPORT_RESPONSE t %.9f K %.12g->%.12g dK %+.12g body %d V(%.9g,%.9g) spin %.9g\\n",
+            std::printf("EVENT_SUPPORT_RESPONSE t %.9f K %.12g->%.12g dK %+.12g body %d V(%.9g,%.9g) spin %.9g\n",
                         elapsed,beforeSupportK,systemKinetic(),systemKinetic()-beforeSupportK,
                         hitBody,body.velocity.x,body.velocity.y,body.spin);
         state = State{ball.position, ball.velocity};
@@ -401,14 +402,14 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         };
         const auto traceStage = [&](const char* stage, double time, double priorEnergy) {
             if (!traceTick) return;
-            std::printf("ENERGY_STAGE tick %llu t %.9f stage %s E %.12g dE %.12g ball p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g\\n",
+            std::printf("ENERGY_STAGE tick %llu t %.9f stage %s E %.12g dE %.12g ball p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g\n",
                         static_cast<unsigned long long>(thisDebugTick), time, stage, localEnergy(),
                         localEnergy() - priorEnergy, state.position.x, state.position.y,
                         state.velocity.x, state.velocity.y, ball.spin);
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 const Body& b = bodies_[i];
                 if (b.count == 0) continue;
-                std::printf("  ENERGY_BODY %zu p(%.9g,%.9g) v(%.9g,%.9g) omega %.9g KE %.12g PE %.12g\\n",
+                std::printf("  ENERGY_BODY %zu p(%.9g,%.9g) v(%.9g,%.9g) omega %.9g KE %.12g PE %.12g\n",
                             i,b.centre.x,b.centre.y,b.velocity.x,b.velocity.y,b.spin,
                             0.5*b.mass*dot(b.velocity,b.velocity)+0.5*b.moment*b.spin*b.spin,
                             b.mass*gravity*b.centre.y);
@@ -428,7 +429,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             if (bodyHeld(i)) return;
             playground_body_air::apply(body, seconds, [&](Vec3 at, Vec3 impulse, Vec3) {
                 airImpulse[i] += impulse;
-                if (traceTick) std::printf("FORCE_APPLY tick %llu body %zu source AIR at(%.9g,%.9g) J(%.9g,%.9g) dt %.9g\\n",
+                if (traceTick) std::printf("FORCE_APPLY tick %llu body %zu source AIR at(%.9g,%.9g) J(%.9g,%.9g) dt %.9g\n",
                                            static_cast<unsigned long long>(thisDebugTick), i, at.x, at.y,
                                            impulse.x, impulse.y, seconds);
                 const Vec3 arm = at - body.centre;
@@ -527,7 +528,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 if (atStart) bodyForces(i, 0.5 * step);
                 const double activationEnergyAfter = localEnergy();
                 if (traceTick || std::getenv("GTC_TRACE_ACTIVATE"))
-                    std::printf("ACTIVATE t %.9f body %zu dE %+0.12g centre (%+.9g,%+.9g)->(%+.9g,%+.9g) v (%+.9g,%+.9g)->(%+.9g,%+.9g) omega %+.9g->%+.9g event %.9g time %.9g predicted (%+.9g,%+.9g) arrival (%+.9g,%+.9g)\\n",
+                    std::printf("ACTIVATE t %.9f body %zu dE %+0.12g centre (%+.9g,%+.9g)->(%+.9g,%+.9g) v (%+.9g,%+.9g)->(%+.9g,%+.9g) omega %+.9g->%+.9g event %.9g time %.9g predicted (%+.9g,%+.9g) arrival (%+.9g,%+.9g)\n",
                                 time, i, activationEnergyAfter-activationEnergyBefore,
                                 activationCentreBefore.x,activationCentreBefore.y,body.centre.x,body.centre.y,
                                 activationVelocityBefore.x,activationVelocityBefore.y,body.velocity.x,body.velocity.y,
@@ -669,7 +670,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             pc::solve(motion, rows, count);
             const double solveEnergyAfter = kinetic();
             if (traceTick) {
-                std::printf("SOLVE tick %llu t %.9f phase %s rows %zu dK %.12g\\n",
+                std::printf("SOLVE tick %llu t %.9f phase %s rows %zu dK %.12g\n",
                             static_cast<unsigned long long>(thisDebugTick), time, atStart ? "begin" : "end",
                             count, solveEnergyAfter - solveEnergyBefore);
                 for (std::size_t r = 0; r < count; ++r) {
@@ -681,7 +682,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     const Vec3 j = c.normal * (c.normalImpulse - oldNormal[r]) +
                                    Vec3{c.normal.y, -c.normal.x, 0} * (c.tangentImpulse - oldTangent[r]);
                     std::printf("CONTACT row %zu A%zu B%zu point(%.9g,%.9g) n(%.9g,%.9g) gapTarget %.9g "
-                                "vrelN %.9g->%.9g J(%.9g,%.9g) Favg(%.9g,%.9g) dJn %.9g dJt %.9g dJroll %.9g\\n",
+                                "vrelN %.9g->%.9g J(%.9g,%.9g) Favg(%.9g,%.9g) dJn %.9g dJt %.9g dJroll %.9g\n",
                                 r, c.a, c.b, c.point.x, c.point.y, c.normal.x, c.normal.y, c.target,
                                 dot(va0-vb0,c.normal), dot(va1-vb1,c.normal), j.x, j.y, j.x/step, j.y/step,
                                 c.normalImpulse-oldNormal[r], c.tangentImpulse-oldTangent[r],
@@ -689,18 +690,18 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 }
                 for (std::size_t i = 0; i < motion.size(); ++i)
                     if (motion[i].inverseMass > 0.0 || motion[i].inverseMoment > 0.0)
-                        std::printf("SOLID %zu v(%.9g,%.9g)->(%.9g,%.9g) omega %.9g->%.9g invM %.9g invI %.9g\\n",
+                        std::printf("SOLID %zu v(%.9g,%.9g)->(%.9g,%.9g) omega %.9g->%.9g invM %.9g invI %.9g\n",
                                     i, motionBefore[i].velocity.x, motionBefore[i].velocity.y,
                                     motion[i].velocity.x, motion[i].velocity.y, motionBefore[i].spin,
                                     motion[i].spin, motion[i].inverseMass, motion[i].inverseMoment);
             }
             if (std::getenv("GTC_TRACE_IMPULSE_ENERGY") && solveEnergyAfter - solveEnergyBefore > 1e-8) {
-                std::printf("IMPULSE_SOLVE t %.9f dK %+.12g rows %zu\\n", time, solveEnergyAfter - solveEnergyBefore, count);
+                std::printf("IMPULSE_SOLVE t %.9f dK %+.12g rows %zu\n", time, solveEnergyAfter - solveEnergyBefore, count);
                 for (std::size_t r = 0; r < count; ++r) {
                     const pc::Contact& c = rows[r];
                     const Vec3 va = pc::pointVelocity(motion[c.a], c.point);
                     const Vec3 vb = c.b == pc::kWorld ? Vec3{} : pc::pointVelocity(motion[c.b], c.point);
-                    std::printf("  row %zu %zu->%zu n(%+.5f,%+.5f) target %+.7g jn %+.9g jt %+.9g vrelN %+.9g\\n",
+                    std::printf("  row %zu %zu->%zu n(%+.5f,%+.5f) target %+.7g jn %+.9g jt %+.9g vrelN %+.9g\n",
                                 r, c.a, c.b, c.normal.x, c.normal.y, c.target, c.normalImpulse,
                                 c.tangentImpulse, dot(va - vb, c.normal));
                 }
@@ -801,7 +802,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             }
             projectionWork += ball.mass * gravity * (state.position.y - beforeProjectionY);
             if (traceTick && length(state.position - beforeProjectionPosition) > 0.0)
-                std::printf("POSITION_CORRECTION tick %llu t %.9f ball p(%.9g,%.9g)->(%.9g,%.9g) dP(%.9g,%.9g) dE %.12g gravityWork %.12g\\n",
+                std::printf("POSITION_CORRECTION tick %llu t %.9f ball p(%.9g,%.9g)->(%.9g,%.9g) dP(%.9g,%.9g) dE %.12g gravityWork %.12g\n",
                             static_cast<unsigned long long>(thisDebugTick), elapsed+step,
                             beforeProjectionPosition.x,beforeProjectionPosition.y,state.position.x,state.position.y,
                             state.position.x-beforeProjectionPosition.x,state.position.y-beforeProjectionPosition.y,
@@ -820,7 +821,7 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 const double energyEnd = localEnergy();
                 if (energyEnd - energyStart > 1e-5 || energyAfterFirstSolve - energyStart > 1e-5 ||
                     energyAfterDrift - energyAfterFirstSolve > 1e-5)
-                    std::printf("SUBSTEP t %.6f dE %+0.8f solve %+0.8f drift %+0.8f end %+0.8f ball v (%+.4f,%+.4f) shape v (%+.4f,%+.4f)\\n",
+                    std::printf("SUBSTEP t %.6f dE %+0.8f solve %+0.8f drift %+0.8f end %+0.8f ball v (%+.4f,%+.4f) shape v (%+.4f,%+.4f)\n",
                                 elapsed, energyEnd - energyStart, energyAfterFirstSolve - energyStart,
                                 energyAfterDrift - energyAfterFirstSolve, energyEnd - energyStart,
                                 state.velocity.x, state.velocity.y, bodies_[kTriangle].velocity.x,
