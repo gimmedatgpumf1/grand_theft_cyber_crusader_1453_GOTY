@@ -588,17 +588,17 @@ void PlaygroundRoom::advance(double seconds) {
         const double traceInitialEnergy = totalEnergy();
         const auto tracePhase = [&](const char* phase, double before) {
             if (!tracePhysics) return;
-            std::printf("ROOM_TRACE context=%s phase=%s E_before=%.12g E_after=%.12g dE=%+.12g\\n",
+            std::printf("ROOM_TRACE context=%s phase=%s E_before=%.12g E_after=%.12g dE=%+.12g\n",
                         traceContext, phase, before, totalEnergy(), totalEnergy()-before);
             for (std::size_t i=0; i<kBodyCount; ++i) {
                 const Body& b=bodies_[i];
                 if (!b.count) continue;
-                std::printf("  BODY_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\\n",
+                std::printf("  BODY_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\n",
                             i,b.centre.x,b.centre.y,b.velocity.x,b.velocity.y,b.spin,int(b.frozen));
             }
             for (std::size_t i=0; i<kBallCount; ++i) {
                 const Ball& b=balls_[i];
-                std::printf("  BALL_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\\n",
+                std::printf("  BALL_TRACE id=%zu p=(%.9g,%.9g) v=(%.9g,%.9g) w=%.9g frozen=%d\n",
                             i,b.position.x,b.position.y,b.velocity.x,b.velocity.y,b.spin,int(b.frozen));
             }
         };
@@ -721,7 +721,7 @@ void PlaygroundRoom::advance(double seconds) {
         recordStaticForces(stepped, pointStepped, ballStepped);
         tracePhase("room.writeImpulses+staticForces", traceBeforePhase);
         if (tracePhysics)
-            std::printf("ROOM_TRACE_TOTAL context=%s E_start=%.12g E_end=%.12g dE=%+.12g\\n",
+            std::printf("ROOM_TRACE_TOTAL context=%s E_start=%.12g E_end=%.12g dE=%+.12g\n",
                         traceContext, traceInitialEnergy, totalEnergy(), totalEnergy()-traceInitialEnergy);
         ++ticks;
     }

@@ -77,9 +77,26 @@ bool PlaygroundRoom::ballPlacementClear(const Ball& ball, Vec3 at) const {
 void PlaygroundRoom::tickBalls() {
     for (std::size_t index = 0; index < kBallCount; ++index) {
         Ball& ball = balls_[index];
+        const bool traceBallTick = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+        const double traceEnergyBefore = traceBallTick ? totalEnergy() : 0.0;
+        const Vec3 tracePositionBefore = ball.position, traceVelocityBefore = ball.velocity;
+        const double traceSpinBefore = ball.spin;
+        const auto traceBallResult = [&](const char* path) {
+            if (!traceBallTick) return;
+            const double after = totalEnergy();
+            std::printf("BALL_TICK_TRACE context=%s id=%zu path=%s dE=%+.12g p=(%.9g,%.9g)->(%.9g,%.9g) "
+                        "v=(%.9g,%.9g)->(%.9g,%.9g) w=%.9g->%.9g\n",
+                        std::getenv("GTC_TRACE_CONTEXT"), index, path, after-traceEnergyBefore,
+                        tracePositionBefore.x,tracePositionBefore.y,ball.position.x,ball.position.y,
+                        traceVelocityBefore.x,traceVelocityBefore.y,ball.velocity.x,ball.velocity.y,
+                        traceSpinBefore,ball.spin);
+        };
         // Near a body, the rope's curved path has to meet that body at the
         // actual instant of contact rather than a later free-fall projection.
-        if (rope_.attached && rope_.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) continue;
+        if (rope_.attached && rope_.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) {
+            traceBallResult("rope-contact-walk");
+            continue;
+        }
         if (!ball.frozen || ballNeighboursMoving(ball)) tickBall(ball);
         else {
             // Asleep: its tick is not run, so what it would have begun with is the
@@ -101,6 +118,7 @@ void PlaygroundRoom::tickBalls() {
                 holdOnRope(ball);
             }
         }
+        traceBallResult("ordinary-ball-tick");
     }
 }
 
