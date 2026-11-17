@@ -643,7 +643,7 @@ bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
             // A speculative normal row may keep a pair from closing farther than
             // its clearance permits, but separated shapes cannot transmit friction.
             // Do not turn a predicted future meeting into a tangential impulse.
-            if (patch.gap[k] > kQuantum || !(patch.normalImpulse[k] > 0.0)) continue;
+            if ((other != nullptr && patch.gap[k] > kQuantum) || !(patch.normalImpulse[k] > 0.0)) continue;
             ++pressed;
             load += patch.normalImpulse[k];
         }
