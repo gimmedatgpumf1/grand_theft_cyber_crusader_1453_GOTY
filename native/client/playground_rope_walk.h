@@ -10,6 +10,24 @@
 bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
     const double dt = playground_tick::kTick;
     const double gravity = playground_tick::kGravity;
+    static std::uint64_t debugTick = 0;
+    const std::uint64_t thisDebugTick = debugTick++;
+    const bool traceTick = std::getenv("GTC_TRACE_TICK") != nullptr;
+    if (traceTick) {
+        std::printf("\\n=== ROPE TICK %llu dt %.9g ===\\n", static_cast<unsigned long long>(thisDebugTick), dt);
+        std::printf("BALL mass %.9g radius %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g omega KE %.12g PE %.12g\\n",
+                    ball.mass, ball.radius, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y,
+                    ball.spin, 0.5 * ball.mass * dot(ball.velocity, ball.velocity),
+                    ball.mass * gravity * ball.position.y);
+        for (std::size_t i = 0; i < kBodyCount; ++i) {
+            const Body& b = bodies_[i];
+            if (b.count == 0) continue;
+            std::printf("BODY %zu mass %.9g I %.9g p(%.9g,%.9g) v(%.9g,%.9g) spin %.9g KE %.12g PE %.12g\\n",
+                        i, b.mass, b.moment, b.centre.x, b.centre.y, b.velocity.x, b.velocity.y, b.spin,
+                        0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin,
+                        b.mass * gravity * b.centre.y);
+        }
+    }
     const double quantum = playground_tick::kQuantum;
     const Vec3 anchor = rope_.anchor;
     const double ropeLength = rope_.length;
@@ -101,6 +119,13 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         predictedSpin[i] = bodies_[i].spin;
     }
     const std::size_t predictedForces = forceCount_;
+    if (traceTick) {
+        for (std::size_t f = 0; f < predictedForces; ++f) {
+            const ForceSample& x = forces_[f];
+            std::printf("FORCE owner %zu kind %u at(%.9g,%.9g) F(%.9g,%.9g) Nm %.9g\\n",
+                        x.owner, static_cast<unsigned>(x.kind), x.at.x, x.at.y, x.force.x, x.force.y, x.moment);
+        }
+    }
 
     ball.began = ball.velocity;
     ball.previous = ball.position;
@@ -344,6 +369,9 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             if (bodyHeld(i)) return;
             playground_body_air::apply(body, seconds, [&](Vec3 at, Vec3 impulse, Vec3) {
                 airImpulse[i] += impulse;
+                if (traceTick) std::printf("FORCE_APPLY tick %llu body %zu source AIR at(%.9g,%.9g) J(%.9g,%.9g) dt %.9g\\n",
+                                           static_cast<unsigned long long>(thisDebugTick), i, at.x, at.y,
+                                           impulse.x, impulse.y, seconds);
                 const Vec3 arm = at - body.centre;
                 airMoment[i] += arm.x * impulse.y - arm.y * impulse.x;
             });
@@ -570,8 +598,41 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 return value;
             };
             const double solveEnergyBefore = kinetic();
+            const auto motionBefore = motion;
+            std::array<double, kRows> oldNormal{}, oldTangent{}, oldRolling{};
+            for (std::size_t r = 0; r < count; ++r) {
+                oldNormal[r] = rows[r].normalImpulse;
+                oldTangent[r] = rows[r].tangentImpulse;
+                oldRolling[r] = rows[r].rollingImpulse;
+            }
             pc::solve(motion, rows, count);
             const double solveEnergyAfter = kinetic();
+            if (traceTick) {
+                std::printf("SOLVE tick %llu t %.9f phase %s rows %zu dK %.12g\\n",
+                            static_cast<unsigned long long>(thisDebugTick), time, atStart ? "begin" : "end",
+                            count, solveEnergyAfter - solveEnergyBefore);
+                for (std::size_t r = 0; r < count; ++r) {
+                    const pc::Contact& c = rows[r];
+                    const Vec3 va0 = pc::pointVelocity(motionBefore[c.a], c.point);
+                    const Vec3 vb0 = c.b == pc::kWorld ? Vec3{} : pc::pointVelocity(motionBefore[c.b], c.point);
+                    const Vec3 va1 = pc::pointVelocity(motion[c.a], c.point);
+                    const Vec3 vb1 = c.b == pc::kWorld ? Vec3{} : pc::pointVelocity(motion[c.b], c.point);
+                    const Vec3 j = c.normal * (c.normalImpulse - oldNormal[r]) +
+                                   Vec3{c.normal.y, -c.normal.x, 0} * (c.tangentImpulse - oldTangent[r]);
+                    std::printf("CONTACT row %zu A%zu B%zu point(%.9g,%.9g) n(%.9g,%.9g) gapTarget %.9g "
+                                "vrelN %.9g->%.9g J(%.9g,%.9g) Favg(%.9g,%.9g) dJn %.9g dJt %.9g dJroll %.9g\\n",
+                                r, c.a, c.b, c.point.x, c.point.y, c.normal.x, c.normal.y, c.target,
+                                dot(va0-vb0,c.normal), dot(va1-vb1,c.normal), j.x, j.y, j.x/step, j.y/step,
+                                c.normalImpulse-oldNormal[r], c.tangentImpulse-oldTangent[r],
+                                c.rollingImpulse-oldRolling[r]);
+                }
+                for (std::size_t i = 0; i < motion.size(); ++i)
+                    if (motion[i].inverseMass > 0.0 || motion[i].inverseMoment > 0.0)
+                        std::printf("SOLID %zu v(%.9g,%.9g)->(%.9g,%.9g) omega %.9g->%.9g invM %.9g invI %.9g\\n",
+                                    i, motionBefore[i].velocity.x, motionBefore[i].velocity.y,
+                                    motion[i].velocity.x, motion[i].velocity.y, motionBefore[i].spin,
+                                    motion[i].spin, motion[i].inverseMass, motion[i].inverseMoment);
+            }
             if (std::getenv("GTC_TRACE_IMPULSE_ENERGY") && solveEnergyAfter - solveEnergyBefore > 1e-8) {
                 std::printf("IMPULSE_SOLVE t %.9f dK %+.12g rows %zu\\n", time, solveEnergyAfter - solveEnergyBefore, count);
                 for (std::size_t r = 0; r < count; ++r) {
