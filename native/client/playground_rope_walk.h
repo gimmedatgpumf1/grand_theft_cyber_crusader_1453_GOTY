@@ -375,7 +375,6 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                 body.velocity = body.arrivalVelocity + (predictedVelocity[i] - body.arrivalVelocity) * spent;
                 body.spin = body.arrivalSpin + (predictedSpin[i] - body.arrivalSpin) * spent;
             }
-            if (!body.pivoted) body.velocity.y += gravity * (dt - time);
             for (std::size_t sample = 0; sample < predictedForces; ++sample) {
                 ForceSample& force = forces_[sample];
                 if (force.owner != i) continue;
@@ -557,7 +556,33 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
                     row.kineticFriction = body.kineticFriction;
                 }
             }
+            // Diagnostic ledger around the actual sequential-impulse solve. A
+            // closed, stationary unilateral/frictional solve cannot increase
+            // kinetic energy; report the individual contact rows whenever it does.
+            const auto kinetic = [&]() {
+                double value = 0.0;
+                for (std::size_t i = 0; i < motion.size(); ++i) {
+                    if (motion[i].inverseMass > 0.0)
+                        value += 0.5 * dot(motion[i].velocity, motion[i].velocity) / motion[i].inverseMass;
+                    if (motion[i].inverseMoment > 0.0)
+                        value += 0.5 * motion[i].spin * motion[i].spin / motion[i].inverseMoment;
+                }
+                return value;
+            };
+            const double solveEnergyBefore = kinetic();
             pc::solve(motion, rows, count);
+            const double solveEnergyAfter = kinetic();
+            if (std::getenv("GTC_TRACE_IMPULSE_ENERGY") && solveEnergyAfter - solveEnergyBefore > 1e-8) {
+                std::printf("IMPULSE_SOLVE t %.9f dK %+.12g rows %zu\\n", time, solveEnergyAfter - solveEnergyBefore, count);
+                for (std::size_t r = 0; r < count; ++r) {
+                    const pc::Contact& c = rows[r];
+                    const Vec3 va = pc::pointVelocity(motion[c.a], c.point);
+                    const Vec3 vb = c.b == pc::kWorld ? Vec3{} : pc::pointVelocity(motion[c.b], c.point);
+                    std::printf("  row %zu %zu->%zu n(%+.5f,%+.5f) target %+.7g jn %+.9g jt %+.9g vrelN %+.9g\\n",
+                                r, c.a, c.b, c.normal.x, c.normal.y, c.target, c.normalImpulse,
+                                c.tangentImpulse, dot(va - vb, c.normal));
+                }
+            }
             state.velocity = motion[0].velocity;
             ball.spin = motion[0].spin;
             for (std::size_t i = 0; i < kBodyCount; ++i) {
