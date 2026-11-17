@@ -12,7 +12,9 @@
 #include "client/playground_room_tick.h"
 #include "client/playground_shapes.h"
 
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 
 namespace gtc::native {
 using namespace ball_shape;
@@ -72,7 +74,9 @@ bool PlaygroundRoom::ballPlacementClear(const Ball& ball, Vec3 at) const {
 // and the drawing -- meet it where the rope really left it rather than where its own
 // gravity took it.
 void PlaygroundRoom::tickBalls() {
+    const bool profile = std::getenv("GTC_PROFILE_CONTACT_TICK") != nullptr;
     for (std::size_t index = 0; index < kBallCount; ++index) {
+        const auto profileStart = std::chrono::steady_clock::now();
         Ball& ball = balls_[index];
         Rope& rope = ropeForBall(index);
         const bool traceBallTick = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
@@ -92,6 +96,11 @@ void PlaygroundRoom::tickBalls() {
         // Near a body, the rope's curved path has to meet that body at the
         // actual instant of contact rather than a later free-fall projection.
         if (rope.attached && rope.ball == index && !ballHeld(ball) && walkRopeContacts(ball)) {
+            if (profile) {
+                const double micros = std::chrono::duration<double, std::micro>(
+                    std::chrono::steady_clock::now() - profileStart).count();
+                if (micros > 1000.0) std::printf("BALL_PROFILE id=%zu path=rope-walk %.1fus\n", index, micros);
+            }
             traceBallResult("rope-contact-walk");
             continue;
         }
@@ -115,6 +124,11 @@ void PlaygroundRoom::tickBalls() {
             } else {
                 holdOnRope(ball);
             }
+        }
+        if (profile) {
+            const double micros = std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - profileStart).count();
+            if (micros > 1000.0) std::printf("BALL_PROFILE id=%zu path=ordinary %.1fus frozen=%d\n", index, micros, int(ball.frozen));
         }
         traceBallResult("ordinary-ball-tick");
     }
