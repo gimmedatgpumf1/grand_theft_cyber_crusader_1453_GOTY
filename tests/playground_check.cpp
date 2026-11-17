@@ -723,8 +723,6 @@ int contactPlacementPerformance() {
     PlaygroundRoom room;
     room.reset();
     settle(room, 300);
-    int awakeBeforeDrop = 0;
-    for (const auto& ball : room.balls_) if (!ball.frozen) ++awakeBeforeDrop;
     const Vec3 cube = room.bodyMiddle(0);
     double totalMicros = 0.0, worstMicros = 0.0;
     auto& droppedTriangle = room.bodies_[1];
@@ -756,9 +754,8 @@ int contactPlacementPerformance() {
         if (micros > 20000.0) ++overBudget;
     }
     char detail[180];
-    std::snprintf(detail, sizeof detail, "%d ticks: mean %.1f us; worst %.1f us at tick %d; contact tick %d; >20ms %d; awake before drop %d/%zu",
-                  ticks, totalMicros / ticks, worstMicros, worstTick, firstContactTick, overBudget,
-                  awakeBeforeDrop, room.balls_.size());
+    std::snprintf(detail, sizeof detail, "%d ticks: mean %.1f us; worst %.1f us at tick %d; contact tick %d; >20ms %d",
+                  ticks, totalMicros / ticks, worstMicros, worstTick, firstContactTick, overBudget);
     check(firstContactTick >= 0, "released triangle actually contacts the cube during the timed run");
     check(overBudget == 0, "triangle-drop ticks avoid frame-scale CPU spikes", detail);
     return failures == 0 ? 0 : 1;

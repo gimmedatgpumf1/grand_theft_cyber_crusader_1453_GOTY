@@ -49,8 +49,9 @@ bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
         if (&balls_[other] == &ball) continue;
         const Ball& neighbour = balls_[other];
         const double reach = length(neighbour.position - neighbour.previous);
-        if (length(neighbour.position - ball.position) <= ball.radius + neighbour.radius + reach +
-                                                             playground_tick::kQuantum)
+        if (reach > playground_tick::kQuantum &&
+            length(neighbour.position - ball.position) <= ball.radius + neighbour.radius + reach +
+                                                               playground_tick::kQuantum)
             return true;
     }
     // A taut rope at its static hanging equilibrium is already balanced by its
@@ -113,7 +114,12 @@ void PlaygroundRoom::tickBalls() {
             traceBallResult("rope-contact-walk");
             continue;
         }
-        if (!ball.frozen || ballNeighboursMoving(ball)) tickBall(ball);
+        const double ropeError = std::abs(length(ball.position - rope.anchor) - rope.length);
+        const bool quietRopeBob = rope.attached && rope.ball == index && ball.restitution <= 0.02 && rope.taut &&
+                                  ropeError <= playground_tick::kQuantum &&
+                                  length(ball.velocity) <= playground_tick::kQuantumSpeed &&
+                                  std::abs(ball.spin) * ball.radius <= playground_tick::kQuantumSpeed;
+        if ((!ball.frozen && !quietRopeBob) || ballNeighboursMoving(ball)) tickBall(ball);
         else {
             // Asleep: its tick is not run, so what it would have begun with is the
             // speed it has, and nothing in the room is going to move it this tick --
