@@ -66,7 +66,19 @@ void ropeAgainstSupportedStack(double angle, double supportOffset, bool supportA
     int worstTick = 0, worstIslandTick = 0, overlapTick = 0;
     for (int tick = 1; tick <= ticks; ++tick) {
         const double energy = room.totalEnergy(), localBefore = islandEnergy();
+        const char* selectedStackTick = std::getenv("GTC_TRACE_STACK_TICK");
+        const bool traceThisStackTick = selectedStackTick && std::atoi(selectedStackTick) == tick;
+        const char* previousTraceTick = std::getenv("GTC_TRACE_TICK");
+        const std::string savedTraceTick = previousTraceTick ? previousTraceTick : "";
+        if (traceThisStackTick) {
+            std::printf("\\n=== SELECTED SUPPORTING-STACK TEST TICK %d ===\\n", tick);
+            setenv("GTC_TRACE_TICK", "all", 1);
+        }
         room.advance(1.0 / 20.0);
+        if (traceThisStackTick) {
+            if (previousTraceTick) setenv("GTC_TRACE_TICK", savedTraceTick.c_str(), 1);
+            else unsetenv("GTC_TRACE_TICK");
+        }
         pair_shape::PairManifold patch;
         if (pair_shape::collide(triangle.position.data(), triangle.count, cube.position.data(), cube.count, 0, patch) &&
             patch.overlap > overlap) { overlap = patch.overlap; overlapTick = tick; }
