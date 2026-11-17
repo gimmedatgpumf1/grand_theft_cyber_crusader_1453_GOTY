@@ -737,24 +737,27 @@ int contactPlacementPerformance() {
     droppedTriangle.spin = 0.0;
     droppedTriangle.frozen = false;
     constexpr int ticks = 600;
-    int overBudget = worstMicros > 50000.0 ? 1 : 0;
-    bool touchedCube = false;
+    int overBudget = worstMicros > 10000.0 ? 1 : 0;
+    int worstTick = -1, firstContactTick = -1;
     for (int i = 0; i < ticks; ++i) {
         const auto begin = std::chrono::steady_clock::now();
         room.advance(1.0 / 20.0);
         const double micros = std::chrono::duration<double, std::micro>(
                                   std::chrono::steady_clock::now() - begin).count();
         totalMicros += micros;
-        worstMicros = std::max(worstMicros, micros);
+        if (micros > worstMicros) {
+            worstMicros = micros;
+            worstTick = i;
+        }
         const auto& triangle = room.bodies_[1];
-        if (triangle.onBody && triangle.supportBody == 0) touchedCube = true;
-        if (micros > 50000.0) ++overBudget;
+        if (triangle.onBody && triangle.supportBody == 0 && firstContactTick < 0) firstContactTick = i;
+        if (micros > 10000.0) ++overBudget;
     }
     char detail[180];
-    std::snprintf(detail, sizeof detail, "%d settled ticks: mean %.1f us; worst including placement %.1f us; >50ms %d",
-                  ticks, totalMicros / ticks, worstMicros, overBudget);
-    check(touchedCube, "released triangle actually contacts the cube during the timed run");
-    check(overBudget == 0, "triangle drop ticks stay within the 20 Hz budget", detail);
+    std::snprintf(detail, sizeof detail, "%d ticks: mean %.1f us; worst %.1f us at tick %d; contact tick %d; >10ms ticks %d",
+                  ticks, totalMicros / ticks, worstMicros, worstTick, firstContactTick, overBudget);
+    check(firstContactTick >= 0, "released triangle actually contacts the cube during the timed run");
+    check(overBudget == 0, "triangle-drop ticks avoid frame-scale CPU spikes", detail);
     return failures == 0 ? 0 : 1;
 }
 
