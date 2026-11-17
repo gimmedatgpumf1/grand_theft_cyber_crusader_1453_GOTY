@@ -635,21 +635,9 @@ void PlaygroundRoom::answerSupportedShapes() {
         // its index: `ball` is an index now, and read as a yes it skipped the body's
         // own patches (kNoBall is not nought) and kept the thrown ball's (index nought
         // is nought) -- the wrong set, both ways round.
-        const Manifold& saved = tickPatches_.items[i];
-        if (saved.ball < kBallCount) continue;
-        bool separated = saved.ends > 0;
-        for (std::size_t k = 0; k < saved.ends; ++k)
-            separated = separated && saved.gap[k] > kQuantum;
-        if (separated) {
-            if (std::getenv("GTC_TRACE_CONTEXT"))
-                std::printf("SUPPORT_PATCH_SKIP context=%s slot=%zu body=%zu other=%zu ends=%zu gap=(%.9g,%.9g) Jn=(%.9g,%.9g) Jt=(%.9g,%.9g)\n",
-                            std::getenv("GTC_TRACE_CONTEXT"),i,saved.body,saved.other,saved.ends,
-                            saved.gap[0],saved.gap[1],saved.normalImpulse[0],saved.normalImpulse[1],
-                            saved.tangentImpulse[0],saved.tangentImpulse[1]);
-            continue;
-        }
+        if (tickPatches_.items[i].ball < kBallCount) continue;
         slot[again.count] = i;
-        again.add(saved);
+        again.add(tickPatches_.items[i]);
     }
     if (again.count == 0) return;
     // Every impulse this applies is written into the ledger where it acts, by

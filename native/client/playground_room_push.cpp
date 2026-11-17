@@ -125,7 +125,7 @@ void PlaygroundRoom::pushBody(Body& body, Vec3 at, Vec3 impulse, ForceKind kind)
     // follows in pushBallSupported(), and for the same reason: an arrow for a blow
     // that was refused would be an arrow with no momentum behind it.
     const Vec3 given = kind == ForceKind::Ball ? bodyFree(body, impulse) : impulse;
-    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr && std::getenv("GTC_TRACE_IMPULSES") != nullptr;
     const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
     const Vec3 traceVelocityBefore = body.velocity;
     const double traceSpinBefore = body.spin;
@@ -182,7 +182,7 @@ void PlaygroundRoom::pushBall(Ball& ball, Vec3 at, Vec3 impulse, ForceKind kind)
     if (!(length(impulse) > 0.0)) return;
     const Vec3 arm = at - ball.position;
     const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
-    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr && std::getenv("GTC_TRACE_IMPULSES") != nullptr;
     const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
     const Vec3 traceVelocityBefore = ball.velocity;
     const double traceSpinBefore = ball.spin;
@@ -208,7 +208,7 @@ void PlaygroundRoom::pushBallSupported(Ball& ball, Vec3 at, Vec3 impulse, ForceK
     const Vec3 arm = at - ball.position;
     const double moment = 0.4 * ball.mass * ball.radius * ball.radius;
     const Vec3 free = ballFree(ball, impulse, except);
-    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
+    const bool trace = std::getenv("GTC_TRACE_CONTEXT") != nullptr && std::getenv("GTC_TRACE_IMPULSES") != nullptr;
     const double traceEnergyBefore = trace ? totalEnergy() : 0.0;
     const Vec3 traceVelocityBefore = ball.velocity;
     const double traceSpinBefore = ball.spin;
