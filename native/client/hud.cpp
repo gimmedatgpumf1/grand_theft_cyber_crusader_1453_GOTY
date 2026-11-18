@@ -79,10 +79,29 @@ struct Font {
     std::vector<unsigned char> bytes;
     bool ready = false;
     Font() {
-        std::ifstream input("native/assets/ui-sans.ttf", std::ios::binary);
-        if (!input) return;
-        bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-        ready = !bytes.empty() && stbtt_InitFont(&info, bytes.data(), 0) != 0;
+        // The face lives in the source tree, but the binary is run from
+        // wherever the build put it -- the repo root, build/, build/bin/.
+        // A single relative path only works from one of those, and when it
+        // misses the face never loads and every drawTextPixels() call draws
+        // nothing (the debug log panel opens as an empty box). Try the paths
+        // from each of those working directories.
+        const char* candidates[] = {
+            "native/assets/ui-sans.ttf",
+            "../native/assets/ui-sans.ttf",
+            "../../native/assets/ui-sans.ttf",
+            "../../../native/assets/ui-sans.ttf",
+            "../../../../native/assets/ui-sans.ttf",
+        };
+        for (const char* path : candidates) {
+            std::ifstream input(path, std::ios::binary);
+            if (!input) continue;
+            bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+            if (!bytes.empty() && stbtt_InitFont(&info, bytes.data(), 0) != 0) {
+                ready = true;
+                return;
+            }
+            bytes.clear();
+        }
     }
 };
 
