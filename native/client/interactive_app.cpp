@@ -63,9 +63,11 @@ int App::run() {
             }
             if (playgroundMode_) {
                 if (playgroundDragging_) updatePlaygroundDragRay();
-                // Paused (D): the ticking stops entirely. Stepping is done by
-                // the . and , keys, one tick at a time.
+                // Paused (D): the ticking stops entirely, but the hand still
+                // carries what it holds -- dragging is not ticking. Stepping
+                // is done by the . and , keys, one tick at a time.
                 if (!debugPaused_) playground_.advance(dt);
+                else playground_.updateDragNow();
             } else if (testRoom_) {
                 roomCamera_.move(dt);
             } else updateGod(dt);

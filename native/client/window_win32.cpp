@@ -56,6 +56,29 @@ struct NativeWindow::Impl {
         }
     }
 
+    // The character a virtual key makes on this keyboard, in this layout, with
+    // the shift state as it stands: '/', '.', ',' and the rest of the OEM keys
+    // that key() above cannot see. Letters come back lower case, matching the
+    // convention key() uses, so a shifted D is still 'd'. Zero when the key
+    // makes no character (dead keys, Alt combinations, function keys).
+    static int characterKey(WPARAM value, LPARAM scan) {
+        BYTE state[256];
+        if (!GetKeyboardState(state)) return 0;
+        BYTE buffer[2] = {};
+        const int count = ToAscii(static_cast<UINT>(value),
+                                  static_cast<UINT>((scan >> 16) & 0xff), state, buffer, 0);
+        if (count != 1) return 0;
+        const unsigned char character = buffer[0];
+        if (character >= 'A' && character <= 'Z') return character - 'A' + 'a';
+        if (character >= 32 && character < 127) return character;
+        return 0;
+    }
+
+    static int keyEvent(WPARAM value, LPARAM scan) {
+        const int character = characterKey(value, scan);
+        return character != 0 ? character : key(value);
+    }
+
     void centerMouse() {
         POINT point{width / 2, height / 2};
         ClientToScreen(window, &point);
@@ -117,13 +140,13 @@ struct NativeWindow::Impl {
         if (!self) return DefWindowProc(hwnd, message, wParam, lParam);
         switch (message) {
             case WM_KEYDOWN: case WM_SYSKEYDOWN: {
-                WindowEvent pressed{WindowEvent::Type::KeyDown, key(wParam)};
+                WindowEvent pressed{WindowEvent::Type::KeyDown, keyEvent(wParam, lParam)};
                 pressed.repeat = (lParam & (1LL << 30)) != 0;
                 self->events.push_back(pressed);
                 return 0;
             }
             case WM_KEYUP: case WM_SYSKEYUP:
-                self->events.push_back({WindowEvent::Type::KeyUp, key(wParam)});
+                self->events.push_back({WindowEvent::Type::KeyUp, keyEvent(wParam, lParam)});
                 return 0;
             case WM_MOUSEMOVE: {
                 WindowEvent moved{WindowEvent::Type::MouseMove};

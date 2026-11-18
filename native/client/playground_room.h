@@ -87,6 +87,11 @@ public:
     const std::vector<std::string>& tickLog() const { return tickLog_; }
     void setDragRay(Vec3 origin, Vec3 direction);
     void beginDrag();
+    // The hand's update without a tick: while the room is paused (D) the mouse
+    // still carries what it holds, so a shape can be dragged and then stepped.
+    void updateDragNow() {
+        if (dragTarget_ != DragTarget::None) updateDrag();
+    }
     // Release a carried ball at its placed position, without adding a throw.
     void endDrag();
     bool render(NativeFrame& frame, const ViewState& view, const RoomFreecam& camera);
