@@ -967,5 +967,11 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         ball.bendIn = firstAt > 0.0 ? (firstPoint - ball.previous) / (dt * firstAt) : Vec3{};
         ball.bendOut = firstAt < 1.0 ? (ball.position - firstPoint) / (dt * (1.0 - firstAt)) : Vec3{};
     }
+    // Last resort only: the hitscan-swept drifts above stop bodies at the
+    // touching instant, so this normally has nothing to do. It exists because
+    // this walk runs after tickBodies()' own separation pass, and a body that
+    // began the walk already a hair inside another (from the last tick's
+    // arithmetic) must not be left there for the whole of this one.
+    separateBodies();
     return true;
 }
