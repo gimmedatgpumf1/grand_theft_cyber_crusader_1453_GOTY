@@ -270,6 +270,7 @@ void PlaygroundRoom::tick() {
         for (std::size_t index = 0; index < kBodyCount; ++index) {
             if (metBody[index]) continue;
             const Body& body = bodies_[index];
+            if (body.count == 0) continue;  // not in the room
             double along = 2.0;
             Vec3 facing{0, 1, 0};
             if (!segmentHitsPolygon(point_, next, body.position.data(), body.count, along, facing)) continue;

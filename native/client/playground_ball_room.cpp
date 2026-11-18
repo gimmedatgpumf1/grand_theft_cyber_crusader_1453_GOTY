@@ -24,6 +24,7 @@ bool holdsBall(Vec3 normal);
 // A ball that is asleep is not stepped, but only while nothing can reach it. The
 // dot and every body count: if any of them is moving, the ball is looked at.
 bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
+    if (!ball.active) return false;  // not in the room
     // Motion elsewhere in the room is not a reason to tick this ball. Wake it only
     // when a moving solid's swept reach can get to its surface this tick. Bodies are
     // already stepped when this is queried, so translation plus furthest-corner arc

@@ -458,29 +458,21 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     // where it is comes from the batch matrix, every frame, with no upload.
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
+        if (body.count == 0) continue;  // not in the room: no geometry at all
         const std::uint32_t base = kBodyFaceId + static_cast<std::uint32_t>(index) * kBodySpan;
-        // A body that is not in the room (count zero) still needs its batches to
-        // exist and be non-empty: an empty mesh is not a valid GPU buffer. It is
-        // given a dummy triangle and hidden every frame by placeMarkers().
-        const std::size_t corners = body.count == 0 ? kMaxCorners : body.count;
-        if (body.count == 0) {
-            points = {{0, 0, kFaceZ}, {1, 0, kFaceZ}, {0, 1, kFaceZ}};
-            faces = {{0, 1, 2}};
-        } else {
-            face(points, faces, body.local.data(), body.count, kFaceZ);
-        }
+        face(points, faces, body.local.data(), body.count, kFaceZ);
         raster.setObject(base, {0, 0}, 0);
         raster.mesh(points, faces, flat("#2c5f74"));
 
         points.clear();
         faces.clear();
         quad(points, faces, 0, -1, 1, 1, 0.0);
-        for (std::size_t i = 0; i < corners; ++i) {
+        for (std::size_t i = 0; i < body.count; ++i) {
             raster.setObject(base + kBodyEdgeOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#9fd8e8"));
         }
         disc(points, faces, kCornerRadius);
-        for (std::size_t i = 0; i < corners; ++i) {
+        for (std::size_t i = 0; i < body.count; ++i) {
             raster.setObject(base + kBodyCornerOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#ff8a4c"));
         }
@@ -523,6 +515,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     // same order, for both of them: one is on a rope and one is not, and that is a fact
     // about the rope.
     for (std::size_t index = 0; index < kBallCount; ++index) {
+        if (!balls_[index].active) continue;  // not in the room: no geometry at all
         const std::uint32_t base = ballId(index);
         points.clear();
         faces.clear();
@@ -652,6 +645,7 @@ void PlaygroundRoom::placeMarkers() {
     }
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
+        if (body.count == 0) continue;  // not in the room: nothing was built for it
         // The face is the rest shape placed where the drawn corners already are,
         // so what is filled in is exactly the outline the edges draw.
         const Vec3 middle = centroid(body.shown.data(), body.count);
