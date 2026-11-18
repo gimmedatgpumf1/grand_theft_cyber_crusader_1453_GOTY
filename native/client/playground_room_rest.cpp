@@ -386,6 +386,16 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     debugHistory_.clear();
     tickLog_.clear();
     tickCount_ = 0;
+    // An initial log, so the physics log panel (/) is never empty: it describes
+    // the starting state the first tick will run from. The ledger was cleared
+    // above and no tick has run, so this reads as the room at rest before
+    // anything has happened -- every speed, energy and position of the start.
+    tickPatches_.count = 0;
+    {
+        double kinetic = 0.0, potential = 0.0;
+        energyBudget(kinetic, potential);
+        buildTickLog(kinetic + potential, kinetic, potential);
+    }
     return true;
 }
 
