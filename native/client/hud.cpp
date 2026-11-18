@@ -9,7 +9,18 @@
 #include <cmath>
 #include <fstream>
 #include <map>
+#include <string>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "vendor/stb_truetype.h"
@@ -80,19 +91,35 @@ struct Font {
     bool ready = false;
     Font() {
         // The face lives in the source tree, but the binary is run from
-        // wherever the build put it -- the repo root, build/, build/bin/.
-        // A single relative path only works from one of those, and when it
-        // misses the face never loads and every drawTextPixels() call draws
-        // nothing (the debug log panel opens as an empty box). Try the paths
-        // from each of those working directories.
-        const char* candidates[] = {
-            "native/assets/ui-sans.ttf",
-            "../native/assets/ui-sans.ttf",
-            "../../native/assets/ui-sans.ttf",
-            "../../../native/assets/ui-sans.ttf",
-            "../../../../native/assets/ui-sans.ttf",
-        };
-        for (const char* path : candidates) {
+        // wherever the build put it -- the repo root, build/, build/bin/, or
+        // by double-clicking the exe, where the working directory is the exe's
+        // own folder or a shortcut's target. A single relative path only works
+        // from one of those, and when it misses the face never loads and every
+        // drawTextPixels() call draws nothing (the debug log panel opens as an
+        // empty box, the FPS counter vanishes). Try the paths from the working
+        // directory and from the executable's own directory.
+        std::vector<std::string> candidates;
+        candidates.emplace_back("native/assets/ui-sans.ttf");
+        candidates.emplace_back("../native/assets/ui-sans.ttf");
+        candidates.emplace_back("../../native/assets/ui-sans.ttf");
+        candidates.emplace_back("../../../native/assets/ui-sans.ttf");
+        candidates.emplace_back("../../../../native/assets/ui-sans.ttf");
+#ifdef _WIN32
+        char exePath[MAX_PATH];
+        if (GetModuleFileNameA(nullptr, exePath, sizeof(exePath)) > 0) {
+            std::string exeDir(exePath);
+            const std::size_t slash = exeDir.find_last_of("\\/");
+            if (slash != std::string::npos) {
+                exeDir = exeDir.substr(0, slash + 1);
+                candidates.push_back(exeDir + "native/assets/ui-sans.ttf");
+                candidates.push_back(exeDir + "../native/assets/ui-sans.ttf");
+                candidates.push_back(exeDir + "../../native/assets/ui-sans.ttf");
+                candidates.push_back(exeDir + "../../../native/assets/ui-sans.ttf");
+                candidates.push_back(exeDir + "../../../../native/assets/ui-sans.ttf");
+            }
+        }
+#endif
+        for (const std::string& path : candidates) {
             std::ifstream input(path, std::ios::binary);
             if (!input) continue;
             bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());

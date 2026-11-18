@@ -176,7 +176,11 @@ int App::run() {
 // the physics log panel. All of it is interface quads and glyphs, like the FPS
 // counter -- the same frame.ui layer, the same text.
 void App::drawPlaygroundDebug(NativeFrame& frame) {
-    const int pixelHeight = std::clamp(int(13.0 * std::max(1, frame.height) / 480.0), 12, 18);
+    // Sized like the FPS counter (fpsCounterTextHeight): 13px at 640x480,
+    // growing with the window, floored at 20 because that is the size this
+    // game's text has always been drawn at.
+    const int pixelHeight = std::clamp(
+        static_cast<int>(std::lround(13.0 * std::max(1, frame.height) / 480.0)), 20, 44);
     const int lineHeight = std::max(1, textHeightPixels(pixelHeight)) + 2;
     const Color ink = colorHex(hexRgb("#e6edf2"));
     const Color accent = colorHex(hexRgb("#d7ff54"));
