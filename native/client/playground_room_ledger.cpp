@@ -150,7 +150,7 @@ void PlaygroundRoom::recordStaticForces(const std::array<bool, kBodyCount>& step
     // point is the true total, not an approximation of it.
     for (std::size_t index = 0; index < kBallCount; ++index) {
         const Ball& ball = balls_[index];
-        if (!ball.frozen || ballStepped[index]) continue;
+        if (!ball.active || !ball.frozen || ballStepped[index]) continue;
         const Vec3 weight{0.0, -ball.mass * kGravity, 0.0};
         const Vec3 at = ball.position + ball.supportNormal * (-ball.radius);
         addForce(ball.position, weight, ForceKind::Gravity, nullptr, ownerOf(ball));

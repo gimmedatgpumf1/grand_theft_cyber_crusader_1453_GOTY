@@ -397,6 +397,7 @@ inline bool leastOverlap(const Vec3* one, std::size_t oneCount, const Vec3* two,
 }
 
 inline bool pushOutOfPolygon(Vec3& point, const Vec3* corners, std::size_t count) {
+    if (count == 0) return false;  // no polygon, nothing to be inside
     bool inside = true;
     for (std::size_t edge = 0; edge < count; ++edge) {
         const Vec3 a = corners[edge];
