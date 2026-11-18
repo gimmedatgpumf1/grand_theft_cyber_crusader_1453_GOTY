@@ -64,11 +64,11 @@ struct NativeWindow::Impl {
     static int characterKey(WPARAM value, LPARAM scan) {
         BYTE state[256];
         if (!GetKeyboardState(state)) return 0;
-        BYTE buffer[2] = {};
+        WORD word = 0;
         const int count = ToAscii(static_cast<UINT>(value),
-                                  static_cast<UINT>((scan >> 16) & 0xff), state, buffer, 0);
+                                  static_cast<UINT>((scan >> 16) & 0xff), state, &word, 0);
         if (count != 1) return 0;
-        const unsigned char character = buffer[0];
+        const unsigned char character = static_cast<unsigned char>(word);
         if (character >= 'A' && character <= 'Z') return character - 'A' + 'a';
         if (character >= 32 && character < 127) return character;
         return 0;
