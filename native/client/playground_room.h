@@ -65,6 +65,10 @@ public:
     bool reset(Vec3 start = {0, 1.9, 0}, Vec3 startVelocity = {});
     // Moves the point alone, leaving the solids where they are.
     void resetPoint(Vec3 start, Vec3 startVelocity = {});
+    // Dot-only mode: reset() still sets the whole room up in full, but then
+    // freezes the bodies, balls and ropes below the floor, leaving only the
+    // point and the floor. The app turns this on; the tests leave it off.
+    void setDotOnly(bool on) { dotOnly_ = on; }
     // Hands the frame's elapsed time to the fixed 20 Hz tick accumulator. No
     // tick is ever split and no tick is ever run twice.
     void advance(double seconds);
@@ -760,6 +764,7 @@ private:
     bool heldStill_ = false;
     bool sceneReady_ = false, resting_ = false, haveTrace_ = false;
     bool pointFrozen_ = false;
+    bool dotOnly_ = false;
     // Which body is holding the point up, or -1 when none is.
     int restingBody_ = -1;
     bool restingOnBall_ = false;

@@ -418,6 +418,7 @@ private:
     }
     void stopPlaygroundDrag() { playgroundDragging_=false; playground_.endDrag(); }
     void enterPlayground() {
+        playground_.setDotOnly(true);
         if (!playground_.reset()) { std::cerr << "Unable to start playground\n"; return; }
         debugPaused_ = false; debugLogOpen_ = false; debugLogScroll_ = 0;
         playgroundReturnToRoom_=testRoom_; roomCamera_.clear(); endOrbit();

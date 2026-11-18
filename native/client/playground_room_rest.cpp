@@ -383,6 +383,7 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     // deleted -- but they are then frozen and parked below the floor, where
     // they are invisible and the point can never reach them. To bring the
     // room back, delete this block.
+    if (dotOnly_) {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         Body& body = bodies_[index];
         body.frozen = true;
@@ -402,6 +403,7 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         Rope& rope = ropeForBall(i + 1);
         rope.attached = false;
         rope.anchor = Vec3{0, -1000, 0};
+    }
     }
     restingOnBall_ = false;
     restingBall_ = kThrowBall;
