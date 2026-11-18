@@ -378,6 +378,31 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
         hanging.angle = hanging.previousAngle = 0.0;
         rope.taut = true; rope.tension = hanging.mass * kGravity;
     }
+    // Dot-only mode: the room is emptied down to the point and the floor. The
+    // bodies, balls and ropes above are still set up in full -- nothing is
+    // deleted -- but they are then frozen and parked below the floor, where
+    // they are invisible and the point can never reach them. To bring the
+    // room back, delete this block.
+    for (std::size_t index = 0; index < kBodyCount; ++index) {
+        Body& body = bodies_[index];
+        body.frozen = true;
+        body.velocity = {};
+        body.spin = 0.0;
+        body.centre = body.previousCentre = Vec3{0, -1000, 0};
+        placeCorners(body);
+        body.previous = body.shown = body.position;
+    }
+    for (Ball& ball : balls_) {
+        ball.frozen = true;
+        ball.velocity = {};
+        ball.spin = 0.0;
+        ball.position = ball.previous = ball.shown = Vec3{0, -1000, 0};
+    }
+    for (std::size_t i = 0; i < kRopeCount; ++i) {
+        Rope& rope = ropeForBall(i + 1);
+        rope.attached = false;
+        rope.anchor = Vec3{0, -1000, 0};
+    }
     restingOnBall_ = false;
     restingBall_ = kThrowBall;
     dragBall_ = kThrowBall;

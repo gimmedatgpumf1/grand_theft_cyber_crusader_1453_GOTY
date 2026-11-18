@@ -199,12 +199,10 @@ void App::drawPlaygroundDebug(NativeFrame& frame) {
         frame.blendRectangle(x, y, width + padding * 2, height + padding * 2, panel, 0.75);
         drawTextPixels(frame, x + padding, y + padding, text, color, pixelHeight);
     };
-    // The hint, always: how to get into debug mode at all.
-    strip(8, frame.height - textHeightPixels(pixelHeight) - 24, "D: pause/step   /: physics log", ink);
     if (debugPaused_) {
         char status[160];
         std::snprintf(status, sizeof(status),
-                      "PAUSED tick %llu (history %zu)   D resume   . step fwd   , step back   / log",
+                      "PAUSED tick %llu (history %zu)",
                       static_cast<unsigned long long>(playground_.tickCount()),
                       playground_.debugHistoryDepth());
         strip(8, 8, status, accent);
