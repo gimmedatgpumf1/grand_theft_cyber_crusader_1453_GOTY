@@ -480,7 +480,7 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
 
     // The pin in the middle of the plank, last of the solid things so that it is
     // drawn over the plank it goes through and not under it.
-    if (PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
+    if (!dotOnly_ && PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
         const auto& plank = kShapes[PlaygroundRoom::kSeesaw];
         // A small square of the axle's own metal, in the middle of the plank and in
         // front of it: the one thing on screen that says the plank is held there.
